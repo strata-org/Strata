@@ -113,7 +113,7 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         Assert.Equal(0, exitCode);
         Assert.True(standardOutput.Length > 0, "Expected some output from BoogieToStrata");
         Assert.True(errorOutput.Length == 0, "Expected no error output from BoogieToStrata");
-        var strataFile = Path.ChangeExtension(filePath, "boogie.st");
+        var strataFile = Path.ChangeExtension(filePath, "core.st");
         File.WriteAllText(strataFile, standardOutput);
         var expectFile = Path.ChangeExtension(filePath, "expect");
         string? expectString = null;

@@ -49,7 +49,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println LoopTrivialPgm.format.render
+#eval IO.println LoopTrivialPgm
 
 /--
 info: function loopTrivial {
@@ -94,10 +94,10 @@ assert [i_eq_n] (i == n)
 return := i
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program LoopTrivialPgm)
+#eval Strata.to_core (Strata.C_Simp.get_program LoopTrivialPgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -167,12 +167,6 @@ Assumptions:
 Proof Obligation:
 #true
 
-Wrote problem to vcs/entry_invariant.smt2.
-Wrote problem to vcs/assert_measure_pos.smt2.
-Wrote problem to vcs/measure_decreases.smt2.
-Wrote problem to vcs/measure_imp_not_guard.smt2.
-Wrote problem to vcs/arbitrary_iter_maintain_invariant.smt2.
-Wrote problem to vcs/i_eq_n.smt2.
 ---
 info:
 Obligation: entry_invariant

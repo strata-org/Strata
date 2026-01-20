@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "strata", "StrataMain", "StrataVerify", "StrataToCBMC", "BoogieToGoto"]
+defaultTargets = ["Strata", "strata", "StrataMain", "StrataVerify", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTest"
 
 [leanOptions]
@@ -33,4 +33,4 @@ name = "StrataVerify"
 name = "StrataToCBMC"
 
 [[lean_exe]]
-name = "BoogieToGoto"
+name = "StrataCoreToGoto"

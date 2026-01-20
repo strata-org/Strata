@@ -6,7 +6,7 @@
 
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.DDMTransform.Translate
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 import Strata.DL.Imperative.Stmt
 
 namespace Strata
@@ -16,7 +16,7 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
-def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Boogie.BoogieLParams.mono :=
+def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
   | .const m c => .const m c
   | .op m o ty => .op m ⟨o.name, .unres⟩ ty
@@ -28,12 +28,12 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Boogie.BoogieLPar
   | .ite m c t e => .ite m (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq m e1 e2 => .eq m (translate_expr e1) (translate_expr e2)
 
-def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Boogie.BoogieLParams.mono) :=
+def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match e with
   | some e => translate_expr e
   | none => none
 
-def translate_cmd (c: C_Simp.Command) : Boogie.Command :=
+def translate_cmd (c: C_Simp.Command) : Core.Command :=
   match c with
   | .init name ty e _md => .cmd (.init ⟨name.name, .unres⟩ ty (translate_expr e) {})
   | .set name e _md => .cmd (.set ⟨name.name, .unres⟩ (translate_expr e) {})
@@ -42,7 +42,7 @@ def translate_cmd (c: C_Simp.Command) : Boogie.Command :=
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})
   | .cover label b _md =>  .cmd (.cover label (translate_expr b) {})
 
-def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Boogie.Statement :=
+def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.Statement :=
   match s with
   | .cmd c => .cmd (translate_cmd c)
   | .block l b _md => .block l (b.map translate_stmt) {}
@@ -73,68 +73,76 @@ Assumption that invariant holds on exit
 This is suitable for Symbolic Execution, but may not be suitable for
 other analyses.
 -/
-def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
+def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
   match s with
   | .loop guard measure invariant body _ =>
     match measure, invariant with
     | .some measure, some invariant =>
       -- let bodyss : := body.ss
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, .unres⟩)
-      let havocd : Boogie.Statement := .block "loop havoc" (assigned_vars.map (λ n => Boogie.Statement.havoc n {})) {}
+      let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
       let measure_pos := (.app () (.app () (.op () "Int.Ge" none) (translate_expr measure)) (.intConst () 0))
 
-      let entry_invariant : Boogie.Statement := .assert "entry_invariant" (translate_expr invariant) {}
-      let assert_measure_positive : Boogie.Statement := .assert "assert_measure_pos" measure_pos {}
-      let first_iter_facts : Boogie.Statement := .block "first_iter_asserts" [entry_invariant, assert_measure_positive] {}
+      let entry_invariant : Core.Statement := .assert "entry_invariant" (translate_expr invariant) {}
+      let assert_measure_positive : Core.Statement := .assert "assert_measure_pos" measure_pos {}
+      let first_iter_facts : Core.Statement := .block "first_iter_asserts" [entry_invariant, assert_measure_positive] {}
 
-      let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" [(Boogie.Statement.assume "assume_guard" (translate_expr guard) {}), (Boogie.Statement.assume "assume_invariant" (translate_expr invariant) {}), (Boogie.Statement.assume "assume_measure_pos" measure_pos {})] {}
-      let measure_old_value_assign : Boogie.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (translate_expr measure) {}
-      let measure_decreases : Boogie.Statement := .assert "measure_decreases" (.app () (.app () (.op () "Int.Lt" none) (translate_expr measure)) (.fvar () "special-name-for-old-measure-value" none)) {}
-      let measure_imp_not_guard : Boogie.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (.op () "Int.Le" none) (translate_expr measure)) (.intConst () 0)) (.app () (.op () "Bool.Not" none) (translate_expr guard)) (.true ())) {}
-      let maintain_invariant : Boogie.Statement := .assert "arbitrary_iter_maintain_invariant" (translate_expr invariant) {}
-      let body_statements : List Boogie.Statement := body.map translate_stmt
-      let arbitrary_iter_facts : Boogie.Statement := .block "arbitrary iter facts" ([havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++ [measure_decreases, measure_imp_not_guard, maintain_invariant]) {}
+      let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" [(Core.Statement.assume "assume_guard" (translate_expr guard) {}), (Core.Statement.assume "assume_invariant" (translate_expr invariant) {}), (Core.Statement.assume "assume_measure_pos" measure_pos {})] {}
+      let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (translate_expr measure) {}
+      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app () (.app () (.op () "Int.Lt" none) (translate_expr measure)) (.fvar () "special-name-for-old-measure-value" none)) {}
+      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (.op () "Int.Le" none) (translate_expr measure)) (.intConst () 0)) (.app () (.op () "Bool.Not" none) (translate_expr guard)) (.true ())) {}
+      let maintain_invariant : Core.Statement := .assert "arbitrary_iter_maintain_invariant" (translate_expr invariant) {}
+      let body_statements : List Core.Statement := body.map translate_stmt
+      let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts" ([havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++ [measure_decreases, measure_imp_not_guard, maintain_invariant]) {}
 
-      let not_guard : Boogie.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard)) {}
-      let invariant : Boogie.Statement := .assume "invariant" (translate_expr invariant) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard)) {}
+      let invariant : Core.Statement := .assume "invariant" (translate_expr invariant) {}
 
       .ite (translate_expr guard) [first_iter_facts, arbitrary_iter_facts, havocd, not_guard, invariant] [] {}
     | _, _ => panic! "Loop elimination require measure and invariant"
   | _ => translate_stmt s
 
--- C_Simp functions are Boogie procedures
-def loop_elimination_function(f : C_Simp.Function) : Boogie.Procedure :=
-  let boogie_preconditions := [("pre", {expr := translate_expr f.pre })]
-  let boogie_postconditions := [("post", {expr := translate_expr f.post })]
+-- C_Simp functions are Strata Core procedures
+def loop_elimination_function(f : C_Simp.Function) : Core.Procedure :=
+  let core_preconditions := [("pre", {expr := translate_expr f.pre })]
+  let core_postconditions := [("post", {expr := translate_expr f.post })]
   {header := {name := f.name.name, typeArgs := [],
               inputs := f.inputs.map (λ p => (p.fst.name, p.snd)),
               outputs := [("return", f.ret_ty)]},
               spec := {modifies := [],
-                       preconditions := boogie_preconditions,
-                       postconditions := boogie_postconditions},
+                       preconditions := core_preconditions,
+                       postconditions := core_postconditions},
                        body := f.body.map loop_elimination_statement}
 
 
-def loop_elimination(program : C_Simp.Program) : Boogie.Program :=
+def loop_elimination(program : C_Simp.Program) : Core.Program :=
   {decls := program.funcs.map (λ f => .proc (loop_elimination_function f) {})}
 
 -- Do loop elimination
-def to_boogie(program : C_Simp.Program) : Boogie.Program :=
+def to_core(program : C_Simp.Program) : Core.Program :=
   loop_elimination program
 
 def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
 
 def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
-  Except Std.Format Boogie.Program := do
+  Except Std.Format Core.Program := do
   let program := C_Simp.get_program p
-  Boogie.typeCheck options (to_boogie program)
+  Core.typeCheck options (to_core program)
 
-def C_Simp.verify (smtsolver : String) (p : Strata.Program) (options : Options := Options.default):
-  IO Boogie.VCResults := do
+def C_Simp.verify (smtsolver : String) (p : Strata.Program)
+    (options : Options := Options.default)
+    (tempDir : Option String := .none):
+  IO Core.VCResults := do
   let program := C_Simp.get_program p
-  EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Boogie.verify smtsolver (to_boogie program) options)
+  let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
+    (Core.verify smtsolver (to_core program) tempDir options)
+  match tempDir with
+  | .none =>
+    IO.FS.withTempDir runner
+  | .some p =>
+    IO.FS.createDirAll ⟨p⟩
+    runner ⟨p⟩
 
 end Strata

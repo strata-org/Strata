@@ -39,7 +39,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println MinPgm.format.render
+#eval IO.println MinPgm
 
 /--
 info: function min {
@@ -56,7 +56,7 @@ open Strata.C_Simp in
 #eval TransM.run (translateProgram (MinPgm.commands))
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

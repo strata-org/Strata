@@ -53,7 +53,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println LoopSimplePgm.format.render
+#eval IO.println LoopSimplePgm
 
 /--
 info: function loopSimple {
@@ -104,10 +104,10 @@ assert [sum_assert] (((~Int.Div ((~Int.Mul n) ((~Int.Sub n) #1))) #2) == sum)
 return := sum
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program LoopSimplePgm)
+#eval Strata.to_core (Strata.C_Simp.get_program LoopSimplePgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -177,12 +177,6 @@ Assumptions:
 Proof Obligation:
 #true
 
-Wrote problem to vcs/entry_invariant.smt2.
-Wrote problem to vcs/assert_measure_pos.smt2.
-Wrote problem to vcs/measure_decreases.smt2.
-Wrote problem to vcs/measure_imp_not_guard.smt2.
-Wrote problem to vcs/arbitrary_iter_maintain_invariant.smt2.
-Wrote problem to vcs/sum_assert.smt2.
 ---
 info:
 Obligation: entry_invariant

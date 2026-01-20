@@ -7,7 +7,7 @@
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.NondetStmt
-import Strata.Languages.Boogie.StatementType
+import Strata.Languages.Core.StatementType
 
 /-! # Deterministic-to-Nondeterministic Transformation -/
 

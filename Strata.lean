@@ -18,9 +18,9 @@ import Strata.DL.Imperative.Imperative
 /- Utilities -/
 import Strata.Util.Sarif
 
-/- Boogie -/
-import Strata.Languages.Boogie.StatementSemantics
-import Strata.Languages.Boogie.SarifOutput
+/- Strata Core -/
+import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Core.SarifOutput
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect

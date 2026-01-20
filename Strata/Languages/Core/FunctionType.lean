@@ -1,0 +1,59 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+
+
+import Strata.Languages.Core.Function
+import Strata.Languages.Core.Program
+
+---------------------------------------------------------------------
+
+namespace Core
+
+namespace Function
+
+open Lambda Imperative
+open Std (ToFormat Format format)
+
+def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
+    Except Format (Function × Core.Expression.TyEnv) := do
+  -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
+  -- using `LExprT.resolve`. Can we share code here?
+  --
+  -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
+  -- where there are duplicates in the formals, etc.).
+  let type ← func.type
+  let (monoty, Env) ← LTy.instantiateWithCheck type C Env
+  let monotys := monoty.destructArrow
+  let input_mtys := monotys.dropLast
+  let output_mty := monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty)
+  -- Resolve type aliases and monomorphize inputs and output.
+  let func := { func with
+                  typeArgs := monoty.freeVars.eraseDups,
+                  inputs := func.inputs.keys.zip input_mtys,
+                  output := output_mty}
+  match func.body with
+  | none => .ok (func, Env)
+  | some body =>
+    -- Temporarily add formals in the context.
+    let Env := Env.pushEmptyContext
+    let Env := Env.addToContext func.inputPolyTypes
+    -- Type check and annotate the body, and ensure that it unifies with the
+    -- return type.
+    let (bodya, Env) ← LExpr.resolve C Env body
+    let bodyty := bodya.toLMonoTy
+    let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
+    let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo |>.mapError format
+    let Env := Env.updateSubst S
+    let Env := Env.popContext
+    -- Resolve type aliases and monomorphize the body.
+    let new_func := { func with body := some bodya.unresolved }
+    .ok (new_func, Env)
+
+end Function
+
+---------------------------------------------------------------------
+end Core

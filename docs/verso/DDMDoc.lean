@@ -235,7 +235,7 @@ op assert (b : Bool) : Statement => "assert" b ";";
 ```
 
 For expressions, Strata supports polymorphic types.  An example operator that uses
-this is a polymorphic assignment operator in the Boogie statement dialect.
+this is a polymorphic assignment operator in the Strata Core statement dialect.
 
 ```
 op assign (tp : Type, v : Ident, e : tp) : Statement => v " := " e ";";
@@ -377,7 +377,7 @@ metadata declare(name : Ident, type : TypeOrCat);
 metadata nonempty;
 ```
 
-As an example, Boogie variable declaration syntax can be defined in Strata using the
+As an example, Strata Core's variable declaration syntax can be defined in Strata using the
 following code:
 
 ```
@@ -444,7 +444,7 @@ be defined in user definable dialects.
     for special characters.
 
   * `Init.Num` represents numeric natural number literals.
-  
+
 ## Datatypes
 %%%
 tag := "datatypes"
@@ -461,12 +461,12 @@ constructors) _tester_ functions to identify to which constructor an instance be
 Dafny datatypes additionally produce an ordering relation, while Lean inductive
 types produce _eliminator_ instances defining induction principles. The DDM
 enables automatic creation of (a subset of) these auxiliary functions via a
-configurable {deftech}_function template_ system. 
+configurable {deftech}_function template_ system.
 
 ### Example
 
-In the Boogie dialect, the auxiliary functions are testers and accessors. That
-is, one can define the following datatype in Strata.Boogie:
+In the Strata Core dialect, the auxiliary functions are testers and accessors. That
+is, one can define the following datatype in Strata Core:
 
 ```
 datatype IntList {
@@ -475,7 +475,7 @@ datatype IntList {
 };
 ```
 
-This declares a list type with two constructors (`Nil` and `Cons`) and two fields (`head` and `tail`). The Boogie dialect automatically generates:
+This declares a list type with two constructors (`Nil` and `Cons`) and two fields (`head` and `tail`). The Core dialect automatically generates:
 
 * Constructors: `Nil : IntList` and `Cons : int -> IntList -> IntList`
 * Testers: `IntList..isNil : IntList -> bool` and `IntList..isCons : IntList -> bool`
@@ -484,7 +484,7 @@ This declares a list type with two constructors (`Nil` and `Cons`) and two field
 ### Defining Datatype Syntax in a Dialect
 
 To support datatypes in a dialect, you must define syntactic categories and
-operators with appropriate annotations. The Boogie dialect provides a complete example.
+operators with appropriate annotations. The Core dialect provides a complete example.
 
 #### Constructor Syntax
 
@@ -517,7 +517,7 @@ arguments
 
 #### Datatype Command
 
-The main datatype declaration uses `@[declareDatatype]` to tie everything together. It is best illustrated with an example (from the Boogie dialect):
+The main datatype declaration uses `@[declareDatatype]` to tie everything together. It is best illustrated with an example (from the Core dialect):
 
 ```
 @[declareDatatype(name, typeParams, constructors,
@@ -532,7 +532,7 @@ op command_datatype (name : Ident,
 
 `@[declareDatatype]` declares a datatype command operator given the datatype
 name, the optional type parameters, the constructor list, and zero or more
-[function templates](#datatypes-function-templates) to expand. Note that the `@[scopeDatatype]` 
+[function templates](#datatypes-function-templates) to expand. Note that the `@[scopeDatatype]`
 annotation brings the datatype name and type parameters into scope when
 parsing the constructors, enabling recursive type references.
 
@@ -544,7 +544,7 @@ tag := "datatypes-function-templates"
 Function templates specify patterns for generating auxiliary functions from datatype
 declarations.
 Currently there are two supported templates: `perConstructor` generates one
-function per constructor, while `perField` generates one function per field 
+function per constructor, while `perField` generates one function per field
 (note that the DDM enforces that fields are unique across all constructors in
 a datatype).
 
@@ -575,7 +575,7 @@ Type references consist of the following components:
 
 ##### Example Templates
 
-The Boogie dialect uses two templates:
+The Strata Core dialect uses two templates:
 
 The tester template generates `IntList..isNil : IntList -> bool`:
 ```
