@@ -224,19 +224,18 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type)) ++
                            constants.map (fun c => (c.name, c.type))
-  -- Translate precondition if it's not just LiteralBool true
+  -- Translate preconditions
   let preconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
-    match proc.precondition with
-    | .LiteralBool true => []
-    | precond =>
-        let check : Core.Procedure.Check := { expr := translateExpr initEnv precond }
-        [("requires", check)]
-  -- Translate postcondition for Opaque bodies
+    proc.preconditions.mapIdx fun i precond =>
+      let check : Core.Procedure.Check := { expr := translateExpr initEnv precond }
+      (s!"{proc.name}_pre_{i}", check)
+  -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
-    | .Opaque postcond _ _ _ =>
-        let check : Core.Procedure.Check := { expr := translateExpr initEnv postcond }
-        [("ensures", check)]
+    | .Opaque posts _ _ _ =>
+        posts.mapIdx fun i postcond =>
+          let check : Core.Procedure.Check := { expr := translateExpr initEnv postcond }
+          (s!"{proc.name}_post_{i}", check)
     | _ => []
   let spec : Core.Procedure.Spec := {
     modifies := []
@@ -255,7 +254,7 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
   let body : List Core.Statement :=
     match proc.body with
     | .Transparent bodyExpr => heapInit ++ (translateStmt initEnv proc.outputs bodyExpr).2
-    | .Opaque _postcond (some impl) _ _ => heapInit ++ (translateStmt initEnv proc.outputs impl).2
+    | .Opaque _posts (some impl) _ _ => heapInit ++ (translateStmt initEnv proc.outputs impl).2
     | _ => []
   {
     header := header
@@ -389,7 +388,7 @@ def canBeBoogieFunction (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
-    (match proc.precondition with | .LiteralBool true => true | _ => false) &&
+    proc.preconditions.isEmpty &&
     proc.outputs.length == 1
   | _ => false
 

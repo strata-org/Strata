@@ -209,8 +209,9 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
               else
                 setLocal param.name arg
             )
-          let precondition ← eval callable.precondition
-          assertBool precondition
+          for precondition in callable.preconditions do
+            let precondResult ← eval precondition
+            assertBool precondResult
           -- TODO, handle decreases
 
           let result: TypedValue ← match callable.body with

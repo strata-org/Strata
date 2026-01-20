@@ -122,16 +122,16 @@ def formatDeterminism : Determinism → Format
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque post impl determ modif =>
+  | .Opaque posts impl determ modif =>
       "opaque " ++ formatDeterminism determ ++
       (match modif with
        | none => ""
        | some m => " modifies " ++ formatStmtExpr m) ++
-      " ensures " ++ formatStmtExpr post ++
+      Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p)) ++
       match impl with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
-  | .Abstract post => "abstract ensures " ++ formatStmtExpr post
+  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
 
 def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++

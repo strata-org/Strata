@@ -85,11 +85,11 @@ op composite (name: Ident, fields: Seq Field): Composite => "composite " name "{
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
-category OptionalRequires;
-op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
+category RequiresClause;
+op requiresClause(cond: StmtExpr): RequiresClause => "requires" cond:0;
 
-category OptionalEnsures;
-op optionalEnsures(cond: StmtExpr): OptionalEnsures => "ensures" cond:0;
+category EnsuresClause;
+op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures" cond:0;
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "returns" "(" parameters ")";
@@ -98,8 +98,8 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
-  ensures: Option OptionalEnsures,
+  requires: Seq RequiresClause,
+  ensures: Seq EnsuresClause,
   body : StmtExpr) : Procedure =>
   "procedure " name "(" parameters ")" returnType returnParameters requires ensures body:0;
 

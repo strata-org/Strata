@@ -66,7 +66,7 @@ structure Procedure: Type where
   name : Identifier
   inputs : List Parameter
   outputs : List Parameter
-  precondition : StmtExpr
+  preconditions : List StmtExpr
   decreases : Option StmtExpr -- optionally prove termination
   body : Body
 
@@ -98,10 +98,10 @@ inductive HighType : Type where
 inductive Body where
   | Transparent (body : StmtExpr)
 /- Without an implementation, the postcondition is assumed -/
-  | Opaque (postcondition : StmtExpr) (implementation : Option StmtExpr) (determinism: Determinism) (modifies : Option StmtExpr)
+  | Opaque (postconditions : List StmtExpr) (implementation : Option StmtExpr) (determinism: Determinism) (modifies : Option StmtExpr)
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
-  | Abstract (postcondition : StmtExpr)
+  | Abstract (postconditions : List StmtExpr)
 
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
