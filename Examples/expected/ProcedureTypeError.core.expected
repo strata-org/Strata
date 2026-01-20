@@ -1,0 +1,3 @@
+Successfully parsed.
+❌ Type checking error.
+ProcedureTypeError.core.st(21, (4-32)) [SumPositive:precond2]: Cannot find this fvar in the context! c

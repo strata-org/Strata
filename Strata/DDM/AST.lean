@@ -8,6 +8,7 @@ module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
+public import Lean.Data.Position
 public import Strata.DDM.AST.Datatype
 
 import Std.Data.HashMap
@@ -18,6 +19,7 @@ set_option autoImplicit false
 
 public section
 namespace Strata
+open Std (ToFormat Format format)
 
 abbrev DialectName := String
 
@@ -271,7 +273,7 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving BEq, Inhabited, Repr
+deriving DecidableEq, Inhabited, Repr
 
 namespace SourceRange
 
@@ -279,7 +281,37 @@ def none : SourceRange := { start := 0, stop := 0 }
 
 def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
 
+instance : ToFormat SourceRange where
+ format fr := f!"{fr.start}-{fr.stop}"
+
 end SourceRange
+
+inductive Uri where
+  | file (path: String)
+  deriving DecidableEq, Repr, Inhabited
+
+instance : ToFormat Uri where
+ format fr := match fr with | .file path => path
+
+structure FileRange where
+  file: Uri
+  range: Strata.SourceRange
+  deriving DecidableEq, Repr, Inhabited
+
+instance : ToFormat FileRange where
+ format fr := f!"{fr.file}:{fr.range}"
+
+structure File2dRange where
+  file: Uri
+  start: Lean.Position
+  ending: Lean.Position
+  deriving DecidableEq, Repr
+
+instance : ToFormat File2dRange where
+ format fr :=
+    let baseName := match fr.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    f!"{baseName}({fr.start.line}, {fr.start.column})-({fr.ending.line}, {fr.ending.column})"
 
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange

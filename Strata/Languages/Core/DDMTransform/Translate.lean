@@ -50,7 +50,7 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
   let startPos := ictx.fileMap.toPosition sr.start
   let endPos := ictx.fileMap.toPosition sr.stop
   let uri: Uri := .file file
-  let fileRangeElt := ⟨ MetaData.fileRange, .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
+  let fileRangeElt := ⟨ MetaData.fileRange, .file2dRange ⟨ uri, startPos, endPos ⟩ ⟩
   #[fileRangeElt]
 
 def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Core.Expression) :=
