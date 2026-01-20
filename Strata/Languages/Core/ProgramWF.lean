@@ -316,12 +316,10 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
       x ∈ Program.getNames.go rs := by
       intros x1 x2 l d' T' Hty x a a_in x_in; unfold Program.getNames.go
       rw[List.mem_flatMap]; exists a
-    cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid)
+    cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty <;> intros x hx)
     | var v =>
-      rename_i Hty
       split_contra tcok
       specialize (IH tcok)
-      intros x hx
       match hx with
       | Or.inl hx =>
         have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -331,9 +329,7 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
         have Hcontains := Identifiers.addListWithErrorContains Hid x
         grind
     | ax a =>
-      rename_i Hty
       specialize (IH tcok)
-      intros x hx
       match hx with
       | Or.inl hx =>
         have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -343,9 +339,7 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
         have Hcontains := Identifiers.addListWithErrorContains Hid x
         grind
     | distinct d =>
-      rename_i Hty
       specialize (IH tcok)
-      intros x hx
       match hx with
       | Or.inl hx =>
         have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -355,9 +349,7 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
         have Hcontains := Identifiers.addListWithErrorContains Hid x
         grind
     | proc p =>
-      rename_i Hty
       specialize (IH tcok)
-      intros x hx
       match hx with
       | Or.inl hx =>
         have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -367,11 +359,9 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
         have Hcontains := Identifiers.addListWithErrorContains Hid x
         grind
     | func f =>
-      rename_i Hty
       split_contra_case Hty; rename_i Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
-      intros x hx
       match hx with
       | Or.inl hx =>
         have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -384,11 +374,9 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
         simp only[LContext.addFactoryFunction] at a_notin
         grind
     | type t =>
-      rename_i Hty
       cases t with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty <;> split_contra_case Hty <;> rename_i Hty)
       | con c =>
         specialize (IH tcok)
-        intros x hx
         match hx with
         | Or.inl hx =>
           have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -400,7 +388,6 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
           grind
       | syn s =>
         specialize (IH tcok)
-        intros x hx
         match hx with
         | Or.inl hx =>
           have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -411,7 +398,6 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
           grind
       | data d =>
         specialize (IH tcok)
-        intros x hx
         match hx with
         | Or.inl hx =>
           have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
@@ -434,71 +420,53 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
          tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.tryCatch]
     split <;> try (intros;contradiction)
     rename_i x v Hid
-     -- Need mem hypothesis in more useful form
-    have a_in': ∀ {x1 x2 l d' T'},
-      Program.typeCheck.go p x1 x2 rs l = .ok (d', T') →
-      ∀ {x: CoreIdent} {a: Decl}, a ∈ rs → x ∈ a.names →
-      x ∈ Program.getNames.go rs := by
-      intros x1 x2 l d' T' Hty x a a_in x_in; unfold Program.getNames.go
-      rw[List.mem_flatMap]; exists a
-    cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid)
+    cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty)
     | var v =>
-      rename_i Hty
       split_contra tcok
       specialize (IH tcok)
-      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
-      . apply IH
-      . intros a a_in; simp[Decl.names] at a_in; subst_vars
-        intros x x_in;
-        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
-        have x_contains := (Identifiers.addListWithErrorContains Hid x)
-        simp_all; grind
+      apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
+      intros a a_in; simp[Decl.names] at a_in; subst_vars
+      intros x x_in;
+      have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+      have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      simp_all; grind
     | ax a =>
-      rename_i Hty
       specialize (IH tcok)
-      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
-      . apply IH
-      . intros a a_in; simp[Decl.names] at a_in; subst_vars
-        intros x x_in;
-        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
-        have x_contains := (Identifiers.addListWithErrorContains Hid x)
-        simp_all; grind
+      apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
+      intros a a_in; simp[Decl.names] at a_in; subst_vars
+      intros x x_in;
+      have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+      have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      simp_all; grind
     | distinct d =>
-      rename_i Hty
       specialize (IH tcok)
-      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
-      . apply IH
-      . intros a a_in; simp[Decl.names] at a_in; subst_vars
-        intros x x_in;
-        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
-        have x_contains := (Identifiers.addListWithErrorContains Hid x)
-        simp_all; grind
+      apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
+      intros a a_in; simp[Decl.names] at a_in; subst_vars
+      intros x x_in;
+      have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+      have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      simp_all; grind
     | proc p =>
-      rename_i Hty
       specialize (IH tcok)
-      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
-      . apply IH
-      . intros a a_in; simp[Decl.names] at a_in; subst_vars
-        intros x x_in;
-        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
-        have x_contains := (Identifiers.addListWithErrorContains Hid x)
-        simp_all; grind
+      apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
+      intros a a_in; simp[Decl.names] at a_in; subst_vars
+      intros x x_in;
+      have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+      have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      simp_all; grind
     | func f =>
-      rename_i Hty
       split_contra_case Hty; rename_i Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
-      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
-      . apply IH
-      . intros a a_in; simp[Decl.names] at a_in; subst_vars
-        intros x x_in;
-        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
-        have x_contains := (Identifiers.addListWithErrorContains Hid x)
-        simp_all
-        simp[LContext.addFactoryFunction] at Hdisj
-        grind
+      apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
+      intros a a_in; simp[Decl.names] at a_in; subst_vars
+      intros x x_in;
+      have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+      have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      simp_all
+      simp[LContext.addFactoryFunction] at Hdisj
+      grind
     | type td =>
-      rename_i Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr
       cases td with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty <;> split_contra_case Hty <;> rename_i Hty)
