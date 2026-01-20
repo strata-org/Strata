@@ -11,12 +11,14 @@ import Strata.Languages.Core.SMTEncoder
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
+import Strata.DDM.AST
 
 ---------------------------------------------------------------------
 
 namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
+open Strata
 
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
@@ -135,7 +137,7 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
-def solverResult (vars : List (IdentT LMonoTy Visibility)) (output: IO.Process.Output)
+def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.Output)
     (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
   let stdout := output.stdout
@@ -154,7 +156,7 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output: IO.Process.O
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error (stdout ++ output.stderr)
+  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
 
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
@@ -463,45 +465,48 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
----------------------------------------------------------------------
+structure DiagnosticModel where
+  fileRange : Strata.FileRange
+  message : String
+  deriving Repr, BEq
 
-/-- A diagnostic produced by analyzing a file -/
+def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
+  match vcr.result with
+  | .pass => none  -- Verification succeeded, no diagnostic
+  | result =>
+    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+    match fileRangeElem.value with
+    | .fileRange fileRange =>
+      let message := match result with
+        | .fail => "assertion does not hold"
+        | .unknown => "assertion could not be proved"
+        | .implementationError msg => s!"verification error: {msg}"
+        | _ => panic "impossible"
+
+      some {
+        fileRange := fileRange
+        message := message
+      }
+    | _ => none
+
 structure Diagnostic where
   start : Lean.Position
   ending : Lean.Position
   message : String
   deriving Repr, BEq
 
-def toDiagnostic (vcr : Core.VCResult) : Option Diagnostic := do
-  -- Only create a diagnostic if verification failed.
-  match vcr.result with
-  | .pass => none  -- Verification succeeded, no diagnostic
-  | _ =>
-    -- Extract file range from metadata
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange range =>
-      let message :=
-      match vcr.obligation.property with
-      | .assert =>
-          match vcr.smtResult with
-          | .sat _ => "assertion does not hold"
-          | .unknown => "assertion verification result is unknown"
-          | .err msg => s!"verification error: {msg}"
-          | _ => "verification failed"
-      | .cover =>
-          match vcr.smtResult with
-          | .unsat => "cover failed"
-          | .unknown => "cover status is unknown"
-          | .err msg => s!"verification error: {msg}"
-          | _ => "verification failed"
-      some {
-        -- Subtract headerOffset to account for program header we added
-        start := { line := range.start.line, column := range.start.column }
-        ending := { line := range.ending.line, column := range.ending.column }
-        message := message
+def toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr
+  modelOption.map (fun dm =>
+      let fileMap := (files.find? dm.fileRange.file).get!
+      let startPos := fileMap.toPosition dm.fileRange.range.start
+      let endPos := fileMap.toPosition dm.fileRange.range.stop
+      {
+        start := { line := startPos.line, column := startPos.column }
+        ending := { line := endPos.line, column := endPos.column }
+        message := dm.message
       }
-    | _ => none
+    )
 
 end Strata
 

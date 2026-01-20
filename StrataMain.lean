@@ -15,8 +15,12 @@ import Strata.Languages.Python.Python
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.LaurelToCoreTranslator
+
 def exitFailure {α} (message : String) : IO α := do
-  IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
+  IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
 
 namespace Strata
@@ -175,7 +179,7 @@ def readPythonStrata (path : String) : IO Strata.Program := do
   let bytes ← Strata.Util.readBinInputSource path
   if ! Ion.isIonFile bytes then
     exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  match Strata.Program.fileFromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
   | .ok p => pure p
   | .error msg => exitFailure msg
 
@@ -242,6 +246,46 @@ def javaGenCommand : Command where
     | .program _ =>
       exitFailure "Expected a dialect file, not a program file."
 
+def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
+  match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
+  | .ok files => pure files
+  | .error msg => exitFailure msg
+
+def laurelAnalyzeCommand : Command where
+  name := "laurelAnalyze"
+  args := []
+  help := "Analyze a Laurel Ion program from stdin. Write diagnostics to stdout."
+  callback := fun _ _ => do
+    -- Read bytes from stdin
+    let stdinBytes ← (← IO.getStdin).readBinToEnd
+
+    let strataFiles ← deserializeIonToLaurelFiles stdinBytes
+
+    let mut combinedProgram : Laurel.Program := {
+      staticProcedures := []
+      staticFields := []
+      types := []
+    }
+
+    for strataFile in strataFiles do
+
+      let transResult := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
+      match transResult with
+      | .error transErrors => exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
+      | .ok laurelProgram =>
+
+        combinedProgram := {
+          staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
+          types := combinedProgram.types ++ laurelProgram.types
+        }
+
+    let diagnostics ← Laurel.verifyToDiagnosticModels "z3" combinedProgram
+
+    IO.println s!"==== DIAGNOSTICS ===="
+    for diag in diagnostics do
+      IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
+
 def commandList : List Command := [
       javaGenCommand,
       checkCommand,
@@ -250,6 +294,7 @@ def commandList : List Command := [
       diffCommand,
       pyAnalyzeCommand,
       pyTranslateCommand,
+      laurelAnalyzeCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=
