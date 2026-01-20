@@ -89,6 +89,10 @@ def encodeType (ty : TermType) : EncoderM String := do
     | .trigger          => return "Trigger"
     | .bitvec n         => return s!"(_ BitVec {n})"
     | .option oty       => return s!"(Option {← encodeType oty})"
+    | .constr "Map" [k, v] =>
+      let k' ← encodeType k
+      let v' ← encodeType v
+      return s!"(Array {k'} {v'})"
     | .constr id targs  =>
       -- let targs' ← targs.mapM (fun t => encodeType t)
       let targs' ← go targs

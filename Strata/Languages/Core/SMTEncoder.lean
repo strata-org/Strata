@@ -88,6 +88,7 @@ private def lMonoTyToSMTString (ty : LMonoTy) : String :=
   | .tcons "real" [] => "Real"
   | .tcons "string" [] => "String"
   | .tcons "regex" [] => "RegLan"
+  | .tcons "Map" [k, v] => s!"(Array {lMonoTyToSMTString k} {lMonoTyToSMTString v})"
   | .tcons name args =>
     if args.isEmpty then name
     else s!"({name} {String.intercalate " " (args.map lMonoTyToSMTString)})"

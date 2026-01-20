@@ -592,6 +592,8 @@ def isPureExpr : StmtExpr → Bool
   | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .Block [single] _ => isPureExpr single
+  | .Forall _ _ body => isPureExpr body
+  | .Exists _ _ body => isPureExpr body
   | _ => false
 termination_by e => sizeOf e
 
