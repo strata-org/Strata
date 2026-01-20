@@ -47,7 +47,7 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
   { obligation := makeObligation label md
     smtResult := smtResult
     result := outcome
-    verbose := true }
+    verbose := .normal }
 
 /-! ## Level Conversion Tests -/
 
@@ -216,7 +216,7 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
 
 -- Test SARIF output with counter-example
 #guard
-  let cex : SMTModel := [((BoogieIdent.unres "x", some .int), "42")]
+  let cex : SMTModel := [(({ name := "x", metadata := Visibility.unres }, some .int), "42")]
   let md := makeMetadata "/test/cex.st" 25 3
   let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md
   let sarifResult := vcResultToSarifResult vcr
