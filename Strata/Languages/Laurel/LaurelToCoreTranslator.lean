@@ -141,6 +141,20 @@ def genConstraintCheck (ctMap : ConstrainedTypeMap) (env : TypeEnv) (param : Par
     | none => none
   | _ => none
 
+def genConstraintAssert (ctMap : ConstrainedTypeMap) (env : TypeEnv) (name : Identifier) (ty : HighType) : List Core.Statement :=
+  match genConstraintCheck ctMap env { name, type := ty } with
+  | some expr => [Core.Statement.assert s!"{name}#constraint" expr .empty]
+  | none => []
+
+def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighType) : Core.Expression.Expr :=
+  match resolveBaseType ctMap ty with
+  | .TInt => .const () (.intConst 0)
+  | .TBool => .const () (.boolConst false)
+  | _ => .const () (.intConst 0)
+
+def isHeapFunction (name : Identifier) : Bool :=
+  name == "heapRead" || name == "heapStore"
+
 /--
 Translate Laurel StmtExpr to Core Statements
 Takes the type environment and output parameter names
@@ -159,61 +173,35 @@ def translateStmt (ctMap : ConstrainedTypeMap) (env : TypeEnv) (outputParams : L
         (e', acc ++ ss)) (env, [])
       (env', stmtsList)
   | .LocalVariable name ty initializer =>
-      let env' := (name, ty) :: env  -- Keep original type for constraint checks
-      let boogieMonoType := translateTypeWithCT ctMap ty
-      let boogieType := LTy.forAll [] boogieMonoType
+      let env' := (name, ty) :: env
+      let boogieType := LTy.forAll [] (translateTypeWithCT ctMap ty)
       let ident := Core.CoreIdent.locl name
-      -- Generate constraint check if type is constrained
-      let constraintCheck : List Core.Statement := match ty with
-        | .UserDefined typeName =>
-          match ctMap.get? typeName with
-          | some _ =>
-            let param : Parameter := { name := name, type := ty }
-            match genConstraintCheck ctMap env' param with
-            | some expr => [Core.Statement.assert s!"{name}#constraint" expr .empty]
-            | none => []
-          | none => []
-        | _ => []
+      let constraintCheck := genConstraintAssert ctMap env' name ty
       match initializer with
       | some (.StaticCall callee args) =>
-          if callee == "heapRead" || callee == "heapStore" then
+          if isHeapFunction callee then
             let boogieExpr := translateExpr ctMap env (.StaticCall callee args)
             (env', [Core.Statement.init ident boogieType boogieExpr] ++ constraintCheck)
           else
             let boogieArgs := args.map (translateExpr ctMap env)
-            let defaultExpr := match resolveBaseType ctMap ty with
-                              | .TInt => .const () (.intConst 0)
-                              | .TBool => .const () (.boolConst false)
-                              | _ => .const () (.intConst 0)
-            let initStmt := Core.Statement.init ident boogieType defaultExpr
+            let initStmt := Core.Statement.init ident boogieType (defaultExprForType ctMap ty)
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt] ++ constraintCheck)
       | some initExpr =>
           let boogieExpr := translateExpr ctMap env initExpr
           (env', [Core.Statement.init ident boogieType boogieExpr] ++ constraintCheck)
       | none =>
-          let defaultExpr := match resolveBaseType ctMap ty with
-                            | .TInt => .const () (.intConst 0)
-                            | .TBool => .const () (.boolConst false)
-                            | _ => .const () (.intConst 0)
-          (env', [Core.Statement.init ident boogieType defaultExpr] ++ constraintCheck)
+          (env', [Core.Statement.init ident boogieType (defaultExprForType ctMap ty)] ++ constraintCheck)
   | .Assign target value _ =>
       match target with
       | .Identifier name =>
           let ident := Core.CoreIdent.locl name
-          -- Look up original type to check if constrained
-          let constraintCheck : List Core.Statement :=
-            match env.find? (fun (n, _) => n == name) with
-            | some (_, ty) =>
-              let param : Parameter := { name := name, type := ty }
-              match genConstraintCheck ctMap env param with
-              | some expr => [Core.Statement.assert s!"{name}#constraint" expr .empty]
-              | none => []
+          let constraintCheck := match env.find? (fun (n, _) => n == name) with
+            | some (_, ty) => genConstraintAssert ctMap env name ty
             | none => []
-          -- Handle StaticCall specially - generate call statement
           match value with
           | .StaticCall callee args =>
-              if callee == "heapRead" || callee == "heapStore" then
+              if isHeapFunction callee then
                 let boogieExpr := translateExpr ctMap env value
                 (env, [Core.Statement.set ident boogieExpr] ++ constraintCheck)
               else
@@ -236,14 +224,8 @@ def translateStmt (ctMap : ConstrainedTypeMap) (env : TypeEnv) (outputParams : L
       let (_, bodyStmts) := translateStmt ctMap env outputParams body
       (env, [Imperative.Stmt.loop condExpr none invExpr bodyStmts .empty])
   | .StaticCall name args =>
-      -- Heap functions (heapRead/heapStore) should not appear as standalone statements
-      -- Only translate actual procedure calls to call statements
-      if name == "heapRead" || name == "heapStore" then
-        -- This shouldn't happen in well-formed programs, but handle gracefully
-        (env, [])
-      else
-        let boogieArgs := args.map (translateExpr ctMap env)
-        (env, [Core.Statement.call [] name boogieArgs])
+      if isHeapFunction name then (env, [])
+      else (env, [Core.Statement.call [] name (args.map (translateExpr ctMap env))])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
