@@ -78,29 +78,34 @@ def lookupType (ctMap : ConstrainedTypeMap) (env : TypeEnv) (name : Identifier) 
   | some (_, ty) => translateTypeWithCT ctMap ty
   | none => LMonoTy.int  -- fallback
 
+/-- Translate a binary operation to Core -/
+def translateBinOp (op : Operation) (e1 e2 : Core.Expression.Expr) : Core.Expression.Expr :=
+  let binOp (bop : Core.Expression.Expr) := LExpr.mkApp () bop [e1, e2]
+  match op with
+  | .Eq => .eq () e1 e2
+  | .Neq => .app () boolNotOp (.eq () e1 e2)
+  | .And => binOp boolAndOp | .Or => binOp boolOrOp
+  | .Add => binOp intAddOp | .Sub => binOp intSubOp | .Mul => binOp intMulOp
+  | .Div => binOp intDivOp | .Mod => binOp intModOp
+  | .Lt => binOp intLtOp | .Leq => binOp intLeOp | .Gt => binOp intGtOp | .Geq => binOp intGeOp
+  | _ => panic! s!"translateBinOp: unsupported {repr op}"
+
+/-- Translate a unary operation to Core -/
+def translateUnaryOp (op : Operation) (e : Core.Expression.Expr) : Core.Expression.Expr :=
+  match op with
+  | .Not => .app () boolNotOp e
+  | .Neg => .app () intNegOp e
+  | _ => panic! s!"translateUnaryOp: unsupported {repr op}"
+
 /-- Translate simple expressions (for constraints - no quantifiers) -/
 def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
   match expr with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
-  | .Identifier name =>
-      .fvar () (Core.CoreIdent.locl name) (some (lookupType ctMap env name))
-  | .PrimitiveOp op [e] =>
-    match op with
-    | .Not => .app () boolNotOp (translateSimpleExpr ctMap env e)
-    | .Neg => .app () intNegOp (translateSimpleExpr ctMap env e)
-    | _ => panic! s!"Unsupported unary operator in constrained type: {repr op}"
+  | .Identifier name => .fvar () (Core.CoreIdent.locl name) (some (lookupType ctMap env name))
+  | .PrimitiveOp op [e] => translateUnaryOp op (translateSimpleExpr ctMap env e)
   | .PrimitiveOp op [e1, e2] =>
-    let binOp (bop : Core.Expression.Expr) :=
-      LExpr.mkApp () bop [translateSimpleExpr ctMap env e1, translateSimpleExpr ctMap env e2]
-    match op with
-    | .Eq => .eq () (translateSimpleExpr ctMap env e1) (translateSimpleExpr ctMap env e2)
-    | .Neq => .app () boolNotOp (.eq () (translateSimpleExpr ctMap env e1) (translateSimpleExpr ctMap env e2))
-    | .And => binOp boolAndOp | .Or => binOp boolOrOp
-    | .Add => binOp intAddOp | .Sub => binOp intSubOp | .Mul => binOp intMulOp
-    | .Div => binOp intDivOp | .Mod => binOp intModOp
-    | .Lt => binOp intLtOp | .Leq => binOp intLeOp | .Gt => binOp intGtOp | .Geq => binOp intGeOp
-    | _ => panic! s!"Unsupported binary operator in constrained type: {repr op}"
+      translateBinOp op (translateSimpleExpr ctMap env e1) (translateSimpleExpr ctMap env e2)
   | .Forall _ _ _ => panic! "Quantifiers not supported in constrained type constraints"
   | .Exists _ _ _ => panic! "Quantifiers not supported in constrained type constraints"
   | _ => panic! "Unsupported expression in constrained type constraint"
@@ -136,31 +141,10 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
-      let ident := Core.CoreIdent.locl name
-      .fvar () ident (some (lookupType ctMap env name))
-  | .PrimitiveOp op [e] =>
-    match op with
-    | .Not => .app () boolNotOp (translateExpr ctMap tcMap env e)
-    | .Neg => .app () intNegOp (translateExpr ctMap tcMap env e)
-    | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
+      .fvar () (Core.CoreIdent.locl name) (some (lookupType ctMap env name))
+  | .PrimitiveOp op [e] => translateUnaryOp op (translateExpr ctMap tcMap env e)
   | .PrimitiveOp op [e1, e2] =>
-    let binOp (bop : Core.Expression.Expr): Core.Expression.Expr :=
-      LExpr.mkApp () bop [translateExpr ctMap tcMap env e1, translateExpr ctMap tcMap env e2]
-    match op with
-    | .Eq => .eq () (translateExpr ctMap tcMap env e1) (translateExpr ctMap tcMap env e2)
-    | .Neq => .app () boolNotOp (.eq () (translateExpr ctMap tcMap env e1) (translateExpr ctMap tcMap env e2))
-    | .And => binOp boolAndOp
-    | .Or => binOp boolOrOp
-    | .Add => binOp intAddOp
-    | .Sub => binOp intSubOp
-    | .Mul => binOp intMulOp
-    | .Div => binOp intDivOp
-    | .Mod => binOp intModOp
-    | .Lt => binOp intLtOp
-    | .Leq => binOp intLeOp
-    | .Gt => binOp intGtOp
-    | .Geq => binOp intGeOp
-    | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
+      translateBinOp op (translateExpr ctMap tcMap env e1) (translateExpr ctMap tcMap env e2)
   | .PrimitiveOp op args =>
     panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
   | .IfThenElse cond thenBranch elseBranch =>
