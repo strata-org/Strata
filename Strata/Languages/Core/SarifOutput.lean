@@ -45,7 +45,7 @@ def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
 def extractLocation (md : Imperative.MetaData Expression) : Option Location := do
   let fileRangeElem ← md.findElem Imperative.MetaData.fileRange
   match fileRangeElem.value with
-  | .fileRange fr =>
+  | .file2dRange fr =>
     let uri := match fr.file with
                | .file path => path
     pure { uri, startLine := fr.start.line, startColumn := fr.start.column }

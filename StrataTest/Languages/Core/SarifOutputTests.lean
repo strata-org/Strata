@@ -29,10 +29,10 @@ open Core.SMT (SMTModel Result)
 
 /-- Create a simple metadata with file and location information -/
 def makeMetadata (file : String) (line col : Nat) : MetaData Expression :=
-  let uri := Imperative.Uri.file file
+  let uri := Strata.Uri.file file
   let pos : Lean.Position := { line := line, column := col }
-  let fr : Imperative.FileRange := { file := uri, start := pos, ending := pos }
-  #[{ fld := Imperative.MetaData.fileRange, value := .fileRange fr }]
+  let fr : Strata.File2dRange := { file := uri, start := pos, ending := pos }
+  #[{ fld := Imperative.MetaData.fileRange, value := .file2dRange fr }]
 
 /-- Create a simple proof obligation for testing -/
 def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObligation Expression :=
