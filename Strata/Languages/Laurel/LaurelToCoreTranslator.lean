@@ -201,7 +201,6 @@ def translateStmt (ctMap : ConstrainedTypeMap) (env : TypeEnv) (outputParams : L
       match target with
       | .Identifier name =>
           let ident := Core.CoreIdent.locl name
-          let boogieExpr := translateExpr ctMap env value
           -- Look up original type to check if constrained
           let constraintCheck : List Core.Statement :=
             match env.find? (fun (n, _) => n == name) with
@@ -211,7 +210,18 @@ def translateStmt (ctMap : ConstrainedTypeMap) (env : TypeEnv) (outputParams : L
               | some expr => [Core.Statement.assert s!"{name}#constraint" expr .empty]
               | none => []
             | none => []
-          (env, [Core.Statement.set ident boogieExpr] ++ constraintCheck)
+          -- Handle StaticCall specially - generate call statement
+          match value with
+          | .StaticCall callee args =>
+              if callee == "heapRead" || callee == "heapStore" then
+                let boogieExpr := translateExpr ctMap env value
+                (env, [Core.Statement.set ident boogieExpr] ++ constraintCheck)
+              else
+                let boogieArgs := args.map (translateExpr ctMap env)
+                (env, [Core.Statement.call [ident] callee boogieArgs] ++ constraintCheck)
+          | _ =>
+              let boogieExpr := translateExpr ctMap env value
+              (env, [Core.Statement.set ident boogieExpr] ++ constraintCheck)
       | _ => (env, [])
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr ctMap env cond
