@@ -104,10 +104,10 @@ instance : ToFormat Procedure.Spec where
        postconditions: {format p.postconditions}"
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
-  s.preconditions.map (fun (n, _) => n)
+  s.preconditions.keys
 
 def Procedure.Spec.postconditionNames (s : Procedure.Spec) : List CoreLabel :=
-  s.postconditions.map (fun (n, _) => n)
+  s.postconditions.keys
 
 def Procedure.Spec.eraseTypes (s : Procedure.Spec) : Procedure.Spec :=
   { s with
