@@ -68,6 +68,22 @@ def lookupType (ctMap : ConstrainedTypeMap) (env : TypeEnv) (name : Identifier) 
   | some (_, ty) => translateTypeWithCT ctMap ty
   | none => LMonoTy.int  -- fallback
 
+/-- Close free variable by name, converting fvar to bvar at depth k -/
+def varCloseByName (k : Nat) (x : Core.CoreIdent) (e : Core.Expression.Expr) : Core.Expression.Expr :=
+  match e with
+  | .const m c => .const m c
+  | .op m o ty => .op m o ty
+  | .bvar m i => .bvar m i
+  | .fvar m y yty => if x == y then .bvar m k else .fvar m y yty
+  | .abs m ty e' => .abs m ty (varCloseByName (k + 1) x e')
+  | .quant m qk ty tr e' => .quant m qk ty (varCloseByName (k + 1) x tr) (varCloseByName (k + 1) x e')
+  | .app m e1 e2 => .app m (varCloseByName k x e1) (varCloseByName k x e2)
+  | .ite m c t f => .ite m (varCloseByName k x c) (varCloseByName k x t) (varCloseByName k x f)
+  | .eq m e1 e2 => .eq m (varCloseByName k x e1) (varCloseByName k x e2)
+
+def boolImpliesOp : Core.Expression.Expr :=
+  .op () (Core.CoreIdent.glob "Bool.Implies") (some (LMonoTy.arrow LMonoTy.bool (LMonoTy.arrow LMonoTy.bool LMonoTy.bool)))
+
 /--
 Translate Laurel StmtExpr to Core Expression
 -/
@@ -118,7 +134,22 @@ def translateExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExpr)
   | .ReferenceEquals e1 e2 =>
       .eq () (translateExpr ctMap env e1) (translateExpr ctMap env e2)
   | .Block [single] _ => translateExpr ctMap env single
+  | .Forall _name ty body =>
+      let coreType := translateTypeWithCT ctMap ty
+      let env' := (_name, ty) :: env
+      let bodyExpr := translateExpr ctMap env' body
+      let coreIdent := Core.CoreIdent.locl _name
+      let closedBody := varCloseByName 0 coreIdent bodyExpr
+      LExpr.quant () .all (some coreType) (LExpr.noTrigger ()) closedBody
+  | .Exists _name ty body =>
+      let coreType := translateTypeWithCT ctMap ty
+      let env' := (_name, ty) :: env
+      let bodyExpr := translateExpr ctMap env' body
+      let coreIdent := Core.CoreIdent.locl _name
+      let closedBody := varCloseByName 0 coreIdent bodyExpr
+      LExpr.quant () .exist (some coreType) (LExpr.noTrigger ()) closedBody
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
+  termination_by expr
   decreasing_by
   all_goals (simp_wf; try omega)
   rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega

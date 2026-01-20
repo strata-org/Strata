@@ -51,6 +51,12 @@ op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " |
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
 
+// Quantifiers
+op forallExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
+  => "forall" "(" name ":" ty ")" "=>" body:0;
+op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
+  => "exists" "(" name ":" ty ")" "=>" body:0;
+
 // If-else
 category OptionalElse;
 op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;

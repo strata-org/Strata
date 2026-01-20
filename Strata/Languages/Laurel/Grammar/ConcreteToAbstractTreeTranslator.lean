@@ -236,6 +236,16 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
         let inner ← translateStmtExpr arg0
         return .PrimitiveOp primOp [inner]
       | none => TransM.error s!"Unknown unary operation: {op.name}"
+    | q`Laurel.forallExpr, #[nameArg, tyArg, bodyArg] =>
+      let name ← translateIdent nameArg
+      let ty ← translateHighType tyArg
+      let body ← translateStmtExpr bodyArg
+      return .Forall name ty body
+    | q`Laurel.existsExpr, #[nameArg, tyArg, bodyArg] =>
+      let name ← translateIdent nameArg
+      let ty ← translateHighType tyArg
+      let body ← translateStmtExpr bodyArg
+      return .Exists name ty body
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0
