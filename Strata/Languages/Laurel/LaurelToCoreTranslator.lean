@@ -89,7 +89,7 @@ def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : Stm
     match op with
     | .Not => .app () boolNotOp (translateSimpleExpr ctMap env e)
     | .Neg => .app () intNegOp (translateSimpleExpr ctMap env e)
-    | _ => panic! s!"translateSimpleExpr: Invalid unary op"
+    | _ => panic! s!"Unsupported unary operator in constrained type: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let binOp (bop : Core.Expression.Expr) :=
       LExpr.mkApp () bop [translateSimpleExpr ctMap env e1, translateSimpleExpr ctMap env e2]
@@ -100,8 +100,10 @@ def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : Stm
     | .Add => binOp intAddOp | .Sub => binOp intSubOp | .Mul => binOp intMulOp
     | .Div => binOp intDivOp | .Mod => binOp intModOp
     | .Lt => binOp intLtOp | .Leq => binOp intLeOp | .Gt => binOp intGtOp | .Geq => binOp intGeOp
-    | _ => panic! s!"translateSimpleExpr: Invalid binary op"
-  | _ => panic! s!"translateSimpleExpr: Unsupported expression in constraint"
+    | _ => panic! s!"Unsupported binary operator in constrained type: {repr op}"
+  | .Forall _ _ _ => panic! "Quantifiers not supported in constrained type constraints"
+  | .Exists _ _ _ => panic! "Quantifiers not supported in constrained type constraints"
+  | _ => panic! "Unsupported expression in constrained type constraint"
 
 /-- Build map of pre-translated constraints -/
 def buildTranslatedConstraintMap (ctMap : ConstrainedTypeMap) : TranslatedConstraintMap :=
