@@ -118,17 +118,16 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
     IO.println s!"Successful VCResult conversion test failed: {repr sarifResult}"
 
 -- Test converting a failed VCResult
-#guard_msgs in
-#eval
+#guard
   let md := makeMetadata "/test/file.st" 20 10
   let vcr := makeVCResult "failed_obligation" .fail (.sat []) md
   let sarifResult := vcResultToSarifResult vcr
-  if sarifResult.ruleId = "failed_obligation" &&
-     sarifResult.level = Level.error &&
-     sarifResult.message.text = "Verification failed" then
-    pure ()
-  else
-    IO.println s!"Failed VCResult conversion test failed: {repr sarifResult}"
+  let expected := { 
+    ruleId := "failed_obligation"
+    level := Level.error
+    message := { text = "Verification failed" }
+  }
+  sarifResult = expected
 
 -- Test converting an unknown VCResult
 #guard_msgs in
