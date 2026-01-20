@@ -79,6 +79,13 @@ def lookupType (ctMap : ConstrainedTypeMap) (env : TypeEnv) (name : Identifier) 
   | some (_, ty) => translateTypeWithCT ctMap ty
   | none => LMonoTy.int  -- fallback
 
+/-- Sequence bounds: array with start (inclusive) and end (exclusive) indices -/
+structure SeqBounds where
+  arr : Core.Expression.Expr   -- the underlying array
+  start : Core.Expression.Expr -- start index (inclusive)
+  «end» : Core.Expression.Expr -- end index (exclusive)
+deriving Inhabited
+
 /-- Translate a binary operation to Core -/
 def translateBinOp (op : Operation) (e1 e2 : Core.Expression.Expr) : Core.Expression.Expr :=
   let binOp (bop : Core.Expression.Expr) := LExpr.mkApp () bop [e1, e2]
@@ -134,6 +141,31 @@ def varCloseByName (k : Nat) (x : Core.CoreIdent) (e : Core.Expression.Expr) : C
 def boolImpliesOp : Core.Expression.Expr :=
   .op () (Core.CoreIdent.unres "Bool.Implies") (some (LMonoTy.arrow LMonoTy.bool (LMonoTy.arrow LMonoTy.bool LMonoTy.bool)))
 
+/-- Translate simple expression (identifier or literal) to Core - for sequence bounds -/
+def translateSimpleBound (expr : StmtExpr) : Core.Expression.Expr :=
+  match expr with
+  | .Identifier name => .fvar () (Core.CoreIdent.locl name) (some LMonoTy.int)
+  | .LiteralInt i => .const () (.intConst i)
+  | _ => panic! "Expected simple bound expression (identifier or literal)"
+
+/-- Extract sequence bounds from Seq.From/Take/Drop chain -/
+def translateSeqBounds (expr : StmtExpr) : SeqBounds :=
+  match expr with
+  | .StaticCall "«Seq.From»" [arr] =>
+      match arr with
+      | .Identifier name =>
+          { arr := .fvar () (Core.CoreIdent.locl name) none
+          , start := .const () (.intConst 0)
+          , «end» := .fvar () (Core.CoreIdent.locl (name ++ "#len")) (some LMonoTy.int) }
+      | _ => panic! "Seq.From on complex expressions not supported"
+  | .StaticCall "«Seq.Take»" [seq, n] =>
+      let inner := translateSeqBounds seq
+      { inner with «end» := translateSimpleBound n }
+  | .StaticCall "«Seq.Drop»" [seq, n] =>
+      let inner := translateSeqBounds seq
+      { inner with start := translateSimpleBound n }
+  | _ => panic! "Not a sequence expression"
+
 /--
 Translate Laurel StmtExpr to Core Expression
 -/
@@ -165,6 +197,23 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
       match arr with
       | .Identifier name => .fvar () (Core.CoreIdent.locl (name ++ "#len")) (some LMonoTy.int)
       | _ => panic! "Array.Length on complex expressions not supported"
+  | .StaticCall "«Seq.Contains»" [seq, elem] =>
+      -- exists i :: start <= i < end && arr[i] == elem
+      let bounds := translateSeqBounds seq
+      let elemExpr := translateExpr ctMap tcMap env elem
+      let i := LExpr.bvar () 0
+      -- start <= i
+      let geStart := LExpr.mkApp () intLeOp [bounds.start, i]
+      -- i < end
+      let ltEnd := LExpr.mkApp () intLtOp [i, bounds.«end»]
+      -- arr[i]
+      let selectOp := LExpr.op () (Core.CoreIdent.unres "select") none
+      let arrAtI := LExpr.mkApp () selectOp [bounds.arr, i]
+      -- arr[i] == elem
+      let eqElem := LExpr.eq () arrAtI elemExpr
+      -- start <= i && i < end && arr[i] == elem
+      let body := LExpr.mkApp () boolAndOp [geStart, LExpr.mkApp () boolAndOp [ltEnd, eqElem]]
+      LExpr.quant () .exist (some LMonoTy.int) (LExpr.noTrigger ()) body
   | .StaticCall name args =>
       let ident := Core.CoreIdent.glob name
       let fnOp := .op () ident none
@@ -265,7 +314,7 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
       let constraintCheck := genConstraintAssert ctMap tcMap name ty
       match initializer with
       | some (.StaticCall callee args) =>
-          if isHeapFunction callee then
+          if isHeapFunction callee || callee.startsWith "«Seq." || callee.startsWith "«Array." then
             let boogieExpr := translateExpr ctMap tcMap env (.StaticCall callee args)
             (env', [Core.Statement.init ident boogieType boogieExpr] ++ constraintCheck)
           else
@@ -287,7 +336,7 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
             | none => []
           match value with
           | .StaticCall callee args =>
-              if isHeapFunction callee then
+              if isHeapFunction callee || callee.startsWith "«Seq." || callee.startsWith "«Array." then
                 let boogieExpr := translateExpr ctMap tcMap env value
                 (env, [Core.Statement.set ident boogieExpr] ++ constraintCheck)
               else
