@@ -290,6 +290,10 @@ def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighType) : Core.Expre
 def isHeapFunction (name : Identifier) : Bool :=
   name == "heapRead" || name == "heapStore"
 
+/-- Check if a StaticCall should be translated as an expression (not a procedure call) -/
+def isExpressionCall (callee : Identifier) : Bool :=
+  isHeapFunction callee || callee.startsWith "«Seq." || callee.startsWith "«Array."
+
 /--
 Translate Laurel StmtExpr to Core Statements
 Takes the type environment and output parameter names
@@ -314,7 +318,7 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
       let constraintCheck := genConstraintAssert ctMap tcMap name ty
       match initializer with
       | some (.StaticCall callee args) =>
-          if isHeapFunction callee || callee.startsWith "«Seq." || callee.startsWith "«Array." then
+          if isExpressionCall callee then
             let boogieExpr := translateExpr ctMap tcMap env (.StaticCall callee args)
             (env', [Core.Statement.init ident boogieType boogieExpr] ++ constraintCheck)
           else
@@ -336,7 +340,7 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
             | none => []
           match value with
           | .StaticCall callee args =>
-              if isHeapFunction callee || callee.startsWith "«Seq." || callee.startsWith "«Array." then
+              if isExpressionCall callee then
                 let boogieExpr := translateExpr ctMap tcMap env value
                 (env, [Core.Statement.set ident boogieExpr] ++ constraintCheck)
               else
