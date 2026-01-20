@@ -135,6 +135,21 @@ theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m'
     have Hin := Identifiers.addWithErrorNotin Heq
     grind
 
+theorem Identifiers.addListWithErrorNoDup {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Format}: m.addListWithError l f = .ok m' → l.Nodup := by
+  unfold addListWithError
+  induction l generalizing m m' with
+  | nil => simp
+  | cons h t IH =>
+    simp only[List.foldlM, bind, Except.bind]
+    split <;> intros Hid; try contradiction
+    apply List.nodup_cons.mpr
+    constructor <;> try grind
+    intros h_in_t
+    rename_i Hadd
+    have := Identifiers.addWithErrorContains Hadd h
+    have := Identifiers.addListWithErrorNotin Hid h
+    grind
+
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)
 

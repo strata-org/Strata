@@ -427,51 +427,109 @@ If a program typechecks succesfully, all identifiers defined in the program are
 unique.
 -/
 theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = .ok (d', T') → (Program.getNames.go decls).Nodup := by
-  -- TODO: This proof needs to be updated to handle mutual datatypes (multiple names per decl)
-  sorry
-  /-
   induction decls generalizing acc p C T with
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
-    simp_all [Program.getNames.go, Program.typeCheck.go,
-              tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.tryCatch];
-    cases Hid: C.idents.addWithError r.name
-                (format (r.metadata.formatFileRangeD true) ++ format " Error in " ++ format r.kind ++ format " " ++
-                  format r.name ++
-                  format ": a declaration of this name already exists."); simp [bind]
-    case error => intro C; cases C; done
-    case ok id =>
-      intro C; simp[bind, Except.bind] at C;
-      cases r <;> simp at C; repeat (split at C <;> try (intros _; contradiction) <;> try contradiction) <;> try contradiction
-      any_goals (split at C <;> try contradiction)
-      all_goals (
-        specialize (IH C); constructor <;> try assumption;
+    simp[Program.getNames.go, Program.typeCheck.go, bind, Except.bind,
+         tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.tryCatch]
+    split <;> try (intros;contradiction)
+    rename_i x v Hid
+     -- Need mem hypothesis in more useful form
+    have a_in': ∀ {x1 x2 l d' T'},
+      Program.typeCheck.go p x1 x2 rs l = .ok (d', T') →
+      ∀ {x: CoreIdent} {a: Decl}, a ∈ rs → x ∈ a.names →
+      x ∈ Program.getNames.go rs := by
+      intros x1 x2 l d' T' Hty x a a_in x_in; unfold Program.getNames.go
+      rw[List.mem_flatMap]; exists a
+    cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid)
+    | var v =>
+      rename_i Hty
+      split_contra tcok
+      specialize (IH tcok)
+      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
+      . apply IH
+      . intros a a_in; simp[Decl.names] at a_in; subst_vars
         intros x x_in;
-        have x_in' : x.name ∈ Program.getNames.go rs := by
-          unfold Program.getNames.go; rw[List.mem_map]; exists x;
-        have x_notin := (Program.typeCheckFunctionDisjoint C x.name x_in')
-        intro name_eq
-        have x_contains := (Identifiers.addWithErrorContains Hid x.name))
-      case _ => grind
-      case _ x v hmatch1 =>
-        rename_i x v hmatch1
-        split at hmatch1 <;> try grind
-        rename_i hmatch2; split at hmatch2 <;> split at hmatch2 <;> try grind
-        rename_i heq
-        have id_eq := addKnownTypeWithErrorIdents heq
-        simp at id_eq; grind
-        rename_i Heq
-        have := addDatatypeIdents Heq; grind
-      case _ => grind
-      case _ => grind
-      case _ => grind
-      case _ =>
-        rename_i x v hmatch1
-        split at hmatch1 <;> try grind
-        rename_i hmatch2; split at hmatch2 <;> try grind
-        simp only [LContext.addFactoryFunction] at hmatch2; grind
-    done
-  -/
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        simp_all; grind
+    | ax a =>
+      rename_i Hty
+      specialize (IH tcok)
+      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
+      . apply IH
+      . intros a a_in; simp[Decl.names] at a_in; subst_vars
+        intros x x_in;
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        simp_all; grind
+    | distinct d =>
+      rename_i Hty
+      specialize (IH tcok)
+      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
+      . apply IH
+      . intros a a_in; simp[Decl.names] at a_in; subst_vars
+        intros x x_in;
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        simp_all; grind
+    | proc p =>
+      rename_i Hty
+      specialize (IH tcok)
+      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
+      . apply IH
+      . intros a a_in; simp[Decl.names] at a_in; subst_vars
+        intros x x_in;
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        simp_all; grind
+    | func f =>
+      rename_i Hty
+      split_contra_case Hty; rename_i Hty
+      split_contra_case Hty; rename_i Hty
+      specialize (IH tcok)
+      apply List.nodup_append.mpr; repeat (constructor <;> try grind)
+      . apply IH
+      . intros a a_in; simp[Decl.names] at a_in; subst_vars
+        intros x x_in;
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        simp_all
+        simp[LContext.addFactoryFunction] at Hdisj
+        grind
+    | type td =>
+      rename_i Hty
+      specialize (IH tcok)
+      apply List.nodup_append.mpr
+      cases td with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty <;> split_contra_case Hty <;> rename_i Hty)
+      | con c =>
+        constructor; simp[Decl.names, TypeDecl.names]; constructor; apply IH
+        intros a a_in; simp[Decl.names, TypeDecl.names] at a_in; subst_vars
+        intros x x_in;
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        have := addKnownTypeWithErrorIdents Hty
+        simp_all[Decl.names, TypeDecl.names];
+        grind
+      | syn s =>
+        constructor; simp[Decl.names, TypeDecl.names]; constructor; apply IH
+        intros a a_in; simp[Decl.names, TypeDecl.names] at a_in; subst_vars
+        intros x x_in;
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        simp_all[Decl.names, TypeDecl.names];
+        grind
+      | data m =>
+        -- mutual block has nodups
+        constructor; apply (Identifiers.addListWithErrorNoDup Hid)
+        constructor; apply IH
+        intros a a_in; simp[Decl.names, TypeDecl.names] at a_in; subst_vars
+        intros x x_in;
+        have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
+        have x_contains := (Identifiers.addListWithErrorContains Hid x)
+        simp_all[Decl.names, TypeDecl.names];
+        have := addMutualBlockIdents Hty;
+        grind
 
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed
