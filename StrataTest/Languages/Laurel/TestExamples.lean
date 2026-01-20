@@ -17,20 +17,21 @@ open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
 open Lean.Parser (InputContext)
 
+namespace Strata
 namespace Laurel
 
 def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
 
-  -- Convert to Laurel.Program using parseProgram (handles unwrapping the program operation)
-  let laurelProgram ← match Laurel.TransM.run input (Laurel.parseProgram strataProgram) with
-    | .ok program => pure program
-    | .error errMsg => throw (IO.userError s!"Translation error: {errMsg}")
+  let uri := Strata.Uri.file input.fileName
+  let transResult := Laurel.TransM.run uri (Laurel.parseProgram strataProgram)
+  match transResult with
+  | .error transErrors => throw (IO.userError s!"Translation errors: {transErrors}")
+  | .ok laurelProgram =>
+    let files := Map.insert Map.empty uri input.fileMap
+    let diagnostics ← Laurel.verifyToDiagnostics "z3" files laurelProgram
 
-  -- Verify the program
-  let diagnostics ← Laurel.verifyToDiagnostics "z3" laurelProgram
-
-  pure diagnostics
+    pure diagnostics
 
 end Laurel
