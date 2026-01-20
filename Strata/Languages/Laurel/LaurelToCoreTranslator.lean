@@ -63,7 +63,8 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TBool => LMonoTy.bool
   | .TVoid => LMonoTy.bool
   | .THeap => .tcons "Heap" []
-  | .TField => .tcons "Field" [LMonoTy.int]  -- For now, all fields hold int
+  | .TField => .tcons "Field" [LMonoTy.int]
+  | .Applied (.UserDefined "Array") [elemTy] => .tcons "Map" [LMonoTy.int, translateType elemTy]
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
 
@@ -131,7 +132,7 @@ def varCloseByName (k : Nat) (x : Core.CoreIdent) (e : Core.Expression.Expr) : C
   | .eq m e1 e2 => .eq m (varCloseByName k x e1) (varCloseByName k x e2)
 
 def boolImpliesOp : Core.Expression.Expr :=
-  .op () (Core.CoreIdent.glob "Bool.Implies") (some (LMonoTy.arrow LMonoTy.bool (LMonoTy.arrow LMonoTy.bool LMonoTy.bool)))
+  .op () (Core.CoreIdent.unres "Bool.Implies") (some (LMonoTy.arrow LMonoTy.bool (LMonoTy.arrow LMonoTy.bool LMonoTy.bool)))
 
 /--
 Translate Laurel StmtExpr to Core Expression
@@ -155,6 +156,15 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
                   | none => .const () (.intConst 0)
       .ite () bcond bthen belse
   | .Assign _ value _ => translateExpr ctMap tcMap env value
+  | .StaticCall "Array.Get" [arr, idx] =>
+      let arrExpr := translateExpr ctMap tcMap env arr
+      let idxExpr := translateExpr ctMap tcMap env idx
+      let selectOp := LExpr.op () (Core.CoreIdent.unres "select") none
+      LExpr.mkApp () selectOp [arrExpr, idxExpr]
+  | .StaticCall "Array.Length" [arr] =>
+      match arr with
+      | .Identifier name => .fvar () (Core.CoreIdent.locl (name ++ "#len")) (some LMonoTy.int)
+      | _ => panic! "Array.Length on complex expressions not supported"
   | .StaticCall name args =>
       let ident := Core.CoreIdent.glob name
       let fnOp := .op () ident none
@@ -331,6 +341,14 @@ def translateParameterToCoreWithCT (ctMap : ConstrainedTypeMap) (param : Paramet
   let ty := translateTypeWithCT ctMap param.type
   (ident, ty)
 
+/-- Expand array parameter to (arr, arr#len) pair -/
+def expandArrayParam (ctMap : ConstrainedTypeMap) (param : Parameter) : List (Core.CoreIdent × LMonoTy) :=
+  match param.type with
+  | .Applied (.UserDefined "Array") _ =>
+      [ (Core.CoreIdent.locl param.name, translateTypeWithCT ctMap param.type)
+      , (Core.CoreIdent.locl (param.name ++ "#len"), LMonoTy.int) ]
+  | _ => [translateParameterToCoreWithCT ctMap param]
+
 /--
 Translate Laurel Procedure to Core Procedure
 -/
@@ -340,17 +358,22 @@ def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstrain
   -- Rename heap input to heap_in if present
   let renamedInputs := proc.inputs.map (fun p =>
     if p.name == "heap" && p.type == .THeap then { p with name := "heap_in" } else p)
-  let inputPairs := renamedInputs.map (translateParameterToCoreWithCT ctMap)
-  let inputs := inputPairs
+  let inputs := renamedInputs.flatMap (expandArrayParam ctMap)
   let header : Core.Procedure.Header := {
     name := proc.name
     typeArgs := []
     inputs := inputs
-    outputs := proc.outputs.map (translateParameterToCoreWithCT ctMap)
+    outputs := proc.outputs.flatMap (expandArrayParam ctMap)
   }
   -- Build type environment with original types (for constraint checks)
+  -- Include array length parameters
+  let arrayLenEnv : TypeEnv := proc.inputs.filterMap (fun p =>
+    match p.type with
+    | .Applied (.UserDefined "Array") _ => some (p.name ++ "#len", .TInt)
+    | _ => none)
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type)) ++
+                           arrayLenEnv ++
                            constants.map (fun c => (c.name, c.type))
   -- Generate constraint checks for input parameters with constrained types
   let inputConstraints : ListMap Core.CoreLabel Core.Procedure.Check :=
@@ -414,7 +437,7 @@ def readFunction : Core.Decl :=
   let tVar := LMonoTy.ftvar "T"
   let fieldTy := LMonoTy.tcons "Field" [tVar]
   .func {
-    name := Core.CoreIdent.glob "heapRead"
+    name := Core.CoreIdent.unres "heapRead"
     typeArgs := ["T"]
     inputs := [(Core.CoreIdent.locl "heap", heapTy),
                (Core.CoreIdent.locl "obj", compTy),
@@ -429,7 +452,7 @@ def updateFunction : Core.Decl :=
   let tVar := LMonoTy.ftvar "T"
   let fieldTy := LMonoTy.tcons "Field" [tVar]
   .func {
-    name := Core.CoreIdent.glob "heapStore"
+    name := Core.CoreIdent.unres "heapStore"
     typeArgs := ["T"]
     inputs := [(Core.CoreIdent.locl "heap", heapTy),
                (Core.CoreIdent.locl "obj", compTy),
@@ -452,8 +475,8 @@ def readUpdateSameAxiom : Core.Decl :=
   let o := LExpr.bvar () 1
   let f := LExpr.bvar () 2
   let v := LExpr.bvar () 3
-  let updateOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
-  let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
+  let updateOp := LExpr.op () (Core.CoreIdent.unres "heapStore") none
+  let readOp := LExpr.op () (Core.CoreIdent.unres "heapRead") none
   let updateExpr := LExpr.mkApp () updateOp [h, o, f, v]
   let readExpr := LExpr.mkApp () readOp [updateExpr, o, f]
   let eqBody := LExpr.eq () readExpr v
@@ -477,8 +500,8 @@ def readUpdateDiffObjAxiom : Core.Decl :=
   let o2 := LExpr.bvar () 2
   let f := LExpr.bvar () 3
   let v := LExpr.bvar () 4
-  let updateOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
-  let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
+  let updateOp := LExpr.op () (Core.CoreIdent.unres "heapStore") none
+  let readOp := LExpr.op () (Core.CoreIdent.unres "heapRead") none
   let updateExpr := LExpr.mkApp () updateOp [h, o1, f, v]
   let lhs := LExpr.mkApp () readOp [updateExpr, o2, f]
   let rhs := LExpr.mkApp () readOp [h, o2, f]

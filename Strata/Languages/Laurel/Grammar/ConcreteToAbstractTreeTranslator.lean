@@ -77,16 +77,19 @@ instance : Inhabited HighType where
 instance : Inhabited Parameter where
   default := { name := "", type := .TVoid }
 
-def translateHighType (arg : Arg) : TransM HighType := do
+partial def translateHighType (arg : Arg) : TransM HighType := do
   match arg with
   | .op op =>
     match op.name, op.args with
     | q`Laurel.intType, _ => return .TInt
     | q`Laurel.boolType, _ => return .TBool
+    | q`Laurel.arrayType, #[elemArg] =>
+      let elemType ← translateHighType elemArg
+      return .Applied (.UserDefined "Array") [elemType]
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return .UserDefined name
-    | _, _ => TransM.error s!"translateHighType expects intType, boolType or compositeType, got {repr op.name}"
+    | _, _ => TransM.error s!"translateHighType expects intType, boolType, arrayType or compositeType, got {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
 def translateNat (arg : Arg) : TransM Nat := do
@@ -214,6 +217,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
       return .FieldSelect obj field
+    | q`Laurel.arrayIndex, #[arrArg, idxArg] =>
+      let arr ← translateStmtExpr arrArg
+      let idx ← translateStmtExpr idxArg
+      return .StaticCall "Array.Get" [arr, idx]
     | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
       let cond ← translateStmtExpr condArg
       let invariants ← match invSeqArg with

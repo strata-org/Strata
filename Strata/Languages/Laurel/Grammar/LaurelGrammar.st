@@ -4,6 +4,7 @@ dialect Laurel;
 category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
+op arrayType (elemType: LaurelType): LaurelType => "Array" "<" elemType ">";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
@@ -24,6 +25,9 @@ op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" arg
 
 // Field access
 op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+
+// Array indexing
+op arrayIndex (arr: StmtExpr, idx: StmtExpr): StmtExpr => @[prec(90)] arr "[" idx "]";
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
