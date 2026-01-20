@@ -4,29 +4,29 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 import Strata.Util.Sarif
 
 /-!
-# Boogie SARIF Output
+# Core SARIF Output
 
-This module provides Boogie-specific conversion functions for SARIF output.
+This module provides Core-specific conversion functions for SARIF output.
 -/
 
-namespace Boogie.Sarif
+namespace Core.Sarif
 
 open Strata.Sarif Strata.SMT
 
-/-! ## Boogie-Specific Conversion Functions -/
+/-! ## Core-Specific Conversion Functions -/
 
-/-- Convert Boogie Outcome to SARIF Level -/
+/-- Convert Core Outcome to SARIF Level -/
 def outcomeToLevel : Outcome → Level
   | .pass => .none
   | .fail => .error
   | .unknown => .warning
   | .implementationError _ => .error
 
-/-- Convert Boogie Outcome to a descriptive message -/
+/-- Convert Core Outcome to a descriptive message -/
 def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
   match outcome with
   | .pass => "Verification succeeded"
@@ -82,4 +82,4 @@ def vcResultsToSarif (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
     schema := "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
     runs := #[run] }
 
-end Boogie.Sarif
+end Core.Sarif

@@ -4,8 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.SarifOutput
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.Verifier
 import Lean.Data.Json
 
 /-!
@@ -18,12 +18,12 @@ This file contains tests for the SARIF output functionality, including:
 - Source location mapping
 -/
 
-namespace Boogie.Sarif.Tests
+namespace Core.Sarif.Tests
 
 open Lean (Json)
 open Imperative
 open Strata.Sarif (Level Message)
-open Boogie.SMT (SMTModel Result)
+open Core.SMT (SMTModel Result)
 
 /-! ## Test Helpers -/
 
@@ -282,4 +282,4 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
   let sarif := vcResultsToSarif vcResults
   Strata.Sarif.toJsonString sarif
 
-end Boogie.Sarif.Tests
+end Core.Sarif.Tests
