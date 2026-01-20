@@ -8,23 +8,19 @@ import StrataTest.Util.TestDiagnostics
 import StrataTest.Languages.Laurel.TestExamples
 
 open StrataTest.Util
-open Strata
 
+namespace Strata
 namespace Laurel
 
 def program := r"
 constrained nat = x: int where x >= 0 witness 0
 
-composite Option {}
-composite Some extends Option {
-  value: int
-}
-composite None extends Option
-constrained SealedOption = x: Option where x is Some || x is None witness None
-
-procedure foo() returns (r: nat) {
+procedure double(n: nat) returns (r: nat)
+  ensures r == n + n
+{
+    return n + n;
 }
 "
 
--- Not working yet
--- #eval! testInput "ConstrainedTypes" program processLaurelFile
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ConstrainedTypes" program 14 processLaurelFile

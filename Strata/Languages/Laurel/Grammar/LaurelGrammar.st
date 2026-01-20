@@ -103,8 +103,15 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   body : StmtExpr) : Procedure =>
   "procedure " name "(" parameters ")" returnType returnParameters requires ensures body:0;
 
+// Constrained types
+category ConstrainedType;
+op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
+                    constraint: StmtExpr, witness: StmtExpr): ConstrainedType
+  => "constrained" name "=" valueName ":" base "where" constraint:0 "witness" witness:0;
+
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
 op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
+op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct;
 
 op program (items: Seq TopLevel): Command => items;

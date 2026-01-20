@@ -25,6 +25,25 @@ namespace Strata.Laurel
 open Strata
 open Lambda (LMonoTy LTy LExpr)
 
+/-- Map from constrained type name to its definition -/
+abbrev ConstrainedTypeMap := Std.HashMap Identifier ConstrainedType
+
+/-- Build a map of constrained types from a program -/
+def buildConstrainedTypeMap (types : List TypeDefinition) : ConstrainedTypeMap :=
+  types.foldl (init := {}) fun m td =>
+    match td with
+    | .Constrained ct => m.insert ct.name ct
+    | _ => m
+
+/-- Get the base type for a type, resolving constrained types -/
+def resolveBaseType (ctMap : ConstrainedTypeMap) (ty : HighType) : HighType :=
+  match ty with
+  | .UserDefined name =>
+    match ctMap.get? name with
+    | some ct => ct.base
+    | none => ty
+  | _ => ty
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -37,6 +56,10 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TField => .tcons "Field" [LMonoTy.int]  -- For now, all fields hold int
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
+
+/-- Translate type, resolving constrained types to their base type -/
+def translateTypeWithCT (ctMap : ConstrainedTypeMap) (ty : HighType) : LMonoTy :=
+  translateType (resolveBaseType ctMap ty)
 
 abbrev TypeEnv := List (Identifier × HighType)
 
@@ -204,39 +227,78 @@ def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :
   let ty := translateType param.type
   (ident, ty)
 
+/-- Translate parameter with constrained type resolution -/
+def translateParameterToCoreWithCT (ctMap : ConstrainedTypeMap) (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
+  let ident := Core.CoreIdent.locl param.name
+  let ty := translateTypeWithCT ctMap param.type
+  (ident, ty)
+
+/-- Generate constraint check for a parameter with a constrained type.
+    Substitutes the parameter name for the constraint's value variable. -/
+def genConstraintCheck (ctMap : ConstrainedTypeMap) (env : TypeEnv) (param : Parameter) : Option Core.Expression.Expr :=
+  match param.type with
+  | .UserDefined name =>
+    match ctMap.get? name with
+    | some ct =>
+      -- Substitute param.name for ct.valueName in ct.constraint
+      let substEnv := (ct.valueName, param.type) :: env
+      let constraintExpr := translateExpr substEnv ct.constraint
+      -- Replace fvar ct.valueName with fvar param.name
+      let paramIdent := Core.CoreIdent.locl param.name
+      let valueIdent := Core.CoreIdent.locl ct.valueName
+      let baseTy := translateTypeWithCT ctMap param.type
+      some (constraintExpr.substFvar valueIdent (.fvar () paramIdent (some baseTy)))
+    | none => none
+  | _ => none
+
 /--
 Translate Laurel Procedure to Core Procedure
 -/
-def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Procedure :=
+def translateProcedure (ctMap : ConstrainedTypeMap) (constants : List Constant) (proc : Procedure) : Core.Procedure :=
   -- Check if this procedure has a heap parameter (first input named "heap")
   let hasHeapParam := proc.inputs.any (fun p => p.name == "heap" && p.type == .THeap)
   -- Rename heap input to heap_in if present
   let renamedInputs := proc.inputs.map (fun p =>
     if p.name == "heap" && p.type == .THeap then { p with name := "heap_in" } else p)
-  let inputPairs := renamedInputs.map translateParameterToCore
+  let inputPairs := renamedInputs.map (translateParameterToCoreWithCT ctMap)
   let inputs := inputPairs
   let header : Core.Procedure.Header := {
     name := proc.name
     typeArgs := []
     inputs := inputs
-    outputs := proc.outputs.map translateParameterToCore
+    outputs := proc.outputs.map (translateParameterToCoreWithCT ctMap)
   }
-  let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
-                           proc.outputs.map (fun p => (p.name, p.type)) ++
+  -- Build type environment with resolved types (constrained types → base types)
+  let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, resolveBaseType ctMap p.type)) ++
+                           proc.outputs.map (fun p => (p.name, resolveBaseType ctMap p.type)) ++
                            constants.map (fun c => (c.name, c.type))
-  -- Translate preconditions
-  let preconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
+  -- Generate constraint checks for input parameters with constrained types
+  let inputConstraints : ListMap Core.CoreLabel Core.Procedure.Check :=
+    proc.inputs.filterMap (fun p =>
+      match genConstraintCheck ctMap initEnv p with
+      | some expr => some (s!"{proc.name}_input_{p.name}_constraint", { expr })
+      | none => none)
+  -- Translate explicit preconditions
+  let explicitPreconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     proc.preconditions.mapIdx fun i precond =>
       let check : Core.Procedure.Check := { expr := translateExpr initEnv precond }
       (s!"{proc.name}_pre_{i}", check)
-  -- Translate postconditions for Opaque bodies
-  let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
+  let preconditions := inputConstraints ++ explicitPreconditions
+  -- Generate constraint checks for output parameters with constrained types
+  let outputConstraints : ListMap Core.CoreLabel Core.Procedure.Check :=
+    proc.outputs.filterMap (fun p =>
+      match genConstraintCheck ctMap initEnv p with
+      | some expr => some (s!"{proc.name}_output_{p.name}_constraint", { expr })
+      | none => none)
+  -- Translate explicit postconditions for Opaque bodies
+  let explicitPostconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
     | .Opaque posts _ _ _ =>
         posts.mapIdx fun i postcond =>
           let check : Core.Procedure.Check := { expr := translateExpr initEnv postcond }
           (s!"{proc.name}_post_{i}", check)
     | _ => []
+  let postconditions := explicitPostconditions ++ outputConstraints
   let spec : Core.Procedure.Spec := {
     modifies := []
     preconditions := preconditions
@@ -418,9 +480,11 @@ Translate Laurel Program to Core Program
 def translate (program : Program) : Except (Array DiagnosticModel) Core.Program := do
   let sequencedProgram ← liftExpressionAssignments program
   let heapProgram := heapParameterization sequencedProgram
+  -- Build constrained type map
+  let ctMap := buildConstrainedTypeMap heapProgram.types
   -- Separate procedures that can be functions from those that must be procedures
   let (funcProcs, procProcs) := heapProgram.staticProcedures.partition canBeBoogieFunction
-  let procedures := procProcs.map (translateProcedure heapProgram.constants)
+  let procedures := procProcs.map (translateProcedure ctMap heapProgram.constants)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map translateProcedureToFunction
   let constDecls := heapProgram.constants.map translateConstant

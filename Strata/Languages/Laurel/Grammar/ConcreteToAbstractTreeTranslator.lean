@@ -319,19 +319,40 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
-def parseTopLevel (arg : Arg) : TransM (Option Procedure) := do
+def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
+  let .op op := arg
+    | TransM.error s!"parseConstrainedType expects operation"
+  match op.name, op.args with
+  | q`Laurel.constrainedType, #[nameArg, valueNameArg, baseArg, constraintArg, witnessArg] =>
+    let name ← translateIdent nameArg
+    let valueName ← translateIdent valueNameArg
+    let base ← translateHighType baseArg
+    let constraint ← translateStmtExpr constraintArg
+    let witness ← translateStmtExpr witnessArg
+    return { name, base, valueName, constraint, witness }
+  | _, _ =>
+    TransM.error s!"parseConstrainedType expects constrainedType, got {repr op.name}"
+
+inductive TopLevelItem where
+  | proc (p : Procedure)
+  | typeDef (t : TypeDefinition)
+
+def parseTopLevel (arg : Arg) : TransM (Option TopLevelItem) := do
   let .op op := arg
     | TransM.error s!"parseTopLevel expects operation"
 
   match op.name, op.args with
   | q`Laurel.topLevelProcedure, #[procArg] =>
     let proc ← parseProcedure procArg
-    return some proc
+    return some (.proc proc)
   | q`Laurel.topLevelComposite, #[_compositeArg] =>
     -- TODO: handle composite types
     return none
+  | q`Laurel.topLevelConstrainedType, #[ctArg] =>
+    let ct ← parseConstrainedType ctArg
+    return some (.typeDef (.Constrained ct))
   | _, _ =>
-    TransM.error s!"parseTopLevel expects topLevelProcedure or topLevelComposite, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects topLevelProcedure, topLevelComposite, or topLevelConstrainedType, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
@@ -353,15 +374,17 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
       prog.commands
 
   let mut procedures : List Procedure := []
+  let mut types : List TypeDefinition := []
   for op in commands do
     let result ← parseTopLevel (.op op)
     match result with
-    | some proc => procedures := procedures ++ [proc]
+    | some (.proc proc) => procedures := procedures ++ [proc]
+    | some (.typeDef td) => types := types ++ [td]
     | none => pure () -- composite types are skipped for now
   return {
     staticProcedures := procedures
     staticFields := []
-    types := []
+    types := types
   }
 
 end Laurel
