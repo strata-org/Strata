@@ -52,6 +52,13 @@ def checkOutsideCondition(md: Imperative.MetaData Core.Expression): SequenceM Un
 def SequenceM.setInsideCondition : SequenceM Unit := do
   modify fun s => { s with insideCondition := true }
 
+def SequenceM.withInsideCondition (m : SequenceM α) : SequenceM α := do
+  let oldInsideCondition := (← get).insideCondition
+  modify fun s => { s with insideCondition := true }
+  let result ← m
+  modify fun s => { s with insideCondition := oldInsideCondition }
+  return result
+
 def SequenceM.takePrependedStmts : SequenceM (List StmtExpr) := do
   let stmts := (← get).prependedStmts
   modify fun s => { s with prependedStmts := [] }
@@ -91,12 +98,12 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
-      SequenceM.setInsideCondition
-      let seqThen ← transformExpr thenBranch
-      let seqElse ← match elseBranch with
-        | some e => transformExpr e >>= (pure ∘ some)
-        | none => pure none
-      return .IfThenElse seqCond seqThen seqElse
+      SequenceM.withInsideCondition do
+        let seqThen ← transformExpr thenBranch
+        let seqElse ← match elseBranch with
+          | some e => transformExpr e >>= (pure ∘ some)
+          | none => pure none
+        return .IfThenElse seqCond seqThen seqElse
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -160,19 +167,18 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
-      SequenceM.setInsideCondition
+      SequenceM.withInsideCondition do
+        let seqThen ← transformStmt thenBranch
+        let thenBlock := .Block seqThen none
 
-      let seqThen ← transformStmt thenBranch
-      let thenBlock := .Block seqThen none
+        let seqElse ← match elseBranch with
+          | some e =>
+              let se ← transformStmt e
+              pure (some (.Block se none))
+          | none => pure none
 
-      let seqElse ← match elseBranch with
-        | some e =>
-            let se ← transformStmt e
-            pure (some (.Block se none))
-        | none => pure none
-
-      SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
-      SequenceM.takePrependedStmts
+        SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
+        SequenceM.takePrependedStmts
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -191,6 +197,8 @@ def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
   | multiple => pure <| .Block multiple.reverse none
 
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
+  -- Reset insideCondition for each procedure to avoid cross-procedure contamination
+  modify fun s => { s with insideCondition := false }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody <- transformProcedureBody bodyExpr
