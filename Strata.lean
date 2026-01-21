@@ -15,8 +15,8 @@ import Strata.DL.SMT.SMT
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.Imperative
 
-/- Boogie -/
-import Strata.Languages.Boogie.StatementSemantics
+/- Strata Core -/
+import Strata.Languages.Core.StatementSemantics
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect

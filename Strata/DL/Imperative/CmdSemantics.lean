@@ -309,6 +309,12 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     ----
     EvalCmd δ σ (.assume _ e _) σ
 
+  /-- A cover, when encountered, is essentially a skip. -/
+  | eval_cover :
+    WellFormedSemanticEvalBool δ →
+    ----
+    EvalCmd δ σ (.cover _ e _) σ
+
 end section
 
 theorem InitStateDefCons

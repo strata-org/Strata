@@ -11,7 +11,7 @@ import Strata.Languages.C_Simp.C_Simp
 namespace Strata
 
 namespace C_Simp
--- (TODO) A bunch of this is just copied from Boogie (or copied with very minor changes)
+-- (TODO) A bunch of this is just copied from Strata Core  (or copied with very minor changes)
 -- What can we factor out to shared code (and where should we put it)?
 
 
@@ -77,7 +77,7 @@ def checkOpArg (arg : Arg) (name : QualifiedIdent) (argc : Nat) : TransM (Array 
 
 def translateCommaSep [Inhabited α] (f : Strata.Arg → TransM α) (arg : Strata.Arg) :
   TransM (Array α) := do
-  let .commaSepList _ args := arg
+  let .seq _ .comma args := arg
     | TransM.error s!"Expected commaSepList: {repr arg}"
   args.mapM f
 
@@ -338,7 +338,7 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   TransM (ListMap Expression.Ident LMonoTy) := do
   let bargs ← checkOpArg op q`C_Simp.mkBindings 1
   match bargs[0]! with
-  | .commaSepList _ args =>
+  | .seq _ .comma args =>
     let arr ← args.mapM (fun op => do
       let bargs ← checkOpArg op q`C_Simp.mkBinding 2
       let id ← translateIdent bargs[0]!
@@ -411,7 +411,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
 partial def translateBlock (bindings : TransBindings) (arg : Arg) :
   TransM (List Statement) := do
   let args ← checkOpArg arg q`C_Simp.block 1
-  let .seq _ stmts := args[0]!
+  let .seq _ .none stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
   let (a, _) ← stmts.foldlM (init := (#[], bindings)) fun (a, b) s => do
       let (s, b) ← translateStmt b s

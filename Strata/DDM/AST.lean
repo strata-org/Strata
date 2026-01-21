@@ -8,15 +8,18 @@ module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
+public import Lean.Data.Position
 public import Strata.DDM.AST.Datatype
 
 import Std.Data.HashMap
-import Strata.DDM.Util.Array
+import all Strata.DDM.Util.Array
+import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
 
 public section
 namespace Strata
+open Std (ToFormat Format format)
 
 abbrev DialectName := String
 
@@ -30,7 +33,7 @@ namespace QualifiedIdent
 def fullName (i : QualifiedIdent) : String := s!"{i.dialect}.{i.name}"
 
 instance : ToString QualifiedIdent where
-  toString := private fullName
+  toString := fullName
 
 section
 open _root_.Lean
@@ -141,6 +144,44 @@ termination_by d
 
 end TypeExprF
 
+/-- Separator format for sequence formatting -/
+inductive SepFormat where
+| none           -- No separator (original Seq)
+| comma          -- Comma separator (CommaSepBy)
+| space          -- Space separator (SpaceSepBy)
+| spacePrefix    -- Space before each element (SpacePrefixSepBy)
+deriving Inhabited, Repr, BEq
+
+namespace SepFormat
+
+def toString : SepFormat → String
+  | .none => "seq"
+  | .comma => "commaSepBy"
+  | .space => "spaceSepBy"
+  | .spacePrefix => "spacePrefixSepBy"
+
+def toIonName : SepFormat → String
+  | .none => "seq"
+  | .comma => "commaSepList"
+  | .space => "spaceSepList"
+  | .spacePrefix => "spacePrefixedList"
+
+def fromIonName? : String → Option SepFormat
+  | "seq" => some .none
+  | "commaSepList" => some .comma
+  | "spaceSepList" => some .space
+  | "spacePrefixedList" => some .spacePrefix
+  | _ => none
+
+theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
+  fromIonName? (toIonName sep) = some sep := by
+  cases sep <;> rfl
+
+instance : ToString SepFormat where
+  toString := SepFormat.toString
+
+end SepFormat
+
 mutual
 
 inductive ExprF (α : Type) : Type where
@@ -167,8 +208,7 @@ inductive ArgF (α : Type) : Type where
 | strlit (ann : α) (i : String)
 | bytes (ann : α) (a : ByteArray)
 | option (ann : α) (l : Option (ArgF α))
-| seq (ann : α) (l : Array (ArgF α))
-| commaSepList (ann : α) (l : Array (ArgF α))
+| seq (ann : α) (sep : SepFormat) (l : Array (ArgF α))
 deriving Inhabited, Repr
 
 end
@@ -192,8 +232,7 @@ def ArgF.ann {α : Type} : ArgF α → α
 | .bytes ann _ => ann
 | .strlit ann _ => ann
 | .option ann _ => ann
-| .seq ann _ => ann
-| .commaSepList ann _ => ann
+| .seq ann _ _ => ann
 
 end
 
@@ -234,7 +273,7 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving BEq, Inhabited, Repr
+deriving DecidableEq, Inhabited, Repr
 
 namespace SourceRange
 
@@ -242,7 +281,37 @@ def none : SourceRange := { start := 0, stop := 0 }
 
 def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
 
+instance : ToFormat SourceRange where
+ format fr := f!"{fr.start}-{fr.stop}"
+
 end SourceRange
+
+inductive Uri where
+  | file (path: String)
+  deriving DecidableEq, Repr, Inhabited
+
+instance : ToFormat Uri where
+ format fr := match fr with | .file path => path
+
+structure FileRange where
+  file: Uri
+  range: Strata.SourceRange
+  deriving DecidableEq, Repr, Inhabited
+
+instance : ToFormat FileRange where
+ format fr := f!"{fr.file}:{fr.range}"
+
+structure File2dRange where
+  file: Uri
+  start: Lean.Position
+  ending: Lean.Position
+  deriving DecidableEq, Repr
+
+instance : ToFormat File2dRange where
+ format fr :=
+    let baseName := match fr.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    f!"{baseName}({fr.start.line}, {fr.start.column})-({fr.ending.line}, {fr.ending.column})"
 
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange
@@ -289,10 +358,8 @@ private def ArgF.beq {α} [BEq α] (a1 a2 : ArgF α) : Bool :=
     | .none, .none => true
     | .some v1, .some v2 => ArgF.beq v1 v2
     | _, _ => false
-  | .seq a1 v1, .seq a2 v2 =>
-    a1 == a2 && ArgF.array_beq v1 v2
-  | .commaSepList a1 v1, .commaSepList a2 v2 =>
-    a1 == a2 && ArgF.array_beq v1 v2
+  | .seq a1 sep1 v1, .seq a2 sep2 v2 =>
+    a1 == a2 && sep1 == sep2 && ArgF.array_beq v1 v2
   | _, _ => false
 termination_by sizeOf a1
 
@@ -571,11 +638,13 @@ structure DebruijnIndex (n : Nat) where
   isLt : val < n
 deriving Repr
 
-
 namespace DebruijnIndex
 
 def toLevel {n} : DebruijnIndex n → Fin n
 | ⟨v, lt⟩ => ⟨n - (v+1), by omega⟩
+
+protected def ofNat {n : Nat} [NeZero n] (a : Nat) : DebruijnIndex n :=
+  ⟨a % n, Nat.mod_lt _ (Nat.pos_of_neZero n)⟩
 
 end DebruijnIndex
 
@@ -1549,8 +1618,7 @@ partial def foldOverArgBindingSpecs {α β}
   | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .bytes .. | .strlit .. => init
   | .option _ none => init
   | .option _ (some a) => foldOverArgBindingSpecs m f init a
-  | .seq _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
-  | .commaSepList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
+  | .seq _ _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
 
 /--
 Invoke a function `f` over each of the declaration specifications for an operator.

@@ -7,15 +7,20 @@
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
 import Strata.DDM.Ion
+import Strata.DDM.Util.ByteArray
 import Strata.Util.IO
 
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Python.Python
-import Strata.Transform.BoogieTransform
+import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.LaurelToCoreTranslator
+
 def exitFailure {α} (message : String) : IO α := do
-  IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
+  IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
 
 namespace Strata
@@ -105,7 +110,7 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
   let bytes ← Strata.Util.readBinInputSource path.toString
   let displayPath : System.FilePath := Strata.Util.displayName path.toString
-  if bytes.startsWith Ion.binaryVersionMarker then
+  if Ion.isIonFile bytes then
     readStrataIon fm displayPath bytes
   else
     readStrataText fm displayPath bytes
@@ -172,21 +177,21 @@ def diffCommand : Command where
 
 def readPythonStrata (path : String) : IO Strata.Program := do
   let bytes ← Strata.Util.readBinInputSource path
-  if ! bytes.startsWith Ion.binaryVersionMarker then
+  if ! Ion.isIonFile bytes then
     exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  match Strata.Program.fileFromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
   | .ok p => pure p
   | .error msg => exitFailure msg
 
 def pyTranslateCommand : Command where
   name := "pyTranslate"
   args := [ "file" ]
-  help := "Translate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
+  help := "Translate a Strata Python Ion file to Strata Core. Write results to stdout."
   callback := fun _ v => do
     let pgm ← readPythonStrata v[0]
-    let preludePgm := Strata.Python.Internal.Boogie.prelude
-    let bpgm := Strata.pythonToBoogie Strata.Python.Internal.signatures pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let preludePgm := Strata.Python.Internal.Core.prelude
+    let bpgm := Strata.pythonToCore Strata.Python.Internal.signatures pgm
+    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
 
 def pyAnalyzeCommand : Command where
@@ -198,13 +203,13 @@ def pyAnalyzeCommand : Command where
     let pgm ← readPythonStrata v[0]
     if verbose then
       IO.print pgm
-    let preludePgm := Strata.Python.Internal.Boogie.prelude
-    let bpgm := Strata.pythonToBoogie Strata.Python.Internal.signatures pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let preludePgm := Strata.Python.Internal.Core.prelude
+    let bpgm := Strata.pythonToCore Strata.Python.Internal.signatures pgm
+    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    match Boogie.Transform.runProgram
-          (Boogie.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
+    match Core.Transform.runProgram
+          (Core.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
           newPgm .emp with
     | ⟨.error e, _⟩ => panic! e
     | ⟨.ok newPgm, _⟩ =>
@@ -212,9 +217,13 @@ def pyAnalyzeCommand : Command where
         IO.println "Inlined: "
         IO.print newPgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
-      let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                          (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
-                                                    (moreFns := Strata.Python.ReFactory))
+      let verboseMode := VerboseMode.ofBool verbose
+      let vcResults ← IO.FS.withTempDir (fun tempDir =>
+          EIO.toIO
+            (fun f => IO.Error.userError (toString f))
+            (Core.verify solverName newPgm tempDir
+              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
+                                      (moreFns := Strata.Python.ReFactory)))
       let mut s := ""
       for vcResult in vcResults do
         s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
@@ -237,6 +246,46 @@ def javaGenCommand : Command where
     | .program _ =>
       exitFailure "Expected a dialect file, not a program file."
 
+def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
+  match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
+  | .ok files => pure files
+  | .error msg => exitFailure msg
+
+def laurelAnalyzeCommand : Command where
+  name := "laurelAnalyze"
+  args := []
+  help := "Analyze a Laurel Ion program from stdin. Write diagnostics to stdout."
+  callback := fun _ _ => do
+    -- Read bytes from stdin
+    let stdinBytes ← (← IO.getStdin).readBinToEnd
+
+    let strataFiles ← deserializeIonToLaurelFiles stdinBytes
+
+    let mut combinedProgram : Laurel.Program := {
+      staticProcedures := []
+      staticFields := []
+      types := []
+    }
+
+    for strataFile in strataFiles do
+
+      let transResult := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
+      match transResult with
+      | .error transErrors => exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
+      | .ok laurelProgram =>
+
+        combinedProgram := {
+          staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
+          types := combinedProgram.types ++ laurelProgram.types
+        }
+
+    let diagnostics ← Laurel.verifyToDiagnosticModels "z3" combinedProgram
+
+    IO.println s!"==== DIAGNOSTICS ===="
+    for diag in diagnostics do
+      IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
+
 def commandList : List Command := [
       javaGenCommand,
       checkCommand,
@@ -245,6 +294,7 @@ def commandList : List Command := [
       diffCommand,
       pyAnalyzeCommand,
       pyTranslateCommand,
+      laurelAnalyzeCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=

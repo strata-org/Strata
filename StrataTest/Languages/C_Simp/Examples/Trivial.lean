@@ -30,7 +30,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println TrivialPgm.format.render
+#eval IO.println TrivialPgm
 
 /--
 info: function trivial {
@@ -45,11 +45,12 @@ Errors: #[]
 #eval Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (TrivialPgm.commands))
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
 Label: post
+Property: assert
 Assumptions:
 
 
@@ -59,7 +60,8 @@ Proof Obligation:
 ---
 info:
 Obligation: post
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" TrivialPgm

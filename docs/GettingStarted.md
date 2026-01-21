@@ -6,9 +6,9 @@ analyses. In this [example](../StrataTest/DL/Imperative), we show
 some of Strata's current capabilities by defining a simple Strata
 dialect called `ArithPrograms` and an associated deductive verifier
 based on the existing [Imperative](../Strata/DL/Imperative)
-dialect in Strata's Dialect Library ([DL](../Strata/DL)). 
-`Imperative` provides basic commands and statements, is 
-parameterizable by expressions, and has a parameterizable partial 
+dialect in Strata's Dialect Library ([DL](../Strata/DL)).
+`Imperative` provides basic commands and statements, is
+parameterizable by expressions, and has a parameterizable partial
 evaluator that generates verification conditions.
 
 ### 1. Design the concrete syntax
@@ -272,8 +272,6 @@ assert [double_x_lemma]: (2 * x == x + x);
 #end
 
 /--
-info: Wrote problem to vcs/double_x_lemma.smt2.
----
 info:
 Obligation: double_x_lemma
 Result: verified
@@ -292,15 +290,15 @@ some next steps to explore:
 
 - **Study Existing Dialects**: Look at the implementation of the
   `Imperative` and `Lambda` dialects, and understand how they are used
-  as building blocks for the existing `Boogie` and `C_Simp` dialects.
+  as building blocks for the existing `Core` and `C_Simp` dialects.
 
 - **Add a New Dialect**: Create a new dialect that captures a language
   construct that you want to formalize and reason about. Perhaps you
   want to *transform* your new dialect into an existing Strata dialect
   to leverage any analysis available for the latter. You may also want
   to verify any such dialect transformations, i.e., prove that they
-  are semantics-preserving. One such example in Strata is for call 
-  eliminiation in Boogie, [here](../Strata/Transform/).
+  are semantics-preserving. One such example in Strata is for call
+  eliminiation in Strata Core, [here](../Strata/Transform/).
 
 - **Create a Language Frontend**: Develop a parser to translate the
   concrete syntax of your language of interest to Strata.

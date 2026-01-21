@@ -286,7 +286,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
         ]
       ]
     ]
-  | .havoc _ _ => panic! "Unimplemented"
+  | .havoc _ _ | .cover _ _ _ => panic! "Unimplemented"
 
 mutual
 def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=

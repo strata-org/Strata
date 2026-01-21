@@ -5,7 +5,6 @@
 -/
 module
 
-public section
 namespace Nat
 
 /--
@@ -18,4 +17,3 @@ A fold over natural numbers similar to `Nat.fold` but with an optional starting 
     pure init
 
 end Nat
-end

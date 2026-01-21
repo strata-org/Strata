@@ -17,6 +17,16 @@ open Lean.Elab.Command
 
 open Ion
 
+namespace Array
+
+def mapM_off {α β m} [Monad m] (as : Array α) (f : α → m β)
+      (start : Nat := 0) (stop := as.size)
+      (init : Array β := Array.mkEmpty ((min as.size stop) - start)) : m (Array β) :=
+  as.foldlM (init := init) (start := start) (stop := stop)
+            fun r e => r.push <$> f e
+
+end Array
+
 public section
 namespace Ion.Ion
 
@@ -284,7 +294,7 @@ private def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromI
       throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a => pure a
   let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
-    | throw s!"Expected single Ion value."
+    | throw s!"Expected single Ion value, but got {a.size} values."
   let entries := a[0]
   let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
     | throw s!"Expected symbol table and value in dialect."
@@ -505,21 +515,19 @@ private protected def ArgF.toIon {α} [ToIon α] (refs : SymbolIdCache) (arg : A
       | some a =>
         args := args.push (← a.toIon refs )
       return .sexp args
-    | .seq ann l => do
-      let args : Array (Ion _) := #[ ionSymbol! "seq", ← toIon ann ]
-      let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
-      return .sexp args
-    | .commaSepList ann l => do
-      let args : Array (Ion _) := #[ ionSymbol! "commaSepList", ← toIon ann ]
+    | .seq ann sep l => do
+      let annIon ← toIon ann
+      let sepName := sep.toIonName
+      let symb := if sepName == "seq" then ionSymbol! "seq"
+                  else if sepName == "commaSepList" then ionSymbol! "commaSepList"
+                  else if sepName == "spaceSepList" then ionSymbol! "spaceSepList"
+                  else ionSymbol! "spacePrefixedList"
+      let args : Array (Ion _) := #[ symb, annIon ]
       let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
       return .sexp args
   termination_by sizeOf arg
   decreasing_by
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
+    all_goals decreasing_tactic
 
 end
 
@@ -617,32 +625,30 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
       | 3 => some <$> Strata.ArgF.fromIon sexp[2]
       | _ => throw "Option expects at most one value."
     return .option ann v
-  | "seq" => do
-    let ⟨p⟩ ← .checkArgMin "seq" sexp 2
-    let ann ← fromIon sexp[1]
-    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-      Strata.ArgF.fromIon u
-    return .seq ann args
-  | "commaSepList" => do
-    let ⟨p⟩ ← .checkArgMin "seq" sexp 2
-    let ann ← fromIon sexp[1]
-    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-      Strata.ArgF.fromIon u
-    return .commaSepList ann args
   | str =>
-    throw s!"Unexpected identifier {str}"
+    match SepFormat.fromIonName? str with
+    | some sep => do
+      let ⟨p⟩ ← .checkArgMin str sexp 2
+      let ann ← fromIon sexp[1]
+      let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+        Strata.ArgF.fromIon u
+      return .seq ann sep args
+    | none =>
+      throw s!"Unexpected identifier {str}"
 termination_by v
 decreasing_by
-  · have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
+  all_goals
+    first
+    | have h : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
+      have : sizeOf sexp < sizeOf v := sexpP.2
+      omega
+    | have h : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
+      have : sizeOf sexp < sizeOf v := sexpP.2
+      omega
+    | have h : sizeOf u < sizeOf sexp := by decreasing_tactic
+      have : sizeOf sexp < sizeOf v := sexpP.2
+      omega
+    | decreasing_tactic
 
 end
 
@@ -1405,6 +1411,11 @@ private instance : FromIon Dialect where
 
 end Dialect
 
+structure StrataFile where
+  filePath : String
+  program : Program
+  deriving Inhabited
+
 namespace Program
 
 private instance : CachedToIon Program where
@@ -1430,7 +1441,7 @@ def fromIonFragment (f : Ion.Fragment)
     commands := ← fromIonFragmentCommands f
   }
 
-def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
+def fileFromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
   let (hdr, frag) ←
     match Strata.Ion.Header.parse bytes with
     | .error msg =>
@@ -1445,5 +1456,60 @@ def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) 
       throw s!"{name} program found when {dialect} expected."
     fromIonFragment frag dialects dialect
 
+def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (List StrataFile) := do
+  let ctx ←
+    match Ion.deserialize bytes with
+    | .error (off, msg) => throw s!"Error reading Ion: {msg} (offset = {off})"
+    | .ok a =>
+      if h : a.size = 1 then
+        pure a[0]
+      else
+        throw s!"Expected single Ion value"
+
+  let .isTrue p := inferInstanceAs (Decidable (ctx.size = 2))
+    | throw "Expected symbol table and value"
+
+  let symbols ←
+    match SymbolTable.ofLocalSymbolTable ctx[0] with
+    | .error (p, msg) => throw s!"Error at {p}: {msg}"
+    | .ok symbols => pure symbols
+
+  let ionCtx : FromIonContext := ⟨symbols⟩
+
+  let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
+
+  let tbl := symbols
+  let filePathId := tbl.symbolId! "filePath"
+  let programId := tbl.symbolId! "program"
+
+  filesList.toList.mapM fun fileEntry => do
+    let fields ← FromIonM.asStruct0 fileEntry ionCtx
+
+    let some (_, filePathData) := fields.find? (·.fst == filePathId)
+      | throw "Could not find 'filePath' field"
+
+    let some (_, programData) := fields.find? (·.fst == programId)
+      | throw "Could not find 'program' field"
+
+    let filePath ← FromIonM.asString "filePath" filePathData ionCtx
+
+    let ⟨programValues, _⟩ ← FromIonM.asList programData ionCtx
+    let .isTrue ne := inferInstanceAs (Decidable (programValues.size ≥ 1))
+      | throw "Expected program header"
+
+    let hdr ← Ion.Header.fromIon programValues[0] ionCtx
+    let dialect ← match hdr with
+      | .program name => pure name
+      | .dialect _ => throw "Expected program, not dialect"
+
+    let frag : Ion.Fragment := {
+      symbols := symbols,
+      values := programValues,
+      offset := 1
+    }
+
+    let program ← fromIonFragment frag dialects dialect
+
+    pure { filePath := filePath, program := program }
+
 end Strata.Program
-end
