@@ -89,7 +89,7 @@ def translateExpr (expr : StmtExpr) : Core.Expression.Expr :=
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).get!
-  s!"({fileRange.start.column},{fileRange.start.line})"
+  s!"({fileRange.range.start})"
 
 /--
 Translate Laurel StmtExpr to Core Statements
@@ -222,8 +222,12 @@ def verifyToVcResults (smtsolver : String) (program : Program)
     EIO.toIO (fun f => IO.Error.userError (toString f))
       (Core.verify smtsolver coreProgram tempDir options))
 
-def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
+def verifyToDiagnostics (smtsolver : String) (files: Map Strata.Uri Lean.FileMap) (program : Program): IO (Array Diagnostic) := do
   let results <- verifyToVcResults smtsolver program
-  return results.filterMap toDiagnostic
+  return results.filterMap (toDiagnostic files)
+
+def verifyToDiagnosticModels (smtsolver : String) (program : Program): IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults smtsolver program
+  return results.filterMap toDiagnosticModel
 
 end Laurel

@@ -10,6 +10,7 @@ import StrataTest.Languages.Laurel.TestExamples
 open StrataTest.Util
 open Strata
 
+namespace Strata
 namespace Laurel
 
 def program: String := r"
