@@ -32,6 +32,8 @@ instance : ToString CondType where
   | .Requires => "Requires"
   | .Ensures => "Ensures"
 
+private abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
+
 /--
 Create proof obligations and path conditions originating from
 a `.call` statement.
@@ -39,7 +41,7 @@ a `.call` statement.
 private def callConditions (proc : Procedure)
                    (condType : CondType)
                    (conditions : ListMap String Procedure.Check)
-                   (subst :  Map (Lambda.IdentT Lambda.LMonoTy Visibility) Expression.Expr) :
+                   (subst :  VarSubst) :
                    ListMap String Procedure.Check :=
   let names := List.map
                (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
@@ -57,8 +59,7 @@ private def callConditions (proc : Procedure)
 Create substitution mapping from formal parameters to actual arguments.
 -/
 private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env)
-    (old_var_subst : SubstMap) :
-    List ((Lambda.IdentT Lambda.LMonoTy Visibility) × Expression.Expr) :=
+    (old_var_subst : SubstMap) : VarSubst :=
   let args' := args.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a))
   let formal_tys := proc.header.inputs.keys.map
                       (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
@@ -78,8 +79,7 @@ Return mapping: `[("ret", fresh_var)]`
 LHS mapping: `[("x", fresh_var)]`
 -/
 private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
-    (List ((Lambda.IdentT Lambda.LMonoTy Visibility) × Expression.Expr) ×
-    List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr) × Env) :=
+    VarSubst × VarSubst × Env :=
   let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
@@ -90,22 +90,26 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   (return_lhs_subst, lhs_post_subst, E')
 
 /--
-Create fresh variables for modified globals and their post-call mapping.
+Create mapping for all globals: fresh variables for modified globals,
+current values for unmodified globals.
 -/
-private def mkFreshGlobalVars (proc : Procedure) (E : Env) :
-  (List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr) × Env) :=
+private def mkGlobalSubst (proc : Procedure) (current_globals : VarSubst)
+    (E : Env) : VarSubst × Env :=
+  -- Create fresh variables for modified globals
   let modifies_tys := proc.spec.modifies.map
       (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
   let modifies_typed := proc.spec.modifies.zip modifies_tys
   let (globals_fvars, E') := E.genFVars modifies_typed
-  let globals_post_subst := List.zip modifies_typed globals_fvars
-  (globals_post_subst, E')
+  let modified_subst := List.zip modifies_typed globals_fvars
+  -- Get current values for unmodified globals
+  let unmodified_subst := current_globals.filter (fun ((id, _), _) =>
+    !proc.spec.modifies.contains id)
+  (modified_subst ++ unmodified_subst, E')
 
 /--
 Get current values of global variables for old expression substitution.
 -/
-private def getCurrentGlobals (E : Env) :
-  List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr) :=
+private def getCurrentGlobals (E : Env) : VarSubst :=
   E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
 
 /--
@@ -122,8 +126,9 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let current_globals := getCurrentGlobals E
     -- (Post-call) Create return variable mappings and fresh LHS variables.
     let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
-    -- (Post-call) Create fresh variables for modified globals.
-    let (globals_post_subst, E) := mkFreshGlobalVars proc E
+    -- (Post-call) Create global variable mapping: fresh vars for modified,
+    -- current values for unmodified.
+    let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
 
     -- Create pre-call substitution for preconditions.
     let precond_subst := formal_arg_subst ++ current_globals
