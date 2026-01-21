@@ -14,22 +14,27 @@ namespace Laurel
 
 def program := r"
 composite Container {
-  var value: int // var indicates mutable field
+  var intValue: int // var indicates mutable field
+  var boolValue: bool
 }
 
 procedure foo(c: Container, d: Container) returns (r: int)
   requires c != d
 {
-  var x: int := c#value;
-  var initialDValue: int := d#value;
-  d#value := d#value + 1;
-  c#value := c#value + 1;
-  assert x + 1 == c#value; // pass
-  assert initialDValue + 1 == d#value;
+  var x: int := c#intValue;
+  var initialDValue: int := d#intValue;
+  d#intValue := d#intValue + 1;
+  c#intValue := c#intValue + 1;
+  assert x + 1 == c#intValue; // pass
+  assert initialDValue + 1 == d#intValue;
 
   var e: Container := d;
-  e#value := e#value + 1;
-  assert e#value == d#value;
+  e#intValue := e#intValue + 1;
+  assert e#intValue == d#intValue;
+}
+
+procedure useBool(c: Container) returns (r: bool) {
+  r := c#boolValue;
 }
 
 // The following two need support for calling procedures in an expression context.

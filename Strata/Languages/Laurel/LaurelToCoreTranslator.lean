@@ -34,7 +34,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TBool => LMonoTy.bool
   | .TVoid => LMonoTy.bool
   | .THeap => .tcons "Heap" []
-  | .TField => .tcons "Field" [LMonoTy.int]  -- For now, all fields hold int
+  | .TField => panic "TField should not be translated directly - field constants are polymorphic"
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
 
@@ -45,27 +45,39 @@ def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   | some (_, ty) => translateType ty
   | none => panic s!"could not find variable {name} in environment"
 
+def isConstant (constants : List Constant) (name : Identifier) : Bool :=
+  constants.any (fun c => c.name == name)
+
 /--
 Translate Laurel StmtExpr to Core Expression
 -/
-def translateExpr (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
+def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
   match h: expr with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
-      let ident := Core.CoreIdent.locl name
-      .fvar () ident (some (lookupType env name))
+      -- Check if this is a constant (field constant) or a variable
+      if isConstant constants name then
+        -- Constants are global identifiers (functions with no arguments)
+        let ident := Core.CoreIdent.glob name
+        -- Field constants are declared as functions () → Field T
+        -- We just reference them as operations without application
+        .op () ident none
+      else
+        -- Regular variables are local identifiers
+        let ident := Core.CoreIdent.locl name
+        .fvar () ident (some (lookupType env name))
   | .PrimitiveOp op [e] =>
     match op with
-    | .Not => .app () boolNotOp (translateExpr env e)
-    | .Neg => .app () intNegOp (translateExpr env e)
+    | .Not => .app () boolNotOp (translateExpr constants env e)
+    | .Neg => .app () intNegOp (translateExpr constants env e)
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let binOp (bop : Core.Expression.Expr): Core.Expression.Expr :=
-      LExpr.mkApp () bop [translateExpr env e1, translateExpr env e2]
+      LExpr.mkApp () bop [translateExpr constants env e1, translateExpr constants env e2]
     match op with
-    | .Eq => .eq () (translateExpr env e1) (translateExpr env e2)
-    | .Neq => .app () boolNotOp (.eq () (translateExpr env e1) (translateExpr env e2))
+    | .Eq => .eq () (translateExpr constants env e1) (translateExpr constants env e2)
+    | .Neq => .app () boolNotOp (.eq () (translateExpr constants env e1) (translateExpr constants env e2))
     | .And => binOp boolAndOp
     | .Or => binOp boolOrOp
     | .Add => binOp intAddOp
@@ -81,18 +93,18 @@ def translateExpr (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
   | .PrimitiveOp op args =>
     panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
   | .IfThenElse cond thenBranch elseBranch =>
-      let bcond := translateExpr env cond
-      let bthen := translateExpr env thenBranch
+      let bcond := translateExpr constants env cond
+      let bthen := translateExpr constants env thenBranch
       let belse := match elseBranch with
-                  | some e => translateExpr env e
+                  | some e => translateExpr constants env e
                   | none => .const () (.intConst 0)
       .ite () bcond bthen belse
-  | .Assign _ value _ => translateExpr env value
+  | .Assign _ value _ => translateExpr constants env value
   | .StaticCall name args =>
       let ident := Core.CoreIdent.glob name
       let fnOp := .op () ident none
-      args.foldl (fun acc arg => .app () acc (translateExpr env arg)) fnOp
-  | .Block [single] _ => translateExpr env single
+      args.foldl (fun acc arg => .app () acc (translateExpr constants env arg)) fnOp
+  | .Block [single] _ => translateExpr constants env single
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   decreasing_by
   all_goals (simp_wf; try omega)
@@ -104,19 +116,19 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
 
 /--
 Translate Laurel StmtExpr to Core Statements
-Takes the type environment and output parameter names
+Takes the constants list, type environment and output parameter names
 -/
-def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtExpr) : TypeEnv × List Core.Statement :=
+def translateStmt (constants : List Constant) (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtExpr) : TypeEnv × List Core.Statement :=
   match stmt with
   | @StmtExpr.Assert cond md =>
-      let boogieExpr := translateExpr env cond
+      let boogieExpr := translateExpr constants env cond
       (env, [Core.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md])
   | @StmtExpr.Assume cond md =>
-      let boogieExpr := translateExpr env cond
+      let boogieExpr := translateExpr constants env cond
       (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md])
   | .Block stmts _ =>
       let (env', stmtsList) := stmts.foldl (fun (e, acc) s =>
-        let (e', ss) := translateStmt e outputParams s
+        let (e', ss) := translateStmt constants e outputParams s
         (e', acc ++ ss)) (env, [])
       (env', stmtsList)
   | .LocalVariable name ty initializer =>
@@ -130,11 +142,11 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
           -- Heap functions should be translated as expressions, not call statements
           if callee == "heapRead" || callee == "heapStore" then
             -- Translate as expression (function application)
-            let boogieExpr := translateExpr env (.StaticCall callee args)
+            let boogieExpr := translateExpr constants env (.StaticCall callee args)
             (env', [Core.Statement.init ident boogieType boogieExpr])
           else
             -- Translate as: var name; call name := callee(args)
-            let boogieArgs := args.map (translateExpr env)
+            let boogieArgs := args.map (translateExpr constants env)
             let defaultExpr := match ty with
                               | .TInt => .const () (.intConst 0)
                               | .TBool => .const () (.boolConst false)
@@ -143,7 +155,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
       | some initExpr =>
-          let boogieExpr := translateExpr env initExpr
+          let boogieExpr := translateExpr constants env initExpr
           (env', [Core.Statement.init ident boogieType boogieExpr])
       | none =>
           let defaultExpr := match ty with
@@ -155,14 +167,14 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       match target with
       | .Identifier name =>
           let ident := Core.CoreIdent.locl name
-          let boogieExpr := translateExpr env value
+          let boogieExpr := translateExpr constants env value
           (env, [Core.Statement.set ident boogieExpr])
       | _ => (env, [])
   | .IfThenElse cond thenBranch elseBranch =>
-      let bcond := translateExpr env cond
-      let (_, bthen) := translateStmt env outputParams thenBranch
+      let bcond := translateExpr constants env cond
+      let (_, bthen) := translateStmt constants env outputParams thenBranch
       let belse := match elseBranch with
-                  | some e => (translateStmt env outputParams e).2
+                  | some e => (translateStmt constants env outputParams e).2
                   | none => []
       (env, [Imperative.Stmt.ite bcond bthen belse .empty])
   | .StaticCall name args =>
@@ -172,13 +184,13 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
         -- This shouldn't happen in well-formed programs, but handle gracefully
         (env, [])
       else
-        let boogieArgs := args.map (translateExpr env)
+        let boogieArgs := args.map (translateExpr constants env)
         (env, [Core.Statement.call [] name boogieArgs])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           let ident := Core.CoreIdent.locl outParam.name
-          let boogieExpr := translateExpr env value
+          let boogieExpr := translateExpr constants env value
           let assignStmt := Core.Statement.set ident boogieExpr
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           (env, [assignStmt, noFallThrough])
@@ -222,13 +234,13 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
     match proc.precondition with
     | .LiteralBool true => []
     | precond =>
-        let check : Core.Procedure.Check := { expr := translateExpr initEnv precond }
+        let check : Core.Procedure.Check := { expr := translateExpr constants initEnv precond }
         [("requires", check)]
   -- Translate postcondition for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
     | .Opaque postcond _ _ _ =>
-        let check : Core.Procedure.Check := { expr := translateExpr initEnv postcond }
+        let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond }
         [("ensures", check)]
     | _ => []
   let spec : Core.Procedure.Spec := {
@@ -248,8 +260,8 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
     else []
   let body : List Core.Statement :=
     match proc.body with
-    | .Transparent bodyExpr => heapInit ++ (translateStmt initEnv proc.outputs bodyExpr).2
-    | .Opaque _postcond (some impl) _ _ => heapInit ++ (translateStmt initEnv proc.outputs impl).2
+    | .Transparent bodyExpr => heapInit ++ (translateStmt constants initEnv proc.outputs bodyExpr).2
+    | .Opaque _postcond (some impl) _ _ => heapInit ++ (translateStmt constants initEnv proc.outputs impl).2
     | _ => []
   {
     header := header
@@ -345,14 +357,25 @@ def readUpdateDiffObjAxiom : Core.Decl :=
   .ax { name := "heapRead_heapStore_diff_obj", e := body }
 
 def translateConstant (c : Constant) : Core.Decl :=
-  let ty := translateType c.type
-  .func {
-    name := Core.CoreIdent.glob c.name
-    typeArgs := []
-    inputs := []
-    output := ty
-    body := none
-  }
+  match c.type with
+  | .TField =>
+      -- Field constants are polymorphic: () → Field T
+      .func {
+        name := Core.CoreIdent.glob c.name
+        typeArgs := ["T"]
+        inputs := []
+        output := .tcons "Field" [.ftvar "T"]
+        body := none
+      }
+  | _ =>
+      let ty := translateType c.type
+      .func {
+        name := Core.CoreIdent.glob c.name
+        typeArgs := []
+        inputs := []
+        output := ty
+        body := none
+      }
 
 /--
 Check if a StmtExpr is a pure expression (can be used as a Core function body).
@@ -390,14 +413,14 @@ def canBeBoogieFunction (proc : Procedure) : Bool :=
 /--
 Translate a Laurel Procedure to a Core Function (when applicable)
 -/
-def translateProcedureToFunction (proc : Procedure) : Core.Decl :=
+def translateProcedureToFunction (constants : List Constant) (proc : Procedure) : Core.Decl :=
   let inputs := proc.inputs.map translateParameterToCore
   let outputTy := match proc.outputs.head? with
     | some p => translateType p.type
     | none => LMonoTy.int
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type))
   let body := match proc.body with
-    | .Transparent bodyExpr => some (translateExpr initEnv bodyExpr)
+    | .Transparent bodyExpr => some (translateExpr constants initEnv bodyExpr)
     | _ => none
   .func {
     name := Core.CoreIdent.glob proc.name
@@ -417,7 +440,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) Core.Program 
   let (funcProcs, procProcs) := heapProgram.staticProcedures.partition canBeBoogieFunction
   let procedures := procProcs.map (translateProcedure heapProgram.constants)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
-  let laurelFuncDecls := funcProcs.map translateProcedureToFunction
+  let laurelFuncDecls := funcProcs.map (translateProcedureToFunction heapProgram.constants)
   let constDecls := heapProgram.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
   let funcDecls := [readFunction, updateFunction]
