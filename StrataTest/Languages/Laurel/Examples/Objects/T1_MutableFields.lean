@@ -42,6 +42,7 @@ procedure foo(c: Container, d: Container) returns (r: int)
 //}
 "
 
+#guard_msgs(drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile
 
 /-

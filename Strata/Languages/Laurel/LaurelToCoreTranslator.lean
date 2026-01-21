@@ -201,7 +201,12 @@ def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :
 Translate Laurel Procedure to Core Procedure
 -/
 def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Procedure :=
-  let inputPairs := proc.inputs.map translateParameterToCore
+  -- Check if this procedure has a heap parameter (first input named "heap")
+  let hasHeapParam := proc.inputs.any (fun p => p.name == "heap" && p.type == .THeap)
+  -- Rename heap input to heap_in if present (Core doesn't allow modifying parameters)
+  let renamedInputs := proc.inputs.map (fun p =>
+    if p.name == "heap" && p.type == .THeap then { p with name := "heap_in" } else p)
+  let inputPairs := renamedInputs.map translateParameterToCore
   let inputs := inputPairs
   let header : Core.Procedure.Header := {
     name := proc.name
@@ -231,10 +236,20 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
     preconditions := preconditions
     postconditions := postconditions
   }
+  -- If we have a heap parameter, add initialization: var heap := heap_in
+  -- This is needed because Core doesn't allow modifying parameter variables
+  let heapInit : List Core.Statement :=
+    if hasHeapParam then
+      let heapTy := LMonoTy.tcons "Heap" []
+      let heapType := LTy.forAll [] heapTy
+      let heapIdent := Core.CoreIdent.locl "heap"
+      let heapInExpr := LExpr.fvar () (Core.CoreIdent.locl "heap_in") (some heapTy)
+      [Core.Statement.init heapIdent heapType heapInExpr]
+    else []
   let body : List Core.Statement :=
     match proc.body with
-    | .Transparent bodyExpr => (translateStmt initEnv proc.outputs bodyExpr).2
-    | .Opaque _postcond (some impl) _ _ => (translateStmt initEnv proc.outputs impl).2
+    | .Transparent bodyExpr => heapInit ++ (translateStmt initEnv proc.outputs bodyExpr).2
+    | .Opaque _postcond (some impl) _ _ => heapInit ++ (translateStmt initEnv proc.outputs impl).2
     | _ => []
   {
     header := header
