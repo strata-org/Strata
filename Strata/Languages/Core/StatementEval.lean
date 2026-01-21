@@ -39,10 +39,9 @@ Create proof obligations and path conditions originating from
 a `.call` statement.
 -/
 private def callConditions (proc : Procedure)
-                   (condType : CondType)
-                   (conditions : ListMap String Procedure.Check)
-                   (subst :  VarSubst) :
-                   ListMap String Procedure.Check :=
+    (condType : CondType) (conditions : ListMap String Procedure.Check)
+    (subst :  VarSubst) :
+    ListMap String Procedure.Check :=
   let names := List.map
                (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
                conditions.keys
@@ -50,7 +49,7 @@ private def callConditions (proc : Procedure)
                 (fun p =>
                   List.foldl
                     (fun c (x, v) =>
-                      { c with expr := LExpr.substFvar c.expr x.fst v })
+                      { c with expr := (LExpr.substFvar c.expr x.fst v) })
                     p subst)
                 conditions.values
   List.zip names exprs
@@ -134,6 +133,8 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let precond_subst := formal_arg_subst ++ current_globals
     -- Generate precondition proof obligations.
     let preconditions := callConditions proc .Requires proc.spec.preconditions precond_subst
+    -- It's safe to evaluate the preconditions in the current environment
+    -- (pre-call context).
     let preconditions := preconditions.map
         (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
