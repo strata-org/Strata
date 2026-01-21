@@ -295,7 +295,7 @@ macro_rules
 syntax "split_contra_case" ident : tactic
 macro_rules
   | `(tactic|split_contra_case $t) =>
-  `(tactic| split_contra $t:ident; cases $t:ident)
+  `(tactic| split at $t:ident <;> (try contradiction); cases $t:ident)
 
 /--
 If a program typechecks successfully, then every identifier in the list of
