@@ -43,7 +43,7 @@ abbrev TypeEnv := List (Identifier × HighType)
 def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
   | some (_, ty) => translateType ty
-  | none => LMonoTy.int  -- fallback
+  | none => panic s!"could not find variable {name} in environment"
 
 /--
 Translate Laurel StmtExpr to Core Expression
@@ -92,8 +92,6 @@ def translateExpr (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
       let ident := Core.CoreIdent.glob name
       let fnOp := .op () ident none
       args.foldl (fun acc arg => .app () acc (translateExpr env arg)) fnOp
-  | .ReferenceEquals e1 e2 =>
-      .eq () (translateExpr env e1) (translateExpr env e2)
   | .Block [single] _ => translateExpr env single
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   decreasing_by
@@ -203,12 +201,7 @@ def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :
 Translate Laurel Procedure to Core Procedure
 -/
 def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Procedure :=
-  -- Check if this procedure has a heap parameter (first input named "heap")
-  let hasHeapParam := proc.inputs.any (fun p => p.name == "heap" && p.type == .THeap)
-  -- Rename heap input to heap_in if present
-  let renamedInputs := proc.inputs.map (fun p =>
-    if p.name == "heap" && p.type == .THeap then { p with name := "heap_in" } else p)
-  let inputPairs := renamedInputs.map translateParameterToCore
+  let inputPairs := proc.inputs.map translateParameterToCore
   let inputs := inputPairs
   let header : Core.Procedure.Header := {
     name := proc.name
@@ -238,19 +231,10 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
     preconditions := preconditions
     postconditions := postconditions
   }
-  -- If we have a heap parameter, add initialization: var heap := heap_in
-  let heapInit : List Core.Statement :=
-    if hasHeapParam then
-      let heapTy := LMonoTy.tcons "Heap" []
-      let heapType := LTy.forAll [] heapTy
-      let heapIdent := Core.CoreIdent.locl "heap"
-      let heapInExpr := LExpr.fvar () (Core.CoreIdent.locl "heap_in") (some heapTy)
-      [Core.Statement.init heapIdent heapType heapInExpr]
-    else []
   let body : List Core.Statement :=
     match proc.body with
-    | .Transparent bodyExpr => heapInit ++ (translateStmt initEnv proc.outputs bodyExpr).2
-    | .Opaque _postcond (some impl) _ _ => heapInit ++ (translateStmt initEnv proc.outputs impl).2
+    | .Transparent bodyExpr => (translateStmt initEnv proc.outputs bodyExpr).2
+    | .Opaque _postcond (some impl) _ _ => (translateStmt initEnv proc.outputs impl).2
     | _ => []
   {
     header := header

@@ -25,7 +25,7 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match expr with
   | .FieldSelect target _ =>
       modify fun s => { s with readsHeapDirectly := true }; collectExpr target
-  | .InstanceCall target _ args => modify fun s => { s with readsHeapDirectly := true }; collectExpr target; for a in args do collectExpr a
+  | .InstanceCall target _ args => collectExpr target; for a in args do collectExpr a
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExpr a
   | .IfThenElse c t e => collectExpr c; collectExpr t; if let some x := e then collectExpr x
   | .Block stmts _ => for s in stmts do collectExpr s
@@ -52,7 +52,6 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   match proc.body with
   | .Transparent b =>
-      dbg_trace s!"Analyzing proc {proc.name} body: {Std.Format.pretty (Std.ToFormat.format b)}"
       (collectExpr b).run {} |>.2
   | _ => {}
 
@@ -137,9 +136,7 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
 
 def heapParameterization (program : Program) : Program :=
   let heapReaders := computeReadsHeap program.staticProcedures
-  dbg_trace s!"Heap readers: {heapReaders}"
   let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders }
-  dbg_trace s!"Field constants: {finalState.fieldConstants.map (·.name)}"
   { program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }
 
 end Strata.Laurel
