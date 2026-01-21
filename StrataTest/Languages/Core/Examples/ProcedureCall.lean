@@ -21,6 +21,7 @@ inline function Add(x : int, y : int) : int { x + y }
 procedure Inc(a : int) returns (ret : int)
 spec {
   modifies counter;
+  requires [counter_ge_zero]: (counter >= 0);
   requires [a_positive]:      (a > 0);
   ensures  [new_g_value]:     (counter == old(counter) + a);
   ensures  [old_g_property]:  (ret - a == old(counter));
@@ -33,6 +34,7 @@ spec {
 procedure P() returns (b : int)
 spec {
   modifies counter;
+  requires [counter_ge_zero]: (counter >= 0);
   ensures [return_value_lemma]: (b == old(counter) + 16);
 }
 {
@@ -65,6 +67,7 @@ VCs:
 Label: new_g_value
 Property: assert
 Assumptions:
+(counter_ge_zero, ((~Int.Ge $__counter0) #0))
 (a_positive, ((~Int.Gt $__a1) #0))
 
 Proof Obligation:
@@ -73,24 +76,42 @@ Proof Obligation:
 Label: old_g_property
 Property: assert
 Assumptions:
+(counter_ge_zero, ((~Int.Ge $__counter0) #0))
 (a_positive, ((~Int.Gt $__a1) #0))
 
 Proof Obligation:
 (((~Int.Sub ((~Int.Add $__counter0) $__a1)) $__a1) == $__counter0)
 
+Label: (Origin_Inc_Requires)counter_ge_zero
+Property: assert
+Assumptions:
+(counter_ge_zero, ((~Int.Ge $__counter3) #0))
+
+Proof Obligation:
+((~Int.Ge $__counter3) #0)
+
 Label: (Origin_Inc_Requires)a_positive
 Property: assert
 Assumptions:
-
+(counter_ge_zero, ((~Int.Ge $__counter3) #0))
 
 Proof Obligation:
 #true
 
+Label: (Origin_Inc_Requires)counter_ge_zero
+Property: assert
+Assumptions:
+(counter_ge_zero, ((~Int.Ge $__counter3) #0))
+((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
+
+Proof Obligation:
+((~Int.Ge $__counter6) #0)
+
 Label: (Origin_Inc_Requires)a_positive
 Property: assert
 Assumptions:
-((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
-((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
+(counter_ge_zero, ((~Int.Ge $__counter3) #0))
+((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
 
 Proof Obligation:
 #true
@@ -98,8 +119,8 @@ Proof Obligation:
 Label: return_value_lemma
 Property: assert
 Assumptions:
-((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
-((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3)) ((Origin_Inc_Ensures)new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
+(counter_ge_zero, ((~Int.Ge $__counter3) #0))
+((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3)) ((Origin_Inc_Ensures)new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
 
 Proof Obligation:
 ($__b7 == ((~Int.Add $__counter3) #16))
@@ -122,7 +143,15 @@ Obligation: old_g_property
 Property: assert
 Result: ✅ pass
 
+Obligation: (Origin_Inc_Requires)counter_ge_zero
+Property: assert
+Result: ✅ pass
+
 Obligation: (Origin_Inc_Requires)a_positive
+Property: assert
+Result: ✅ pass
+
+Obligation: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
 Result: ✅ pass
 

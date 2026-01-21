@@ -269,11 +269,13 @@ theorem substOldExpr_nil: OldExpressions.substsOldExpr [] e = e := by
 For each `(var, expr)` pair in `sm`, substitute `old(var)` with `expr` in
 `conds`.
 -/
-protected def substsOldInProcChecks (sm : Map Expression.Ident Expression.Expr)
+protected def substsOldInProcChecks {Ty}
+  (sm : List ((Expression.Ident × Option Ty) × Expression.Expr))
   (conds : Map String Procedure.Check) :
   Map String Procedure.Check :=
+  let sm_map := sm.map (fun ((e1, _), e2) => (e1, e2))
   conds.map (fun (label, c) =>
-                 (label, { c with expr := substsOldExpr sm c.expr }))
+                 (label, { c with expr := substsOldExpr sm_map c.expr }))
 
 
 protected def substsOldChecks (sm : Map Expression.Ident Expression.Expr)
