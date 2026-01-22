@@ -399,16 +399,20 @@ op varStatement (dl : DeclList) : Statement => "var " dl ";";
 
 ### Polymorphic Type Variables
 
-The `@[declareTypeVars]` annotation allows polymorphic function declarations
+The `@[declareTVar]` annotation allows polymorphic function declarations
 where type parameters (like `<a, b>`)
 need to be in scope when parsing parameter types and return types.
 For example, function declarations in Strata.Core are defined as 
 the following:
 
 ```
+category TypeVar;
+@[declareTVar(name)]
+op type_var (name : Ident) : TypeVar => name;
+
 category TypeArgs;
-@[declareTypeVars(args)]
-op type_args (args : CommaSepBy Ident) : TypeArgs => "<" args ">";
+@[scope(args)]
+op type_args (args : CommaSepBy TypeVar) : TypeArgs => "<" args ">";
 
 @[declareFn(name, b, r)]
 op command_fndecl (name : Ident,

@@ -512,13 +512,13 @@ def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
   | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
   | some _ => panic! s!"Unexpected argument count to scopeDatatype"
 
-/-- Returns the args index if @[declareTypeVars] is present.
-    Used for operations that introduce type variables (creates .tvar bindings in result context). -/
-def declareTypeVarsIndex (metadata : Metadata) : Option Nat :=
-  match metadata[q`StrataDDL.declareTypeVars]? with
+/-- Returns the name index if @[declareTVar] is present.
+    Used for operations that introduce a type variable (creates .tvar binding in result context). -/
+def declareTVarIndex (metadata : Metadata) : Option Nat :=
+  match metadata[q`StrataDDL.declareTVar]? with
   | none => none
-  | some #[.catbvar argsIdx] => some argsIdx
-  | some _ => panic! s!"Unexpected argument count to declareTypeVars"
+  | some #[.catbvar nameIdx] => some nameIdx
+  | some _ => panic! s!"Unexpected argument count to declareTVar"
 
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
 private def resultIndex (metadata : Metadata) : Option Nat :=
@@ -970,12 +970,12 @@ structure DatatypeBindingSpec (argDecls : ArgDecls) where
   deriving Repr
 
 /--
-Specification for declaring type variables from identifiers.
-Creates .tvar bindings in the result context.
+Specification for declaring a single type variable.
+Creates a .tvar binding in the result context.
 -/
-structure TypeVarsBindingSpec (argDecls : ArgDecls) where
-  /-- deBrujin index of the argument containing identifiers to become type variables -/
-  argsIndex : DebruijnIndex argDecls.size
+structure TvarBindingSpec (argDecls : ArgDecls) where
+  /-- deBrujin index of the identifier to become a type variable -/
+  nameIndex : DebruijnIndex argDecls.size
   deriving Repr
 
 /-
@@ -985,16 +985,16 @@ inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
 | datatype (_ : DatatypeBindingSpec argDecls)
-| typeVars (_ : TypeVarsBindingSpec argDecls)
+| tvar (_ : TvarBindingSpec argDecls)
 deriving Repr
 
 namespace BindingSpec
 
-def nameIndex? {argDecls} : BindingSpec argDecls → Option (DebruijnIndex argDecls.size)
-| .value v => some v.nameIndex
-| .type v => some v.nameIndex
-| .datatype v => some v.nameIndex
-| .typeVars _ => none
+def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
+| .value v => v.nameIndex
+| .type v => v.nameIndex
+| .datatype v => v.nameIndex
+| .tvar v => v.nameIndex
 
 end BindingSpec
 
@@ -1132,12 +1132,12 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             constructorsIndex := ⟨constructorsIndex, constructorsP⟩,
             functionTemplates
           }
-        | q`StrataDDL.declareTypeVars => do
-          let #[.catbvar argsIndex] := attr.args
-            | newBindingErr "declareTypeVars expects 1 argument."; return none
-          let .isTrue argsP := inferInstanceAs (Decidable (argsIndex < argDecls.size))
-            | return panic! "Invalid args index"
-          some <$> .typeVars <$> pure { argsIndex := ⟨argsIndex, argsP⟩ }
+        | q`StrataDDL.declareTVar => do
+          let #[.catbvar nameIndex] := attr.args
+            | newBindingErr "declareTVar expects 1 argument."; return none
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+            | return panic! "Invalid name index"
+          some <$> .tvar <$> pure { nameIndex := ⟨nameIndex, nameP⟩ }
         | _ =>
           pure none
   (md.toArray.filterMapM ins) #[]
@@ -1739,12 +1739,9 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
         | none => #[]
         | some idx =>
           let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
-              match b.nameIndex? with
-              | some nameIdx =>
-                match args[nameIdx.toLevel] with
-                | .ident _ name => a.push name
-                | a => panic! s!"Expected ident at {idx.val} {repr a}"
-              | none => a
+              match args[b.nameIndex.toLevel] with
+              | .ident _ name => a.push name
+              | a => panic! s!"Expected ident at {idx.val} {repr a}"
           foldOverArgAtLevel m addBinding #[] argDecls args idx.toLevel
     let value :=
             match b.defIndex with
@@ -1761,16 +1758,13 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
     separately in addDatatypeBindings. -/
     let params : Array String :=
         let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
-            match b.nameIndex? with
-            | some nameIdx =>
-              match args[nameIdx.toLevel] with
-              | .ident _ name => a.push name
-              | a => panic! s!"Expected ident for type param {repr a}"
-            | none => a
+            match args[b.nameIndex.toLevel] with
+            | .ident _ name => a.push name
+            | a => panic! s!"Expected ident for type param {repr a}"
         foldOverArgAtLevel m addBinding #[] argDecls args b.typeParamsIndex.toLevel
     some <| .type params.toList none
-  | .typeVars _ =>
-    -- typeVars doesn't produce a GlobalKind; it only affects TypingContext during elaboration
+  | .tvar _ =>
+    -- tvar bindings are local only, not added to GlobalContext
     none
 
 /--
@@ -2006,12 +2000,9 @@ private def addDatatypeBindings
 
   let typeParams : Array String :=
     let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (bs : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
-        match bs.nameIndex? with
-        | some nameIdx =>
-          match args[nameIdx.toLevel] with
-          | .ident _ name => a.push name
-          | a => panic! s!"Expected ident for type param {repr a}"
-        | none => a
+        match args[bs.nameIndex.toLevel] with
+        | .ident _ name => a.push name
+        | a => panic! s!"Expected ident for type param {repr a}"
     foldOverArgAtLevel dialects addBinding #[] argDecls args b.typeParamsIndex.toLevel
 
   let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
@@ -2043,19 +2034,13 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
           match b with
           | .datatype datatypeSpec =>
             addDatatypeBindings dialects gctx l dialectName datatypeSpec args
-          | .typeVars _ =>
-            -- typeVars only affects TypingContext during elaboration, not GlobalContext
-            gctx
           | _ =>
-            match b.nameIndex? with
-            | some nameIdx =>
-              let name :=
-                    match args[nameIdx.toLevel] with
-                    | .ident _ e => e
-                    | a => panic! s!"Expected ident at {nameIdx.toLevel} {repr a}"
-              match resolveBindingIndices dialects l b args with
-              | some kind => gctx.push name kind
-              | none => gctx
+            let name :=
+                  match args[b.nameIndex.toLevel] with
+                  | .ident _ e => e
+                  | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+            match resolveBindingIndices dialects l b args with
+            | some kind => gctx.push name kind
             | none => gctx
 
 end GlobalContext

@@ -800,7 +800,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     return default
 
 /--
-Construct a binding from a binding spec and the arguments to a operation.
+Construct a binding from a binding spec and the arguments to an operation.
 -/
 def evalBindingSpec
     {bindings}
@@ -808,7 +808,7 @@ def evalBindingSpec
     (initSize : Nat)
     (b : BindingSpec bindings)
     (args : Vector Tree bindings.size)
-    : ElabM (Array Binding) := do
+    : ElabM Binding := do
   match b with
   | .value b =>
     let ident := evalBindingNameIndex args b.nameIndex
@@ -822,7 +822,7 @@ def evalBindingSpec
             logError argLoc "Expecting expressions in variable binding"
             pure none
     if !success then
-      return #[]
+      return default
     let bindings := bindings.filterMap id
     let typeTree := args[b.typeIndex.toLevel]
     let kind ←
@@ -842,8 +842,7 @@ def evalBindingSpec
             translateBindingKind typeTree.asBindingType!
           | arg =>
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
-    -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
-    pure #[{ ident, kind }]
+    pure { ident, kind }
   | .type b =>
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabArgIndex initSize args b.argsIndex fun argLoc b => do
@@ -864,18 +863,13 @@ def evalBindingSpec
               some info.typeExpr
             | _ =>
               panic! "Bad arg"
-    pure #[{ ident, kind := .type loc params.toList value }]
+    pure { ident, kind := .type loc params.toList value }
   | .datatype b =>
     let ident := evalBindingNameIndex args b.nameIndex
-    pure #[{ ident, kind := .type loc [] none }]
-  | .typeVars tvb =>
-    -- Create .tvar bindings for type variable names
-    let commaSepTree := args[tvb.argsIndex.toLevel]
-    let typeVarNames := commaSepTree.children.filterMap fun identTree =>
-      match identTree.info with
-      | .ofIdentInfo info => some info.val
-      | _ => none
-    pure <| typeVarNames.map fun name => { ident := name, kind := .tvar loc name }
+    pure { ident, kind := .type loc [] none }
+  | .tvar b =>
+    let ident := evalBindingNameIndex args b.nameIndex
+    pure { ident, kind := .tvar loc ident }
 
 /--
 Given a type expression and a natural number, this returns a
@@ -1013,8 +1007,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   if !success then
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
-    let newBindings ← evalBindingSpec loc initSize spec args
-    pure <| newBindings.foldl (init := ctx) fun ctx b => ctx.push b
+    ctx.push <$> evalBindingSpec loc initSize spec args
   -- Apply unwrapping based on unwrapSpecs
   let unwrappedArgs := args.toArray.mapIdx fun idx tree =>
     let unwrap := se.unwrapSpecs.getD idx false

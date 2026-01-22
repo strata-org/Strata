@@ -440,16 +440,11 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
     | some idx => set argResults[idx]!.snd
     | none => pure ()
     for b in decl.newBindings do
-      match b.nameIndex? with
-      | some nameIdx =>
-        match args[nameIdx.toLevel] with
-        | .ident _ e =>
-          modify (·.pushBinding e)
-        | _ =>
-          return panic! s!"Expected ident at {nameIdx.toLevel}."
-      | none =>
-        -- typeVars doesn't add a single named binding
-        pure ()
+      match args[b.nameIndex.toLevel] with
+      | .ident _ e =>
+        modify (·.pushBinding e)
+      | _ =>
+        return panic! s!"Expected ident at {b.nameIndex.toLevel}."
     return fmt
   | none =>
     -- FIXME: Consider reporting error here.

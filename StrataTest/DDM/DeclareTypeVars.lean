@@ -7,14 +7,14 @@
 import Strata.DDM.Integration.Lean
 
 /-!
-# Tests for @[declareTypeVars] annotation
+# Tests for @[declareTVar] annotation
 
-Tests that type variables declared via `@[declareTypeVars]` are properly
+Tests that type variables declared via `@[declareTVar]` are properly
 brought into scope via `@[scope]`.
 -/
 
 #dialect
-dialect TestDeclareTypeVars;
+dialect TestDeclareTVar;
 
 type bool;
 type int;
@@ -23,9 +23,13 @@ type Map (k : Type, v : Type);
 fn trueExpr : bool => "true";
 fn intLit (n : Num) : int => n;
 
+category TypeVar;
+@[declareTVar(name)]
+op type_var (name : Ident) : TypeVar => name;
+
 category TypeArgs;
-@[declareTypeVars(args)]
-op type_args (args : CommaSepBy Ident) : TypeArgs => "<" args ">";
+@[scope(args)]
+op type_args (args : CommaSepBy TypeVar) : TypeArgs => "<" args ">";
 
 category Binding;
 @[declare(name, tp)]
@@ -50,12 +54,12 @@ op command_fndecl (name : Ident,
 
 def singleTypeParamPgm :=
 #strata
-program TestDeclareTypeVars;
+program TestDeclareTVar;
 function identity<a>(x : a) : a;
 #end
 
 /--
-info: program TestDeclareTypeVars;
+info: program TestDeclareTVar;
 function identity<a>(x:tvar!a) : tvar!a;
 -/
 #guard_msgs in
@@ -67,12 +71,12 @@ function identity<a>(x:tvar!a) : tvar!a;
 
 def noTypeParamPgm :=
 #strata
-program TestDeclareTypeVars;
+program TestDeclareTVar;
 function constInt(x : int) : int;
 #end
 
 /--
-info: program TestDeclareTypeVars;
+info: program TestDeclareTVar;
 function constInt(x:int) : int;
 -/
 #guard_msgs in
@@ -84,12 +88,12 @@ function constInt(x:int) : int;
 
 def typeParamInMapPgm :=
 #strata
-program TestDeclareTypeVars;
+program TestDeclareTVar;
 function lookup<k, v>(m : Map k v, key : k) : v;
 #end
 
 /--
-info: program TestDeclareTypeVars;
+info: program TestDeclareTVar;
 function lookup<k, v>(m:(Map tvar!v tvar!k), key:tvar!k) : tvar!v;
 -/
 #guard_msgs in

@@ -38,9 +38,13 @@ type bv32;
 type bv64;
 type Map (dom : Type, range : Type);
 
+category TypeVar;
+@[declareTVar(name)]
+op type_var (name : Ident) : TypeVar => name;
+
 category TypeArgs;
-@[declareTypeVars(args)]
-op type_args (args : CommaSepBy Ident) : TypeArgs => "<" args ">";
+@[scope(args)]
+op type_args (args : CommaSepBy TypeVar) : TypeArgs => "<" args ">";
 
 category Bind;
 @[declare(v, tp)]
