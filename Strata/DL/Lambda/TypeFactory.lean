@@ -461,7 +461,17 @@ We determine if all types in a TypeFactory are inhabited simulataneously,
 memoizing the results.
 -/
 
-abbrev typeMap : Type := Map String Bool
+/-- Stores whether a type is known to be inhabited -/
+abbrev inhabMap : Type := Map String Bool
+
+/-
+The termination argument follows from the fact that each time a type symbol
+is evaluated, it is added to the `seen` set, which by assumption is a subset
+of `adts` (which has no duplicates). Therefore, `adts.size - seen.length`
+decreases. `ty_inhab` does not change this value but is
+structurally recursive over the type arguments. Thus, we use the lexicographic
+measure `(adts.size - seen.length, t.size)`.
+-/
 
 mutual
 
@@ -473,9 +483,14 @@ The `List.Nodup` and `⊆` hypotheses are only used to prove termination.
 def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen)
   (hsub: seen ⊆ (List.map (fun x => x.name) adts.toList))
-  (ts: String) : StateM typeMap (Option String) := do
-  let knowType (b: Bool) : StateM typeMap (Option String) := do
-    -- Only add false if not in a cycle, it may resolve later
+  (ts: String) : StateM inhabMap (Option String) := do
+  let knowType (b: Bool) : StateM inhabMap (Option String) := do
+    /-
+    Only add false if not in a cycle, it may resolve later
+    E.g. when checking the `cons` case for `List`, `List` itself is in the
+    `seen` set and so will be temporarily marked as uninhabited. This should not
+    be memoized.
+    -/
     if b || seen.isEmpty then
       let m ← get
       set (m.insert ts b)
@@ -521,7 +536,7 @@ def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
 
 def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.toList))
-  (t: LMonoTy) : StateM typeMap Bool :=
+  (t: LMonoTy) : StateM inhabMap Bool :=
   match t with
   | .tcons name args => do
       -- name(args) is inhabited if name is inhabited as a typesym
@@ -544,7 +559,7 @@ end
 /--
 Prove that ADT with name `a` is inhabited. All other types are assumed inhabited.
 -/
-def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM typeMap (Option String) :=
+def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM inhabMap (Option String) :=
   typesym_inhab adts [] (by grind) (by grind) a
 
 /--
