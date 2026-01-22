@@ -36,22 +36,22 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program)
   | .call lhs pname args md => try
     -- `try`: to augment any errors with source location info.
      match Program.Procedure.find? P pname with
-     | none => .error (MetaData.toDiagnosticF md f!"[{c}]: Procedure {pname} not found!")
+     | none => .error (md.toDiagnosticF f!"[{c}]: Procedure {pname} not found!")
      | some proc =>
        if lhs.any (fun (l: CoreIdent) => (Env.context.types.find? l).isNone) then
-         .error (MetaData.toDiagnosticF md f!"[{c}]: All the return variables {lhs} must exist in the context!")
+         .error (md.toDiagnosticF f!"[{c}]: All the return variables {lhs} must exist in the context!")
        else if lhs.length != proc.header.outputs.length then
-         .error (MetaData.toDiagnosticF md f!"[{c}]: Arity mismatch in this call's return values!\
+         .error (md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's return values!\
                    Here is the expected signature: {proc.header.inputs}")
        else if args.length != proc.header.inputs.length then
-         .error (MetaData.toDiagnosticF md f!"[{c}]: Arity mismatch in this call's arguments!\
+         .error (md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's arguments!\
                    Here is the expected signature: {proc.header.inputs}")
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.
          let lhsinsts ← Lambda.Identifier.instantiateAndSubsts lhs C Env |>.mapError Strata.DiagnosticModel.fromFormat
          match lhsinsts with
-         | none => .error (MetaData.toDiagnosticF md f!"Implementation error. \
+         | none => .error (md.toDiagnosticF f!"Implementation error. \
                              Types of {lhs} should have been known.")
          | some (lhs_tys, Env) =>
            let _ ← Env.freeVarChecks args |>.mapError Strata.DiagnosticModel.fromFormat
@@ -107,7 +107,7 @@ where
             let (eb, Env) ← go Env [(Stmt.block "$_else" ess  #[])] []
             let s' := Stmt.ite conda.unresolved tb eb md
             .ok (s', Env)
-          | _ => .error (MetaData.toDiagnosticF md f!"[{s}]: If's condition {cond} is not of type `bool`!")
+          | _ => .error (md.toDiagnosticF f!"[{s}]: If's condition {cond} is not of type `bool`!")
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
@@ -145,9 +145,9 @@ where
               | none | .some (.tcons "int" []) =>
                 match ity with
                 | none | .some (.tcons "bool" []) => panic! "Internal error. condty, mty or ity must be unexpected."
-                | _ => .error (MetaData.toDiagnosticF md f!"[{s}]: Loop's invariant {invariant} is not of type `bool`!")
-              | _ => .error (MetaData.toDiagnosticF md f!"[{s}]: Loop's measure {measure} is not of type `int`!")
-            | _ =>  .error (MetaData.toDiagnosticF md f!"[{s}]: Loop's guard {guard} is not of type `bool`!")
+                | _ => .error (md.toDiagnosticF f!"[{s}]: Loop's invariant {invariant} is not of type `bool`!")
+              | _ => .error (md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!")
+            | _ =>  .error (md.toDiagnosticF f!"[{s}]: Loop's guard {guard} is not of type `bool`!")
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
@@ -158,8 +158,8 @@ where
             if Block.hasLabelInside label p.body then
               .ok (s, Env)
             else
-              .error (MetaData.toDiagnosticF md f!"Label {label} does not exist in the body of {p.header.name}")
-          | .none => .error (MetaData.toDiagnosticF md f!"{s} occurs outside a procedure.")
+              .error (md.toDiagnosticF f!"Label {label} does not exist in the body of {p.header.name}")
+          | .none => .error (md.toDiagnosticF f!"{s} occurs outside a procedure.")
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)

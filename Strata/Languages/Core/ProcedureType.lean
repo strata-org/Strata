@@ -78,7 +78,7 @@ private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression
 -- Error message prefix for errors in processing procedure pre/post conditions.
 def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
     (md : MetaData Expression) : Strata.DiagnosticModel :=
-  MetaData.toDiagnosticF md f!"[{procName}:{condName}]:"
+  md.toDiagnosticF f!"[{procName}:{condName}]:"
 
 -- Type checking procedure pre/post conditions.
 -- We flag occurrences of `old` expressions in the preconditions and normalize
