@@ -44,13 +44,15 @@ procedure caller(c: Container, d: Container) {
   assert d#intValue == 3;
 }
 
-// ATM, the assertion in this test is proven not to hold even though it holds
 procedure implicitEquality(c: Container, d: Container) {
   c#intValue := 1;
   d#intValue := 2;
   if (c#intValue == d#intValue) {
+// ATM, the assertion in this test is proven not to hold even though it holds
     assert c == d;
 //  ^^^^^^^^^^^^^^ error: assertion does not hold
+  } else {
+    assert c != d;
   }
 }
 "
