@@ -327,37 +327,14 @@ def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
 def DiagnosticModel.withRange (fr : FileRange) (msg : String) : DiagnosticModel :=
   { fileRange := fr, message := msg }
 
-/-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
-def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := false) : Std.Format :=
-  let baseName := match dm.fileRange.file with
+/-- Format a file range using a FileMap to convert byte offsets to line/column positions. -/
+def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := false) : Std.Format :=
+  let baseName := match fr.file with
                   | .file path => (path.splitToList (· == '/')).getLast!
   match fileMap with
   | some fm =>
-    let startPos := fm.toPosition dm.fileRange.range.start
-    let endPos := fm.toPosition dm.fileRange.range.stop
-    let posStr := if includeEnd? then
-      if startPos.line == endPos.line then
-        f!"{baseName}({startPos.line}, ({startPos.column}-{endPos.column}))"
-      else
-        f!"{baseName}(({startPos.line}, {startPos.column})-({endPos.line}, {endPos.column}))"
-    else
-      f!"{baseName}({startPos.line}, {startPos.column})"
-    f!"{posStr} {dm.message}"
-  | none =>
-    -- No FileMap available, use byte offsets
-    if dm.fileRange.range.isNone then
-      f!"{dm.message}"
-    else
-      f!"{baseName}({dm.fileRange.range.start}-{dm.fileRange.range.stop}) {dm.message}"
-
-/-- Format just the file range portion of a DiagnosticModel. -/
-def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := false) : Std.Format :=
-  let baseName := match dm.fileRange.file with
-                  | .file path => (path.splitToList (· == '/')).getLast!
-  match fileMap with
-  | some fm =>
-    let startPos := fm.toPosition dm.fileRange.range.start
-    let endPos := fm.toPosition dm.fileRange.range.stop
+    let startPos := fm.toPosition fr.range.start
+    let endPos := fm.toPosition fr.range.stop
     if includeEnd? then
       if startPos.line == endPos.line then
         f!"{baseName}({startPos.line}, ({startPos.column}-{endPos.column}))"
@@ -366,10 +343,22 @@ def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.Fi
     else
       f!"{baseName}({startPos.line}, {startPos.column})"
   | none =>
-    if dm.fileRange.range.isNone then
+    if fr.range.isNone then
       f!""
     else
-      f!"{baseName}({dm.fileRange.range.start}-{dm.fileRange.range.stop})"
+      f!"{baseName}({fr.range.start}-{fr.range.stop})"
+
+/-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
+def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := false) : Std.Format :=
+  let rangeStr := dm.fileRange.format fileMap includeEnd?
+  if dm.fileRange.range.isNone then
+    f!"{dm.message}"
+  else
+    f!"{rangeStr} {dm.message}"
+
+/-- Format just the file range portion of a DiagnosticModel. -/
+def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := false) : Std.Format :=
+  dm.fileRange.format fileMap includeEnd?
 
 /-- Update the file range of a DiagnosticModel if it's currently unknown. -/
 def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) : DiagnosticModel :=

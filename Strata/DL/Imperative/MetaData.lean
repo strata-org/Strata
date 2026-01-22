@@ -193,9 +193,7 @@ def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg :
     For proper line/column display, use toDiagnostic and format with a FileMap at the top level. -/
 def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false) : Format :=
   match getFileRange md with
-  | some fr =>
-    let dm : Strata.DiagnosticModel := { fileRange := fr, message := "" }
-    dm.formatRange none includeEnd?
+  | some fr => fr.format none includeEnd?
   | none => f!""
 
 ---------------------------------------------------------------------
