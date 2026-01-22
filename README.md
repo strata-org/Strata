@@ -42,7 +42,7 @@ Unit tests are run with `#guard_msgs` commands. No output means the tests passed
 ## Running Analyses on Existing Strata Programs
 
 Strata programs use the `.st` file extension, preceded by the dialect name,
-preceded by a second `.` e.g., `SimpleProc.boogie.st` or
+preceded by a second `.` e.g., `SimpleProc.core.st` or
 `LoopSimple.csimp.st`. Note the current `StrataVerify` executable
 relies on this file extension convention to know what dialect it's
 parsing (since the Strata IR allows a program to open multiple
@@ -51,7 +51,7 @@ dialects).
 Here is an example invocation that runs Strata's deductive verifier.
 
 ```bash
-lake exe StrataVerify Examples/SimpleProc.boogie.st
+lake exe StrataVerify Examples/SimpleProc.core.st
 ```
 
 This will:

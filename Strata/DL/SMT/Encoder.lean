@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DL.SMT.Factory
 import Strata.DL.SMT.Op
 import Strata.DL.SMT.Solver
@@ -195,8 +196,20 @@ def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String)
       defineTerm inBinder tyEnc s!"{← encodeUF f}"
     else
       defineTerm inBinder tyEnc s!"({← encodeUF f} {args})"
-  | _ =>
+  | .datatype_op .constructor name =>
+    -- Zero-argument constructors are constants in SMT-LIB, not function applications
+    -- For parametric datatypes, we need to cast the constructor to the concrete type
+    if tEncs.isEmpty then
+      defineTerm inBinder tyEnc s!"(as {name} {tyEnc})"
+    else
+      defineTerm inBinder tyEnc s!"({name} {args})"
+  | .datatype_op _ _ =>
     defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
+  | _ =>
+    if tEncs.isEmpty then
+      defineTerm inBinder tyEnc s!"({encodeOp op})"
+    else
+      defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
 
 -- Helper function for quantifier generation
 def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
@@ -241,13 +254,10 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
   let enc ←
     match t with
     | .var v            => return v.id
-    | .prim p           =>
-      match p with
-      | .bool b         => return if b then "true" else "false"
-      | .int i          => return encodeInt i
-      | .real r         => return r
-      | .bitvec bv      => return encodeBitVec bv
-      | .string s       => return encodeString s
+    | .prim _           =>
+      match SMTDDM.toString t with
+      | .ok s => return s
+      | .error _ => return "<error>"
     | .none _           => defineTerm inBinder tyEnc s!"(as none {tyEnc})"
     | .some t₁          => defineTerm inBinder tyEnc s!"(some {← encodeTerm inBinder t₁})"
     | .app .re_allchar [] .regex => return encodeReAllChar

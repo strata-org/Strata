@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Util.DecidableEq
+import Strata.DDM.AST
 import Lean.Data.Position
 
 namespace Imperative
@@ -65,22 +66,6 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
       | .label s => f!"MetaDataElem.Field.label {s}"
     Repr.addAppParen res prec
 
-inductive Uri where
-  | file (path: String)
-  deriving DecidableEq
-
-instance : ToFormat Uri where
- format fr := match fr with | .file path => path
-
-structure FileRange where
-  file: Uri
-  start: Lean.Position
-  ending: Lean.Position
-  deriving DecidableEq
-
-instance : ToFormat FileRange where
- format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
-
 /-- A metadata value, which can be either an expression, a message, or a fileRange -/
 inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a structured expression. -/
@@ -88,19 +73,25 @@ inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of an arbitrary string. -/
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
-  | fileRange (r: FileRange)
-
+  | fileRange (r: Strata.FileRange)
+  /-- Metadata value in the form of a fileRange. -/
+  | file2dRange (r: Strata.File2dRange)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
-  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
+  format f := match f with
+              | .expr e => f!"{e}"
+              | .msg s => f!"{s}"
+              | .fileRange r => f!"{r}"
+              | .file2dRange r => f!"{r}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
     let res :=
       match v with
-      | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
-      | .msg s => f!"MetaDataElem.Value.msg {s}"
-      | .fileRange fr => f!"MetaDataElem.Value.fileRange {fr}"
+      | .expr e => f!".expr {reprPrec e prec}"
+      | .msg s => f!".msg {s}"
+      | .fileRange fr => f!".fileRange {fr}"
+      | .file2dRange fr => f!".file2dRange {fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -108,6 +99,7 @@ def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
   | .fileRange r1, .fileRange r2 => r1 == r2
+  | .file2dRange r1, .file2dRange r2 => r1 == r2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -182,5 +174,36 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+
+def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option Strata.FileRange := do
+  let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
+  match fileRangeElement.value with
+    | .fileRange fileRange =>
+      some fileRange
+    | _ => none
+
+def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false) :
+    Option Std.Format := do
+  let fileRangeElem ← md.findElem MetaData.fileRange
+  match fileRangeElem.value with
+  | .file2dRange m =>
+    let baseName := match m.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    if includeEnd? then
+      if m.start.line == m.ending.line then
+        return f!"{baseName}({m.start.line}, ({m.start.column}-{m.ending.column}))"
+      else
+        return f!"{baseName}(({m.start.line}, {m.start.column})-({m.ending.line}, {m.ending.column}))"
+    else -- don't include the end position.
+      return f!"{baseName}({m.start.line}, {m.start.column})"
+  | _ => none
+
+def MetaData.formatFileRangeD {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false)
+    : Std.Format :=
+  match formatFileRange? md includeEnd? with
+  | .none => ""
+  | .some f => f
+
+---------------------------------------------------------------------
 
 end Imperative

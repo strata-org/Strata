@@ -5,14 +5,11 @@
 -/
 module
 
-public import Strata.DDM.AST
-
-import Strata.DDM.Util.Format
-import Strata.DDM.Util.Nat
-import Strata.DDM.Util.String
 import Std.Data.HashSet
-
-meta import Strata.DDM.AST
+public import Strata.DDM.AST
+import all Strata.DDM.Util.Format
+import all Strata.DDM.Util.Nat
+import all Strata.DDM.Util.String
 
 open Std (Format format)
 
@@ -114,7 +111,7 @@ private def fvarName (ctx : FormatContext) (idx : FreeVarIndex) : String :=
   else
     s!"fvar!{idx}"
 
-protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext) (opts : FormatOptions) : FormatContext where
+protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext := {}) (opts : FormatOptions := {}) : FormatContext where
   opts := opts
   getFnDecl sym := Id.run do
     let .function f := dialects.decl! sym
@@ -378,16 +375,28 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
   match ma with
   | none => pure (.atom .nil)
   | some a => a.mformatM
-| .seq _ entries => do
-  .atom <$> entries.foldlM (init := .nil) fun p a =>
-    return (p ++ (← a.mformatM).format)
-| .commaSepList _ entries => do
-  if z : entries.size = 0 then
-    pure (.atom .nil)
-  else do
-    let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
-    let a := (← entries[0].mformatM).format
-    .atom <$> entries.size.foldlM f (start := 1) a
+| .seq _ sep entries => do
+  match sep with
+  | .none =>
+    .atom <$> entries.foldlM (init := .nil) fun p a =>
+      return (p ++ (← a.mformatM).format)
+  | .comma =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
+  | .space =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ " " ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
+  | .spacePrefix =>
+    .atom <$> entries.foldlM (init := .nil) fun p a =>
+      return (p ++ " " ++ (← a.mformatM).format)
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then
@@ -444,14 +453,26 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
 
 end
 
-instance Expr.instToStrataFormat : ToStrataFormat Expr where
+instance ExprF.instToStrataFormat {α} : ToStrataFormat (ExprF α) where
   mformat e c s := private e.mformatM #[] c s |>.fst
 
-instance Arg.instToStrataFormat : ToStrataFormat Arg where
+instance ArgF.instToStrataFormat {α} : ToStrataFormat (ArgF α) where
   mformat a c s := private a.mformatM c s |>.fst
 
-instance Operation.instToStrataFormat : ToStrataFormat Operation where
+
+namespace OperationF
+
+instance {α} : ToStrataFormat (OperationF α) where
   mformat o c s := private o.mformatM c s |>.fst
+
+/--
+This renders an operation returning its string representation and new state.
+-/
+def render {α} (op : OperationF α) (ctx : FormatContext) (s : FormatState) : String × FormatState :=
+  let (f, s) := op.mformatM ctx s
+  (f.format.render, s)
+
+end OperationF
 
 namespace MetadataArg
 
@@ -463,6 +484,7 @@ private protected def mformat : MetadataArg → StrataFormat
   match ma with
   | none => mf!"none"
   | some a => a.mformat
+| .functionTemplate t => mf!"functionTemplate({repr t})"
 
 instance : ToStrataFormat MetadataArg where
   mformat := private MetadataArg.mformat
@@ -596,6 +618,7 @@ private protected def mformat : MetadataArgType → StrataFormat
 | .ident => mf!"Ident"
 | .bool => mf!"Bool"
 | .opt tp => mf!"Option {tp.mformat |>.ensurePrec (appPrec + 1)}" |>.setPrec appPrec
+| .functionTemplate => mf!"FunctionTemplate"
 
 instance : ToStrataFormat MetadataArgType where
   mformat := private MetadataArgType.mformat
@@ -640,10 +663,10 @@ end DialectMap
 
 namespace Program
 
-private protected def formatContext (p : Program) (opts : FormatOptions) : FormatContext :=
+protected def formatContext (p : Program) (opts : FormatOptions) : FormatContext :=
   .ofDialects p.dialects p.globalContext opts
 
-private protected def formatState (p : Program) : FormatState where
+protected def formatState (p : Program) : FormatState where
   openDialects := p.dialects.toList.foldl (init := {}) fun a d => a.insert d.name
 
 protected def format (p : Program) (opts : FormatOptions := {}) : Format :=
@@ -652,9 +675,11 @@ protected def format (p : Program) (opts : FormatOptions := {}) : Format :=
   p.commands.foldl (init := f!"program {p.dialect};\n") fun f cmd =>
     f ++ (mformat cmd c s).format
 
-instance : ToString Program where
-  toString p := private p.format |>.render
+protected def toString (p : Program) (opts : FormatOptions := {}) : String :=
+  p.format opts |>.render
 
+instance : ToString Program where
+  toString p := p.toString
 protected def ppDialect! (p : Program) (name : DialectName := p.dialect) (opts : FormatOptions := {}) : Format :=
   if mem : name ∈ p.dialects then
     p.dialects.format name mem opts

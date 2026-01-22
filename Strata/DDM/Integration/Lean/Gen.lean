@@ -7,6 +7,7 @@ import Lean.Elab.Command
 
 import Strata.DDM.BuiltinDialects.Init
 import Strata.DDM.BuiltinDialects.StrataDDL
+import Strata.DDM.Integration.Categories
 import Strata.DDM.Integration.Lean.BoolConv
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
@@ -127,14 +128,7 @@ def resolveDialects (lookup : String → Option Dialect) (dialects : Array Diale
 
 abbrev CategoryName := QualifiedIdent
 
-/--
-Forbidden categories are categories that
--/
-def forbiddenCategories : Std.HashSet CategoryName := {
-  q`Init.TypeExpr,
-  q`Init.BindingType,
-  q`StrataDDL.Binding
-}
+def forbiddenCategories : Std.HashSet CategoryName := DDM.Integration.forbiddenCategories
 
 private def forbiddenWellDefined : Bool :=
   forbiddenCategories.all fun nm =>
@@ -151,11 +145,7 @@ private def forbiddenWellDefined : Bool :=
 Special categories ignore operations introduced in Init, but are populated
 with operators via functions/types.
 -/
-def specialCategories : Std.HashSet CategoryName := {
-  q`Init.Expr,
-  q`Init.Type,
-  q`Init.TypeP
-}
+def specialCategories : Std.HashSet CategoryName := DDM.Integration.abstractCategories
 
 /--
 Argument declaration for code generation.
@@ -250,10 +240,7 @@ def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
   .mk (.ident .none name.toString.toSubstring rootName [.decl name []])
 
-/--
-This maps category names in the Init that are already declared to their
-representation.
--/
+/-- Maps primitive Init categories to their Lean types. -/
 def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Ident, ``String),
   (q`Init.Num, ``Nat),
@@ -262,6 +249,8 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.ByteArray, ``ByteArray),
   (q`Init.Bool, ``Bool)
 ]
+
+#guard declaredCategories.keys.all (DDM.Integration.primitiveCategories.contains ·)
 
 def ignoredCategories : Std.HashSet CategoryName :=
   .ofList declaredCategories.keys ∪ forbiddenCategories
@@ -573,6 +562,10 @@ partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Bool) : 
   match c.name, eq : args.size with
   | q`Init.CommaSepBy, 1 =>
     return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpaceSepBy, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpacePrefixSepBy, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
   | q`Init.Option, 1 =>
     return mkCApp ``Ann #[mkCApp ``Option #[args[0]], annType]
   | q`Init.Seq, 1 =>
@@ -680,6 +673,21 @@ def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
 def annToAst (argCtor : Name) (annTerm : Term) : Term :=
   mkCApp argCtor #[mkCApp ``Ann.ann #[annTerm], mkCApp ``Ann.val #[annTerm]]
 
+mutual
+
+partial def toAstApplyArgSeq (v : Ident) (cat : SyntaxCat) (sepFormat : Name) : GenM Term := do
+  assert! cat.args.size = 1
+  let c := cat.args[0]!
+  let e ← genFreshLeanName "e"
+  let canE ← genIdentFrom e (canonical := true)
+  let t ← toAstApplyArg e c
+  let args := mkCApp ``Array.map #[
+        ←`(fun ⟨$canE, _⟩ => $t),
+        mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
+  ]
+  let sepExpr := mkCApp sepFormat #[]
+  return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
+
 partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false) : GenM Term := do
   let v := mkIdentFrom (←read).src vn
   match cat.name with
@@ -731,16 +739,13 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
     let toAst ← toAstIdentM cat.name
     ``($toAst $v)
   | q`Init.CommaSepBy => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    return mkAnnWithTerm ``ArgF.commaSepList v args
+    toAstApplyArgSeq v cat ``SepFormat.comma
+  | q`Init.SpaceSepBy => do
+    toAstApplyArgSeq v cat ``SepFormat.space
+  | q`Init.SpacePrefixSepBy => do
+    toAstApplyArgSeq v cat ``SepFormat.spacePrefix
+  | q`Init.Seq => do
+    toAstApplyArgSeq v cat ``SepFormat.none
   | q`Init.Option => do
     assert! cat.args.size = 1
     let c := cat.args[0]!
@@ -752,21 +757,12 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
           mkCApp ``Option.attach #[mkCApp ``Ann.val #[v]]
     ]
     return mkAnnWithTerm ``ArgF.option v args
-  | q`Init.Seq => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    return mkAnnWithTerm ``ArgF.seq v args
   | qid => do
     assert! cat.args.size = 0
     let toAst ← toAstIdentM qid
     ``(ArgF.op ($toAst $v))
+
+end
 
 abbrev MatchAlt := TSyntax ``Lean.Parser.Term.matchAlt
 
@@ -836,7 +832,7 @@ def genToAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM Command := 
   let catTerm ← getCategoryTerm cat annType
   let astType : Term := categoryToAstTypeIdent cat annType
   let cases ← toAstBuiltinMatches cat
-  let cases : Array MatchAlt ← ops.mapM_off (init := cases) (toAstMatch cat)
+  let cases : Array MatchAlt := cases ++ (← ops.mapM (toAstMatch cat))
   let toAst ← toAstIdentM cat
   trace[Strata.generator] "Generating {toAst}"
   let src := (←read).src
@@ -908,25 +904,31 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
     let ofAst ← ofAstIdentM cid
     pure <| mkApp ofAst #[e]
   | q`Init.CommaSepBy => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg varName c vi
-    ``(OfAstM.ofCommaSepByM $e fun $vc _ => $body)
+    getOfIdentArgSeq varName cat e ``SepFormat.comma
+  | q`Init.SpaceSepBy => do
+    getOfIdentArgSeq varName cat e ``SepFormat.space
+  | q`Init.SpacePrefixSepBy => do
+    getOfIdentArgSeq varName cat e ``SepFormat.spacePrefix
+  | q`Init.Seq => do
+    getOfIdentArgSeq varName cat e ``SepFormat.none
   | q`Init.Option => do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
     let body ← getOfIdentArg varName c vi
     ``(OfAstM.ofOptionM $e fun $vc _ => $body)
-  | q`Init.Seq => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg "e" c vi
-    ``(OfAstM.ofSeqM $e fun $vc _ => $body)
   | cid => do
     assert! cat.args.isEmpty
     let (vc, vi) ← genFreshIdentPair varName
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofOperationM $e fun $vc _ => $ofAst $vi)
+
+where
+  getOfIdentArgSeq (varName : String) (cat : SyntaxCat) (e : Term) (sepFormat : Name) : GenM Term := do
+    let c := cat.args[0]!
+    let (vc, vi) ← genFreshIdentPair varName
+    let body ← getOfIdentArg varName c vi
+    let sepFormatTerm := mkCApp sepFormat #[]
+    ``(OfAstM.ofSeqM $sepFormatTerm $e fun $vc _ => $body)
 
 end
 
@@ -1102,6 +1104,8 @@ def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT Inh
         match arg.cat.name with
         | q`Init.Seq => true
         | q`Init.CommaSepBy => true
+        | q`Init.SpaceSepBy => true
+        | q`Init.SpacePrefixSepBy => true
         | q`Init.Option => true
         | c => c ∈ inhabited
     if !isInhabited then
@@ -1202,13 +1206,14 @@ def genAstImpl : CommandElab := fun stx =>
     let .str .anonymous dialectName := dialectStx.getId
       | throwErrorAt dialectStx s!"Expected dialect name"
     let loader := dialectExt.getState (← getEnv) |>.loaded
+    let some d := loader.dialects[dialectName]?
+      | throwErrorAt dialectStx "Missing dialect {dialectName}"
+
     let depDialectNames := generateDependentDialects (loader.dialects[·]?) dialectName
     let usedDialects ← depDialectNames.mapM fun nm =>
           match loader.dialects[nm]? with
           | some d => pure d
           | none => panic! s!"Missing dialect {nm}"
-    let some d := loader.dialects[dialectName]?
-      | throwErrorAt dialectStx "Missing dialect"
     let (cm, errs) := mkCatOpMap usedDialects
     if errs.size > 0 then
       for e in errs do

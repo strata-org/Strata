@@ -388,17 +388,16 @@ info: B3: .ite
   (.literal () (.intLit () 1))
   (.literal () (.intLit () 0))
 ---
-info: if true then 1 else 0
+info: if true 1 else 0
 -/
 #guard_msgs in
-#eval roundtripExpr $ #strata program B3CST; check if true then 1 else 0 #end
+#eval roundtripExpr $ #strata program B3CST; check if true 1 else 0 #end
 
 /--
 info: B3: .quantifierExpr
   ()
   (.forall ())
-  u "i"
-  u "int"
+  u #[.quantVarDecl () u "i" u "int"]
   u #[]
   (.binaryOp
     ()
@@ -415,8 +414,7 @@ info: forall i : int i >= 0
 info: B3: .quantifierExpr
   ()
   (.exists ())
-  u "y"
-  u "bool"
+  u #[.quantVarDecl () u "y" u "bool"]
   u #[]
   (.binaryOp
     ()
@@ -433,8 +431,7 @@ info: exists y : bool y || !y
 info: B3: .quantifierExpr
   ()
   (.forall ())
-  u "x"
-  u "int"
+  u #[.quantVarDecl () u "x" u "int"]
   u #[.pattern
     ()
     u #[.functionCall
@@ -463,15 +460,14 @@ info: forall x : int pattern f(x), f(x) f(x) > 0
 info: B3: .quantifierExpr
   ()
   (.exists ())
-  u "y"
-  u "bool"
-  u #[.pattern
-    ()
-    u #[.unaryOp
+  u #[.quantVarDecl () u "y" u "bool"]
+  u #[.pattern () u #[.id () 0],
+    .pattern
       ()
-      (.not ())
-      (.id () 0)],
-  .pattern () u #[.id () 0]]
+      u #[.unaryOp
+        ()
+        (.not ())
+        (.id () 0)]]
   (.binaryOp
     ()
     (.or ())
@@ -487,23 +483,22 @@ info: exists y : bool pattern y pattern !y y || !y
 info: B3: .quantifierExpr
   ()
   (.forall ())
-  u "z"
-  u "int"
-  u #[.pattern
-    ()
-    u #[.binaryOp
+  u #[.quantVarDecl () u "z" u "int"]
+  u #[.pattern () u #[.id () 0],
+    .pattern
       ()
-      (.mul ())
-      (.id () 0)
-      (.literal () (.intLit () 2))],
-  .pattern
-    ()
-    u #[.binaryOp
+      u #[.binaryOp
+        ()
+        (.add ())
+        (.id () 0)
+        (.literal () (.intLit () 1))],
+    .pattern
       ()
-      (.add ())
-      (.id () 0)
-      (.literal () (.intLit () 1))],
-  .pattern () u #[.id () 0]]
+      u #[.binaryOp
+        ()
+        (.mul ())
+        (.id () 0)
+        (.literal () (.intLit () 2))]]
   (.binaryOp
     ()
     (.gt ())
@@ -515,6 +510,319 @@ info: forall z : int pattern z pattern z + 1 pattern z * 2 z > 0
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check forall z : int pattern z pattern z + 1 pattern z * 2 z > 0 #end
 
+/--
+info: B3: .quantifierExpr
+  ()
+  (.forall ())
+  u #[.quantVarDecl () u "x" u "int",
+    .quantVarDecl () u "y" u "int"]
+  u #[]
+  (.binaryOp
+    ()
+    (.le ())
+    (.id () 1)
+    (.id () 0))
+---
+info: forall x : int, y : int x <= y
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check forall x : int, y : int x <= y #end
+
+/--
+info: B3: .quantifierExpr
+  ()
+  (.exists ())
+  u #[.quantVarDecl () u "a" u "bool",
+    .quantVarDecl () u "b" u "bool",
+    .quantVarDecl () u "c" u "bool"]
+  u #[]
+  (.binaryOp
+    ()
+    (.and ())
+    (.binaryOp
+      ()
+      (.and ())
+      (.id () 2)
+      (.id () 1))
+    (.id () 0))
+---
+info: exists a : bool, b : bool, c : bool a && b && c
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check exists a : bool, b : bool, c : bool a && b && c #end
+
+/--
+info: B3: .quantifierExpr
+  ()
+  (.forall ())
+  u #[.quantVarDecl () u "i" u "int",
+    .quantVarDecl () u "j" u "int"]
+  u #[.pattern
+    ()
+    u #[.binaryOp
+      ()
+      (.add ())
+      (.id () 1)
+      (.id () 0)]]
+  (.binaryOp
+    ()
+    (.ge ())
+    (.binaryOp
+      ()
+      (.add ())
+      (.id () 1)
+      (.id () 0))
+    (.literal () (.intLit () 0)))
+---
+info: forall i : int, j : int pattern i + j i + j >= 0
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check forall i : int, j : int pattern i + j i + j >= 0 #end
+
 end ExpressionRoundtripTests
+
+section AssociativityAndPrecedenceTests
+
+-- Test <== left-associativity
+-- B3 grammar: ExpliesExpr ::= ( LogicalExpr "<==" )* LogicalExpr
+-- Expected: true <== false <== true parses as (true <== false) <== true (left-associative)
+/--
+info: B3: .binaryOp
+  ()
+  (.impliedBy ())
+  (.binaryOp
+    ()
+    (.impliedBy ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: true <== false <== true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true <== false <== true #end
+
+-- Test <== with explicit left-associative parentheses
+-- Should parse the same as without parentheses
+/--
+info: B3: .binaryOp
+  ()
+  (.impliedBy ())
+  (.binaryOp
+    ()
+    (.impliedBy ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: true <== false <== true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check (true <== false) <== true #end
+
+-- Test <== with explicit right-associative parentheses
+-- Should parse differently than without parentheses (if left-assoc is correct)
+/--
+info: B3: .binaryOp
+  ()
+  (.impliedBy ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.impliedBy ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true <== (false <== true)
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true <== (false <== true) #end
+
+-- Test ==> right-associativity
+-- B3 grammar: ImpliesExpr ::= LogicalExpr "==>" ImpliesExpr
+-- Expected: true ==> false ==> true parses as true ==> (false ==> true) (right-associative)
+/--
+info: B3: .binaryOp
+  ()
+  (.implies ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true ==> false ==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true ==> false ==> true #end
+
+-- Test ==> with explicit right-associative parentheses
+-- Should parse the same as without parentheses
+/--
+info: B3: .binaryOp
+  ()
+  (.implies ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true ==> false ==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true ==> (false ==> true) #end
+
+-- Test ==> with explicit left-associative parentheses
+-- Should parse differently than without parentheses (if right-assoc is correct)
+/--
+info: B3: .binaryOp
+  ()
+  (.implies ())
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: (true ==> false) ==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check (true ==> false) ==> true #end
+
+-- Commented out for now because of an infinite issue
+-- Test <==> left-associativity
+-- B3 grammar: Expr ::= ( ImpExpExpr "<=>" )* ImpExpExpr
+-- Expected: true <==> false <==> true parses as (true <==> false) <==> true (left-associative)
+/--
+info: B3: .binaryOp
+  ()
+  (.iff ())
+  (.binaryOp
+    ()
+    (.iff ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: true <==> false <==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check (true <==> false) <==> true #end
+
+-- Might not resolve but we still need to parse them without error or infinite loop
+/--
+info: B3: .binaryOp
+  ()
+  (.le ())
+  (.binaryOp
+    ()
+    (.le ())
+    (.literal () (.intLit () 0))
+    (.literal () (.intLit () 1)))
+  (.literal () (.intLit () 2))
+---
+info: 0 <= 1 <= 2
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check 0 <= 1 <= 2 #end
+
+-- We capture this parsing error as ok just in case the DDM tolerates things differently.
+/-- error: expected token -/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check 0 <= 1 => 2 #end
+
+/--
+info: B3: .binaryOp
+  ()
+  (.lt ())
+  (.binaryOp
+    ()
+    (.lt ())
+    (.literal () (.intLit () 0))
+    (.literal () (.intLit () 1)))
+  (.literal () (.intLit () 2))
+---
+info: 0 < 1 < 2
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check 0 < 1 < 2 #end
+
+/--
+info: B3: .binaryOp
+  ()
+  (.ge ())
+  (.binaryOp
+    ()
+    (.ge ())
+    (.literal () (.intLit () 0))
+    (.literal () (.intLit () 1)))
+  (.literal () (.intLit () 2))
+---
+info: 0 >= 1 >= 2
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check 0 >= 1 >= 2 #end
+
+
+/--
+info: B3: .binaryOp
+  ()
+  (.gt ())
+  (.binaryOp
+    ()
+    (.gt ())
+    (.literal () (.intLit () 0))
+    (.literal () (.intLit () 1)))
+  (.literal () (.intLit () 2))
+---
+info: 0 > 1 > 2
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check 0 > 1 > 2 #end
+
+
+-- Test <==> binds looser than ==>
+-- B3 grammar hierarchy: Expr (<==>)  contains ImpExpExpr (==>)
+-- Expected: true <==> false ==> true parses as true <==> (false ==> true)
+/--
+info: B3: .binaryOp
+  ()
+  (.iff ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true <==> false ==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true <==> false ==> true #end
+
+-- Test if-else as PrimaryExpr to capture current behavior
+-- It should be possible to remove parentheses around the if-else construct
+-- because it's an endless expression, but there is no option yet in the DDM for that because that would require detecting that the else expression has the lowest precedence possible.
+/--
+info: B3: .binaryOp
+  ()
+  (.add ())
+  (.literal () (.intLit () 1))
+  (.ite
+    ()
+    (.literal () (.boolLit () true))
+    (.literal () (.intLit () 2))
+    (.literal () (.intLit () 3)))
+---
+info: 1 + (if true 2 else 3)
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check 1 + if true 2 else 3 #end
+
+end AssociativityAndPrecedenceTests
 
 end B3

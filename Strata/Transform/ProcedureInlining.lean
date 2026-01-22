@@ -6,25 +6,27 @@
 
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
-import Strata.Languages.Boogie.Boogie
-import Strata.Languages.Boogie.BoogieGen
-import Strata.Languages.Boogie.ProgramWF
-import Strata.Languages.Boogie.Statement
-import Strata.Transform.BoogieTransform
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.CoreGen
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.Statement
+import Strata.Transform.CoreTransform
 
 /-! # Procedure Inlining Transformation -/
 
-namespace Boogie
+namespace Core
 namespace ProcedureInlining
 
 open Transform
 
 mutual
-partial def Block.substFvar (b : Block) (fr:Expression.Ident)
+def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-partial def Statement.substFvar (s : Boogie.Statement)
+def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
@@ -37,6 +39,8 @@ partial def Statement.substFvar (s : Boogie.Statement)
     .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .assume lbl b metadata =>
     .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .cover lbl b metadata =>
+    .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .call lhs pname args metadata =>
     .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
 
@@ -52,13 +56,16 @@ partial def Statement.substFvar (s : Boogie.Statement)
           (Block.substFvar body fr to)
           metadata
   | .goto _ _ => s
+  termination_by s.sizeOf
 end
 
 mutual
-partial def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
+def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
+def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
   match s with
   | .init lhs ty rhs metadata =>
@@ -75,18 +82,20 @@ partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Vi
   | .loop m g i b md =>
     .loop m g i (Block.renameLhs b fr to) md
   | .havoc l md => .havoc (if l.name == fr then to else l) md
-  | .assert _ _ _ | .assume _ _ _
-  | .goto _ _ => s
+  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
+  termination_by s.sizeOf
 end
 
 -- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
 mutual
-partial def Block.labels (b : Block): List String :=
+def Block.labels (b : Block): List String :=
   List.flatMap (fun s => Statement.labels s) b
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
 -- Assume and Assert's labels have special meanings, so they must not be
 -- mangled during procedure inlining.
-partial def Statement.labels (s : Boogie.Statement) : List String :=
+def Statement.labels (s : Core.Statement) : List String :=
   match s with
   | .block lbl b _ => lbl :: (Block.labels b)
   | .ite _ thenb elseb _ => (Block.labels thenb) ++ (Block.labels elseb)
@@ -94,15 +103,18 @@ partial def Statement.labels (s : Boogie.Statement) : List String :=
   | .assume lbl _ _ => [lbl]
   | .assert lbl _ _ => [lbl]
   | _ => []
+  termination_by s.sizeOf
 end
 
 mutual
-partial def Block.replaceLabels (b : Block) (map:Map String String)
+def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
-   b.map (fun s => Statement.replaceLabels s map)
+  b.map (fun s => Statement.replaceLabels s map)
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-partial def Statement.replaceLabels
-    (s : Boogie.Statement) (map:Map String String) : Boogie.Statement :=
+def Statement.replaceLabels
+    (s : Core.Statement) (map:Map String String) : Core.Statement :=
   let app (s:String) :=
     match Map.find? map s with
     | .none => s
@@ -117,12 +129,13 @@ partial def Statement.replaceLabels
   | .assume lbl e m => .assume (app lbl) e m
   | .assert lbl e m => .assert (app lbl) e m
   | _ => s
+  termination_by s.sizeOf
 end
 
 
 private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
     (prev_map : Map Expression.Ident Expression.Ident) (prefix_ : String)
-    : BoogieTransformM (Map Expression.Ident Expression.Ident) := do
+    : CoreTransformM (Map Expression.Ident Expression.Ident) := do
   let prev_map <- old_vars.foldlM
     (fun var_map id => do
       let new_name <- genIdent id (fun s => prefix_ ++ "_" ++ s)
@@ -131,7 +144,7 @@ private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
   return prev_map
 
 private def renameAllLocalNames (c:Procedure)
-    : BoogieTransformM (Procedure × Map Expression.Ident Expression.Ident) := do
+    : CoreTransformM (Procedure × Map Expression.Ident Expression.Ident) := do
   let var_map: Map Expression.Ident Expression.Ident := []
   let proc_name := c.header.name.name
 
@@ -179,11 +192,14 @@ This function does not update the specification because inlineCallStmt will not
 use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
-def inlineCallStmt (st: Statement) (p : Program)
-  : BoogieTransformM (List Statement) :=
+def inlineCallCmd (excluded_calls:List String := [])
+                  (cmd: Command) (p : Program)
+  : CoreTransformM (List Statement) :=
     open Lambda in do
-    match st with
+    match cmd with
       | .call lhs procName args _ =>
+
+        if procName ∈ excluded_calls then return [.cmd cmd] else
 
         let some proc := Program.Procedure.find? p procName
           | throw s!"Procedure {procName} not found in program"
@@ -207,16 +223,18 @@ def inlineCallStmt (st: Statement) (p : Program)
         --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
         -- `init outN` is not necessary because calls are only allowed to use
-        -- already declared variables (per Boogie.typeCheck)
+        -- already declared variables (per Core.typeCheck)
 
         -- Create a fresh var statement for each LHS
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
-        let outputInit := createInitVars
+        let outputInits := createInitVars
           (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
+        let outputHavocs := outputTrips.map (fun
+          (_,orgvar) => Statement.havoc orgvar)
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
         --let inputTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInit := createInits (sigInputs.zip args)
+        let inputInits := createInits (sigInputs.zip args)
         -- Assign the output variables in the signature to the actual output
         -- variables used in the callee.
         let outputSetStmts :=
@@ -230,30 +248,21 @@ def inlineCallStmt (st: Statement) (p : Program)
               Statement.set lhs_var (.fvar () out_var (.none)))
             outs_lhs_and_sig
 
-        let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
-          := inputInit ++ outputInit ++ proc.body ++ outputSetStmts
+        let stmts:List (Imperative.Stmt Core.Expression Core.Command)
+          := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
+             outputSetStmts
 
         return [.block (procName ++ "$inlined") stmts]
-      | _ => return [st]
 
-def inlineCallStmts (ss: List Statement) (prog : Program)
-  : BoogieTransformM (List Statement) := do match ss with
-    | [] => return []
-    | s :: ss =>
-      let s' := (inlineCallStmt s prog)
-      let ss' := (inlineCallStmts ss prog)
-      return (← s') ++ (← ss')
+      | _ => return [.cmd cmd]
+
+def inlineCallStmtsRec (ss: List Statement) (prog : Program)
+  : CoreTransformM (List Statement) :=
+  runStmtsRec inlineCallCmd ss prog
 
 def inlineCallL (dcls : List Decl) (prog : Program)
-  : BoogieTransformM (List Decl) :=
-  match dcls with
-  | [] => return []
-  | d :: ds =>
-    match d with
-    | .proc p =>
-      return Decl.proc { p with body := ← (inlineCallStmts p.body prog ) } ::
-        (← (inlineCallL ds prog))
-    | _       => return d :: (← (inlineCallL ds prog))
+  : CoreTransformM (List Decl) :=
+  runProcedures inlineCallCmd dcls prog
 
 end ProcedureInlining
-end Boogie
+end Core

@@ -92,7 +92,7 @@ def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :
 /--
 Instantiation of `TypeContext` for `ArithPrograms`.
 -/
-instance : TypeContext PureExpr Unit TEnv where
+instance : TypeContext PureExpr Unit TEnv Std.Format where
   isBoolType := Arith.TypeCheck.isBoolType
   freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))
   preprocess := fun _ => Arith.TypeCheck.preprocess
@@ -101,6 +101,7 @@ instance : TypeContext PureExpr Unit TEnv where
   lookup := Arith.TypeCheck.lookup
   inferType := fun _ => Arith.TypeCheck.inferType
   unifyTypes := Arith.TypeCheck.unifyTypes
+  typeErrorFmt := id
 
 instance : ToFormat (Cmds PureExpr × TEnv) where
   format arg :=
@@ -140,9 +141,7 @@ private def testProgram2 : Cmds Arith.PureExpr :=
 private def testProgram3 : Cmds Arith.PureExpr :=
   [.init "x" .Bool (.Var "x" .none)]
 
-/--
-info: error: Type Checking [init (x : .Bool) := x]: Variable x cannot appear in its own initialization expression!
--/
+/-- info: error: Variable x cannot appear in its own initialization expression! -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram3
           return format (cs, τ)
@@ -168,9 +167,7 @@ private def testProgram5 : Cmds Arith.PureExpr :=
   [.init "x" .Num (.Num 5),
    .init "x" .Bool (.Eq (.Num 1) (.Num 2))]
 
-/--
-info: error: Type Checking [init (x : .Bool) := 1 = 2]: Variable x of type Num already in context.
--/
+/-- info: error: Variable x of type Num already in context. -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram5
           return format (cs, τ)

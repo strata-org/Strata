@@ -41,19 +41,19 @@ op letExpr (name : Ident, value : Expression, body : Expression) : Expression =>
 
 op labeledExpr (label : Ident, e : Expression) : Expression => @[prec(1)] label ": " e:1;
 
-op ite (c : Expression, t : Expression, f : Expression) : Expression => @[prec(3)] "if " c:0 " then " indent(2, t:3) " else " indent(2, f:3);
-op iff (a : Expression, b : Expression) : Expression => @[prec(4)] a " <==> " b;
+op ite (c : Expression, t : Expression, f : Expression) : Expression => @[prec(3)] "if " c:0 " " indent(2, t:3) " else " indent(2, f:3);
+op iff (a : Expression, b : Expression) : Expression => @[prec(4), leftassoc] a " <==> " b;
 op implies (a : Expression, b : Expression) : Expression => @[prec(5), rightassoc] a " ==> " b;
-op impliedBy (a : Expression, b : Expression) : Expression => @[prec(5), rightassoc] a " <== " b;
+op impliedBy (a : Expression, b : Expression) : Expression => @[prec(5), leftassoc] a " <== " b;
 op and (a : Expression, b : Expression) : Expression => @[prec(10), leftassoc] a " && " b;
 op or (a : Expression, b : Expression) : Expression => @[prec(8), leftassoc] a " || " b;
 
 op equal (a : Expression, b : Expression) : Expression => @[prec(15)] a " == " b;
 op not_equal (a : Expression, b : Expression) : Expression => @[prec(15)] a " != " b;
-op le (a : Expression, b : Expression) : Expression => @[prec(15)] a " <= " b;
-op lt (a : Expression, b : Expression) : Expression => @[prec(15)] a " < " b;
-op ge (a : Expression, b : Expression) : Expression => @[prec(15)] a " >= " b;
-op gt (a : Expression, b : Expression) : Expression => @[prec(15)] a " > " b;
+op le (a : Expression, b : Expression) : Expression => @[prec(15), leftassoc] a " <= " b;
+op lt (a : Expression, b : Expression) : Expression => @[prec(15), leftassoc] a " < " b;
+op ge (a : Expression, b : Expression) : Expression => @[prec(15), leftassoc] a " >= " b;
+op gt (a : Expression, b : Expression) : Expression => @[prec(15), leftassoc] a " > " b;
 
 op neg (e : Expression) : Expression => "-" e;
 op add (a : Expression, b : Expression) : Expression => @[prec(25), leftassoc] a " + " b;
@@ -68,21 +68,14 @@ op functionCall (name : Ident, args : CommaSepBy Expression) : Expression => @[p
 category Pattern;
 op pattern (e : CommaSepBy Expression) : Pattern => " pattern " e:0;
 
-category Patterns;
-op patterns_cons (p : Pattern, ps : Patterns) : Patterns => @[prec(0)] p:0 ps:0;
-op patterns_single (p : Pattern) : Patterns => @[prec(0)] p:0;
+category VarDecl;
+op var_decl (name : Ident, ty : Ident) : VarDecl => name:0 " : " ty:0;
 
-op forall_expr_no_patterns (var : Ident, ty : Ident, body : Expression) : Expression =>
-  @[prec(1)] "forall " var " : " ty " " body:1;
+op forall_expr (vars : CommaSepBy VarDecl, patterns : Seq Pattern, body : Expression) : Expression =>
+  @[prec(1)] "forall " vars:0 patterns " " body:1;
 
-op forall_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression) : Expression =>
-  @[prec(1)] "forall " var " : " ty patterns " " body:1;
-
-op exists_expr_no_patterns (var : Ident, ty : Ident, body : Expression) : Expression =>
-  @[prec(1)] "exists " var " : " ty " " body:1;
-
-op exists_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression) : Expression =>
-  @[prec(1)] "exists " var " : " ty patterns " " body:1;
+op exists_expr (vars : CommaSepBy VarDecl, patterns : Seq Pattern, body : Expression) : Expression =>
+  @[prec(1)] "exists " vars:0 patterns " " body:1;
 
 category Statement;
 

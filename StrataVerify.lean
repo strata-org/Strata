@@ -5,28 +5,18 @@
 -/
 
 -- Executable for verifying a Strata program from a file.
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
 import Strata.Util.IO
 import Std.Internal.Parsec
 
 open Strata
 
-def isSuccessResult : Boogie.Result → Bool
-| .unsat => true
-| _ => false
-
-def isSuccessVCResult (vcResult : Boogie.VCResult) :=
-  isSuccessResult vcResult.result
-
-def isFailureVCResult (vcResult : Boogie.VCResult) :=
-  !isSuccessResult vcResult.result
-
 def parseOptions (args : List String) : Except Std.Format (Options × String) :=
   go Options.quiet args
     where
       go : Options → List String → Except Std.Format (Options × String)
-      | opts, "--verbose" :: rest => go {opts with verbose := true} rest
+      | opts, "--verbose" :: rest => go {opts with verbose := .normal} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
       | opts, "--type-check" :: rest => go {opts with typeCheckOnly := true} rest
       | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
@@ -41,7 +31,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : Std.Format :=
-  f!"Usage: StrataVerify [OPTIONS] <file.\{boogie, csimp}.st>{Std.Format.line}\
+  f!"Usage: StrataVerify [OPTIONS] <file.\{core, csimp}.st>{Std.Format.line}\
   {Std.Format.line}\
   Options:{Std.Format.line}\
   {Std.Format.line}  \
@@ -59,7 +49,7 @@ def main (args : List String) : IO UInt32 := do
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
-    let dctx := dctx.addDialect! Boogie
+    let dctx := dctx.addDialect! Core
     let dctx := dctx.addDialect! C_Simp
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match Strata.Elab.elabProgram dctx leanEnv inputCtx with
@@ -71,37 +61,38 @@ def main (args : List String) : IO UInt32 := do
         let ans := if file.endsWith ".csimp.st" then
                      C_Simp.typeCheck pgm opts
                    else
-                     -- Boogie.
+                     -- Strata Core.
                      typeCheck inputCtx pgm opts
         match ans with
         | .error e =>
-          println! f!"Type checking error: {e}"
+          println! f!"{e}"
           return 1
         | .ok _ =>
           println! f!"Program typechecked."
           return 0
       else -- !typeCheckOnly
-        let vcResults ←
-            if file.endsWith ".csimp.st" then
-              C_Simp.verify "z3" pgm opts
-            else
-              verify "z3" pgm inputCtx opts
+        let vcResults ← try
+          if file.endsWith ".csimp.st" then
+            C_Simp.verify "z3" pgm opts
+          else
+            verify "z3" pgm inputCtx opts
+        catch e =>
+          println! f!"{e}"
+          return (1 : UInt32)
         for vcResult in vcResults do
-          let posStr := match Boogie.formatPositionMetaData vcResult.obligation.metadata with
-                        | .none => "<none>"
-                        | .some str => s!"{str}"
+          let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
-        let success := vcResults.all isSuccessVCResult
+        let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
-          println! f!"Proved all {vcResults.size} goals."
+          println! f!"All {vcResults.size} goals passed."
           return 0
         else if success && opts.checkOnly then
           println! f!"Skipping verification."
           return 0
         else
-          let provedGoalCount := (vcResults.filter isSuccessVCResult).size
-          let failedGoalCount := (vcResults.filter isFailureVCResult).size
-          println! f!"Finished with {provedGoalCount} goals proved, {failedGoalCount} failed."
+          let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
+          let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+          println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
           return 1
     -- Strata.Elab.elabProgram
     | .error errors =>

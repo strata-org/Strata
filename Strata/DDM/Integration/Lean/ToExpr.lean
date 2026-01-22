@@ -4,20 +4,24 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-
-public import Strata.DDM.AST
-
+/-
+This module provides ToExpr instances and other methods
+for converting DDM types into Lean expressions.
+-/
 public import Lean.Elab.Term
+meta import Lean.Elab.Term.TermElabM
+public import Strata.DDM.AST
 import Strata.DDM.Util.ByteArray
 import Strata.DDM.Util.Decimal
 import Strata.DDM.Util.Lean
 
-meta import Lean.Elab.Term.TermElabM
+
+open Lean
+open Lean.Elab
+open Strata.Lean
 
 public section
 namespace Strata
-
-open Lean
 
 namespace QualifiedIdent
 
@@ -27,12 +31,17 @@ instance : ToExpr QualifiedIdent where
 
 end QualifiedIdent
 
-section
+namespace SepFormat
 
-open Lean.Elab
+instance : ToExpr SepFormat where
+  toTypeExpr := private mkConst ``SepFormat
+  toExpr
+    | .none => mkConst ``SepFormat.none
+    | .comma => mkConst ``SepFormat.comma
+    | .space => mkConst ``SepFormat.space
+    | .spacePrefix => mkConst ``SepFormat.spacePrefix
 
-private def rootIdent (name : Name) : Ident :=
-  .mk (.ident .none name.toString.toSubstring name [.decl name []])
+end SepFormat
 
 private meta def emptyLevel : Lean.Expr := mkApp (mkConst ``List.nil [.zero]) (mkConst ``Level)
 
@@ -46,7 +55,7 @@ Lean expression and returns another.
 syntax:max (name := astExprElab) "astExpr!" ident : term
 
 @[term_elab astExprElab]
-public meta def astExprElabImpl : Term.TermElab := fun stx _expectedType => do
+meta def astExprElabImpl : Term.TermElab := fun stx _expectedType => do
   match stx with
   | `(astExpr! $ident) => do
     let ctor ← realizeGlobalConstNoOverloadWithInfo ident
@@ -69,7 +78,7 @@ public meta def astExprElabImpl : Term.TermElab := fun stx _expectedType => do
 syntax:max (name := astAnnExprElab) "astAnnExpr!" ident term:max : term
 
 @[term_elab astAnnExprElab]
-public meta def astAnnExprElabImpl : Term.TermElab := fun stx _expectedType => do
+meta def astAnnExprElabImpl : Term.TermElab := fun stx _expectedType => do
   match stx with
   | `(astAnnExpr! $ident $ann) => do
     let ctor ← realizeGlobalConstNoOverloadWithInfo ident
@@ -88,8 +97,6 @@ public meta def astAnnExprElabImpl : Term.TermElab := fun stx _expectedType => d
     return mkApp3 (mkConst mkAppName) ctorExpr annTypeExpr annExpr
   | _ => do
     throwUnsupportedSyntax
-
-end
 
 namespace SyntaxCatF
 
@@ -159,12 +166,9 @@ private def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
 | .option ann a =>
   let tpe := ArgF.typeExpr α
   astAnnExpr! ArgF.option ann (optionToExpr tpe <| a.attach.map fun ⟨e, _⟩ => e.toExpr)
-| .seq ann a =>
+| .seq ann sep a =>
   let tpe := ArgF.typeExpr α
-  astAnnExpr! ArgF.seq ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
-| .commaSepList ann a =>
-  let tpe := ArgF.typeExpr α
-  astAnnExpr! ArgF.commaSepList ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
+  astAnnExpr! ArgF.seq ann (toExpr sep) <| arrayToExpr .zero tpe <| a.map (·.toExpr)
 termination_by a => sizeOf a
 
 private protected def OperationF.toExpr {α} [ToExpr α] (op : OperationF α) : Lean.Expr :=
@@ -228,6 +232,47 @@ instance : ToExpr PreType where
 
 end PreType
 
+namespace FunctionIterScope
+
+instance : ToExpr FunctionIterScope where
+  toTypeExpr := mkConst ``FunctionIterScope
+  toExpr
+  | .perConstructor => mkConst ``FunctionIterScope.perConstructor
+  | .perField => mkConst ``FunctionIterScope.perField
+
+end FunctionIterScope
+
+namespace TypeRef
+
+instance : ToExpr TypeRef where
+  toTypeExpr := mkConst ``TypeRef
+  toExpr
+  | .datatype => mkConst ``TypeRef.datatype
+  | .fieldType => mkConst ``TypeRef.fieldType
+  | .builtin name => astExpr! builtin (toExpr name)
+
+end TypeRef
+
+namespace NamePatternPart
+
+instance : ToExpr NamePatternPart where
+  toTypeExpr := mkConst ``NamePatternPart
+  toExpr
+  | .literal s => astExpr! literal (toExpr s)
+  | .datatype => mkConst ``NamePatternPart.datatype
+  | .constructor => mkConst ``NamePatternPart.constructor
+  | .field => mkConst ``NamePatternPart.field
+
+end NamePatternPart
+
+namespace FunctionTemplate
+
+instance : ToExpr FunctionTemplate where
+  toTypeExpr := mkConst ``FunctionTemplate
+  toExpr t := astExpr! mk (toExpr t.scope) (toExpr t.namePattern) (toExpr t.paramTypes) (toExpr t.returnType)
+
+end FunctionTemplate
+
 namespace MetadataArg
 
 private protected def typeExpr := mkConst ``MetadataArg
@@ -239,6 +284,7 @@ private protected def toExpr : MetadataArg → Lean.Expr
 | .option ma =>
   let maExpr := optionToExpr MetadataArg.typeExpr (ma.attach.map fun ⟨a, _⟩ => a.toExpr)
   astExpr! option maExpr
+| .functionTemplate t => astExpr! functionTemplate (toExpr t)
 
 instance : ToExpr MetadataArg where
   toTypeExpr := private MetadataArg.typeExpr
@@ -306,9 +352,6 @@ instance SynCatDecl.instToExpr : ToExpr SynCatDecl where
 
 namespace DebruijnIndex
 
-private protected def ofNat {n : Nat} [NeZero n] (a : Nat) : DebruijnIndex n :=
-  ⟨a % n, Nat.mod_lt _ (Nat.pos_of_neZero n)⟩
-
 instance {n} : ToExpr (DebruijnIndex n) where
   toTypeExpr := private .app (mkConst ``DebruijnIndex) (toExpr n)
   toExpr a := private
@@ -342,6 +385,18 @@ private protected def toExpr {argDecls} (b : TypeBindingSpec argDecls) (argDecls
 
 end TypeBindingSpec
 
+namespace DatatypeBindingSpec
+
+protected def toExpr {argDecls} (b : DatatypeBindingSpec argDecls) (argDeclsExpr : Lean.Expr) : Lean.Expr :=
+  astExpr! mk
+    argDeclsExpr
+    (toExpr b.nameIndex)
+    (toExpr b.typeParamsIndex)
+    (toExpr b.constructorsIndex)
+    (toExpr b.functionTemplates)
+
+end DatatypeBindingSpec
+
 namespace BindingSpec
 
 private def typeExpr (argDeclsExpr : Lean.Expr) : Lean.Expr := mkApp (mkConst ``BindingSpec) argDeclsExpr
@@ -355,6 +410,7 @@ private def toExpr {argDecls} (bi : BindingSpec argDecls) (argDeclsExpr : Lean.E
   match bi with
   | .value b => astExpr! value argDeclsExpr (b.toExpr argDeclsExpr)
   | .type b => astExpr! type argDeclsExpr (b.toExpr argDeclsExpr)
+  | .datatype b => astExpr! datatype argDeclsExpr (b.toExpr argDeclsExpr)
 
 end BindingSpec
 
@@ -408,6 +464,7 @@ private protected def toExpr : MetadataArgType → Lean.Expr
 | .num => astExpr! num
 | .ident => astExpr! ident
 | .opt tp => astExpr! opt tp.toExpr
+| .functionTemplate => astExpr! functionTemplate
 
 instance : ToExpr MetadataArgType where
   toTypeExpr := private mkConst ``MetadataArgType
