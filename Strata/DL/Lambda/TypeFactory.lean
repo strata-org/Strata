@@ -98,9 +98,9 @@ def tyNameAppearsIn (n: String) (t: LMonoTy) : Bool :=
 
 /--
 Determines whether all occurences of type name `n` within type `t` have
-arguments `args`. The string `c` appears only for error message information.
+arguments `args`. `c` appears only for error message information.
 -/
-def checkUniform (c: String) (n: String) (args: List LMonoTy) (t: LMonoTy) : Except Format Unit :=
+def checkUniform (c: Format) (n: String) (args: List LMonoTy) (t: LMonoTy) : Except Format Unit :=
   match t with
   | .tcons n1 args1 => if n == n1 && args == args1 then .ok ()
     else if n == n1 then .error f!"Error in constructor {c}: Non-uniform occurrence of {n}, which is applied to {args1} when it should be applied to {args}"
@@ -112,9 +112,9 @@ def checkUniform (c: String) (n: String) (args: List LMonoTy) (t: LMonoTy) : Exc
 
 /--
 Check for strict positivity and uniformity of all datatypes in a mutual block
-within type `ty`. The string `c` appears only for error message information.
+within type `ty`. `c` appears only for error message information.
 -/
-def checkStrictPosUnifTy (c: String) (block: MutualDatatype IDMeta) (ty: LMonoTy) : Except Format Unit :=
+def checkStrictPosUnifTy (c: Format) (block: MutualDatatype IDMeta) (ty: LMonoTy) : Except Format Unit :=
   match ty with
   | .arrow t1 t2 =>
     -- Check that no datatype in the block appears in the left side of an arrow

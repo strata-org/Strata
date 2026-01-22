@@ -10,7 +10,6 @@ import Strata.Languages.Core.Core
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
-import Strata.DDM.Util.Graph.Tarjan
 
 ---------------------------------------------------------------------
 
