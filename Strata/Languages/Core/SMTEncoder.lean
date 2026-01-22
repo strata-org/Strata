@@ -168,7 +168,6 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
         | none => throw (IO.userError s!"Datatype {datatypeName} not found in context")
         | some d =>
           let constructors ← d.constrs.mapM fun c => do
-            -- Use prefixed field names (Datatype..fieldName) for selector uniqueness
             let fieldPairs := c.args.map fun (name, fieldTy) =>
               (d.name ++ ".." ++ name.name, lMonoTyToSMTString fieldTy)
             let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
