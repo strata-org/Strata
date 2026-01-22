@@ -842,6 +842,7 @@ def evalBindingSpec
             translateBindingKind typeTree.asBindingType!
           | arg =>
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
+    -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
     pure { ident, kind }
   | .type b =>
     let ident := evalBindingNameIndex args b.nameIndex
