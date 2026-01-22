@@ -348,21 +348,13 @@ def readUpdateDiffAxiom : Core.Decl :=
   let v := LExpr.bvar () 5
   let storeOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
   let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
-  -- store(h, r1, f1, v)
   let storeExpr := LExpr.mkApp () storeOp [h, r1, f1, v]
-  -- read(store(h, r1, f1, v), r2, f2)
   let readAfterStore := LExpr.mkApp () readOp [storeExpr, r2, f2]
-  -- read(h, r2, f2)
   let readOriginal := LExpr.mkApp () readOp [h, r2, f2]
-  -- r1 != r2
   let refsDiff := LExpr.app () boolNotOp (LExpr.eq () r1 r2)
-  -- f1 != f2
   let fieldsDiff := LExpr.app () boolNotOp (LExpr.eq () f1 f2)
-  -- (r1 != r2 || f1 != f2)
   let precond := LExpr.app () (LExpr.app () boolOrOp refsDiff) fieldsDiff
-  -- read(store(h, r1, f1, v), r2, f2) == read(h, r2, f2)
   let conclusion := LExpr.eq () readAfterStore readOriginal
-  -- precond ==> conclusion
   let implBody := LExpr.app () (LExpr.app () Core.boolImpliesOp precond) conclusion
   let body := LExpr.all () (some LMonoTy.int) <|
               LExpr.all () (some fieldTy) <|
