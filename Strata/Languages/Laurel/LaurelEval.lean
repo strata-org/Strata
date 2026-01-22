@@ -220,7 +220,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
                 withResult <| EvalResult.TypeError s!"Static invocation of {callee} with wrong return type"
               else
                 pure transparantResult
-            | Body.Opaque (postcondition: StmtExpr) _ => panic! "not implemented: opaque body"
+            | Body.Opaque (postcondition: StmtExpr) _ _ => panic! "not implemented: opaque body"
             | Body.Abstract (postcondition: StmtExpr) => panic! "not implemented: opaque body"
           popStack
           pure result

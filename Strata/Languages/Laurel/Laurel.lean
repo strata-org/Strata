@@ -61,12 +61,14 @@ inductive Operation: Type where
 -- Explicit instance needed for deriving Repr in the mutual block
 instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
 
+
 mutual
 structure Procedure: Type where
   name : Identifier
   inputs : List Parameter
   outputs : List Parameter
   precondition : StmtExpr
+  determinism : Determinism
   decreases : Option StmtExpr -- optionally prove termination
   body : Body
 
@@ -98,7 +100,7 @@ inductive HighType : Type where
 inductive Body where
   | Transparent (body : StmtExpr)
 /- Without an implementation, the postcondition is assumed -/
-  | Opaque (postcondition : StmtExpr) (implementation : Option StmtExpr) (determinism: Determinism) (modifies : Option StmtExpr)
+  | Opaque (postcondition : StmtExpr) (implementation : Option StmtExpr) (modifies : Option StmtExpr)
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
   | Abstract (postcondition : StmtExpr)

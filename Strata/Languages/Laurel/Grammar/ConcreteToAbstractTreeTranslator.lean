@@ -119,6 +119,7 @@ instance : Inhabited Procedure where
     inputs := []
     outputs := []
     precondition := .LiteralBool true
+    determinism := .nondeterministic
     decreases := none
     body := .Transparent (.LiteralBool true)
   }
@@ -270,13 +271,14 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     let body ← translateCommand bodyArg
     -- If there's a postcondition, use Opaque body; otherwise use Transparent
     let procBody := match postcondition with
-      | some post => Body.Opaque post (some body) .nondeterministic none
+      | some post => Body.Opaque post (some body) none
       | none => Body.Transparent body
     return {
       name := name
       inputs := parameters
       outputs := returnParameters
       precondition := precondition
+      determinism := .nondeterministic
       decreases := none
       body := procBody
     }

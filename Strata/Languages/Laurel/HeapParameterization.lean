@@ -69,7 +69,7 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
     | .Transparent b => (collectExpr b).run {} |>.2
-    | .Opaque postcond impl _ _ =>
+    | .Opaque postcond impl _ =>
         let r1 := (collectExpr postcond).run {} |>.2
         let r2 := match impl with
           | some e => (collectExpr e).run {} |>.2
@@ -196,11 +196,11 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformExpr heapName bodyExpr
           pure (.Transparent bodyExpr')
-      | .Opaque postcond impl det modif =>
+      | .Opaque postcond impl modif =>
           let postcond' ← heapTransformExpr heapName postcond
           let impl' ← impl.mapM (heapTransformExpr heapName)
           let modif' ← modif.mapM (heapTransformExpr heapName)
-          pure (.Opaque postcond' impl' det modif')
+          pure (.Opaque postcond' impl' modif')
       | .Abstract postcond =>
           let postcond' ← heapTransformExpr heapName postcond
           pure (.Abstract postcond')
@@ -217,9 +217,9 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           pure (.Transparent bodyExpr)
-      | .Opaque postcond impl det modif =>
+      | .Opaque postcond impl modif =>
           let postcond' ← heapTransformExpr heapName postcond
-          pure (.Opaque postcond' impl det modif)
+          pure (.Opaque postcond' impl modif)
       | .Abstract postcond =>
           let postcond' ← heapTransformExpr heapName postcond
           pure (.Abstract postcond')

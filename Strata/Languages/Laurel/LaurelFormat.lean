@@ -122,8 +122,7 @@ def formatDeterminism : Determinism → Format
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque post impl determ modif =>
-      "opaque " ++ formatDeterminism determ ++
+  | .Opaque post impl modif =>
       (match modif with
        | none => ""
        | some m => " modifies " ++ formatStmtExpr m) ++
@@ -138,6 +137,7 @@ def formatProcedure (proc : Procedure) : Format :=
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
   "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++
+  formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 
 def formatField (f : Field) : Format :=

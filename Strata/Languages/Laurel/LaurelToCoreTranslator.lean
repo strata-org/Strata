@@ -251,7 +251,7 @@ def translateProcedure (constants : List Constant) (heapWriters : List Identifie
   -- Translate postcondition for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
-    | .Opaque postcond _ _ _ =>
+    | .Opaque postcond _ _ =>
         let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond }
         [("ensures", check)]
     | _ => []
@@ -265,7 +265,7 @@ def translateProcedure (constants : List Constant) (heapWriters : List Identifie
   let body : List Core.Statement :=
     match proc.body with
     | .Transparent bodyExpr => (translateStmt constants initEnv proc.outputs bodyExpr).2
-    | .Opaque _postcond (some impl) _ _ => (translateStmt constants initEnv proc.outputs impl).2
+    | .Opaque _postcond (some impl) _ => (translateStmt constants initEnv proc.outputs impl).2
     | _ => []
   {
     header := header
