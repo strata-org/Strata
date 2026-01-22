@@ -39,7 +39,7 @@ def typeCheck (options : Options) (program : Program)
   let C := { Lambda.LContext.default with
                 functions := factory,
                 knownTypes := Core.KnownTypes }
-  let (program, _T) ← Program.typeCheck C T program
+  let (program, _T) ← Program.typeCheck C T program |>.mapError (fun dm => dm.format none)
   -- dbg_trace f!"[Strata.Core] Type variables:\n{T.state.substInfo.subst.length}"
   -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
   if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"

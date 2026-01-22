@@ -86,6 +86,19 @@ theorem Identifiers.addWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Ident
   simp
   grind
 
+/-- If `Except.mapError` returns `.ok`, then the underlying result was also `.ok`. -/
+theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
+    Except.mapError f e = .ok v → e = .ok v := by
+  cases e with
+  | error _ => simp [Except.mapError]
+  | ok val => simp [Except.mapError]
+
+/-- Variant of `addWithErrorNotin` that works through `Except.mapError`. -/
+theorem Identifiers.addWithErrorNotin' {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta} {g : Format → ε}:
+    Except.mapError g (m.addWithError x f) = .ok m' → m.contains x = false := by
+  intro h
+  exact addWithErrorNotin (Except.mapError_ok h)
+
 theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
   unfold addWithError contains;
   have m_contains := (Std.HashMap.containsThenInsertIfNew_fst (m:=m) (k:=x.name) (v:=x.metadata));
@@ -104,6 +117,12 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   constructor
   . intros _; apply Or.inl; cases x; cases y; grind
   . rw[meta_eq]; intros _; simp
+
+/-- Variant of `addWithErrorContains` that works through `Except.mapError`. -/
+theorem Identifiers.addWithErrorContains' {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta} {g : Format → ε}:
+    Except.mapError g (m.addWithError x f) = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
+  intro h
+  exact addWithErrorContains (Except.mapError_ok h)
 
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)

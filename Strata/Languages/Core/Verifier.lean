@@ -465,12 +465,7 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-structure DiagnosticModel where
-  fileRange : Strata.FileRange
-  message : String
-  deriving Repr, BEq
-
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
+def toDiagnosticModel (vcr : Core.VCResult) : Option Strata.DiagnosticModel := do
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
@@ -483,10 +478,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
         | .implementationError msg => s!"verification error: {msg}"
         | _ => panic "impossible"
 
-      some {
-        fileRange := fileRange
-        message := message
-      }
+      some (Strata.DiagnosticModel.withRange fileRange message)
     | _ => none
 
 structure Diagnostic where
