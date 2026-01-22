@@ -168,7 +168,9 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
         | none => throw (IO.userError s!"Datatype {datatypeName} not found in context")
         | some d =>
           let constructors ← d.constrs.mapM fun c => do
-            let fieldPairs := c.args.map fun (name, fieldTy) => (name.name, lMonoTyToSMTString fieldTy)
+            -- Use prefixed field names (Datatype..fieldName) for selector uniqueness
+            let fieldPairs := c.args.map fun (name, fieldTy) =>
+              (d.name ++ ".." ++ name.name, lMonoTyToSMTString fieldTy)
             let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
             let fieldsStr := String.intercalate " " fieldStrs
             if c.args.isEmpty then
@@ -376,7 +378,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
         Note: testers use constructor, translated in `Op.mkName` to is-foo
-        Selectors use full function name, directly translated to function app
+        Selectors use full function name (Datatype..fieldName) for uniqueness
         -/
         let name := match kind with
           | .selector => fn.name
