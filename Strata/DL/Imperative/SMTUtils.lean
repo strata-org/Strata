@@ -115,7 +115,7 @@ def processModel {P : PureExpr} [ToFormat P.Ident]
     | none => .error f!"Cannot find model for id: {id}"
     | some p => .ok p.value
 
-def runSolver (solver : String) (args : Array String) : IO String := do
+def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
     cmd := solver
     args := args
@@ -123,15 +123,16 @@ def runSolver (solver : String) (args : Array String) : IO String := do
   -- dbg_trace f!"runSolver: exitcode: {repr output.exitCode}\n\
   --                         stderr: {repr output.stderr}\n\
   --                         stdout: {repr output.stdout}"
-  return output.stdout
+  return output
 
 def solverResult {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
-    (vars : List P.TypedIdent) (ans : String)
+    (vars : List P.TypedIdent) (output : IO.Process.Output)
     (E : Strata.SMT.EncoderState) : Except Format (Result P.TypedIdent) := do
-  let pos := (ans.find (fun c => c == '\n' || c == '\r')).byteIdx
-  let verdict := ans.take pos
-  let rest := ans.drop pos
+  let stdout := output.stdout
+  let pos := (stdout.find (fun c => c == '\n' || c == '\r')).byteIdx
+  let verdict := stdout.take pos
+  let rest := stdout.drop pos
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest
@@ -139,12 +140,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     .ok (.sat model)
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | other     =>  .error other
-
-def VC_folder_name: String := "vcs"
-
-def smt2_filename (name: String) (suffix : String := "") : String :=
-  name ++ suffix ++ ".smt2"
+  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
 
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
   (encodeTerms : List Strata.SMT.Term → Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
@@ -152,14 +148,10 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
   (vars : List P.TypedIdent) (smtsolver filename : String)
   (terms : List Strata.SMT.Term) :
   IO (Except Format (Result P.TypedIdent × Strata.SMT.EncoderState)) := do
-  if !(← System.FilePath.isDir VC_folder_name) then
-    let _ ← IO.FS.createDir VC_folder_name
-  let filename := s!"{VC_folder_name}/{filename}"
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
   let (ids, estate) ← encodeTerms terms solver
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
-  IO.println s!"Wrote problem to {filename}."
   let produce_models ←
     if smtsolver.endsWith "z3" then
       -- No need to specify -model because we already have `get-value` in the
@@ -169,8 +161,8 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
       .ok "--produce-models"
     else
       return .error f!"Unsupported SMT solver: {smtsolver}"
-  let solver_out ← runSolver smtsolver #[filename, produce_models]
-  match solverResult typedVarToSMTFn vars solver_out estate with
+  let solver_output ← runSolver smtsolver #[filename, produce_models]
+  match solverResult typedVarToSMTFn vars solver_output estate with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 

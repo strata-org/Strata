@@ -9,8 +9,8 @@ public import Strata.DDM.AST
 public import Strata.DDM.Elab.Core
 
 import Std.Data.HashMap
-import Strata.DDM.Util.Array
-import Strata.DDM.Util.Fin
+import all Strata.DDM.Util.Array
+import all Strata.DDM.Util.Fin
 
 set_option autoImplicit false
 

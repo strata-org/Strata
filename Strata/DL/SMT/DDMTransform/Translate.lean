@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
 import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.Term
-import Strata.DDM.Format
-import Strata.DDM.Util.DecimalRat
 
 namespace Strata
 
@@ -156,11 +153,9 @@ private def dummy_prg_for_toString :=
 def toString (t:SMT.Term): Except String String := do
   let ddm_term <- translateFromTerm t
   let ddm_ast := SMTDDM.Term.toAst ddm_term
-  let fmt := Operation.instToStrataFormat.mformat ddm_ast
-    (dummy_prg_for_toString.formatContext {})
-    dummy_prg_for_toString.formatState
-  return fmt.format |>.render
-
+  let ctx := dummy_prg_for_toString.formatContext {}
+  let s := dummy_prg_for_toString.formatState
+  return ddm_ast.render ctx s |>.fst
 
 /-- info: Except.ok "(+ 10 20)" -/
 #guard_msgs in #eval (toString

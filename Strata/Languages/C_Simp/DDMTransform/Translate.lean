@@ -11,7 +11,7 @@ import Strata.Languages.C_Simp.C_Simp
 namespace Strata
 
 namespace C_Simp
--- (TODO) A bunch of this is just copied from Boogie (or copied with very minor changes)
+-- (TODO) A bunch of this is just copied from Strata Core  (or copied with very minor changes)
 -- What can we factor out to shared code (and where should we put it)?
 
 

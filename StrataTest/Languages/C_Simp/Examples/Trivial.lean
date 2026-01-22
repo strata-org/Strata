@@ -30,7 +30,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println TrivialPgm.format.render
+#eval IO.println TrivialPgm
 
 /--
 info: function trivial {
@@ -45,7 +45,7 @@ Errors: #[]
 #eval Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (TrivialPgm.commands))
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

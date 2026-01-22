@@ -1,7 +1,7 @@
 Successfully parsed.
-Axioms.boogie.st(25, 4) [assert_0]: ✅ pass
-Axioms.boogie.st(26, 4) [assert_1]: ✅ pass
-Axioms.boogie.st(27, 4) [assert_2]: ✅ pass
-Axioms.boogie.st(37, 4) [assert_3]: 🟡 unknown
-Axioms.boogie.st(48, 4) [assert_4]: ✅ pass
+Axioms.core.st(25, 4) [assert_0]: ✅ pass
+Axioms.core.st(26, 4) [assert_1]: ✅ pass
+Axioms.core.st(27, 4) [assert_2]: ✅ pass
+Axioms.core.st(37, 4) [assert_3]: 🟡 unknown
+Axioms.core.st(48, 4) [assert_4]: ✅ pass
 Finished with 4 goals passed, 1 failed.

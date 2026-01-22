@@ -49,7 +49,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println SimpleTestEnv.format.render
+#eval IO.println SimpleTestEnv
 
 
 /--
@@ -72,7 +72,7 @@ open Strata.C_Simp in
 #eval TransM.run (translateProgram (SimpleTestEnv.commands))
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -93,7 +93,6 @@ Assumptions:
 Proof Obligation:
 #true
 
-Wrote problem to vcs/test_assert.smt2.
 ---
 info:
 Obligation: test_assert

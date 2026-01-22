@@ -8,38 +8,35 @@ import Strata.DDM.AST
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Laurel
 import Strata.DL.Imperative.MetaData
-import Strata.Languages.Boogie.Expressions
+import Strata.Languages.Core.Expressions
 
 namespace Laurel
 
 open Std (ToFormat Format format)
-open Strata (QualifiedIdent Arg SourceRange)
+open Strata (QualifiedIdent Arg SourceRange Uri FileRange)
 open Lean.Parser (InputContext)
-open Imperative (MetaData Uri FileRange)
+open Imperative (MetaData)
 
 structure TransState where
-  inputCtx : InputContext
+  uri : Uri
+  errors : Array String
 
 abbrev TransM := StateT TransState (Except String)
 
-def TransM.run (ictx : InputContext) (m : TransM α) : Except String α :=
-  match StateT.run m { inputCtx := ictx } with
+def TransM.run (uri : Uri) (m : TransM α) : Except String α :=
+  match StateT.run m { uri := uri, errors := #[] } with
   | .ok (v, _) => .ok v
   | .error e => .error e
 
 def TransM.error (msg : String) : TransM α :=
   throw msg
 
-def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
-  let file := ictx.fileName
-  let startPos := ictx.fileMap.toPosition sr.start
-  let endPos := ictx.fileMap.toPosition sr.stop
-  let uri : Uri := .file file
-  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
+def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
+  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
   #[fileRangeElt]
 
-def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
-  return SourceRange.toMetaData (← get).inputCtx arg.ann
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
+  return SourceRange.toMetaData (← get).uri arg.ann
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -63,13 +60,13 @@ def translateBool (arg : Arg) : TransM Bool := do
   match arg with
   | .expr (.fn _ name) =>
     match name with
-    | q`Laurel.boolTrue => return true
-    | q`Laurel.boolFalse => return false
+    | q`Init.boolTrue => return true
+    | q`Init.boolFalse => return false
     | _ => TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr name}"
   | .op op =>
     match op.name with
-    | q`Laurel.boolTrue => return true
-    | q`Laurel.boolFalse => return false
+    | q`Init.boolTrue => return true
+    | q`Init.boolFalse => return false
     | _ => TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr op.name}"
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
@@ -151,8 +148,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return .Block stmts none
-    | q`Laurel.boolTrue, _ => return .LiteralBool true
-    | q`Laurel.boolFalse, _ => return .LiteralBool false
+    | q`Laurel.literalBool, #[arg0] => return .LiteralBool (← translateBool arg0)
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
       return .LiteralInt n
