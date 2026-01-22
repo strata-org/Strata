@@ -34,7 +34,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TBool => LMonoTy.bool
   | .TVoid => LMonoTy.bool
   | .THeap => .tcons "Heap" []
-  | .TField => panic "TField should not be translated directly - field constants are polymorphic"
+  | .TTypedField valueType => .tcons "Field" [translateType valueType]
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
 
@@ -362,13 +362,14 @@ def readUpdateDiffObjAxiom : Core.Decl :=
 
 def translateConstant (c : Constant) : Core.Decl :=
   match c.type with
-  | .TField =>
-      -- Field constants are polymorphic: () → Field T
+  | .TTypedField valueType =>
+      -- Field constants with known type: () → Field <valueType>
+      let valueTy := translateType valueType
       .func {
         name := Core.CoreIdent.glob c.name
-        typeArgs := ["T"]
+        typeArgs := []
         inputs := []
-        output := .tcons "Field" [.ftvar "T"]
+        output := .tcons "Field" [valueTy]
         body := none
       }
   | _ =>

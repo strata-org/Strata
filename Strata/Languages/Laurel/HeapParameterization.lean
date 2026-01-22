@@ -116,12 +116,16 @@ structure TransformState where
   fieldConstants : List Constant := []
   heapReaders : List Identifier
   heapWriters : List Identifier
+  fieldTypes : List (Identifier × HighType) := []  -- Maps field names to their value types
 
 abbrev TransformM := StateM TransformState
 
-def addFieldConstant (name : Identifier) : TransformM Unit :=
+def addFieldConstant (name : Identifier) (valueType : HighType) : TransformM Unit :=
   modify fun s => if s.fieldConstants.any (·.name == name) then s
-    else { s with fieldConstants := { name := name, type := .TField } :: s.fieldConstants }
+    else { s with fieldConstants := { name := name, type := .TTypedField valueType } :: s.fieldConstants }
+
+def lookupFieldType (name : Identifier) : TransformM (Option HighType) := do
+  return (← get).fieldTypes.find? (·.1 == name) |>.map (·.2)
 
 def readsHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapReaders.contains name
@@ -132,7 +136,10 @@ def writesHeap (name : Identifier) : TransformM Bool := do
 partial def heapTransformExpr (heapVar : Identifier) (expr : StmtExpr) : TransformM StmtExpr := do
   match expr with
   | .FieldSelect target fieldName =>
-      addFieldConstant fieldName
+      let fieldType ← lookupFieldType fieldName
+      match fieldType with
+      | some ty => addFieldConstant fieldName ty
+      | none => addFieldConstant fieldName .TInt  -- Fallback to int if type unknown
       let t ← heapTransformExpr heapVar target
       return .StaticCall "heapRead" [.Identifier heapVar, t, .Identifier fieldName]
   | .StaticCall callee args =>
@@ -151,7 +158,10 @@ partial def heapTransformExpr (heapVar : Identifier) (expr : StmtExpr) : Transfo
   | .Assign t v md =>
       match t with
       | .FieldSelect target fieldName =>
-          addFieldConstant fieldName
+          let fieldType ← lookupFieldType fieldName
+          match fieldType with
+          | some ty => addFieldConstant fieldName ty
+          | none => addFieldConstant fieldName .TInt  -- Fallback to int if type unknown
           let target' ← heapTransformExpr heapVar target
           let v' ← heapTransformExpr heapVar v
           -- Assign to global heap variable
@@ -221,10 +231,15 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
 def heapParameterization (program : Program) : Program × List Identifier :=
   let heapReaders := computeReadsHeap program.staticProcedures
   let heapWriters := computeWritesHeap program.staticProcedures
+  -- Extract field types from composite type definitions
+  let fieldTypes := program.types.foldl (fun acc typeDef =>
+    match typeDef with
+    | .Composite ct => acc ++ ct.fields.map (fun f => (f.name, f.type))
+    | .Constrained _ => acc) []
   -- Debug: print heap readers and writers
   dbg_trace s!"Heap readers: {heapReaders}"
   dbg_trace s!"Heap writers: {heapWriters}"
-  let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders, heapWriters }
+  let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders, heapWriters, fieldTypes }
   ({ program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }, heapWriters)
 
 end Strata.Laurel

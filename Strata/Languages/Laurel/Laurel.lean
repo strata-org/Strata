@@ -84,7 +84,7 @@ inductive HighType : Type where
   | TInt
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
   | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
-  | TField /- Internal type for field constants in heap parameterization pass. Not accessible via grammar. -/
+  | TTypedField (valueType : HighType) /- Field constant with known value type. Not accessible via grammar. -/
   | UserDefined (name: Identifier)
   | Applied (base : HighType) (typeArguments : List HighType)
   /- Pure represents a composite type that does not support reference equality -/
@@ -195,7 +195,7 @@ def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.TInt, HighType.TInt => true
   | HighType.TFloat64, HighType.TFloat64 => true
   | HighType.THeap, HighType.THeap => true
-  | HighType.TField, HighType.TField => true
+  | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))

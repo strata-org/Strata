@@ -38,59 +38,21 @@ procedure useBool(c: Container) returns (r: bool) {
   r := c#boolValue;
 }
 
-// The following two need support for calling procedures in an expression context.
 procedure caller(c: Container, d: Container) {
   assume d#intValue == 1;
   var x: int := foo(c, d);
   assert d#intValue == 3;
 }
 
-//procedure impureContract(c: Container) {
-//  assert foo(c,c) == 3;
-//}
+procedure implicitEquality(c: Container, d: Container) {
+  c#intValue := 1;
+  d#intValue := 2;
+  if (c#intValue == d#intValue) {
+    assert c == d;
+//  ^^^^^^^^^^^^^^ assertion does not hold
+  }
+}
 "
 
--- #guard_msgs(drop info, error) in
+#guard_msgs(drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile
-
-/-
-Translation towards SMT:
-
-type Composite;
-type Field;
-val value: Field
-
-function foo(heap_in: Heap, c: Composite, d: Composite) returns (r: int, out_heap: Heap) {
-  var heap = heap_in;
-  var x = read(heap, c, value);
-  heap = update(heap, d, value, read(heap, d, value));
-  heap_out = heap;
-}
-
-proof foo_body {
-  var heap_in;
-  var Heap;
-  var c: Composite;
-  var d: Composite;
-  var r: int;
-  var out_heap: Heap;
-
-  var heap = heap_in;
-  var x = read(heap, c, value);
-  heap = update(heap, d, value, read(heap, d, value));
-  assert x == read(heap, c, value);
-}
-
-proof caller {
-  var heap_in;
-  var Heap;
-  var c: Composite;
-  var d: Composite;
-  var heap_out: Heap;
-
-  heap = heap_in;
-  var x: int;
-  (x, heap) = foo(heap, c, d);
-  heap_out = heap;
-}
--/

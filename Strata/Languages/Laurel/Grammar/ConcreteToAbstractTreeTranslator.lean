@@ -285,17 +285,45 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
-def parseTopLevel (arg : Arg) : TransM (Option Procedure) := do
+def parseField (arg : Arg) : TransM Field := do
+  let .op op := arg
+    | TransM.error s!"parseField expects operation"
+  match op.name, op.args with
+  | q`Laurel.mutableField, #[nameArg, typeArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    return { name := name, isMutable := true, type := fieldType }
+  | q`Laurel.immutableField, #[nameArg, typeArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    return { name := name, isMutable := false, type := fieldType }
+  | _, _ =>
+    TransM.error s!"parseField expects mutableField or immutableField, got {repr op.name}"
+
+def parseComposite (arg : Arg) : TransM TypeDefinition := do
+  let .op op := arg
+    | TransM.error s!"parseComposite expects operation"
+  match op.name, op.args with
+  | q`Laurel.composite, #[nameArg, fieldsArg] =>
+    let name ← translateIdent nameArg
+    let fields ← match fieldsArg with
+      | .seq _ _ args => args.toList.mapM parseField
+      | _ => pure []
+    return .Composite { name := name, extending := [], fields := fields, instanceProcedures := [] }
+  | _, _ =>
+    TransM.error s!"parseComposite expects composite, got {repr op.name}"
+
+def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
   let .op op := arg
     | TransM.error s!"parseTopLevel expects operation"
 
   match op.name, op.args with
   | q`Laurel.topLevelProcedure, #[procArg] =>
     let proc ← parseProcedure procArg
-    return some proc
-  | q`Laurel.topLevelComposite, #[_compositeArg] =>
-    -- TODO: handle composite types
-    return none
+    return (some proc, none)
+  | q`Laurel.topLevelComposite, #[compositeArg] =>
+    let typeDef ← parseComposite compositeArg
+    return (none, some typeDef)
   | _, _ =>
     TransM.error s!"parseTopLevel expects topLevelProcedure or topLevelComposite, got {repr op.name}"
 
@@ -319,15 +347,19 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
       prog.commands
 
   let mut procedures : List Procedure := []
+  let mut types : List TypeDefinition := []
   for op in commands do
-    let result ← parseTopLevel (.op op)
-    match result with
+    let (procOpt, typeOpt) ← parseTopLevel (.op op)
+    match procOpt with
     | some proc => procedures := procedures ++ [proc]
-    | none => pure () -- composite types are skipped for now
+    | none => pure ()
+    match typeOpt with
+    | some typeDef => types := types ++ [typeDef]
+    | none => pure ()
   return {
     staticProcedures := procedures
     staticFields := []
-    types := []
+    types := types
   }
 
 end Laurel
