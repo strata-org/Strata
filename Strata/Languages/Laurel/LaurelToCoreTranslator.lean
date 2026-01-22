@@ -308,57 +308,69 @@ def updateFunction : Core.Decl :=
     body := none
   }
 
--- Axiom: forall h, o, f, v :: heapRead(heapStore(h, o, f, v), o, f) == v
--- Using int for field values since Core doesn't support polymorphism in axioms
+-- Axiom 1: read-over-write-same
+-- forall h, r, f, v :: read(store(h, r, f, v), r, f) == v
 def readUpdateSameAxiom : Core.Decl :=
   let heapTy := LMonoTy.tcons "Heap" []
   let compTy := LMonoTy.tcons "Composite" []
   let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
-  -- Build: heapRead(heapStore(h, o, f, v), o, f) == v using de Bruijn indices
-  -- Quantifier order (outer to inner): int (v), Field int (f), Composite (o), Heap (h)
-  -- So: h is bvar 0, o is bvar 1, f is bvar 2, v is bvar 3
+  -- Quantifier order (outer to inner): int (v), Field int (f), Composite (r), Heap (h)
+  -- So: h is bvar 0, r is bvar 1, f is bvar 2, v is bvar 3
   let h := LExpr.bvar () 0
-  let o := LExpr.bvar () 1
+  let r := LExpr.bvar () 1
   let f := LExpr.bvar () 2
   let v := LExpr.bvar () 3
-  let updateOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
+  let storeOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
   let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
-  let updateExpr := LExpr.mkApp () updateOp [h, o, f, v]
-  let readExpr := LExpr.mkApp () readOp [updateExpr, o, f]
+  let storeExpr := LExpr.mkApp () storeOp [h, r, f, v]
+  let readExpr := LExpr.mkApp () readOp [storeExpr, r, f]
   let eqBody := LExpr.eq () readExpr v
-  -- Wrap in foralls: forall v:int, f:Field int, o:Composite, h:Heap
   let body := LExpr.all () (some LMonoTy.int) <|
               LExpr.all () (some fieldTy) <|
               LExpr.all () (some compTy) <|
               LExpr.all () (some heapTy) eqBody
-  .ax { name := "heapRead_heapStore_same", e := body }
+  .ax { name := "read_over_write_same", e := body }
 
--- Axiom: forall h, o1, o2, f, v :: o1 != o2 ==> heapRead(heapStore(h, o1, f, v), o2, f) == heapRead(h, o2, f)
--- Using int for field values since Core doesn't support polymorphism in axioms
-def readUpdateDiffObjAxiom : Core.Decl :=
+-- Axiom 2: read-over-write-diff
+-- forall h, r1, r2, f1, f2, v ::
+--   (r1 != r2 || f1 != f2) ==> read(store(h, r1, f1, v), r2, f2) == read(h, r2, f2)
+def readUpdateDiffAxiom : Core.Decl :=
   let heapTy := LMonoTy.tcons "Heap" []
   let compTy := LMonoTy.tcons "Composite" []
   let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
-  -- Quantifier order (outer to inner): int (v), Field int (f), Composite (o2), Composite (o1), Heap (h)
-  -- So: h is bvar 0, o1 is bvar 1, o2 is bvar 2, f is bvar 3, v is bvar 4
+  -- Quantifier order (outer to inner): int (v), Field (f2), Field (f1), Composite (r2), Composite (r1), Heap (h)
+  -- So: h is bvar 0, r1 is bvar 1, r2 is bvar 2, f1 is bvar 3, f2 is bvar 4, v is bvar 5
   let h := LExpr.bvar () 0
-  let o1 := LExpr.bvar () 1
-  let o2 := LExpr.bvar () 2
-  let f := LExpr.bvar () 3
-  let v := LExpr.bvar () 4
-  let updateOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
+  let r1 := LExpr.bvar () 1
+  let r2 := LExpr.bvar () 2
+  let f1 := LExpr.bvar () 3
+  let f2 := LExpr.bvar () 4
+  let v := LExpr.bvar () 5
+  let storeOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
   let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
-  let updateExpr := LExpr.mkApp () updateOp [h, o1, f, v]
-  let lhs := LExpr.mkApp () readOp [updateExpr, o2, f]
-  let rhs := LExpr.mkApp () readOp [h, o2, f]
-  let neq := LExpr.app () boolNotOp (LExpr.eq () o1 o2)
-  let implBody := LExpr.app () (LExpr.app () Core.boolImpliesOp neq) (LExpr.eq () lhs rhs)
+  -- store(h, r1, f1, v)
+  let storeExpr := LExpr.mkApp () storeOp [h, r1, f1, v]
+  -- read(store(h, r1, f1, v), r2, f2)
+  let readAfterStore := LExpr.mkApp () readOp [storeExpr, r2, f2]
+  -- read(h, r2, f2)
+  let readOriginal := LExpr.mkApp () readOp [h, r2, f2]
+  -- r1 != r2
+  let refsDiff := LExpr.app () boolNotOp (LExpr.eq () r1 r2)
+  -- f1 != f2
+  let fieldsDiff := LExpr.app () boolNotOp (LExpr.eq () f1 f2)
+  -- (r1 != r2 || f1 != f2)
+  let precond := LExpr.app () (LExpr.app () boolOrOp refsDiff) fieldsDiff
+  -- read(store(h, r1, f1, v), r2, f2) == read(h, r2, f2)
+  let conclusion := LExpr.eq () readAfterStore readOriginal
+  -- precond ==> conclusion
+  let implBody := LExpr.app () (LExpr.app () Core.boolImpliesOp precond) conclusion
   let body := LExpr.all () (some LMonoTy.int) <|
+              LExpr.all () (some fieldTy) <|
               LExpr.all () (some fieldTy) <|
               LExpr.all () (some compTy) <|
               LExpr.all () (some compTy) <|
               LExpr.all () (some heapTy) implBody
-  .ax { name := "heapRead_heapStore_diff_obj", e := body }
+  .ax { name := "read_over_write_diff", e := body }
 
 def translateConstant (c : Constant) : Core.Decl :=
   match c.type with
@@ -452,7 +464,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) Core.Program 
   let constDecls := heapProgram.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
   let funcDecls := [readFunction, updateFunction]
-  let axiomDecls := [readUpdateSameAxiom, readUpdateDiffObjAxiom]
+  let axiomDecls := [readUpdateSameAxiom, readUpdateDiffAxiom]
   -- Add global heap variable declaration with a free variable as initializer
   let heapTy := LMonoTy.tcons "Heap" []
   let heapInitVar := LExpr.fvar () (Core.CoreIdent.glob "$heap_init") (some heapTy)
