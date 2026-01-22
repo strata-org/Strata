@@ -793,6 +793,94 @@ info: #0
 #eval format $
   typeCheckAndPartialEval #[[listTy], [wrapperTy']] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
+---------------------------------------------------------------------
+-- Test 15: 3-way mutually recursive datatypes (A -> B -> C -> A)
+---------------------------------------------------------------------
+
+section ThreeWayMutualRecursion
+
+/-
+type TyA = MkA TyB
+type TyB = MkB TyC
+type TyC = LeafC int | NodeC TyA TyA
+-/
+
+def mkAConstr' : LConstr Unit := {name := "MkA", args := [("b", .tcons "TyB" [])], testerName := "isMkA"}
+def tyATy : LDatatype Unit := {name := "TyA", typeArgs := [], constrs := [mkAConstr'], constrs_ne := rfl}
+
+def mkBConstr' : LConstr Unit := {name := "MkB", args := [("c", .tcons "TyC" [])], testerName := "isMkB"}
+def tyBTy : LDatatype Unit := {name := "TyB", typeArgs := [], constrs := [mkBConstr'], constrs_ne := rfl}
+
+def leafCConstr : LConstr Unit := {name := "LeafC", args := [("val", .int)], testerName := "isLeafC"}
+def nodeCConstr : LConstr Unit := {name := "NodeC", args := [("left", .tcons "TyA" []), ("right", .tcons "TyA" [])], testerName := "isNodeC"}
+def tyCTy : LDatatype Unit := {name := "TyC", typeArgs := [], constrs := [leafCConstr, nodeCConstr], constrs_ne := rfl}
+
+def threeWayBlock : MutualDatatype Unit := [tyATy, tyBTy, tyCTy]
+
+-- Syntactic sugar
+def mkA (b : LExpr TestParams.mono) : LExpr TestParams.mono :=
+  (LExpr.op () ("MkA" : TestParams.Identifier) .none).mkApp () [b]
+def mkB (c : LExpr TestParams.mono) : LExpr TestParams.mono :=
+  (LExpr.op () ("MkB" : TestParams.Identifier) .none).mkApp () [c]
+def leafC (v : LExpr TestParams.mono) : LExpr TestParams.mono :=
+  (LExpr.op () ("LeafC" : TestParams.Identifier) .none).mkApp () [v]
+def nodeC (l r : LExpr TestParams.mono) : LExpr TestParams.mono :=
+  (LExpr.op () ("NodeC" : TestParams.Identifier) .none).mkApp () [l, r]
+
+-- Test tester
+/-- info: Annotated expression:
+((~isNodeC : (arrow TyC bool)) (((~NodeC : (arrow TyA (arrow TyA TyC))) ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #1)))) ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #2)))))
+
+---
+info: #true
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[threeWayBlock] (Factory.default : @Factory TestParams)
+    ((LExpr.op () ("isNodeC" : TestParams.Identifier) .none).mkApp ()
+      [nodeC (mkA (mkB (leafC (intConst () 1)))) (mkA (mkB (leafC (intConst () 2))))])
+
+/-
+Test eliminator: compute tree size (count all MkA/MkB/LeafC/NodeC constructors)
+
+Tree structure:
+  MkA (MkB (NodeC
+    (MkA (MkB (LeafC 1)))
+    (MkA (MkB (NodeC
+      (MkA (MkB (LeafC 2)))
+      (MkA (MkB (LeafC 3))))))))
+
+Size = 5 MkA + 5 MkB + 2 NodeC + 3 LeafC = 15
+-/
+
+def threeWayTree : LExpr TestParams.mono :=
+  mkA (mkB (nodeC
+    (mkA (mkB (leafC (intConst () 1))))
+    (mkA (mkB (nodeC
+      (mkA (mkB (leafC (intConst () 2))))
+      (mkA (mkB (leafC (intConst () 3)))))))))
+
+def treeSizeA (t : LExpr TestParams.mono) : LExpr TestParams.mono :=
+  (LExpr.op () ("TyA$Elim" : TestParams.Identifier) .none).mkApp ()
+    [t,
+     .abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))),  -- MkA: 1 + rec(b)
+     .abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))),  -- MkB: 1 + rec(c)
+     .abs () .none (intConst () 1),                                       -- LeafC: 1
+     absMulti' 4 (addOp (intConst () 1) (addOp (.bvar () 1) (.bvar () 0)))]  -- NodeC: 1 + rec(l) + rec(r)
+
+/-- info: Annotated expression:
+((((((~TyA$Elim : (arrow TyA (arrow (arrow TyB (arrow int int)) (arrow (arrow TyC (arrow int int)) (arrow (arrow int int) (arrow (arrow TyA (arrow TyA (arrow int (arrow int int)))) int)))))) ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) (((~NodeC : (arrow TyA (arrow TyA TyC))) ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #1)))) ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) (((~NodeC : (arrow TyA (arrow TyA TyC))) ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #2)))) ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #3)))))))))) (λ (λ (((~Int.Add : (arrow int (arrow int int))) #1) %0)))) (λ (λ (((~Int.Add : (arrow int (arrow int int))) #1) %0)))) (λ #1)) (λ (λ (λ (λ (((~Int.Add : (arrow int (arrow int int))) #1) (((~Int.Add : (arrow int (arrow int int))) %1) %0)))))))
+
+---
+info: #15
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[threeWayBlock] (IntBoolFactory : @Factory TestParams)
+    (treeSizeA threeWayTree)
+
+end ThreeWayMutualRecursion
+
 end MutualRecursion
 
 end Lambda

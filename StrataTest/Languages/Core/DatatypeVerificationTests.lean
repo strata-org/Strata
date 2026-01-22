@@ -758,5 +758,25 @@ info: "Test 9 - Mutual Recursive with Havoc: PASSED\n  Verified 2 obligation(s)\
 #guard_msgs in
 #eval test9_mutualRecursiveWithHavoc
 
+/-! ## Test 10: Duplicate Datatype Name in Mutual Block (Typecheck Failure) -/
+
+/-- Duplicate of optionDatatype to trigger validation error -/
+def optionDatatype2 : LDatatype Visibility :=
+  { name := "Option"  -- Same name as optionDatatype!
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"Nothing", .unres⟩, args := [], testerName := "isNothing" }
+    ]
+    constrs_ne := by decide }
+
+/--
+info: error:  Error in type Option: a declaration of this name already exists.
+-/
+#guard_msgs in
+#eval do
+  let program : Program := {
+    decls := [Decl.type (.data [optionDatatype, optionDatatype2]) .empty]
+  }
+  Core.typeCheck .default program
 
 end Core.DatatypeVerificationTests

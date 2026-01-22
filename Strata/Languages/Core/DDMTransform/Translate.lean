@@ -275,7 +275,10 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.boundTypeVars.size
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
-  | _ => TransM.error s!"translateLMonoTy not yet implemented {repr tp}"
+  | .arrow _ arg res =>
+    let arg' ← translateLMonoTy bindings (.type arg)
+    let res' ← translateLMonoTy bindings (.type res)
+    return (.arrow arg' res')
 
 partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :
   TransM (Array LMonoTy) :=
@@ -1386,7 +1389,8 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
       Core.Decl.func func
 
     -- Only includes typeDecl, factory functions generated later
-    let typeDecl := Core.Decl.type (.data [ldatatype])
+    let md ← getOpMetaData op
+    let typeDecl := Core.Decl.type (.data [ldatatype]) md
     let allDecls := [typeDecl]
 
     /-

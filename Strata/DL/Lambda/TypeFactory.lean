@@ -143,9 +143,8 @@ Validate a mutual block: check non-empty and no duplicate names.
 def validateMutualBlock (block: MutualDatatype IDMeta) : Except Format Unit := do
   if block.isEmpty then
     .error f!"Error: Empty mutual block is not allowed"
-  let names : Std.HashSet String := ∅
-  match (block.foldl (fun o d =>
-    if d.name ∈ names then some d else o) none) with
+  match (block.foldl (fun (o, names) d =>
+    if d.name ∈ names then (some d, names) else (o, Std.HashSet.insert names d.name)) (none, ∅)).1 with
   | some dup => .error f!"Duplicate datataype name in mutual block: {dup}"
   | none => .ok ()
 
