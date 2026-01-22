@@ -56,13 +56,17 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) 
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
-      -- Check if this is a constant (field constant) or a variable
+      -- Check if this is a constant (field constant), global variable, or local variable
       if isConstant constants name then
         -- Constants are global identifiers (functions with no arguments)
         let ident := Core.CoreIdent.glob name
         -- Field constants are declared as functions () → Field T
         -- We just reference them as operations without application
         .op () ident none
+      else if name == "$heap" then
+        -- Global heap variable
+        let ident := Core.CoreIdent.glob name
+        .fvar () ident (some (.tcons "Heap" []))
       else
         -- Regular variables are local identifiers
         let ident := Core.CoreIdent.locl name
@@ -105,6 +109,10 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) 
       let fnOp := .op () ident none
       args.foldl (fun acc arg => .app () acc (translateExpr constants env arg)) fnOp
   | .Block [single] _ => translateExpr constants env single
+  | .FieldSelect target fieldName =>
+      -- Field selects should have been eliminated by heap parameterization
+      -- If we see one here, it's an error in the pipeline
+      panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   decreasing_by
   all_goals (simp_wf; try omega)
@@ -166,9 +174,15 @@ def translateStmt (constants : List Constant) (env : TypeEnv) (outputParams : Li
   | .Assign target value _ =>
       match target with
       | .Identifier name =>
-          let ident := Core.CoreIdent.locl name
-          let boogieExpr := translateExpr constants env value
-          (env, [Core.Statement.set ident boogieExpr])
+          -- Check if this is the global heap variable
+          if name == "$heap" then
+            let heapIdent := Core.CoreIdent.glob "$heap"
+            let boogieExpr := translateExpr constants env value
+            (env, [Core.Statement.set heapIdent boogieExpr])
+          else
+            let ident := Core.CoreIdent.locl name
+            let boogieExpr := translateExpr constants env value
+            (env, [Core.Statement.set ident boogieExpr])
       | _ => (env, [])
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr constants env cond
@@ -212,19 +226,17 @@ def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :
 /--
 Translate Laurel Procedure to Core Procedure
 -/
-def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Procedure :=
-  -- Check if this procedure has a heap parameter (first input named "heap")
-  let hasHeapParam := proc.inputs.any (fun p => p.name == "heap" && p.type == .THeap)
-  -- Rename heap input to heap_in if present (Core doesn't allow modifying parameters)
-  let renamedInputs := proc.inputs.map (fun p =>
-    if p.name == "heap" && p.type == .THeap then { p with name := "heap_in" } else p)
-  let inputPairs := renamedInputs.map translateParameterToCore
+def translateProcedure (constants : List Constant) (heapWriters : List Identifier) (proc : Procedure) : Core.Procedure :=
+  let inputPairs := proc.inputs.map translateParameterToCore
   let inputs := inputPairs
+
+  let outputs := proc.outputs.map translateParameterToCore
+
   let header : Core.Procedure.Header := {
     name := proc.name
     typeArgs := []
     inputs := inputs
-    outputs := proc.outputs.map translateParameterToCore
+    outputs := outputs
   }
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type)) ++
@@ -243,25 +255,17 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
         let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond }
         [("ensures", check)]
     | _ => []
+  -- Add $heap to modifies clause only if this procedure writes to the heap
+  let modifies := if heapWriters.contains proc.name then [Core.CoreIdent.glob "$heap"] else []
   let spec : Core.Procedure.Spec := {
-    modifies := []
+    modifies := modifies
     preconditions := preconditions
     postconditions := postconditions
   }
-  -- If we have a heap parameter, add initialization: var heap := heap_in
-  -- This is needed because Core doesn't allow modifying parameter variables
-  let heapInit : List Core.Statement :=
-    if hasHeapParam then
-      let heapTy := LMonoTy.tcons "Heap" []
-      let heapType := LTy.forAll [] heapTy
-      let heapIdent := Core.CoreIdent.locl "heap"
-      let heapInExpr := LExpr.fvar () (Core.CoreIdent.locl "heap_in") (some heapTy)
-      [Core.Statement.init heapIdent heapType heapInExpr]
-    else []
   let body : List Core.Statement :=
     match proc.body with
-    | .Transparent bodyExpr => heapInit ++ (translateStmt constants initEnv proc.outputs bodyExpr).2
-    | .Opaque _postcond (some impl) _ _ => heapInit ++ (translateStmt constants initEnv proc.outputs impl).2
+    | .Transparent bodyExpr => (translateStmt constants initEnv proc.outputs bodyExpr).2
+    | .Opaque _postcond (some impl) _ _ => (translateStmt constants initEnv proc.outputs impl).2
     | _ => []
   {
     header := header
@@ -435,17 +439,28 @@ Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) Core.Program := do
   let sequencedProgram ← liftExpressionAssignments program
-  let heapProgram := heapParameterization sequencedProgram
+  let (heapProgram, heapWriters) := heapParameterization sequencedProgram
+  dbg_trace "===  Program after heapParameterization==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format heapProgram)))
+  dbg_trace "================================="
   -- Separate procedures that can be functions from those that must be procedures
   let (funcProcs, procProcs) := heapProgram.staticProcedures.partition canBeBoogieFunction
-  let procedures := procProcs.map (translateProcedure heapProgram.constants)
+  let procedures := procProcs.map (translateProcedure heapProgram.constants heapWriters)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction heapProgram.constants)
   let constDecls := heapProgram.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
   let funcDecls := [readFunction, updateFunction]
   let axiomDecls := [readUpdateSameAxiom, readUpdateDiffObjAxiom]
-  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }
+  -- Add global heap variable declaration with a free variable as initializer
+  let heapTy := LMonoTy.tcons "Heap" []
+  let heapInitVar := LExpr.fvar () (Core.CoreIdent.glob "$heap_init") (some heapTy)
+  let heapVarDecl := Core.Decl.var
+    (Core.CoreIdent.glob "$heap")
+    (LTy.forAll [] heapTy)
+    heapInitVar
+    .empty
+  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ [heapVarDecl] ++ constDecls ++ laurelFuncDecls ++ procDecls }
 
 /--
 Verify a Laurel program using an SMT solver

@@ -72,7 +72,7 @@ def formatStmtExpr (s:StmtExpr) : Format :=
   | .Assign target value _ =>
       formatStmtExpr target ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
-      formatStmtExpr target ++ "." ++ Format.text field
+      formatStmtExpr target ++ "#" ++ Format.text field
   | .PureFieldUpdate target field value =>
       formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
   | .StaticCall name args =>
@@ -136,7 +136,9 @@ def formatBody : Body → Format
 def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
-  "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++ formatBody proc.body
+  "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
+  "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++
+  formatBody proc.body
 
 def formatField (f : Field) : Format :=
   (if f.isMutable then "var " else "val ") ++

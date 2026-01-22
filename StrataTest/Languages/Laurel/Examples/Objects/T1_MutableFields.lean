@@ -19,7 +19,8 @@ composite Container {
 }
 
 procedure foo(c: Container, d: Container) returns (r: int)
-  requires c != d
+  requires c != d && d#intValue == 1
+  ensures d#intValue == 3
 {
   var x: int := c#intValue;
   var initialDValue: int := d#intValue;
@@ -38,16 +39,18 @@ procedure useBool(c: Container) returns (r: bool) {
 }
 
 // The following two need support for calling procedures in an expression context.
-//procedure caller(c: Container, d: Container) {
-//  var x: int := foo(c, d);
-//}
+procedure caller(c: Container, d: Container) {
+  assume d#intValue == 1;
+  var x: int := foo(c, d);
+  assert d#intValue == 3;
+}
 
 //procedure impureContract(c: Container) {
 //  assert foo(c,c) == 3;
 //}
 "
 
-#guard_msgs(drop info, error) in
+-- #guard_msgs(drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile
 
 /-

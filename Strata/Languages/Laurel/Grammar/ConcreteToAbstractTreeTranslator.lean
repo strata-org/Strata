@@ -132,6 +132,8 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.lt => some Operation.Lt
   | q`Laurel.le => some Operation.Leq
   | q`Laurel.ge => some Operation.Geq
+  | q`Laurel.and => some Operation.And
+  | q`Laurel.or => some Operation.Or
   | _ => none
 
 mutual

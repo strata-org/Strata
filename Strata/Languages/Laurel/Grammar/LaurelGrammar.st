@@ -41,6 +41,10 @@ op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<" rhs;
 op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<=" rhs;
 op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">=" rhs;
 
+// Logical operators
+op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30)] lhs "&&" rhs;
+op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(25)] lhs "||" rhs;
+
 // If-else
 category OptionalElse;
 op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
