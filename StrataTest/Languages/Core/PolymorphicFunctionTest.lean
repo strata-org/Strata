@@ -4,12 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 
 /-!
 # Polymorphic Function Integration Tests
 
-Tests polymorphic function declarations in Boogie syntax, including parsing,
+Tests polymorphic function declarations in Core syntax, including parsing,
 typechecking, and type inference.
 -/
 
@@ -21,7 +21,7 @@ namespace Strata.PolymorphicFunctionTest
 
 def singleTypeParamDeclPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 function identity<a>(x : a) : a;
 
@@ -31,7 +31,7 @@ function identity<a>(x : a) : a;
 info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 -/
 #guard_msgs in
-#eval Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamDeclPgm)).fst
+#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamDeclPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 2: Single Type Parameter Function Concrete Instantiation
@@ -39,7 +39,7 @@ info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 
 def singleTypeParamIntPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 function identity<a>(x : a) : a;
 
@@ -65,7 +65,7 @@ init (y : int) := (init_y_1 : int)
 x := #42
 y := ((~identity : (arrow int int)) (x : int))-/
 #guard_msgs in
-#eval (Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamIntPgm)).fst)
+#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamIntPgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 3: Multiple Type Parameter Function Used in Expression
@@ -73,7 +73,7 @@ y := ((~identity : (arrow int int)) (x : int))-/
 
 def multiTypeParamUsePgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 function makePair<a, b>(x : a, y : b) : Map a b;
 
@@ -95,7 +95,7 @@ postconditions: (TestMakePair_ensures_0, #true)
 body: init (m : (Map int bool)) := (init_m_0 : (Map int bool))
 m := (((~makePair : (arrow int (arrow bool (Map int bool)))) #42) #true)-/
 #guard_msgs in
-#eval (Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram multiTypeParamUsePgm)).fst)
+#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram multiTypeParamUsePgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 4: Polymorphic Function with Arrow Types Used in Expression
@@ -103,7 +103,7 @@ m := (((~makePair : (arrow int (arrow bool (Map int bool)))) #42) #true)-/
 
 def arrowTypeParamUsePgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 function apply<a, b>(f : a -> b, x : a) : b;
 function intToBool(x : int) : bool;
@@ -127,7 +127,7 @@ postconditions: (TestApply_ensures_0, #true)
 body: init (result : bool) := (init_result_0 : bool)
 result := (((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (arrow int bool))) #42)-/
 #guard_msgs in
-#eval (Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram arrowTypeParamUsePgm)).fst)
+#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram arrowTypeParamUsePgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 5: Different Instantiations in a Single Term
@@ -135,7 +135,7 @@ result := (((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (
 
 def differentInstantiationsPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 function identity<a>(x : a) : a;
 function makePair<a, b>(x : a, y : b) : Map a b;
@@ -159,7 +159,7 @@ postconditions: (TestDifferentInstantiations_ensures_0, #true)
 body: init (m : (Map int bool)) := (init_m_0 : (Map int bool))
 m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))-/
 #guard_msgs in
-#eval (Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram differentInstantiationsPgm)).fst)
+#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram differentInstantiationsPgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 6: Negative Test - Type Unification Failure (eq with different types)
@@ -167,7 +167,7 @@ m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arro
 
 def eqTypeMismatchPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 function eq<a>(x : a, y : a) : bool;
 
@@ -184,6 +184,6 @@ spec {
 /-- info: error: (0, 0) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
 First mismatch: int with bool.-/
 #guard_msgs in
-#eval (Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eqTypeMismatchPgm)).fst)
+#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eqTypeMismatchPgm)).fst)
 
 end Strata.PolymorphicFunctionTest

@@ -400,6 +400,15 @@ protected def toExpr {argDecls} (b : DatatypeBindingSpec argDecls) (argDeclsExpr
 
 end DatatypeBindingSpec
 
+namespace TypeVarsBindingSpec
+
+protected def toExpr {argDecls} (b : TypeVarsBindingSpec argDecls) (argDeclsExpr : Lean.Expr) : Lean.Expr :=
+  astExpr! mk
+    argDeclsExpr
+    (toExpr b.argsIndex)
+
+end TypeVarsBindingSpec
+
 namespace BindingSpec
 
 private def typeExpr (argDeclsExpr : Lean.Expr) : Lean.Expr := mkApp (mkConst ``BindingSpec) argDeclsExpr
@@ -414,6 +423,7 @@ private def toExpr {argDecls} (bi : BindingSpec argDecls) (argDeclsExpr : Lean.E
   | .value b => astExpr! value argDeclsExpr (b.toExpr argDeclsExpr)
   | .type b => astExpr! type argDeclsExpr (b.toExpr argDeclsExpr)
   | .datatype b => astExpr! datatype argDeclsExpr (b.toExpr argDeclsExpr)
+  | .typeVars b => astExpr! typeVars argDeclsExpr (b.toExpr argDeclsExpr)
 
 end BindingSpec
 

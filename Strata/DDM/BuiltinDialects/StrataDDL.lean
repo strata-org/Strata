@@ -171,8 +171,8 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
    used for recursive datatype definitions where the datatype name must be visible when parsing constructor field types (e.g., `tail: List` in
    `Cons(head: int, tail: List)`) -/
   declareMetadata { name := "scopeDatatype", args := #[.mk "name" .ident, .mk "typeParams" .ident] }
-  -- Metadata for bringing type variable names into scope as .tvar bindings.
-  declareMetadata { name := "scopeTypeVars", args := #[.mk "typeArgs" .ident] }
+  -- Metadata for declaring type variables from identifiers (creates .tvar bindings in result context)
+  declareMetadata { name := "declareTypeVars", args := #[.mk "args" .ident] }
 
 end Strata
 end

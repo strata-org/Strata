@@ -4,12 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 
 /-!
 # Polymorphic Datatype Integration Tests
 
-Tests polymorphic datatype declarations in Boogie syntax, including function
+Tests polymorphic datatype declarations in Core syntax, including function
 generation (constructor, accessor, etc) and SMT verification for concrete
 instantiations.
 -/
@@ -22,7 +22,7 @@ namespace Strata.PolymorphicDatatypeTest
 
 def optionDeclPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
@@ -35,7 +35,7 @@ Type Arguments:
 Constructors:
 [Name: None Args: [] Tester: Option..isNone , Name: Some Args: [(value, a)] Tester: Option..isSome ]-/
 #guard_msgs in
-#eval Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionDeclPgm)).fst
+#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionDeclPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 2: Option Used with Concrete Type (int)
@@ -43,7 +43,7 @@ Constructors:
 
 def optionIntPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
@@ -82,7 +82,7 @@ y := ((~Some : (arrow int (Option int))) #42)
 v := ((~value : (arrow (Option int) int)) (y : (Option int)))
 assert [valIs42] ((v : int) == #42)-/
 #guard_msgs in
-#eval Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
+#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 3: List Used with Concrete Type (int)
@@ -90,7 +90,7 @@ assert [valIs42] ((v : int) == #42)-/
 
 def listIntPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
@@ -125,7 +125,7 @@ xs := (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (((~Cons : (arro
 h := ((~head : (arrow (List int) int)) (xs : (List int)))
 assert [headIs1] ((h : int) == #1)-/
 #guard_msgs in
-#eval Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
+#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 4: Type with Multiple Parameters (Either)
@@ -133,7 +133,7 @@ assert [headIs1] ((h : int) == #1)-/
 
 def eitherUsePgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
 
@@ -173,7 +173,7 @@ assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Eithe
 assert [yIsRight] ((~Either..isRight : (arrow (Either int bool) bool)) (y : (Either int bool)))
 assert [lValue] (((~l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)-/
 #guard_msgs in
-#eval Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
+#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 9: Nested Polymorphic Types (Option of List)
@@ -181,7 +181,7 @@ assert [lValue] (((~l : (arrow (Either int bool) int)) (x : (Either int bool))) 
 
 def nestedPolyPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
@@ -220,7 +220,7 @@ body: init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
 x := ((~Some : (arrow (List int) (Option (List int)))) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (~Nil : (List int))))
 assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))-/
 #guard_msgs in
-#eval Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
+#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 6: Polymorphic List Destructor with Havoc (SMT verification)
@@ -228,7 +228,7 @@ assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Opti
 
 def polyListHavocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
@@ -275,7 +275,7 @@ Result: ✅ pass
 /-- Test SMT verification with List int and List bool in same procedure -/
 def multiInstSMTPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 

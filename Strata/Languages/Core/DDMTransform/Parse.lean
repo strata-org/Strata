@@ -39,6 +39,7 @@ type bv64;
 type Map (dom : Type, range : Type);
 
 category TypeArgs;
+@[declareTypeVars(args)]
 op type_args (args : CommaSepBy Ident) : TypeArgs => "<" args ">";
 
 category Bind;
@@ -265,8 +266,8 @@ op command_constdecl (name : Ident,
 @[declareFn(name, b, r)]
 op command_fndecl (name : Ident,
                    typeArgs : Option TypeArgs,
-                   @[scopeTypeVars(typeArgs)] b : Bindings,
-                   @[scopeTypeVars(typeArgs)] r : Type) : Command =>
+                   @[scope(typeArgs)] b : Bindings,
+                   @[scope(typeArgs)] r : Type) : Command =>
   "function " name typeArgs b ":" r ";\n";
 
 category Inline;
@@ -275,8 +276,8 @@ op inline () : Inline => "inline";
 @[declareFn(name, b, r)]
 op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
-                  @[scopeTypeVars(typeArgs)] b : Bindings,
-                  @[scopeTypeVars(typeArgs)] r : Type,
+                  @[scope(typeArgs)] b : Bindings,
+                  @[scope(typeArgs)] r : Type,
                   @[scope(b)] c : r,
                   // Prefer adding the inline attribute here so
                   // that the order of the arguments in the fndecl and fndef

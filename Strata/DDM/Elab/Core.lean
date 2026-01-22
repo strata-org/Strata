@@ -64,8 +64,9 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
     | some a =>
       let addType (tps : Array TypeExpr) loc _ s args : Array TypeExpr :=
         match resolveBindingIndices m loc s args with
-        | .expr tp => tps.push tp
-        | .type _ _ => panic! s!"Expected binding to be expression."
+        | some (.expr tp) => tps.push tp
+        | some (.type _ _) => panic! s!"Expected binding to be expression."
+        | none => tps
       let argTypes := foldOverArgBindingSpecs m addType (init := #[]) a
       pure <| argTypes.foldr (init := r) (.arrow loc)
 
@@ -807,7 +808,7 @@ def evalBindingSpec
     (initSize : Nat)
     (b : BindingSpec bindings)
     (args : Vector Tree bindings.size)
-    : ElabM Binding := do
+    : ElabM (Array Binding) := do
   match b with
   | .value b =>
     let ident := evalBindingNameIndex args b.nameIndex
@@ -821,7 +822,7 @@ def evalBindingSpec
             logError argLoc "Expecting expressions in variable binding"
             pure none
     if !success then
-      return default
+      return #[]
     let bindings := bindings.filterMap id
     let typeTree := args[b.typeIndex.toLevel]
     let kind ←
@@ -842,7 +843,7 @@ def evalBindingSpec
           | arg =>
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
     -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
-    pure { ident, kind }
+    pure #[{ ident, kind }]
   | .type b =>
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabArgIndex initSize args b.argsIndex fun argLoc b => do
@@ -863,10 +864,18 @@ def evalBindingSpec
               some info.typeExpr
             | _ =>
               panic! "Bad arg"
-    pure { ident, kind := .type loc params.toList value }
+    pure #[{ ident, kind := .type loc params.toList value }]
   | .datatype b =>
     let ident := evalBindingNameIndex args b.nameIndex
-    pure { ident, kind := .type loc [] none }
+    pure #[{ ident, kind := .type loc [] none }]
+  | .typeVars tvb =>
+    -- Create .tvar bindings for type variable names
+    let commaSepTree := args[tvb.argsIndex.toLevel]
+    let typeVarNames := commaSepTree.children.filterMap fun identTree =>
+      match identTree.info with
+      | .ofIdentInfo info => some info.val
+      | _ => none
+    pure <| typeVarNames.map fun name => { ident := name, kind := .tvar loc name }
 
 /--
 Given a type expression and a natural number, this returns a
@@ -979,33 +988,6 @@ def unwrapTree (tree : Tree) (unwrap : Bool) : Arg :=
     | .ofBytesInfo info => .bytes info.loc info.val
     | _ => tree.arg  -- Fallback for non-unwrappable types
 
-/--
-Extract type variable names from a TypeArgs tree (or Option TypeArgs).
-TypeArgs is an operation `type_args` with one child that is `CommaSepBy Ident`.
-Option TypeArgs wraps this in an OptionInfo node.
--/
-def extractTypeVarNames (tree : Tree) : Array String :=
-  let innerTree :=
-    match tree.info with
-    | .ofOptionInfo _ =>
-      match tree.children[0]? with
-      | none => none
-      | some t => some t
-    | _ => some tree
-  match innerTree with
-  | none => #[]
-  | some typeArgsTree =>
-    -- typeArgsTree should be the type_args operation
-    -- Its first child should be CommaSepBy Ident
-    match typeArgsTree.children[0]? with
-    | none => #[]
-    | some commaSepTree =>
-      -- commaSepTree has CommaSepInfo with children that are Ident trees
-      commaSepTree.children.filterMap fun identTree =>
-        match identTree.info with
-        | .ofIdentInfo info => some info.val
-        | _ => none
-
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -1031,7 +1013,8 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   if !success then
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
-    ctx.push <$> evalBindingSpec loc initSize spec args
+    let newBindings ← evalBindingSpec loc initSize spec args
+    pure <| newBindings.foldl (init := ctx) fun ctx b => ctx.push b
   -- Apply unwrapping based on unwrapSpecs
   let unwrappedArgs := args.toArray.mapIdx fun idx tree =>
     let unwrap := se.unwrapSpecs.getD idx false
@@ -1085,26 +1068,12 @@ partial def runSyntaxElaborator
           pure tctx
         | _, _ => continue
       | none =>
-        -- Check for typeVarsScope (polymorphic function type parameters)
-        match ae.typeVarsScope with
-        | some typeArgsLevel =>
-          match trees[typeArgsLevel] with
-          | some typeArgsTree =>
-            -- Extract identifiers from TypeArgs and add as .tvar bindings
-            let baseCtx := typeArgsTree.resultContext
-            let typeVarNames := extractTypeVarNames typeArgsTree
-            let tctx := typeVarNames.foldl (init := baseCtx) fun ctx name =>
-              let loc := typeArgsTree.info.loc
-              ctx.push { ident := name, kind := .tvar loc name }
-            pure tctx
+        match ae.contextLevel with
+        | some idx =>
+          match trees[idx] with
+          | some t => pure t.resultContext
           | none => continue
-        | none =>
-          match ae.contextLevel with
-          | some idx =>
-            match trees[idx] with
-            | some t => pure t.resultContext
-            | none => continue
-          | none => pure tctx0
+        | none => pure tctx0
     let astx := args[ae.syntaxLevel]
     let expectedKind := argDecls[argLevel].kind
     match expectedKind with

@@ -27,9 +27,6 @@ structure ArgElaborator where
   -- Datatype scope: (nameLevel, typeParamsLevel) for recursive datatype definitions
   -- When set, the datatype name is added to the typing context as a type
   datatypeScope : Option (Fin argLevel × Fin argLevel) := .none
-  -- Type vars scope: level of TypeArgs argument for polymorphic function declarations
-  -- When set, identifiers from TypeArgs are added as .tvar bindings
-  typeVarsScope : Option (Fin argLevel) := .none
   -- Whether to unwrap this argument
   unwrap : Bool := false
 deriving Inhabited, Repr
@@ -68,7 +65,6 @@ private def push (as : ArgElaborators)
     argLevel := argLevel.val
     contextLevel := argDecls.argScopeLevel argLevel
     datatypeScope := argDecls.argScopeDatatypeLevel argLevel
-    typeVarsScope := argDecls.argScopeTypeVarsLevel argLevel
   }
   have scp : sc < sc + 1 := by grind
   { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
@@ -85,7 +81,6 @@ private def pushWithUnwrap
     argLevel := argLevel.val
     contextLevel := argDecls.argScopeLevel argLevel
     datatypeScope := argDecls.argScopeDatatypeLevel argLevel
-    typeVarsScope := argDecls.argScopeTypeVarsLevel argLevel
     unwrap := unwrap
   }
   have scp : sc < sc + 1 := by grind
