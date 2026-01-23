@@ -28,13 +28,13 @@ Becomes:
 
 structure SequenceState where
   insideCondition : Bool
-  prependedStmts : List StmtExpr := []
+  prependedStmts : List StmtExprMd := []
   diagnostics : List DiagnosticModel
   tempCounter : Nat := 0
 
 abbrev SequenceM := StateM SequenceState
 
-def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
+def SequenceM.addPrependedStmt (stmt : StmtExprMd) : SequenceM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
 
 def SequenceM.addDiagnostic (d : DiagnosticModel) : SequenceM Unit :=
@@ -52,7 +52,7 @@ def checkOutsideCondition(md: Imperative.MetaData Core.Expression): SequenceM Un
 def SequenceM.setInsideCondition : SequenceM Unit := do
   modify fun s => { s with insideCondition := true }
 
-def SequenceM.takePrependedStmts : SequenceM (List StmtExpr) := do
+def SequenceM.takePrependedStmts : SequenceM (List StmtExprMd) := do
   let stmts := (← get).prependedStmts
   modify fun s => { s with prependedStmts := [] }
   return stmts.reverse
@@ -62,32 +62,40 @@ def SequenceM.freshTemp : SequenceM Identifier := do
   modify fun s => { s with tempCounter := s.tempCounter + 1 }
   return s!"__t{counter}"
 
+/-- Helper to create a StmtExprMd with empty metadata -/
+def mkStmtExprMdEmpty' (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+
+-- Add Inhabited instance for StmtExprMd to help with partial definitions
+instance : Inhabited StmtExprMd where
+  default := ⟨.Hole, #[]⟩
+
 mutual
 /-
 Process an expression, extracting any assignments to preceding statements.
 Returns the transformed expression with assignments replaced by variable references.
 -/
-def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
-  match expr with
-  | .Assign target value md =>
+partial def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
+  let md := expr.md
+  match expr.val with
+  | .Assign target value =>
       checkOutsideCondition md
       -- This is an assignment in expression context
       -- We need to: 1) execute the assignment, 2) capture the value in a temporary
       -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← transformExpr value
-      let assignStmt := StmtExpr.Assign target seqValue md
+      let assignStmt : StmtExprMd := ⟨.Assign target seqValue, md⟩
       SequenceM.addPrependedStmt assignStmt
       -- Create a temporary variable to capture the assigned value
       -- Use TInt as the type (could be refined with type inference)
       let tempName ← SequenceM.freshTemp
-      let tempDecl := StmtExpr.LocalVariable tempName .TInt (some target)
+      let tempDecl : StmtExprMd := ⟨.LocalVariable tempName ⟨.TInt, #[]⟩ (some target), md⟩
       SequenceM.addPrependedStmt tempDecl
       -- Return the temporary variable as the expression value
-      return .Identifier tempName
+      return ⟨.Identifier tempName, md⟩
 
   | .PrimitiveOp op args =>
       let seqArgs ← args.mapM transformExpr
-      return .PrimitiveOp op seqArgs
+      return ⟨.PrimitiveOp op seqArgs, md⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
@@ -96,22 +104,22 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       let seqElse ← match elseBranch with
         | some e => transformExpr e >>= (pure ∘ some)
         | none => pure none
-      return .IfThenElse seqCond seqThen seqElse
+      return ⟨.IfThenElse seqCond seqThen seqElse, md⟩
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
-      return .StaticCall name seqArgs
+      return ⟨.StaticCall name seqArgs, md⟩
 
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
-      let rec next (remStmts: List StmtExpr) := match remStmts with
+      let rec next (remStmts: List StmtExprMd) := match remStmts with
         | [last] => transformExpr last
         | head :: tail => do
             let seqStmt ← transformStmt head
             for s in seqStmt do
               SequenceM.addPrependedStmt s
             next tail
-        | [] => return .Block [] metadata
+        | [] => return ⟨.Block [] metadata, md⟩
 
       next stmts
 
@@ -126,36 +134,37 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original one may be split into multiple).
 -/
-def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
-  match stmt with
-  | @StmtExpr.Assert cond md =>
+partial def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
+  let md := stmt.md
+  match stmt.val with
+  | .Assert cond =>
       -- Process the condition, extracting any assignments
       let seqCond ← transformExpr cond
-      SequenceM.addPrependedStmt <| StmtExpr.Assert seqCond md
+      SequenceM.addPrependedStmt ⟨.Assert seqCond, md⟩
       SequenceM.takePrependedStmts
 
-  | @StmtExpr.Assume cond md =>
+  | .Assume cond =>
       let seqCond ← transformExpr cond
-      SequenceM.addPrependedStmt <| StmtExpr.Assume seqCond md
+      SequenceM.addPrependedStmt ⟨.Assume seqCond, md⟩
       SequenceM.takePrependedStmts
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
-      return [.Block (seqStmts.flatten) metadata]
+      return [⟨.Block (seqStmts.flatten) metadata, md⟩]
 
   | .LocalVariable name ty initializer =>
       match initializer with
       | some initExpr => do
           let seqInit ← transformExpr initExpr
-          SequenceM.addPrependedStmt <| .LocalVariable name ty (some seqInit)
+          SequenceM.addPrependedStmt ⟨.LocalVariable name ty (some seqInit), md⟩
           SequenceM.takePrependedStmts
       | none =>
           return [stmt]
 
-  | .Assign target value md =>
+  | .Assign target value =>
       let seqTarget ← transformExpr target
       let seqValue ← transformExpr value
-      SequenceM.addPrependedStmt <| .Assign seqTarget seqValue md
+      SequenceM.addPrependedStmt ⟨.Assign seqTarget seqValue, md⟩
       SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -163,20 +172,20 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       SequenceM.setInsideCondition
 
       let seqThen ← transformStmt thenBranch
-      let thenBlock := .Block seqThen none
+      let thenBlock : StmtExprMd := ⟨.Block seqThen none, md⟩
 
       let seqElse ← match elseBranch with
         | some e =>
             let se ← transformStmt e
-            pure (some (.Block se none))
+            pure (some (⟨.Block se none, md⟩ : StmtExprMd))
         | none => pure none
 
-      SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
+      SequenceM.addPrependedStmt ⟨.IfThenElse seqCond thenBlock seqElse, md⟩
       SequenceM.takePrependedStmts
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
-      SequenceM.addPrependedStmt <| .StaticCall name seqArgs
+      SequenceM.addPrependedStmt ⟨.StaticCall name seqArgs, md⟩
       SequenceM.takePrependedStmts
 
   | _ =>
@@ -184,11 +193,11 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
 end
 
-def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
+def transformProcedureBody (body : StmtExprMd) : SequenceM StmtExprMd := do
   let seqStmts <- transformStmt body
   match seqStmts with
   | [single] => pure single
-  | multiple => pure <| .Block multiple.reverse none
+  | multiple => pure ⟨.Block multiple.reverse none, body.md⟩
 
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   match proc.body with
