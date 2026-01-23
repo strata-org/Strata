@@ -11,6 +11,7 @@ import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
+open Strata (DiagnosticModel FileRange)
 
 ---------------------------------------------------------------------
 
@@ -20,8 +21,8 @@ Type checker for an Imperative Command.
 The `TypeError` parameter for the `TypeContext` instance `TC` is `DiagnosticModel`.
 -/
 def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T Strata.DiagnosticModel]
-    (ctx: C) (τ : T) (c : Cmd P) : Except Strata.DiagnosticModel (Cmd P × T) := do
+    [DecidableEq P.Ident] [TC : TypeContext P C T DiagnosticModel]
+    (ctx: C) (τ : T) (c : Cmd P) : Except DiagnosticModel (Cmd P × T) := do
 
   try match c with
 
@@ -84,14 +85,14 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
 
   catch e =>
     -- Add source location to error messages if not already present.
-    .error (e.withRangeIfUnknown (getFileRange c.getMetaData |>.getD Strata.FileRange.unknown))
+    .error (e.withRangeIfUnknown (getFileRange c.getMetaData |>.getD FileRange.unknown))
 
 /--
 Type checker for Imperative's Commands.
 -/
 def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T Strata.DiagnosticModel]
-    (ctx: C) (τ : T) (cs : Cmds P) : Except Strata.DiagnosticModel (Cmds P × T) := do
+    [DecidableEq P.Ident] [TC : TypeContext P C T DiagnosticModel]
+    (ctx: C) (τ : T) (cs : Cmds P) : Except DiagnosticModel (Cmds P × T) := do
   match cs with
   | [] => .ok ([], τ)
   | c :: crest =>

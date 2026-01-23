@@ -10,6 +10,7 @@ import Strata.DDM.AST
 import Lean.Data.Position
 
 namespace Imperative
+open Strata (DiagnosticModel FileRange)
 
 ---------------------------------------------------------------------
 
@@ -73,7 +74,7 @@ inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of an arbitrary string. -/
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
-  | fileRange (r: Strata.FileRange)
+  | fileRange (r: FileRange)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with
@@ -170,7 +171,7 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
-def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option Strata.FileRange := do
+def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
   let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
   match fileRangeElement.value with
     | .fileRange fileRange =>
@@ -179,13 +180,13 @@ def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option Strata.F
 
 /-- Create a DiagnosticModel from metadata and a message.
     Uses the file range from metadata if available, otherwise uses a default location. -/
-def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) : Strata.DiagnosticModel :=
+def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) : DiagnosticModel :=
   match getFileRange md with
-  | some fr => Strata.DiagnosticModel.withRange fr msg
-  | none => Strata.DiagnosticModel.fromMessage msg
+  | some fr => DiagnosticModel.withRange fr msg
+  | none => DiagnosticModel.fromMessage msg
 
 /-- Create a DiagnosticModel from metadata and a Format message. -/
-def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) : Strata.DiagnosticModel :=
+def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) : DiagnosticModel :=
   MetaData.toDiagnostic md (toString msg)
 
 /-- Get the file range from metadata as a DiagnosticModel (for formatting).

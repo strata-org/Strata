@@ -427,6 +427,7 @@ end Core
 namespace Strata
 
 open Lean.Parser
+open Strata (DiagnosticModel FileRange)
 
 def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
@@ -465,7 +466,7 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option Strata.DiagnosticModel := do
+def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
@@ -478,7 +479,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option Strata.DiagnosticModel := d
         | .implementationError msg => s!"verification error: {msg}"
         | _ => panic "impossible"
 
-      some (Strata.DiagnosticModel.withRange fileRange message)
+      some (DiagnosticModel.withRange fileRange message)
     | _ => none
 
 structure Diagnostic where
