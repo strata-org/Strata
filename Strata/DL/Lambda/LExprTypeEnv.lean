@@ -218,9 +218,6 @@ deriving Inhabited
 def LDatatype.toKnownType (d: LDatatype IDMeta) : KnownType :=
   { name := d.name, metadata := d.typeArgs.length}
 
-def TypeFactory.toKnownTypes (t: @TypeFactory IDMeta) : KnownTypes :=
-  makeKnownTypes (t.foldr (fun t l => t.toKnownType :: l) [])
-
 /--
 A type environment `TEnv` contains
 - genEnv: `TGenEnv` to track the generator state as well as the typing context
@@ -333,28 +330,26 @@ def LContext.addFactoryFunctions (C : LContext T) (fact : @Factory T) : LContext
   { C with functions := C.functions.append fact }
 
 /--
-Add a datatype `d` to an `LContext` `C`.
-This adds `d` to `C.datatypes`, adds the derived functions
-(e.g. eliminators, testers) to `C.functions`, and adds `d` to
-`C.knownTypes`. It performs error checking for name clashes.
+Add a mutual block of datatypes `block` to an `LContext` `C`.
+This adds all types to `C.datatypes` and `C.knownTypes`,
+adds the derived functions (e.g. eliminators, testers),
+and performs error checking for name clashes.
 -/
-def LContext.addDatatype [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (d: LDatatype T.IDMeta) : Except Format (LContext T) := do
-  -- Ensure not in known types
-  if C.knownTypes.containsName d.name then
-    .error f!"Cannot name datatype same as known type!\n\
-                      {d}\n\
-                      KnownTypes' names:\n\
-                      {C.knownTypes.keywords}"
-  let ds ← C.datatypes.addDatatype d
+def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta] (C: LContext T) (block: MutualDatatype T.IDMeta) : Except Format (LContext T) := do
+  -- Check for name clashes with known types
+  for d in block do
+    if C.knownTypes.containsName d.name then
+      throw f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
+  let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
   -- Add factory functions, checking for name clashes
-  let f ← d.genFactory
+  let f ← genBlockFactory block
   let fs ← C.functions.addFactory f
   -- Add datatype names to knownTypes
-  let ks ← C.knownTypes.add d.toKnownType
+  let ks ← block.foldlM (fun ks d => ks.add d.toKnownType) C.knownTypes
   .ok {C with datatypes := ds, functions := fs, knownTypes := ks}
 
 def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except Format (LContext T) :=
-  Array.foldlM (fun C d => C.addDatatype d) C f
+  f.foldlM (fun C block => C.addMutualBlock block) C
 
 /--
 Replace the global substitution in `T.state.subst` with `S`.
