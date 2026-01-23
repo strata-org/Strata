@@ -32,15 +32,16 @@ instance : ToString CondType where
   | .Requires => "Requires"
   | .Ensures => "Ensures"
 
+private abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
+
 /--
-Helper function to create proof obligations and path conditions originating from
+Create proof obligations and path conditions originating from
 a `.call` statement.
 -/
-def callConditions (proc : Procedure)
-                   (condType : CondType)
-                   (conditions : ListMap String Procedure.Check)
-                   (subst :  Map (Lambda.IdentT Lambda.LMonoTy Visibility) Expression.Expr) :
-                   ListMap String Procedure.Check :=
+private def callConditions (proc : Procedure)
+    (condType : CondType) (conditions : ListMap String Procedure.Check)
+    (subst :  VarSubst) :
+    ListMap String Procedure.Check :=
   let names := List.map
                (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
                conditions.keys
@@ -48,90 +49,112 @@ def callConditions (proc : Procedure)
                 (fun p =>
                   List.foldl
                     (fun c (x, v) =>
-                      { c with expr := LExpr.substFvar c.expr x.fst v })
+                      { c with expr := (LExpr.substFvar c.expr x.fst v) })
                     p subst)
                 conditions.values
   List.zip names exprs
 
 /--
+Create substitution mapping from formal parameters to actual arguments.
+-/
+private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env)
+    (old_var_subst : SubstMap) : VarSubst :=
+  let args' := args.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a))
+  let formal_tys := proc.header.inputs.keys.map
+                      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
+  List.zip formal_tys args'
+
+/--
+Create fresh variables for return and LHS mapping.
+
+Return mapping is used for postcondition substitution, i.e., to map procedure's
+return parameter names to fresh variables.
+
+LHS mapping is used for environment updates, i.e., to map caller's LHS variable
+names to the _same_ fresh variables as above.
+
+For example, if we have `call x := Inc(8)` where `Inc` returns a variable named `ret`:
+Return mapping: `[("ret", fresh_var)]`
+LHS mapping: `[("x", fresh_var)]`
+-/
+private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
+    VarSubst × VarSubst × Env :=
+  let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  let lhs_typed := lhs.zip lhs_tys
+  let (lhs_fvars, E') := E.genFVars lhs_typed
+  let return_tys := proc.header.outputs.keys.map
+      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
+  let return_lhs_subst := List.zip return_tys lhs_fvars
+  let lhs_post_subst := List.zip lhs_typed lhs_fvars
+  (return_lhs_subst, lhs_post_subst, E')
+
+/--
+Create mapping for all globals: fresh variables for modified globals,
+current values for unmodified globals.
+-/
+private def mkGlobalSubst (proc : Procedure) (current_globals : VarSubst)
+    (E : Env) : VarSubst × Env :=
+  -- Create fresh variables for modified globals
+  let modifies_tys := proc.spec.modifies.map
+      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  let modifies_typed := proc.spec.modifies.zip modifies_tys
+  let (globals_fvars, E') := E.genFVars modifies_typed
+  let modified_subst := List.zip modifies_typed globals_fvars
+  -- Get current values for unmodified globals
+  let unmodified_subst := current_globals.filter (fun ((id, _), _) =>
+    !proc.spec.modifies.contains id)
+  (modified_subst ++ unmodified_subst, E')
+
+/--
+Get current values of global variables for old expression substitution.
+-/
+private def getCurrentGlobals (E : Env) : VarSubst :=
+  E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
+
+/--
 Evaluate a procedure call `lhs := pname(args)`.
 -/
--- (FIXME) Clean this code up.
 def Command.evalCall (E : Env) (old_var_subst : SubstMap)
-  (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr) (md : Imperative.MetaData Expression) :
-  Command × Env :=
-  -- Procedures in Strata Core have a `modifies` clause that contain global variables that
-  -- can be modified by the procedure. Also, the procedure's post-conditions can
-  -- contain `old <var>` expressions, which refer to the value of
-  -- `<var>` before the execution of the procedure (i.e., pre-state). See also
-  -- `OldExpressions.lean`.
-  --
-  -- We apply some transformations to take these into account for the `call`
-  -- statement. These are noted in comments below.
-  -- We also require that all well-formed procedures identifiers to have a global scope
-  -- This should be enforced by the type checker
+    (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
+    (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
-    -- Create a mapping from the formals to the evaluated actuals.
-    let args' := List.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a)) args
-    let formal_tys := proc.header.inputs.keys.map
-        (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
-    let formal_arg_subst := List.zip formal_tys args'
-    -- Generate fresh variables for the LHS, and then create a mapping
-    -- from the procedure's return variables to these LHS fresh
-    -- variables.
-    let lhs_tys :=
-      lhs.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-    let lhs_typed := lhs.zip lhs_tys
-    let (lhs_fvars, E) := E.genFVars lhs_typed
-    let return_tys := proc.header.outputs.keys.map
-        (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
-    let return_lhs_subst := List.zip return_tys lhs_fvars
-    -- The LHS fresh variables reflect the values of these variables
-    -- in the post-call state.
-    let lhs_post_subst := List.zip lhs_typed lhs_fvars
-    -- Create a mapping from global variables to their current values
-    -- (i.e., just before this call site). We will substitute all
-    -- `old(v)` expressions in `proc`'s postconditions using this map.
-    let current_globals_values := E.exprEnv.state.oldest.map (fun (id, _, e) => (id, e))
-    let formal_arg_subst' := formal_arg_subst.map (fun ((i, _), e) => (i, e))
-    let return_lhs_subst' := return_lhs_subst.map (fun ((i, _), e) => (i, e))
-    let postcond_subst := current_globals_values ++ formal_arg_subst' ++ return_lhs_subst'
-    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst proc.spec.postconditions
-    -- Create a mapping from global variables in the `modifies` clause
-    -- of `proc` to fresh variables. Similar to the LHS fresh variables, these
-    -- reflect the post-call value of these globals.
-    let modifies_tys :=
-        proc.spec.modifies.map
-        (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-    let modifies_typed := proc.spec.modifies.zip modifies_tys
-    let (globals_fvars, E) := E.genFVars modifies_typed
-    let globals_post_subst := List.zip modifies_typed globals_fvars
-    let post_subst := globals_post_subst ++ lhs_post_subst
-    -- Create proof obligations to ensure that the actuals and global
-    -- variables in the modifies clause satisfy the procedure's
-    -- preconditions.
-    let subst := formal_arg_subst ++ return_lhs_subst ++ globals_post_subst
-    let preconditions :=
-        callConditions proc .Requires proc.spec.preconditions subst
+    -- (Pre-call) Create formal-to-actual argument mapping.
+    let formal_arg_subst := mkFormalArgSubst proc args E old_var_subst
+    -- (Pre-call) Get current global values for old expression handling.
+    let current_globals := getCurrentGlobals E
+    -- (Post-call) Create return variable mappings and fresh LHS variables.
+    let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
+    -- (Post-call) Create global variable mapping: fresh vars for modified,
+    -- current values for unmodified.
+    let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
+
+    -- Create pre-call substitution for preconditions.
+    let precond_subst := formal_arg_subst ++ current_globals
+    -- Generate precondition proof obligations.
+    let preconditions := callConditions proc .Requires proc.spec.preconditions precond_subst
+    -- It's safe to evaluate the preconditions in the current environment
+    -- (pre-call context).
     let preconditions := preconditions.map
-                            (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
-    -- A free precondition is not checked at call sites, which is
-    -- accounted for by `ProofObligations.create` below.
+        (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
-    -- If the preconditions hold, then the postconditions are
-    -- guaranteed to hold.
-    let postconditions :=
-        callConditions proc .Ensures postconditions subst
-    -- (TODO): Annotate "free" postconditions for record-keeping.
-    let postconditions := (postconditions.keys.map toString).zip (Procedure.Spec.getCheckExprs postconditions)
+
+    -- Create post-call substitution for postconditions.
+    let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
+    let postcond_subst_map := postcond_subst_init ++ current_globals
+    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst_map proc.spec.postconditions
+    let postcond_subst_full :=  postcond_subst_init ++ globals_post_subst
+    let postconditions := callConditions proc .Ensures postconditions postcond_subst_full
+
+    -- Add postconditions to path conditions.
+    let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)
     let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
-    -- Update the LHS and global variables to reflect the post-call state.
+
+    -- Update environment with post-call state.
+    let post_subst := globals_post_subst ++ lhs_post_subst
     let post_vars_mdata := post_subst.map
-                              (fun ((old, _), new) =>
-                                Imperative.MetaDataElem.mk (.var old) (.expr new))
+        (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
     let md' := md ++ post_vars_mdata.toArray
     let c' := CmdExt.call lhs pname args md'
     let E := E.addToContext post_subst
