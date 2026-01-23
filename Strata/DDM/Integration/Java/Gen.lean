@@ -318,7 +318,7 @@ def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : Op
     fields := op.argDecls.toArray.map argDeclToJavaField }
 
 def generateBuilders (package : String) (dialectName : String) (d : Dialect) (names : NameAssignments) : String :=
-  let method (op : OpDecl) :=
+  let methods (op : OpDecl) :=
     let fields := op.argDecls.toArray.map argDeclToJavaField
     let (ps, as, checks) := fields.foldl (init := (#[], #[], #[])) fun (ps, as, checks) f =>
       match f.type with
@@ -329,10 +329,19 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
       | .simple "java.math.BigDecimal" _ => (ps.push s!"double {f.name}", as.push s!"java.math.BigDecimal.valueOf({f.name})", checks)
       | t => (ps.push s!"{t.toJava} {f.name}", as.push f.name, checks)
     let methodName := escapeJavaName op.name
+    let returnType := names.categories[op.category]!
+    let recordName := names.operators[(op.category, op.name)]!
     let checksStr := if checks.isEmpty then "" else " ".intercalate checks.toList ++ " "
-    s!"    public static {names.categories[op.category]!} {methodName}({", ".intercalate ps.toList}) \{ {checksStr}return new {names.operators[(op.category, op.name)]!}(SourceRange.NONE{if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList}); }"
-  let methods := d.declarations.filterMap fun | .op op => some (method op) | _ => none
-  s!"package {package};\n\npublic class {dialectName} \{\n{"\n".intercalate methods.toList}\n}\n"
+    let argsStr := if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList
+    let paramsStr := ", ".intercalate ps.toList
+    -- Overload with SourceRange parameter
+    let srParams := if ps.isEmpty then "SourceRange sourceRange" else s!"SourceRange sourceRange, {paramsStr}"
+    let withSR := s!"    public static {returnType} {methodName}({srParams}) \{ {checksStr}return new {recordName}(sourceRange{argsStr}); }"
+    -- Convenience overload without SourceRange
+    let withoutSR := s!"    public static {returnType} {methodName}({paramsStr}) \{ {checksStr}return new {recordName}(SourceRange.NONE{argsStr}); }"
+    s!"{withSR}\n{withoutSR}"
+  let allMethods := d.declarations.filterMap fun | .op op => some (methods op) | _ => none
+  s!"package {package};\n\npublic class {dialectName} \{\n{"\n\n".intercalate allMethods.toList}\n}\n"
 
 def generateDialect (d : Dialect) (package : String) : Except String GeneratedFiles := do
   let names := assignAllNames d
