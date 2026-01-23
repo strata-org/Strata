@@ -705,6 +705,38 @@ partial def LMonoTys.resolveAliases [ToFormat IDMeta] (mtys : LMonoTys) (aliases
 end
 
 /--
+Resolve type aliases in a list of constructors.
+-/
+def LConstrs.resolveAliases [ToFormat IDMeta] (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
+    List (LConstr IDMeta) × TEnv IDMeta :=
+  constrs.foldr (fun c (acc, Env) =>
+    let names := c.args.map (·.fst)
+    let tys := c.args.map (·.snd)
+    let (tys', Env) := LMonoTys.resolveAliases tys Env.context.aliases Env
+    let args' := names.zip (tys'.getD tys)
+    ({ c with args := args' } :: acc, Env)) ([], Env)
+
+theorem LConstrs.resolveAliases_length [ToFormat IDMeta] (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
+    (LConstrs.resolveAliases constrs Env).fst.length = constrs.length := by
+  simp only [LConstrs.resolveAliases]
+  induction constrs <;> grind
+
+/--
+Resolve type aliases in constructor argument types within a mutual datatype block.
+-/
+def MutualDatatype.resolveAliases [ToFormat IDMeta] (block : MutualDatatype IDMeta) (Env : TEnv IDMeta) :
+    MutualDatatype IDMeta × TEnv IDMeta :=
+  block.foldr (fun d (acc, Env)  =>
+    match h: LConstrs.resolveAliases d.constrs Env with
+    | (constrs', Env) =>
+      have h : constrs'.length != 0 := by
+        rename_i E
+        have Hlen := LConstrs.resolveAliases_length d.constrs E
+        rw[h] at Hlen
+        cases d; grind
+      ({ d with constrs := constrs', constrs_ne := h } :: acc, Env)) ([], Env)
+
+/--
 info: De-aliased type: some (Foo $__ty0 (Bar $__ty3 $__ty3))
 Subst:
 [(p, $__ty3) ($__ty1, (BarAlias $__ty3 $__ty3)) ($__ty0, $__ty3) ($__ty2, $__ty3)]
