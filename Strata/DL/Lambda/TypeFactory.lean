@@ -632,7 +632,7 @@ The `List.Nodup` and `⊆` hypotheses are only used to prove termination.
 -/
 def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen)
-  (hsub: seen ⊆ (List.map (fun x => x.name) adts.toList))
+  (hsub: seen ⊆ (List.map (fun x => x.name) adts.allDatatypes))
   (ts: String) : StateM inhabMap (Option String) := do
   let knowType (b: Bool) : StateM inhabMap (Option String) := do
     /-
@@ -665,27 +665,27 @@ def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
                 do
                   have hn: List.Nodup (l.name :: seen) := by
                     rw[List.nodup_cons]; constructor
-                    . have := Array.find?_some ha; grind
+                    . have := List.find?_some ha; grind
                     . assumption
-                  have hsub' : (l.name :: seen) ⊆ (List.map (fun x => x.name) adts.toList) := by
+                  have hsub' : (l.name :: seen) ⊆ (List.map (fun x => x.name) adts.allDatatypes) := by
                     apply List.cons_subset.mpr
                     constructor <;> try assumption
                     rw[List.mem_map]; exists l; constructor <;> try grind
-                    have := Array.mem_of_find?_eq_some ha; grind
+                    have := List.mem_of_find?_eq_some ha; grind
                   let b1 ← ty_inhab adts (l.name :: seen) hn hsub' ty1.2
                   pure (accA && b1)
               ) true)
           pure (accC || constrInhab)
           ) false)
         knowType res
-  termination_by (adts.size - seen.length, 0)
+  termination_by (adts.allDatatypes.length - seen.length, 0)
   decreasing_by
     apply Prod.Lex.left; simp only[List.length]
     apply Nat.sub_succ_lt_self
     have hlen := List.subset_nodup_length hn hsub'; simp_all; omega
 
 def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
-  (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.toList))
+  (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.allDatatypes))
   (t: LMonoTy) : StateM inhabMap Bool :=
   match t with
   | .tcons name args => do
@@ -699,7 +699,7 @@ def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
         ) true
       else pure false
   | _ => pure true -- Type variables and bitvectors are inhabited
-termination_by (adts.size - seen.length, t.size)
+termination_by (adts.allDatatypes.length - seen.length, t.size)
 decreasing_by
   . apply Prod.Lex.right; simp only[LMonoTy.size]; omega
   . rename_i h; have := LMonoTy.size_lt_of_mem h;
@@ -718,11 +718,11 @@ to avoid computing the intermediate results more than once. Returns `none` if
 all datatypes are inhabited, `some a` for some uninhabited type `a`
 -/
 def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Option String :=
-  let x := (Array.foldlM (fun (x: Option String) (l: LDatatype IDMeta) =>
+  let x := (List.foldlM (fun (x: Option String) (l: LDatatype IDMeta) =>
     do
       match x with
       | some a => pure (some a)
-      | none => adt_inhab adts l.name) none adts)
+      | none => adt_inhab adts l.name) none adts.allDatatypes)
   (StateT.run x []).1
 
 /--

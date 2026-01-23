@@ -741,17 +741,20 @@ info: #5
 
 /-
 type BadA = MkA (BadB -> int)
-type BadB = MkB BadA
+type BadB = MkB BadA | BadBBase
 
 BadA has BadB in negative position (left of arrow), which is non-strictly positive
 since BadB is in the same mutual block.
+BadB has a base case (BadBBase) to make it inhabited, so we hit the strict positivity
+error rather than the inhabited error.
 -/
 
 def mkAConstr : LConstr Unit := {name := "MkA", args := [("f", .arrow (.tcons "BadB" []) .int)], testerName := "isMkA"}
 def badATy : LDatatype Unit := {name := "BadA", typeArgs := [], constrs := [mkAConstr], constrs_ne := rfl}
 
 def mkBConstr : LConstr Unit := {name := "MkB", args := [("a", .tcons "BadA" [])], testerName := "isMkB"}
-def badBTy : LDatatype Unit := {name := "BadB", typeArgs := [], constrs := [mkBConstr], constrs_ne := rfl}
+def badBBaseConstr : LConstr Unit := {name := "BadBBase", args := [], testerName := "isBadBBase"}
+def badBTy : LDatatype Unit := {name := "BadB", typeArgs := [], constrs := [badBBaseConstr, mkBConstr], constrs_ne := rfl}
 
 def badMutualBlock : MutualDatatype Unit := [badATy, badBTy]
 
@@ -907,10 +910,10 @@ def optionTy : LDatatype Unit := {
 }
 
 /-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[optionTy]
+#guard_msgs in #eval TypeFactory.all_inhab #[[optionTy]]
 
 /-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[listTy]
+#guard_msgs in #eval TypeFactory.all_inhab #[[listTy]]
 
 -- Either type: Left a | Right b
 def eitherTy : LDatatype Unit := {
@@ -922,7 +925,7 @@ def eitherTy : LDatatype Unit := {
 }
 
 /-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[eitherTy]
+#guard_msgs in #eval TypeFactory.all_inhab #[[eitherTy]]
 
 -- Nat type: Zero | Succ Nat
 def natTy : LDatatype Unit := {
@@ -934,7 +937,7 @@ def natTy : LDatatype Unit := {
 }
 
 /-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[natTy]
+#guard_msgs in #eval TypeFactory.all_inhab #[[natTy]]
 
 -- Test 2: Mutually recursive inhabited types
 
@@ -955,7 +958,7 @@ def oddTy : LDatatype Unit := {
 }
 
 /-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[evenTy, oddTy]
+#guard_msgs in #eval TypeFactory.all_inhab #[[evenTy, oddTy]]
 
 -- Forest/Tree mutual recursion
 def forestTy : LDatatype Unit := {
@@ -974,7 +977,7 @@ def treeTy2 : LDatatype Unit := {
 }
 
 /-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[forestTy, treeTy2]
+#guard_msgs in #eval TypeFactory.all_inhab #[[forestTy, treeTy2]]
 
 -- Test 3: Uninhabited types
 
@@ -988,7 +991,7 @@ def emptyTy : LDatatype Unit := {
 
 /-- info: Error: datatype Empty not inhabited -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval #[emptyTy] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+#eval format $ typeCheckAndPartialEval #[[emptyTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 -- Type requiring uninhabited type
 def needsEmptyTy : LDatatype Unit := {
@@ -1000,7 +1003,7 @@ def needsEmptyTy : LDatatype Unit := {
 
 /-- info: Error: datatype NeedsEmpty not inhabited -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval #[needsEmptyTy, emptyTy] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+#eval format $ typeCheckAndPartialEval #[[needsEmptyTy], [emptyTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 -- Mutually uninhabited types
 def bad1Ty : LDatatype Unit := {
@@ -1019,7 +1022,7 @@ def bad2Ty : LDatatype Unit := {
 
 /-- info: Error: datatype Bad1 not inhabited -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval #[bad1Ty, bad2Ty] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+#eval format $ typeCheckAndPartialEval #[[bad1Ty, bad2Ty]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 -- Three-way mutual uninhabited cycle
 def cycle1Ty : LDatatype Unit := {
@@ -1042,7 +1045,7 @@ def cycle3Ty : LDatatype Unit := {
 
 /-- info: Error: datatype Cycle1 not inhabited -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval #[cycle1Ty, cycle2Ty, cycle3Ty] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+#eval format $ typeCheckAndPartialEval #[[cycle1Ty, cycle2Ty, cycle3Ty]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 end InhabitedTests
 
