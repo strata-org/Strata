@@ -327,8 +327,8 @@ def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := toString fmt }
 
 /-- Create a DiagnosticModel with source location. -/
-def DiagnosticModel.withRange (fr : FileRange) (msg : String) : DiagnosticModel :=
-  { fileRange := fr, message := msg }
+def DiagnosticModel.withRange (fr : FileRange) (msg : Format) : DiagnosticModel :=
+  { fileRange := fr, message := toString msg }
 
 /-- Format a file range using a FileMap to convert byte offsets to line/column positions. -/
 def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := false) : Std.Format :=

@@ -8,11 +8,13 @@
 
 import Strata.DL.Lambda.LTy
 import Strata.DL.Util.Map
+import Strata.DDM.AST
 
 ---------------------------------------------------------------------
 
 namespace Lambda
 open Std (ToFormat Format format)
+open Strata
 
 section Identifiers
 
@@ -64,14 +66,14 @@ abbrev Identifiers IDMeta := Std.HashMap String IDMeta
 def Identifiers.default {IDMeta} : Identifiers IDMeta := Std.HashMap.emptyWithCapacity
 
 /-
-For an informative error message, takes in a `Format`
+For an informative error message, takes in a `DiagnosticModel`
 -/
-def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: Format) : Except Format (Identifiers IDMeta) :=
+def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: DiagnosticModel) : Except DiagnosticModel (Identifiers IDMeta) :=
   let (b, m') := m.containsThenInsertIfNew x.name x.metadata
   if b then .error f else .ok m'
 
-def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except Format (Identifiers IDMeta) :=
-  m.addWithError x f!"Error: duplicate identifier {x.name}"
+def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except DiagnosticModel (Identifiers IDMeta) :=
+  m.addWithError x <| DiagnosticModel.fromFormat f!"Error: duplicate identifier {x.name}"
 
 def Identifiers.contains {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (x: Identifier IDMeta) : Bool :=
   match m[x.name]?with
@@ -94,7 +96,7 @@ theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ
   | ok val => simp [Except.mapError]
 
 /-- Variant of `addWithErrorNotin` that works through `Except.mapError`. -/
-theorem Identifiers.addWithErrorNotin' {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta} {g : Format → ε}:
+theorem Identifiers.addWithErrorNotin' {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta} {g : DiagnosticModel → ε}:
     Except.mapError g (m.addWithError x f) = .ok m' → m.contains x = false := by
   intro h
   exact addWithErrorNotin (Except.mapError_ok h)
@@ -119,7 +121,7 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   . rw[meta_eq]; intros _; simp
 
 /-- Variant of `addWithErrorContains` that works through `Except.mapError`. -/
-theorem Identifiers.addWithErrorContains' {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta} {g : Format → ε}:
+theorem Identifiers.addWithErrorContains' {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta} {g : DiagnosticModel → ε}:
     Except.mapError g (m.addWithError x f) = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
   intro h
   exact addWithErrorContains (Except.mapError_ok h)

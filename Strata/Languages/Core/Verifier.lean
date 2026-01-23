@@ -431,13 +431,13 @@ open Strata (DiagnosticModel FileRange)
 
 def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-  Except Std.Format Core.Program := do
+  Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     Core.typeCheck options program moreFns
   else
-    .error s!"DDM Transform Error: {repr errors}"
+    .error <| DiagnosticModel.fromFormat s!"DDM Transform Error: {repr errors}"
 
 def Core.getProgram
   (p : Strata.Program)

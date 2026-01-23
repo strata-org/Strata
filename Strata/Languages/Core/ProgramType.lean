@@ -36,8 +36,8 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
     let fileRange := Imperative.getFileRange decl.metadata |>.getD FileRange.unknown
     let errorWithSourceLoc := fun (e : DiagnosticModel) => e.withRangeIfUnknown fileRange
     let C := {C with idents := (← C.idents.addWithError decl.name
-                                    f!"Error in {decl.kind} {decl.name}: \
-                                       a declaration of this name already exists." |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e)))}
+                                    (DiagnosticModel.withRange fileRange f!"Error in {decl.kind} {decl.name}: \
+                                       a declaration of this name already exists."))}
     let (decl', C, Env) ←
       match decl with
 
@@ -54,17 +54,17 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
       | .type td _ => try
           match td with
           | .con tc =>
-            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } f!"This type declaration's name is reserved!\n\
+            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } (DiagnosticModel.fromFormat f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\
-                      {C.knownTypes.keywords}" |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+                      {C.knownTypes.keywords}") |>.mapError (fun e => errorWithSourceLoc e)
             .ok (Decl.type td, C, Env)
           | .syn ts =>
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
               |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
             .ok (Decl.type td, C, Env)
           | .data d =>
-            let C ← C.addDatatype d |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+            let C ← C.addDatatype d |>.mapError (fun e => errorWithSourceLoc e)
             .ok (Decl.type td, C, Env)
           catch e =>
             .error (errorWithSourceLoc e)

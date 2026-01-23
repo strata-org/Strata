@@ -20,6 +20,7 @@ non-uniform or mutually inductive types.
 
 namespace Lambda
 
+open Strata
 open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
@@ -97,10 +98,10 @@ def tyNameAppearsIn (n: String) (t: LMonoTy) : Bool :=
 Determines whether all occurences of type name `n` within type `t` have
 arguments `args`. The string `c` appears only for error message information.
 -/
-def checkUniform (c: String) (n: String) (args: List LMonoTy) (t: LMonoTy) : Except Format Unit :=
+def checkUniform (c: String) (n: String) (args: List LMonoTy) (t: LMonoTy) : Except DiagnosticModel Unit :=
   match t with
   | .tcons n1 args1 => if n == n1 && args == args1 then .ok ()
-    else if n == n1 then .error f!"Error in constructor {c}: Non-uniform occurrence of {n}, which is applied to {args1} when it should be applied to {args}"
+    else if n == n1 then .error <| DiagnosticModel.fromFormat f!"Error in constructor {c}: Non-uniform occurrence of {n}, which is applied to {args1} when it should be applied to {args}"
     else List.foldrM (fun t u => do
       let _ ← checkUniform c n args t
       .ok u
@@ -112,18 +113,18 @@ def checkUniform (c: String) (n: String) (args: List LMonoTy) (t: LMonoTy) : Exc
 Check for strict positivity and uniformity of datatype `d` in type `ty`. The
 string `c` appears only for error message information.
 -/
-def checkStrictPosUnifTy (c: String) (d: LDatatype IDMeta) (ty: LMonoTy) : Except Format Unit :=
+def checkStrictPosUnifTy (c: String) (d: LDatatype IDMeta) (ty: LMonoTy) : Except DiagnosticModel Unit :=
   match ty with
   | .arrow t1 t2 =>
     if tyNameAppearsIn d.name t1 then
-      .error f!"Error in constructor {c}: Non-strictly positive occurrence of {d.name} in type {ty}"
+      .error <| DiagnosticModel.fromFormat f!"Error in constructor {c}: Non-strictly positive occurrence of {d.name} in type {ty}"
     else checkStrictPosUnifTy c d t2
   | _ => checkUniform c d.name (d.typeArgs.map .ftvar) ty
 
 /--
 Check for strict positivity and uniformity of a datatype
 -/
-def checkStrictPosUnif (d: LDatatype IDMeta) : Except Format Unit :=
+def checkStrictPosUnif (d: LDatatype IDMeta) : Except DiagnosticModel Unit :=
   List.foldrM (fun ⟨name, args, _⟩ _ =>
     List.foldrM (fun ⟨ _, ty ⟩ _ =>
       checkStrictPosUnifTy name.name d ty
@@ -382,7 +383,8 @@ def TypeFactory.default : @TypeFactory IDMeta := #[]
 Generates the Factory (containing the eliminator, constructors, testers,
 and destructors) for a single datatype.
 -/
-def LDatatype.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta]  [ToFormat T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta): Except Format (@Lambda.Factory T) := do
+def LDatatype.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta]  [ToFormat T.IDMeta] [BEq T.Identifier]
+  (d: LDatatype T.IDMeta): Except DiagnosticModel (@Lambda.Factory T) := do
   _ ← checkStrictPosUnif d
   Factory.default.addFactory (
       elimFunc d inst.default ::
@@ -407,7 +409,7 @@ def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Ident
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
 -/
-def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except Format (@Lambda.Factory T) :=
+def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) :=
   t.foldlM (fun f d => do
     let f' ← d.genFactory
     f.addFactory f') Factory.default
@@ -419,11 +421,11 @@ def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDat
 Add an `LDatatype` to an existing `TypeFactory`, checking that no
 types are duplicated.
 -/
-def TypeFactory.addDatatype (t: @TypeFactory IDMeta) (d: LDatatype IDMeta) : Except Format (@TypeFactory IDMeta) :=
+def TypeFactory.addDatatype (t: @TypeFactory IDMeta) (d: LDatatype IDMeta) : Except DiagnosticModel (@TypeFactory IDMeta) :=
   -- Check that type is not redeclared
   match t.getType d.name with
   | none => .ok (t.push d)
-  | some d' => .error f!"A datatype of name {d.name} already exists! \
+  | some d' => .error <| DiagnosticModel.fromFormat f!"A datatype of name {d.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Type: {d'}\n\
               New Type:{d}"
