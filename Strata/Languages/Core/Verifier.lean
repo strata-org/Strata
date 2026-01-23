@@ -502,7 +502,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
       | _ =>
         some {
           fileRange := default
-          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange.obligation label: {repr vcr.obligation.label}"
+          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
         }
     result
 
