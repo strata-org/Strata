@@ -1,0 +1,14 @@
+
+datetime_now_ensures_0: ✅ pass
+
+datetime_utcnow_ensures_0: ✅ pass
+
+ensures_str_strp_reverse: ✅ pass
+
+assert_name_is_foo: ✅ pass
+
+assert_opt_name_none_or_str: ✅ pass
+
+assert_opt_name_none_or_bar: ✅ pass
+
+ensures_maybe_except_none: ✅ pass
