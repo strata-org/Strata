@@ -30,7 +30,7 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .IfThenElse c t e => collectExpr c; collectExpr t; if let some x := e then collectExpr x
   | .Block stmts _ => for s in stmts do collectExpr s
   | .LocalVariable _ _ i => if let some x := i then collectExpr x
-  | .While c i d b => collectExpr c; collectExpr b; if let some x := i then collectExpr x; if let some x := d then collectExpr x
+  | .While c invs d b => collectExpr c; collectExpr b; for i in invs do collectExpr i; if let some x := d then collectExpr x
   | .Return v => if let some x := v then collectExpr x
   | .Assign t v _ => collectExpr t; collectExpr v
   | .PureFieldUpdate t _ v => collectExpr t; collectExpr v
@@ -99,7 +99,7 @@ partial def heapTransformExpr (heap : Identifier) (expr : StmtExpr) : TransformM
   | .IfThenElse c t e => return .IfThenElse (← heapTransformExpr heap c) (← heapTransformExpr heap t) (← e.mapM (heapTransformExpr heap))
   | .Block stmts label => return .Block (← stmts.mapM (heapTransformExpr heap)) label
   | .LocalVariable n ty i => return .LocalVariable n ty (← i.mapM (heapTransformExpr heap))
-  | .While c i d b => return .While (← heapTransformExpr heap c) (← i.mapM (heapTransformExpr heap)) (← d.mapM (heapTransformExpr heap)) (← heapTransformExpr heap b)
+  | .While c invs d b => return .While (← heapTransformExpr heap c) (← invs.mapM (heapTransformExpr heap)) (← d.mapM (heapTransformExpr heap)) (← heapTransformExpr heap b)
   | .Return v => return .Return (← v.mapM (heapTransformExpr heap))
   | .Assign t v md =>
       match t with

@@ -133,6 +133,8 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.mul => some Operation.Mul
   | q`Laurel.div => some Operation.Div
   | q`Laurel.mod => some Operation.Mod
+  | q`Laurel.divT => some Operation.DivT
+  | q`Laurel.modT => some Operation.ModT
   | q`Laurel.eq => some Operation.Eq
   | q`Laurel.neq => some Operation.Neq
   | q`Laurel.gt => some Operation.Gt
@@ -141,6 +143,7 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.ge => some Operation.Geq
   | q`Laurel.and => some Operation.And
   | q`Laurel.or => some Operation.Or
+  | q`Laurel.implies => some Operation.Implies
   | _ => none
 
 def getUnaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -231,13 +234,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
             | _ => TransM.error "Expected operation"
         | _ => pure []
       let body ← translateStmtExpr bodyArg
-      -- Combine multiple invariants with &&
-      let combinedInv := match invariants with
-        | [] => none
-        | [single] => some single
-        | first :: rest => some (rest.foldl (fun acc inv =>
-            .PrimitiveOp Operation.And [acc, inv]) first)
-      return .While cond combinedInv none body
+      return .While cond invariants none body
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0
@@ -263,8 +260,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
   | _ => TransM.error s!"translateStmtExpr expects operation"
 
 partial def translateSeqCommand (arg : Arg) : TransM (List StmtExpr) := do
-  let .seq _ .none args := arg
-    | TransM.error s!"translateSeqCommand expects seq"
+  let args ← match arg with
+    | .seq _ .none args => pure args
+    | .seq _ .newline args => pure args  -- NewlineSepBy for block statements
+    | _ => TransM.error s!"translateSeqCommand expects seq or newlineSepBy"
   let mut stmts : List StmtExpr := []
   for arg in args do
     let stmt ← translateStmtExpr arg
@@ -304,7 +303,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
     -- Parse preconditions (requires clauses)
     let preconditions ← match requiresArg with
-      | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+      | .seq _ .none clauses => clauses.toList.mapM fun arg => match arg with
           | .op reqOp => match reqOp.name, reqOp.args with
             | q`Laurel.requiresClause, #[exprArg] => translateStmtExpr exprArg
             | _, _ => TransM.error "Expected requiresClause"
@@ -312,7 +311,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | _ => pure []
     -- Parse postconditions (ensures clauses)
     let postconditions ← match ensuresArg with
-      | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+      | .seq _ .none clauses => clauses.toList.mapM fun arg => match arg with
           | .op ensOp => match ensOp.name, ensOp.args with
             | q`Laurel.ensuresClause, #[exprArg] => translateStmtExpr exprArg
             | _, _ => TransM.error "Expected ensuresClause"

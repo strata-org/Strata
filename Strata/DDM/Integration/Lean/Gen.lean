@@ -744,6 +744,8 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
     toAstApplyArgSeq v cat ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
     toAstApplyArgSeq v cat ``SepFormat.spacePrefix
+  | q`Init.NewlineSepBy => do
+    toAstApplyArgSeq v cat ``SepFormat.newline
   | q`Init.Seq => do
     toAstApplyArgSeq v cat ``SepFormat.none
   | q`Init.Option => do
@@ -909,6 +911,8 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
     getOfIdentArgSeq varName cat e ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
     getOfIdentArgSeq varName cat e ``SepFormat.spacePrefix
+  | q`Init.NewlineSepBy => do
+    getOfIdentArgSeq varName cat e ``SepFormat.newline
   | q`Init.Seq => do
     getOfIdentArgSeq varName cat e ``SepFormat.none
   | q`Init.Option => do

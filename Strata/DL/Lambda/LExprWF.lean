@@ -256,11 +256,23 @@ theorem varOpen_of_varClose {T} {GenericTy} [BEq T.Metadata] [LawfulBEq T.Metada
 /-! ### Substitution on `LExpr`s -/
 
 /--
-Substitute `(.fvar x _)` in `e` with `s`. Note that unlike `substK`, `varClose`,
-and `varOpen`, this function is agnostic of types.
+Increment all bound variable indices in `e` by `n`. Used to avoid capture when
+substituting under binders.
+-/
+def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ :=
+  match e with
+  | .const _ _ => e | .op _ _ _ => e | .fvar _ _ _ => e
+  | .bvar m i => .bvar m (i + n)
+  | .abs m ty e' => .abs m ty (liftBVars n e')
+  | .quant m qk ty tr' e' => .quant m qk ty (liftBVars n tr') (liftBVars n e')
+  | .app m fn e' => .app m (liftBVars n fn) (liftBVars n e')
+  | .ite m c t e' => .ite m (liftBVars n c) (liftBVars n t) (liftBVars n e')
+  | .eq m e1 e2 => .eq m (liftBVars n e1) (liftBVars n e2)
 
-Also see function `subst`, where `subst s e` substitutes the outermost _bound_
-variable in `e` with `s`.
+/--
+Substitute `(.fvar x _)` in `e` with `to`. Does NOT lift de Bruijn indices in `to`
+when going under binders - safe when `to` contains no bvars (e.g., substituting
+fvar→fvar). Use `substFvarLifting` when `to` contains bvars.
 -/
 def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
   : (LExpr ⟨T, GenericTy⟩) :=
@@ -272,6 +284,28 @@ def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) 
   | .app m fn e' => .app m (substFvar fn fr to) (substFvar e' fr to)
   | .ite m c t e' => .ite m (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq m e1 e2 => .eq m (substFvar e1 fr to) (substFvar e2 fr to)
+
+/--
+Like `substFvar`, but properly lifts de Bruijn indices in `to` when going under
+binders. Use this when `to` contains bound variables that should be preserved.
+-/
+def substFvarLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
+  : (LExpr ⟨T, GenericTy⟩) :=
+  go e 0
+where
+  go (e : LExpr ⟨T, GenericTy⟩) (depth : Nat) : LExpr ⟨T, GenericTy⟩ :=
+    match e with
+    | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+    | .fvar _ name _ => if name == fr then liftBVars depth to else e
+    | .abs m ty e' => .abs m ty (go e' (depth + 1))
+    | .quant m qk ty tr' e' => .quant m qk ty (go tr' (depth + 1)) (go e' (depth + 1))
+    | .app m fn e' => .app m (go fn depth) (go e' depth)
+    | .ite m c t f => .ite m (go c depth) (go t depth) (go f depth)
+    | .eq m e1 e2 => .eq m (go e1 depth) (go e2 depth)
+
+def substFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+  : LExpr ⟨T, GenericTy⟩ :=
+  List.foldl (fun e (var, s) => substFvarLifting e var s) e sm
 
 def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=

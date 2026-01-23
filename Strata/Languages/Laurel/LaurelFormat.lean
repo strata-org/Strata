@@ -17,6 +17,7 @@ def formatOperation : Operation → Format
   | .Neq => "!="
   | .And => "&&"
   | .Or => "||"
+  | .Implies => "==>"
   | .Not => "!"
   | .Neg => "-"
   | .Add => "+"
@@ -24,6 +25,8 @@ def formatOperation : Operation → Format
   | .Mul => "*"
   | .Div => "/"
   | .Mod => "%"
+  | .DivT => "/t"
+  | .ModT => "%t"
   | .Lt => "<"
   | .Leq => "<="
   | .Gt => ">"
@@ -58,8 +61,10 @@ def formatStmtExpr (s:StmtExpr) : Format :=
       match init with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
-  | .While cond _ _ body =>
-      "while " ++ formatStmtExpr cond ++ " " ++ formatStmtExpr body
+  | .While cond invs _ body =>
+      "while " ++ formatStmtExpr cond ++
+      (if invs.isEmpty then Format.nil else " invariant " ++ Format.joinSep (invs.map formatStmtExpr) "; ") ++
+      " " ++ formatStmtExpr body
   | .Exit target => "exit " ++ Format.text target
   | .Return value =>
       "return" ++

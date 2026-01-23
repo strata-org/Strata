@@ -33,6 +33,27 @@ procedure testLogical() {
     assert a == false;
     var b: bool := t || f;
     assert b == true;
+    var c: bool := !f;
+    assert c == true;
+    assert t ==> t;
+    assert f ==> t;
+}
+
+procedure testUnary() {
+    var x: int := 5;
+    var y: int := -x;
+    assert y == 0 - 5;
+}
+
+procedure testTruncatingDiv() {
+    // Truncating division rounds toward zero (Java/C semantics)
+    // For positive numbers, same as Euclidean
+    assert 7 /t 3 == 2;
+    assert 7 %t 3 == 1;
+    // For negative dividend, truncates toward zero (not floor)
+    // -7 /t 3 = -2 (not -3), -7 %t 3 = -1 (not 2)
+    assert (0 - 7) /t 3 == 0 - 2;
+    assert (0 - 7) %t 3 == 0 - 1;
 }
 "
 

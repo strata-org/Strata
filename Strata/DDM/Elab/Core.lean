@@ -1173,6 +1173,8 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
     elabSeqWith c .space "spaceSepBy" (·.getSepArgs)
   | q`Init.SpacePrefixSepBy =>
     elabSeqWith c .spacePrefix "spacePrefixSepBy" (·.getArgs)
+  | q`Init.NewlineSepBy =>
+    elabSeqWith c .newline "newlineSepBy" (·.getArgs)
   | _ =>
     assert! c.args.isEmpty
     elabOperation

@@ -150,6 +150,7 @@ inductive SepFormat where
 | comma          -- Comma separator (CommaSepBy)
 | space          -- Space separator (SpaceSepBy)
 | spacePrefix    -- Space before each element (SpacePrefixSepBy)
+| newline        -- Newline separator (NewlineSepBy)
 deriving Inhabited, Repr, BEq
 
 namespace SepFormat
@@ -159,18 +160,21 @@ def toString : SepFormat → String
   | .comma => "commaSepBy"
   | .space => "spaceSepBy"
   | .spacePrefix => "spacePrefixSepBy"
+  | .newline => "newlineSepBy"
 
 def toIonName : SepFormat → String
   | .none => "seq"
   | .comma => "commaSepList"
   | .space => "spaceSepList"
   | .spacePrefix => "spacePrefixedList"
+  | .newline => "newlineSepList"
 
 def fromIonName? : String → Option SepFormat
   | "seq" => some .none
   | "commaSepList" => some .comma
   | "spaceSepList" => some .space
   | "spacePrefixedList" => some .spacePrefix
+  | "newlineSepList" => some .newline
   | _ => none
 
 theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :

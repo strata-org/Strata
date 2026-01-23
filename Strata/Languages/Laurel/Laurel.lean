@@ -52,9 +52,9 @@ inductive Operation: Type where
   /- Works on Bool -/
     /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
   | Eq | Neq
-  | And | Or | Not
+  | And | Or | Not | Implies
   /- Works on Int/Float64 -/
-  | Neg | Add | Sub | Mul | Div | Mod
+  | Neg | Add | Sub | Mul | Div | Mod | DivT | ModT
   | Lt | Leq | Gt | Geq
   deriving Repr
 
@@ -121,9 +121,9 @@ inductive StmtExpr : Type where
   /- The initializer must be set if this StmtExpr is pure -/
   | LocalVariable (name : Identifier) (type : HighType) (initializer : Option StmtExpr)
   /- While is only allowed in an impure context
-    The invariant and decreases are always pure
+    The invariants and decreases are always pure
   -/
-  | While (cond : StmtExpr) (invariant : Option StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
+  | While (cond : StmtExpr) (invariants : List StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
   | Exit (target: Identifier)
   | Return (value : Option StmtExpr)
 /- Expression like -/

@@ -117,14 +117,14 @@ partial def syntaxCatToJavaType (cat : SyntaxCat) : JavaType :=
   else if abstractCategories.contains cat.name then
     .simple (abstractJavaName cat.name)
   else match cat.name with
-  | ⟨"Init", "Option"⟩ =>
+  | q`Init.Option =>
     match cat.args[0]? with
     | some inner => .optional (syntaxCatToJavaType inner)
     | none => panic! "Init.Option requires a type argument"
-  | ⟨"Init", "Seq"⟩ | ⟨"Init", "CommaSepBy"⟩ =>
+  | q`Init.Seq | q`Init.CommaSepBy | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy =>
     match cat.args[0]? with
     | some inner => .list (syntaxCatToJavaType inner)
-    | none => panic! "Init.Seq/CommaSepBy requires a type argument"
+    | none => panic! "List category requires a type argument"
   | ⟨"Init", _⟩ => panic! s!"Unknown Init category: {cat.name.name}"
   | ⟨_, name⟩ => .simple (escapeJavaName (toPascalCase name))
 
@@ -132,12 +132,23 @@ def argDeclKindToJavaType : ArgDeclKind → JavaType
   | .type _ => .simple "Expr"
   | .cat c => syntaxCatToJavaType c
 
+/-- Get Ion separator name for a list category, or none if not a list. -/
+def getSeparator (c : SyntaxCat) : Option String :=
+  match c.name with
+  | q`Init.Seq => some "seq"
+  | q`Init.CommaSepBy => some "commaSepList"
+  | q`Init.NewlineSepBy => some "newlineSepList"
+  | q`Init.SpaceSepBy => some "spaceSepList"
+  | q`Init.SpacePrefixSepBy => some "spacePrefixedList"
+  | _ => none
+
 /-- Extract the QualifiedIdent for categories that need Java interfaces, or none for primitives. -/
 partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :=
   if primitiveCategories.contains cat.name then none
   else if abstractCategories.contains cat.name then some cat.name
   else match cat.name with
-  | ⟨"Init", "Option"⟩ | ⟨"Init", "Seq"⟩ | ⟨"Init", "CommaSepBy"⟩ =>
+  | q`Init.Option | q`Init.Seq | q`Init.CommaSepBy
+  | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy =>
     cat.args[0]?.bind syntaxCatToQualifiedName
   | ⟨"Init", _⟩ => none
   | qid => some qid
@@ -178,8 +189,7 @@ structure NameAssignments where
 /-! ## Code Generation -/
 
 def argDeclToJavaField (decl : ArgDecl) : JavaField :=
-  { name := escapeJavaName decl.ident
-    type := argDeclKindToJavaType decl.kind }
+  { name := escapeJavaName decl.ident, type := argDeclKindToJavaType decl.kind }
 
 def JavaField.toParam (f : JavaField) : String :=
   s!"{f.type.toJava} {f.name}"
@@ -225,8 +235,9 @@ def generateNodeInterface (package : String) (categories : List String) : String
 def generateStubInterface (package : String) (name : String) : String × String :=
   (s!"{name}.java", s!"package {package};\n\npublic non-sealed interface {name} extends Node \{}\n")
 
-def generateSerializer (package : String) : String :=
+def generateSerializer (package : String) (separatorMap : String) : String :=
   serializerTemplate.replace templatePackage package
+    |>.replace "/*SEPARATOR_MAP*/" separatorMap
 
 /-- Assign unique Java names to all generated types -/
 def assignAllNames (d : Dialect) : NameAssignments :=
@@ -240,7 +251,7 @@ def assignAllNames (d : Dialect) : NameAssignments :=
       let cats := if cats.contains op.category then cats else cats.push op.category
       let refs := op.argDecls.toArray.foldl (init := refs) fun refs arg =>
         match arg.kind with
-        | .type _ => refs.insert ⟨"Init", "Expr"⟩
+        | .type _ => refs.insert q`Init.Expr
         | .cat c => match syntaxCatToQualifiedName c with
           | some qid => refs.insert qid
           | none => refs
@@ -309,13 +320,17 @@ def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : Op
 def generateBuilders (package : String) (dialectName : String) (d : Dialect) (names : NameAssignments) : String :=
   let method (op : OpDecl) :=
     let fields := op.argDecls.toArray.map argDeclToJavaField
-    let (ps, as) := fields.foldl (init := (#[], #[])) fun (ps, as) f =>
+    let (ps, as, checks) := fields.foldl (init := (#[], #[], #[])) fun (ps, as, checks) f =>
       match f.type with
-      | .simple "java.math.BigInteger" _ => (ps.push s!"long {f.name}", as.push s!"java.math.BigInteger.valueOf({f.name})")
-      | .simple "java.math.BigDecimal" _ => (ps.push s!"double {f.name}", as.push s!"java.math.BigDecimal.valueOf({f.name})")
-      | t => (ps.push s!"{t.toJava} {f.name}", as.push f.name)
+      | .simple "java.math.BigInteger" _ =>
+        (ps.push s!"long {f.name}",
+         as.push s!"java.math.BigInteger.valueOf({f.name})",
+         checks.push s!"if ({f.name} < 0) throw new IllegalArgumentException(\"{f.name} must be non-negative\");")
+      | .simple "java.math.BigDecimal" _ => (ps.push s!"double {f.name}", as.push s!"java.math.BigDecimal.valueOf({f.name})", checks)
+      | t => (ps.push s!"{t.toJava} {f.name}", as.push f.name, checks)
     let methodName := escapeJavaName op.name
-    s!"    public static {names.categories[op.category]!} {methodName}({", ".intercalate ps.toList}) \{ return new {names.operators[(op.category, op.name)]!}(SourceRange.NONE{if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList}); }"
+    let checksStr := if checks.isEmpty then "" else " ".intercalate checks.toList ++ " "
+    s!"    public static {names.categories[op.category]!} {methodName}({", ".intercalate ps.toList}) \{ {checksStr}return new {names.operators[(op.category, op.name)]!}(SourceRange.NONE{if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList}); }"
   let methods := d.declarations.filterMap fun | .op op => some (method op) | _ => none
   s!"package {package};\n\npublic class {dialectName} \{\n{"\n".intercalate methods.toList}\n}\n"
 
@@ -351,13 +366,30 @@ def generateDialect (d : Dialect) (package : String) : Except String GeneratedFi
   -- All interface names for Node permits clause
   let allInterfaceNames := (sealedInterfaces ++ stubInterfaces).map (·.1.dropRight 5)
 
+  -- Generate separator map for list fields
+  let separatorEntries := d.declarations.toList.filterMap fun decl =>
+    match decl with
+    | .op op =>
+      let opName := s!"{d.name}.{op.name}"
+      let fieldEntries := op.argDecls.toArray.toList.filterMap fun arg =>
+        match arg.kind with
+        | .cat c => match getSeparator c with
+          | some sep => some s!"\"{escapeJavaName arg.ident}\", \"{sep}\""
+          | none => none
+        | _ => none
+      if fieldEntries.isEmpty then none
+      else some s!"        \"{opName}\", java.util.Map.of({", ".intercalate fieldEntries})"
+    | _ => none
+  let separatorMap := if separatorEntries.isEmpty then "java.util.Map.of()"
+    else s!"java.util.Map.of(\n{",\n".intercalate separatorEntries})"
+
   return {
     sourceRange := generateSourceRange package
     node := generateNodeInterface package allInterfaceNames
     interfaces := sealedInterfaces.toArray ++ stubInterfaces.toArray
     records := records.toArray
     builders := (s!"{names.builders}.java", generateBuilders package names.builders d names)
-    serializer := generateSerializer package
+    serializer := generateSerializer package separatorMap
   }
 
 /-! ## File Output -/

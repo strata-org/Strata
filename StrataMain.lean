@@ -251,14 +251,12 @@ def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile
   | .ok files => pure files
   | .error msg => exitFailure msg
 
-def laurelAnalyzeCommand : Command where
-  name := "laurelAnalyze"
+def laurelAnalyzeBinaryCommand : Command where
+  name := "laurelAnalyzeBinary"
   args := []
-  help := "Analyze a Laurel Ion program from stdin. Write diagnostics to stdout."
+  help := "Analyze a Laurel program from binary (Ion) stdin. Write diagnostics to stdout."
   callback := fun _ _ => do
-    -- Read bytes from stdin
     let stdinBytes ← (← IO.getStdin).readBinToEnd
-
     let strataFiles ← deserializeIonToLaurelFiles stdinBytes
 
     let mut combinedProgram : Strata.Laurel.Program := {
@@ -268,12 +266,10 @@ def laurelAnalyzeCommand : Command where
     }
 
     for strataFile in strataFiles do
-
       let transResult := Strata.Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Strata.Laurel.parseProgram strataFile.program)
       match transResult with
       | .error transErrors => exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
       | .ok laurelProgram =>
-
         combinedProgram := {
           staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
           staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
@@ -286,8 +282,108 @@ def laurelAnalyzeCommand : Command where
     for diag in diagnostics do
       IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
 
+def laurelParseCommand : Command where
+  name := "laurelParse"
+  args := [ "file" ]
+  help := "Parse a Laurel source file (no verification)."
+  callback := fun _ v => do
+    let path : System.FilePath := v[0]
+    let content ← IO.FS.readFile path
+    let input := Strata.Parser.stringInputContext path content
+    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+
+    let uri := Strata.Uri.file path.toString
+    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
+    match transResult with
+    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
+    | .ok _ => IO.println "Parse successful"
+
+def laurelAnalyzeCommand : Command where
+  name := "laurelAnalyze"
+  args := [ "file" ]
+  help := "Analyze a Laurel source file. Write diagnostics to stdout."
+  callback := fun _ v => do
+    let path : System.FilePath := v[0]
+    let content ← IO.FS.readFile path
+    let input := Strata.Parser.stringInputContext path content
+    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+
+    let uri := Strata.Uri.file path.toString
+    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
+    match transResult with
+    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
+    | .ok laurelProgram =>
+      let results ← Strata.Laurel.verifyToVcResults "z3" laurelProgram Options.default none
+      match results with
+      | .error errors =>
+        IO.println s!"==== ERRORS ===="
+        for err in errors do
+          IO.println s!"{err.message}"
+      | .ok vcResults =>
+        IO.println s!"==== RESULTS ===="
+        for vc in vcResults do
+          IO.println s!"{vc.obligation.label}: {repr vc.result}"
+
+def laurelPrintCommand : Command where
+  name := "laurelPrint"
+  args := []
+  help := "Read Laurel Ion from stdin and print in concrete syntax to stdout."
+  callback := fun _ _ => do
+    let stdinBytes ← (← IO.getStdin).readBinToEnd
+    let strataFiles ← deserializeIonToLaurelFiles stdinBytes
+    for strataFile in strataFiles do
+      IO.println s!"// File: {strataFile.filePath}"
+      let p := strataFile.program
+      let c := p.formatContext {}
+      let s := p.formatState
+      let fmt := p.commands.foldl (init := f!"") fun f cmd =>
+        f ++ (Strata.mformat cmd c s).format
+      IO.println (fmt.pretty 100)
+      IO.println ""
+
+def prettyPrintCore (p : Core.Program) : String :=
+  let decls := p.decls.map fun d =>
+    let s := toString (Std.format d)
+    -- Add newlines after major sections in procedures
+    s.replace "preconditions:" "\n  preconditions:"
+     |>.replace "postconditions:" "\n  postconditions:"
+     |>.replace "body:" "\n  body:\n    "
+     |>.replace "assert [" "\n    assert ["
+     |>.replace "init (" "\n    init ("
+     |>.replace "while (" "\n    while ("
+     |>.replace "if (" "\n      if ("
+     |>.replace "call [" "\n    call ["
+     |>.replace "else{" "\n      else {"
+     |>.replace "}}" "}\n    }"
+  String.intercalate "\n" decls
+
+def laurelToCoreCommand : Command where
+  name := "laurelToCore"
+  args := [ "file" ]
+  help := "Translate a Laurel source file to Core and print to stdout."
+  callback := fun _ v => do
+    let path : System.FilePath := v[0]
+    let content ← IO.FS.readFile path
+    let input := Strata.Parser.stringInputContext path content
+    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+
+    let uri := Strata.Uri.file path.toString
+    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
+    match transResult with
+    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
+    | .ok laurelProgram =>
+      match Strata.Laurel.translate laurelProgram with
+      | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
+      | .ok coreProgram => IO.println (prettyPrintCore coreProgram)
+
 def commandList : List Command := [
       javaGenCommand,
+      laurelPrintCommand,
+      laurelParseCommand,
+      laurelToCoreCommand,
       checkCommand,
       toIonCommand,
       printCommand,
@@ -295,6 +391,7 @@ def commandList : List Command := [
       pyAnalyzeCommand,
       pyTranslateCommand,
       laurelAnalyzeCommand,
+      laurelAnalyzeBinaryCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=
