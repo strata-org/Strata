@@ -60,7 +60,8 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
                       {C.knownTypes.keywords}" |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
             .ok (Decl.type td, C, Env)
           | .syn ts =>
-            let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+            let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
+              |>.mapError (fun e => errorWithSourceLoc e)
             .ok (Decl.type td, C, Env)
           | .data d =>
             let C ← C.addDatatype d |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
@@ -69,7 +70,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
             .error (errorWithSourceLoc e)
 
       | .ax a _ => try
-        let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+        let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => errorWithSourceLoc e)
         match ae.toLMonoTy with
         | .bool => .ok (Decl.ax { a with e := ae.unresolved }, C, Env)
         | _ => .error <| errorWithSourceLoc <| DiagnosticModel.fromFormat f!"Axiom {a.name} has non-boolean type."
@@ -77,7 +78,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
             .error (errorWithSourceLoc e)
 
       | .distinct l es md => try
-        let es' ← es.mapM (LExpr.resolve C Env) |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+        let es' ← es.mapM (LExpr.resolve C Env) |>.mapError (fun e => errorWithSourceLoc e)
         .ok (Decl.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
         catch e =>
           .error (errorWithSourceLoc e)
@@ -91,7 +92,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
       | .func func _ => try
         let Env := Env.pushEmptySubstScope
-        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => errorWithSourceLoc e)
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
         .ok (Decl.func func', C, Env)
