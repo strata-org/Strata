@@ -448,6 +448,8 @@ def destructorConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.I
         then a[idx]? else none)
     | _ => none
 
+def destructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier IDMeta) := d.name ++ ".." ++ name.name
+
 /--
 Generate destructor functions for a constructor, which extract the
 constructor components, e.g.
@@ -458,9 +460,8 @@ These functions are partial, `List..head Nil` is undefined.
 def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
   c.args.mapIdx (fun i (name, ty) =>
     let arg := genArgName
-    let destructorName : Identifier T.IDMeta := d.name ++ ".." ++ name.name
     {
-      name := destructorName,
+      name := destructorFuncName d name,
       typeArgs := d.typeArgs,
       inputs := [(arg, dataDefault d)],
       output := ty,
