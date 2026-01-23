@@ -24,36 +24,36 @@ namespace Procedure
 private def checkNoDuplicates (proc : Procedure) (sourceLoc : DiagnosticModel → DiagnosticModel) :
     Except DiagnosticModel Unit := do
   if !proc.header.inputs.keys.Nodup then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the formals!"))
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the formals!"
   if !proc.header.outputs.keys.Nodup then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the return variables!"))
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the return variables!"
   if !proc.spec.modifies.Nodup then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the modifies clause!"))
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the modifies clause!"
 
 private def checkVariableScoping (proc : Procedure) (sourceLoc : DiagnosticModel → DiagnosticModel) :
     Except DiagnosticModel Unit := do
   if proc.spec.modifies.any (fun v => v ∈ proc.header.inputs.keys) then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the modifies clause must \
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the modifies clause must \
               not appear in the formals.\n\
               Modifies: {proc.spec.modifies}\n\
-              Formals: {proc.header.inputs.keys}"))
+              Formals: {proc.header.inputs.keys}"
   if proc.spec.modifies.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the modifies clause must \
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the modifies clause must \
               not appear in the return values.\n\
               Modifies: {proc.spec.modifies}\n\
-              Returns: {proc.header.outputs.keys}"))
+              Returns: {proc.header.outputs.keys}"
   if proc.header.inputs.keys.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the formals must \
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the formals must \
               not appear in the return values.\n\
               Formals: {proc.header.inputs.keys}\n\
-              Returns: {proc.header.outputs.keys}"))
+              Returns: {proc.header.outputs.keys}"
 
 private def checkModifiesClause (proc : Procedure) (Env : Core.Expression.TyEnv)
     (sourceLoc : DiagnosticModel → DiagnosticModel) : Except DiagnosticModel Unit := do
   if proc.spec.modifies.any (fun v => (Env.context.types.find? v).isNone) then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}]: All the variables in the modifies clause \
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}]: All the variables in the modifies clause \
               must exist in the context!\n\
-              Modifies: {proc.spec.modifies}"))
+              Modifies: {proc.spec.modifies}"
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : DiagnosticModel → DiagnosticModel) :
     Except DiagnosticModel Unit := do
@@ -61,10 +61,10 @@ private def checkModificationRights (proc : Procedure) (sourceLoc : DiagnosticMo
   let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
   let allowedVars := proc.header.outputs.keys ++ proc.spec.modifies ++ definedVars
   if modifiedVars.any (fun v => v ∉ allowedVars) then
-    .error (sourceLoc (DiagnosticModel.fromFormat f!"[{proc.header.name}]: This procedure modifies variables it \
+    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
               Variables actually modified: {modifiedVars}\n\
-              Modification allowed for these variables: {allowedVars}"))
+              Modification allowed for these variables: {allowedVars}"
 
 private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (errorWithSourceLoc : DiagnosticModel → DiagnosticModel) :

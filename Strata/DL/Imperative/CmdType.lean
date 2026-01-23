@@ -30,7 +30,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     match TC.lookup τ x with
     | none =>
       if x ∈ TC.freeVars e then
-        .error (md.toDiagnosticF f!"Variable {x} cannot appear in its own initialization expression!")
+        .error <| md.toDiagnosticF f!"Variable {x} cannot appear in its own initialization expression!"
       else
         let (xty, τ) ← TC.preprocess ctx τ xty
         let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -40,11 +40,11 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
         let c := Cmd.init x xty e md
         .ok (c, τ)
     | some xty =>
-      .error (md.toDiagnosticF f!"Variable {x} of type {xty} already in context.")
+      .error <| md.toDiagnosticF f!"Variable {x} of type {xty} already in context."
 
   | .set x e md =>
     match TC.lookup τ x with
-    | none => .error (md.toDiagnosticF f!"Cannot set undeclared variable {x}.")
+    | none => .error <| md.toDiagnosticF f!"Cannot set undeclared variable {x}."
     | some xty =>
       let (e, ety, τ) ← TC.inferType ctx τ c e
       let τ ← TC.unifyTypes τ [(xty, ety)]
@@ -54,7 +54,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
   | .havoc x md =>
     match TC.lookup τ x with
     | some _ => .ok (c, τ)
-    | none => .error (md.toDiagnosticF f!"Cannot havoc undeclared variable {x}.")
+    | none => .error <| md.toDiagnosticF f!"Cannot havoc undeclared variable {x}."
 
   | .assert label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -62,8 +62,8 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
        let c := Cmd.assert label e md
        .ok (c, τ)
     else
-      .error (md.toDiagnosticF f!"Assertion {label} expected to be of type boolean, \
-                but inferred type is {ety}.")
+      .error <| md.toDiagnosticF f!"Assertion {label} expected to be of type boolean, \
+                but inferred type is {ety}."
 
   | .assume label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -71,8 +71,8 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
        let c := Cmd.assume label e md
        .ok (c, τ)
     else
-      .error (md.toDiagnosticF f!"Assumption {label} expected to be of type boolean, \
-                but inferred type is {ety}.")
+      .error <| md.toDiagnosticF f!"Assumption {label} expected to be of type boolean, \
+                but inferred type is {ety}."
 
   | .cover label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -80,12 +80,12 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
        let c := Cmd.cover label e md
        .ok (c, τ)
     else
-      .error (md.toDiagnosticF f!"Cover {label} expected to be of type boolean, \
-                but inferred type is {ety}.")
+      .error <| md.toDiagnosticF f!"Cover {label} expected to be of type boolean, \
+                but inferred type is {ety}."
 
   catch e =>
     -- Add source location to error messages if not already present.
-    .error (e.withRangeIfUnknown (getFileRange c.getMetaData |>.getD FileRange.unknown))
+    .error <| e.withRangeIfUnknown (getFileRange c.getMetaData |>.getD FileRange.unknown)
 
 /--
 Type checker for Imperative's Commands.

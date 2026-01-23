@@ -45,11 +45,11 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
         let (s', Env) ← Statement.typeCheck C Env program .none [Statement.init x ty val md]
         match s' with
         | [Statement.init x' ty' val' _] => .ok (Decl.var x' ty' val', C, Env)
-        | _ => .error (errorWithSourceLoc (DiagnosticModel.fromFormat f!"Implementation error! \
+        | _ => .error <| errorWithSourceLoc <| DiagnosticModel.fromFormat f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
                          {s'}{Format.line}
-                         Declaration: {decl}"))
+                         Declaration: {decl}"
 
       | .type td _ => try
           match td with
@@ -72,7 +72,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
         let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
         match ae.toLMonoTy with
         | .bool => .ok (Decl.ax { a with e := ae.unresolved }, C, Env)
-        | _ => .error (errorWithSourceLoc (DiagnosticModel.fromFormat f!"Axiom {a.name} has non-boolean type."))
+        | _ => .error <| errorWithSourceLoc <| DiagnosticModel.fromFormat f!"Axiom {a.name} has non-boolean type."
           catch e =>
             .error (errorWithSourceLoc e)
 

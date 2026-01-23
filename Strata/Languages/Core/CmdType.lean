@@ -50,7 +50,7 @@ def postprocess (_: LContext CoreLParams) (Env: TEnv Visibility) (ty : LTy) :
     let ty := LMonoTy.subst Env.stateSubstInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, Env)
   else
-    .error (DiagnosticModel.fromFormat f!"[postprocess] Expected mono-type; instead got {ty}")
+    .error <| DiagnosticModel.fromFormat f!"[postprocess] Expected mono-type; instead got {ty}"
 
 /--
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
@@ -88,9 +88,9 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) :
       let c_rest ← canonicalizeConstraints c_rest
       .ok ((t1, t2) :: c_rest)
     else
-      .error (DiagnosticModel.fromFormat f!"[canonicalizeConstraints] Expected to see only mono-types in \
+      .error <| DiagnosticModel.fromFormat f!"[canonicalizeConstraints] Expected to see only mono-types in \
                 type constraints, but found the following instead:\n\
-                t1: {t1}\nt2: {t2}\n")
+                t1: {t1}\nt2: {t2}\n"
 
 def unifyTypes (Env: TEnv Visibility) (constraints : List (LTy × LTy)) :
     Except DiagnosticModel (TEnv Visibility) := do
