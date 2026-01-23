@@ -318,10 +318,13 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
-def Env.addDatatypes (E: Env) (datatypes: List (Lambda.LDatatype Visibility)) : Except Format Env := do
-  let f ← Lambda.TypeFactory.genFactory (T:=CoreLParams) (datatypes.toArray)
+def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Visibility) : Except Format Env := do
+  let f ← Lambda.genBlockFactory (T:=CoreLParams) block
   let env ← E.addFactory f
-  return { env with datatypes := datatypes.toArray }
+  return { env with datatypes := E.datatypes.push block }
+
+def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Visibility)) : Except Format Env :=
+  blocks.foldlM Env.addMutualDatatype E
 
 end Core
 

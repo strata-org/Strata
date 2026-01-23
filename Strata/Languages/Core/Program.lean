@@ -79,6 +79,12 @@ def Decl.name (d : Decl) : Expression.Ident :=
   | .proc p _       => p.header.name
   | .func f _       => f.name
 
+/-- Get all names from a declaration. For mutual datatypes, returns all datatype names. -/
+def Decl.names (d : Decl) : List Expression.Ident :=
+  match d with
+  | .type t _ => t.names
+  | _ => [d.name]
+
 def Decl.getVar? (d : Decl) :
   Option (Expression.Ident × Expression.Ty × Expression.Expr) :=
   match d with
@@ -207,7 +213,7 @@ def Program.getInit? (P: Program) (x : Expression.Ident) : Option Expression.Exp
 
 def Program.getNames (P: Program) : List Expression.Ident :=
   go P.decls
-  where go decls := decls.map Decl.name
+  where go decls := decls.flatMap Decl.names
 
 def Program.Type.find? (P : Program) (x : Expression.Ident) : Option TypeDecl :=
   match P.find? .type x with
