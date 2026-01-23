@@ -209,8 +209,6 @@ def PyExprToMonoTy (e : Python.expr SourceRange) : Lambda.LMonoTy :=
   match e with
   | .Name _ n _ =>
     match n.val with
-    | "bool" => .tcons "bool" []
-    | "int" => .tcons "int" []
     | "str" => .tcons "string" []
     | "float" => .tcons "string" []
     | "Dict[str Any]" => .tcons "DictStrAny" []
@@ -218,9 +216,7 @@ def PyExprToMonoTy (e : Python.expr SourceRange) : Lambda.LMonoTy :=
     | "datetime" => .tcons "Datetime" []
     | "date" => .tcons "Date" []
     | "timedelta" => .tcons "Timedelta" []
-    | "Client" => .tcons "Client" []
-    | "LatencyAnalyzer" => .tcons "LatencyAnalyzer" []
-    | _ => panic! s!"Unhandled name: {repr e}"
+    | _ => .tcons n.val []
   | .Subscript _ val _slice _ =>
     match val with
     | .Name _ n _ =>
@@ -775,17 +771,20 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program): Core.Pr
     let new_acc := update acc info
     let (ys, acc'') := helper f update new_acc xs
     (y ++ ys, acc'')
-  let func_info : TranslationContext := { signatures }
 
-  let func_defs_and_infos := helper PyFuncDefToCore (fun acc info => {acc with func_infos := info :: acc.func_infos}) func_info func_defs.toList
+  -- TODO: in Python, declarations can be circular
+  let base_ctx : TranslationContext := { signatures }
+
+  let class_defs_and_infos := helper PyClassDefToCore (fun acc info => {acc with class_infos := info :: acc.class_infos}) base_ctx class_defs.toList
+  let class_defs := class_defs_and_infos.fst
+  let class_infos := class_defs_and_infos.snd
+
+  let class_ty_decls := class_infos.class_infos.map (λ info => .type (.con {name := info.name, numargs := 0}))
+
+  let func_defs_and_infos := helper PyFuncDefToCore (fun acc info => {acc with func_infos := info :: acc.func_infos}) class_infos func_defs.toList
   let func_defs := func_defs_and_infos.fst
   let func_infos := func_defs_and_infos.snd
 
-  let class_defs_and_infos := helper PyClassDefToCore (fun acc info => {acc with class_infos := info :: acc.class_infos}) func_infos class_defs.toList
-  let class_defs := class_defs_and_infos.fst
-  let class_infos := class_defs_and_infos.snd
-  let class_ty_decls := [(.type (.con {name := "LatencyAnalyzer", numargs := 0})) ]
-
-  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++ [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default class_infos)]}
+  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++ [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos)]}
 
 end Strata

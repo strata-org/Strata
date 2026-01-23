@@ -251,10 +251,13 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                   | .type (.syn syn) _md =>
                     let ty := syn.toLHSLMonoTy
                     pure ty
-                  | .type (.data ldatatype) =>
+                  | .type (.data (ldatatype :: _)) _md =>
                     -- Datatype Declaration
+                    -- TODO: Handle mutual blocks, need to find the specific datatype by name
                     let args := ldatatype.typeArgs.map LMonoTy.ftvar
                     pure (.tcons ldatatype.name args)
+                  | .type (.data []) _md =>
+                    TransM.error "Empty mutual datatype block"
                   | _ =>
                     TransM.error
                       s!"translateLMonoTy not yet implemented for this declaration: \
@@ -272,7 +275,10 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.boundTypeVars.size
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
-  | _ => TransM.error s!"translateLMonoTy not yet implemented {repr tp}"
+  | .arrow _ arg res =>
+    let arg' ← translateLMonoTy bindings (.type arg)
+    let res' ← translateLMonoTy bindings (.type res)
+    return (.arrow arg' res')
 
 partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :
   TransM (Array LMonoTy) :=
@@ -1347,7 +1353,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
       typeArgs := typeArgs
       constrs := [{ name := datatypeName, args := [], testerName := "" }]
       constrs_ne := by simp }
-  let placeholderDecl := Core.Decl.type (.data placeholderLDatatype)
+  let placeholderDecl := Core.Decl.type (.data [placeholderLDatatype])
   let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
 
   -- Extract constructor information (possibly recursive)
@@ -1376,14 +1382,15 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
 
     -- Generate factory from LDatatype and convert to Core.Decl
     -- (used only for bindings.freeVars, not for allDecls)
-    let factory ← match ldatatype.genFactory (T := CoreLParams) with
+    let factory ← match genBlockFactory [ldatatype] (T := CoreLParams) with
       | .ok f => pure f
       | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
     let funcDecls : List Core.Decl := factory.toList.map fun func =>
       Core.Decl.func func
 
     -- Only includes typeDecl, factory functions generated later
-    let typeDecl := Core.Decl.type (.data ldatatype)
+    let md ← getOpMetaData op
+    let typeDecl := Core.Decl.type (.data [ldatatype]) md
     let allDecls := [typeDecl]
 
     /-
