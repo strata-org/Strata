@@ -301,7 +301,8 @@ structure FileRange where
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.range}"
 
-/-- A default file range for errors without source location. -/
+/-- A default file range for errors without source location.
+This should only be used for generated nodes that are guaranteed to be correct. -/
 def FileRange.unknown : FileRange :=
   { file := .file "<unknown>", range := SourceRange.none }
 
@@ -315,11 +316,13 @@ structure DiagnosticModel where
 instance : Inhabited DiagnosticModel where
   default := { fileRange := FileRange.unknown, message := "" }
 
-/-- Create a DiagnosticModel from just a message (using default location). -/
+/-- Create a DiagnosticModel from just a message (using default location).
+This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
 def DiagnosticModel.fromMessage (msg : String) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := msg }
 
-/-- Create a DiagnosticModel from a Format (using default location). -/
+/-- Create a DiagnosticModel from a Format (using default location).
+This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
 def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := toString fmt }
 
@@ -360,7 +363,8 @@ def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap
 def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := false) : Std.Format :=
   dm.fileRange.format fileMap includeEnd?
 
-/-- Update the file range of a DiagnosticModel if it's currently unknown. -/
+/-- Update the file range of a DiagnosticModel if it's currently unknown.
+This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
 def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) : DiagnosticModel :=
   if dm.fileRange.range.isNone then
     { dm with fileRange := fr }
