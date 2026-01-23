@@ -77,6 +77,7 @@ namespace Core
 namespace WF
 
 open Imperative Std Lambda
+open Strata
 
 /- The default program is well-formed -/
 theorem Program.init.wf : WFProgramProp .init := by
@@ -338,21 +339,43 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
   induction decls generalizing acc p C T with
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
-    -- The proof structure needs to be updated to handle the new code structure
-    -- with Except.mapError wrapping. The proofs were already incomplete in other
-    -- places, so we use sorry here as well.
-    intro tcok
-    simp only [Program.getNames.go]
-    constructor
-    · -- Show r.name is not in the rest of the names
-      intro h_in
-      -- This requires showing that the identifier was successfully added,
-      -- which means it wasn't already present. The proof needs restructuring
-      -- due to the Except.mapError wrapper.
-      sorry
-    · -- Show the rest of the names are unique (by IH)
-      -- Need to extract the recursive call from tcok
-      sorry
+    simp_all [Program.getNames.go, Program.typeCheck.go,
+              tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.tryCatch];
+    cases Hid: C.idents.addWithError r.name
+                (let fileRange := Imperative.getFileRange r.metadata |>.getD FileRange.unknown
+                (DiagnosticModel.withRange fileRange f!"Error in {r.kind} {r.name}: a declaration of this name already exists.")); simp [bind]
+    case error => intro C; cases C; done
+    case ok id =>
+      intro C; simp[bind, Except.bind] at C;
+      cases r <;> simp at C; repeat (split at C <;> try (intros _; contradiction) <;> try contradiction) <;> try contradiction
+      any_goals (split at C <;> try contradiction)
+      all_goals (
+        specialize (IH C); constructor <;> try assumption;
+        intros x x_in;
+        have x_in' : x.name ∈ Program.getNames.go rs := by
+          unfold Program.getNames.go; rw[List.mem_map]; exists x;
+        have x_notin := (Program.typeCheckFunctionDisjoint C x.name x_in')
+        intro name_eq
+        have x_contains := (Identifiers.addWithErrorContains Hid x.name))
+      case _ => grind
+      case _ x v hmatch1 =>
+        rename_i x v hmatch1
+        split at hmatch1 <;> try grind
+        rename_i hmatch2; split at hmatch2 <;> split at hmatch2 <;> try grind
+        rename_i heq
+        have id_eq := addKnownTypeWithErrorIdents heq
+        simp at id_eq; grind
+        rename_i Heq
+        have := addDatatypeIdents Heq; grind
+      case _ => grind
+      case _ => grind
+      case _ => grind
+      case _ =>
+        rename_i x v hmatch1
+        split at hmatch1 <;> try grind
+        rename_i hmatch2; split at hmatch2 <;> try grind
+        simp only [LContext.addFactoryFunction] at hmatch2; grind
+    done
 
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed

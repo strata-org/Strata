@@ -120,12 +120,6 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   . intros _; apply Or.inl; cases x; cases y; grind
   . rw[meta_eq]; intros _; simp
 
-/-- Variant of `addWithErrorContains` that works through `Except.mapError`. -/
-theorem Identifiers.addWithErrorContains' {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta} {g : DiagnosticModel → ε}:
-    Except.mapError g (m.addWithError x f) = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
-  intro h
-  exact addWithErrorContains (Except.mapError_ok h)
-
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)
 

@@ -34,7 +34,6 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
   | [] => .ok (acc.reverse, Env)
   | decl :: drest => do
     let fileRange := Imperative.getFileRange decl.metadata |>.getD FileRange.unknown
-    let errorWithSourceLoc := fun (e : DiagnosticModel) => e.withRangeIfUnknown fileRange
     let C := {C with idents := (← C.idents.addWithError decl.name
                                     (DiagnosticModel.withRange fileRange f!"Error in {decl.kind} {decl.name}: \
                                        a declaration of this name already exists."))}
@@ -45,7 +44,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
         let (s', Env) ← Statement.typeCheck C Env program .none [Statement.init x ty val md]
         match s' with
         | [Statement.init x' ty' val' _] => .ok (Decl.var x' ty' val', C, Env)
-        | _ => .error <| errorWithSourceLoc <| DiagnosticModel.fromFormat f!"Implementation error! \
+        | _ => .error <| DiagnosticModel.withRange fileRange f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
                          {s'}{Format.line}
@@ -54,34 +53,34 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
       | .type td _ => try
           match td with
           | .con tc =>
-            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } (DiagnosticModel.fromFormat f!"This type declaration's name is reserved!\n\
+            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } (DiagnosticModel.withRange fileRange f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\
-                      {C.knownTypes.keywords}") |>.mapError (fun e => errorWithSourceLoc e)
+                      {C.knownTypes.keywords}")
             .ok (Decl.type td, C, Env)
           | .syn ts =>
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
-              |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+              |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
             .ok (Decl.type td, C, Env)
           | .data d =>
-            let C ← C.addDatatype d |>.mapError (fun e => errorWithSourceLoc e)
+            let C ← C.addDatatype d |>.mapError (fun e => e.withRangeIfUnknown fileRange)
             .ok (Decl.type td, C, Env)
           catch e =>
-            .error (errorWithSourceLoc e)
+            .error (e.withRangeIfUnknown fileRange)
 
       | .ax a _ => try
-        let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+        let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         match ae.toLMonoTy with
         | .bool => .ok (Decl.ax { a with e := ae.unresolved }, C, Env)
-        | _ => .error <| errorWithSourceLoc <| DiagnosticModel.fromFormat f!"Axiom {a.name} has non-boolean type."
+        | _ => .error <| DiagnosticModel.withRange fileRange f!"Axiom {a.name} has non-boolean type."
           catch e =>
-            .error (errorWithSourceLoc e)
+            .error (e.withRangeIfUnknown fileRange)
 
       | .distinct l es md => try
-        let es' ← es.mapM (LExpr.resolve C Env) |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+        let es' ← es.mapM (LExpr.resolve C Env) |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         .ok (Decl.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
         catch e =>
-          .error (errorWithSourceLoc e)
+          .error (e.withRangeIfUnknown fileRange)
 
       | .proc proc md =>
         -- Already reports source locations.
@@ -92,12 +91,12 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
       | .func func _ => try
         let Env := Env.pushEmptySubstScope
-        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
         .ok (Decl.func func', C, Env)
           catch e =>
-            .error (errorWithSourceLoc e)
+            .error (e.withRangeIfUnknown fileRange)
 
     go C Env drest (decl' :: acc)
 
