@@ -21,57 +21,57 @@ open Strata (DiagnosticModel FileRange)
 
 namespace Procedure
 
-private def checkNoDuplicates (proc : Procedure) (sourceLoc : DiagnosticModel → DiagnosticModel) :
+private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if !proc.header.inputs.keys.Nodup then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the formals!"
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
   if !proc.header.outputs.keys.Nodup then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the return variables!"
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
   if !proc.spec.modifies.Nodup then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Duplicates found in the modifies clause!"
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the modifies clause!"
 
-private def checkVariableScoping (proc : Procedure) (sourceLoc : DiagnosticModel → DiagnosticModel) :
+private def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if proc.spec.modifies.any (fun v => v ∈ proc.header.inputs.keys) then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the modifies clause must \
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \
               not appear in the formals.\n\
               Modifies: {proc.spec.modifies}\n\
               Formals: {proc.header.inputs.keys}"
   if proc.spec.modifies.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the modifies clause must \
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \
               not appear in the return values.\n\
               Modifies: {proc.spec.modifies}\n\
               Returns: {proc.header.outputs.keys}"
   if proc.header.inputs.keys.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}] Variables in the formals must \
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the formals must \
               not appear in the return values.\n\
               Formals: {proc.header.inputs.keys}\n\
               Returns: {proc.header.outputs.keys}"
 
 private def checkModifiesClause (proc : Procedure) (Env : Core.Expression.TyEnv)
-    (sourceLoc : DiagnosticModel → DiagnosticModel) : Except DiagnosticModel Unit := do
+    (sourceLoc : FileRange) : Except DiagnosticModel Unit := do
   if proc.spec.modifies.any (fun v => (Env.context.types.find? v).isNone) then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}]: All the variables in the modifies clause \
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: All the variables in the modifies clause \
               must exist in the context!\n\
               Modifies: {proc.spec.modifies}"
 
-private def checkModificationRights (proc : Procedure) (sourceLoc : DiagnosticModel → DiagnosticModel) :
+private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
   let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
   let allowedVars := proc.header.outputs.keys ++ proc.spec.modifies ++ definedVars
   if modifiedVars.any (fun v => v ∉ allowedVars) then
-    .error <| sourceLoc <| DiagnosticModel.fromFormat f!"[{proc.header.name}]: This procedure modifies variables it \
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
               Variables actually modified: {modifiedVars}\n\
               Modification allowed for these variables: {allowedVars}"
 
 private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (proc : Procedure) (errorWithSourceLoc : DiagnosticModel → DiagnosticModel) :
+    (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel (@Lambda.LMonoTySignature Visibility × Core.Expression.TyEnv) := do
   let Env := Env.pushEmptyContext
   let (inp_mty_sig, Env) ← Lambda.LMonoTySignature.instantiate C Env proc.header.typeArgs
-                            proc.header.inputs |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+                            proc.header.inputs |>.mapError (fun e => DiagnosticModel.withRange sourceLoc e)
   let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
   let Env := Env.addToContext inp_lty_sig
   return (inp_mty_sig, Env)
@@ -106,16 +106,15 @@ private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expr
 def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
     (proc : Procedure) (md : MetaData Expression) : Except DiagnosticModel (Procedure × Core.Expression.TyEnv) := do
   let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
-  let errorWithSourceLoc := fun (e : DiagnosticModel) => e.withRangeIfUnknown fileRange
 
   -- Validate well-formedness of formals, returns, and modifies clause.
-  checkNoDuplicates proc errorWithSourceLoc
-  checkVariableScoping proc errorWithSourceLoc
-  checkModifiesClause proc Env errorWithSourceLoc
-  checkModificationRights proc errorWithSourceLoc
+  checkNoDuplicates proc fileRange
+  checkVariableScoping proc fileRange
+  checkModifiesClause proc Env fileRange
+  checkModificationRights proc fileRange
 
   -- Temporarily add the formals into the context.
-  let (inp_mty_sig, envWithInputs) ← setupInputEnv C Env proc errorWithSourceLoc
+  let (inp_mty_sig, envWithInputs) ← setupInputEnv C Env proc fileRange
 
   -- Type check preconditions.
   -- Note: `envWithInputs` does not have the return variables in the context,
@@ -128,7 +127,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Temporarily add returns into the context.
   let (out_mty_sig, envWithOutputs) ← Lambda.LMonoTySignature.instantiate C
                                         envAfterPreconds proc.header.typeArgs
-                                        proc.header.outputs |>.mapError (fun e => errorWithSourceLoc (DiagnosticModel.fromFormat e))
+                                        proc.header.outputs |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := envWithOutputs.addToContext out_lty_sig
 
