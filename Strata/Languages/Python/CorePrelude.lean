@@ -10,6 +10,7 @@ import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Core.Verifier
 
 namespace Strata
+namespace Python
 
 def corePrelude :=
 #strata
@@ -358,6 +359,7 @@ spec {
 #end
 
 def Core.prelude : Core.Program :=
-   Core.getProgram Strata.corePrelude |>.fst
+   Core.getProgram corePrelude |>.fst
 
+end Python
 end Strata
