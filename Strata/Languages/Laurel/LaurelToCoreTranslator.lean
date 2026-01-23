@@ -389,7 +389,7 @@ def genConstraintCheck (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstrain
 
 def genConstraintAssert (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (name : Identifier) (ty : HighTypeMd) : List Core.Statement :=
   match genConstraintCheck ctMap tcMap { name, type := ty } with
-  | some expr => [Core.Statement.assert s!"{name}_constraint" expr .empty]
+  | some expr => [Core.Statement.assert s!"{name}_constraint" expr ty.md]
   | none => []
 
 def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Except String Core.Expression.Expr :=
@@ -475,7 +475,7 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
       let belse ← match elseBranch with
                   | some e => do let (_, s) ← translateStmt ctMap tcMap ftMap env outputParams postconds e; pure s
                   | none => pure []
-      pure (env, [Imperative.Stmt.ite bcond bthen belse .empty])
+      pure (env, [Imperative.Stmt.ite bcond bthen belse stmt.md])
   | .While cond invariants _decOpt body => do
       let condExpr ← translateExpr ctMap tcMap ftMap env cond
       -- Combine multiple invariants with && for Core (which expects single invariant)
@@ -489,7 +489,7 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
               pure (LExpr.mkApp () boolAndOp [acc, invExpr])) firstExpr
             pure (some combined)
       let (_, bodyStmts) ← translateStmt ctMap tcMap ftMap env outputParams postconds body
-      pure (env, [Imperative.Stmt.loop condExpr none invExpr bodyStmts .empty])
+      pure (env, [Imperative.Stmt.loop condExpr none invExpr bodyStmts stmt.md])
   | .StaticCall name args => do
       if isHeapFunction (normalizeCallee name) then pure (env, [])
       else do
@@ -498,16 +498,16 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
   | .Return valueOpt => do
       -- Generate postcondition assertions before assuming false
       let postAsserts := postconds.map fun (label, expr) =>
-        Core.Statement.assert label expr .empty
+        Core.Statement.assert label expr stmt.md
       match valueOpt, outputParams.head? with
       | some value, some outParam => do
           let ident := Core.CoreIdent.locl outParam.name
           let boogieExpr ← translateExpr ctMap tcMap ftMap env value
           let assignStmt := Core.Statement.set ident boogieExpr
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
+          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) stmt.md
           pure (env, [assignStmt] ++ postAsserts ++ [noFallThrough])
       | none, _ =>
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
+          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) stmt.md
           pure (env, postAsserts ++ [noFallThrough])
       | some _, none =>
           throw "Return statement with value but procedure has no output parameters"
@@ -545,7 +545,8 @@ def HighType.isHeap : HighType → Bool
 /--
 Translate Laurel Procedure to Core Procedure
 -/
-def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (ftMap : FunctionTypeMap) (constants : List Constant) (proc : Procedure) : Except String Core.Procedure := do
+def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (ftMap : FunctionTypeMap)
+  (constants : List Constant) (proc : Procedure) : Except String Core.Decl := do
   -- Check if this procedure has a heap parameter (first input named "heap")
   let hasHeapParam := proc.inputs.any (fun p => p.name == "heap" && p.type.val.isHeap)
   -- Rename heap input to heap_in if present
@@ -641,11 +642,11 @@ def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstrain
         let (_, stmts) ← translateStmt ctMap tcMap ftMap initEnv proc.outputs postcondExprs impl
         pure (heapInit ++ stmts)
     | _ => pure []
-  pure {
+  pure <| Core.Decl.proc ({
     header := header
     spec := spec
     body := body
-  }
+  }) .empty
 
 def heapTypeDecl : Core.Decl := .type (.con { name := "Heap", numargs := 0 })
 def fieldTypeDecl : Core.Decl := .type (.con { name := "Field", numargs := 1 })
@@ -858,8 +859,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) Core.Program 
   let (funcProcs, procProcs) := heapProgram.staticProcedures.partition canBeBoogieFunction
   -- Build function type map from procedures that will become functions
   let ftMap := buildFunctionTypeMap ctMap funcProcs
-  let procedures ← procProcs.mapM (translateProcedure ctMap tcMap ftMap heapProgram.constants) |>.mapError fun e => #[{ fileRange := default, message := e }]
-  let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+  let procDecls ← procProcs.mapM (translateProcedure ctMap tcMap ftMap heapProgram.constants) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let laurelFuncDecls ← funcProcs.mapM (translateProcedureToFunction ctMap tcMap ftMap) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let constDecls := heapProgram.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl, arrayTypeSynonym]
