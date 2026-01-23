@@ -287,6 +287,13 @@ theorem addDatatypeIdents {C: Expression.TyContext}: C.addDatatype d = .ok C' �
   repeat (split at Hok <;> try contradiction)
   cases Hok <;> rfl
 
+/-- If `Except.mapError` returns `.ok`, then the underlying result was also `.ok`. -/
+theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
+    Except.mapError f e = .ok v → e = .ok v := by
+  cases e with
+  | error _ => simp [Except.mapError]
+  | ok val => simp [Except.mapError]
+
 /--
 If a program typechecks successfully, then every identifier in the list of
 program decls is not in the original `LContext`
@@ -316,11 +323,11 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
       rename_i hmatch2; split at hmatch2 <;> try grind
       split at hmatch2 <;> try grind
       rename_i heq
-      have id_eq := addKnownTypeWithErrorIdents (Except.mapError_ok heq)
+      have id_eq := addKnownTypeWithErrorIdents heq
       simp at id_eq; grind
       split at hmatch2 <;> try grind
       rename_i Heq
-      have :=addDatatypeIdents (Except.mapError_ok Heq); grind
+      have := addDatatypeIdents (Except.mapError_ok Heq); grind
     case _ => grind
     case _ => grind
     case _ => grind
@@ -366,7 +373,7 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
         have id_eq := addKnownTypeWithErrorIdents heq
         simp at id_eq; grind
         rename_i Heq
-        have := addDatatypeIdents Heq; grind
+        have := addDatatypeIdents (Except.mapError_ok Heq); grind
       case _ => grind
       case _ => grind
       case _ => grind
