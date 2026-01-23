@@ -71,8 +71,8 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assigned n => collectExpr n
   | .Old v => collectExpr v
   | .Fresh v => collectExpr v
-  | .Assert c _ => collectExpr c
-  | .Assume c _ => collectExpr c
+  | .Assert c => collectExpr c
+  | .Assume c => collectExpr c
   | .ProveBy v p => collectExpr v; collectExpr p
   | .ContractOf _ f => collectExpr f
   | _ => pure ()
@@ -152,6 +152,12 @@ def freshVarName : TransformM Identifier := do
   let s ← get
   set { s with freshCounter := s.freshCounter + 1 }
   return s!"$tmp{s.freshCounter}"
+
+/-- Helper to create a StmtExprMd with the same metadata as the input -/
+def mkStmtExprMdFrom (orig : StmtExprMd) (e : StmtExpr) : StmtExprMd := ⟨e, orig.md⟩
+
+/-- Helper to create a StmtExprMd with empty metadata -/
+def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -239,7 +245,6 @@ where
             let targets' ← rest.mapM recurse
             return .Assign (tgt' :: targets') (← recurse v) md
     | .PureFieldUpdate t f v => return .PureFieldUpdate (← recurse t) f (← recurse v)
-    | .PrimitiveOp op args =>
       let args' ← args.mapM recurse
       return .PrimitiveOp op args'
     | .ReferenceEquals l r => return .ReferenceEquals (← recurse l) (← recurse r)

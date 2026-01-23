@@ -28,7 +28,7 @@ open Lambda (LMonoTy LTy LExpr)
 /-
 Translate Laurel HighType to Core Type
 -/
-def translateType (ty : HighType) : LMonoTy :=
+partial def translateType (ty : HighType) : LMonoTy :=
   match ty with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
@@ -223,7 +223,7 @@ Translate Laurel Parameter to Core Signature entry
 -/
 def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
   let ident := Core.CoreIdent.locl param.name
-  let ty := translateType param.type
+  let ty := translateType param.type.val
   (ident, ty)
 
 /--
@@ -404,7 +404,6 @@ def isPureExpr : StmtExpr → Bool
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .Block [single] _ => isPureExpr single
   | _ => false
-termination_by e => sizeOf e
 
 /--
 Check if a procedure can be translated as a Core function.
