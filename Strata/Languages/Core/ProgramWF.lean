@@ -302,13 +302,13 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
     any_goals (split at tcok <;> try contradiction)
     all_goals (specialize (IH tcok))
     -- Solve C.idents.contains name = false for all goals
-    all_goals (constructor <;> try simp[Decl.name]; exact (Identifiers.addWithErrorNotin' Hid))
+    all_goals (constructor <;> try simp[Decl.name]; exact (Identifiers.addWithErrorNotin Hid))
     all_goals(
       intros a a_in;
       have a_in' : a.name ∈ Program.getNames.go rs := by
         unfold Program.getNames.go; rw[List.mem_map ]; exists a
       have a_notin := IH a.name a_in';
-      have Hcontains := Identifiers.addWithErrorContains' Hid a.name)
+      have Hcontains := Identifiers.addWithErrorContains Hid a.name)
     case _ => grind
     case _ x v hmatch1 =>
       split at hmatch1 <;> try grind
