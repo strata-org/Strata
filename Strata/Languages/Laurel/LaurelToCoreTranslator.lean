@@ -28,8 +28,8 @@ open Lambda (LMonoTy LTy LExpr)
 /-
 Translate Laurel HighType to Core Type
 -/
-partial def translateType (ty : HighType) : LMonoTy :=
-  match ty with
+partial def translateType (ty : HighTypeMd) : LMonoTy :=
+  match ty.val with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
@@ -38,7 +38,7 @@ partial def translateType (ty : HighType) : LMonoTy :=
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
 
-abbrev TypeEnv := List (Identifier × HighType)
+abbrev TypeEnv := List (Identifier × HighTypeMd)
 
 def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
@@ -51,8 +51,8 @@ def isConstant (constants : List Constant) (name : Identifier) : Bool :=
 /--
 Translate Laurel StmtExpr to Core Expression
 -/
-def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
-  match h: expr with
+def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd) : Core.Expression.Expr :=
+  match h: expr.val with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
@@ -99,7 +99,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) 
                   | some e => translateExpr constants env e
                   | none => .const () (.intConst 0)
       .ite () bcond bthen belse
-  | .Assign _ value _ => translateExpr constants env value
+  | .Assign _ value => translateExpr constants env value
   | .StaticCall name args =>
       let ident := Core.CoreIdent.glob name
       let fnOp := .op () ident none
@@ -123,12 +123,13 @@ Translate Laurel StmtExpr to Core Statements
 Takes the constants list, type environment and output parameter names
 -/
 def translateStmt (constants : List Constant) (env : TypeEnv)
-  (outputParams : List Parameter) (stmt : StmtExpr) : TypeEnv × List Core.Statement :=
-  match stmt with
-  | @StmtExpr.Assert cond md =>
+  (outputParams : List Parameter) (stmt : StmtExprMd) : TypeEnv × List Core.Statement :=
+  let md := stmt.md
+  match stmt.val with
+  | @StmtExpr.Assert cond =>
       let boogieExpr := translateExpr constants env cond
       (env, [Core.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md])
-  | @StmtExpr.Assume cond md =>
+  | @StmtExpr.Assume cond =>
       let boogieExpr := translateExpr constants env cond
       (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md])
   | .Block stmts _ =>
@@ -142,17 +143,17 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
       let boogieType := LTy.forAll [] boogieMonoType
       let ident := Core.CoreIdent.locl name
       match initializer with
-      | some (.StaticCall callee args) =>
+      | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a heap function (heapRead/heapStore) or a regular procedure call
           -- Heap functions should be translated as expressions, not call statements
           if callee == "heapRead" || callee == "heapStore" then
             -- Translate as expression (function application)
-            let boogieExpr := translateExpr constants env (.StaticCall callee args)
+            let boogieExpr := translateExpr constants env (⟨ .StaticCall callee args, md ⟩)
             (env', [Core.Statement.init ident boogieType boogieExpr])
           else
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr constants env)
-            let defaultExpr := match ty with
+            let defaultExpr := match ty.val with
                               | .TInt => .const () (.intConst 0)
                               | .TBool => .const () (.boolConst false)
                               | _ => .const () (.intConst 0)
@@ -163,25 +164,25 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
           let boogieExpr := translateExpr constants env initExpr
           (env', [Core.Statement.init ident boogieType boogieExpr])
       | none =>
-          let defaultExpr := match ty with
+          let defaultExpr := match ty.val with
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
                             | _ => .const () (.intConst 0)
           (env', [Core.Statement.init ident boogieType defaultExpr])
-  | .Assign targets value _ =>
+  | .Assign targets value =>
       match targets with
-      | [.Identifier name] =>
+      | [⟨ .Identifier name, idMd ⟩] =>
           let ident := Core.CoreIdent.locl name
           let boogieExpr := translateExpr constants env value
           (env, [Core.Statement.set ident boogieExpr])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
-          match value with
+          match value.val with
           | .StaticCall callee args =>
               let boogieArgs := args.map (translateExpr constants env)
               let lhsIdents := targets.filterMap fun t =>
-                match t with
+                match t.val with
                 | .Identifier name => some (Core.CoreIdent.locl name)
                 | _ => none
               (env, [Core.Statement.call lhsIdents callee boogieArgs])
@@ -223,7 +224,7 @@ Translate Laurel Parameter to Core Signature entry
 -/
 def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
   let ident := Core.CoreIdent.locl param.name
-  let ty := translateType param.type.val
+  let ty := translateType param.type
   (ident, ty)
 
 /--
@@ -247,15 +248,15 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
   -- Translate precondition if it's not just LiteralBool true
   let preconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.precondition with
-    | .LiteralBool true => []
+    | ⟨ .LiteralBool true, _ ⟩ => []
     | precond =>
-        let check : Core.Procedure.Check := { expr := translateExpr constants initEnv precond }
+        let check : Core.Procedure.Check := { expr := translateExpr constants initEnv precond, md := precond.md }
         [("requires", check)]
   -- Translate postcondition for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
     | .Opaque postcond _ _ =>
-        let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond }
+        let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond, md := postcond.md }
         [("ensures", check)]
     | _ => []
   let modifies : List Core.Expression.Ident := []
@@ -367,7 +368,7 @@ def readUpdateDiffAxiom : Core.Decl :=
   .ax { name := "read_over_write_diff", e := body }
 
 def translateConstant (c : Constant) : Core.Decl :=
-  match c.type with
+  match c.type.val with
   | .TTypedField valueType =>
       -- Field constants with known type: () → Field <valueType>
       let valueTy := translateType valueType
@@ -393,7 +394,8 @@ Check if a StmtExpr is a pure expression (can be used as a Core function body).
 Pure expressions don't contain statements like assignments, loops, or local variables.
 A Block with a single pure expression is also considered pure.
 -/
-def isPureExpr : StmtExpr → Bool
+def isPureExpr(expr: StmtExprMd): Bool :=
+  match expr.val with
   | .LiteralBool _ => true
   | .LiteralInt _ => true
   | .Identifier _ => true
@@ -404,6 +406,7 @@ def isPureExpr : StmtExpr → Bool
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .Block [single] _ => isPureExpr single
   | _ => false
+  termination_by sizeOf expr
 
 /--
 Check if a procedure can be translated as a Core function.
@@ -416,7 +419,7 @@ def canBeBoogieFunction (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
-    (match proc.precondition with | .LiteralBool true => true | _ => false) &&
+    (match proc.precondition.val with | .LiteralBool true => true | _ => false) &&
     proc.outputs.length == 1
   | _ => false
 
