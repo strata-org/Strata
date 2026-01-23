@@ -545,20 +545,28 @@ def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constr
 #eval format $ typeCheckAndPartialEval #[listTy, nonUnifTy1] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-6. Nested types are allowed, though they won't produce a useful elimination principle
+6. Nested types with ADT are not allowed
 type Nest a := | C (List (Nest a))
 -/
 def nestConstr1: LConstr Unit := {name := "C", args := [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩], testerName := "isC"}
 def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"], constrs := [nestConstr1], constrs_ne := rfl}
 
-/-- info: Annotated expression:
-#0
-
----
-info: #0
+/-- info: Error in constructor C: Nested datatypes are not yet supported in Strata. Datatype Nest appears nested inside List.
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[listTy, nestTy1] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+/-
+6b. Nested types with other type constructors are not allowed
+type Nest2 a := | C (Map int (Nest2 a))
+-/
+def nestConstr2: LConstr Unit := {name := "C", args := [⟨"x", .tcons "Map" [.int, .tcons "Nest2" [.ftvar "a"]]⟩], testerName := "isC"}
+def nestTy2 : LDatatype Unit := {name := "Nest2", typeArgs := ["a"], constrs := [nestConstr2], constrs_ne := rfl}
+
+/-- info: Error in constructor C: Nested datatypes are not yet supported in Strata. Datatype Nest2 appears nested inside Map.
+-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[nestTy2] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
 7. 2 constructors with the same name:

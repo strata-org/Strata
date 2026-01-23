@@ -107,6 +107,23 @@ def checkUniform (c: String) (n: String) (args: List LMonoTy) (t: LMonoTy) : Exc
       ) () args1
   | _ => .ok ()
 
+/--
+Check that datatype `n` does not appear nested inside another type constructor's arguments.
+The format `c` appears only for error message information.
+-/
+def checkNotNested (c: Format) (n: String) (t: LMonoTy) : Except Format Unit :=
+  match t with
+  | .arrow t1 t2 => do
+    checkNotNested c n t1
+    checkNotNested c n t2
+  | .tcons n1 args1 =>
+    if n == n1 then .ok ()
+    else if args1.any (tyNameAppearsIn n) then
+      .error f!"Error in constructor {c}: Nested datatypes are not yet 
+      supported in Strata. Datatype {n} appears nested inside {n1}."
+    else List.foldlM (fun _ => checkNotNested c n) () args1
+  | _ => .ok ()
+
 
 /--
 Check for strict positivity and uniformity of datatype `d` in type `ty`. The
@@ -121,11 +138,12 @@ def checkStrictPosUnifTy (c: String) (d: LDatatype IDMeta) (ty: LMonoTy) : Excep
   | _ => checkUniform c d.name (d.typeArgs.map .ftvar) ty
 
 /--
-Check for strict positivity and uniformity of a datatype
+Check strict positivity, uniformity, and non-nesting of constructor arguments for a datatype
 -/
-def checkStrictPosUnif (d: LDatatype IDMeta) : Except Format Unit :=
+def checkConstructorArgsWF (d: LDatatype IDMeta) : Except Format Unit :=
   List.foldrM (fun ⟨name, args, _⟩ _ =>
-    List.foldrM (fun ⟨ _, ty ⟩ _ =>
+    List.foldrM (fun ⟨ _, ty ⟩ _ => do
+      checkNotNested name.name d.name ty
       checkStrictPosUnifTy name.name d ty
     ) () args
   ) () d.constrs
@@ -383,7 +401,7 @@ Generates the Factory (containing the eliminator, constructors, testers,
 and destructors) for a single datatype.
 -/
 def LDatatype.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta]  [ToFormat T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta): Except Format (@Lambda.Factory T) := do
-  _ ← checkStrictPosUnif d
+  _ ← checkConstructorArgsWF d
   Factory.default.addFactory (
       elimFunc d inst.default ::
       d.constrs.map (fun c => constrFunc c d) ++
