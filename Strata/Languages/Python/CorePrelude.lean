@@ -393,7 +393,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" corePrelude (options := Options.quiet) (moreFns := Strata.Python.ReFactory)
+#eval verify "z3" corePrelude (options := Options.quiet) (moreFns := Strata.Python.ReFactory)
 
 private def preludeArtifactsPre : Except Std.Format Core.PreludeArtifacts := do
   let (program, C, T) ← Core.typeCheck Options.quiet Core.prelude (moreFns := Strata.Python.ReFactory)
