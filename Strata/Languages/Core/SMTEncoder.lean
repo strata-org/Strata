@@ -241,7 +241,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       let uf := { id := (toString $ format f), args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
-  | .abs _ ty e => .error f!"Cannot encode lambda abstraction {e}"
+  | .abs _ _ _ => .error f!"Cannot encode lambda abstraction {e}"
 
   | .quant _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk (.some ty) tr e =>

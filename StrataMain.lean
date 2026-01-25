@@ -209,21 +209,20 @@ def pyAnalyzeCommand : Command where
     if verbose then
       IO.print newPgm
     match Core.Transform.runProgram
-          (Core.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
-          newPgm .emp with
+          (Core.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]) (preludeProg := preludePgm))
+          bpgm .emp with
     | ⟨.error e, _⟩ => panic! e
-    | ⟨.ok newPgm, _⟩ =>
+    | ⟨.ok newBpgm, _⟩ =>
       if verbose then
         IO.println "Inlined: "
-        IO.print newPgm
+        IO.print newBpgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
       let verboseMode := VerboseMode.ofBool verbose
       let vcResults ← IO.FS.withTempDir (fun tempDir =>
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
-            (Core.verify solverName newPgm tempDir
-              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
-                                      (moreFns := Strata.Python.ReFactory)))
+            (Strata.Python.Core.verifyWithPrelude solverName newBpgm tempDir
+              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }))
       let mut s := ""
       for vcResult in vcResults do
         s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"

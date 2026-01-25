@@ -22,15 +22,16 @@ open Lambda
 namespace Program
 
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
-  Except Format (Program × Core.Expression.TyEnv) := do
+  Except Format (Program × Core.Expression.TyEnv × Core.Expression.TyContext) := do
     -- Push a type substitution scope to store global type variables.
     let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
-    let (decls, Env) ← go C Env program.decls []
-    .ok ({ decls }, Env)
+    let (decls, Env, C) ← go program C Env program.decls []
+    .ok ({ decls }, Env, C)
 
-  where go C Env remaining acc : Except Format (Decls × Core.Expression.TyEnv) :=
+  where go program C Env remaining acc :
+      Except Format (Decls × Core.Expression.TyEnv × Core.Expression.TyContext) :=
   match remaining with
-  | [] => .ok (acc.reverse, Env)
+  | [] => .ok (acc.reverse, Env, C)
   | decl :: drest => do
     let sourceLoc := Imperative.MetaData.formatFileRangeD decl.metadata (includeEnd? := true)
     let errorWithSourceLoc := fun e => if sourceLoc.isEmpty then e else f!"{sourceLoc} {e}"
@@ -55,10 +56,11 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
       | .type td _ => try
           match td with
           | .con tc =>
-            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } f!"This type declaration's name is reserved!\n\
-                      {td}\n\
-                      KnownTypes' names:\n\
-                      {C.knownTypes.keywords}"
+            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs }
+                      f!"This type declaration's name is reserved!\n\
+                         {td}\n\
+                         KnownTypes' names:\n\
+                         {C.knownTypes.keywords}"
             .ok (.type td, C, Env)
           | .syn ts =>
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
@@ -100,7 +102,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
           catch e =>
             .error (errorWithSourceLoc e)
 
-    go C Env drest (decl' :: acc)
+    go program C Env drest (decl' :: acc)
 
 ---------------------------------------------------------------------
 

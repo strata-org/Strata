@@ -227,7 +227,7 @@ def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram inlineCallCmd p .emp) with
+  match (runProgram (inlineCallCmd (excluded_calls := []) (preludeProg := Program.init)) p .emp) with
   | ⟨.ok res, _⟩ => res
   | ⟨.error e, _⟩ => panic! e
 

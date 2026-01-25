@@ -193,7 +193,7 @@ use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
 def inlineCallCmd (excluded_calls:List String := [])
-                  (cmd: Command) (p : Program)
+                  (cmd: Command) (preludeProg p : Program)
   : CoreTransformM (List Statement) :=
     open Lambda in do
     match cmd with
@@ -201,7 +201,8 @@ def inlineCallCmd (excluded_calls:List String := [])
 
         if procName ∈ excluded_calls then return [.cmd cmd] else
 
-        let some proc := Program.Procedure.find? p procName
+        let some proc := (Program.Procedure.find? preludeProg procName <|>
+                          Program.Procedure.find? p procName)
           | throw s!"Procedure {procName} not found in program"
 
         -- Create a copy of the procedure that has all input/output/local vars
@@ -256,13 +257,14 @@ def inlineCallCmd (excluded_calls:List String := [])
 
       | _ => return [.cmd cmd]
 
-def inlineCallStmtsRec (ss: List Statement) (prog : Program)
-  : CoreTransformM (List Statement) :=
-  runStmtsRec inlineCallCmd ss prog
+def inlineCallStmtsRec (excluded_calls:List String := [])
+    (ss: List Statement) (preludeProg prog : Program)
+    : CoreTransformM (List Statement) :=
+  runStmtsRec (fun c p => inlineCallCmd excluded_calls c preludeProg p) ss prog
 
-def inlineCallL (dcls : List Decl) (prog : Program)
-  : CoreTransformM (List Decl) :=
-  runProcedures inlineCallCmd dcls prog
+def inlineCallL (excluded_calls:List String := []) (dcls : List Decl)
+    (preludeProg prog : Program) : CoreTransformM (List Decl) :=
+  runProcedures (fun c p => inlineCallCmd excluded_calls c preludeProg p) dcls prog
 
 end ProcedureInlining
 end Core

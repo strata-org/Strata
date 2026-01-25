@@ -39,35 +39,34 @@ def typeCheck (options : Options) (program : Program)
   let C := { Lambda.LContext.default with
                 functions := factory,
                 knownTypes := Core.KnownTypes }
-  let (program, _T) ← Program.typeCheck C T program
-  -- dbg_trace f!"[Strata.Core] Type variables:\n{T.state.substInfo.subst.length}"
-  -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
+  let (program, _T, _C) ← Program.typeCheck C T program
   if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
   return program
 
-def typeCheckAndPartialEval (options : Options) (program : Program)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except Std.Format (List (Program × Env)) := do
-  let program ← typeCheck options program moreFns
-  -- Extract datatypes from program declarations and add to environment
-  let datatypes := program.decls.filterMap fun decl =>
+def partialEval (options : Options) (program : Program) := do
+  let σ ← (Lambda.LState.init).addFactory Core.Factory
+  let E := { Env.init with exprEnv := σ,
+                           program := program }
+  -- Extract generated functions for datatypes (containing eliminators,
+  -- constructors, testers, and destructors) from program declarations and add
+  -- to the evaluation environment.
+  let datatypes := program.decls.filterMap fun (decl : Decl) =>
     match decl with
     | .type (.data d) _ => some d
     | _ => none
-  let σ ← (Lambda.LState.init).addFactory Core.Factory
-  let σ ← σ.addFactory moreFns
-  let E := { Env.init with exprEnv := σ,
-                           program := program }
   let E ← E.addDatatypes datatypes
   let pEs := Program.eval E
-  if options.verbose >= .normal then do
+  if options.verbose >= VerboseMode.normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for (_p, E) in pEs do
       dbg_trace f!"{ProofObligations.eraseTypes E.deferred}"
   return pEs
 
-instance : ToString (Program) where
-  toString p := toString (Std.format p)
+def typeCheckAndPartialEval (options : Options) (program : Program)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except Std.Format (List (Program × Env)) := do
+  let program ← typeCheck options program moreFns
+  partialEval options program
 
 end Core
 

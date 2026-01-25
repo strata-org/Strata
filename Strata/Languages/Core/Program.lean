@@ -156,6 +156,9 @@ def Program.init : Program :=
 instance : ToFormat Program where
   format p := Std.Format.joinSep (List.map format p.decls) Format.line
 
+instance : ToString (Program) where
+  toString p := toString (Std.format p)
+
 instance : Inhabited Program where
   default := .init
 
