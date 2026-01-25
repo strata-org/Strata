@@ -81,11 +81,11 @@ datatype ExceptErrorRegex () {
 
 // NOTE: `re.match` returns a `Re.Match` object, but for now, we are interested
 // only in match/nomatch, which is why we return `bool` here.
-function PyReMatchRegex(pattern : regex, str : string, flags : int) : bool;
+function PyReMatchRegex(pattern : string, str : string, flags : int) : bool;
 // We only support Re.Match when flags == 0.
 axiom [PyReMatchRegex_def_noFlg]:
-  (forall pattern : regex, str : string :: {PyReMatchRegex(pattern, str, 0)}
-    PyReMatchRegex(pattern, str, 0) == str.in.re(str, pattern));
+  (forall pattern : string, str : string :: {PyReMatchRegex(pattern, str, 0)}
+    PyReMatchRegex(pattern, str, 0) == str.in.re(str, str.to.re(pattern)));
 
 // Unsupported/uninterpreted: eventually, this would first call PyReCompile and if there's
 // no exception, call PyReMatchRegex.
@@ -360,6 +360,50 @@ spec {
 
 def Core.prelude : Core.Program :=
    Core.getProgram corePrelude |>.fst
+
+/--
+info:
+Obligation: datetime_now_ensures_0
+Property: assert
+Result: ✅ pass
+
+Obligation: datetime_utcnow_ensures_0
+Property: assert
+Result: ✅ pass
+
+Obligation: ensures_str_strp_reverse
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_name_is_foo
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_opt_name_none_or_str
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_opt_name_none_or_bar
+Property: assert
+Result: ✅ pass
+
+Obligation: ensures_maybe_except_none
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" corePrelude (options := Options.quiet)
+
+def Core.preludeEnv : Except Std.Format Core.Env :=
+  match Core.typeCheckAndPartialEval Options.quiet Core.prelude with
+  | .error e => .error e
+  | .ok [(_residueProgram, E)] => .ok E
+  | .ok _ => .error f!"Unimplemented. \
+                       More than one environment found after partial evaluation!"
+
+#eval do let E ← Core.preludeEnv
+         return Std.format E
+
 
 end Python
 end Strata
