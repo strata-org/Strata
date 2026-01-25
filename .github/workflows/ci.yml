@@ -120,6 +120,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Build documentation package
@@ -130,6 +132,23 @@ jobs:
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
+      - name: Create documentation index
+        run: |
+          cp index.html _out/
+          cp ../../strata_logo.png _out/
+        working-directory: docs/verso
+      - name: Setup Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v4
+      - name: Upload artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/verso/_out
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/deploy-pages@v4
+        environment: github-pages
 
   build_python:
     name: Build and test Python
