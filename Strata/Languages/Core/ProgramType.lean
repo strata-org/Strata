@@ -22,16 +22,16 @@ open Lambda
 namespace Program
 
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
-  Except Format (Program × Core.Expression.TyEnv × Core.Expression.TyContext) := do
+  Except Format (Program × Core.Expression.TyContext × Core.Expression.TyEnv) := do
     -- Push a type substitution scope to store global type variables.
     let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
-    let (decls, Env, C) ← go program C Env program.decls []
-    .ok ({ decls }, Env, C)
+    let (decls, C, Env) ← go program C Env program.decls []
+    .ok ({ decls }, C, Env)
 
   where go program C Env remaining acc :
-      Except Format (Decls × Core.Expression.TyEnv × Core.Expression.TyContext) :=
+      Except Format (Decls × Core.Expression.TyContext × Core.Expression.TyEnv) :=
   match remaining with
-  | [] => .ok (acc.reverse, Env, C)
+  | [] => .ok (acc.reverse, C, Env)
   | decl :: drest => do
     let sourceLoc := Imperative.MetaData.formatFileRangeD decl.metadata (includeEnd? := true)
     let errorWithSourceLoc := fun e => if sourceLoc.isEmpty then e else f!"{sourceLoc} {e}"

@@ -221,7 +221,8 @@ def pyAnalyzeCommand : Command where
       let vcResults ← IO.FS.withTempDir (fun tempDir =>
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
-            (Strata.Python.Core.verifyWithPrelude solverName newBpgm tempDir
+            (Core.verify solverName newBpgm tempDir
+              (prelude := Strata.Python.preludeArtifacts)
               { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }))
       let mut s := ""
       for vcResult in vcResults do

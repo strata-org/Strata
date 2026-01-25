@@ -8,6 +8,7 @@ import Strata.DDM.Elab
 import Strata.DDM.AST
 import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Core.Verifier
+import Strata.Languages.Python.PyFactory
 
 namespace Strata
 namespace Python
@@ -392,133 +393,18 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" corePrelude (options := Options.quiet)
+#eval verify "cvc5" corePrelude (options := Options.quiet) (moreFns := Strata.Python.ReFactory)
 
-def Core.typeCheckT (options : Options) (program : Core.Program)
-    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except Std.Format (Core.Program × Core.Expression.TyEnv × Core.Expression.TyContext) := do
-  let T := Lambda.TEnv.default
-  let factory ← Core.Factory.addFactory moreFns
-  let C := { Lambda.LContext.default with
-                functions := factory,
-                knownTypes := Core.KnownTypes }
-  let (program, T, C) ← Core.Program.typeCheck C T program
-  if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
-  return (program, T, C)
+private def preludeArtifactsPre : Except Std.Format Core.PreludeArtifacts := do
+  let (program, C, T) ← Core.typeCheck Options.quiet Core.prelude (moreFns := Strata.Python.ReFactory)
+  return { program, tyContext := C, tyEnv := T }
 
-def Core.typedPrelude : Except Std.Format (Core.Program × Core.Expression.TyEnv × Core.Expression.TyContext) :=
-  Core.typeCheckT Options.quiet Core.prelude
+#guard preludeArtifactsPre.isOk
 
-#eval do match Core.typedPrelude with
-        | .error e => f!"{e}"
-        | .ok (p, T, C) =>
-           f!"\n\
-           {C.datatypes}\n\
-           {C.functions.map (fun f => Lambda.LFunc.name f)}"
+def preludeArtifacts : Core.PreludeArtifacts :=
+  match preludeArtifactsPre with
+  | .ok a => a
+  | .error _ => panic! "Unreachable"
 
-def Core.typeCheckWithPrelude (options : Options)
-    (prelude program : Core.Program)
-    (initT : Core.Expression.TyEnv)
-    (initC :  Core.Expression.TyContext) :
-    Except Std.Format Core.Program := do
-  let (programDecls, _T, _C) ← Core.Program.typeCheck.go
-                                  { decls := prelude.decls ++ program.decls }
-                                  initC initT program.decls []
-  if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
-  return { decls := programDecls }
-
-def Core.evalWithPrelude (prelude program : Core.Program)
-    (initC : Core.Expression.TyContext):
-    Except Std.Format (List (Core.Program × Core.Env)) := do
-  let σ ← (Lambda.LState.init).addFactory initC.functions
-  let E := { Core.Env.init with exprEnv := σ,
-                                datatypes := initC.datatypes,
-                                program := { decls := prelude.decls ++ program.decls }}
-  let datatypes := (program.decls).filterMap fun decl =>
-   match decl with
-   | .type (.data d) _ => some d
-   | _ => none
-  let E ← E.addDatatypes datatypes
-  -- Push a path condition scope to store axioms
-  let preludeAxioms := prelude.decls.filterMap fun decl =>
-   match decl with
-   | .ax a _ => some a
-   | _ => none
-  let preludePathConditions := preludeAxioms.map (fun a => (a.name, a.e))
-  let E := { E with pathConditions := E.pathConditions.push preludePathConditions }
-  let declsEnv := Core.Program.eval.go program.decls { env := E }
-  return (declsEnv.map (fun (decls, E) => ({ decls := prelude.decls ++ decls },
-                                           E)))
-
-def Core.typeCheckAndPartialEvalWithPrelude
-    (options : Options) (prelude program : Core.Program)
-    (initT : Core.Expression.TyEnv)
-    (initC :  Core.Expression.TyContext) :
-    Except Std.Format (List (Core.Program × Core.Env)) := do
-  let program ← Core.typeCheckWithPrelude options prelude program initT initC
-  let pEs ← Core.evalWithPrelude prelude program initC
-  if options.verbose >= .normal then do
-    dbg_trace f!"{Std.Format.line}VCs:"
-    for (_p, E) in pEs do
-      dbg_trace f!"{Core.ProofObligations.eraseTypes E.deferred}"
-  return pEs
-
-def Core.verifyWithPrelude
-    (smtsolver : String)
-    (program : Core.Program)
-    (tempDir : System.FilePath)
-    (options : Options := Options.default)
-    : EIO Std.Format Core.VCResults := do
-  match Core.typedPrelude with
-  | .error e => .error f!"❌ Prelude Type checking error.\n{Std.format e}"
-  | .ok (prelude, initT, initC) =>
-    match Core.typeCheckAndPartialEvalWithPrelude options prelude program initT initC with
-    | .error err =>
-      .error f!"{Std.format err}"
-    | .ok pEs =>
-      let counter ← IO.toEIO (fun e => f!"{e}") (IO.mkRef 0)
-      let VCss ← if options.checkOnly then
-                   pure []
-                 else
-                   (List.mapM (fun pE => Core.verifySingleEnv smtsolver pE options counter tempDir) pEs)
-      .ok VCss.toArray.flatten
-
-
-/-
-def testProgram :=
-#strata
-program Core;
-
-datatype Foo () {
-  FooStr(FooStrVal : string),
-  FooInt(FooIntVal : int)
-};
-
-function ugh (x : int) : int;
-
-procedure my_f (i : int) returns (j : int)
-  {
-    assume [ugh_assume]: (ugh(i) == 12);
-    assert [ugh_assert]: (ugh(i) == 12);
-    j := i;
-  };
-
-procedure my_g (i : int) returns (j : int)
-  {
-    call j := my_f(i);
-    assert [my_g]: (i == j);
-    assert [foo]: (Foo..isFooStr(FooStr("foo")));
-  };
-
-#end
-
-def foo :=
-  EIO.toIO (fun f => IO.Error.userError (toString f))
-            (Core.verifyWithPrelude "cvc5" (Core.getProgram testProgram |>.fst)
-                    (tempDir := "/Users/shilgoel/Code/MIDI-Devel/Strata/vcs")
-                    (options := { Options.debug with removeIrrelevantAxioms := false} ))
-
-#eval foo
--/
 end Python
 end Strata

@@ -408,11 +408,12 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
 def verify (smtsolver : String) (program : Program)
     (tempDir : System.FilePath)
     (options : Options := Options.default)
+    (prelude : Option Core.PreludeArtifacts := .none)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO Format VCResults := do
-  match Core.typeCheckAndPartialEval options program moreFns with
+  match Core.typeCheckAndPartialEval options program prelude moreFns with
   | .error err =>
-    .error f!"❌ Type checking error.\n{format err}"
+    .error f!"❌ {format err}"
   | .ok pEs =>
     let counter ← IO.toEIO (fun e => f!"{e}") (IO.mkRef 0)
     let VCss ← if options.checkOnly then
@@ -434,7 +435,8 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Options := Option
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
-    Core.typeCheck options program moreFns
+    let (p, _, _) ← Core.typeCheck options program moreFns
+    return p
   else
     .error s!"DDM Transform Error: {repr errors}"
 
@@ -447,6 +449,7 @@ def verify
     (smtsolver : String) (env : Program)
     (ictx : InputContext := Inhabited.default)
     (options : Options := Options.default)
+    (prelude : Option Core.PreludeArtifacts := .none)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (tempDir : Option String := .none)
     : IO Core.VCResults := do
@@ -455,7 +458,7 @@ def verify
     -- dbg_trace f!"AST: {program}"
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
-                  (Core.verify smtsolver program tempDir options moreFns)
+                  (Core.verify smtsolver program tempDir options prelude moreFns)
     match tempDir with
     | .none =>
       IO.FS.withTempDir runner

@@ -385,8 +385,8 @@ m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arro
 -/
 #guard_msgs in
 #eval do
-  let ans ← typeCheck Options.default polyFuncProg
-  return (format ans)
+  let (p, _, _) ← typeCheck Options.default polyFuncProg
+  return (format p)
 
 ---------------------------------------------------------------------
 

@@ -129,7 +129,8 @@ def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
 def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
   Except Std.Format Core.Program := do
   let program := C_Simp.get_program p
-  Core.typeCheck options (to_core program)
+  let (p, _, _) ← Core.typeCheck options (to_core program)
+  return p
 
 def C_Simp.verify (smtsolver : String) (p : Strata.Program)
     (options : Options := Options.default)

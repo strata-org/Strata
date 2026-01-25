@@ -47,4 +47,5 @@ axiom a1: (∀ (∀ ((((~diff : (arrow (Map int bool) (arrow (Map int bool) (Map
 axiom a2: (∀ (∀ (∀ (∀ ((((~select : (arrow (Map int int) (arrow int int))) ((((~lambda_0 : (arrow bool (arrow int (arrow int (Map int int))))) %3) %2) %1)) %0) == (((~select : (arrow (Map int int) (arrow int int))) ((((~lambda_0 : (arrow bool (arrow int (arrow int (Map int int))))) %3) %1) %2)) %0))))));
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.default core_pgm.fst
+#eval do let (p, _, _) ← (Core.typeCheck Options.default core_pgm.fst)
+         return p

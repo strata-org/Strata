@@ -35,6 +35,6 @@ datatype Bad () { MkBad(f: Bad -> int) };
 info: error: (0, (0-0)) Error in constructor MkBad: Non-strictly positive occurrence of Bad in type (arrow Bad int)
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonStrictlyPositivePgm) |>.fst)
+#eval Std.format <$> Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonStrictlyPositivePgm) |>.fst)
 
 end Strata.DatatypeIllFormedTest

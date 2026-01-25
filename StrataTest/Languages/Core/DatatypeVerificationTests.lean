@@ -777,6 +777,6 @@ info: error:  Error in type Option: a declaration of this name already exists.
   let program : Program := {
     decls := [Decl.type (.data [optionDatatype, optionDatatype2]) .empty]
   }
-  Core.typeCheck .default program
+  Std.format <$> Core.typeCheck .default program
 
 end Core.DatatypeVerificationTests
