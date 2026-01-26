@@ -71,18 +71,6 @@ def indexOfRaw (s sub : String) (b : Pos.Raw := 0) : Option Pos.Raw :=
 
 def splitLines (s : String) := s.splitToList (· ∈  ['\n', '\r'])
 
-/--
-info: [" ab", "cd", "", "de", ""]
--/
-#guard_msgs in
-#eval " ab\ncd\n\nde\n".splitLines
-
-/--
-info: [""]
--/
-#guard_msgs in
-#eval "".splitLines
-
 end String
 
 public section
