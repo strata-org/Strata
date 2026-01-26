@@ -80,7 +80,7 @@ def main (args : List String) : IO UInt32 := do
           println! f!"{e}"
           return (1 : UInt32)
         for vcResult in vcResults do
-          let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata
+          let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata inputCtx.fileMap
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
         let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then

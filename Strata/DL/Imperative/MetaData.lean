@@ -192,9 +192,9 @@ def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg :
 /-- Get the file range from metadata as a DiagnosticModel (for formatting).
     This is a compatibility function that formats the file range using byte offsets.
     For proper line/column display, use toDiagnostic and format with a FileMap at the top level. -/
-def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false) : Format :=
+def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fileMap : Option Lean.FileMap := none) (includeEnd? : Bool := false) : Format :=
   match getFileRange md with
-  | some fr => fr.format none includeEnd?
+  | some fr => fr.format fileMap includeEnd?
   | none => f!""
 
 ---------------------------------------------------------------------
