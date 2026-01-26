@@ -61,14 +61,14 @@ info: (((~Re.Concat ((~Re.Concat ((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.To
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^^^a$"
+#eval Std.format $ pythonRegexToCore "^^^a$$"
 
 /--
 info: (((~Re.Concat (~Str.ToRegEx #)) ((~Re.Concat ((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #))) (~Str.ToRegEx #a))) (~Str.ToRegEx #))) (~Str.ToRegEx #))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^(^^a$)"
+#eval Std.format $ pythonRegexToCore "^(^^a$$)"
 
 /--
 info: (((~Re.Union ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) (~Str.ToRegEx #))) ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #b))) (~Str.ToRegEx #))),
@@ -161,7 +161,7 @@ info: (((~Re.Concat ((~Re.Concat ((~Re.Union ((~Re.Concat (~Str.ToRegEx #)) (~St
 info: (((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #))) (~Str.ToRegEx #))) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^$^"
+#eval Std.format $ pythonRegexToCore "^$$^"
 
 /-- info: (((~Re.Concat ((~Re.Union (~Str.ToRegEx #)) (~Str.ToRegEx #))) (~Str.ToRegEx #)), none) -/
 #guard_msgs in
