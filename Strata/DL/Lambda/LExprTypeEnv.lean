@@ -219,9 +219,6 @@ deriving Inhabited
 def LDatatype.toKnownType (d: LDatatype IDMeta) : KnownType :=
   { name := d.name, metadata := d.typeArgs.length}
 
-def TypeFactory.toKnownTypes (t: @TypeFactory IDMeta) : KnownTypes :=
-  makeKnownTypes (t.foldr (fun t l => t.toKnownType :: l) [])
-
 /--
 A type environment `TEnv` contains
 - genEnv: `TGenEnv` to track the generator state as well as the typing context
@@ -334,28 +331,27 @@ def LContext.addFactoryFunctions (C : LContext T) (fact : @Factory T) : LContext
   { C with functions := C.functions.append fact }
 
 /--
-Add a datatype `d` to an `LContext` `C`.
-This adds `d` to `C.datatypes`, adds the derived functions
-(e.g. eliminators, testers) to `C.functions`, and adds `d` to
-`C.knownTypes`. It performs error checking for name clashes.
+Add a mutual block of datatypes `block` to an `LContext` `C`.
+This adds all types to `C.datatypes` and `C.knownTypes`,
+adds the derived functions (e.g. eliminators, testers),
+and performs error checking for name clashes.
 -/
-def LContext.addDatatype [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (d: LDatatype T.IDMeta) : Except DiagnosticModel (LContext T) := do
-  -- Ensure not in known types
-  if C.knownTypes.containsName d.name then
-    .error <| DiagnosticModel.fromFormat f!"Cannot name datatype same as known type!\n\
-                      {d}\n\
-                      KnownTypes' names:\n\
-                      {C.knownTypes.keywords}"
-  let ds ← C.datatypes.addDatatype d
+def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta]
+  (C: LContext T) (block: MutualDatatype T.IDMeta) : Except DiagnosticModel (LContext T) := do
+  -- Check for name clashes with known types
+  for d in block do
+    if C.knownTypes.containsName d.name then
+      throw <| DiagnosticModel.fromFormat f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
+  let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
   -- Add factory functions, checking for name clashes
-  let f ← d.genFactory
+  let f ← genBlockFactory block
   let fs ← C.functions.addFactory f
   -- Add datatype names to knownTypes
-  let ks ← C.knownTypes.add d.toKnownType
+  let ks ← block.foldlM (fun ks d => ks.add d.toKnownType) C.knownTypes
   .ok {C with datatypes := ds, functions := fs, knownTypes := ks}
 
 def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except DiagnosticModel (LContext T) :=
-  Array.foldlM (fun C d => C.addDatatype d) C f
+  f.foldlM (fun C block => C.addMutualBlock block) C
 
 /--
 Replace the global substitution in `T.state.subst` with `S`.
@@ -709,6 +705,38 @@ partial def LMonoTys.resolveAliases [ToFormat IDMeta] (mtys : LMonoTys) (aliases
       else
         (none, Env)
 end
+
+/--
+Resolve type aliases in a list of constructors.
+-/
+def LConstrs.resolveAliases [ToFormat IDMeta] (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
+    List (LConstr IDMeta) × TEnv IDMeta :=
+  constrs.foldr (fun c (acc, Env) =>
+    let names := c.args.map (·.fst)
+    let tys := c.args.map (·.snd)
+    let (tys', Env) := LMonoTys.resolveAliases tys Env.context.aliases Env
+    let args' := names.zip (tys'.getD tys)
+    ({ c with args := args' } :: acc, Env)) ([], Env)
+
+theorem LConstrs.resolveAliases_length [ToFormat IDMeta] (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
+    (LConstrs.resolveAliases constrs Env).fst.length = constrs.length := by
+  simp only [LConstrs.resolveAliases]
+  induction constrs <;> grind
+
+/--
+Resolve type aliases in constructor argument types within a mutual datatype block.
+-/
+def MutualDatatype.resolveAliases [ToFormat IDMeta] (block : MutualDatatype IDMeta) (Env : TEnv IDMeta) :
+    MutualDatatype IDMeta × TEnv IDMeta :=
+  block.foldr (fun d (acc, Env)  =>
+    match h: LConstrs.resolveAliases d.constrs Env with
+    | (constrs', Env) =>
+      have h : constrs'.length != 0 := by
+        rename_i E
+        have Hlen := LConstrs.resolveAliases_length d.constrs E
+        rw[h] at Hlen
+        cases d; grind
+      ({ d with constrs := constrs', constrs_ne := h } :: acc, Env)) ([], Env)
 
 /--
 info: De-aliased type: some (Foo $__ty0 (Bar $__ty3 $__ty3))
