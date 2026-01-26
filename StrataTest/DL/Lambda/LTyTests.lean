@@ -10,6 +10,7 @@ import Strata.DL.Lambda.LTy
 
 namespace Lambda
 
+open Std (format)
 open LTy.Syntax
 
 /--

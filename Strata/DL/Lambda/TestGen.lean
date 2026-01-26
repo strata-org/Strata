@@ -1130,5 +1130,3 @@ match t with
 def reduces (t : LExpr TrivialParams.mono) : Bool :=
   let t' := t.eval 1000 example_lstate
   isIntConst t'
-
-end Lambda

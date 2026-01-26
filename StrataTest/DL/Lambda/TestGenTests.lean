@@ -11,6 +11,7 @@ import Strata.DL.Lambda.TestGen
 namespace Lambda
 open Plausible
 open LTy
+open TestGen
 
 #guard_msgs(drop info) in
 #eval
