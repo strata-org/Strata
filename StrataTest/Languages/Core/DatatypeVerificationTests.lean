@@ -770,7 +770,7 @@ def optionDatatype2 : LDatatype Visibility :=
     constrs_ne := by decide }
 
 /--
-info: error:  Error in type Option: a declaration of this name already exists.
+info: error: Error in type Option: a declaration of this name already exists.
 -/
 #guard_msgs in
 #eval do
