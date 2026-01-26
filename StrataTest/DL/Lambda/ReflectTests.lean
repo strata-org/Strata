@@ -56,3 +56,46 @@ info: Lean.Expr.forallE
                         (@LExpr.const MonoString () (.intConst 5))]
 
 end Lambda
+
+
+/-! ## Additional Reflect Tests -/
+
+namespace Lambda.Reflect.AdditionalTests
+
+open Lean Elab Tactic Expr Meta
+open Std (ToFormat Format format)
+open LTy.Syntax LExpr.Syntax
+
+def test1' : MetaM Lean.Expr :=
+  LExpr.toExpr
+    (.quant () .all (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
+
+elab "test1" : term => do
+  let result ← liftM test1'
+  return result
+
+/-- info: ∀ (x x_1 : Int), (x == x_1) = true : Prop -/
+#guard_msgs in
+#check test1
+
+
+def test2 : MetaM Lean.Expr :=
+  LExpr.toExpr
+    (LExpr.app () (.abs () (some mty[bool]) (.bvar () 0)) (.eq () (.const () (.intConst 4)) (.const () (.intConst 4))))
+
+
+elab "test2" : term => do
+  let result ← liftM test2
+  return result
+
+/-- info: (fun x => x) (4 == 4) = true : Prop -/
+#guard_msgs in
+#check test2
+
+/-- info: ∀ (x : Int), (x == 5) = true : Prop -/
+#guard_msgs in
+#check elaborate_lexpr [@LExpr.eq MonoString ()
+                          (@LExpr.fvar MonoString () "x" (Option.some (LMonoTy.int)))
+                          (@LExpr.const MonoString () (.intConst 5))]
+
+end Lambda.Reflect.AdditionalTests

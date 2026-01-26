@@ -444,29 +444,7 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
 
 elab "mty[" ty:lmonoty "]" : term => elabLMonoTy ty
 
-/-- info: LMonoTy.tcons "list" [LMonoTy.tcons "int" []] : LMonoTy -/
-#guard_msgs in
-#check mty[list int]
-
-/-- info: LMonoTy.tcons "pair" [LMonoTy.tcons "int" [], LMonoTy.tcons "bool" []] : LMonoTy -/
-#guard_msgs in
-#check mty[pair int bool]
-
-/--
-info: LMonoTy.tcons "arrow"
-  [LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"],
-    LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]] : LMonoTy
--/
-#guard_msgs in
-#check mty[(Map %k %v) → %k → %v]
-
-/--
-info: LMonoTy.tcons "arrow"
-  [LMonoTy.ftvar "a",
-    LMonoTy.tcons "arrow" [LMonoTy.ftvar "b", LMonoTy.tcons "arrow" [LMonoTy.ftvar "c", LMonoTy.ftvar "d"]]] : LMonoTy
--/
-#guard_msgs in
-#check mty[%a → %b → %c → %d]
+-- Syntax tests moved to StrataTest/DL/Lambda/LTyTests.lean
 
 declare_syntax_cat lty
 scoped syntax (lmonoty)* : lty
@@ -489,16 +467,7 @@ partial def elabLTy : Lean.Syntax → MetaM Expr
 
 elab "t[" lsch:lty "]" : term => elabLTy lsch
 
-/-- info: forAll ["α"] (LMonoTy.tcons "myType" [LMonoTy.ftvar "α"]) : LTy -/
-#guard_msgs in
-#check t[∀α. myType %α]
-
-/--
-info: forAll ["α"]
-  (LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "int" []]]) : LTy
--/
-#guard_msgs in
-#check t[∀α. %α → %α → int]
+-- Syntax tests moved to StrataTest/DL/Lambda/LTyTests.lean
 
 end Syntax
 end LTy

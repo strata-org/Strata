@@ -197,8 +197,7 @@ def varbytesRequired (x : Nat) : Nat := aux 0 x
             aux (c+1) (x >>> 7)
         termination_by x
 
-#guard varbytesRequired 0x7f = 1
-#guard varbytesRequired 0x80 = 2
+-- Tests moved to StrataTest/DDM/Util/Ion/SerializeTests.lean
 
 def appendUInt {n} (x : Nat) (cnt : Nat)
       (bytes : ByteVector n) (off : Nat) (offp : off + cnt ≤ n := by omega) : ByteVector n :=

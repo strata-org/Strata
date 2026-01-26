@@ -53,7 +53,7 @@ syntax:max (name := quoteIdent) "q`" noWs ident : term
   | _ => Macro.throwUnsupported
 end
 
-#guard q`A.C = { dialect := "A", name := "C" }
+-- Tests moved to StrataTest/DDM/ASTTests.lean
 
 end QualifiedIdent
 

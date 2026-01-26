@@ -156,47 +156,7 @@ section Tests
 
 open LTy.Syntax LExpr.Syntax
 
-def test1 : MetaM Lean.Expr :=
-  LExpr.toExpr
-    (.quant () .all (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
-
--- #eval show MetaM _ from do
---   ppExpr (← test1)
-
-elab "test1" : term => do
-  let result ← liftM test1
-  return result
-
-/-- info: ∀ (x x_1 : Int), (x == x_1) = true : Prop -/
-#guard_msgs in
-#check test1
-
-
-def test2 : MetaM Lean.Expr :=
-  LExpr.toExpr
-    (LExpr.app () (.abs () (some mty[bool]) (.bvar () 0)) (.eq () (.const () (.intConst 4)) (.const () (.intConst 4))))
-
-
-elab "test2" : term => do
-  let result ← liftM test2
-  return result
-
-/-- info: (fun x => x) (4 == 4) = true : Prop -/
-#guard_msgs in
-#check test2
-
-elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
-  let expr ← Term.elabTerm e none
-  let lexpr ← Lean.Meta.evalExpr (LExpr MonoString)
-    (mkApp (mkConst ``LExpr) (mkConst ``MonoString)) expr
-  let result ← liftM (LExpr.toExpr lexpr)
-  return result
-
-/-- info: ∀ (x : Int), (x == 5) = true : Prop -/
-#guard_msgs in
-#check elaborate_lexpr [@LExpr.eq MonoString ()
-                          (@LExpr.fvar MonoString () "x" (Option.some (LMonoTy.int)))
-                          (@LExpr.const MonoString () (.intConst 5))]
+-- Tests moved to StrataTest/DL/Lambda/ReflectTests.lean
 
 end Tests
 

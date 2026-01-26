@@ -52,3 +52,48 @@ info: [Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "_dummy0", Lambda.LMon
 #eval LMonoTy.inputTypes mty[pair int bool]
 
 end Lambda
+
+
+/-! ## Syntax Tests for LTy -/
+
+namespace LTy.SyntaxTests
+
+open Lambda
+open LTy.Syntax
+
+/-- info: LMonoTy.tcons "list" [LMonoTy.tcons "int" []] : LMonoTy -/
+#guard_msgs in
+#check mty[list int]
+
+/-- info: LMonoTy.tcons "pair" [LMonoTy.tcons "int" [], LMonoTy.tcons "bool" []] : LMonoTy -/
+#guard_msgs in
+#check mty[pair int bool]
+
+/--
+info: LMonoTy.tcons "arrow"
+  [LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"],
+    LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]] : LMonoTy
+-/
+#guard_msgs in
+#check mty[(Map %k %v) → %k → %v]
+
+/--
+info: LMonoTy.tcons "arrow"
+  [LMonoTy.ftvar "a",
+    LMonoTy.tcons "arrow" [LMonoTy.ftvar "b", LMonoTy.tcons "arrow" [LMonoTy.ftvar "c", LMonoTy.ftvar "d"]]] : LMonoTy
+-/
+#guard_msgs in
+#check mty[%a → %b → %c → %d]
+
+/-- info: forAll ["α"] (LMonoTy.tcons "myType" [LMonoTy.ftvar "α"]) : LTy -/
+#guard_msgs in
+#check t[∀α. myType %α]
+
+/--
+info: forAll ["α"]
+  (LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "int" []]]) : LTy
+-/
+#guard_msgs in
+#check t[∀α. %α → %α → int]
+
+end LTy.SyntaxTests

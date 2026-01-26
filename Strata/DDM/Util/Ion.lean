@@ -44,9 +44,7 @@ public instance : ToString Position where
 
 end Position
 
-#guard toString Position.root = "root"
-#guard toString (Position.root |>.push 0) = "root.0"
-#guard toString (Position.root |>.push 0 |>.push 1) = "root.0.1"
+-- Tests moved to StrataTest/DDM/Util/IonTests.lean
 
 namespace SymbolTable
 

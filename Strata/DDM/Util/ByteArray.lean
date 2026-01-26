@@ -37,11 +37,7 @@ def startsWith (a pre : ByteArray) :=
 
 end ByteArray
 
-#guard (ByteArray.empty |>.back!) = default
-#guard (ByteArray.empty |>.push 4 |>.back!) = 4
-
-#guard (ByteArray.empty |>.pop) = .empty
-#guard let a := ByteArray.empty |>.push 0 |>.push 1; (a |>.push 2 |>.pop) = a
+-- Tests moved to StrataTest/DDM/Util/ByteArrayTests.lean
 
 public section
 namespace Strata.ByteArray
