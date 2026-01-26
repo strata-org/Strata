@@ -374,18 +374,6 @@ def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) :
 instance : ToString DiagnosticModel where
   toString dm := dm.format none |> toString
 
-structure File2dRange where
-  file: Uri
-  start: Lean.Position
-  ending: Lean.Position
-  deriving DecidableEq, Repr
-
-instance : ToFormat File2dRange where
- format fr :=
-    let baseName := match fr.file with
-                    | .file path => (path.splitToList (· == '/')).getLast!
-    f!"{baseName}({fr.start.line}, {fr.start.column})-({fr.ending.line}, {fr.ending.column})"
-
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange
 abbrev Operation := OperationF SourceRange
