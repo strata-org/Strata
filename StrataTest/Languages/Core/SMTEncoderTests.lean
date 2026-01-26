@@ -10,6 +10,7 @@ import Strata.Languages.Core.SMTEncoder
 
 namespace Core
 open Lambda
+open Strata.SMT
 
 /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
