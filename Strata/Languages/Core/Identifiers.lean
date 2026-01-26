@@ -141,13 +141,8 @@ def elabCoreIdent : Syntax → MetaM Expr
     return ← mkAppM ``CoreIdent.unres #[mkStrLit s]
   | _ => throwUnsupportedSyntax
 
---
 instance : MkLExprParams ⟨CoreExprMetadata, Visibility⟩ where
   elabIdent := elabCoreIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (.const ``Visibility [])
-
-elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Visibility⟩) e
-
--- Syntax tests moved to StrataTest/Languages/Core/IdentifiersTests.lean
 
 end Syntax

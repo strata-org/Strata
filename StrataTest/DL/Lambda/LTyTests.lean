@@ -85,12 +85,12 @@ info: LMonoTy.tcons "arrow"
 #guard_msgs in
 #check mty[%a → %b → %c → %d]
 
-/-- info: forAll ["α"] (LMonoTy.tcons "myType" [LMonoTy.ftvar "α"]) : LTy -/
+/-- info: LTy.forAll ["α"] (LMonoTy.tcons "myType" [LMonoTy.ftvar "α"]) : LTy -/
 #guard_msgs in
 #check t[∀α. myType %α]
 
 /--
-info: forAll ["α"]
+info: LTy.forAll ["α"]
   (LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "int" []]]) : LTy
 -/
 #guard_msgs in

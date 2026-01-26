@@ -5,11 +5,15 @@
 -/
 
 import Strata.Languages.Core.Identifiers
+import Strata.DL.Lambda.LExpr
 
 namespace Core.Identifiers.Tests
 
 open Core.Syntax
 open Lambda.LTy.Syntax
+open Lambda.LExpr.SyntaxMono
+
+elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Visibility⟩) e
 
 /--
 info: Lambda.LExpr.op () (CoreIdent.unres "old")

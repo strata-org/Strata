@@ -189,7 +189,7 @@ def bytesRequired (x : Nat) : Nat := aux 0 x
 Return the number of bytes using the 7-bit varint encoding.
 -/
 @[specialize]
-def varbytesRequired (x : Nat) : Nat := aux 0 x
+public def varbytesRequired (x : Nat) : Nat := aux 0 x
   where aux c x :=
           if x = 0 then
             c
