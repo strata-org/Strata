@@ -205,6 +205,7 @@ end Core.SMT
 namespace Core
 open Imperative Lambda Strata.SMT
 open Std (ToFormat Format format)
+open Strata
 
 /--
 Analysis outcome of a verification condition.
@@ -283,7 +284,7 @@ instance : ToString VCResults where
 Preprocess a proof obligation before handing it off to a backend engine.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) : EIO Format (ProofObligation Expression × Option VCResult) := do
+    (options : Options) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
   match obligation.property with
   | .cover =>
     if obligation.obligation.isFalse then
@@ -331,14 +332,14 @@ given proof obligation.
 def getObligationResult (terms : List Term) (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
     (smtsolver : String) (options : Options) (counter : IO.Ref Nat)
-    (tempDir : System.FilePath) : EIO Format VCResult := do
+    (tempDir : System.FilePath) : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\nEvaluated program:\n{p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
   let ans ←
       IO.toEIO
-        (fun e => f!"{e}")
+        (fun e => DiagnosticModel.fromFormat f!"{e}")
         (SMT.dischargeObligation options
           (ProofObligation.getVars obligation) smtsolver
             filename.toString
@@ -348,7 +349,7 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
                  {if options.verbose >= .normal then prog else ""}"
-    .error e
+    .error <| DiagnosticModel.fromFormat e
   | .ok (smt_result, estate) =>
     let result :=  { obligation,
                      result := smtResultToOutcome smt_result (obligation.property == .cover)
@@ -359,11 +360,11 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
 
 def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options)
     (counter : IO.Ref Nat) (tempDir : System.FilePath) :
-    EIO Format VCResults := do
+    EIO DiagnosticModel VCResults := do
   let (p, E) := pE
   match E.error with
   | some err =>
-    .error s!"🚨 Error during evaluation!\n\
+    .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
               {format err}\n\n\
               Evaluated program: {p}\n\n"
   | _ =>
@@ -409,12 +410,12 @@ def verify (smtsolver : String) (program : Program)
     (tempDir : System.FilePath)
     (options : Options := Options.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
-    : EIO Format VCResults := do
+    : EIO DiagnosticModel VCResults := do
   match Core.typeCheckAndPartialEval options program moreFns with
   | .error err =>
-    .error f!"❌ Type checking error.\n{format err}"
+    .error { err with message := s!"❌ Type checking error.\n{err.message}" }
   | .ok pEs =>
-    let counter ← IO.toEIO (fun e => f!"{e}") (IO.mkRef 0)
+    let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
     let VCss ← if options.checkOnly then
                  pure []
                else
@@ -455,7 +456,7 @@ def verify
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     let runner tempDir :=
-      EIO.toIO (fun f => IO.Error.userError (toString f))
+      EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
                   (Core.verify smtsolver program tempDir options moreFns)
     match tempDir with
     | .none =>
