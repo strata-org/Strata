@@ -236,8 +236,10 @@ elab "#genOpAbbrevs" : command => do
   logInfo s!"Generated abbrevs: {abbrevs.map (fun a => a.fst)}"
 
 
--- Generate the Op abbreviations (e.g., Op.not for Op.core Op.Core.not)
--- The macro logs the generated abbreviations as info; see StrataTest/DL/SMT/OpTests.lean for verification
+/--
+info: Generated abbrevs: #[Op.not, Op.and, Op.or, Op.eq, Op.ite, Op.implies, Op.distinct, Op.uf, Op.neg, Op.sub, Op.add, Op.mul, Op.div, Op.mod, Op.abs, Op.le, Op.lt, Op.ge, Op.gt, Op.bvneg, Op.bvadd, Op.bvsub, Op.bvmul, Op.bvnot, Op.bvand, Op.bvor, Op.bvxor, Op.bvshl, Op.bvlshr, Op.bvashr, Op.bvslt, Op.bvsle, Op.bvult, Op.bvsge, Op.bvsgt, Op.bvule, Op.bvugt, Op.bvuge, Op.bvudiv, Op.bvurem, Op.bvsdiv, Op.bvsrem, Op.bvnego, Op.bvsaddo, Op.bvssubo, Op.bvsmulo, Op.bvconcat, Op.zero_extend, Op.str_length, Op.str_concat, Op.str_lt, Op.str_le, Op.str_at, Op.str_substr, Op.str_prefixof, Op.str_suffixof, Op.str_contains, Op.str_indexof, Op.str_replace, Op.str_replace_all, Op.str_to_re, Op.str_in_re, Op.re_none, Op.re_all, Op.re_allchar, Op.re_concat, Op.re_union, Op.re_inter, Op.re_star, Op.str_replace_re, Op.str_replace_re_all, Op.re_comp, Op.re_diff, Op.re_plus, Op.re_opt, Op.re_range, Op.re_loop, Op.re_index]
+-/
+#guard_msgs in
 #genOpAbbrevs
 
 def Op.mkName : Op → String

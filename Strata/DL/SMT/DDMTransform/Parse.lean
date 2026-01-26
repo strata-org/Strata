@@ -498,8 +498,10 @@ op error (msg:Str) : Command => "(" "error " msg ")";
 
 #end
 
--- Verify SMT dialect type (see StrataTest/DL/SMT/DDMTransform/ParseTests.lean for full test)
-#check SMT
+/--
+info: Strata.SMT : Dialect
+-/
+#guard_msgs in #check SMT
 
 namespace Test
 
