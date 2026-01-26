@@ -124,7 +124,7 @@ type int := bool;
 
 /--
 error: ❌ Type checking error.
-(0, (0-0)) This type declaration's name is reserved!
+(2172-2189) This type declaration's name is reserved!
 int := bool
 KnownTypes' names:
 [arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
