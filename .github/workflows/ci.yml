@@ -118,6 +118,7 @@ jobs:
   build_doc:
     name: Build documentation
     runs-on: ubuntu-latest
+    environment: github-pages
     permissions:
       contents: read
       pages: write
@@ -148,7 +149,6 @@ jobs:
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/deploy-pages@v4
-        environment: github-pages
 
   build_python:
     name: Build and test Python
