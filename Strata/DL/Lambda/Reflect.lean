@@ -156,8 +156,6 @@ section Tests
 
 open LTy.Syntax LExpr.Syntax
 
--- Tests moved to StrataTest/DL/Lambda/ReflectTests.lean
-
 end Tests
 
 -------------------------------------------------------------------------------

@@ -37,8 +37,6 @@ def startsWith (a pre : ByteArray) :=
 
 end ByteArray
 
--- Tests moved to StrataTest/DDM/Util/ByteArrayTests.lean
-
 public section
 namespace Strata.ByteArray
 

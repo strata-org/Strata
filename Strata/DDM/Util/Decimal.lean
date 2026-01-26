@@ -66,6 +66,4 @@ end
 
 end Decimal
 
--- Tests moved to StrataTest/DDM/Util/DecimalTests.lean
-
 end Strata

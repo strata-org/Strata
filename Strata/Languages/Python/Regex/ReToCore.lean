@@ -169,6 +169,4 @@ def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     let result := RegexAST.toCore ast true true
     (result, none)
 
--- Tests moved to StrataTest/Languages/Python/Regex/ReToCoreTests.lean
-
 -------------------------------------------------------------------------------

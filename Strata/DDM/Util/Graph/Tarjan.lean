@@ -103,5 +103,3 @@ def tarjan {n} (g : OutGraph n) : Array (Array (Node n)) :=
 
 end Strata.OutGraph
 end
-
--- Tests moved to StrataTest/DDM/Util/Graph/TarjanTests.lean

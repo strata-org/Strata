@@ -53,8 +53,6 @@ syntax:max (name := quoteIdent) "q`" noWs ident : term
   | _ => Macro.throwUnsupported
 end
 
--- Tests moved to StrataTest/DDM/ASTTests.lean
-
 end QualifiedIdent
 
 /--

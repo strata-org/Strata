@@ -75,7 +75,5 @@ def fromRat (r : Rat) : Option Decimal :=
       let exponent := -(k : Int)
       some (normalize mantissa exponent)
 
--- Tests moved to StrataTest/DDM/Util/DecimalRatTests.lean
-
 end Strata.Decimal
 end

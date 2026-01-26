@@ -44,8 +44,6 @@ public instance : ToString Position where
 
 end Position
 
--- Tests moved to StrataTest/DDM/Util/IonTests.lean
-
 namespace SymbolTable
 
 /-- Create value-/
