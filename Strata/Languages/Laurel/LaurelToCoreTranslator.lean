@@ -32,7 +32,7 @@ def translateType (ty : HighType) : LMonoTy :=
   match ty with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
-  | .TVoid => LMonoTy.bool
+  | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => .tcons "Heap" []
   | .TTypedField valueType => .tcons "Field" [translateType valueType]
   | .UserDefined _ => .tcons "Composite" []
