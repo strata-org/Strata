@@ -65,7 +65,7 @@ def main (args : List String) : IO UInt32 := do
                      typeCheck inputCtx pgm opts
         match ans with
         | .error e =>
-          println! f!"{e.format (some inputCtx.fileMap)}"
+          println! f!"{e.formatRange (some inputCtx.fileMap) true} {e.message}"
           return 1
         | .ok _ =>
           println! f!"Program typechecked."
