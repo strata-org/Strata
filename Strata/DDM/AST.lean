@@ -311,7 +311,7 @@ def FileRange.unknown : FileRange :=
 structure DiagnosticModel where
   fileRange : FileRange
   message : String
-  deriving Repr, BEq
+  deriving Repr, BEq, Inhabited
 
 instance : Inhabited DiagnosticModel where
   default := { fileRange := FileRange.unknown, message := "" }
