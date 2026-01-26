@@ -191,7 +191,7 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 end
 
 def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
-  let seqStmts <- transformStmt body
+  let seqStmts ← transformStmt body
   match seqStmts with
   | [single] => pure single
   | multiple => pure <| .Block multiple.reverse none
@@ -201,7 +201,7 @@ def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   modify fun s => { s with insideCondition := false }
   match proc.body with
   | .Transparent bodyExpr =>
-      let seqBody <- transformProcedureBody bodyExpr
+      let seqBody ← transformProcedureBody bodyExpr
       pure { proc with body := .Transparent seqBody }
   | _ => pure proc  -- Opaque and Abstract bodies unchanged
 

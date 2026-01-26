@@ -255,12 +255,11 @@ def translateProcedure (constants : List Constant) (heapWriters : List Identifie
         let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond }
         [("ensures", check)]
     | _ => []
-  -- Add $heap to modifies clause only if this procedure writes to the heap
   let modifies := if heapWriters.contains proc.name then [Core.CoreIdent.glob "$heap"] else []
   let spec : Core.Procedure.Spec := {
-    modifies := modifies
-    preconditions := preconditions
-    postconditions := postconditions
+    modifies,
+    preconditions,
+    postconditions,
   }
   let body : List Core.Statement :=
     match proc.body with
@@ -474,21 +473,21 @@ def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default)
     (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let boogieProgramExcept := translate program
+  let strataCoreProgramExcept := translate program
     -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
-  -- Debug: Print the generated Core program
-  match boogieProgramExcept with
+  -- Debug: Print the generated Strata Core program
+  match strataCoreProgramExcept with
     | .error e => return .error e
-    | .ok boogieProgram =>
-      dbg_trace "=== Generated Core Program ==="
-      dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
+    | .ok strataCoreProgram =>
+      dbg_trace "=== Generated Strata Core Program ==="
+      dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format strataCoreProgram)))
       dbg_trace "================================="
 
       let runner tempDir :=
         EIO.toIO (fun f => IO.Error.userError (toString f))
-            (Core.verify smtsolver boogieProgram tempDir options)
-      let ioResult <- match tempDir with
+            (Core.verify smtsolver strataCoreProgram tempDir options)
+      let ioResult ← match tempDir with
       | .none =>
         IO.FS.withTempDir runner
       | .some p =>

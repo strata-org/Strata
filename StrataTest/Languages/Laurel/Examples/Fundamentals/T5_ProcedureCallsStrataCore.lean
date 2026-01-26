@@ -6,7 +6,7 @@
 
 /-
 The purpose of this test is to ensure we're using functions and procedures as well as
-Strata Boogie supports them. When Strata Core makes procedures more powerful, so we
+Strata Core supports them. When Strata Core makes procedures more powerful, so we
 won't need functions any more, then this test can be merged into other tests.
 -/
 
@@ -45,4 +45,4 @@ procedure caller() {
 "
 
 #guard_msgs(drop info, error) in
-#eval! testInputWithOffset "T5_ProcedureCallsBoogie" program 20 processLaurelFile
+#eval! testInputWithOffset "T5_ProcedureCallsStrataCore" program 20 processLaurelFile
