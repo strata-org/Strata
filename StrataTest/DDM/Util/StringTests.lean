@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Util.String
+import all Strata.DDM.Util.String
 
 /-! ## Tests for String utilities -/
 

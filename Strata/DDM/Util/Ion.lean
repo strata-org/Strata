@@ -29,9 +29,9 @@ structure Position where
 
 namespace Position
 
-private def root : Position := {}
+def root : Position := {}
 
-private def push (p : Position) (index : Nat) : Position where
+def push (p : Position) (index : Nat) : Position where
   indices := p.indices.push index
 
 private def ofList (l : List Nat) : Position where

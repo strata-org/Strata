@@ -49,12 +49,6 @@ info: Lean.Expr.forallE
 #guard_msgs in
 #eval test1
 
-/-- info: true -/
-#guard_msgs in
-#eval elaborate_lexpr [@LExpr.eq MonoString ()
-                        (@LExpr.const MonoString () (.intConst 5))
-                        (@LExpr.const MonoString () (.intConst 5))]
-
 end Lambda
 
 
@@ -62,7 +56,7 @@ end Lambda
 
 namespace Lambda.Reflect.AdditionalTests
 
-open Lean Elab Tactic Expr Meta
+open Lean Elab Tactic Expr Meta Term
 open Std (ToFormat Format format)
 open LTy.Syntax LExpr.Syntax
 
@@ -91,6 +85,19 @@ elab "test2" : term => do
 /-- info: (fun x => x) (4 == 4) = true : Prop -/
 #guard_msgs in
 #check test2
+
+elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
+  let expr ← elabTerm e none
+  let lexpr ← Lean.Meta.evalExpr (LExpr MonoString)
+    (mkApp (mkConst ``LExpr) (mkConst ``MonoString)) expr
+  let result ← liftM (LExpr.toExpr lexpr)
+  return result
+
+/-- info: true -/
+#guard_msgs in
+#eval elaborate_lexpr [@LExpr.eq MonoString ()
+                        (@LExpr.const MonoString () (.intConst 5))
+                        (@LExpr.const MonoString () (.intConst 5))]
 
 /-- info: ∀ (x : Int), (x == 5) = true : Prop -/
 #guard_msgs in
