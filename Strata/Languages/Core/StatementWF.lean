@@ -125,6 +125,14 @@ theorem Statement.typeCheckAux_go_WF :
       any_goals (try simp [WFStatementsProp] at *; try simp [List.Forall_append, *]; try constructor)
       any_goals (simp [Forall])
       any_goals constructor
+    | funcDecl decl md =>
+      simp [Except.bind] at tcok
+      repeat (split at tcok <;> try contradiction)
+      have tcok := Statement.typeCheckAux_elim_singleton tcok
+      rw[List.append_cons];
+      apply ih tcok <;> try assumption
+      simp [WFStatementsProp] at *
+      simp [List.Forall_append, Forall, *]
 
 /--
 A list of Statement `ss` that passes type checking is well formed with respect

@@ -163,7 +163,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .goto _ _ => false
+  | .funcDecl _ _ | .goto _ _ => false  -- Function declarations and gotos don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -202,7 +202,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .goto _ _ => []
+  | .funcDecl _ _ | .goto _ _ => []  -- Function declarations and gotos don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -226,7 +226,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .goto _ _ => []
+  | .funcDecl _ _ | .goto _ _ => []  -- Function declarations and gotos don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -376,6 +376,27 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             panic! "Cannot evaluate `loop` statement. \
                     Please transform your program to eliminate loops before \
                     calling Core.Statement.evalAux"
+
+          | .funcDecl decl _ =>
+            -- Add function to factory
+            -- Convert PureFunc Expression (with LTy) to LFunc CoreLParams (with LMonoTy)
+            -- Assumes type checking has already monomorphized the types to .forAll [] mty
+            let func : Lambda.LFunc CoreLParams := {
+              name := decl.name,
+              typeArgs := decl.typeArgs,
+              isConstr := decl.isConstr,
+              inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+              output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+              body := decl.body,
+              attr := decl.attr,
+              concreteEval := decl.concreteEval,
+              axioms := decl.axioms
+            }
+            match Ewn.env.addFactoryFunc func with
+            | .ok env' => [{ Ewn with env := env' }]
+            | .error e =>
+              -- If adding fails, set error but continue
+              [{ Ewn with env := { Ewn.env with error := some (.Misc e) } }]
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 

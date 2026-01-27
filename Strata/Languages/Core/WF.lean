@@ -79,6 +79,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .goto (label : String) _ => WFgotoProp p label
+  | .funcDecl _ _ => True  -- Function declarations are always well-formed at this level
 
 abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 

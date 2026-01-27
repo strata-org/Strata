@@ -55,6 +55,12 @@ def Statement.substFvar (s : Core.Statement)
           (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
           (Block.substFvar body fr to)
           metadata
+  | .funcDecl decl md =>
+    -- Substitute in function body and axioms
+    let decl' := { decl with
+      body := decl.body.map (Lambda.LExpr.substFvar · fr to),
+      axioms := decl.axioms.map (Lambda.LExpr.substFvar · fr to) }
+    .funcDecl decl' md
   | .goto _ _ => s
   termination_by s.sizeOf
 end
@@ -82,6 +88,10 @@ def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) 
   | .loop m g i b md =>
     .loop m g i (Block.renameLhs b fr to) md
   | .havoc l md => .havoc (if l.name == fr then to else l) md
+  | .funcDecl decl md =>
+    -- Rename function name if it matches
+    let decl' := if decl.name == fr then { decl with name := to } else decl
+    .funcDecl decl' md
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
   termination_by s.sizeOf
 end

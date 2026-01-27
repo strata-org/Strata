@@ -179,6 +179,7 @@ theorem callElimBlockNoExcept :
   | ite cd tb eb md => exists [.ite cd tb eb md]
   | goto l b => exists [.goto l b]
   | loop g m i b md => exists [.loop g m i b md]
+  | funcDecl _ _ => sorry  -- TODO: Add funcDecl case to CallElimCorrect proof
   | cmd c =>
     cases c with
     | cmd c' => exists [Imperative.Stmt.cmd (CmdExt.cmd c')]
@@ -3298,6 +3299,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   case ite => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case goto => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case loop => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
+  case funcDecl => sorry  -- TODO: Add funcDecl case to CallElimCorrect proof
   case cmd c =>
   cases c with
   | cmd c' =>

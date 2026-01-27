@@ -17,6 +17,21 @@ open LTy.Syntax LExpr.SyntaxMono LExpr LMonoTy
 
 private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
+private instance : ToFormat (Lambda.LFunc { Metadata := Unit, IDMeta := Unit }) where
+  format f :=
+    let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
+    let typeArgs := if f.typeArgs.isEmpty
+                    then f!""
+                    else f!"∀{f.typeArgs}."
+    let type := f!"{typeArgs} ({Lambda.Signature.format f.inputs}) → {f.output}"
+    let sep := if f.body.isNone then f!";" else f!" :="
+    let body := match f.body with
+                | none => f!""
+                | some e => f!"{Format.line}  {format e}"
+    f!"{attr}\
+       func {f.name} : {type}{sep}\
+       {body}"
+
 private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 

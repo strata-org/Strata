@@ -48,7 +48,7 @@ Proof Obligation:
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] eb[#0],
                     .set "x" eb[#18],
-                    .assert "x_eq_18" eb[x == #18]]) |>.snd |> format
+                    .assert "x_eq_18" eb[x == #18]]) |>.snd |> Env.format
 
 /--
 info: Error:
@@ -88,7 +88,7 @@ Proof Obligation:
   ∅
   [.init "x" t[int] eb[#0],
   .set "x" eb[y],
-  .assert "x_eq_12" eb[x == #12]]) |>.snd |> format
+  .assert "x_eq_12" eb[x == #12]]) |>.snd |> Env.format
 
 /--
 info: Error:
@@ -122,7 +122,7 @@ Deferred Proof Obligations:
 #eval evalOne ∅ ∅
        [
        .init "x" t[bool] eb[x == #true]
-       ] |>.snd |> format
+       ] |>.snd |> Env.format
 
 /--
 info: Error:
@@ -182,7 +182,7 @@ Proof Obligation:
   .assert "m_2_eq_20" eb[(m #2) == #20],
   .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))],
   .assert "m_1_eq_10" eb[(m #1) == #10]
-  ]) |>.snd |> format
+  ]) |>.snd |> Env.format
 
 /--
 info: Error:
@@ -239,7 +239,7 @@ Proof Obligation:
   .assert "m_2_eq_20" eb[(m #2) == #20],
   .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))],
   .assert "m_1_eq_10" eb[(m #1) == #10]
-  ]) |>.snd |> format
+  ]) |>.snd |> Env.format
 
 
 
@@ -320,7 +320,7 @@ Proof Obligation:
 ((if (zinit == #false) then #6 else #0) == #6)
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog1) |>.snd |> format
+#eval (evalOne ∅ ∅ prog1) |>.snd |> Env.format
 
 
 private def prog2 : Statements := [
@@ -375,7 +375,125 @@ Proof Obligation:
 (($__x0 : int) == #1)
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog2) |>.snd |> format
+#eval (evalOne ∅ ∅ prog2) |>.snd |> Env.format
+
+/--
+Test funcDecl: declare a helper function and use it
+-/
+def testFuncDecl : List Statement :=
+  let doubleFunc : PureFunc Expression := {
+    name := CoreIdent.unres "double",
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) x)],
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .funcDecl doubleFunc,
+    .init "y" t[int] eb[(~double #5)],
+    .assert "y_eq_10" eb[y == #10]
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(y : int) → (~double #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func double :  ((x : int)) → int :=
+  ((~Int.Add x) x)
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: y_eq_10
+Property: assert
+Assumptions:
+Proof Obligation:
+((~double #5) == #10)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> Env.format
+
+/--
+Test funcDecl with symbolic variable capture: function references a variable from enclosing scope
+-/
+def testFuncDeclSymbolic : List Statement :=
+  let addNFunc : PureFunc Expression := {
+    name := CoreIdent.unres "addN",
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) n)],  -- References 'n' from outer scope
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .init "n" t[int] eb[globalN],  -- Initialize with symbolic global
+    .funcDecl addNFunc,
+    .init "result" t[int] eb[(~addN #5)],
+    .assert "result_eq_n_plus_5" eb[result == ((~Int.Add globalN) #5)]
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(globalN : int) → globalN
+(n : int) → globalN
+(result : int) → (~addN #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func addN :  ((x : int)) → int :=
+  ((~Int.Add x) n)
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: result_eq_n_plus_5
+Property: assert
+Assumptions:
+Proof Obligation:
+((~addN #5) == ((~Int.Add globalN) #5))
+-/
+#guard_msgs in
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope [("globalN", (mty[int], eb[globalN]))])
+  ∅
+  testFuncDeclSymbolic) |>.snd |> Env.format
 
 end Tests
 ---------------------------------------------------------------------

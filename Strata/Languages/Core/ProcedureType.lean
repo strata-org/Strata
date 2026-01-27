@@ -18,6 +18,21 @@ namespace Core
 open Std (ToFormat Format format)
 open Imperative (MetaData)
 
+instance : ToFormat (Lambda.LFunc { Metadata := ExpressionMetadata, IDMeta := Visibility }) where
+  format f :=
+    let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
+    let typeArgs := if f.typeArgs.isEmpty
+                    then f!""
+                    else f!"∀{f.typeArgs}."
+    let type := f!"{typeArgs} ({Lambda.Signature.format f.inputs}) → {f.output}"
+    let sep := if f.body.isNone then f!";" else f!" :="
+    let body := match f.body with
+                | none => f!""
+                | some e => f!"{Format.line}  {format e}"
+    f!"{attr}\
+       func {f.name} : {type}{sep}\
+       {body}"
+
 namespace Procedure
 
 private def checkNoDuplicates (proc : Procedure) (sourceLoc : Format) :

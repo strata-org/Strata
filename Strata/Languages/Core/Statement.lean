@@ -15,7 +15,7 @@ import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
 
 namespace Core
-open Imperative
+open Lambda Imperative
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
@@ -126,6 +126,12 @@ def Statement.eraseTypes (s : Statement) : Statement :=
     let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
   | .goto l md => .goto l md
+  | .funcDecl decl md =>
+    -- Erase types from function body and axioms
+    let decl' := { decl with
+      body := decl.body.map Lambda.LExpr.eraseTypes,
+      axioms := decl.axioms.map Lambda.LExpr.eraseTypes }
+    .funcDecl decl' md
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf <;> simp [sizeOf] <;> omega
@@ -203,6 +209,7 @@ def Statement.modifiedVarsTrans
     Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
   | .loop _ _ _ bss _ =>
     Statements.modifiedVarsTrans π bss
+  | .funcDecl _ _ => []  -- Function declarations don't modify variables
   termination_by (Stmt.sizeOf s)
 
 def Statements.modifiedVarsTrans
@@ -241,6 +248,11 @@ def Statement.getVarsTrans
     Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
   | .loop _ _ _ bss  _ =>
     Statements.getVarsTrans π bss
+  | .funcDecl decl _ =>
+    -- Get variables from function body (including parameters for simplicity)
+    match decl.body with
+    | none => []
+    | some body => HasVarsPure.getVars body
   termination_by (Stmt.sizeOf s)
 
 def Statements.getVarsTrans
@@ -284,6 +296,7 @@ def Statement.touchedVarsTrans
   | .block _ bss _ => Statements.touchedVarsTrans π bss
   | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
   | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
+  | .funcDecl decl _ => [decl.name]  -- Function declaration touches (defines) the function name
   termination_by (Stmt.sizeOf s)
 
 def Statements.touchedVarsTrans
@@ -347,6 +360,12 @@ def Statement.substFvar (s : Core.Statement)
           (Block.substFvar body fr to)
           metadata
   | .goto _ _ => s
+  | .funcDecl decl md =>
+    -- Substitute in function body and axioms
+    let decl' := { decl with
+      body := decl.body.map (Lambda.LExpr.substFvar · fr to),
+      axioms := decl.axioms.map (Lambda.LExpr.substFvar · fr to) }
+    .funcDecl decl' md
   termination_by s.sizeOf
   decreasing_by all_goals(simp_wf; try omega)
 end
@@ -373,6 +392,10 @@ def Statement.renameLhs (s : Core.Statement)
       if l.name == fr  then to else l)) pname args metadata
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
+  | .funcDecl decl md =>
+    -- Rename function name if it matches
+    let decl' := if decl.name == fr then { decl with name := to } else decl
+    .funcDecl decl' md
   | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
   | .loop _ _ _ _ _ | .goto _ _ | .cover _ _ _ => s
   termination_by s.sizeOf

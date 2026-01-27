@@ -16,25 +16,44 @@ open Imperative
 instance : ToFormat ExpressionMetadata :=
   show ToFormat Unit from inferInstance
 
+-- ToFormat instance for Expression.EvalEnv (which is Lambda.LState CoreLParams)
+instance : ToFormat Expression.EvalEnv := by
+  show ToFormat (Lambda.LState CoreLParams)
+  infer_instance
+
 -- ToFormat instance for Expression.Expr
 instance : ToFormat Expression.Expr := by
   show ToFormat (Lambda.LExpr CoreLParams.mono)
   infer_instance
 
--- Custom ToFormat instance for our specific Scope type to get the desired formatting
-private def formatScope (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
+-- Custom ToFormat instance for Scopes to get the desired formatting
+def formatScopeMap (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
   match m with
   | [] => ""
-  | [(k, (ty, v))] => go k ty v
-  | (k, (ty, v)) :: rest =>
-    go k ty v ++ Format.line ++ formatScope rest
-  where go k ty v :=
+  | [(k, (ty, v))] =>
     match ty with
     | some ty => f!"({k} : {ty}) → {v}"
     | none => f!"{k} → {v}"
+  | (k, (ty, v)) :: rest =>
+    let entry := match ty with
+      | some ty => f!"({k} : {ty}) → {v}"
+      | none => f!"{k} → {v}"
+    entry ++ Format.line ++ formatScopeMap rest
 
+def formatScopes (ms : Lambda.Scopes CoreLParams) : Std.Format :=
+  match ms with
+  | [] => ""
+  | [m] => f!"[{formatScopeMap m}]"
+  | m :: rest => f!"[{formatScopeMap m}]{Format.line}" ++ formatScopes rest
+
+@[default_instance 1000]
+instance : ToFormat (Lambda.Scopes CoreLParams) where
+  format := formatScopes
+
+-- Also provide the instance for single Map for compatibility
+@[default_instance 1000]
 instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) where
-  format := formatScope
+  format := formatScopeMap
 
 instance : Inhabited ExpressionMetadata :=
   show Inhabited Unit from inferInstance
@@ -151,6 +170,19 @@ def Env.init (empty_factory:=false): Env :=
     warnings := []
     deferred := ∅ }
 
+-- Custom formatter for Env that uses the proper scope formatting
+def Env.format (s : Env) : Std.Format :=
+  let stateFormat := formatScopes s.exprEnv.state
+  let configFormat := (inferInstance : ToFormat (Lambda.EvalConfig CoreLParams)).format s.exprEnv.config
+  Std.format f!"Error:{Format.line}{s.error}{Format.line}\
+            Subst Map:{Format.line}{s.substMap}{Format.line}\
+            Expression Env:{Format.line}State:{Format.line}{stateFormat}{Format.line}{Format.line}\
+            Evaluation Config:{Format.line}{configFormat}{Format.line}{Format.line}{Format.line}\
+            Datatypes:{Format.line}{s.datatypes}{Format.line}\
+            Path Conditions:{Format.line}{PathConditions.format s.pathConditions}{Format.line}{Format.line}\
+            Warnings:{Format.line}{s.warnings}{Format.line}\
+            Deferred Proof Obligations:{Format.line}{s.deferred}{Format.line}"
+
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
 
@@ -158,15 +190,7 @@ instance : Inhabited Env where
   default := Env.init
 
 instance : ToFormat Env where
-  format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
-    format f!"Error:{Format.line}{error}{Format.line}\
-              Subst Map:{Format.line}{substMap}{Format.line}\
-              Expression Env:{Format.line}{exprEnv}{Format.line}\
-              Datatypes:{Format.line}{datatypes}{Format.line}\
-              Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
-              Warnings:{Format.line}{warnings}{Format.line}\
-              Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
+  format := Env.format
 
 /--
 Create a substitution map from all non-global variables to their values.

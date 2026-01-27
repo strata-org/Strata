@@ -9,6 +9,8 @@ import Strata.DL.Lambda.LTy
 import Strata.DDM.Util.Array
 import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
+import Strata.DL.Imperative.PureExpr
+import Strata.DL.Imperative.MetaData
 
 /-!
 ## Lambda's Factory
@@ -28,7 +30,7 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
+variable {T : LExprParams} [Inhabited T.Metadata]
 
 ---------------------------------------------------------------------
 
@@ -56,9 +58,11 @@ abbrev LTySignature := Signature IDMeta LTy
 
 
 /--
-A Lambda factory function, where the body can be optional. Universally
-quantified type identifiers, if any, appear before this signature and can
-quantify over the type identifiers in it.
+A generic function structure, parameterized by identifier, expression, type, and metadata types.
+
+This structure can be instantiated for different expression languages.
+For Lambda expressions, use `LFunc`. For other expression systems, instantiate
+with appropriate types.
 
 A optional evaluation function can be provided in the `concreteEval` field for
 each factory function to allow the partial evaluator to do constant propagation
@@ -84,44 +88,74 @@ concrete/constants, this fails and it returns .none.
 (TODO) Use `.bvar`s in the body to correspond to the formals instead of using
 `.fvar`s.
 -/
-structure LFunc (T : LExprParams) where
-  name     : T.Identifier
+structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) where
+  name     : IdentT
   typeArgs : List TyIdentifier := []
   isConstr : Bool := false --whether function is datatype constructor
-  inputs   : @LMonoTySignature T.IDMeta
-  output   : LMonoTy
-  body     : Option (LExpr T.mono) := .none
+  inputs   : ListMap IdentT TyT
+  output   : TyT
+  body     : Option ExprT := .none
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
   -- a function, etc.).
   attr     : Array String := #[]
-  -- The T.Metadata argument is the metadata that will be attached to the
+  -- The MetadataT argument is the metadata that will be attached to the
   -- resulting expression of concreteEval if evaluation was successful.
-  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
-  axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
+  concreteEval : Option (MetadataT → List ExprT → Option ExprT) := .none
+  axioms   : List ExprT := []  -- For axiomatic definitions
 
 /--
-Well-formedness properties of LFunc. These are split from LFunc because
-otherwise it becomes impossible to create a 'temporary' LFunc object whose
+A Lambda factory function - instantiation of `Func` for Lambda expressions.
+
+Universally quantified type identifiers, if any, appear before this signature and can
+quantify over the type identifiers in it.
+-/
+abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+
+/--
+A function declaration for use with `PureExpr` - instantiation of `Func` for
+any expression system that implements the `PureExpr` interface.
+-/
+abbrev PureFunc (P : Imperative.PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
+
+/--
+Helper constructor for LFunc to maintain backward compatibility.
+-/
+def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
+    (isConstr : Bool := false) (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
+    (body : Option (LExpr T.mono) := .none) (attr : Array String := #[])
+    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
+    (axioms : List (LExpr T.mono) := []) : LFunc T :=
+  Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms
+
+/--
+Well-formedness properties of Func. These are split from Func because
+otherwise it becomes impossible to create a 'temporary' Func object whose
 wellformedness might not hold yet.
 -/
-structure LFuncWF {T : LExprParams} (f : LFunc T) where
+structure FuncWF {IdentT ExprT TyT MetadataT : Type} (f : Func IdentT ExprT TyT MetadataT) where
   -- No args have same name.
   arg_nodup:
-    List.Nodup (f.inputs.map (·.1.name))
-  -- Free variables of body must be arguments.
-  body_freevars:
-    ∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)
+    List.Nodup (f.inputs.map (·.1))
   -- concreteEval does not succeed if the length of args is incorrect.
   concreteEval_argmatch:
     ∀ fn md args res, f.concreteEval = .some fn
       → fn md args = .some res
       → args.length = f.inputs.length
 
-instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
+/--
+Well-formedness properties of LFunc - extends FuncWF with Lambda-specific properties.
+-/
+structure LFuncWF {T : LExprParams} (f : LFunc T) extends FuncWF f where
+  -- Free variables of body must be arguments.
+  body_freevars:
+    ∀ b freevars, f.body = .some b
+      → freevars = LExpr.freeVars b
+      → (∀ fv, fv ∈ freevars →
+          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)
+
+instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type} [DecidableEq IdentT]
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (List.Nodup (f.inputs.map (·.1))) := by
   apply List.nodupDecidable
 
 instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
@@ -150,7 +184,8 @@ instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
   | .none => by
     apply isTrue; grind
 
--- LFuncWF.concreteEval_argmatch is not decidable.
+-- FuncWF.concreteEval_argmatch and LFuncWF.concreteEval_argmatch are not decidable.-- FuncWF.body_freevars is commented out as it's expression-type specific
+-- FuncWF.concreteEval_argmatch is not decidable.
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -163,7 +198,7 @@ instance : ToFormat (LFunc T) where
                     else f!"∀{f.typeArgs}."
     let type := f!"{typeArgs} ({Signature.format f.inputs}) → {f.output}"
     let sep := if f.body.isNone then f!";" else f!" :="
-    let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
+    let body := if f.body.isNone then f!"" else f!"<body>"
     f!"{attr}\
        func {f.name} : {type}{sep}\
        {body}"

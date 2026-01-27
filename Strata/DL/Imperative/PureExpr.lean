@@ -21,6 +21,8 @@ structure PureExpr : Type 1 where
   Expr    : Type
   /-- Types -/
   Ty      : Type
+  /-- Expression metadata type (for use in function declarations, etc.) -/
+  ExprMetadata : Type
   /-- Typing environment, expected to contain a map of variables to their types,
   type substitution, etc.
   -/
