@@ -444,8 +444,6 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
 
 elab "mty[" ty:lmonoty "]" : term => elabLMonoTy ty
 
--- Syntax tests moved to StrataTest/DL/Lambda/LTyTests.lean
-
 declare_syntax_cat lty
 scoped syntax (lmonoty)* : lty
 scoped syntax "∀" (ident)* "." (lmonoty)* : lty
@@ -466,8 +464,6 @@ partial def elabLTy : Lean.Syntax → MetaM Expr
   | _ => throwUnsupportedSyntax
 
 elab "t[" lsch:lty "]" : term => elabLTy lsch
-
--- Syntax tests moved to StrataTest/DL/Lambda/LTyTests.lean
 
 end Syntax
 end LTy
