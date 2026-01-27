@@ -15,7 +15,6 @@ import Strata.Languages.Core.Axiom
 
 namespace Core
 
-open Lambda
 open Std (ToFormat Format format)
 open Imperative
 
