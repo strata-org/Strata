@@ -15,7 +15,7 @@ import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
 
 namespace Core
-open Lambda Imperative
+open Imperative
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
