@@ -4,23 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Factory
+module
+import all Strata.Languages.Core.Factory
 
 /-! ## Tests for Factory -/
 
 namespace Core
-
-private def BVOpNames :=
-  ["Neg", "Add", "Sub", "Mul", "UDiv", "UMod", "SDiv", "SMod",
-   "Not", "And", "Or", "Xor", "Shl", "UShr", "SShr",
-   "ULt", "ULe", "UGt", "UGe",
-   "SLt", "SLe", "SGt", "SGe"]
-
-private def BVOpAritys :=
-  ["unaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp",
-   "unaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp",
-   "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate",
-   "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate" ]
 
 /--
 info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "binaryOp"), ("UDiv", "binaryOp"),

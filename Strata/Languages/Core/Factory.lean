@@ -54,7 +54,7 @@ match ine with
     | .eq m e1 e2 => .eq m (ToCoreIdent e1) (ToCoreIdent e2)
 
 
-def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
+private def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
   (check:∀ {n}, BitVec n → BitVec n → Bool)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
@@ -68,7 +68,7 @@ def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
     else .none
   | _ => .none
 
-def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
+private def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
     : Option (LExpr CoreLParams.mono) :=
@@ -80,7 +80,7 @@ def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
     else .none
   | _ => .none
 
-def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
+private def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
     : Option (LExpr CoreLParams.mono) :=
@@ -88,7 +88,7 @@ def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
   | [.bitvecConst _ n b] => .some (.bitvecConst m n (fn b))
   | _ => .none
 
-def bvBinaryPred (fn:∀ {n}, BitVec n → BitVec n → Bool)
+private def bvBinaryPred (fn:∀ {n}, BitVec n → BitVec n → Bool)
   (swap:Bool)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
