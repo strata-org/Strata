@@ -58,7 +58,7 @@ spec {
 
   x := None();
   y := Some(42);
-  v := value(y);
+  v := Option..value(y);
   assert [valIs42]: v == 42;
 };
 #end
@@ -79,7 +79,7 @@ init (y : (Option int)) := (init_y_1 : (Option int))
 init (v : int) := (init_v_2 : int)
 x := (~None : (Option int))
 y := ((~Some : (arrow int (Option int))) #42)
-v := ((~value : (arrow (Option int) int)) (y : (Option int)))
+v := ((~Option..value : (arrow (Option int) int)) (y : (Option int)))
 assert [valIs42] ((v : int) == #42)-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
@@ -103,7 +103,7 @@ spec {
   var h : int;
 
   xs := Cons(1, Cons(2, Nil()));
-  h := head(xs);
+  h := List..head(xs);
   assert [headIs1]: h == 1;
 };
 #end
@@ -122,7 +122,7 @@ postconditions: (TestListInt_ensures_0, #true)
 body: init (xs : (List int)) := (init_xs_0 : (List int))
 init (h : int) := (init_h_1 : int)
 xs := (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (((~Cons : (arrow int (arrow (List int) (List int)))) #2) (~Nil : (List int))))
-h := ((~head : (arrow (List int) int)) (xs : (List int)))
+h := ((~List..head : (arrow (List int) int)) (xs : (List int)))
 assert [headIs1] ((h : int) == #1)-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
@@ -150,7 +150,7 @@ spec {
 
   assert [xIsLeft]: Either..isLeft(x);
   assert [yIsRight]: Either..isRight(y);
-  assert [lValue]: l(x) == 42;
+  assert [lValue]: Either..l(x) == 42;
 };
 #end
 
@@ -171,7 +171,7 @@ x := ((~Left : (arrow int (Either int bool))) #42)
 y := ((~Right : (arrow bool (Either int bool))) #true)
 assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Either int bool)))
 assert [yIsRight] ((~Either..isRight : (arrow (Either int bool) bool)) (y : (Either int bool)))
-assert [lValue] (((~l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)-/
+assert [lValue] (((~Either..l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
 
@@ -245,7 +245,7 @@ spec {
 
   assume xs == Cons(100, Nil());
 
-  h := head(xs);
+  h := List..head(xs);
 
   assert [headIs100]: h == 100;
 };
