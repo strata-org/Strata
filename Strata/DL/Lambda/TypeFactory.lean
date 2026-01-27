@@ -633,29 +633,17 @@ The `List.Nodup` and `⊆` hypotheses are only used to prove termination.
 def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen)
   (hsub: seen ⊆ (List.map (fun x => x.name) adts.allDatatypes))
-  (ts: String) : StateM inhabMap (Option String) := do
-  let knowType (b: Bool) : StateM inhabMap (Option String) := do
-    /-
-    Only add false if not in a cycle, it may resolve later
-    E.g. when checking the `cons` case for `List`, `List` itself is in the
-    `seen` set and so will be temporarily marked as uninhabited. This should not
-    be memoized.
-    -/
-    if b || seen.isEmpty then
-      let m ← get
-      set (m.insert ts b)
-    if b then pure none else pure (some ts)
+  (ts: String) : StateM inhabMap Bool := do
   -- Check if type is already known to be inhabited
   let m ← get
   match m.find? ts with
-  | some true => pure none
-  | some false => pure (some ts)
+  | some b => pure b
   | none =>
     -- If type in `seen`, it is unknown, so we return false
-    if hin: List.elem ts seen then pure (some ts)
+    if hin: List.elem ts seen then pure false
     else
       match ha: adts.getType ts with
-      | none => pure none -- Assume all non-datatypes are inhabited
+      | none => pure true -- Assume all non-datatypes are inhabited
       | some l =>
         -- A datatype is inhabited if it has an inhabited constructor
         let res ← (l.constrs.foldlM (fun accC c => do
@@ -677,7 +665,17 @@ def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
               ) true)
           pure (accC || constrInhab)
           ) false)
-        knowType res
+        /-
+        Type is known: we can add to map
+        Only add false if not in a cycle, it may resolve later
+        E.g. when checking the `cons` case for `List`, `List` itself is in
+        the `seen` set and so will be temporarily marked as uninhabited.
+        This should not be memoized.
+        -/
+        if res || seen.isEmpty then
+          let m ← get
+          set (m.insert ts res)
+        pure res
   termination_by (adts.allDatatypes.length - seen.length, 0)
   decreasing_by
     apply Prod.Lex.left; simp only[List.length]
@@ -692,7 +690,7 @@ def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
       -- name(args) is inhabited if name is inhabited as a typesym
       -- and all args are inhabited as types (note this is conservative)
       let checkTy ← typesym_inhab adts seen hnodup hsub name
-      if checkTy.isNone then
+      if checkTy then
         args.foldrM (fun ty acc => do
           let x ← ty_inhab adts seen hnodup hsub ty
           pure (x && acc)
@@ -709,8 +707,8 @@ end
 /--
 Prove that ADT with name `a` is inhabited. All other types are assumed inhabited.
 -/
-def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM inhabMap (Option String) :=
-  typesym_inhab adts [] (by grind) (by grind) a
+def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM inhabMap Bool
+  := typesym_inhab adts [] (by grind) (by grind) a
 
 /--
 Check that all ADTs in TypeFactory `adts` are inhabited. This uses memoization
@@ -722,7 +720,10 @@ def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Option String :=
     do
       match x with
       | some a => pure (some a)
-      | none => adt_inhab adts l.name) none adts.allDatatypes)
+      | none =>
+        let b ← adt_inhab adts l.name
+        pure (if b then none else some l.name)
+    ) none adts.allDatatypes)
   (StateT.run x []).1
 
 /--
