@@ -565,10 +565,7 @@ set_option maxHeartbeats 4000000 in
 Wellformedness of Factory
 -/
 theorem Factory_wf :
-    FactoryWF Factory := by sorry -- TODO: Requires handling ~200+ functions including dynamically generated BV ops
-  /-
-  -- The proof needs to show LFuncWF for each function in the factory
-  -- Challenge: ExpandBVOpFuncNames generates many functions at compile time
+    FactoryWF Factory := by
   unfold Factory
   apply FactoryWF.mk
   · decide -- FactoryWF.name_nodup
@@ -583,21 +580,24 @@ theorem Factory_wf :
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
       · apply LFuncWF.mk
-        · decide -- LFuncWF.arg_nodup
+        rotate_left
         · decide -- LFuncWF.body_freevars
-        · -- LFuncWf.concreteEval_argmatch
-          simp (config := { ground := true })
-          try (
-            try unfold unOpCeval
-            try unfold binOpCeval
-            try unfold cevalIntDiv
-            try unfold cevalIntMod
-            try unfold bvUnaryOp
-            try unfold bvBinaryOp
-            try unfold bvShiftOp
-            try unfold bvBinaryPred
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+        rotate_left
+        · apply FuncWF.mk
+          · decide -- LFuncWF.arg_nodup
+          · -- LFuncWf.concreteEval_argmatch
+            simp (config := { ground := true })
+            try (
+              try unfold unOpCeval
+              try unfold binOpCeval
+              try unfold cevalIntDiv
+              try unfold cevalIntMod
+              try unfold bvUnaryOp
+              try unfold bvBinaryOp
+              try unfold bvShiftOp
+              try unfold bvBinaryPred
+              intros lf md args res
+              repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
--/
+
 end Core
