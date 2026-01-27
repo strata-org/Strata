@@ -307,7 +307,9 @@ elab "#testRoundtrip" : command => do
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
   let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
-  let ionBytes ← IO.FS.readBinFile "StrataTest/DDM/Integration/Java/testdata/comprehensive.ion"
+  let srcFile := System.FilePath.mk (← Lean.getFileName)
+  let testdataDir := srcFile.parent.get! / "testdata"
+  let ionBytes ← IO.FS.readBinFile (testdataDir / "comprehensive.ion")
   match Strata.Program.fileFromIon dm "Simple" ionBytes with
   | .error e => Lean.logError s!"Roundtrip test failed: {e}"
   | .ok prog =>
@@ -328,7 +330,9 @@ elab "#testRoundtripFiles" : command => do
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
   let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
-  let ionBytes ← IO.FS.readBinFile "StrataTest/DDM/Integration/Java/testdata/comprehensive-files.ion"
+  let srcFile := System.FilePath.mk (← Lean.getFileName)
+  let testdataDir := srcFile.parent.get! / "testdata"
+  let ionBytes ← IO.FS.readBinFile (testdataDir / "comprehensive-files.ion")
   match Strata.Program.filesFromIon dm ionBytes with
   | .error e => Lean.logError s!"Roundtrip files test failed: {e}"
   | .ok files =>
