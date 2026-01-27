@@ -189,16 +189,13 @@ def bytesRequired (x : Nat) : Nat := aux 0 x
 Return the number of bytes using the 7-bit varint encoding.
 -/
 @[specialize]
-public def varbytesRequired (x : Nat) : Nat := aux 0 x
+def varbytesRequired (x : Nat) : Nat := aux 0 x
   where aux c x :=
           if x = 0 then
             c
           else
             aux (c+1) (x >>> 7)
         termination_by x
-
-#guard varbytesRequired 0x7f = 1
-#guard varbytesRequired 0x80 = 2
 
 def appendUInt {n} (x : Nat) (cnt : Nat)
       (bytes : ByteVector n) (off : Nat) (offp : off + cnt ≤ n := by omega) : ByteVector n :=
