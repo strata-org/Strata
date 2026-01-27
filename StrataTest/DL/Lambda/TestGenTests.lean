@@ -123,6 +123,11 @@ abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcon
   let P : Maps (Identifier Unit) LTy → Prop := fun Γ => MapsInsert (example_ctx.types) "y" (.forAll [] (.tcons "int" [])) Γ
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
 
+#guard_msgs(drop info) in
+#time #eval
+    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
+    Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 4) 4
+
 /-- info: [LExpr.fvar () { name := "x", metadata := () } none, LExpr.fvar () { name := "y", metadata := () } none] -/
 #guard_msgs(info) in
 #eval Shrinkable.shrink (LExpr.eq (T := TrivialParams.mono) () (.fvar () "x" .none) (.fvar () "y" .none))

@@ -327,8 +327,6 @@ instance : Arbitrary LMonoTy where
 instance : Arbitrary LTy where
   arbitrary := LTy.forAll [] <$> Arbitrary.arbitrary
 
--- #eval Gen.printSamples (Arbitrary.arbitrary : Gen LMonoTy)
-
 -- -- This works
 -- derive_generator fun α β m y => ∃ x, @MapFind α β m x y
 
