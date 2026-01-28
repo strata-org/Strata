@@ -53,8 +53,6 @@ syntax:max (name := quoteIdent) "q`" noWs ident : term
   | _ => Macro.throwUnsupported
 end
 
-#guard q`A.C = { dialect := "A", name := "C" }
-
 end QualifiedIdent
 
 /--

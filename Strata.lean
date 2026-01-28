@@ -18,9 +18,5 @@ import Strata.DL.Imperative.Imperative
 /- Strata Core -/
 import Strata.Languages.Core.StatementSemantics
 
-/- Code Transforms -/
-import Strata.Transform.CallElimCorrect
-import Strata.Transform.DetToNondetCorrect
-
 /- Backends -/
 import Strata.Backends.CBMC.CProver
