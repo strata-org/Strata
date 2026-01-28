@@ -173,6 +173,10 @@ theorem LMonoTy.size_gt_zero :
   unfold LMonoTys.size; split
   simp_all; omega
 
+theorem LMonoTy.size_lt_of_mem {ty: LMonoTy} {tys: LMonoTys} (h: ty ∈ tys):
+  ty.size <= tys.size := by
+  induction tys <;> simp only[LMonoTys.size]<;> grind
+
 /--
 Boolean equality for `LMonoTy`.
 -/

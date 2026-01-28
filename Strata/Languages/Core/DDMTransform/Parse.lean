@@ -38,8 +38,13 @@ type bv32;
 type bv64;
 type Map (dom : Type, range : Type);
 
+category TypeVar;
+@[declareTVar(name)]
+op type_var (name : Ident) : TypeVar => name;
+
 category TypeArgs;
-op type_args (args : CommaSepBy Ident) : TypeArgs => "<" args ">";
+@[scope(args)]
+op type_args (args : CommaSepBy TypeVar) : TypeArgs => "<" args ">";
 
 category Bind;
 @[declare(v, tp)]
@@ -266,7 +271,7 @@ op command_constdecl (name : Ident,
 op command_fndecl (name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
-                   @[scope (typeArgs)] r : Type) : Command =>
+                   @[scope(typeArgs)] r : Type) : Command =>
   "function " name typeArgs b ":" r ";\n";
 
 category Inline;
@@ -275,8 +280,8 @@ op inline () : Inline => "inline";
 @[declareFn(name, b, r)]
 op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
-                  @[scope (typeArgs)] b : Bindings,
-                  @[scope (typeArgs)] r : Type,
+                  @[scope(typeArgs)] b : Bindings,
+                  @[scope(typeArgs)] r : Type,
                   @[scope(b)] c : r,
                   // Prefer adding the inline attribute here so
                   // that the order of the arguments in the fndecl and fndef
@@ -317,7 +322,7 @@ op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList
 // scope when parsing constructors for recursive types
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
-    perField([.field], [.datatype], .fieldType))]
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>

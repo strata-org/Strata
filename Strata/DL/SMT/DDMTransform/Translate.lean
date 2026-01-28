@@ -32,6 +32,9 @@ private def mkSimpleSymbol (s:String):SimpleSymbol SourceRange :=
     | "lt" => .simple_symbol_lt SourceRange.none
     | "gt" => .simple_symbol_gt SourceRange.none
     | "at" => .simple_symbol_at SourceRange.none
+    | "le" => .simple_symbol_le SourceRange.none
+    | "ge" => .simple_symbol_ge SourceRange.none
+    | "implies" => .simple_symbol_implies SourceRange.none
     | _ => panic! s!"Unknown simple symbol: {name}")
   | .none =>
     .simple_symbol_qid SourceRange.none (mkQualifiedIdent s)
@@ -110,6 +113,35 @@ private def translateFromTermType (t:SMT.TermType):
     else
       return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 
+-- Helper function to convert a SMTDDM.Term to SExpr for use in pattern attributes
+def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange :=
+  let srnone := SourceRange.none
+  match t with
+  | .qual_identifier _ qi =>
+      match qi with
+      | .qi_ident _ iden =>
+          match iden with
+          | .iden_simple _ sym => .se_symbol srnone sym
+          | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
+      | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
+  | .qual_identifier_args _ qi args =>
+      -- Function application in pattern: convert to nested S-expr
+      let qiSExpr := match qi with
+        | .qi_ident _ iden =>
+            match iden with
+            | .iden_simple _ sym => SMTDDM.SExpr.se_symbol srnone sym
+            | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "fn")))
+        | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "fn")))
+      -- Convert args array to SExpr list
+      let argsSExpr := args.val.map termToSExpr
+      .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
+  | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
+  decreasing_by
+    cases args
+    rename_i hargs
+    have := Array.sizeOf_lt_of_mem hargs
+    simp_all; omega
+
 def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
   let srnone := SourceRange.none
   match t with
@@ -126,7 +158,7 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
     else
       return (.qual_identifier_args srnone
         (.qi_ident srnone (mkIdentifier op.mkName)) (Ann.mk srnone args_array))
-  | .quant qkind args _tr body =>
+  | .quant qkind args tr body =>
     let args_sorted:List (SMTDDM.SortedVar SourceRange) <-
       args.mapM
         (fun ⟨name,ty⟩ => do
@@ -137,11 +169,37 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
       throw "empty quantifier"
     else
       let body <- translateFromTerm body
+
+      -- Handle triggers/patterns
+      let bodyWithPattern <-
+        match tr with
+        | .app .triggers triggerTerms .trigger =>
+          if triggerTerms.isEmpty then
+            -- No patterns - return body as-is
+            pure body
+          else
+            -- Convert each trigger term to a SMTDDM.Term, then to SExpr
+            let triggerDDMTerms <- triggerTerms.mapM translateFromTerm
+            let triggerSExprs := triggerDDMTerms.map termToSExpr
+
+            -- Create the :pattern attribute
+            -- av_sel wraps the SExprs in parens, so we pass the array directly
+            let patternAttr : SMTDDM.Attribute SourceRange :=
+              .att_kw srnone
+                (.kw_symbol srnone (mkSimpleSymbol "pattern"))
+                (Ann.mk srnone (some (.av_sel srnone (Ann.mk srnone triggerSExprs.toArray))))
+
+            -- Wrap body with bang operator and pattern attribute
+            pure (.bang srnone body (Ann.mk srnone #[patternAttr]))
+        | _ =>
+          -- Unexpected trigger format - return body as-is
+          pure body
+
       match qkind with
       | .all =>
-        return .forall_smt srnone (Ann.mk srnone args_array) body
+        return .forall_smt srnone (Ann.mk srnone args_array) bodyWithPattern
       | .exist =>
-        return .exists_smt srnone (Ann.mk srnone args_array) body
+        return .exists_smt srnone (Ann.mk srnone args_array) bodyWithPattern
 
 
 private def dummy_prg_for_toString :=

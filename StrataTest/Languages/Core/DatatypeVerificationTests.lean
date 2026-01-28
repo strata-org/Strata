@@ -98,7 +98,7 @@ def mkProgramWithDatatypes
     body := body
   }
 
-  let decls := datatypes.map (fun d => Decl.type (.data d) .empty)
+  let decls := datatypes.map (fun d => Decl.type (.data [d]) .empty)
   return { decls := decls ++ [Decl.proc proc .empty] }
 
 /-! ## Helper for Running Tests -/
@@ -238,7 +238,7 @@ def test3_destructorFunctions : IO String := do
     -- Extract value from Some
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
 
@@ -260,7 +260,7 @@ def test3_destructorFunctions : IO String := do
     -- Extract head
     Statement.init (CoreIdent.unres "head") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "hd")
+        (LExpr.op () (CoreIdent.unres "List..hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int])))),
 
@@ -323,7 +323,7 @@ def test4_nestedDatatypes : IO String := do
     -- Extract the head of the list (which is an Option)
     Statement.init (CoreIdent.unres "headOpt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "hd")
+        (LExpr.op () (CoreIdent.unres "List..hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) (LMonoTy.tcons "Option" [.int]))))
         (LExpr.fvar () (CoreIdent.unres "listOfOpt")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
@@ -331,7 +331,7 @@ def test4_nestedDatatypes : IO String := do
     -- Extract the value from the Option
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "headOpt")
           (.some (LMonoTy.tcons "Option" [.int])))),
@@ -434,7 +434,7 @@ def test6_destructorWithHavoc : IO String := do
     -- Extract value
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
 
@@ -538,16 +538,16 @@ def test8_hiddenTypeRecursion : IO String := do
           (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Extract the visible part
-    Statement.init (CoreIdent.unres "visiblePart") (.forAll [] LMonoTy.int)
+    Statement.init (CoreIdent.unres "Container..visiblePart") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "visiblePart")
+        (LExpr.op () (CoreIdent.unres "Container..visiblePart")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int])))),
 
     -- Assume the visible part has a specific value
     Statement.assume "visible_part_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "visiblePart") (.some .int))
+        (LExpr.fvar () (CoreIdent.unres "Container..visiblePart") (.some .int))
         (LExpr.intConst () 42)),
 
     -- Assert that container is WithHidden
@@ -614,5 +614,169 @@ info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
 #guard_msgs in
 #eval test8_hiddenTypeRecursion
 
+/-! ## Test 9: Mutually Recursive Datatypes with Havoc -/
+
+/-- RoseTree a = Node a (Forest a) -/
+def roseTreeDatatype : LDatatype Visibility :=
+  { name := "RoseTree"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"Node", .unres⟩, args := [
+          (⟨"nodeVal", .unres⟩, .ftvar "a"),
+          (⟨"children", .unres⟩, .tcons "Forest" [.ftvar "a"])
+        ], testerName := "isNode" }
+    ]
+    constrs_ne := by decide }
+
+/-- Forest a = FNil | FCons (RoseTree a) (Forest a) -/
+def forestDatatype : LDatatype Visibility :=
+  { name := "Forest"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"FNil", .unres⟩, args := [], testerName := "isFNil" },
+      { name := ⟨"FCons", .unres⟩, args := [
+          (⟨"head", .unres⟩, .tcons "RoseTree" [.ftvar "a"]),
+          (⟨"tail", .unres⟩, .tcons "Forest" [.ftvar "a"])
+        ], testerName := "isFCons" }
+    ]
+    constrs_ne := by decide }
+
+/--
+Create a Core program with a mutual block of datatypes.
+-/
+def mkProgramWithMutualDatatypes
+  (mutualBlock : List (LDatatype Visibility))
+  (procName : String)
+  (body : List Statement)
+  : Except Format Program := do
+  let proc : Procedure := {
+    header := {
+      name := CoreIdent.unres procName
+      typeArgs := []
+      inputs := []
+      outputs := []
+    }
+    spec := {
+      modifies := []
+      preconditions := []
+      postconditions := []
+    }
+    body := body
+  }
+  let decls := [Decl.type (.data mutualBlock) .empty]
+  return { decls := decls ++ [Decl.proc proc .empty] }
+
+/--
+Test mutually recursive datatypes (RoseTree/Forest) with havoc.
+
+mutual
+  datatype RoseTree a = Node a (Forest a)
+  datatype Forest a = FNil | FCons (RoseTree a) (Forest a)
+end
+
+procedure testMutualRecursive () {
+  tree := Node 1 FNil;
+  havoc tree;
+  val := nodeVal tree;
+  assume (val == 42);
+  assert (isNode tree);
+
+  forest := FNil;
+  havoc forest;
+  assume (isFCons forest);
+  assert (not (isFNil forest));
+}
+-/
+def test9_mutualRecursiveWithHavoc : IO String := do
+  let statements : List Statement := [
+    -- Create a tree: Node 1 FNil
+    Statement.init (CoreIdent.unres "tree") (.forAll [] (LMonoTy.tcons "RoseTree" [.int]))
+      (LExpr.app ()
+        (LExpr.app ()
+          (LExpr.op () (CoreIdent.unres "Node")
+            (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) (LMonoTy.tcons "RoseTree" [.int])))))
+          (LExpr.intConst () 1))
+        (LExpr.op () (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int])))),
+
+    -- Havoc the tree
+    Statement.havoc (CoreIdent.unres "tree"),
+
+    -- Extract nodeVal
+    Statement.init (CoreIdent.unres "val") (.forAll [] LMonoTy.int)
+      (LExpr.app ()
+        (LExpr.op () (CoreIdent.unres "RoseTree..nodeVal")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .int)))
+        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
+
+    -- Assume val == 42
+    Statement.assume "val_is_42"
+      (LExpr.eq ()
+        (LExpr.fvar () (CoreIdent.unres "val") (.some .int))
+        (LExpr.intConst () 42)),
+
+    -- Assert tree is a Node (always true for RoseTree)
+    Statement.assert "tree_is_node"
+      (LExpr.app ()
+        (LExpr.op () (CoreIdent.unres "isNode")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .bool)))
+        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
+
+    -- Create a forest: FNil
+    Statement.init (CoreIdent.unres "forest") (.forAll [] (LMonoTy.tcons "Forest" [.int]))
+      (LExpr.op () (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int]))),
+
+    -- Havoc the forest
+    Statement.havoc (CoreIdent.unres "forest"),
+
+    -- Assume forest is FCons
+    Statement.assume "forest_is_fcons"
+      (LExpr.app ()
+        (LExpr.op () (CoreIdent.unres "isFCons")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
+        (LExpr.fvar () (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))),
+
+    -- Assert forest is not FNil
+    Statement.assert "forest_not_fnil"
+      (LExpr.app ()
+        (LExpr.op () (CoreIdent.unres "Bool.Not")
+          (.some (LMonoTy.arrow .bool .bool)))
+        (LExpr.app ()
+          (LExpr.op () (CoreIdent.unres "isFNil")
+            (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
+          (LExpr.fvar () (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))))
+  ]
+
+  match mkProgramWithMutualDatatypes [roseTreeDatatype, forestDatatype] "testMutualRecursive" statements with
+  | .error err =>
+    return s!"Test 9 - Mutual Recursive with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
+  | .ok program =>
+    runVerificationTest "Test 9 - Mutual Recursive with Havoc" program
+
+/--
+info: "Test 9 - Mutual Recursive with Havoc: PASSED\n  Verified 2 obligation(s)\n"
+-/
+#guard_msgs in
+#eval test9_mutualRecursiveWithHavoc
+
+/-! ## Test 10: Duplicate Datatype Name in Mutual Block (Typecheck Failure) -/
+
+/-- Duplicate of optionDatatype to trigger validation error -/
+def optionDatatype2 : LDatatype Visibility :=
+  { name := "Option"  -- Same name as optionDatatype!
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"Nothing", .unres⟩, args := [], testerName := "isNothing" }
+    ]
+    constrs_ne := by decide }
+
+/--
+info: error:  Error in type Option: a declaration of this name already exists.
+-/
+#guard_msgs in
+#eval do
+  let program : Program := {
+    decls := [Decl.type (.data [optionDatatype, optionDatatype2]) .empty]
+  }
+  Core.typeCheck .default program
 
 end Core.DatatypeVerificationTests
