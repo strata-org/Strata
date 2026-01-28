@@ -20,9 +20,6 @@ jobs:
         with:
           build-args: '--wfail'
           lake-package-directory: 'docs/verso'
-      - name: Build API documentation
-        run: lake build Strata:docs
-        working-directory: docs/api
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
