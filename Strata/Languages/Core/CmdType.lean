@@ -14,6 +14,7 @@ import Strata.DL.Lambda.Factory
 namespace Core
 open Lambda Imperative
 open Std (ToFormat Format format)
+open Strata (DiagnosticModel FileRange)
 
 ---------------------------------------------------------------------
 
@@ -39,24 +40,24 @@ Preprocess a user-facing type in Core amounts to converting a poly-type (i.e.,
 `LTy`, with no bound variables.
 -/
 def preprocess (C: LContext CoreLParams) (Env : TEnv Visibility) (ty : LTy) :
-    Except Format (LTy × TEnv Visibility) := do
-  let (mty, Env) ← ty.instantiateWithCheck C Env
+    Except DiagnosticModel (LTy × TEnv Visibility) := do
+  let (mty, Env) ← ty.instantiateWithCheck C Env |>.mapError DiagnosticModel.fromFormat
   return (.forAll [] mty, Env)
 
 def postprocess (_: LContext CoreLParams) (Env: TEnv Visibility) (ty : LTy) :
-    Except Format (LTy × TEnv Visibility) := do
+    Except DiagnosticModel (LTy × TEnv Visibility) := do
   if h: ty.isMonoType then
     let ty := LMonoTy.subst Env.stateSubstInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, Env)
   else
-    .error f!"[postprocess] Expected mono-type; instead got {ty}"
+    .error <| DiagnosticModel.fromFormat f!"[postprocess] Expected mono-type; instead got {ty}"
 
 /--
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
 def inferType (C: LContext CoreLParams) (Env: TEnv Visibility) (c : Cmd Expression) (e : LExpr CoreLParams.mono) :
-    Except Format ((LExpr CoreLParams.mono) × LTy × TEnv Visibility) := do
+    Except DiagnosticModel ((LExpr CoreLParams.mono) × LTy × TEnv Visibility) := do
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
   let T ← match c with
@@ -64,10 +65,10 @@ def inferType (C: LContext CoreLParams) (Env: TEnv Visibility) (c : Cmd Expressi
       let efv := LExpr.freeVars e
       .ok (Env.addInOldestContext efv)
     | _ =>
-      let _ ← Env.freeVarCheck e f!"[{c}]"
+      let _ ← Env.freeVarCheck e f!"[{c}]" |>.mapError DiagnosticModel.fromFormat
       .ok Env
   let e := OldExpressions.normalizeOldExpr e
-  let (ea, T) ← LExpr.resolve C T e
+  let (ea, T) ← LExpr.resolve C T e |>.mapError DiagnosticModel.fromFormat
   let ety := ea.toLMonoTy
   return (ea.unresolved, (.forAll [] ety), T)
 
@@ -77,7 +78,7 @@ are expected to return `LTy`s with no bound variables which can be safely
 converted to `LMonoTy`s.
 -/
 def canonicalizeConstraints (constraints : List (LTy × LTy)) :
-    Except Format Constraints := do
+    Except DiagnosticModel Constraints := do
   match constraints with
   | [] => .ok []
   | (t1, t2) :: c_rest =>
@@ -87,23 +88,23 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) :
       let c_rest ← canonicalizeConstraints c_rest
       .ok ((t1, t2) :: c_rest)
     else
-      .error f!"[canonicalizeConstraints] Expected to see only mono-types in \
+      .error <| DiagnosticModel.fromFormat f!"[canonicalizeConstraints] Expected to see only mono-types in \
                 type constraints, but found the following instead:\n\
                 t1: {t1}\nt2: {t2}\n"
 
 def unifyTypes (Env: TEnv Visibility) (constraints : List (LTy × LTy)) :
-    Except Format (TEnv Visibility) := do
+    Except DiagnosticModel (TEnv Visibility) := do
   let constraints ← canonicalizeConstraints constraints
-  let S ← Constraints.unify constraints Env.stateSubstInfo |> .mapError format
+  let S ← Constraints.unify constraints Env.stateSubstInfo |> .mapError (fun f => DiagnosticModel.fromFormat (format f))
   let Env := Env.updateSubst S
   return Env
 
-def typeErrorFmt (e : Format) : Format :=
-  e
+def typeErrorFmt (e : DiagnosticModel) : Format :=
+  e.format none
 
 ---------------------------------------------------------------------
 
-instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Visibility) Format where
+instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Visibility) DiagnosticModel where
   isBoolType   := CmdType.isBoolType
   freeVars     := CmdType.freeVars
   preprocess   := CmdType.preprocess

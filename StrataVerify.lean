@@ -67,7 +67,7 @@ def main (args : List String) : IO UInt32 := do
                      typeCheck inputCtx pgm opts
         match ans with
         | .error e =>
-          println! f!"{e}"
+          println! f!"{e.formatRange (some inputCtx.fileMap) true} {e.message}"
           return 1
         | .ok _ =>
           println! f!"Program typechecked."
@@ -103,7 +103,7 @@ def main (args : List String) : IO UInt32 := do
           println! f!"{e}"
           return (1 : UInt32)
         for vcResult in vcResults do
-          let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata
+          let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
         let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then

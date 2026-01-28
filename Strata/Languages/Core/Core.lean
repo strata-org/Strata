@@ -12,6 +12,7 @@ import Strata.Languages.Core.ProgramType
 ---------------------------------------------------------------------
 
 namespace Core
+open Strata
 
 /-!
 ## Differences between Boogie and Strata.Core
@@ -33,7 +34,7 @@ namespace Core
 
 def typeCheck (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except Std.Format Program := do
+    Except DiagnosticModel Program := do
   let T := Lambda.TEnv.default
   let factory ← Core.Factory.addFactory moreFns
   let C := { Lambda.LContext.default with
@@ -47,7 +48,7 @@ def typeCheck (options : Options) (program : Program)
 
 def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except Std.Format (List (Program × Env)) := do
+    Except DiagnosticModel (List (Program × Env)) := do
   let program ← typeCheck options program moreFns
   -- Extract datatypes from program declarations and add to environment
   let datatypes := program.decls.filterMap fun decl =>

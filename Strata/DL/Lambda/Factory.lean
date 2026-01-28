@@ -6,6 +6,7 @@
 
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
+import Strata.DDM.AST
 import Strata.DDM.Util.Array
 import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
@@ -25,7 +26,7 @@ Also see `Strata.DL.Lambda.IntBoolFactory` for a concrete example of a factory.
 
 
 namespace Lambda
-
+open Strata
 open Std (ToFormat Format format)
 
 variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
@@ -247,11 +248,11 @@ def Factory.getFactoryLFunc (F : @Factory T) (name : String) : Option (LFunc T) 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Format (@Factory T) :=
+def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except DiagnosticModel (@Factory T) :=
   match F.getFactoryLFunc func.name.name with
   | none => .ok (F.push func)
   | some func' =>
-    .error f!"A function of name {func.name} already exists! \
+    .error <| DiagnosticModel.fromFormat f!"A function of name {func.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Function: {func'}\n\
               New Function:{func}"
@@ -286,7 +287,7 @@ by
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def Factory.addFactory (F newF : @Factory T) : Except Format (@Factory T) :=
+def Factory.addFactory (F newF : @Factory T) : Except DiagnosticModel (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
 

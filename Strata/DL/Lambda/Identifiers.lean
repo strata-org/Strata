@@ -8,11 +8,13 @@
 
 import Strata.DL.Lambda.LTy
 import Strata.DL.Util.Map
+import Strata.DDM.AST
 
 ---------------------------------------------------------------------
 
 namespace Lambda
 open Std (ToFormat Format format)
+open Strata
 
 section Identifiers
 
@@ -64,17 +66,17 @@ abbrev Identifiers IDMeta := Std.HashMap String IDMeta
 def Identifiers.default {IDMeta} : Identifiers IDMeta := Std.HashMap.emptyWithCapacity
 
 /-
-For an informative error message, takes in a `Format`
+For an informative error message, takes in a `DiagnosticModel`
 -/
-def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: Format) : Except Format (Identifiers IDMeta) :=
+def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: DiagnosticModel) : Except DiagnosticModel (Identifiers IDMeta) :=
   let (b, m') := m.containsThenInsertIfNew x.name x.metadata
   if b then .error f else .ok m'
 
-def Identifiers.addListWithError {IDMeta} (m: Identifiers IDMeta) (x: List (Identifier IDMeta)) (f: Identifier IDMeta → Format) :=
+def Identifiers.addListWithError {IDMeta} (m: Identifiers IDMeta) (x: List (Identifier IDMeta)) (f: Identifier IDMeta → DiagnosticModel) :=
   x.foldlM (fun m x => Identifiers.addWithError m x (f x)) m
 
-def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except Format (Identifiers IDMeta) :=
-  m.addWithError x f!"Error: duplicate identifier {x.name}"
+def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except DiagnosticModel (Identifiers IDMeta) :=
+  m.addWithError x <| DiagnosticModel.fromFormat f!"Error: duplicate identifier {x.name}"
 
 def Identifiers.contains {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (x: Identifier IDMeta) : Bool :=
   match m[x.name]?with
@@ -108,7 +110,9 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   . intros _; apply Or.inl; cases x; cases y; grind
   . rw[meta_eq]; intros _; simp
 
-theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Format}: m.addListWithError l f = .ok m' → forall x, x ∈ l → m.contains x = false := by
+theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta]
+  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}:
+  m.addListWithError l f = .ok m' → forall x, x ∈ l → m.contains x = false := by
   unfold addListWithError
   induction l generalizing m m' with
   | nil => simp
@@ -121,7 +125,8 @@ theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': I
     have Hin := Identifiers.addWithErrorNotin Heq
     have := addWithErrorContains Heq x; grind
 
-theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Format}: m.addListWithError l f = .ok m' → ∀ y, m'.contains y ↔ y ∈ l ∨ m.contains y := by
+theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta]
+  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}: m.addListWithError l f = .ok m' → ∀ y, m'.contains y ↔ y ∈ l ∨ m.contains y := by
   unfold addListWithError
   induction l generalizing m m' with
   | nil => simp; intros Heq; cases Heq; grind
@@ -135,7 +140,8 @@ theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m'
     have Hin := Identifiers.addWithErrorNotin Heq
     grind
 
-theorem Identifiers.addListWithErrorNoDup {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Format}: m.addListWithError l f = .ok m' → l.Nodup := by
+theorem Identifiers.addListWithErrorNoDup {IDMeta} [DecidableEq IDMeta]
+  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}: m.addListWithError l f = .ok m' → l.Nodup := by
   unfold addListWithError
   induction l generalizing m m' with
   | nil => simp

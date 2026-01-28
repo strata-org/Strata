@@ -89,6 +89,11 @@ instance [ToFormat T.TypeType]: ToFormat (Except Format (LExpr T)) where
               | .ok e => format e
               | .error err => err
 
+instance [ToFormat T.TypeType]: ToFormat (Except Strata.DiagnosticModel (LExpr T)) where
+  format x := match x with
+              | .ok e => format e
+              | .error err => f!"{err.message}"
+
 /--
 Embed `core` in an abstraction whose depth is `arity`. Used to implement
 eta-expansion.

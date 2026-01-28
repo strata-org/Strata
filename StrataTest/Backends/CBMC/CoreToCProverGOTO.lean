@@ -158,7 +158,7 @@ open Lambda.LTy.Syntax in
 def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context := do
   let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
   let Env := Lambda.TEnv.default
-  let (cprog, _Env) ← Core.Program.typeCheck Ctx Env cprog
+  let (cprog, _Env) ← Core.Program.typeCheck Ctx Env cprog |>.mapError (fun dm => dm.format none)
   dbg_trace f!"[Strata.Core] Type Checking Succeeded!"
   if h : cprog.decls.length = 1 then
     let decl := cprog.decls[0]'(by exact Nat.lt_of_sub_eq_succ h)
