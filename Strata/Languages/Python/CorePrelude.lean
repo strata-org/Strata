@@ -47,37 +47,12 @@ datatype Error () {
 // /////////////////////////////////////////////////////////////////////////////////////
 // Regular Expressions
 
-type Except (err : Type, ok : Type);
-
-// FIXME:
-// Once DDM support polymorphic functions (and not just type declarations),
-// we will be able to define the following generic functions and axioms. For now,
-// we manually define appropriate instantiations.
-// Also: when ADT support is lifted up to Boogie, all these
-// constructors, testers, destructors, and axioms will be auto-generated.
-// How will the DDM keep track of them?
-
-// // Constructors
-// function Except_mkOK(err : Type, ok : Type, val : ok) : Except err ok;
-// function Except_mkErr(err : Type, ok : Type, val : err) : Except err ok;
-// // Testers
-// function Except_isOK(err : Type, ok : Type, x : Except err ok) : bool;
-// function Except_isErr(err : Type, ok : Type, x : Except err ok) : bool;
-// // Destructors
-// function Except_getOK(err : Type, ok : Type, x : Except err ok) : ok;
-// function Except_getErr(err : Type, ok : Type, x : Except err ok) : err;
-// // Axioms
-// // Testers of Constructors
-// axiom [Except_isOK_mkOK]: (forall x : ok :: Except_isOK(Except_mkOK x));
-// axiom [Except_isErr_mkErr]: (forall x : err :: Except_isErr(Except_mkErr x));
-// // Destructors of Constructors
-// axiom [Except_getOK_mkOK]: (forall x : ok :: Except_getOK(Except_mkOK x) == x);
-// axiom [Except_getErr_mkErr]: (forall x : err :: Except_isErr(Except_mkErr x));
-
-datatype ExceptErrorRegex () {
-  ExceptErrorRegex_mkOK(getOK: regex),
-  ExceptErrorRegex_mkErr(getErr: Error)
+datatype Except (err : Type, ok : Type) {
+  Except_mkOK(Except_getOK: ok),
+  Except_mkErr(Except_getErr: err)
 };
+
+type ExceptErrorRegex := Except Error regex;
 
 // NOTE: `re.match` returns a `Re.Match` object, but for now, we are interested
 // only in match/nomatch, which is why we return `bool` here.

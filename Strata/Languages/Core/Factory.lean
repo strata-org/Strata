@@ -54,7 +54,7 @@ match ine with
     | .eq m e1 e2 => .eq m (ToCoreIdent e1) (ToCoreIdent e2)
 
 
-private def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
+def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
   (check:∀ {n}, BitVec n → BitVec n → Bool)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
@@ -68,7 +68,7 @@ private def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
     else .none
   | _ => .none
 
-private def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
+def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
     : Option (LExpr CoreLParams.mono) :=
@@ -80,7 +80,7 @@ private def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
     else .none
   | _ => .none
 
-private def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
+def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
     : Option (LExpr CoreLParams.mono) :=
@@ -88,7 +88,7 @@ private def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
   | [.bitvecConst _ n b] => .some (.bitvecConst m n (fn b))
   | _ => .none
 
-private def bvBinaryPred (fn:∀ {n}, BitVec n → BitVec n → Bool)
+def bvBinaryPred (fn:∀ {n}, BitVec n → BitVec n → Bool)
   (swap:Bool)
   (m:CoreLParams.Metadata)
   (ops:List (LExpr CoreLParams.mono))
@@ -114,6 +114,16 @@ private def BVOpAritys :=
    "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate",
    "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate" ]
 
+/--
+info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "binaryOp"), ("UDiv", "binaryOp"),
+  ("UMod", "binaryOp"), ("SDiv", "binaryOp"), ("SMod", "binaryOp"), ("Not", "unaryOp"), ("And", "binaryOp"),
+  ("Or", "binaryOp"), ("Xor", "binaryOp"), ("Shl", "binaryOp"), ("UShr", "binaryOp"), ("SShr", "binaryOp"),
+  ("ULt", "binaryPredicate"), ("ULe", "binaryPredicate"), ("UGt", "binaryPredicate"), ("UGe", "binaryPredicate"),
+  ("SLt", "binaryPredicate"), ("SLe", "binaryPredicate"), ("SGt", "binaryPredicate"), ("SGe", "binaryPredicate")]
+-/
+#guard_msgs in
+#eval List.zip BVOpNames BVOpAritys
+
 private def BVOpEvals :=
   [("Neg", Option.some (bvUnaryOp BitVec.neg)),
    ("Add", .some (bvBinaryOp BitVec.add (λ_ _ => true))),
@@ -138,16 +148,6 @@ private def BVOpEvals :=
    ("SLe", .some (bvBinaryPred BitVec.sle false)),
    ("SGt", .some (bvBinaryPred BitVec.slt true)),
    ("SGe", .some (bvBinaryPred BitVec.sle true))]
-
-/--
-info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "binaryOp"), ("UDiv", "binaryOp"),
-  ("UMod", "binaryOp"), ("SDiv", "binaryOp"), ("SMod", "binaryOp"), ("Not", "unaryOp"), ("And", "binaryOp"),
-  ("Or", "binaryOp"), ("Xor", "binaryOp"), ("Shl", "binaryOp"), ("UShr", "binaryOp"), ("SShr", "binaryOp"),
-  ("ULt", "binaryPredicate"), ("ULe", "binaryPredicate"), ("UGt", "binaryPredicate"), ("UGe", "binaryPredicate"),
-  ("SLt", "binaryPredicate"), ("SLe", "binaryPredicate"), ("SGt", "binaryPredicate"), ("SGe", "binaryPredicate")]
--/
-#guard_msgs in
-#eval List.zip BVOpNames BVOpAritys
 
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
@@ -558,43 +558,5 @@ Get all the built-in functions supported by Strata Core.
 -/
 def builtinFunctions : Array String :=
   Factory.map (fun f => CoreIdent.toPretty f.name)
-
-set_option maxRecDepth 32768 in
-set_option maxHeartbeats 4000000 in
-/--
-Wellformedness of Factory
--/
-theorem Factory_wf :
-    FactoryWF Factory := by
-  unfold Factory
-  apply FactoryWF.mk
-  · decide -- FactoryWF.name_nodup
-  · unfold HAppend.hAppend Array.instHAppendList
-    simp only []
-    unfold Array.appendList
-    simp only [List.foldl, Array.push, List.concat]
-    intros lf
-    rw [← Array.mem_toList_iff]
-    simp only []
-    intros Hmem
-    repeat (
-      rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWF.mk
-        · decide -- LFuncWF.arg_nodup
-        · decide -- LFuncWF.body_freevars
-        · -- LFuncWf.concreteEval_argmatch
-          simp (config := { ground := true })
-          try (
-            try unfold unOpCeval
-            try unfold binOpCeval
-            try unfold cevalIntDiv
-            try unfold cevalIntMod
-            try unfold bvUnaryOp
-            try unfold bvBinaryOp
-            try unfold bvShiftOp
-            try unfold bvBinaryPred
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
-    contradiction
 
 end Core
