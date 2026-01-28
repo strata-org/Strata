@@ -317,7 +317,7 @@ op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList
 // scope when parsing constructors for recursive types
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
-    perField([.field], [.datatype], .fieldType))]
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>

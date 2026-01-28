@@ -101,7 +101,8 @@ private def lMonoTyToSMTString (ty : LMonoTy) : String :=
 /-- Convert a datatype's constructors to SMT format. -/
 private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List String :=
   d.constrs.map fun c =>
-    let fieldPairs := c.args.map fun (name, fieldTy) => (name.name, lMonoTyToSMTString fieldTy)
+    let fieldPairs := c.args.map fun (name, fieldTy) =>
+              (d.name ++ ".." ++ name.name, lMonoTyToSMTString fieldTy)
     let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
     let fieldsStr := String.intercalate " " fieldStrs
     if c.args.isEmpty then s!"({c.name.name})"
@@ -324,7 +325,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
         Note: testers use constructor, translated in `Op.mkName` to is-foo
-        Selectors use full function name, directly translated to function app
+        Selectors use full function name (Datatype..fieldName) for uniqueness
         -/
         let name := match kind with
           | .selector => fn.name
