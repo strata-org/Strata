@@ -55,6 +55,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
   | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
+  | .tvar loc name => pure (.tvar loc name)
   | .funMacro loc i r => do
     let r ← expandMacros m r args
     match args i with
@@ -63,8 +64,9 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
     | some a =>
       let addType (tps : Array TypeExpr) loc _ s args : Array TypeExpr :=
         match resolveBindingIndices m loc s args with
-        | .expr tp => tps.push tp
-        | .type _ _ => panic! s!"Expected binding to be expression."
+        | some (.expr tp) => tps.push tp
+        | some (.type _ _) => panic! s!"Expected binding to be expression."
+        | none => tps
       let argTypes := foldOverArgBindingSpecs m addType (init := #[]) a
       pure <| argTypes.foldr (init := r) (.arrow loc)
 
@@ -78,7 +80,7 @@ the head is in a normal form.
 -/
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. => e
+  | .arrow .. | .ident .. | .tvar .. => e
   | .fvar _ idx args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
@@ -95,6 +97,7 @@ partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
       assert! d.isGround
       hnf (tctx.drop (idx + 1)) d
     | .type _ _ none => e
+    | .tvar _ _ => e
     | _ => panic! "Expected a type"
 
 /--
@@ -176,6 +179,9 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
       return default
     if let .type loc [] _ := k then
       let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .bvar loc idx, isInferred := false }
+      return .node (.ofTypeInfo info) #[]
+    else if let .tvar loc tvarName := k then
+      let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .tvar loc tvarName, isInferred := false }
       return .node (.ofTypeInfo info) #[]
     else
       logErrorMF loc mf!"Expected a type instead of {k}"
@@ -327,7 +333,7 @@ N.B. This expects that macros have already been expanded in e.
 -/
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. | .bvar .. => e
+  | .arrow .. | .ident .. | .bvar .. | .tvar .. => e
   | .fvar _ idx args =>
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
@@ -348,6 +354,10 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
   let itype := tctx.hnf itype
   let rtype := tctx.hnf rtype
   match itype, rtype with
+  -- tvar matches anything (dialect responsible for typechecking)
+  | .tvar _ n1, .tvar _ n2 => return n1 == n2
+  | .tvar _ _, _ => return true
+  | _, .tvar _ _ => return true
   | .ident _ iq ia, .ident _ rq ra =>
     if p : iq = rq ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
@@ -469,9 +479,12 @@ partial def unifyTypes
       if !(← checkExpressionType tctx inferredType info.typeExpr) then
         logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected."
       pure args
+  | .tvar _ _ =>
+    -- tvar nodes are passed through without attempting unification
+    pure args
   | .arrow _ ea er =>
     match inferredType with
-    | .ident .. | .bvar .. | .fvar .. =>
+    | .ident .. | .bvar .. | .fvar .. | .tvar .. =>
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
       pure args
     | .arrow _ ia ir =>
@@ -753,6 +766,12 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
             else
               logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
               return default
+          else if let .tvar loc tvarName := k then
+            if tpArgs.isEmpty then
+              return .expr (.tvar loc tvarName)
+            else
+              logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
+              return default
           else
             logErrorMF nameLoc mf!"Expected a type instead of {k}"
             return default
@@ -781,7 +800,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     return default
 
 /--
-Construct a binding from a binding spec and the arguments to a operation.
+Construct a binding from a binding spec and the arguments to an operation.
 -/
 def evalBindingSpec
     {bindings}
@@ -796,12 +815,15 @@ def evalBindingSpec
     let (bindings, success) ← runChecked <| elabArgIndex initSize args b.argsIndex fun argLoc b =>
           match b.kind with
           | .expr tp =>
-            pure (b.ident, tp)
+            pure (some (b.ident, tp))
+          | .tvar .. =>
+            pure none
           | .type .. | .cat _ => do
             logError argLoc "Expecting expressions in variable binding"
-            pure default
+            pure none
     if !success then
       return default
+    let bindings := bindings.filterMap id
     let typeTree := args[b.typeIndex.toLevel]
     let kind ←
           match typeTree.info with
@@ -828,6 +850,8 @@ def evalBindingSpec
           match b.kind with
           | .type _ [] _ =>
             pure ()
+          | .tvar _ _ =>
+            pure ()
           | .type .. | .expr _ | .cat _ => do
             logError argLoc s!"{b.ident} must be have type Type instead of {repr b.kind}."
           return b.ident
@@ -844,6 +868,9 @@ def evalBindingSpec
   | .datatype b =>
     let ident := evalBindingNameIndex args b.nameIndex
     pure { ident, kind := .type loc [] none }
+  | .tvar b =>
+    let ident := evalBindingNameIndex args b.nameIndex
+    pure { ident, kind := .tvar loc ident }
 
 /--
 Given a type expression and a natural number, this returns a
@@ -1018,13 +1045,21 @@ partial def runSyntaxElaborator
             | .ofIdentInfo info => info.val
             | _ => panic! "Expected identifier for datatype name"
           let baseCtx := typeParamsT.resultContext
+          -- Extract type parameter names from the bindings
+          let typeParamNames := baseCtx.bindings.toArray.filterMap fun b =>
+            match b.kind with
+            | .type _ [] _ => some b.ident
+            | _ => none
           -- Add the datatype name to the GlobalContext as a type
           let gctx := baseCtx.globalContext
           let gctx :=
             if datatypeName ∈ gctx then gctx
-            else gctx.push datatypeName (GlobalKind.type [] none)
-          -- Create a new typing context with the updated GlobalContext
-          pure (baseCtx.withGlobalContext gctx)
+            else gctx.push datatypeName (GlobalKind.type typeParamNames.toList none)
+          -- Add .tvar bindings for type parameters
+          let loc := typeParamsT.info.loc
+          let tctx := typeParamNames.foldl (init := baseCtx.withGlobalContext gctx) fun ctx name =>
+            ctx.push { ident := name, kind := .tvar loc name }
+          pure tctx
         | _, _ => continue
       | none =>
         match ae.contextLevel with
@@ -1209,6 +1244,9 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
         return .node (.ofExprInfo info) #[]
       | .type _ _params _ =>
         logErrorMF loc mf!"{name} is a type when an expression is required."
+        return default
+      | .tvar _ _ =>
+        logErrorMF loc mf!"{name} is a type variable when an expression is required."
         return default
       | .cat c =>
         logErrorMF loc mf!"{name} has category {c} when an expression is required."

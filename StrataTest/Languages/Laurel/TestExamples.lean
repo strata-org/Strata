@@ -17,8 +17,7 @@ open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
 open Lean.Parser (InputContext)
 
-namespace Strata
-namespace Laurel
+namespace Strata.Laurel
 
 def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]

@@ -345,7 +345,7 @@ spec {
   t := Leaf(42);
 
   // Extract the val using the destructor function
-  v := val(t);
+  v := Tree..val(t);
 
   // Assert the extracted val is correct
   assert [valIs42]: v == 42;
@@ -354,18 +354,18 @@ spec {
   t := Node(Leaf(10), Leaf(20));
 
   // Extract the left child
-  l := left(t);
+  l := Tree..left(t);
 
   // Assert the left child is a Leaf with val 10
   assert [leftIsLeaf]: Tree..isLeaf(l);
-  assert [leftVal]: val(l) == 10;
+  assert [leftVal]: Tree..val(l) == 10;
 
   // Extract the right child
-  r := right(t);
+  r := Tree..right(t);
 
   // Assert the right child is a Leaf with val 20
   assert [rightIsLeaf]: Tree..isLeaf(r);
-  assert [rightVal]: val(r) == 20;
+  assert [rightVal]: Tree..val(r) == 20;
 };
 #end
 
@@ -430,13 +430,13 @@ spec {
   t := Node(Node(Leaf(1), Leaf(2)), Leaf(3));
 
   // Get the left-left child (should be Leaf(1))
-  leftLeft := left(left(t));
+  leftLeft := Tree..left(Tree..left(t));
 
   // Assert it's a Leaf
   assert [leftLeftIsLeaf]: Tree..isLeaf(leftLeft);
 
   // Get its value
-  v := val(leftLeft);
+  v := Tree..val(leftLeft);
 
   // Assert the value is 1
   assert [leftLeftVal]: v == 1;
@@ -490,7 +490,7 @@ spec {
   assume t == Leaf(100);
 
   // Extract val
-  v := val(t);
+  v := Tree..val(t);
 
   // Assert val is 100
   assert [valIs100]: v == 100;

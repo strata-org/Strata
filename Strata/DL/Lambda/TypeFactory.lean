@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Factory
+import Strata.DL.Util.List
 
 /-!
 ## Lambda's Type Factory
@@ -449,18 +450,20 @@ def destructorConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.I
         then a[idx]? else none)
     | _ => none
 
+def destructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier IDMeta) := d.name ++ ".." ++ name.name
+
 /--
 Generate destructor functions for a constructor, which extract the
 constructor components, e.g.
-`List$ConsProj0 (Cons h t) = h`
-`List$ConsProj1 (Cons h t) = t`
-These functions are partial, `List@ConsProj0 Nil` is undefined.
+`List..head (Cons h t) = h`
+`List..tail (Cons h t) = t`
+These functions are partial, `List..head Nil` is undefined.
 -/
 def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
   c.args.mapIdx (fun i (name, ty) =>
     let arg := genArgName
     {
-      name := name,
+      name := destructorFuncName d name,
       typeArgs := d.typeArgs,
       inputs := [(arg, dataDefault d)],
       output := ty,
@@ -579,6 +582,160 @@ def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabi
     f.addFactory f'
   ) Factory.default
 
+---------------------------------------------------------------------
+
+-- Inhabited types
+
+/-
+Because we generate destructors, it is vital to ensure that every datatype
+is inhabited. Otherwise, we can have the following:
+```
+type Empty :=.
+type List := Nil | Cons (hd: Empty) (tl: List)
+```
+The only element of `List` is `Nil`, but we also create the destructor
+`hd : List → Empty`, which means `hd Nil` has type `Empty`, contradicting the
+fact that `Empty` is uninhabited.
+
+However, checking type inhabitation is complicated for several reasons:
+1. Datatypes can refer to other datatypes. E.g. `type Bad = B(x: Empty)` is
+uninhabited
+2. These dependencies need not be linear. For example,
+the following datatypes are uninhabited:
+```
+type Bad1 := B1(x: Bad2)
+type Bad2 := B2(x: Bad1)
+```
+3. Instantiated type parameters matter: `List Empty` is
+inhabited, but `Either Empty Empty` is not. Our check is conservative and will
+not allow either of these types.
+
+We determine if all types in a TypeFactory are inhabited simulataneously,
+memoizing the results.
+-/
+
+/-- Stores whether a type is known to be inhabited -/
+abbrev inhabMap : Type := Map String Bool
+
+/-
+The termination argument follows from the fact that each time a type symbol
+is evaluated, it is added to the `seen` set, which by assumption is a subset
+of `adts` (which has no duplicates). Therefore, `adts.size - seen.length`
+decreases. `ty_inhab` does not change this value but is
+structurally recursive over the type arguments. Thus, we use the lexicographic
+measure `(adts.size - seen.length, t.size)`.
+-/
+
+mutual
+
+/--
+Prove that type symbol `ts` is inhabited, assuming
+that types `seen` are unknown. All other types are assumed inhabited.
+The `List.Nodup` and `⊆` hypotheses are only used to prove termination.
+-/
+def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
+  (hnodup: List.Nodup seen)
+  (hsub: seen ⊆ (List.map (fun x => x.name) adts.allDatatypes))
+  (ts: String) : StateM inhabMap Bool := do
+  -- Check if type is already known to be inhabited
+  let m ← get
+  match m.find? ts with
+  | some b => pure b
+  | none =>
+    -- If type in `seen`, it is unknown, so we return false
+    if hin: List.elem ts seen then pure false
+    else
+      match ha: adts.getType ts with
+      | none => pure true -- Assume all non-datatypes are inhabited
+      | some l =>
+        -- A datatype is inhabited if it has an inhabited constructor
+        let res ← (l.constrs.foldlM (fun accC c => do
+          -- A constructor is inhabited if all of its arguments are inhabited
+          let constrInhab ← (c.args.foldlM
+            (fun accA ty1 =>
+                do
+                  have hn: List.Nodup (l.name :: seen) := by
+                    rw[List.nodup_cons]; constructor
+                    . have := List.find?_some ha; grind
+                    . assumption
+                  have hsub' : (l.name :: seen) ⊆ (List.map (fun x => x.name) adts.allDatatypes) := by
+                    apply List.cons_subset.mpr
+                    constructor <;> try assumption
+                    rw[List.mem_map]; exists l; constructor <;> try grind
+                    have := List.mem_of_find?_eq_some ha; grind
+                  let b1 ← ty_inhab adts (l.name :: seen) hn hsub' ty1.2
+                  pure (accA && b1)
+              ) true)
+          pure (accC || constrInhab)
+          ) false)
+        /-
+        Type is known: we can add to map
+        Only add false if not in a cycle, it may resolve later
+        E.g. when checking the `cons` case for `List`, `List` itself is in
+        the `seen` set and so will be temporarily marked as uninhabited.
+        This should not be memoized.
+        -/
+        if res || seen.isEmpty then
+          let m ← get
+          set (m.insert ts res)
+        pure res
+  termination_by (adts.allDatatypes.length - seen.length, 0)
+  decreasing_by
+    apply Prod.Lex.left; simp only[List.length]
+    apply Nat.sub_succ_lt_self
+    have hlen := List.subset_nodup_length hn hsub'; simp_all; omega
+
+def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
+  (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.allDatatypes))
+  (t: LMonoTy) : StateM inhabMap Bool :=
+  match t with
+  | .tcons name args => do
+      -- name(args) is inhabited if name is inhabited as a typesym
+      -- and all args are inhabited as types (note this is conservative)
+      let checkTy ← typesym_inhab adts seen hnodup hsub name
+      if checkTy then
+        args.foldrM (fun ty acc => do
+          let x ← ty_inhab adts seen hnodup hsub ty
+          pure (x && acc)
+        ) true
+      else pure false
+  | _ => pure true -- Type variables and bitvectors are inhabited
+termination_by (adts.allDatatypes.length - seen.length, t.size)
+decreasing_by
+  . apply Prod.Lex.right; simp only[LMonoTy.size]; omega
+  . rename_i h; have := LMonoTy.size_lt_of_mem h;
+    apply Prod.Lex.right; simp only[LMonoTy.size]; omega
+end
+
+/--
+Prove that ADT with name `a` is inhabited. All other types are assumed inhabited.
+-/
+def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM inhabMap Bool
+  := typesym_inhab adts [] (by grind) (by grind) a
+
+/--
+Check that all ADTs in TypeFactory `adts` are inhabited. This uses memoization
+to avoid computing the intermediate results more than once. Returns `none` if
+all datatypes are inhabited, `some a` for some uninhabited type `a`
+-/
+def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Option String :=
+  let x := (List.foldlM (fun (x: Option String) (l: LDatatype IDMeta) =>
+    do
+      match x with
+      | some a => pure (some a)
+      | none =>
+        let b ← adt_inhab adts l.name
+        pure (if b then none else some l.name)
+    ) none adts.allDatatypes)
+  (StateT.run x []).1
+
+/--
+Check that all ADTs in TypeFactory `adts` are inhabited.
+-/
+def TypeFactory.checkInhab (adts: @TypeFactory IDMeta) : Except Format Unit :=
+  match adts.all_inhab with
+  | none => .ok ()
+  | some a => .error f!"Error: datatype {a} not inhabited"
 
 ---------------------------------------------------------------------
 

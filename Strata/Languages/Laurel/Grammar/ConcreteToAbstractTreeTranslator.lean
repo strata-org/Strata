@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.Laurel
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Core.Expressions
 
+namespace Strata
 namespace Laurel
 
 open Std (ToFormat Format format)
@@ -79,10 +80,13 @@ instance : Inhabited Parameter where
 def translateHighType (arg : Arg) : TransM HighType := do
   match arg with
   | .op op =>
-    match op.name with
-    | q`Laurel.intType => return .TInt
-    | q`Laurel.boolType => return .TBool
-    | _ => TransM.error s!"translateHighType expects intType or boolType, got {repr op.name}"
+    match op.name, op.args with
+    | q`Laurel.intType, _ => return .TInt
+    | q`Laurel.boolType, _ => return .TBool
+    | q`Laurel.compositeType, #[nameArg] =>
+      let name ← translateIdent nameArg
+      return .UserDefined name
+    | _, _ => TransM.error s!"translateHighType expects intType, boolType or compositeType, got {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
 def translateNat (arg : Arg) : TransM Nat := do
@@ -115,9 +119,8 @@ instance : Inhabited Procedure where
     inputs := []
     outputs := []
     precondition := .LiteralBool true
+    determinism := .nondeterministic
     decreases := none
-    determinism := Determinism.deterministic none
-    modifies := none
     body := .Transparent (.LiteralBool true)
   }
 
@@ -130,6 +133,8 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.lt => some Operation.Lt
   | q`Laurel.le => some Operation.Leq
   | q`Laurel.ge => some Operation.Geq
+  | q`Laurel.and => some Operation.And
+  | q`Laurel.or => some Operation.Or
   | _ => none
 
 mutual
@@ -157,8 +162,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let varType ← match typeArg with
         | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
           | q`Laurel.optionalType, #[typeArg0] => translateHighType typeArg0
-          | _, _ => pure .TInt
-        | _ => pure .TInt
+          | _, _ => TransM.error s!"Variable {name} requires explicit type"
+        | _ => TransM.error s!"Variable {name} requires explicit type"
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) => match assignOp.args with
           | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
@@ -173,7 +178,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
     | q`Laurel.assign, #[arg0, arg1] =>
       let target ← translateStmtExpr arg0
       let value ← translateStmtExpr arg1
-      return .Assign target value
+      let md ← getArgMetaData (.op op)
+      return .Assign target value md
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let calleeName := match callee with
@@ -195,6 +201,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
           | _, _ => pure none
         | _ => pure none
       return .IfThenElse cond thenBranch elseBranch
+    | q`Laurel.fieldAccess, #[objArg, fieldArg] =>
+      let obj ← translateStmtExpr objArg
+      let field ← translateIdent fieldArg
+      return .FieldSelect obj field
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0
@@ -223,31 +233,101 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     | TransM.error s!"parseProcedure expects operation"
 
   match op.name, op.args with
-  | q`Laurel.procedure, #[arg0, arg1, returnParamsArg, arg3] =>
-    let name ← translateIdent arg0
-    let parameters ← translateParameters arg1
-    -- returnParamsArg is ReturnParameters category, need to unwrap returnParameters operation
-    let returnParameters ← match returnParamsArg with
-      | .option _ (some (.op returnOp)) => match returnOp.name, returnOp.args with
-        | q`Laurel.returnParameters, #[returnArg0] => translateParameters returnArg0
-        | _, _ => TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
-      | .option _ none => pure []
-      | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
-    let body ← translateCommand arg3
+  | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+      requiresArg, ensuresArg, bodyArg] =>
+    let name ← translateIdent nameArg
+    let parameters ← translateParameters paramArg
+    -- Either returnTypeArg or returnParamsArg may have a value, not both
+    -- If returnTypeArg is set, create a single "result" parameter
+    let returnParameters ← match returnTypeArg with
+      | .option _ (some (.op returnTypeOp)) => match returnTypeOp.name, returnTypeOp.args with
+        | q`Laurel.optionalReturnType, #[typeArg] =>
+          let retType ← translateHighType typeArg
+          pure [{ name := "result", type := retType : Parameter }]
+        | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
+      | .option _ none =>
+        -- No return type, check returnParamsArg instead
+        match returnParamsArg with
+        | .option _ (some (.op returnOp)) => match returnOp.name, returnOp.args with
+          | q`Laurel.returnParameters, #[returnArg0] => translateParameters returnArg0
+          | _, _ => TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
+        | .option _ none => pure []
+        | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
+      | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
+    -- Parse precondition (requires clause)
+    let precondition ← match requiresArg with
+      | .option _ (some (.op requiresOp)) => match requiresOp.name, requiresOp.args with
+        | q`Laurel.optionalRequires, #[exprArg] => translateStmtExpr exprArg
+        | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
+      | .option _ none => pure (.LiteralBool true)
+      | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"
+    -- Parse postcondition (ensures clause)
+    let postcondition ← match ensuresArg with
+      | .option _ (some (.op ensuresOp)) => match ensuresOp.name, ensuresOp.args with
+        | q`Laurel.optionalEnsures, #[exprArg] => translateStmtExpr exprArg >>= (pure ∘ some)
+        | _, _ => TransM.error s!"Expected optionalEnsures operation, got {repr ensuresOp.name}"
+      | .option _ none => pure none
+      | _ => TransM.error s!"Expected optionalEnsures operation, got {repr ensuresArg}"
+    let body ← translateCommand bodyArg
+    -- If there's a postcondition, use Opaque body; otherwise use Transparent
+    let procBody := match postcondition with
+      | some post => Body.Opaque post (some body) none
+      | none => Body.Transparent body
     return {
       name := name
       inputs := parameters
       outputs := returnParameters
-      precondition := .LiteralBool true
+      precondition := precondition
+      determinism := .nondeterministic
       decreases := none
-      determinism := Determinism.deterministic none
-      modifies := none
-      body := .Transparent body
+      body := procBody
     }
   | q`Laurel.procedure, args =>
-    TransM.error s!"parseProcedure expects 4 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 7 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
+
+def parseField (arg : Arg) : TransM Field := do
+  let .op op := arg
+    | TransM.error s!"parseField expects operation"
+  match op.name, op.args with
+  | q`Laurel.mutableField, #[nameArg, typeArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    return { name := name, isMutable := true, type := fieldType }
+  | q`Laurel.immutableField, #[nameArg, typeArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    return { name := name, isMutable := false, type := fieldType }
+  | _, _ =>
+    TransM.error s!"parseField expects mutableField or immutableField, got {repr op.name}"
+
+def parseComposite (arg : Arg) : TransM TypeDefinition := do
+  let .op op := arg
+    | TransM.error s!"parseComposite expects operation"
+  match op.name, op.args with
+  | q`Laurel.composite, #[nameArg, fieldsArg] =>
+    let name ← translateIdent nameArg
+    let fields ← match fieldsArg with
+      | .seq _ _ args => args.toList.mapM parseField
+      | _ => pure []
+    return .Composite { name := name, extending := [], fields := fields, instanceProcedures := [] }
+  | _, _ =>
+    TransM.error s!"parseComposite expects composite, got {repr op.name}"
+
+def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
+  let .op op := arg
+    | TransM.error s!"parseTopLevel expects operation"
+
+  match op.name, op.args with
+  | q`Laurel.topLevelProcedure, #[procArg] =>
+    let proc ← parseProcedure procArg
+    return (some proc, none)
+  | q`Laurel.topLevelComposite, #[compositeArg] =>
+    let typeDef ← parseComposite compositeArg
+    return (none, some typeDef)
+  | _, _ =>
+    TransM.error s!"parseTopLevel expects topLevelProcedure or topLevelComposite, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
@@ -269,16 +349,19 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
       prog.commands
 
   let mut procedures : List Procedure := []
+  let mut types : List TypeDefinition := []
   for op in commands do
-    if op.name == q`Laurel.procedure then
-      let proc ← parseProcedure (.op op)
-      procedures := procedures ++ [proc]
-    else
-      TransM.error s!"Unknown top-level declaration: {op.name}"
+    let (procOpt, typeOpt) ← parseTopLevel (.op op)
+    match procOpt with
+    | some proc => procedures := procedures ++ [proc]
+    | none => pure ()
+    match typeOpt with
+    | some typeDef => types := types ++ [typeDef]
+    | none => pure ()
   return {
     staticProcedures := procedures
     staticFields := []
-    types := []
+    types := types
   }
 
 end Laurel
