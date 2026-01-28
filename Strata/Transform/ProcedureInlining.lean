@@ -116,6 +116,7 @@ def Statement.labels (s : Core.Statement) : List String :=
   | .goto _ _ => []
   -- No other labeled commands.
   | .cmd _ => []
+  | .funcDecl _ _ => []
   termination_by s.sizeOf
 end
 
@@ -143,6 +144,7 @@ def Statement.replaceLabels
   | .assert lbl e m => .assert (app lbl) e m
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
+  | .funcDecl _ _ => s
   termination_by s.sizeOf
 end
 
