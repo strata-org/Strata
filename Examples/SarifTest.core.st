@@ -1,4 +1,4 @@
-program Boogie;
+program Core;
 
 // Simple test program for SARIF output
 procedure AddPositive(x : int, y : int) returns (z : int)
