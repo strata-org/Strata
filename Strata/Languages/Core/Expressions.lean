@@ -22,6 +22,7 @@ abbrev Expression : Imperative.PureExpr :=
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier _))
      Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Visibility⟩, Lambda.LMonoTy⟩,
      Ty := Lambda.LTy,
+     ExprMetadata := ExpressionMetadata,
      TyEnv := @Lambda.TEnv Visibility,
      TyContext := @Lambda.LContext ⟨ExpressionMetadata, Visibility⟩,
      EvalEnv := Lambda.LState ⟨ExpressionMetadata, Visibility⟩ }

@@ -10,6 +10,7 @@ import Strata.Languages.Core.Statement
 import Strata.Languages.Core.CmdType
 import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
+import Strata.Languages.Core.FunctionType
 import Strata.DL.Imperative.CmdType
 
 namespace Core
@@ -165,6 +166,37 @@ where
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
+        | .funcDecl decl md => do try
+          -- Type check the function declaration
+          -- Manually convert PureFunc Expression to Function for type checking
+          let func : Function := {
+            name := decl.name,
+            typeArgs := decl.typeArgs,
+            isConstr := decl.isConstr,
+            inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+            output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+            body := decl.body,
+            attr := decl.attr,
+            concreteEval := none,  -- Can't convert concreteEval safely
+            axioms := decl.axioms
+          }
+          let (func', Env) ← Function.typeCheck C Env func
+          -- Convert back by wrapping monotypes in trivial polytypes
+          let decl' : PureFunc Expression := {
+            name := func'.name,
+            typeArgs := func'.typeArgs,
+            isConstr := func'.isConstr,
+            inputs := func'.inputs.map (fun (id, mty) => (id, .forAll [] mty)),
+            output := .forAll [] func'.output,
+            body := func'.body,
+            attr := func'.attr,
+            concreteEval := decl.concreteEval,  -- Preserve original
+            axioms := func'.axioms
+          }
+          .ok (.funcDecl decl' md, Env)
+          catch e =>
+            .error (errorWithSourceLoc e md)
+
       go Env srest (s' :: acc)
     termination_by Block.sizeOf ss
     decreasing_by
@@ -208,6 +240,13 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .loop guard m i bss md =>
     .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) (go S bss []) md
   | .goto _ _ => s
+  | .funcDecl decl md =>
+    let decl' := { decl with
+      inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.subst S ty)),
+      output := Lambda.LTy.subst S decl.output,
+      body := decl.body.map (·.applySubst S),
+      axioms := decl.axioms.map (·.applySubst S) }
+    .funcDecl decl' md
   where
     go S ss acc : List Statement :=
     match ss with

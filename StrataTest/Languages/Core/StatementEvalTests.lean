@@ -377,6 +377,124 @@ Proof Obligation:
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |>.snd |> format
 
+/--
+Test funcDecl: declare a helper function and use it
+-/
+def testFuncDecl : List Statement :=
+  let doubleFunc : PureFunc Expression := {
+    name := CoreIdent.unres "double",
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) x)],
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .funcDecl doubleFunc,
+    .init "y" t[int] eb[(~double #5)],
+    .assert "y_eq_10" eb[y == #10]
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(y : int) → (~double #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func double :  ((x : int)) → int :=
+  (((~Int.Add x) x))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: y_eq_10
+Property: assert
+Assumptions:
+Proof Obligation:
+((~double #5) == #10)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
+
+/--
+Test funcDecl with symbolic variable capture: function references a variable from enclosing scope
+-/
+def testFuncDeclSymbolic : List Statement :=
+  let addNFunc : PureFunc Expression := {
+    name := CoreIdent.unres "addN",
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) n)],  -- References 'n' from outer scope
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .init "n" t[int] eb[globalN],  -- Initialize with symbolic global
+    .funcDecl addNFunc,
+    .init "result" t[int] eb[(~addN #5)],
+    .assert "result_eq_n_plus_5" eb[result == ((~Int.Add globalN) #5)]
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(globalN : int) → globalN
+(n : int) → globalN
+(result : int) → (~addN #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func addN :  ((x : int)) → int :=
+  (((~Int.Add x) n))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: result_eq_n_plus_5
+Property: assert
+Assumptions:
+Proof Obligation:
+((~addN #5) == ((~Int.Add globalN) #5))
+-/
+#guard_msgs in
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope [("globalN", (mty[int], eb[globalN]))])
+  ∅
+  testFuncDeclSymbolic) |>.snd |> format
+
 end Tests
 ---------------------------------------------------------------------
 end Core
