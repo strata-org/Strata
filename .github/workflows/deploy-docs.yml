@@ -5,12 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy_doc:
     name: Deploy documentation
     runs-on: ubuntu-latest
-    environment: github-pages
     permissions:
       contents: read
       pages: write
