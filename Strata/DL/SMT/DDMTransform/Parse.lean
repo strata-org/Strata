@@ -95,7 +95,10 @@ def specialCharsInSimpleSymbol := [
     ("caret", "^"),
     ("lt", "<"),
     ("gt", ">"),
-    ("at", "@")
+    ("at", "@"),
+    ("le", "<="),
+    ("ge", ">="),
+    ("implies", "=>")
   ]
 
 -- https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-07-07.pdf
@@ -159,7 +162,7 @@ category Symbol;
 op symbol (@[unwrap] s:SimpleSymbol) : Symbol => s;
 
 category Keyword;
-op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s;
+op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s:0;
 
 
 // 2. S-expressions
@@ -180,12 +183,12 @@ op sc_numeral_neg (@[unwrap] n:Num) : SpecConstant => "-" n:0;
 op sc_decimal_neg (@[unwrap] n:Decimal) : SpecConstant => "-" n:0;
 
 category SExpr;
-op se_spec_const (s:SpecConstant) : SExpr => s;
-op se_symbol (s:Symbol) : SExpr => s;
-op se_reserved (s:Reserved) : SExpr => s;
-op se_keyword (s:Keyword) : SExpr => s;
+op se_spec_const (s:SpecConstant) : SExpr => s:0;
+op se_symbol (s:Symbol) : SExpr => s:0;
+op se_reserved (s:Reserved) : SExpr => s:0;
+op se_keyword (s:Keyword) : SExpr => s:0;
 
-op se_ls (s:SpaceSepBy SExpr) : SExpr => "(" s ")";
+op se_ls (s:SpaceSepBy SExpr) : SExpr => "(" s:0 ")";
 
 
 category SMTIdentifier;
@@ -211,12 +214,12 @@ op smtsort_param (s:SMTIdentifier, @[nonempty] sl:SpaceSepBy SMTSort) : SMTSort
 
 // 5. Attributes
 category AttributeValue;
-op av_spec_constant (s:SpecConstant) : AttributeValue => s;
-op av_symbol (s:Symbol) : AttributeValue => s;
-op av_sel (s:Seq SExpr) : AttributeValue => "(" s ")";
+op av_spec_constant (s:SpecConstant) : AttributeValue => s:0;
+op av_symbol (s:Symbol) : AttributeValue => s:0;
+op av_sel (s:Seq SExpr) : AttributeValue => "(" s:0 ")";
 
 category Attribute;
-op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k av;
+op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k:0 " " av:0;
 
 
 // 6. Terms
@@ -239,18 +242,18 @@ op sorted_var (s:Symbol, so:SMTSort) : SortedVar => "(" s " " so ")";
 op spec_constant_term (sc:SpecConstant) : Term => sc;
 op qual_identifier (qi:QualIdentifier) : Term => qi;
 op qual_identifier_args (qi:QualIdentifier, @[nonempty] ts:SpaceSepBy Term) : Term =>
-  "(" qi " " ts ")";
+  "(" qi " " ts:0 ")";
 
 op let_smt (@[nonempty] vbps: SpaceSepBy ValBinding, t:Term) : Term =>
-  "(" "let" "(" vbps ")" t ")";
+  "(" "let " "(" vbps ")" t ")";
 op lambda_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
-  "(" "lambda" "(" svs ")" t ")";
+  "(" "lambda " "(" svs ")" t ")";
 op forall_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
-  "(" "forall" "(" svs ")" t ")";
+  "(" "forall " "(" svs ") " t ")";
 op exists_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
-  "(" "exists" "(" svs ")" t ")";
+  "(" "exists " "(" svs ") " t ")";
 op bang (t:Term, @[nonempty] attrs:SpaceSepBy Attribute) : Term =>
-  "(" "!" t " " attrs ")";
+  "(" "! " t:0 " " attrs:0 ")";
 
 
 // 7. Theories

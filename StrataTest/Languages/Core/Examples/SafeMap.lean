@@ -66,7 +66,7 @@ spec {
     call result := GetValue(101);
 
     if (OptionInt..isSome(result)) {
-        assert [value_of_101]: val(result) == 500;
+        assert [value_of_101]: OptionInt..val(result) == 500;
     } else {
         // Unreachable, based on `Register` ensures.
         cover [unreachable_cover]: true;

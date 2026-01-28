@@ -37,10 +37,10 @@ axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFro
 // Strata that indicates that our models is partial.
 
 datatype Error () {
-  Error_TypeError(Error_getTypeError: string),
-  Error_AttributeError(Error_getAttributeError: string),
-  Error_RePatternError(Error_getRePatternError: string),
-  Error_Unimplemented(Error_getUnimplemented: string)
+  Error_TypeError(getTypeError: string),
+  Error_AttributeError(getAttributeError: string),
+  Error_RePatternError(getRePatternError: string),
+  Error_Unimplemented(getUnimplemented: string)
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -75,8 +75,8 @@ type Except (err : Type, ok : Type);
 // axiom [Except_getErr_mkErr]: (forall x : err :: Except_isErr(Except_mkErr x));
 
 datatype ExceptErrorRegex () {
-  ExceptErrorRegex_mkOK(ExceptErrorRegex_getOK: regex),
-  ExceptErrorRegex_mkErr(ExceptErrorRegex_getErr: Error)
+  ExceptErrorRegex_mkOK(getOK: regex),
+  ExceptErrorRegex_mkErr(getErr: Error)
 };
 
 // NOTE: `re.match` returns a `Re.Match` object, but for now, we are interested
@@ -96,7 +96,7 @@ function PyReMatchStr(pattern : string, str : string, flags : int) : Except Erro
 // List of strings
 datatype ListStr () {
   ListStr_nil(),
-  ListStr_cons(ListStr_head: string, ListStr_tail: ListStr)
+  ListStr_cons(head: string, tail: ListStr)
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -104,18 +104,18 @@ datatype ListStr () {
 // Temporary Types
 
 datatype ExceptOrNone () {
-  ExceptOrNone_mk_code(ExceptOrNone_code_val: string),
-  ExceptOrNone_mk_none(ExceptOrNone_none_val: None)
+  ExceptOrNone_mk_code(code_val: string),
+  ExceptOrNone_mk_none(none_val: None)
 };
 
 datatype IntOrNone () {
-  IntOrNone_mk_int(IntOrNone_int_val: int),
-  IntOrNone_mk_none(IntOrNone_none_val: None)
+  IntOrNone_mk_int(int_val: int),
+  IntOrNone_mk_none(none_val: None)
 };
 
 datatype StrOrNone () {
-  StrOrNone_mk_str(StrOrNone_str_val: string),
-  StrOrNone_mk_none(StrOrNone_none_val: None)
+  StrOrNone_mk_str(str_val: string),
+  StrOrNone_mk_none(none_val: None)
 };
 
 function strOrNone_toObject(v : StrOrNone) : Object;
@@ -125,32 +125,32 @@ axiom (forall s1:StrOrNone, s2: StrOrNone :: {strOrNone_toObject(s1), strOrNone_
         strOrNone_toObject(s1) != strOrNone_toObject(s2));
 axiom (forall s : StrOrNone :: {StrOrNone..isStrOrNone_mk_str(s)}
         StrOrNone..isStrOrNone_mk_str(s) ==>
-        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone_str_val(s)));
+        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone..str_val(s)));
 
 datatype AnyOrNone () {
-  AnyOrNone_mk_str(AnyOrNone_str_val: string),
-  AnyOrNone_mk_none(AnyOrNone_none_val: None)
+  AnyOrNone_mk_str(str_val: string),
+  AnyOrNone_mk_none(none_val: None)
 };
 
 datatype BoolOrNone () {
-  BoolOrNone_mk_str(BoolOrNone_str_val: string),
-  BoolOrNone_mk_none(BoolOrNone_none_val: None)
+  BoolOrNone_mk_str(str_val: string),
+  BoolOrNone_mk_none(none_val: None)
 };
 
 datatype BoolOrStrOrNone () {
-  BoolOrStrOrNone_mk_bool(BoolOrStrOrNone_bool_val: bool),
-  BoolOrStrOrNone_mk_str(BoolOrStrOrNone_str_val: string),
-  BoolOrStrOrNone_mk_none(BoolOrStrOrNone_none_val: None)
+  BoolOrStrOrNone_mk_bool(bool_val: bool),
+  BoolOrStrOrNone_mk_str(str_val: string),
+  BoolOrStrOrNone_mk_none(none_val: None)
 };
 
 datatype DictStrStrOrNone () {
-  DictStrStrOrNone_mk_str(DictStrStrOrNone_str_val: string),
-  DictStrStrOrNone_mk_none(DictStrStrOrNone_none_val: None)
+  DictStrStrOrNone_mk_str(str_val: string),
+  DictStrStrOrNone_mk_none(none_val: None)
 };
 
 datatype BytesOrStrOrNone () {
-  BytesOrStrOrNone_mk_none(BytesOrStrOrNone_none_val: None),
-  BytesOrStrOrNone_mk_str(BytesOrStrOrNone_str_val: string)
+  BytesOrStrOrNone_mk_none(none_val: None),
+  BytesOrStrOrNone_mk_str(str_val: string)
 };
 
 type DictStrAny;
@@ -193,11 +193,11 @@ spec{
 {
   var days_i : int := 0;
   if (IntOrNone..isIntOrNone_mk_int(days)) {
-        days_i := IntOrNone_int_val(days);
+        days_i := IntOrNone..int_val(days);
   }
   var hours_i : int := 0;
   if (IntOrNone..isIntOrNone_mk_int(hours)) {
-        hours_i := IntOrNone_int_val(hours);
+        hours_i := IntOrNone..int_val(hours);
   }
   assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
 };
@@ -346,13 +346,13 @@ procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns
 spec {
   requires [req_name_is_foo]: req_name == "foo";
   requires [req_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone_str_val(opt_name) == "bar") else true);
+  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
   ensures [ensures_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 }
 {
   assert [assert_name_is_foo]: req_name == "foo";
   assert [assert_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone_str_val(opt_name) == "bar") else true);
+  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
   assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 };
 

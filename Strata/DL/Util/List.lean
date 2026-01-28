@@ -411,4 +411,15 @@ theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List
       simp_all [dedup]
       omega
 
+theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
+  induction s1 generalizing s2 with
+  | nil => simp
+  | cons x t IH =>
+    simp only[List.length]
+    have xin: x ∈ s2 := by apply hsub; grind
+    rw[List.mem_iff_append] at xin
+    rcases xin with ⟨l1, ⟨l2, hs2⟩⟩; subst_vars
+    have hsub1: t ⊆ (l1 ++ l2) := by grind
+    grind
+
 end List

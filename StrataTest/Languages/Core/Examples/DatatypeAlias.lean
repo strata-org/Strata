@@ -34,7 +34,7 @@ spec {
   b := MkBox(42);
   havoc b;
   assume b == MkBox(100);
-  v := value(b);
+  v := Box..value(b);
   assert [valueIs100]: v == 100;
 };
 #end
