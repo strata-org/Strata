@@ -3,14 +3,12 @@ name: Deploy Documentation
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
 
 jobs:
   deploy_doc:
     name: Deploy documentation
     runs-on: ubuntu-latest
+    environment: github-pages
     permissions:
       contents: read
       pages: write
@@ -25,11 +23,6 @@ jobs:
       - name: Build API documentation
         run: lake build Strata:docs
         working-directory: docs/api
-      - name: Debug API docs location
-        run: |
-          echo "Listing docs/api/.lake/build/doc:"
-          ls -la docs/api/.lake/build/doc || echo "Not found at docs/api/.lake/build/doc"
-          find docs/api -name "*.html" -type f | head -20 || echo "No HTML files found"
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
