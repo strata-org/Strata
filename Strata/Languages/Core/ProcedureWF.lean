@@ -31,6 +31,7 @@ theorem snd_values_mem {ps : ListMap CoreLabel Procedure.Check} :
 
 theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
 
+
 /-
 set_option warn.sorry false in
 /--

@@ -127,7 +127,6 @@ def Statement.eraseTypes (s : Statement) : Statement :=
     .loop guard measure invariant body' md
   | .goto l md => .goto l md
   | .funcDecl decl md =>
-    -- Erase types from function body and axioms
     let decl' := { decl with
       body := decl.body.map Lambda.LExpr.eraseTypes,
       axioms := decl.axioms.map Lambda.LExpr.eraseTypes }
