@@ -167,6 +167,8 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   declareMetadata { name := "aliasType",   args := #[.mk "name" .ident, .mk "args" (.opt .ident), .mk "def" .ident] }
   declareMetadata { name := "declare",     args := #[.mk "name" .ident, .mk "type" .ident] }
   declareMetadata { name := "declareFn",   args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
+  -- Metadata for declaring a type variable binding (creates .tvar binding in result context)
+  declareMetadata { name := "declareTVar", args := #[.mk "name" .ident] }
   /- Metadata for bringing a datatype name and its type parameters into scope,
    used for recursive datatype definitions where the datatype name must be visible when parsing constructor field types (e.g., `tail: List` in
    `Cons(head: int, tail: List)`) -/

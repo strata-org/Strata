@@ -36,8 +36,8 @@ def optionDatatype : LDatatype Visibility :=
   { name := "TestOption"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"None", .unres⟩, args := [], testerName := "TestOption$isNone" },
-      { name := ⟨"Some", .unres⟩, args := [(⟨"TestOption$SomeProj0", .unres⟩, .ftvar "α")], testerName := "TestOption$isSome"  }
+      { name := ⟨"None", .unres⟩, args := [], testerName := "TestOption..isNone" },
+      { name := ⟨"Some", .unres⟩, args := [(⟨"val", .unres⟩, .ftvar "α")], testerName := "TestOption..isSome"  }
     ]
     constrs_ne := by decide }
 
@@ -46,11 +46,11 @@ def listDatatype : LDatatype Visibility :=
   { name := "TestList"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"Nil", .unres⟩, args := [], testerName := "TestList$isNil" },
+      { name := ⟨"Nil", .unres⟩, args := [], testerName := "TestList..isNil" },
       { name := ⟨"Cons", .unres⟩, args := [
-          (⟨"TestList$ConsProj0", .unres⟩, .ftvar "α"),
-          (⟨"TestList$ConsProj1", .unres⟩, .tcons "TestList" [.ftvar "α"])
-        ], testerName := "TestList$isCons" }
+          (⟨"head", .unres⟩, .ftvar "α"),
+          (⟨"tail", .unres⟩, .tcons "TestList" [.ftvar "α"])
+        ], testerName := "TestList..isCons" }
     ]
     constrs_ne := by decide }
 
@@ -59,22 +59,25 @@ def treeDatatype : LDatatype Visibility :=
   { name := "TestTree"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"Leaf", .unres⟩, args := [], testerName := "TestTree$isLeaf" },
+      { name := ⟨"Leaf", .unres⟩, args := [], testerName := "TestTree..isLeaf" },
       { name := ⟨"Node", .unres⟩, args := [
-          (⟨"TestTree$NodeProj0", .unres⟩, .ftvar "α"),
-          (⟨"TestTree$NodeProj1", .unres⟩, .tcons "TestTree" [.ftvar "α"]),
-          (⟨"TestTree$NodeProj2", .unres⟩, .tcons "TestTree" [.ftvar "α"])
-        ], testerName := "TestTree$isNode" }
+          (⟨"value", .unres⟩, .ftvar "α"),
+          (⟨"left", .unres⟩, .tcons "TestTree" [.ftvar "α"]),
+          (⟨"right", .unres⟩, .tcons "TestTree" [.ftvar "α"])
+        ], testerName := "TestTree..isNode" }
     ]
     constrs_ne := by decide }
 /--
 Convert an expression to full SMT string including datatype declarations.
+`blocks` is a list of mutual blocks (each block is a list of mutually recursive datatypes).
 -/
-def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDatatype Visibility)) : IO String := do
-  match Env.init.addDatatypes datatypes with
+def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Visibility))) : IO String := do
+  match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
-    match toSMTTerm env [] e SMT.Context.default with
+    -- Set the TypeFactory for correct datatype emission ordering
+    let ctx := SMT.Context.default.withTypeFactory env.datatypes
+    match toSMTTerm env [] e ctx with
     | .error err => return err.pretty
     | .ok (smt, ctx) =>
       -- Emit the full SMT output including datatype declarations
@@ -95,13 +98,20 @@ def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDa
         else
           return "Invalid UTF-8 in output"
 
+/--
+Convert an expression to full SMT string including datatype declarations.
+Each datatype is treated as its own (non-mutual) block.
+-/
+def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDatatype Visibility)) : IO String :=
+  toSMTStringWithDatatypeBlocks e (datatypes.map (fun d => [d]))
+
 /-! ## Test Cases with Guard Messages -/
 
 -- Test 1: Simple datatype (Option) - zero-argument constructor
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption$SomeProj0 α)))))
+  (Some (TestOption..val α)))))
 ; x
 (declare-const f0 (TestOption Int))
 (define-fun t0 () (TestOption Int) f0)
@@ -115,7 +125,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -129,7 +139,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestTree (par (α) (
   (Leaf)
-  (Node (TestTree$NodeProj0 α) (TestTree$NodeProj1 (TestTree α)) (TestTree$NodeProj2 (TestTree α))))))
+  (Node (TestTree..value α) (TestTree..left (TestTree α)) (TestTree..right (TestTree α))))))
 ; tree
 (declare-const f0 (TestTree Bool))
 (define-fun t0 () (TestTree Bool) f0)
@@ -143,7 +153,7 @@ info: (declare-datatype TestTree (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; intList
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -157,7 +167,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; boolList
 (declare-const f0 (TestList Bool))
 (define-fun t0 () (TestList Bool) f0)
@@ -171,7 +181,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestTree (par (α) (
   (Leaf)
-  (Node (TestTree$NodeProj0 α) (TestTree$NodeProj1 (TestTree α)) (TestTree$NodeProj2 (TestTree α))))))
+  (Node (TestTree..value α) (TestTree..left (TestTree α)) (TestTree..right (TestTree α))))))
 ; intTree
 (declare-const f0 (TestTree Int))
 (define-fun t0 () (TestTree Int) f0)
@@ -185,10 +195,10 @@ info: (declare-datatype TestTree (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption$SomeProj0 α)))))
+  (Some (TestOption..val α)))))
 (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; listOfOption
 (declare-const f0 (TestList (TestOption Int)))
 (define-fun t0 () (TestList (TestOption Int)) f0)
@@ -196,7 +206,7 @@ info: (declare-datatype TestOption (par (α) (
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
   (.fvar () (CoreIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
-  [listDatatype, optionDatatype]
+  [optionDatatype, listDatatype]
 
 /-! ## Constructor Application Tests -/
 
@@ -204,7 +214,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption$SomeProj0 α)))))
+  (Some (TestOption..val α)))))
 (define-fun t0 () (TestOption Int) (as None (TestOption Int)))
 -/
 #guard_msgs in
@@ -216,7 +226,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption$SomeProj0 α)))))
+  (Some (TestOption..val α)))))
 (define-fun t0 () (TestOption Int) (Some 42))
 -/
 #guard_msgs in
@@ -228,7 +238,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 (define-fun t0 () (TestList Int) (as Nil (TestList Int)))
 (define-fun t1 () (TestList Int) (Cons 1 t0))
 -/
@@ -246,7 +256,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption$SomeProj0 α)))))
+  (Some (TestOption..val α)))))
 ; x
 (declare-const f0 (TestOption Int))
 (define-fun t0 () (TestOption Int) f0)
@@ -254,7 +264,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestOption$isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
+  (.app () (.op () (CoreIdent.unres "TestOption..isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
     (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
@@ -262,7 +272,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -270,7 +280,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList$isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
+  (.app () (.op () (CoreIdent.unres "TestList..isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
     (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
@@ -280,15 +290,15 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption$SomeProj0 α)))))
+  (Some (TestOption..val α)))))
 ; x
 (declare-const f0 (TestOption Int))
 (define-fun t0 () (TestOption Int) f0)
-(define-fun t1 () Int (TestOption$SomeProj0 t0))
+(define-fun t1 () Int (TestOption..val t0))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestOption$SomeProj0") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
+  (.app () (.op () (CoreIdent.unres "TestOption..val") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
     (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
@@ -296,15 +306,15 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
-(define-fun t1 () Int (TestList$ConsProj0 t0))
+(define-fun t1 () Int (TestList..head t0))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList$ConsProj0") (.some (.arrow (.tcons "TestList" [.int]) .int)))
+  (.app () (.op () (CoreIdent.unres "TestList..head") (.some (.arrow (.tcons "TestList" [.int]) .int)))
     (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
@@ -312,125 +322,31 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+  (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
-(define-fun t1 () (TestList Int) (TestList$ConsProj1 t0))
+(define-fun t1 () (TestList Int) (TestList..tail t0))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList$ConsProj1") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
+  (.app () (.op () (CoreIdent.unres "TestList..tail") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
     (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
-/-! ## Complex Dependency Topological Sorting Tests -/
+/-! ## Dependency Order Tests -/
 
--- Test 16: Very complex dependency graph requiring sophisticated topological sorting
--- Dependencies: Alpha -> Beta, Gamma
---              Beta -> Delta, Epsilon
---              Gamma -> Epsilon, Zeta
---              Delta -> Zeta
---              Epsilon -> Zeta
--- Actual topological order: Zeta, Epsilon, Gamma, Delta, Beta, Alpha
-
-/-- Alpha = AlphaValue Beta Gamma -/
-def alphaDatatype : LDatatype Visibility :=
-  { name := "Alpha"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"AlphaValue", .unres⟩, args := [
-          (⟨"Alpha$AlphaValueProj0", .unres⟩, .tcons "Beta" []),
-          (⟨"Alpha$AlphaValueProj1", .unres⟩, .tcons "Gamma" [])
-        ], testerName := "Alpha$isAlphaValue" }
-    ]
-    constrs_ne := by decide }
-
-/-- Beta = BetaValue Delta Epsilon -/
-def betaDatatype : LDatatype Visibility :=
-  { name := "Beta"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"BetaValue", .unres⟩, args := [
-          (⟨"Beta$BetaValueProj0", .unres⟩, .tcons "Delta" []),
-          (⟨"Beta$BetaValueProj1", .unres⟩, .tcons "Epsilon" [])
-        ], testerName := "Beta$isBetaValue" }
-    ]
-    constrs_ne := by decide }
-
-/-- Gamma = GammaValue Epsilon Zeta -/
-def gammaDatatype : LDatatype Visibility :=
-  { name := "Gamma"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"GammaValue", .unres⟩, args := [
-          (⟨"Gamma$GammaValueProj0", .unres⟩, .tcons "Epsilon" []),
-          (⟨"Gamma$GammaValueProj1", .unres⟩, .tcons "Zeta" [])
-        ], testerName := "Gamma$isGammaValue" }
-    ]
-    constrs_ne := by decide }
-
-/-- Delta = DeltaValue Zeta -/
-def deltaDatatype : LDatatype Visibility :=
-  { name := "Delta"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"DeltaValue", .unres⟩, args := [(⟨"Delta$DeltaValueProj0", .unres⟩, .tcons "Zeta" [])], testerName := "Delta$isDeltaValue" }
-    ]
-    constrs_ne := by decide }
-
-/-- Epsilon = EpsilonValue Zeta -/
-def epsilonDatatype : LDatatype Visibility :=
-  { name := "Epsilon"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"EpsilonValue", .unres⟩, args := [(⟨"Epsilon$EpsilonValueProj0", .unres⟩, .tcons "Zeta" [])], testerName := "Epsilon$isEpsilonValue" }
-    ]
-    constrs_ne := by decide }
-
-/-- Zeta = ZetaValue int -/
-def zetaDatatype : LDatatype Visibility :=
-  { name := "Zeta"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"ZetaValue", .unres⟩, args := [(⟨"Zeta$ZetaValueProj0", .unres⟩, .int)], testerName := "Zeta$isZetaValue" }
-    ]
-    constrs_ne := by decide }
-
-/--
-info: (declare-datatype Zeta (
-  (ZetaValue (Zeta$ZetaValueProj0 Int))))
-(declare-datatype Epsilon (
-  (EpsilonValue (Epsilon$EpsilonValueProj0 Zeta))))
-(declare-datatype Gamma (
-  (GammaValue (Gamma$GammaValueProj0 Epsilon) (Gamma$GammaValueProj1 Zeta))))
-(declare-datatype Delta (
-  (DeltaValue (Delta$DeltaValueProj0 Zeta))))
-(declare-datatype Beta (
-  (BetaValue (Beta$BetaValueProj0 Delta) (Beta$BetaValueProj1 Epsilon))))
-(declare-datatype Alpha (
-  (AlphaValue (Alpha$AlphaValueProj0 Beta) (Alpha$AlphaValueProj1 Gamma))))
-; alphaVar
-(declare-const f0 Alpha)
-(define-fun t0 () Alpha f0)
--/
-#guard_msgs in
-#eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "alphaVar") (.some (.tcons "Alpha" [])))
-  [alphaDatatype, betaDatatype, gammaDatatype, deltaDatatype, epsilonDatatype, zetaDatatype]
-
--- Test 17: Diamond dependency pattern
+-- Test 16: Diamond dependency pattern
 -- Dependencies: Diamond -> Left, Right
 --              Left -> Root
 --              Right -> Root
--- Actual topological order: Root, Right, Left, Diamond (or Root, Left, Right, Diamond)
 
 /-- Root = RootValue int -/
 def rootDatatype : LDatatype Visibility :=
   { name := "Root"
     typeArgs := []
     constrs := [
-      { name := ⟨"RootValue", .unres⟩, args := [(⟨"Root$RootValueProj0", .unres⟩, .int)], testerName := "Root$isRootValue" }
+      { name := ⟨"RootValue", .unres⟩, args := [(⟨"value", .unres⟩, .int)], testerName := "Root..isRootValue" }
     ]
     constrs_ne := by decide }
 
@@ -439,7 +355,7 @@ def leftDatatype : LDatatype Visibility :=
   { name := "Left"
     typeArgs := []
     constrs := [
-      { name := ⟨"LeftValue", .unres⟩, args := [(⟨"Left$LeftValueProj0", .unres⟩, .tcons "Root" [])], testerName := "Left$isLeftValue" }
+      { name := ⟨"LeftValue", .unres⟩, args := [(⟨"root", .unres⟩, .tcons "Root" [])], testerName := "Left..isLeftValue" }
     ]
     constrs_ne := by decide }
 
@@ -448,7 +364,7 @@ def rightDatatype : LDatatype Visibility :=
   { name := "Right"
     typeArgs := []
     constrs := [
-      { name := ⟨"RightValue", .unres⟩, args := [(⟨"Right$RightValueProj0", .unres⟩, .tcons "Root" [])], testerName := "Right$isRightValue" }
+      { name := ⟨"RightValue", .unres⟩, args := [(⟨"root", .unres⟩, .tcons "Root" [])], testerName := "Right..isRightValue" }
     ]
     constrs_ne := by decide }
 
@@ -458,21 +374,21 @@ def diamondDatatype : LDatatype Visibility :=
     typeArgs := []
     constrs := [
       { name := ⟨"DiamondValue", .unres⟩, args := [
-          (⟨"Diamond$DiamondValueProj0", .unres⟩, .tcons "Left" []),
-          (⟨"Diamond$DiamondValueProj1", .unres⟩, .tcons "Right" [])
-        ], testerName := "Diamond$isDiamondValue" }
+          (⟨"left", .unres⟩, .tcons "Left" []),
+          (⟨"right", .unres⟩, .tcons "Right" [])
+        ], testerName := "Diamond..isDiamondValue" }
     ]
     constrs_ne := by decide }
 
 /--
 info: (declare-datatype Root (
-  (RootValue (Root$RootValueProj0 Int))))
+  (RootValue (Root..value Int))))
 (declare-datatype Right (
-  (RightValue (Right$RightValueProj0 Root))))
+  (RightValue (Right..root Root))))
 (declare-datatype Left (
-  (LeftValue (Left$LeftValueProj0 Root))))
+  (LeftValue (Left..root Root))))
 (declare-datatype Diamond (
-  (DiamondValue (Diamond$DiamondValueProj0 Left) (Diamond$DiamondValueProj1 Right))))
+  (DiamondValue (Diamond..left Left) (Diamond..right Right))))
 ; diamondVar
 (declare-const f0 Diamond)
 (define-fun t0 () Diamond f0)
@@ -480,7 +396,66 @@ info: (declare-datatype Root (
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
   (.fvar () (CoreIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
-  [diamondDatatype, leftDatatype, rightDatatype, rootDatatype]
+  [rootDatatype, rightDatatype, leftDatatype, diamondDatatype]
+
+-- Test 17: Mutually recursive datatypes (RoseTree/Forest)
+-- Should emit declare-datatypes with both types together
+
+/-- RoseTree α = Node α (Forest α) -/
+def roseTreeDatatype : LDatatype Visibility :=
+  { name := "RoseTree"
+    typeArgs := ["α"]
+    constrs := [
+      { name := ⟨"Node", .unres⟩, args := [
+          (⟨"node", .unres⟩, .ftvar "α"),
+          (⟨"children", .unres⟩, .tcons "Forest" [.ftvar "α"])
+        ], testerName := "RoseTree$isNode" }
+    ]
+    constrs_ne := by decide }
+
+/-- Forest α = FNil | FCons (RoseTree α) (Forest α) -/
+def forestDatatype : LDatatype Visibility :=
+  { name := "Forest"
+    typeArgs := ["α"]
+    constrs := [
+      { name := ⟨"FNil", .unres⟩, args := [], testerName := "Forest$isFNil" },
+      { name := ⟨"FCons", .unres⟩, args := [
+          (⟨"hd", .unres⟩, .tcons "RoseTree" [.ftvar "α"]),
+          (⟨"tl", .unres⟩, .tcons "Forest" [.ftvar "α"])
+        ], testerName := "Forest$isFCons" }
+    ]
+    constrs_ne := by decide }
+
+/--
+info: (declare-datatypes ((RoseTree 1) (Forest 1))
+  ((par (α) ((Node (RoseTree..node α) (RoseTree..children (Forest α)))))
+  (par (α) ((FNil) (FCons (Forest..hd (RoseTree α)) (Forest..tl (Forest α)))))))
+; tree
+(declare-const f0 (RoseTree Int))
+(define-fun t0 () (RoseTree Int) f0)
+-/
+#guard_msgs in
+#eval format <$> toSMTStringWithDatatypeBlocks
+  (.fvar () (CoreIdent.unres "tree") (.some (.tcons "RoseTree" [.int])))
+  [[roseTreeDatatype, forestDatatype]]
+
+-- Test 19: Mix of mutual and non-mutual datatypes
+-- TestOption (non-mutual), then RoseTree/Forest (mutual)
+/--
+info: (declare-datatype TestOption (par (α) (
+  (None)
+  (Some (TestOption..val α)))))
+(declare-datatypes ((RoseTree 1) (Forest 1))
+  ((par (α) ((Node (RoseTree..node α) (RoseTree..children (Forest α)))))
+  (par (α) ((FNil) (FCons (Forest..hd (RoseTree α)) (Forest..tl (Forest α)))))))
+; optionTree
+(declare-const f0 (TestOption (RoseTree Int)))
+(define-fun t0 () (TestOption (RoseTree Int)) f0)
+-/
+#guard_msgs in
+#eval format <$> toSMTStringWithDatatypeBlocks
+  (.fvar () (CoreIdent.unres "optionTree") (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
+  [[optionDatatype], [roseTreeDatatype, forestDatatype]]
 
 end DatatypeTests
 

@@ -395,6 +395,9 @@ private protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeEx
     -- A bound type variable with the given index.
     | .bvar ann vidx =>
       return Ion.sexp #[ionSymbol! "bvar", ← toIon ann, .int vidx]
+    -- A polymorphic type variable with the given name.
+    | .tvar ann name =>
+      return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
     | .fvar ann idx a => do
       let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon ann, .int idx]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ =>
@@ -426,6 +429,11 @@ private protected def fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (T
     return .bvar
       (← FromIon.fromIon args[1])
       (← .asNat "Type expression bvar" args[2])
+  | "tvar" =>
+    let ⟨p⟩ ← .checkArgCount "Type expression tvar" args 3
+    return .tvar
+      (← FromIon.fromIon args[1])
+      (← .asString "Type expression tvar name" args[2])
   | "fvar" =>
     let ⟨p⟩ ← .checkArgMin "Type expression free variable" args 3
     let ann ← FromIon.fromIon args[1]
@@ -941,6 +949,9 @@ private protected def toIon (refs : SymbolIdCache) (tpe : PreType) : InternM (Io
     -- A bound type variable with the given index.
     | .bvar loc vidx =>
       return Ion.sexp #[ionSymbol! "bvar", ← toIon loc, .int vidx]
+    -- A polymorphic type variable with the given name.
+    | .tvar loc name =>
+      return Ion.sexp #[ionSymbol! "tvar", ← toIon loc, .string name]
     | .fvar loc idx a => do
       let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon loc, .int idx]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ => e.toIon refs
@@ -968,6 +979,11 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM PreType := do
     return PreType.bvar
       (← fromIon args[1])
       (← .asNat "TypeExpr bvar" args[2])
+  | "tvar" =>
+    let ⟨p⟩ ← .checkArgCount "PreType tvar" args 3
+    return PreType.tvar
+      (← fromIon args[1])
+      (← .asString "PreType tvar name" args[2])
   | "fvar" =>
     let ⟨p⟩ ← .checkArgMin "fvar" args 3
     let ann ← fromIon args[1]

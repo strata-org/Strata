@@ -343,14 +343,14 @@ spec {
   x := Some(42);
 
   // Extract the value using the destructor function
-  v := val(x);
+  v := Option..val(x);
 
   // Assert the extracted value is correct
   assert [valIs42]: v == 42;
 
   // Test with a different value
   x := Some(100);
-  v := val(x);
+  v := Option..val(x);
   assert [valIs100]: v == 100;
 };
 #end

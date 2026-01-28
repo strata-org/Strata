@@ -70,6 +70,9 @@ def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDM
   let (b, m') := m.containsThenInsertIfNew x.name x.metadata
   if b then .error f else .ok m'
 
+def Identifiers.addListWithError {IDMeta} (m: Identifiers IDMeta) (x: List (Identifier IDMeta)) (f: Identifier IDMeta → Format) :=
+  x.foldlM (fun m x => Identifiers.addWithError m x (f x)) m
+
 def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except Format (Identifiers IDMeta) :=
   m.addWithError x f!"Error: duplicate identifier {x.name}"
 
@@ -104,6 +107,48 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   constructor
   . intros _; apply Or.inl; cases x; cases y; grind
   . rw[meta_eq]; intros _; simp
+
+theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Format}: m.addListWithError l f = .ok m' → forall x, x ∈ l → m.contains x = false := by
+  unfold addListWithError
+  induction l generalizing m m' with
+  | nil => simp
+  | cons h t IH =>
+    simp only[List.foldlM, bind, Except.bind]
+    split <;> intros Hid; try contradiction
+    intros x
+    rw[List.mem_cons]
+    rename_i Heq
+    have Hin := Identifiers.addWithErrorNotin Heq
+    have := addWithErrorContains Heq x; grind
+
+theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Format}: m.addListWithError l f = .ok m' → ∀ y, m'.contains y ↔ y ∈ l ∨ m.contains y := by
+  unfold addListWithError
+  induction l generalizing m m' with
+  | nil => simp; intros Heq; cases Heq; grind
+  | cons h t IH =>
+    simp only[List.foldlM, bind, Except.bind]
+    split <;> intros Hid; try contradiction
+    intros x
+    rw[List.mem_cons]
+    rename_i Heq
+    have Hcont := Identifiers.addWithErrorContains Heq x
+    have Hin := Identifiers.addWithErrorNotin Heq
+    grind
+
+theorem Identifiers.addListWithErrorNoDup {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Format}: m.addListWithError l f = .ok m' → l.Nodup := by
+  unfold addListWithError
+  induction l generalizing m m' with
+  | nil => simp
+  | cons h t IH =>
+    simp only[List.foldlM, bind, Except.bind]
+    split <;> intros Hid; try contradiction
+    apply List.nodup_cons.mpr
+    constructor <;> try grind
+    intros h_in_t
+    rename_i Hadd
+    have := Identifiers.addWithErrorContains Hadd h
+    have := Identifiers.addListWithErrorNotin Hid h
+    grind
 
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)
