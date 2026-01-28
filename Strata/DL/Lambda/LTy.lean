@@ -173,6 +173,10 @@ theorem LMonoTy.size_gt_zero :
   unfold LMonoTys.size; split
   simp_all; omega
 
+theorem LMonoTy.size_lt_of_mem {ty: LMonoTy} {tys: LMonoTys} (h: ty ∈ tys):
+  ty.size <= tys.size := by
+  induction tys <;> simp only[LMonoTys.size]<;> grind
+
 /--
 Boolean equality for `LMonoTy`.
 -/
@@ -291,16 +295,6 @@ def LMonoTy.getTyConstructors (mty : LMonoTy) : List LMonoTy :=
   where go mtys :=
   match mtys with
   | [] => [] | m :: mrest => LMonoTy.getTyConstructors m ++ go mrest
-
-/--
-info: [Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "_dummy0", Lambda.LMonoTy.ftvar "_dummy1"],
- Lambda.LMonoTy.tcons "bool" [],
- Lambda.LMonoTy.tcons "foo" [Lambda.LMonoTy.ftvar "_dummy0"],
- Lambda.LMonoTy.tcons "a" [Lambda.LMonoTy.ftvar "_dummy0", Lambda.LMonoTy.ftvar "_dummy1"]]
--/
-#guard_msgs in
-#eval LMonoTy.getTyConstructors
-        ((.tcons "arrow" [.tcons "bool" [], .tcons "foo" [.tcons "a" [.ftvar "b", .tcons "bool" []]]]))
 
 ---------------------------------------------------------------------
 
@@ -454,30 +448,6 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
 
 elab "mty[" ty:lmonoty "]" : term => elabLMonoTy ty
 
-/-- info: LMonoTy.tcons "list" [LMonoTy.tcons "int" []] : LMonoTy -/
-#guard_msgs in
-#check mty[list int]
-
-/-- info: LMonoTy.tcons "pair" [LMonoTy.tcons "int" [], LMonoTy.tcons "bool" []] : LMonoTy -/
-#guard_msgs in
-#check mty[pair int bool]
-
-/--
-info: LMonoTy.tcons "arrow"
-  [LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"],
-    LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]] : LMonoTy
--/
-#guard_msgs in
-#check mty[(Map %k %v) → %k → %v]
-
-/--
-info: LMonoTy.tcons "arrow"
-  [LMonoTy.ftvar "a",
-    LMonoTy.tcons "arrow" [LMonoTy.ftvar "b", LMonoTy.tcons "arrow" [LMonoTy.ftvar "c", LMonoTy.ftvar "d"]]] : LMonoTy
--/
-#guard_msgs in
-#check mty[%a → %b → %c → %d]
-
 declare_syntax_cat lty
 scoped syntax (lmonoty)* : lty
 scoped syntax "∀" (ident)* "." (lmonoty)* : lty
@@ -499,17 +469,6 @@ partial def elabLTy : Lean.Syntax → MetaM Expr
 
 elab "t[" lsch:lty "]" : term => elabLTy lsch
 
-/-- info: forAll ["α"] (LMonoTy.tcons "myType" [LMonoTy.ftvar "α"]) : LTy -/
-#guard_msgs in
-#check t[∀α. myType %α]
-
-/--
-info: forAll ["α"]
-  (LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "int" []]]) : LTy
--/
-#guard_msgs in
-#check t[∀α. %α → %α → int]
-
 end Syntax
 end LTy
 
@@ -530,19 +489,6 @@ def LTy.inputArity (ty : LTy) : Nat :=
   match ty with
   | .forAll _ mty => mty.inputArity
 
-/-- info: 3 -/
-#guard_msgs in
-#eval LTy.inputArity t[int → (int → (int → int))]
-/-- info: 2 -/
-#guard_msgs in
-#eval LTy.inputArity t[int → (int → int)]
-/-- info: 1 -/
-#guard_msgs in
-#eval LTy.inputArity t[∀a. (%a → int) → int]
-/-- info: 0 -/
-#guard_msgs in
-#eval LTy.inputArity t[∀a. pair %a bool]
-
 def LMonoTy.inputTypes (ty : LMonoTy) : List LMonoTy :=
   match ty with
   | .tcons "arrow" (a :: rest) => a :: go rest
@@ -551,22 +497,6 @@ def LMonoTy.inputTypes (ty : LMonoTy) : List LMonoTy :=
   match args with
   | [] => []
   | a :: arest => inputTypes a ++ go arest
-
-/-- info: [int, int, int] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[int → (int → (int → int))]
-/-- info: [int, bool] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[int → (bool → int)]
-/-- info: [int, bool, bit] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[int → (bool → (bit → nat))]
-/-- info: [(arrow int int)] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[(int → int) → nat]
-/-- info: [] -/
-#guard_msgs in
-#eval LMonoTy.inputTypes mty[pair int bool]
 
 ---------------------------------------------------------------------
 

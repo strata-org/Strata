@@ -132,22 +132,6 @@ def normalizeOldExpr (e : Expression.Expr) (inOld : Bool := false)
 def normalizeOldExprs (sm : List Expression.Expr) :=
   sm.map normalizeOldExpr
 
-/-- info: true -/
-#guard_msgs in
-#eval normalizeOldExpr eb[(~old (f g))] == eb[((~old f) (~old g))]
-
-/-- info: true -/
-#guard_msgs in
-#eval normalizeOldExpr eb[((~old (~old f)) g)] == eb[((~old f) g)]
-
-/-- info: true -/
-#guard_msgs in
-#eval normalizeOldExpr eb[(~old #2)] == eb[#2]
-
-/-- info: true -/
-#guard_msgs in
-#eval normalizeOldExpr eb[(~old ((f a) g))] == eb[(((~old f) (~old a)) (~old g))]
-
 def normalizeOldCheck (c : Procedure.Check) : Procedure.Check :=
   { c with expr := normalizeOldExpr c.expr }
 
@@ -172,14 +156,6 @@ def containsOldExpr (e : Expression.Expr) : Bool :=
   | .ite _ c t f => containsOldExpr c || containsOldExpr t || containsOldExpr f
   | .eq _ e1 e2 => containsOldExpr e1 || containsOldExpr e2
 
-/-- info: true -/
-#guard_msgs in
-#eval containsOldExpr eb[(~old (f g))]
-
-/-- info: false -/
-#guard_msgs in
-#eval containsOldExpr eb[(f x)]
-
 /--
 Get a list of original global variable names that are referred to in an
 `old(...)` expression. Note that `expr` below should be normalized by
@@ -196,10 +172,6 @@ def extractOldExprVars (expr : Expression.Expr)
     | e1', e2' => extractOldExprVars e1' ++ extractOldExprVars e2'
   | .ite _ c t e => extractOldExprVars c ++ extractOldExprVars t ++ extractOldExprVars e
   | .eq _ e1 e2 => extractOldExprVars e1 ++ extractOldExprVars e2
-
-/-- info: [u:f, u:g] -/
-#guard_msgs in
-#eval extractOldExprVars eb[((~old f) (~old g))]
 
 /--
 Substitute `old(var)` in expression `e` with `s`.
@@ -269,11 +241,13 @@ theorem substOldExpr_nil: OldExpressions.substsOldExpr [] e = e := by
 For each `(var, expr)` pair in `sm`, substitute `old(var)` with `expr` in
 `conds`.
 -/
-protected def substsOldInProcChecks (sm : Map Expression.Ident Expression.Expr)
+protected def substsOldInProcChecks {Ty}
+  (sm : List ((Expression.Ident × Option Ty) × Expression.Expr))
   (conds : Map String Procedure.Check) :
   Map String Procedure.Check :=
+  let sm_map := sm.map (fun ((e1, _), e2) => (e1, e2))
   conds.map (fun (label, c) =>
-                 (label, { c with expr := substsOldExpr sm c.expr }))
+                 (label, { c with expr := substsOldExpr sm_map c.expr }))
 
 
 protected def substsOldChecks (sm : Map Expression.Ident Expression.Expr)

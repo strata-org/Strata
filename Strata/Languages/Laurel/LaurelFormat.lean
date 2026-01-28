@@ -6,6 +6,7 @@
 
 import Strata.Languages.Laurel.Laurel
 
+namespace Strata
 namespace Laurel
 
 open Std (Format)
@@ -33,6 +34,8 @@ def formatHighType : HighType → Format
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .THeap => "Heap"
+  | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
@@ -66,10 +69,10 @@ def formatStmtExpr (s:StmtExpr) : Format :=
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .Identifier name => Format.text name
-  | .Assign target value =>
+  | .Assign target value _ =>
       formatStmtExpr target ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
-      formatStmtExpr target ++ "." ++ Format.text field
+      formatStmtExpr target ++ "#" ++ Format.text field
   | .PureFieldUpdate target field value =>
       formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
   | .StaticCall name args =>
@@ -119,8 +122,11 @@ def formatDeterminism : Determinism → Format
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque post impl =>
-      "opaque ensures " ++ formatStmtExpr post ++
+  | .Opaque post impl modif =>
+      (match modif with
+       | none => ""
+       | some m => " modifies " ++ formatStmtExpr m) ++
+      " ensures " ++ formatStmtExpr post ++
       match impl with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
@@ -129,7 +135,10 @@ def formatBody : Body → Format
 def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
-  "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++ formatBody proc.body
+  "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
+  "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++
+  formatDeterminism proc.determinism ++ Format.line ++
+  formatBody proc.body
 
 def formatField (f : Field) : Format :=
   (if f.isMutable then "var " else "val ") ++

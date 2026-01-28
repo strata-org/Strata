@@ -119,6 +119,7 @@ mutual
   partial def typeExprFUnitToSourceRange : TypeExprF Unit → TypeExprF SourceRange
     | .ident () tp a => .ident default tp (a.map typeExprFUnitToSourceRange)
     | .bvar () idx => .bvar default idx
+    | .tvar () name => .tvar default name
     | .fvar () idx a => .fvar default idx (a.map typeExprFUnitToSourceRange)
     | .arrow () a r => .arrow default (typeExprFUnitToSourceRange a) (typeExprFUnitToSourceRange r)
 

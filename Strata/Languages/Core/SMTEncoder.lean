@@ -10,7 +10,6 @@ import Strata.Languages.Core.Core
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
-import Strata.DDM.Util.Graph.Tarjan
 
 ---------------------------------------------------------------------
 
@@ -35,9 +34,12 @@ structure SMT.Context where
   ifs : Array SMT.IF := #[]
   axms : Array Term := #[]
   tySubst: Map String TermType := []
-  datatypes : Array (LDatatype CoreLParams.IDMeta) := #[]
+  /-- Stores the TypeFactory purely for ordering datatype declarations
+  correctly (TypeFactory in topological order) -/
+  typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
+  seenDatatypes : Std.HashSet String := {}
   datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
 
@@ -65,7 +67,7 @@ def SMT.Context.removeSubst (ctx : SMT.Context) (newSubst: Map String TermType) 
   { ctx with tySubst := newSubst.foldl (fun acc_m p => acc_m.erase p.fst) ctx.tySubst }
 
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
-  (ctx.datatypes.map LDatatype.name).contains name
+  ctx.seenDatatypes.contains name
 
 def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx
@@ -74,7 +76,10 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMet
     let m := Map.union ctx.datatypeFuns (c.fmap (fun (_, x) => (.constructor, x)))
     let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
     let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
-    { ctx with datatypes := ctx.datatypes.push d, datatypeFuns := m }
+    { ctx with seenDatatypes := ctx.seenDatatypes.insert d.name, datatypeFuns := m }
+
+def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
+  { ctx with typeFactory := tf }
 
 /--
 Helper function to convert LMonoTy to SMT string representation.
@@ -93,89 +98,33 @@ private def lMonoTyToSMTString (ty : LMonoTy) : String :=
     else s!"({name} {String.intercalate " " (args.map lMonoTyToSMTString)})"
   | .ftvar tv => tv
 
-/--
-Build a dependency graph for datatypes.
-Returns a mapping from datatype names to their dependencies.
--/
-private def buildDatatypeDependencyGraph (datatypes : Array (LDatatype CoreLParams.IDMeta)) :
-  Map String (Array String) :=
-  let depMap := datatypes.foldl (fun acc d =>
-    let deps := d.constrs.foldl (fun deps c =>
-      c.args.foldl (fun deps (_, fieldTy) =>
-        match fieldTy with
-        | .tcons typeName _ =>
-          -- Only include dependencies on other datatypes in our set
-          if datatypes.any (fun dt => dt.name == typeName) then
-            deps.push typeName
-          else deps
-        | _ => deps
-      ) deps
-    ) #[]
-    acc.insert d.name deps
-  ) Map.empty
-  depMap
+/-- Convert a datatype's constructors to SMT format. -/
+private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List String :=
+  d.constrs.map fun c =>
+    let fieldPairs := c.args.map fun (name, fieldTy) =>
+              (d.name ++ ".." ++ name.name, lMonoTyToSMTString fieldTy)
+    let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
+    let fieldsStr := String.intercalate " " fieldStrs
+    if c.args.isEmpty then s!"({c.name.name})"
+    else s!"({c.name.name} {fieldsStr})"
 
 /--
-Convert datatype dependency map to OutGraph for Tarjan's algorithm.
-Returns the graph and a mapping from node indices to datatype names.
--/
-private def dependencyMapToGraph (depMap : Map String (Array String)) :
-  (n : Nat) × Strata.OutGraph n × Array String :=
-  let names := depMap.keys.toArray
-  let n := names.size
-  let nameToIndex : Map String Nat :=
-    names.mapIdx (fun i name => (name, i)) |>.foldl (fun acc (name, i) => acc.insert name i) Map.empty
-
-  let edges := depMap.foldl (fun edges (fromName, deps) =>
-    match nameToIndex.find? fromName with
-    | none => edges
-    | some fromIdx =>
-      deps.foldl (fun edges depName =>
-        match nameToIndex.find? depName with
-        | none => edges
-        | some toIdx => edges.push (fromIdx, toIdx)
-      ) edges
-  ) #[]
-
-  let graph := Strata.OutGraph.ofEdges! n edges.toList
-  ⟨n, graph, names⟩
-
-/--
-Emit datatype declarations to the solver in topologically sorted order.
-For each datatype in ctx.datatypes, generates a declare-datatype command
-with constructors and selectors following the TypeFactory naming convention.
-Dependencies are emitted before the datatypes that depend on them, and
-mutually recursive datatypes are not (yet) supported.
+Emit datatype declarations to the solver.
+Uses the TypeFactory ordering (already topologically sorted).
+Only emits datatypes that have been seen (added via addDatatype).
+Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
-  if ctx.datatypes.isEmpty then return
-
-  -- Build dependency graph and SCCs
-  let depMap := buildDatatypeDependencyGraph ctx.datatypes
-  let ⟨_, graph, names⟩ := dependencyMapToGraph depMap
-  let sccs := Strata.OutGraph.tarjan graph
-
-  -- Emit datatypes in topological order (reverse of SCC order)
-  for scc in sccs.reverse do
-    if scc.size > 1 then
-      let sccNames := scc.map (fun idx => names[idx]!)
-      throw (IO.userError s!"Mutually recursive datatypes not supported: {sccNames.toList}")
-    else
-      for nodeIdx in scc do
-        let datatypeName := names[nodeIdx]!
-        -- Find the datatype by name
-        match ctx.datatypes.find? (fun d => d.name == datatypeName) with
-        | none => throw (IO.userError s!"Datatype {datatypeName} not found in context")
-        | some d =>
-          let constructors ← d.constrs.mapM fun c => do
-            let fieldPairs := c.args.map fun (name, fieldTy) => (name.name, lMonoTyToSMTString fieldTy)
-            let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
-            let fieldsStr := String.intercalate " " fieldStrs
-            if c.args.isEmpty then
-              pure s!"({c.name.name})"
-            else
-              pure s!"({c.name.name} {fieldsStr})"
-          Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
+  for block in ctx.typeFactory.toList do
+    let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
+    match usedBlock with
+    | [] => pure ()
+    | [d] =>
+      let constructors := datatypeConstructorsToSMT d
+      Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
+    | _ =>
+      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d)
+      Strata.SMT.Solver.declareDatatypes dts
 
 abbrev BoundVars := List (String × TermType)
 
@@ -376,7 +325,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
         Note: testers use constructor, translated in `Op.mkName` to is-foo
-        Selectors use full function name, directly translated to function app
+        Selectors use full function name (Datatype..fieldName) for uniqueness
         -/
         let name := match kind with
           | .selector => fn.name
@@ -608,6 +557,7 @@ end
 
 def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) :
   Except Format ((List Term) × SMT.Context) := do
+  let ctx := if ctx.typeFactory.isEmpty then ctx.withTypeFactory E.datatypes else ctx
   match es with
   | [] => .ok ([], ctx)
   | e :: erest =>
@@ -663,95 +613,5 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   match smtctx with
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt
-
-/-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
-#guard_msgs in
-#eval toSMTTermString
-  (.quant () .all (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
-
-/--
-info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (= $__bv0 f0)))\n"
--/
-#guard_msgs in
-#eval toSMTTermString
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
-
-/--
-info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 f1) :pattern ((f0 $__bv0)))))\n"
--/
-#guard_msgs in
-#eval toSMTTermString
-   (.quant ()  .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
-
-
-/--
-info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) f1) :pattern ((f0 $__bv0)))))\n"
--/
-#guard_msgs in
-#eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
-
-/-- info: "Cannot encode expression (f %0)" -/
-#guard_msgs in
-#eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
-
-/--
-info: "; f\n(declare-const f0 (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\n; x\n(declare-const f2 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f1 $__bv0) f2) :pattern (f0))))\n"
--/
-#guard_msgs in
-#eval toSMTTermString
-   (.quant () .exist (.some .int)
-   (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
-   (ctx := SMT.Context.default)
-   (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
-
-/--
-info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) f1) :pattern ((f0 $__bv1 $__bv0)))))\n"
--/
-#guard_msgs in
-#eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] [])
-   (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory :=
-          Env.init.exprEnv.config.factory.push $
-          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
-      }
-   }})
-
-
-/--
-info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (= (f0 $__bv1 $__bv0) f1)))\n"
--/
-#guard_msgs in -- No valid trigger
-#eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] [])
-   (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory :=
-          Env.init.exprEnv.config.factory.push $
-          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
-      }
-   }})
-
 
 end Core

@@ -189,8 +189,8 @@ def pyTranslateCommand : Command where
   help := "Translate a Strata Python Ion file to Strata Core. Write results to stdout."
   callback := fun _ v => do
     let pgm ← readPythonStrata v[0]
-    let preludePgm := Strata.Python.Internal.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.Internal.signatures pgm
+    let preludePgm := Strata.Python.Core.prelude
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
 
@@ -203,8 +203,8 @@ def pyAnalyzeCommand : Command where
     let pgm ← readPythonStrata v[0]
     if verbose then
       IO.print pgm
-    let preludePgm := Strata.Python.Internal.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.Internal.signatures pgm
+    let preludePgm := Strata.Python.Core.prelude
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
@@ -261,7 +261,7 @@ def laurelAnalyzeCommand : Command where
 
     let strataFiles ← deserializeIonToLaurelFiles stdinBytes
 
-    let mut combinedProgram : Laurel.Program := {
+    let mut combinedProgram : Strata.Laurel.Program := {
       staticProcedures := []
       staticFields := []
       types := []
@@ -269,7 +269,7 @@ def laurelAnalyzeCommand : Command where
 
     for strataFile in strataFiles do
 
-      let transResult := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
+      let transResult := Strata.Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Strata.Laurel.parseProgram strataFile.program)
       match transResult with
       | .error transErrors => exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
       | .ok laurelProgram =>
@@ -280,7 +280,7 @@ def laurelAnalyzeCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Laurel.verifyToDiagnosticModels "z3" combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels "z3" combinedProgram
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do

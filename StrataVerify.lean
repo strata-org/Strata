@@ -7,6 +7,7 @@
 -- Executable for verifying a Strata program from a file.
 import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
+import Strata.Languages.B3.Verifier.Program
 import Strata.Util.IO
 import Std.Internal.Parsec
 
@@ -31,7 +32,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : Std.Format :=
-  f!"Usage: StrataVerify [OPTIONS] <file.\{core, csimp}.st>{Std.Format.line}\
+  f!"Usage: StrataVerify [OPTIONS] <file.\{core, csimp, b3}.st>{Std.Format.line}\
   {Std.Format.line}\
   Options:{Std.Format.line}\
   {Std.Format.line}  \
@@ -51,6 +52,7 @@ def main (args : List String) : IO UInt32 := do
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
     let dctx := dctx.addDialect! C_Simp
+    let dctx := dctx.addDialect! B3CST
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match Strata.Elab.elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
@@ -74,6 +76,27 @@ def main (args : List String) : IO UInt32 := do
         let vcResults ← try
           if file.endsWith ".csimp.st" then
             C_Simp.verify "z3" pgm opts
+          else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
+            -- B3 verification (different model, handle inline)
+            let ast ← match B3.Verifier.programToB3AST pgm with
+              | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
+              | Except.ok ast => pure ast
+            let solver ← B3.Verifier.createInteractiveSolver "z3"
+            let reports ← B3.Verifier.programToSMT ast solver
+            -- B3 uses a different result format, print directly and return empty array
+            for report in reports do
+              IO.println s!"\nProcedure: {report.procedureName}"
+              for (result, _) in report.results do
+                let marker := if result.result.isError then "✗" else "✓"
+                let desc := match result.result with
+                  | .error .counterexample => "counterexample found"
+                  | .error .unknown => "unknown"
+                  | .error .refuted => "refuted"
+                  | .success .verified => "verified"
+                  | .success .reachable => "reachable"
+                  | .success .reachabilityUnknown => "reachability unknown"
+                IO.println s!"  {marker} {desc}"
+            pure #[]  -- Return empty array since B3 prints directly
           else
             verify "z3" pgm inputCtx opts
         catch e =>

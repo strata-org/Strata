@@ -495,18 +495,19 @@ structure Diagnostic where
   message : String
   deriving Repr, BEq
 
-def toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do
+def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
+  let fileMap := (files.find? dm.fileRange.file).get!
+  let startPos := fileMap.toPosition dm.fileRange.range.start
+  let endPos := fileMap.toPosition dm.fileRange.range.stop
+  {
+    start := { line := startPos.line, column := startPos.column }
+    ending := { line := endPos.line, column := endPos.column }
+    message := dm.message
+  }
+
+def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do
   let modelOption := toDiagnosticModel vcr
-  modelOption.map (fun dm =>
-      let fileMap := (files.find? dm.fileRange.file).get!
-      let startPos := fileMap.toPosition dm.fileRange.range.start
-      let endPos := fileMap.toPosition dm.fileRange.range.stop
-      {
-        start := { line := startPos.line, column := startPos.column }
-        ending := { line := endPos.line, column := endPos.column }
-        message := dm.message
-      }
-    )
+  modelOption.map (fun dm => dm.toDiagnostic files)
 
 end Strata
 
