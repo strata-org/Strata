@@ -53,7 +53,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   match f with
   | .ident loc i a => .ident loc i <$> a.mapM fun e => expandMacros m e args
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
-  | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
+  | .fvar loc i name a => .fvar loc i name <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
   | .funMacro loc i r => do
     let r ← expandMacros m r args
@@ -79,7 +79,7 @@ the head is in a normal form.
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
   | .arrow .. | .ident .. => e
-  | .fvar _ idx args =>
+  | .fvar _ idx _ args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
@@ -197,7 +197,7 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
             | logErrorMF c.info.loc mf!"Expected type"
           tpArgs := tpArgs.push cinfo.typeExpr
           children := children.push c
-        let tp :=  .fvar loc fidx tpArgs
+        let tp := .fvar loc fidx (some name) tpArgs
         let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := tp, isInferred := false }
         return .node (.ofTypeInfo info) children
       else if let some a := args[params.size]? then
@@ -328,7 +328,7 @@ N.B. This expects that macros have already been expanded in e.
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
   | .arrow .. | .ident .. | .bvar .. => e
-  | .fvar _ idx args =>
+  | .fvar _ idx _ args =>
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
     | .type params (some d) =>
@@ -358,7 +358,7 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
       return false
   | .bvar _ ii, .bvar _ ri =>
     return ii = ri
-  | .fvar _ ii ia, .fvar _ ri ra =>
+  | .fvar _ ii _ ia, .fvar _ ri _ ra =>
     if p : ii = ri ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
         if !(← checkExpressionType tctx ia[i] ra[i]) then
@@ -436,9 +436,9 @@ partial def unifyTypes
     | _ =>
       logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
       return args
-  | .fvar _ eid ea =>
+  | .fvar _ eid _ ea =>
     match tctx.hnf inferredType with
-    | .fvar _ iid ia =>
+    | .fvar _ iid _ ia =>
       if eid != iid then
         logErrorMF exprLoc mf!"Encountered {inferredType} expression when {expectedType} expected."
         return args
@@ -449,7 +449,7 @@ partial def unifyTypes
       return args
   | .bvar _ idx =>
     let .isTrue idxP := inferInstanceAs (Decidable (idx < argLevel))
-      | return panic! "Invalid index"
+      | return panic! s!"Invalid index: idx={idx} argLevel={argLevel} expectedType={repr expectedType} inferredType={repr inferredType}"
     let typeLevel := argLevel - (idx + 1)
     -- Verify type level is a type parameter.
     assert! b[typeLevel].kind.isType
@@ -736,7 +736,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
           | .type params _ =>
             let params := params.toArray
             if params.size = tpArgs.size then
-              return .expr (.fvar nameLoc fidx tpArgs)
+              return .expr (.fvar nameLoc fidx (some name) tpArgs)
             else if let some a := tpArgs[params.size]? then
               logErrorMF a.ann mf!"Unexpected argument to {name}."
               return default
@@ -822,7 +822,7 @@ def evalBindingSpec
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
     -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
     pure { ident, kind }
-  | .type b =>
+  | .type b | .typeForward b =>
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabArgIndex initSize args b.argsIndex fun argLoc b => do
           match b.kind with
