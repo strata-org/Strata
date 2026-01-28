@@ -5,7 +5,11 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Core.Verifier
 
+
+namespace Strata
 namespace Laurel
 
 /-
@@ -23,13 +27,37 @@ Becomes:
 -/
 
 structure SequenceState where
+  insideCondition : Bool
   prependedStmts : List StmtExpr := []
+  diagnostics : List DiagnosticModel
   tempCounter : Nat := 0
 
 abbrev SequenceM := StateM SequenceState
 
 def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
+
+def SequenceM.addDiagnostic (d : DiagnosticModel) : SequenceM Unit :=
+  modify fun s => { s with diagnostics := d :: s.diagnostics }
+
+def checkOutsideCondition(md: Imperative.MetaData Core.Expression): SequenceM Unit := do
+  let state <- get
+  if state.insideCondition then
+    let fileRange := (Imperative.getFileRange md).get!
+    SequenceM.addDiagnostic {
+        fileRange := fileRange,
+        message := "Could not lift assigment in expression that is evaluated conditionally"
+    }
+
+def SequenceM.setInsideCondition : SequenceM Unit := do
+  modify fun s => { s with insideCondition := true }
+
+def SequenceM.withInsideCondition (m : SequenceM α) : SequenceM α := do
+  let oldInsideCondition := (← get).insideCondition
+  modify fun s => { s with insideCondition := true }
+  let result ← m
+  modify fun s => { s with insideCondition := oldInsideCondition }
+  return result
 
 def SequenceM.takePrependedStmts : SequenceM (List StmtExpr) := do
   let stmts := (← get).prependedStmts
@@ -48,12 +76,13 @@ Returns the transformed expression with assignments replaced by variable referen
 -/
 def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
-  | .Assign target value =>
+  | .Assign target value md =>
+      checkOutsideCondition md
       -- This is an assignment in expression context
       -- We need to: 1) execute the assignment, 2) capture the value in a temporary
       -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← transformExpr value
-      let assignStmt := StmtExpr.Assign target seqValue
+      let assignStmt := StmtExpr.Assign target seqValue md
       SequenceM.addPrependedStmt assignStmt
       -- Create a temporary variable to capture the assigned value
       -- Use TInt as the type (could be refined with type inference)
@@ -69,11 +98,12 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
-      let seqThen ← transformExpr thenBranch
-      let seqElse ← match elseBranch with
-        | some e => transformExpr e >>= (pure ∘ some)
-        | none => pure none
-      return .IfThenElse seqCond seqThen seqElse
+      SequenceM.withInsideCondition do
+        let seqThen ← transformExpr thenBranch
+        let seqElse ← match elseBranch with
+          | some e => transformExpr e >>= (pure ∘ some)
+          | none => pure none
+        return .IfThenElse seqCond seqThen seqElse
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -129,26 +159,26 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       | none =>
           return [stmt]
 
-  | .Assign target value =>
-      -- Top-level assignment (statement context)
+  | .Assign target value md =>
       let seqTarget ← transformExpr target
       let seqValue ← transformExpr value
-      SequenceM.addPrependedStmt <| .Assign seqTarget seqValue
+      SequenceM.addPrependedStmt <| .Assign seqTarget seqValue md
       SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
-      let seqThen ← transformStmt thenBranch
-      let thenBlock := .Block seqThen none
-
-      let seqElse ← match elseBranch with
-        | some e =>
-            let se ← transformStmt e
-            pure (some (.Block se none))
-        | none => pure none
-
       let seqCond ← transformExpr cond
-      SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
-      SequenceM.takePrependedStmts
+      SequenceM.withInsideCondition do
+        let seqThen ← transformStmt thenBranch
+        let thenBlock := .Block seqThen none
+
+        let seqElse ← match elseBranch with
+          | some e =>
+              let se ← transformStmt e
+              pure (some (.Block se none))
+          | none => pure none
+
+        SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
+        SequenceM.takePrependedStmts
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -160,24 +190,30 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
 end
 
-def transformProcedureBody (body : StmtExpr) : StmtExpr :=
-  let (seqStmts, _) := transformStmt body |>.run {}
+def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
+  let seqStmts ← transformStmt body
   match seqStmts with
-  | [single] => single
-  | multiple => .Block multiple.reverse none
+  | [single] => pure single
+  | multiple => pure <| .Block multiple.reverse none
 
-def transformProcedure (proc : Procedure) : Procedure :=
+def transformProcedure (proc : Procedure) : SequenceM Procedure := do
+  -- Reset insideCondition for each procedure to avoid cross-procedure contamination
+  modify fun s => { s with insideCondition := false }
   match proc.body with
   | .Transparent bodyExpr =>
-      let seqBody := transformProcedureBody bodyExpr
-      { proc with body := .Transparent seqBody }
-  | _ => proc  -- Opaque and Abstract bodies unchanged
+      let seqBody ← transformProcedureBody bodyExpr
+      pure { proc with body := .Transparent seqBody }
+  | _ => pure proc  -- Opaque and Abstract bodies unchanged
 
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftExpressionAssignments (program : Program) : Program :=
-  let seqProcedures := program.staticProcedures.map transformProcedure
-  { program with staticProcedures := seqProcedures }
+def liftExpressionAssignments (program : Program) : Except (Array DiagnosticModel) Program :=
+  let (seqProcedures, afterState) := (program.staticProcedures.mapM transformProcedure).run
+    { insideCondition := false, diagnostics := [] }
+  if !afterState.diagnostics.isEmpty then
+    .error afterState.diagnostics.toArray
+  else
+    .ok { program with staticProcedures := seqProcedures }
 
 end Laurel

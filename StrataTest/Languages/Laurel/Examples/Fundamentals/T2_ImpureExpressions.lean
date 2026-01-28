@@ -10,21 +10,16 @@ import StrataTest.Languages.Laurel.TestExamples
 open StrataTest.Util
 open Strata
 
-namespace Strata
-namespace Laurel
+namespace Strata.Laurel
 
 def program: String := r"
-procedure nestedImpureStatements(x: int) {
-  var y := 0;
-  if (y := y + 1; == { y := y + 1; x }) {
-    assert x == 1;
-    assert y == x + 1;
-  } else {
-    assert x != 1;
-  }
-  assert y == 2;
-    assert false;
-//  ^^^^^^^^^^^^^ error: assertion does not hold
+procedure NestedImpureStatements() {
+  var y: int := 0;
+  var x: int := y;
+  var z: int := y := y + 1;;
+    assert x == y;
+//  ^^^^^^^^^^^^^^ error: assertion does not hold
+  assert z == y;
 }
 "
 

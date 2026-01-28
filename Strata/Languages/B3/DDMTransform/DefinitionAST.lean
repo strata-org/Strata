@@ -299,7 +299,7 @@ def Statement.mapMetadata [Inhabited N] (f : M → N) (s: Statement M) : Stateme
       -- Unlike List and Array, Option.map does not use `attach` by default for wf proofs
         ⟨f elseB.ann, elseB.val.attach.map (fun x => Statement.mapMetadata f x.1)⟩
   | .ifCase m cases => .ifCase (f m) ⟨f cases.ann, cases.val.map (fun o =>
-      match ho: o with
+      match _: o with
       | .oneIfCase m cond body => .oneIfCase (f m) (Expression.mapMetadata f cond) (Statement.mapMetadata f body))⟩
   | .loop m invariants body =>
       .loop (f m) ⟨f invariants.ann, invariants.val.map (Expression.mapMetadata f)⟩ (Statement.mapMetadata f body)
@@ -373,5 +373,26 @@ def Decl.toUnit [Inhabited (Expression Unit)] (d : Decl M) : Decl Unit :=
 
 def Program.toUnit [Inhabited (Expression Unit)] (p : Program M) : Program Unit :=
   p.mapMetadata (fun _ => ())
+
+/-- Extract metadata from any B3 statement -/
+def Statement.metadata : Statement M → M
+  | .check m _ => m
+  | .assert m _ => m
+  | .assume m _ => m
+  | .reach m _ => m
+  | .blockStmt m _ => m
+  | .probe m _ => m
+  | .varDecl m _ _ _ _ => m
+  | .assign m _ _ => m
+  | .reinit m _ => m
+  | .ifStmt m _ _ _ => m
+  | .ifCase m _ => m
+  | .choose m _ => m
+  | .loop m _ _ => m
+  | .labeledStmt m _ _ => m
+  | .exit m _ => m
+  | .returnStmt m => m
+  | .aForall m _ _ _ => m
+  | .call m _ _ => m
 
 end B3AST
