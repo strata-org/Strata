@@ -48,7 +48,7 @@ Proof Obligation:
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] eb[#0],
                     .set "x" eb[#18],
-                    .assert "x_eq_18" eb[x == #18]]) |>.snd |> Env.format
+                    .assert "x_eq_18" eb[x == #18]]) |>.snd |> format
 
 /--
 info: Error:
@@ -88,7 +88,7 @@ Proof Obligation:
   ∅
   [.init "x" t[int] eb[#0],
   .set "x" eb[y],
-  .assert "x_eq_12" eb[x == #12]]) |>.snd |> Env.format
+  .assert "x_eq_12" eb[x == #12]]) |>.snd |> format
 
 /--
 info: Error:
@@ -122,7 +122,7 @@ Deferred Proof Obligations:
 #eval evalOne ∅ ∅
        [
        .init "x" t[bool] eb[x == #true]
-       ] |>.snd |> Env.format
+       ] |>.snd |> format
 
 /--
 info: Error:
@@ -182,7 +182,7 @@ Proof Obligation:
   .assert "m_2_eq_20" eb[(m #2) == #20],
   .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))],
   .assert "m_1_eq_10" eb[(m #1) == #10]
-  ]) |>.snd |> Env.format
+  ]) |>.snd |> format
 
 /--
 info: Error:
@@ -239,7 +239,7 @@ Proof Obligation:
   .assert "m_2_eq_20" eb[(m #2) == #20],
   .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))],
   .assert "m_1_eq_10" eb[(m #1) == #10]
-  ]) |>.snd |> Env.format
+  ]) |>.snd |> format
 
 
 
@@ -320,7 +320,7 @@ Proof Obligation:
 ((if (zinit == #false) then #6 else #0) == #6)
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog1) |>.snd |> Env.format
+#eval (evalOne ∅ ∅ prog1) |>.snd |> format
 
 
 private def prog2 : Statements := [
@@ -375,7 +375,7 @@ Proof Obligation:
 (($__x0 : int) == #1)
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog2) |>.snd |> Env.format
+#eval (evalOne ∅ ∅ prog2) |>.snd |> format
 
 /--
 Test funcDecl: declare a helper function and use it
@@ -413,7 +413,7 @@ Variable Prefix: $__
 Variable gen count: 0
 Factory Functions:
 func double :  ((x : int)) → int :=
-  ((~Int.Add x) x)
+  (((~Int.Add x) x))
 
 
 Datatypes:
@@ -431,7 +431,7 @@ Proof Obligation:
 ((~double #5) == #10)
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> Env.format
+#eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
 
 /--
 Test funcDecl with symbolic variable capture: function references a variable from enclosing scope
@@ -472,7 +472,7 @@ Variable Prefix: $__
 Variable gen count: 0
 Factory Functions:
 func addN :  ((x : int)) → int :=
-  ((~Int.Add x) n)
+  (((~Int.Add x) n))
 
 
 Datatypes:
@@ -493,7 +493,7 @@ Proof Obligation:
 #eval (evalOne
   ((Env.init (empty_factory := true)).pushScope [("globalN", (mty[int], eb[globalN]))])
   ∅
-  testFuncDeclSymbolic) |>.snd |> Env.format
+  testFuncDeclSymbolic) |>.snd |> format
 
 end Tests
 ---------------------------------------------------------------------

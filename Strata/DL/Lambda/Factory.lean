@@ -30,7 +30,7 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [Inhabited T.Metadata]
+variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
 ---------------------------------------------------------------------
 
@@ -190,18 +190,29 @@ instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
-instance : ToFormat (LFunc T) where
+instance {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] : ToFormat (Func IdentT ExprT TyT MetadataT) where
   format f :=
     let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
     let typeArgs := if f.typeArgs.isEmpty
                     then f!""
                     else f!"∀{f.typeArgs}."
-    let type := f!"{typeArgs} ({Signature.format f.inputs}) → {f.output}"
+    -- Format inputs recursively like Signature.format
+    let rec formatInputs (inputs : List (IdentT × TyT)) : Format :=
+      match inputs with
+      | [] => f!""
+      | [(k, v)] => f!"({k} : {v})"
+      | (k, v) :: rest => f!"({k} : {v}) " ++ formatInputs rest
+    let type := f!"{typeArgs} ({formatInputs f.inputs}) → {f.output}"
     let sep := if f.body.isNone then f!";" else f!" :="
-    let body := if f.body.isNone then f!"" else f!"<body>"
+    let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
     f!"{attr}\
        func {f.name} : {type}{sep}\
        {body}"
+
+-- Provide explicit instance for LFunc to ensure proper resolution
+-- Requires ToFormat for T.IDMeta (for identifiers in expressions) and T.Metadata (for Inhabited LExpr)
+instance [ToFormat T.IDMeta] [Inhabited T.Metadata] : ToFormat (LFunc T) where
+  format := format
 
 def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then

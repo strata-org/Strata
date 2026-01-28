@@ -170,19 +170,6 @@ def Env.init (empty_factory:=false): Env :=
     warnings := []
     deferred := ∅ }
 
--- Custom formatter for Env that uses the proper scope formatting
-def Env.format (s : Env) : Std.Format :=
-  let stateFormat := formatScopes s.exprEnv.state
-  let configFormat := (inferInstance : ToFormat (Lambda.EvalConfig CoreLParams)).format s.exprEnv.config
-  Std.format f!"Error:{Format.line}{s.error}{Format.line}\
-            Subst Map:{Format.line}{s.substMap}{Format.line}\
-            Expression Env:{Format.line}State:{Format.line}{stateFormat}{Format.line}{Format.line}\
-            Evaluation Config:{Format.line}{configFormat}{Format.line}{Format.line}{Format.line}\
-            Datatypes:{Format.line}{s.datatypes}{Format.line}\
-            Path Conditions:{Format.line}{PathConditions.format s.pathConditions}{Format.line}{Format.line}\
-            Warnings:{Format.line}{s.warnings}{Format.line}\
-            Deferred Proof Obligations:{Format.line}{s.deferred}{Format.line}"
-
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
 
@@ -190,7 +177,15 @@ instance : Inhabited Env where
   default := Env.init
 
 instance : ToFormat Env where
-  format := Env.format
+  format s :=
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
+    format f!"Error:{Format.line}{error}{Format.line}\
+              Subst Map:{Format.line}{substMap}{Format.line}\
+              Expression Env:{Format.line}{exprEnv}{Format.line}\
+              Datatypes:{Format.line}{datatypes}{Format.line}\
+              Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
+              Warnings:{Format.line}{warnings}{Format.line}\
+              Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--
 Create a substitution map from all non-global variables to their values.
