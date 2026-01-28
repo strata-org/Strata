@@ -25,6 +25,11 @@ jobs:
         with:
           build-args: 'Strata:docs StrataTest:docs'
           lake-package-directory: 'docs/api'
+      - name: Debug API docs location
+        run: |
+          echo "Listing docs/api/.lake/build/doc:"
+          ls -la docs/api/.lake/build/doc || echo "Not found at docs/api/.lake/build/doc"
+          find docs/api -name "*.html" -type f | head -20 || echo "No HTML files found"
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
