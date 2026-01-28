@@ -23,10 +23,8 @@ jobs:
           build-args: '--wfail'
           lake-package-directory: 'docs/verso'
       - name: Build API documentation
-        uses: leanprover/lean-action@v1
-        with:
-          build-args: 'Strata:docs StrataTest:docs'
-          lake-package-directory: 'docs/api'
+        run: lake build Strata:docs
+        working-directory: docs/api
       - name: Debug API docs location
         run: |
           echo "Listing docs/api/.lake/build/doc:"
