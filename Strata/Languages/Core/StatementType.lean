@@ -180,7 +180,7 @@ where
             concreteEval := none,  -- Can't convert concreteEval safely
             axioms := decl.axioms
           }
-          let (func', Env) ← Function.typeCheck C Env func
+          let (func', Env) ← Function.typeCheck C Env func |>.mapError DiagnosticModel.fromFormat
           -- Convert back by wrapping monotypes in trivial polytypes
           let decl' : PureFunc Expression := {
             name := func'.name,
