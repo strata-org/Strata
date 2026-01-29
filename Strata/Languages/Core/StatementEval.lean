@@ -419,7 +419,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | .ok env' => [{ Ewn with env := env' }]
             | .error e =>
               -- If adding fails, set error but continue
-              [{ Ewn with env := { Ewn.env with error := some (.Misc e) } }]
+              [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 
