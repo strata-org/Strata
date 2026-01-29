@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
+public section
 
 namespace Imperative
 
@@ -64,3 +65,5 @@ class HasBoolVal (P : PureExpr) [HasBool P] [HasVal P] where
   bool_is_val : (@HasVal.value P) HasBool.tt ∧ (@HasVal.value P) HasBool.ff
 
 end Imperative
+
+end
