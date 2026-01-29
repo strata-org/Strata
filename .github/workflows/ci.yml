@@ -122,6 +122,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Build API documentation package
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: 'docs/api'
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:

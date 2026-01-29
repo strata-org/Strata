@@ -43,6 +43,7 @@ Design choices:
 - Construction of composite types is WIP. It needs a design first.
 
 -/
+namespace Strata
 namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
@@ -60,15 +61,15 @@ inductive Operation: Type where
 -- Explicit instance needed for deriving Repr in the mutual block
 instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
 
+
 mutual
 structure Procedure: Type where
   name : Identifier
   inputs : List Parameter
   outputs : List Parameter
   precondition : StmtExpr
+  determinism : Determinism
   decreases : Option StmtExpr -- optionally prove termination
-  determinism: Determinism
-  modifies : Option StmtExpr
   body : Body
 
 inductive Determinism where
@@ -84,6 +85,8 @@ inductive HighType : Type where
   | TBool
   | TInt
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
+  | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
+  | TTypedField (valueType : HighType) /- Field constant with known value type. Not accessible via grammar. -/
   | UserDefined (name: Identifier)
   | Applied (base : HighType) (typeArguments : List HighType)
   /- Pure represents a composite type that does not support reference equality -/
@@ -97,7 +100,7 @@ inductive HighType : Type where
 inductive Body where
   | Transparent (body : StmtExpr)
 /- Without an implementation, the postcondition is assumed -/
-  | Opaque (postcondition : StmtExpr) (implementation : Option StmtExpr)
+  | Opaque (postcondition : StmtExpr) (implementation : Option StmtExpr) (modifies : Option StmtExpr)
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
   | Abstract (postcondition : StmtExpr)
@@ -130,7 +133,7 @@ inductive StmtExpr : Type where
   | LiteralBool (value: Bool)
   | Identifier (name : Identifier)
   /- Assign is only allowed in an impure context -/
-  | Assign (target : StmtExpr) (value : StmtExpr)
+  | Assign (target : StmtExpr) (value : StmtExpr) (md : Imperative.MetaData Core.Expression)
   /- Used by itself for fields reads and in combination with Assign for field writes -/
   | FieldSelect (target : StmtExpr) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/
@@ -193,6 +196,8 @@ def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
   | HighType.TFloat64, HighType.TFloat64 => true
+  | HighType.THeap, HighType.THeap => true
+  | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -250,7 +255,12 @@ inductive TypeDefinition where
   | Composite (ty : CompositeType)
   | Constrained (ty : ConstrainedType)
 
+structure Constant where
+  name : Identifier
+  type : HighType
+
 structure Program where
   staticProcedures : List Procedure
   staticFields : List Field
   types : List TypeDefinition
+  constants : List Constant := []
