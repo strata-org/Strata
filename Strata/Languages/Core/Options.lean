@@ -45,6 +45,8 @@ structure Options where
   removeIrrelevantAxioms : Bool
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
+  /-- Output results in SARIF format -/
+  outputSarif : Bool
 
 def Options.default : Options := {
   verbose := .normal,
@@ -53,7 +55,8 @@ def Options.default : Options := {
   checkOnly := false,
   stopOnFirstError := false,
   removeIrrelevantAxioms := false,
-  solverTimeout := 10
+  solverTimeout := 10,
+  outputSarif := false
 }
 
 instance : Inhabited Options where

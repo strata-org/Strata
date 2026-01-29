@@ -6,6 +6,7 @@
 
 -- Executable for verifying a Strata program from a file.
 import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Util.IO
@@ -22,6 +23,8 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | opts, "--type-check" :: rest => go {opts with typeCheckOnly := true} rest
       | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
       | opts, "--stop-on-first-error" :: rest => go {opts with stopOnFirstError := true} rest
+      | opts, "--sarif" :: rest => go {opts with outputSarif := true} rest
+      | opts, "--output-format=sarif" :: rest => go {opts with outputSarif := true} rest
       | opts, "--solver-timeout" :: secondsStr :: rest =>
          let n? := String.toNat? secondsStr
          match n? with
@@ -41,7 +44,9 @@ def usageMessage : Std.Format :=
   --type-check                Exit after semantic dialect's type inference/checking.{Std.Format.line}  \
   --parse-only                Exit after DDM parsing and type checking.{Std.Format.line}  \
   --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
-  --solver-timeout <seconds>  Set the solver time limit per proof goal."
+  --solver-timeout <seconds>  Set the solver time limit per proof goal.{Std.Format.line}  \
+  --sarif                     Output results in SARIF format to <file>.sarif{Std.Format.line}  \
+  --output-format=sarif       Output results in SARIF format to <file>.sarif"
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -102,6 +107,26 @@ def main (args : List String) : IO UInt32 := do
         catch e =>
           println! f!"{e}"
           return (1 : UInt32)
+
+        -- Output in SARIF format if requested
+        if opts.outputSarif then
+          -- Skip SARIF generation for C_Simp files because the translation from C_Simp to
+          -- Core discards metadata (file, line, column information), making SARIF output
+          -- less useful. The vcResultsToSarif function would work type-wise (both produce
+          -- Core.VCResults), but the resulting SARIF would lack location information.
+          if file.endsWith ".csimp.st" then
+            println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
+          else
+            let sarifDoc := Core.Sarif.vcResultsToSarif vcResults
+            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
+            let sarifFile := file ++ ".sarif"
+            try
+              IO.FS.writeFile sarifFile sarifJson
+              println! f!"SARIF output written to {sarifFile}"
+            catch e =>
+              println! f!"Error writing SARIF output to {sarifFile}: {e.toString}"
+
+        -- Also output standard format
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
