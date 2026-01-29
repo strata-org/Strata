@@ -732,10 +732,10 @@ def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Option String :=
 /--
 Check that all ADTs in TypeFactory `adts` are inhabited.
 -/
-def TypeFactory.checkInhab (adts: @TypeFactory IDMeta) : Except Format Unit :=
+def TypeFactory.checkInhab (adts: @TypeFactory IDMeta) : Except DiagnosticModel Unit :=
   match adts.all_inhab with
   | none => .ok ()
-  | some a => .error f!"Error: datatype {a} not inhabited"
+  | some a => .error <| DiagnosticModel.fromFormat f!"Error: datatype {a} not inhabited"
 
 ---------------------------------------------------------------------
 
