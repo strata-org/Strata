@@ -21,6 +21,7 @@ Also see `Strata.DL.Lambda.LExprT`.
 namespace Lambda
 open Std (ToFormat Format format)
 open LExpr
+open Strata
 
 ---------------------------------------------------------------------
 
@@ -198,7 +199,7 @@ def KnownTypes.keywords (ks : KnownTypes) : List String :=
 def KnownTypes.toList (ks: KnownTypes) : List KnownType :=
   (Std.HashMap.toList ks).map (fun x => ⟨x.1, x.2⟩)
 
-def KnownTypes.addWithError (ks: KnownTypes) (x: KnownType) (f: Format) : Except Format KnownTypes :=
+def KnownTypes.addWithError (ks: KnownTypes) (x: KnownType) (f: DiagnosticModel) : Except DiagnosticModel KnownTypes :=
   Identifiers.addWithError ks ⟨x.name, x.arity⟩ f
 
 def KnownTypes.contains (ks: KnownTypes) (x: KnownType) : Bool :=
@@ -313,13 +314,13 @@ instance : ToFormat (LContext T) where
                  identifiers:{Format.line}{s.idents}"
 
 
-def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: Format) : Except Format (LContext T) := do
+def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
   .ok {C with knownTypes := (← C.knownTypes.addWithError k f)}
 
-def LContext.addKnownTypes (C : LContext T) (k : KnownTypes) : Except Format (LContext T) := do
-  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ f!"Error: type {k} already known") C
+def LContext.addKnownTypes (C : LContext T) (k : KnownTypes) : Except DiagnosticModel (LContext T) := do
+  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ (DiagnosticModel.fromFormat f!"Error: type {k} already known")) C
 
-def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: Format) : Except Format (LContext T) := do
+def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
   let i ← C.idents.addWithError i f
   .ok {C with idents := i}
 
@@ -335,11 +336,12 @@ This adds all types to `C.datatypes` and `C.knownTypes`,
 adds the derived functions (e.g. eliminators, testers),
 and performs error checking for name clashes.
 -/
-def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta] (C: LContext T) (block: MutualDatatype T.IDMeta) : Except Format (LContext T) := do
+def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta]
+  (C: LContext T) (block: MutualDatatype T.IDMeta) : Except DiagnosticModel (LContext T) := do
   -- Check for name clashes with known types
   for d in block do
     if C.knownTypes.containsName d.name then
-      throw f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
+      throw <| DiagnosticModel.fromFormat f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
   let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
   -- Add factory functions, checking for name clashes
   let f ← genBlockFactory block
@@ -348,7 +350,7 @@ def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToForma
   let ks ← block.foldlM (fun ks d => ks.add d.toKnownType) C.knownTypes
   .ok {C with datatypes := ds, functions := fs, knownTypes := ks}
 
-def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except Format (LContext T) :=
+def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except DiagnosticModel (LContext T) :=
   f.foldlM (fun C block => C.addMutualBlock block) C
 
 /--
