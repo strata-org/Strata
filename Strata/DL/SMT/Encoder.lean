@@ -197,8 +197,8 @@ def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String)
     else
       defineTerm inBinder tyEnc s!"({← encodeUF f} {args})"
   | .datatype_op .constructor name =>
+    -- Zero-argument constructors are constants in SMT-LIB, not function applications
     -- For parametric datatypes, we need to cast the constructor to the concrete type
-    -- This is necessary when the constructor doesn't use all type parameters
     if tEncs.isEmpty then
       defineTerm inBinder tyEnc s!"(as {name} {tyEnc})"
     else
