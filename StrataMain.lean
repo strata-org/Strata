@@ -6,13 +6,10 @@
 
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
-import Strata.DDM.Ion
-import Strata.DDM.Util.ByteArray
-import Strata.Util.IO
-
 import Strata.DDM.Integration.Java.Gen
 import Strata.DDM.Util.ByteArray
 import Strata.Languages.Python.Python
+import Strata.Languages.Python.Specs
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
@@ -145,7 +142,7 @@ def toIonCommand : Command where
 def printCommand : Command where
   name := "print"
   args := [ "file" ]
-  help := "Write a Strata t ext or Ion file to standard output."
+  help := "Write a Strata text or Ion file to standard output."
   callback := fun searchPath v => do
     let (ld, pd) ← readFile searchPath v[0]
     match pd with
@@ -176,16 +173,21 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (strataPath : String) : IO (Array (Strata.Python.stmt Strata.SourceRange)) := do
+def readPythonStrata (strataPath : String) :
+    IO (Array (Strata.Python.stmt Strata.SourceRange)) := do
   let bytes ← Strata.Util.readBinInputSource strataPath
   if ! Ion.isIonFile bytes then
     exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  let map := Strata.Python.Python_map
+  match Strata.Program.fromIon map Strata.Python.Python.name bytes with
   | .ok pgm =>
     let pyCmds ← pgm.commands.mapM fun cmd =>
       match Strata.Python.Command.ofAst cmd with
       | .error msg =>
-        exitFailure s!"Internal: could not parse command:\nMessage {msg}\nCommand: {Strata.eformat cmd}"
+        exitFailure $
+          s!"Internal: could not parse command:\n"
+          ++ "Message: {msg}\n"
+          ++ "Command: {Strata.eformat cmd}"
       | .ok r => pure r
     let isTrue p := inferInstanceAs (Decidable (pyCmds.size = 1))
       | exitFailure s!"Internal: Invalid number of commands"
@@ -194,6 +196,55 @@ def readPythonStrata (strataPath : String) : IO (Array (Strata.Python.stmt Strat
     pure stmts.val
   | .error msg =>
     exitFailure msg
+
+def pySpecsCommand : Command where
+  name := "pySpecs"
+  args := [ "python_path", "strata_path" ]
+  help := "Translate a Python specification source file into binary pySpec file."
+  callback := fun _ v => do
+    let dialectFile := "Tools/Python/dialects/Python.dialect.st.ion"
+    let pythonFile : System.FilePath := v[0]
+    let strataDir : System.FilePath := v[1]
+    if (←pythonFile.metadata).type != .file then
+      exitFailure s!"Expected Python to be a regular file."
+    match ←strataDir.metadata |>.toBaseIO with
+    | .ok md =>
+      if md.type != .dir then
+        exitFailure s!"Expected Strata to be a directory."
+    | .error _ =>
+      IO.FS.createDir strataDir
+    let some searchPath := pythonFile.parent
+      | exitFailure s!"{pythonFile} directory unknown"
+    let contents ←
+          match ← IO.FS.readFile pythonFile |>.toBaseIO with
+          | .ok b => pure b
+          | .error msg =>
+            exitFailure s!"Could not read {pythonFile}"
+    let body ←
+      match ← Strata.Python.pythonToStrata dialectFile pythonFile |>.toBaseIO with
+      | .ok r => pure r
+      | .error msg =>
+        exitFailure msg
+
+    let (fmm, sigs, errors) ←
+      Strata.Python.Specs.translateModule
+        (dialectFile := dialectFile)
+        (searchPath := searchPath)
+        (strataDir := strataDir)
+        (pythonFile := pythonFile)
+        (.ofString contents)
+        body
+    if errors.size > 0 then
+      IO.eprintln "Translation errors:"
+      for e in errors do
+        IO.eprintln s!"{fmm.ppSourceRange pythonFile e.loc}: {e.message}"
+      IO.Process.exit 1
+    let some mod := pythonFile.fileStem
+      | exitFailure s!"No stem {pythonFile}"
+    let .ok mod := Strata.Python.Specs.ModuleName.ofString mod
+      | exitFailure s!"Invalid module {mod}"
+    let strataFile := strataDir / mod.strataFileName
+    Strata.Python.Specs.writeDDM strataFile sigs
 
 def pyTranslateCommand : Command where
   name := "pyTranslate"
@@ -306,6 +357,7 @@ def commandList : List Command := [
       diffCommand,
       pyAnalyzeCommand,
       pyTranslateCommand,
+      pySpecsCommand,
       laurelAnalyzeCommand,
     ]
 
