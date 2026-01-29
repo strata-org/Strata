@@ -12,6 +12,7 @@ import Strata.DL.Imperative.EvalContext
 namespace Core
 open Std (ToFormat Format format)
 open Imperative
+open Strata
 
 instance : ToFormat ExpressionMetadata :=
   show ToFormat Unit from inferInstance
@@ -196,11 +197,11 @@ def Env.popScope (E : Env) : Env :=
 def Env.factory (E : Env) : (@Lambda.Factory CoreLParams) :=
   E.exprEnv.config.factory
 
-def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Format Env := do
+def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except DiagnosticModel Env := do
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
-def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Format Env := do
+def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
@@ -318,12 +319,12 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
-def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Visibility) : Except Format Env := do
+def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Visibility) : Except DiagnosticModel Env := do
   let f ← Lambda.genBlockFactory (T:=CoreLParams) block
   let env ← E.addFactory f
   return { env with datatypes := E.datatypes.push block }
 
-def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Visibility)) : Except Format Env :=
+def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Visibility)) : Except DiagnosticModel Env :=
   blocks.foldlM Env.addMutualDatatype E
 
 end Core
