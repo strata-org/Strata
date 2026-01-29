@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-! ## List Properties Utilities
   This file contains miscellaneous utilities for manipulating lists and
@@ -47,7 +48,7 @@ Taken from mathlib4
 https://github.com/leanprover-community/mathlib4/blob/d7a4adb961ed411dbec6ff6857cfc771859ec83f/Mathlib/Data/List/Defs.lean#L131-L137
 https://github.com/leanprover-community/mathlib4/blob/d7a4adb961ed411dbec6ff6857cfc771859ec83f/Mathlib/Data/List/Basic.lean#L1203-L1206
 -/
-def Forall (p : α → Prop) : List α → Prop
+public def Forall (p : α → Prop) : List α → Prop
   | [] => True
   | x :: [] => p x
   | x :: l => p x ∧ Forall p l
@@ -91,7 +92,7 @@ def List.replaceAll [BEq α] : List α → α → α → List α
 /-- `Disjoint l₁ l₂` means that `l₁` and `l₂` have no elements in common.
 Taken from https://github.com/leanprover-community/batteries/blob/3613427d66262c4e25e19b40a6a49242e94ba072/Batteries/Data/List/Basic.lean#L512-L514
 -/
-def List.Disjoint (l₁ l₂ : List α) : Prop :=
+public def List.Disjoint (l₁ l₂ : List α) : Prop :=
   ∀ ⦃a⦄, a ∈ l₁ → a ∈ l₂ → False
 
 theorem List.removeAll_Sublist [BEq α] {xs ys : List α}:

@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-! ## No Duplication Properties
   This file contains theormes related to `List.Nodup` property. The main theorem
