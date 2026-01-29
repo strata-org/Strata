@@ -16,108 +16,108 @@ open LTy.Syntax
 -- are instantiated appropriately and the global substitution is updated.
 -- See `resolveAliases` for a version that also de-aliases `BarAlias`.
 /--
-info: Ans: some (Foo $__ty0 (BarAlias $__ty0 $__ty0))
+info: ok: Ans: (Foo $__ty0 (BarAlias $__ty0 $__ty0))
 Subst:
 [(p, $__ty0) ($__ty1, (BarAlias $__ty0 $__ty0))]
 -/
 #guard_msgs in
-#eval let (ans, Env) := LMonoTy.aliasDef?
-        mty[FooAlias %p (BarAlias %p %p)]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]})
-      format f!"Ans: {ans}\n\
-                Subst:\n{Env.stateSubstInfo.subst}"
+#eval do let (ans, Env) ← LMonoTy.aliasDef?
+                            mty[FooAlias %p (BarAlias %p %p)]
+                            ( (@TEnv.default String).updateContext
+                              { aliases := [{ typeArgs := ["x", "y"],
+                                                         name := "FooAlias",
+                                                         type := mty[Foo %x %y]},
+                                                       { typeArgs := ["a", "b"],
+                                                         name := "BarAlias",
+                                                         type := mty[Bar %a %b]
+                                                       }
+                                                      ]})
+          return (format f!"Ans: {ans}\n\
+                            Subst:\n{Env.stateSubstInfo.subst}")
 
-/-- info: some (Foo $__ty0 (BarAlias q $__ty0)) -/
+/-- info: ok: (Foo $__ty0 (BarAlias q $__ty0)) -/
 #guard_msgs in
-#eval LMonoTy.aliasDef?
-        mty[FooAlias %p (BarAlias %q %p)]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]} )
-      |>.fst |> format
+#eval do let (ans, _Env) ← LMonoTy.aliasDef?
+          mty[FooAlias %p (BarAlias %q %p)]
+          ( (@TEnv.default String).updateContext
+            { aliases := [{ typeArgs := ["x", "y"],
+                                       name := "FooAlias",
+                                       type := mty[Foo %x %y]},
+                                     { typeArgs := ["a", "b"],
+                                       name := "BarAlias",
+                                       type := mty[Bar %a %b]
+                                     }
+                                    ]} )
+          return f!"{ans}"
 
-/-- info: some int -/
+/-- info: ok: int -/
 #guard_msgs in
-#eval LMonoTy.aliasDef? mty[myInt]
-      ( (@TEnv.default String).updateContext
-                  { aliases := [{ typeArgs := [],
-                                  name := "myInt",
-                                  type := mty[int]}]} )
-      |>.fst |> format
+#eval do let (ans, _) ← LMonoTy.aliasDef? mty[myInt]
+                        ( (@TEnv.default String).updateContext
+                          { aliases := [{ typeArgs := [],
+                                          name := "myInt",
+                                          type := mty[int]}]} )
+         return format ans
 
-/-- info: some bool -/
+/-- info: ok: bool -/
 #guard_msgs in
-#eval LMonoTy.aliasDef?
-        mty[BadBoolAlias %p %q]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "BadBoolAlias",
-                                     type := mty[bool]}]} )
-      |>.fst |> format
+#eval do let (ans, _) ← LMonoTy.aliasDef?
+                        mty[BadBoolAlias %p %q]
+                        ( (@TEnv.default String).updateContext
+                          { aliases := [{ typeArgs := ["x", "y"],
+                                          name := "BadBoolAlias",
+                                          type := mty[bool]}]} )
+         return format ans
 
-/-- info: none -/
+/-- info: ok: myInt -/
 #guard_msgs in
-#eval LMonoTy.aliasDef? mty[myInt]
-                    ( (@TEnv.default String).updateContext
-                      { aliases := [{
-                         typeArgs := ["a"],
-                         name := "myInt",
-                         type := mty[int]}] })
-      |>.fst |> format
+#eval do let (ans, _) ← LMonoTy.aliasDef? mty[myInt]
+                        ( (@TEnv.default String).updateContext
+                          { aliases := [{
+                             typeArgs := ["a"],
+                             name := "myInt",
+                             type := mty[int]}] })
+         return format ans
 
-/-- info: some (myDef int) -/
+/-- info: ok: (myDef int) -/
 #guard_msgs in
-#eval LMonoTy.aliasDef? mty[myAlias int bool]
-                    ( (@TEnv.default String).updateContext
-                      { aliases := [{
-                        typeArgs := ["a", "b"],
-                        name := "myAlias",
-                        type := mty[myDef %a]}] })
-      |>.fst |> format
+#eval do let (ans, _) ← LMonoTy.aliasDef? mty[myAlias int bool]
+                        ( (@TEnv.default String).updateContext
+                          { aliases := [{
+                            typeArgs := ["a", "b"],
+                            name := "myAlias",
+                            type := mty[myDef %a]}] })
+         return format ans
 
 /--
-info: De-aliased type: some (Foo $__ty0 (Bar $__ty3 $__ty3))
+info: ok: De-aliased type: (Foo $__ty2 (Bar $__ty2 $__ty2))
 Subst:
-[(p, $__ty3) ($__ty1, (BarAlias $__ty3 $__ty3)) ($__ty0, $__ty3) ($__ty2, $__ty3)]
+[(p, $__ty2) ($__ty0, $__ty2) ($__ty1, $__ty2) ($__ty3, (Bar $__ty2 $__ty2))]
 -/
 #guard_msgs in
-#eval let (ty, Env) := LMonoTy.resolveAliases
-        mty[FooAlias %p (BarAlias %p %p)]
-        ((@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]})
-      format f!"De-aliased type: {ty}\n\
-                Subst:\n{Env.stateSubstInfo.subst}"
+#eval do let (ty, Env) ← LMonoTy.resolveAliases
+          mty[FooAlias %p (BarAlias %p %p)]
+          ((@TEnv.default String).updateContext
+            { aliases := [{ typeArgs := ["x", "y"],
+                                       name := "FooAlias",
+                                       type := mty[Foo %x %y]},
+                                     { typeArgs := ["a", "b"],
+                                       name := "BarAlias",
+                                       type := mty[Bar %a %b]
+                                     }
+                                    ]})
+          return (format f!"De-aliased type: {ty}\n\
+                            Subst:\n{Env.stateSubstInfo.subst}")
 
-/-- info: some (arrow bool $__ty0) -/
+/-- info: ok: (arrow bool $__ty0) -/
 #guard_msgs in
-#eval LTy.resolveAliases
-        t[∀x. (FooAlias %x %x) → %x]
-        ((@TEnv.default String).updateContext { aliases := [{
-                                        typeArgs := ["x", "y"],
-                                        name := "FooAlias",
-                                        type := mty[bool]}]} )
-      |>.fst |>.format
+#eval do let (ans, _) ← LTy.resolveAliases
+                        t[∀x. (FooAlias %x %x) → %x]
+                        ((@TEnv.default String).updateContext { aliases := [{
+                                                        typeArgs := ["x", "y"],
+                                                        name := "FooAlias",
+                                                        type := mty[bool]}]} )
+          return (format ans)
 
 /-- info: false -/
 #guard_msgs in

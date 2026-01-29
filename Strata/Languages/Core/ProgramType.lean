@@ -64,7 +64,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
             .ok (.type td, C, Env)
           | .data block =>
-            let (block, Env) := MutualDatatype.resolveAliases block Env
+            let (block, Env) ← MutualDatatype.resolveAliases block Env
             let C ← C.addMutualBlock block
             .ok (.type (.data block), C, Env)
           catch e =>
