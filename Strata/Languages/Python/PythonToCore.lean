@@ -78,11 +78,6 @@ def toPyCommands (a : Array Operation) : Array (Python.Command SourceRange) :=
     | .error e => panic! s!"Failed to translate to Python.Command: {e}"
     | .ok cmd => cmd)
 
-def unwrapModule (c : Python.Command SourceRange) : Array (Python.stmt SourceRange) :=
-  match c with
-  | Python.Command.Module _ body _ => body.val
-  | _ => panic! "Expected module"
-
 def strToCoreExpr (s: String) : Core.Expression.Expr :=
   .strConst () s
 
@@ -742,10 +737,7 @@ def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationC
       .proc (pythonFuncToCore (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program): Core.Program :=
-  let pyCmds := toPyCommands pgm.commands
-  assert! pyCmds.size == 1
-  let insideMod := unwrapModule pyCmds[0]!
+def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stmt SourceRange)) : Core.Program :=
   let func_defs := insideMod.filter (λ s => match s with
   | .FunctionDef _ _ _ _ _ _ _ _ => true
   | _ => false)
