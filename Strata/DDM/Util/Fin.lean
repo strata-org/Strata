@@ -35,3 +35,10 @@ end Range
 def range (n : Nat) : Range n := .mk
 
 end Fin
+
+public section
+namespace Strata.Fin
+export _root_.Fin(Range range)
+end Strata.Fin
+
+end

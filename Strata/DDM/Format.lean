@@ -133,10 +133,10 @@ structure FormatState where
 namespace FormatState
 
 /-- A format context that uses no syntactic sugar. -/
-private def empty : FormatState where
+def empty : FormatState where
   openDialects := {}
 
-private instance : Inhabited FormatState where
+instance : Inhabited FormatState where
   default := .empty
 
 def pushBinding (s : FormatState) (ident : String) : FormatState :=

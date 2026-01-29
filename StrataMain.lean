@@ -11,12 +11,13 @@ import Strata.DDM.Util.ByteArray
 import Strata.Util.IO
 
 import Strata.DDM.Integration.Java.Gen
+import Strata.DDM.Util.ByteArray
 import Strata.Languages.Python.Python
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 def exitFailure {α} (message : String) : IO α := do
@@ -144,7 +145,7 @@ def toIonCommand : Command where
 def printCommand : Command where
   name := "print"
   args := [ "file" ]
-  help := "Write a Strata text or Ion file to standard output."
+  help := "Write a Strata t ext or Ion file to standard output."
   callback := fun searchPath v => do
     let (ld, pd) ← readFile searchPath v[0]
     match pd with
@@ -175,12 +176,12 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (path : String) : IO Strata.Program := do
-  let bytes ← Strata.Util.readBinInputSource path
+def readPythonStrata (strataPath : String) : IO Strata.Program := do
+  let bytes ← Strata.Util.readBinInputSource strataPath
   if ! Ion.isIonFile bytes then
     exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fileFromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
-  | .ok p => pure p
+  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  | .ok pgm => pure pgm
   | .error msg => exitFailure msg
 
 def pyTranslateCommand : Command where

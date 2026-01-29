@@ -598,7 +598,7 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
   | "ident" =>
     let ⟨p⟩ ← .checkArgCount "ident" sexp 3
     .ident <$> fromIon sexp[1]
-           <*> .asString "Identifier value" sexp[2]
+           <*> .asSymbolString "Identifier value" sexp[2]
   | "num" =>
     let ⟨p⟩ ← .checkArgCount "num" sexp 3
     let ann ← fromIon sexp[1]
@@ -1452,7 +1452,10 @@ def fromIonFragment (f : Ion.Fragment)
     commands := ← fromIonFragmentCommands f
   }
 
-def fileFromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
+/--
+Decodes bytes in the Ion format into a single Strata program.
+-/
+def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
   let (hdr, frag) ←
     match Strata.Ion.Header.parse bytes with
     | .error msg =>

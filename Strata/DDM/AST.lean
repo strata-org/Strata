@@ -6,10 +6,10 @@
 module
 
 public import Std.Data.HashMap.Basic
+public import Strata.DDM.AST.Datatype
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
-public import Lean.Data.Position
-public import Strata.DDM.AST.Datatype
+public import Strata.DDM.Util.SourceRange
 
 import Std.Data.HashMap
 import all Strata.DDM.Util.Array
@@ -273,122 +273,6 @@ public def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α 
   | _ => (e, prev)
 
 end ExprF
-
-/--
-Source location information in the DDM is defined
-by a range of bytes in a UTF-8 string with the input
-Line/column information can be construced from a
-`Lean.FileMap`
-
-As an example, in the string `"123abc\ndef"`, the string
-`"abc"` has the position `{start := 3, stop := 6 }` while
-`"def"` has the position `{start := 7, stop := 10 }`.
--/
-structure SourceRange where
-  /-- The starting offset of the source range. -/
-  start : String.Pos.Raw
-  /-- One past the end of the range. -/
-  stop : String.Pos.Raw
-deriving DecidableEq, Inhabited, Repr
-
-namespace SourceRange
-
-def none : SourceRange := { start := 0, stop := 0 }
-
-def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
-
-instance : ToFormat SourceRange where
- format fr := f!"{fr.start}-{fr.stop}"
-
-end SourceRange
-
-inductive Uri where
-  | file (path: String)
-  deriving DecidableEq, Repr, Inhabited
-
-instance : ToFormat Uri where
- format fr := match fr with | .file path => path
-
-structure FileRange where
-  file: Uri
-  range: Strata.SourceRange
-  deriving DecidableEq, Repr, Inhabited
-
-instance : ToFormat FileRange where
- format fr := f!"{fr.file}:{fr.range}"
-
-/-- A default file range for errors without source location.
-This should only be used for generated nodes that are guaranteed to be correct. -/
-def FileRange.unknown : FileRange :=
-  { file := .file "<unknown>", range := SourceRange.none }
-
-/-- A diagnostic model that holds a file range and a message.
-    This can be converted to a formatted string using a FileMap. -/
-structure DiagnosticModel where
-  fileRange : FileRange
-  message : String
-  deriving Repr, BEq, Inhabited
-
-instance : Inhabited DiagnosticModel where
-  default := { fileRange := FileRange.unknown, message := "" }
-
-/-- Create a DiagnosticModel from just a message (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := msg }
-
-/-- Create a DiagnosticModel from a Format (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := toString fmt }
-
-/-- Create a DiagnosticModel with source location. -/
-def DiagnosticModel.withRange (fr : FileRange) (msg : Format) : DiagnosticModel :=
-  { fileRange := fr, message := toString msg }
-
-/-- Format a file range using a FileMap to convert byte offsets to line/column positions. -/
-def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  let baseName := match fr.file with
-                  | .file path => (path.splitToList (· == '/')).getLast!
-  match fileMap with
-  | some fm =>
-    let startPos := fm.toPosition fr.range.start
-    let endPos := fm.toPosition fr.range.stop
-    if includeEnd? then
-      if startPos.line == endPos.line then
-        f!"{baseName}({startPos.line},({startPos.column}-{endPos.column}))"
-      else
-        f!"{baseName}(({startPos.line},{startPos.column})-({endPos.line},{endPos.column}))"
-    else
-      f!"{baseName}({startPos.line}, {startPos.column})"
-  | none =>
-    if fr.range.isNone then
-      f!""
-    else
-      f!"{baseName}({fr.range.start}-{fr.range.stop})"
-
-/-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
-def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  let rangeStr := dm.fileRange.format fileMap includeEnd?
-  if dm.fileRange.range.isNone then
-    f!"{dm.message}"
-  else
-    f!"{rangeStr} {dm.message}"
-
-/-- Format just the file range portion of a DiagnosticModel. -/
-def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  dm.fileRange.format fileMap includeEnd?
-
-/-- Update the file range of a DiagnosticModel if it's currently unknown.
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) : DiagnosticModel :=
-  if dm.fileRange.range.isNone then
-    { dm with fileRange := fr }
-  else
-    dm
-
-instance : ToString DiagnosticModel where
-  toString dm := dm.format none |> toString
 
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange
@@ -1750,7 +1634,7 @@ private partial def OperationF.foldBindingSpecs {α β}
         | some lvl => foldOverArgAtLevel m f init argDecls argsV lvl
       decl.newBindings.foldl (init := init) fun a b => f a op.ann b argsV
     else
-      @panic _ ⟨init⟩ "Expected arguments to match bindings"
+      @panic _ ⟨init⟩ s!"{op.name} expects {argDecls.size} arguments when {args.size} provided."
   | _ => @panic _ ⟨init⟩ s!"Unknown operation {op.name}"
 
 /--
