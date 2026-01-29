@@ -91,12 +91,14 @@ inductive TypeExprF (α : Type) where
 | ident (ann : α) (name : QualifiedIdent) (args : Array (TypeExprF α))
   /-- A bound type variable at the given deBruijn index in the context. -/
 | bvar (ann : α) (index : Nat)
-  /-- A reference to a global variable along with any arguments to ensure it is well-typed.
-      The name field stores the original type name for lookup in mutual blocks. -/
-| fvar (ann : α) (fvar : FreeVarIndex) (name : Option String) (args : Array (TypeExprF α))
   /-- A polymorphic type variable (universally quantified).
       Used for polymorphic function type parameters -/
 | tvar (ann : α) (name : String)
+  /-- A reference to a global variable along with any arguments to ensure it is
+      well-typed. The name field stores the original type name for lookup in
+      mutual blocks. -/
+| fvar (ann : α) (fvar : FreeVarIndex) (name : Option String)
+  (args : Array (TypeExprF α))
   /-- A function type. -/
 | arrow (ann : α) (arg : TypeExprF α) (res : TypeExprF α)
 deriving BEq, Inhabited, Repr
@@ -106,8 +108,8 @@ namespace TypeExprF
 def ann {α} : TypeExprF α → α
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
-| .fvar ann _ _ _ => ann
 | .tvar ann _ => ann
+| .fvar ann _ _ _ => ann
 | .arrow ann _ _ => ann
 
 def mkFunType {α} (n : α) (bindings : Array (String × TypeExprF α)) (res : TypeExprF α) : TypeExprF α :=
@@ -1910,7 +1912,7 @@ def isForward (ctx : GlobalContext) (idx : FreeVarIndex) : Bool :=
   | some (_, _, .forward) => true
   | _ => false
 
-/-- Add a symbol as defined (backward compatible with existing code). -/
+/-- Add a symbol as defined. -/
 def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
   match ctx.define v k with
   | .ok ctx' => ctx'
@@ -1919,7 +1921,7 @@ def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
 /-- Return the index of the variable with the given name. -/
 def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
 
-def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.vars[idx]? |>.map (·.1)
+def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.vars[idx]? |>.map (·.fst)
 
 def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   assert! idx < ctx.vars.size
@@ -2128,7 +2130,6 @@ private def addDatatypeBindings
   let gctx := match gctx.define datatypeName (GlobalKind.type typeParams.toList none) with
     | .ok gctx' => gctx'
     | .error msg => panic! s!"addDatatypeBindings: {msg}"
-  -- Get the actual index - may be from forward declaration or newly added
   let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams (some datatypeName)
 

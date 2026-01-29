@@ -185,32 +185,19 @@ inductive VarBinding
 | fvar (idx : FreeVarIndex) (tp : GlobalKind)
 
 protected def lookupVar (tctx : TypingContext) (var : String) : Option VarBinding :=
-  let gctx := tctx.globalContext
-  -- Check if there's a forward declaration in global context - those take precedence
-  match gctx.findIndex? var with
-  | some gidx =>
-    if gctx.isForward gidx then
-      -- Forward declaration - use global
-      some (.fvar gidx (gctx.kindOf! gidx))
-    else
-      -- Not forward-declared, check local first for shadowing
-      let a := tctx.map.getD var #[]
-      match a.back? with
-      | some lvl =>
-        assert! lvl < tctx.bindings.size
-        let idx := tctx.bindings.size - 1 - lvl
-        some (.bvar idx tctx.bindings[lvl]!.kind)
-      | none =>
-        some (.fvar gidx (gctx.kindOf! gidx))
+  let a := tctx.map.getD var #[]
+  match a.back? with
+  | some lvl =>
+    assert! lvl < tctx.bindings.size
+    let idx := tctx.bindings.size - 1 - lvl
+    some (.bvar idx tctx.bindings[lvl]!.kind)
   | none =>
-    -- Not in global, check local
-    let a := tctx.map.getD var #[]
-    match a.back? with
-    | some lvl =>
-      assert! lvl < tctx.bindings.size
-      let idx := tctx.bindings.size - 1 - lvl
-      some (.bvar idx tctx.bindings[lvl]!.kind)
-    | none => none
+    let gctx := tctx.globalContext
+    match gctx.findIndex? var with
+    | some idx =>
+      some (.fvar idx (gctx.kindOf! idx))
+    | none =>
+      none
 
 end TypingContext
 

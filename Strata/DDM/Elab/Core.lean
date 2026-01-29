@@ -459,7 +459,7 @@ partial def unifyTypes
       return args
   | .bvar _ idx =>
     let .isTrue idxP := inferInstanceAs (Decidable (idx < argLevel))
-      | return panic! s!"Invalid index: idx={idx} argLevel={argLevel} expectedType={repr expectedType} inferredType={repr inferredType}"
+      | return panic! "Invalid index"
     let typeLevel := argLevel - (idx + 1)
     -- Verify type level is a type parameter.
     assert! b[typeLevel].kind.isType
@@ -799,6 +799,18 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     logInternalError argInfo.loc s!"translateArgDeclKind given invalid kind {opInfo.op.name}"
     return default
 
+/-- Extract type parameter names from a bindings argument. -/
+def elabTypeParams {n} (initSize : Nat) (args : Vector Tree n)
+    (idx : Option (DebruijnIndex n)) : ElabM (List String) := do
+  let params ← elabArgIndex initSize args idx fun argLoc b => do
+    match b.kind with
+    | .type _ [] _ => pure ()
+    | .tvar _ _ => pure ()
+    | .type .. | .expr _ | .cat _ =>
+      logError argLoc s!"{b.ident} must have type Type instead of {repr b.kind}."
+    return b.ident
+  pure params.toList
+
 /--
 Construct a binding from a binding spec and the arguments to an operation.
 -/
@@ -846,15 +858,7 @@ def evalBindingSpec
     pure { ident, kind }
   | .type b | .typeForward b =>
     let ident := evalBindingNameIndex args b.nameIndex
-    let params ← elabArgIndex initSize args b.argsIndex fun argLoc b => do
-          match b.kind with
-          | .type _ [] _ =>
-            pure ()
-          | .tvar _ _ =>
-            pure ()
-          | .type .. | .expr _ | .cat _ => do
-            logError argLoc s!"{b.ident} must be have type Type instead of {repr b.kind}."
-          return b.ident
+    let params ← elabTypeParams initSize args b.argsIndex
     let value : Option TypeExpr :=
           match b.defIndex with
           | none => none
@@ -864,10 +868,11 @@ def evalBindingSpec
               some info.typeExpr
             | _ =>
               panic! "Bad arg"
-    pure { ident, kind := .type loc params.toList value }
+    pure { ident, kind := .type loc params value }
   | .datatype b =>
     let ident := evalBindingNameIndex args b.nameIndex
-    pure { ident, kind := .type loc [] none }
+    let params ← elabTypeParams initSize args (some b.typeParamsIndex)
+    pure { ident, kind := .type loc params none }
   | .tvar b =>
     let ident := evalBindingNameIndex args b.nameIndex
     pure { ident, kind := .tvar loc ident }
@@ -1057,7 +1062,9 @@ partial def runSyntaxElaborator
             else gctx.push datatypeName (GlobalKind.type typeParamNames.toList none)
           -- Add .tvar bindings for type parameters
           let loc := typeParamsT.info.loc
-          let tctx := typeParamNames.foldl (init := baseCtx.withGlobalContext gctx) fun ctx name =>
+          -- Start with empty local bindings - don't inherit from baseCtx
+          -- This prevents datatype names from leaking between mutual block entries
+          let tctx := typeParamNames.foldl (init := TypingContext.empty gctx) fun ctx name =>
             ctx.push { ident := name, kind := .tvar loc name }
           pure tctx
         | _, _ => continue
