@@ -5,17 +5,12 @@
 -/
 
 -- Executable with utilities for working with Strata files.
-import Strata.DDM.Elab
 import Strata.DDM.Integration.Java.Gen
-import Strata.DDM.Util.ByteArray
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
-import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
-
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
