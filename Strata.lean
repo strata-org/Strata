@@ -17,6 +17,7 @@ import Strata.DL.Imperative.Imperative
 
 /- Strata Core -/
 import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Core.Core
 
 /- Backends -/
 import Strata.Backends.CBMC.CProver
