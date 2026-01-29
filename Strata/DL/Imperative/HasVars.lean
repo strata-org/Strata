@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.PureExpr
+
+public section
 
 namespace Imperative
 
@@ -46,3 +49,5 @@ class HasVarsTrans
 abbrev HasVarsProcTrans (P : PureExpr) (PT : Type) := HasVarsTrans P PT PT
 
 end Imperative
+
+end
