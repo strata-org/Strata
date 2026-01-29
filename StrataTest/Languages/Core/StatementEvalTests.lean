@@ -451,10 +451,10 @@ def testFuncDeclSymbolic : List Statement :=
   }
   [
     .init "n" t[int] eb[#10],  -- Initialize n to 10
-    .funcDecl addNFunc,  -- Function captures reference to 'n'
+    .funcDecl addNFunc,  -- Function captures n = 10 at declaration time
     .set "n" eb[#20],  -- Mutate n to 20
     .init "result" t[int] eb[(~addN #5)],  -- Call function
-    .assert "result_eq_25" eb[result == #25]  -- Should be 5 + 20 = 25 (uses current value of n)
+    .assert "result_eq_15" eb[result == #15]  -- Result is 5 + 10 = 15 (uses captured value)
   ]
 
 /--
@@ -473,7 +473,7 @@ Variable Prefix: $__
 Variable gen count: 0
 Factory Functions:
 func addN :  ((x : int)) → int :=
-  (((~Int.Add x) n))
+  (((~Int.Add x) #10))
 
 
 Datatypes:
@@ -484,11 +484,11 @@ Path Conditions:
 Warnings:
 []
 Deferred Proof Obligations:
-Label: result_eq_25
+Label: result_eq_15
 Property: assert
 Assumptions:
 Proof Obligation:
-((~addN #5) == #25)
+((~addN #5) == #15)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format

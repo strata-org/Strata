@@ -401,16 +401,23 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                     calling Core.Statement.evalAux"
 
           | .funcDecl decl _ =>
-            -- Add function to factory
-            -- Convert PureFunc Expression (with LTy) to LFunc CoreLParams (with LMonoTy)
-            -- Assumes type checking has already monomorphized the types to .forAll [] mty
+            -- Add function to factory with value capture semantics
+            -- Substitute current values of free variables into function body
             let func : Lambda.LFunc CoreLParams := {
               name := decl.name,
               typeArgs := decl.typeArgs,
               isConstr := decl.isConstr,
               inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
               output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-              body := decl.body,
+              body := decl.body.map (fun e =>
+                -- Substitute free variables with their current values from the environment
+                let freeVars := Lambda.LExpr.freeVars e
+                freeVars.foldl (fun body fv =>
+                  match Ewn.env.exprEnv.state.find? fv.fst with
+                  | some (_, val) => Lambda.LExpr.substFvar body fv.fst val
+                  | none => body
+                ) e
+              ),
               attr := decl.attr,
               concreteEval := decl.concreteEval,
               axioms := decl.axioms
