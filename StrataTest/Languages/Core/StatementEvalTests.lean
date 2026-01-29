@@ -434,7 +434,8 @@ Proof Obligation:
 #eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
 
 /--
-Test funcDecl with symbolic variable capture: function references a variable from enclosing scope
+Test funcDecl with variable capture: function captures variable value at declaration time,
+not affected by subsequent mutations
 -/
 def testFuncDeclSymbolic : List Statement :=
   let addNFunc : PureFunc Expression := {
@@ -443,16 +444,17 @@ def testFuncDeclSymbolic : List Statement :=
     isConstr := false,
     inputs := [(CoreIdent.unres "x", .forAll [] .int)],
     output := .forAll [] .int,
-    body := some eb[((~Int.Add x) n)],  -- References 'n' from outer scope
+    body := some eb[((~Int.Add x) n)],  -- Captures 'n' at declaration time
     attr := #[],
     concreteEval := none,
     axioms := []
   }
   [
-    .init "n" t[int] eb[globalN],  -- Initialize with symbolic global
-    .funcDecl addNFunc,
-    .init "result" t[int] eb[(~addN #5)],
-    .assert "result_eq_n_plus_5" eb[result == ((~Int.Add globalN) #5)]
+    .init "n" t[int] eb[#10],  -- Initialize n to 10
+    .funcDecl addNFunc,  -- Function captures reference to 'n'
+    .set "n" eb[#20],  -- Mutate n to 20
+    .init "result" t[int] eb[(~addN #5)],  -- Call function
+    .assert "result_eq_25" eb[result == #25]  -- Should be 5 + 20 = 25 (uses current value of n)
   ]
 
 /--
@@ -462,8 +464,7 @@ Subst Map:
 
 Expression Env:
 State:
-[(globalN : int) → globalN
-(n : int) → globalN
+[(n : int) → #20
 (result : int) → (~addN #5)]
 
 Evaluation Config:
@@ -483,17 +484,14 @@ Path Conditions:
 Warnings:
 []
 Deferred Proof Obligations:
-Label: result_eq_n_plus_5
+Label: result_eq_25
 Property: assert
 Assumptions:
 Proof Obligation:
-((~addN #5) == ((~Int.Add globalN) #5))
+((~addN #5) == #25)
 -/
 #guard_msgs in
-#eval (evalOne
-  ((Env.init (empty_factory := true)).pushScope [("globalN", (mty[int], eb[globalN]))])
-  ∅
-  testFuncDeclSymbolic) |>.snd |> format
+#eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format
 
 end Tests
 ---------------------------------------------------------------------

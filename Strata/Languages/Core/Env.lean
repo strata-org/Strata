@@ -16,44 +16,25 @@ open Imperative
 instance : ToFormat ExpressionMetadata :=
   show ToFormat Unit from inferInstance
 
--- ToFormat instance for Expression.EvalEnv (which is Lambda.LState CoreLParams)
-instance : ToFormat Expression.EvalEnv := by
-  show ToFormat (Lambda.LState CoreLParams)
-  infer_instance
-
 -- ToFormat instance for Expression.Expr
 instance : ToFormat Expression.Expr := by
   show ToFormat (Lambda.LExpr CoreLParams.mono)
   infer_instance
 
--- Custom ToFormat instance for Scopes to get the desired formatting
-def formatScopeMap (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
+-- Custom ToFormat instance for our specific Scope type to get the desired formatting
+private def formatScope (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
   match m with
   | [] => ""
-  | [(k, (ty, v))] =>
+  | [(k, (ty, v))] => go k ty v
+  | (k, (ty, v)) :: rest =>
+    go k ty v ++ Format.line ++ formatScope rest
+  where go k ty v :=
     match ty with
     | some ty => f!"({k} : {ty}) → {v}"
     | none => f!"{k} → {v}"
-  | (k, (ty, v)) :: rest =>
-    let entry := match ty with
-      | some ty => f!"({k} : {ty}) → {v}"
-      | none => f!"{k} → {v}"
-    entry ++ Format.line ++ formatScopeMap rest
 
-def formatScopes (ms : Lambda.Scopes CoreLParams) : Std.Format :=
-  match ms with
-  | [] => ""
-  | [m] => f!"[{formatScopeMap m}]"
-  | m :: rest => f!"[{formatScopeMap m}]{Format.line}" ++ formatScopes rest
-
-@[default_instance 1000]
-instance : ToFormat (Lambda.Scopes CoreLParams) where
-  format := formatScopes
-
--- Also provide the instance for single Map for compatibility
-@[default_instance 1000]
 instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) where
-  format := formatScopeMap
+  format := formatScope
 
 instance : Inhabited ExpressionMetadata :=
   show Inhabited Unit from inferInstance
