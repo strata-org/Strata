@@ -42,30 +42,32 @@ def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
   | .implementationError msg => s!"Verification error: {msg}"
 
 /-- Extract location information from metadata -/
-def extractLocation (md : Imperative.MetaData Expression) : Option Location := do
+def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
   let fileRangeElem ← md.findElem Imperative.MetaData.fileRange
   match fileRangeElem.value with
-  | .file2dRange fr =>
+  | .fileRange fr =>
+    let fileMap ← files.find? fr.file
+    let startPos := fileMap.toPosition fr.range.start
     let uri := match fr.file with
                | .file path => path
-    pure { uri, startLine := fr.start.line, startColumn := fr.start.column }
+    pure { uri, startLine := startPos.line, startColumn := startPos.column }
   | _ => none
 
 /-- Convert a VCResult to a SARIF Result -/
-def vcResultToSarifResult (vcr : VCResult) : Strata.Sarif.Result :=
+def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
   let level := outcomeToLevel vcr.result
   let messageText := outcomeToMessage vcr.result vcr.smtResult
   let message : Strata.Sarif.Message := { text := messageText }
 
-  let locations := match extractLocation vcr.obligation.metadata with
+  let locations := match extractLocation files vcr.obligation.metadata with
     | some loc => #[locationToSarif loc]
     | none => #[]
 
   { ruleId, level, message, locations }
 
 /-- Convert VCResults to a SARIF document -/
-def vcResultsToSarif (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
+def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
   let tool : Strata.Sarif.Tool := {
     driver := {
       name := "Strata",
@@ -74,7 +76,7 @@ def vcResultsToSarif (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
     }
   }
 
-  let results := vcResults.map vcResultToSarifResult
+  let results := vcResults.map (vcResultToSarifResult files)
 
   let run : Strata.Sarif.Run := { tool, results }
 

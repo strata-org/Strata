@@ -117,7 +117,10 @@ def main (args : List String) : IO UInt32 := do
           if file.endsWith ".csimp.st" then
             println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
           else
-            let sarifDoc := Core.Sarif.vcResultsToSarif vcResults
+            -- Create a files map with the single input file
+            let uri := Strata.Uri.file file
+            let files := Map.empty.insert uri inputCtx.fileMap
+            let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
             let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
             let sarifFile := file ++ ".sarif"
             try
