@@ -76,18 +76,20 @@ Returns the transformed expression with assignments replaced by variable referen
 -/
 def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
-  | .Assign target value md =>
+  | .Assign targets value md =>
       checkOutsideCondition md
       -- This is an assignment in expression context
       -- We need to: 1) execute the assignment, 2) capture the value in a temporary
       -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← transformExpr value
-      let assignStmt := StmtExpr.Assign target seqValue md
+      let assignStmt := StmtExpr.Assign targets seqValue md
       SequenceM.addPrependedStmt assignStmt
       -- Create a temporary variable to capture the assigned value
       -- Use TInt as the type (could be refined with type inference)
+      -- For multi-target assigns, use the first target
       let tempName ← SequenceM.freshTemp
-      let tempDecl := StmtExpr.LocalVariable tempName .TInt (some target)
+      let firstTarget := targets.head?.getD (.Identifier tempName)
+      let tempDecl := StmtExpr.LocalVariable tempName .TInt (some firstTarget)
       SequenceM.addPrependedStmt tempDecl
       -- Return the temporary variable as the expression value
       return .Identifier tempName
@@ -159,10 +161,10 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       | none =>
           return [stmt]
 
-  | .Assign target value md =>
-      let seqTarget ← transformExpr target
+  | .Assign targets value md =>
+      let seqTargets ← targets.mapM transformExpr
       let seqValue ← transformExpr value
-      SequenceM.addPrependedStmt <| .Assign seqTarget seqValue md
+      SequenceM.addPrependedStmt <| .Assign seqTargets seqValue md
       SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
