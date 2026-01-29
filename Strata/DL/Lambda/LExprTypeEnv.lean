@@ -576,9 +576,9 @@ def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
     -- let (instantiatedTypes, updatedEnv) := ...
     let instTypesWithEnv := LMonoTys.instantiateEnv alias.typeArgs typesToInstantiate Env
     have : 1 < instTypesWithEnv.fst.length := by
-      simp [instTypesWithEnv, LMonoTys.instantiateEnv, liftGenEnv, typesToInstantiate]
-      have := @LMonoTys.instantiate_length _ alias.typeArgs typesToInstantiate Env.genEnv _
-      simp [typesToInstantiate] at this
+      simp only [LMonoTys.instantiateEnv, liftGenEnv, instTypesWithEnv, typesToInstantiate]
+      have hlen := @LMonoTys.instantiate_length _ alias.typeArgs typesToInstantiate Env.genEnv _
+      simp [typesToInstantiate] at hlen
       grind
     -- Extract the instantiated pattern and definition.
     let instantiatedPattern := instTypesWithEnv.fst[0]'(by grind)
