@@ -32,6 +32,11 @@ over the parameters.
 Variable belongs to the particular category below.
 -/
 | cat (k : SyntaxCat)
+/--
+Variable is a polymorphic type variable (for function type parameters).
+These are passed through to the dialect's typechecker for inference.
+-/
+| tvar (ann : SourceRange) (name : String)
 deriving Inhabited, Repr
 
 namespace BindingKind
@@ -48,6 +53,7 @@ def ofCat (c : SyntaxCat) : BindingKind :=
 def categoryOf : BindingKind → SyntaxCat
 | .expr tp => .atom tp.ann q`Init.Expr
 | .type loc _ _ => .atom loc q`Init.Type
+| .tvar loc _ => .atom loc q`Init.Type
 | .cat c => c
 
 instance : ToStrataFormat BindingKind where
@@ -55,6 +61,7 @@ instance : ToStrataFormat BindingKind where
     match bk with
     | .expr tp => mformat tp
     | .type _ params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
+    | .tvar _ name => mformat f!"tvar({name})"
     | .cat c => mformat c
 
 end BindingKind

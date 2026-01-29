@@ -238,7 +238,7 @@ def test3_destructorFunctions : IO String := do
     -- Extract value from Some
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
 
@@ -260,7 +260,7 @@ def test3_destructorFunctions : IO String := do
     -- Extract head
     Statement.init (CoreIdent.unres "head") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "hd")
+        (LExpr.op () (CoreIdent.unres "List..hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int])))),
 
@@ -323,7 +323,7 @@ def test4_nestedDatatypes : IO String := do
     -- Extract the head of the list (which is an Option)
     Statement.init (CoreIdent.unres "headOpt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "hd")
+        (LExpr.op () (CoreIdent.unres "List..hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) (LMonoTy.tcons "Option" [.int]))))
         (LExpr.fvar () (CoreIdent.unres "listOfOpt")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
@@ -331,7 +331,7 @@ def test4_nestedDatatypes : IO String := do
     -- Extract the value from the Option
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "headOpt")
           (.some (LMonoTy.tcons "Option" [.int])))),
@@ -434,7 +434,7 @@ def test6_destructorWithHavoc : IO String := do
     -- Extract value
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
 
@@ -538,16 +538,16 @@ def test8_hiddenTypeRecursion : IO String := do
           (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Extract the visible part
-    Statement.init (CoreIdent.unres "visiblePart") (.forAll [] LMonoTy.int)
+    Statement.init (CoreIdent.unres "Container..visiblePart") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "visiblePart")
+        (LExpr.op () (CoreIdent.unres "Container..visiblePart")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int])))),
 
     -- Assume the visible part has a specific value
     Statement.assume "visible_part_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "visiblePart") (.some .int))
+        (LExpr.fvar () (CoreIdent.unres "Container..visiblePart") (.some .int))
         (LExpr.intConst () 42)),
 
     -- Assert that container is WithHidden
@@ -704,7 +704,7 @@ def test9_mutualRecursiveWithHavoc : IO String := do
     -- Extract nodeVal
     Statement.init (CoreIdent.unres "val") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "nodeVal")
+        (LExpr.op () (CoreIdent.unres "RoseTree..nodeVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
 

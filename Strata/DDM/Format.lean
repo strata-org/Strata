@@ -274,6 +274,7 @@ private protected def mformat : TypeExprF α → StrataFormat
 | .bvar _ idx => .bvar idx
 | .fvar _ idx _ a => a.attach.foldl (init := .fvar idx) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
+| .tvar _ name => mf!"tvar!{name}"
 | .arrow _ a r => mf!"{a.mformat.ensurePrec (arrowPrec+1)} -> {r.mformat.ensurePrec arrowPrec}"
 
 instance {α} : ToStrataFormat (TypeExprF α) where
@@ -287,6 +288,7 @@ private protected def mformat : PreType → StrataFormat
 | .ident _ tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
 | .bvar _ idx => .bvar idx
 | .fvar _ idx _ a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
+| .tvar _ name => mf!"tvar!{name}"
 | .arrow _ a r => mf!"{a.mformat} -> {r.mformat}"
 | .funMacro _ idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
 

@@ -53,8 +53,6 @@ syntax:max (name := quoteIdent) "q`" noWs ident : term
   | _ => Macro.throwUnsupported
 end
 
-#guard q`A.C = { dialect := "A", name := "C" }
-
 end QualifiedIdent
 
 /--
@@ -96,6 +94,9 @@ inductive TypeExprF (α : Type) where
   /-- A reference to a global variable along with any arguments to ensure it is well-typed.
       The name field stores the original type name for lookup in mutual blocks. -/
 | fvar (ann : α) (fvar : FreeVarIndex) (name : Option String) (args : Array (TypeExprF α))
+  /-- A polymorphic type variable (universally quantified).
+      Used for polymorphic function type parameters -/
+| tvar (ann : α) (name : String)
   /-- A function type. -/
 | arrow (ann : α) (arg : TypeExprF α) (res : TypeExprF α)
 deriving BEq, Inhabited, Repr
@@ -106,6 +107,7 @@ def ann {α} : TypeExprF α → α
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
 | .fvar ann _ _ _ => ann
+| .tvar ann _ => ann
 | .arrow ann _ _ => ann
 
 def mkFunType {α} (n : α) (bindings : Array (String × TypeExprF α)) (res : TypeExprF α) : TypeExprF α :=
@@ -116,6 +118,7 @@ protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :
   | .ident n i args => .ident n i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .fvar n f name args => .fvar n f name (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .bvar n idx => .bvar n (idx + count)
+  | .tvar n name => .tvar n name  -- tvar doesn't use indices
   | .arrow n a r => .arrow n (a.incIndices count) (r.incIndices count)
 
 /-- Return true if type expression has a bound variable. -/
@@ -123,6 +126,7 @@ protected def hasUnboundVar {α} (bindingCount : Nat := 0) : TypeExprF α → Bo
 | .ident _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .fvar _ _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .bvar _ idx => idx ≥ bindingCount
+| .tvar _ _ => true
 | .arrow _ a r => a.hasUnboundVar bindingCount || r.hasUnboundVar bindingCount
 termination_by e => e
 
@@ -140,6 +144,7 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
     .ident n i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .bvar n idx => bindings n idx
   | .fvar n idx name a => .fvar n idx name <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
+  | .tvar n name => pure (.tvar n name)
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
 
@@ -506,6 +511,14 @@ def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
   | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
   | some _ => panic! s!"Unexpected argument count to scopeDatatype"
 
+/-- Returns the name index if @[declareTVar] is present.
+    Used for operations that introduce a type variable (creates .tvar binding in result context). -/
+def declareTVarIndex (metadata : Metadata) : Option Nat :=
+  match metadata[q`StrataDDL.declareTVar]? with
+  | none => none
+  | some #[.catbvar nameIdx] => some nameIdx
+  | some _ => panic! s!"Unexpected argument count to declareTVar"
+
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
 private def resultIndex (metadata : Metadata) : Option Nat :=
   match metadata[MetadataAttr.scopeName]? with
@@ -544,8 +557,12 @@ generate types.
 inductive PreType where
   /-- A dialect defined type. -/
 | ident (ann : SourceRange) (name : QualifiedIdent) (args : Array PreType)
-  /-- A bound type variable at the given deBruijn index in the context. -/
+  /-- A bound type variable at the given deBruijn index in the context.
+      Used for type alias parameters -/
 | bvar (ann : SourceRange) (index : Nat)
+  /-- A polymorphic type variable (universally quantified).
+      Used for polymorphic function type parameters -/
+| tvar (ann : SourceRange) (name : String)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
 | fvar (ann : SourceRange) (fvar : FreeVarIndex) (name : Option String) (args : Array PreType)
   /-- A function type. -/
@@ -560,6 +577,7 @@ namespace PreType
 def ann : PreType → SourceRange
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
+| .tvar ann _ => ann
 | .fvar ann _ _ _ => ann
 | .arrow ann _ _ => ann
 | .funMacro ann _ _ => ann
@@ -568,6 +586,7 @@ def ofType : TypeExprF SourceRange → PreType
 | .ident loc name args => .ident loc name (args.map fun a => .ofType a)
 | .bvar loc idx => .bvar loc idx
 | .fvar loc idx name args => .fvar loc idx name (args.map fun a => .ofType a)
+| .tvar loc name => .tvar loc name
 | .arrow loc a r => .arrow loc (.ofType a) (.ofType r)
 termination_by tp => tp
 
@@ -788,10 +807,10 @@ structure ConstructorInfo where
 
 /--
 Build a TypeExpr reference to the datatype with type parameters, using
-`.fvar` for the datatype's GlobalContext index.
+`.fvar` for the datatype's GlobalContext index and `.tvar` for type parameters.
 -/
 def mkDatatypeTypeRef (ann : SourceRange) (datatypeIndex : FreeVarIndex) (typeParams : Array String) (datatypeName : Option String := none) : TypeExpr :=
-  let typeArgs := typeParams.mapIdx fun i _ => TypeExprF.bvar ann i
+  let typeArgs := typeParams.map fun name => TypeExprF.tvar ann name
   TypeExprF.fvar ann datatypeIndex datatypeName typeArgs
 
 /--
@@ -949,6 +968,15 @@ structure DatatypeBindingSpec (argDecls : ArgDecls) where
   functionTemplates : Array FunctionTemplate := #[]
   deriving Repr
 
+/--
+Specification for declaring a single type variable.
+Creates a .tvar binding in the result context.
+-/
+structure TvarBindingSpec (argDecls : ArgDecls) where
+  /-- deBrujin index of the identifier to become a type variable -/
+  nameIndex : DebruijnIndex argDecls.size
+  deriving Repr
+
 /-
 A spec for introducing a new binding into a type context.
 -/
@@ -957,6 +985,7 @@ inductive BindingSpec (argDecls : ArgDecls) where
 | type (_ : TypeBindingSpec argDecls)
 | typeForward (_ : TypeBindingSpec argDecls)  -- Forward declaration (no AST node)
 | datatype (_ : DatatypeBindingSpec argDecls)
+| tvar (_ : TvarBindingSpec argDecls)
 deriving Repr
 
 namespace BindingSpec
@@ -966,6 +995,7 @@ def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .type v => v.nameIndex
 | .typeForward v => v.nameIndex
 | .datatype v => v.nameIndex
+| .tvar v => v.nameIndex
 
 end BindingSpec
 
@@ -1119,6 +1149,12 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             constructorsIndex := ⟨constructorsIndex, constructorsP⟩,
             functionTemplates
           }
+        | q`StrataDDL.declareTVar => do
+          let #[.catbvar nameIndex] := attr.args
+            | newBindingErr "declareTVar expects 1 argument."; return none
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+            | return panic! "Invalid name index"
+          some <$> .tvar <$> pure { nameIndex := ⟨nameIndex, nameP⟩ }
         | _ =>
           pure none
   (md.toArray.filterMapM ins) #[]
@@ -1696,27 +1732,26 @@ inductive DeclState where
 deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- Resolves a binding spec into a global kind. -/
-partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalKind :=
+partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Option GlobalKind :=
   match b with
   | .value b =>
     match args[b.typeIndex.toLevel] with
     | .type tp =>
       match b.argsIndex with
       | none =>
-        .expr tp
+        some <| .expr tp
       | some idx =>
         let f (a : Array _) (l : SourceRange) {argDecls : ArgDecls} (b : BindingSpec argDecls) args :=
-                let type :=
-                      match resolveBindingIndices m l b args with
-                      | .expr tp => tp
-                      | .type _ _ => panic! s!"Expected binding to be expression."
-                a.push type
+                match resolveBindingIndices m l b args with
+                | some (.expr tp) => a.push tp
+                | some (.type _ _) => panic! s!"Expected binding to be expression."
+                | none => a
         let fnBindings : Array TypeExpr :=
           foldOverArgAtLevel m f #[] argDecls args idx.toLevel
-        .expr <| fnBindings.foldr (init := tp) fun argType tp => .arrow src argType tp
+        some <| .expr <| fnBindings.foldr (init := tp) fun argType tp => .arrow src argType tp
     | .cat c =>
       if c.name = q`Init.Type then
-        .type [] none
+        some <| .type [] none
       else
         panic! s!"Expected new binding to be Type instead of {repr c}."
     | a =>
@@ -1739,7 +1774,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
               | .type tp =>
                 some tp
               | _ => panic! "Bad arg"
-    .type params.toList value
+    some <| .type params.toList value
   | .datatype b =>
     /- For datatypes, resolveBindingIndices only returns the datatype type
     itself; the constructors and template-generated functions are handled
@@ -1750,7 +1785,10 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
             | .ident _ name => a.push name
             | a => panic! s!"Expected ident for type param {repr a}"
         foldOverArgAtLevel m addBinding #[] argDecls args b.typeParamsIndex.toLevel
-    .type params.toList none
+    some <| .type params.toList none
+  | .tvar _ =>
+    -- tvar bindings are local only, not added to GlobalContext
+    none
 
 /--
 Typing environment created from declarations in an environment.
@@ -2060,17 +2098,20 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
                   match args[typeSpec.nameIndex.toLevel] with
                   | .ident _ e => e
                   | a => panic! s!"Expected ident at {typeSpec.nameIndex.toLevel} {repr a}"
-            let kind := resolveBindingIndices dialects l b args
-            match gctx.declareForward name kind with
-            | .ok gctx' => gctx'
-            | .error msg => panic! msg
+            match resolveBindingIndices dialects l b args with
+            | some kind =>
+              match gctx.declareForward name kind with
+              | .ok gctx' => gctx'
+              | .error msg => panic! msg
+            | none => gctx
           | _ =>
             let name :=
                   match args[b.nameIndex.toLevel] with
                   | .ident _ e => e
                   | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
-            let kind := resolveBindingIndices dialects l b args
-            gctx.push name kind
+            match resolveBindingIndices dialects l b args with
+            | some kind => gctx.push name kind
+            | none => gctx
 
 end GlobalContext
 

@@ -138,23 +138,23 @@ spec {
   t := Node(42, FNil());
 
   // Extract the value
-  v := val(t);
+  v := RoseTree..val(t);
   assert [valIs42]: v == 42;
 
   // Extract the children (should be empty forest)
-  c := children(t);
+  c := RoseTree..children(t);
   assert [childrenIsNil]: Forest..isFNil(c);
 
   // Create a forest with one tree
   f := FCons(Node(10, FNil()), FNil());
 
   // Extract the head
-  t := head(f);
+  t := Forest..head(f);
   assert [headIsNode]: RoseTree..isNode(t);
-  assert [headVal]: val(t) == 10;
+  assert [headVal]: RoseTree..val(t) == 10;
 
   // Extract the tail
-  f := tail(f);
+  f := Forest..tail(f);
   assert [tailIsNil]: Forest..isFNil(f);
 };
 #end
@@ -258,5 +258,65 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" roseTreeEqualityPgm Inhabited.default Options.quiet
+
+---------------------------------------------------------------------
+-- Test 4: Polymorphic Rose Tree
+---------------------------------------------------------------------
+
+def polyRoseTreeHavocPgm : Program :=
+#strata
+program Core;
+
+forward type RoseTree (a : Type);
+forward type Forest (a : Type);
+mutual
+  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
+  datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
+end;
+
+procedure TestPolyRoseTreeHavoc() returns ()
+spec {
+  ensures true;
+}
+{
+  var t : RoseTree int;
+  var f : Forest int;
+
+  havoc t;
+  havoc f;
+
+  assume t == Node(42, FNil());
+  assume f == FCons(t, FNil());
+
+  assert [valIs42]: RoseTree..val(t) == 42;
+  assert [headIsT]: Forest..head(f) == t;
+  assert [headVal]: RoseTree..val(Forest..head(f)) == 42;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram polyRoseTreeHavocPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: valIs42
+Property: assert
+Result: ✅ pass
+
+Obligation: headIsT
+Property: assert
+Result: ✅ pass
+
+Obligation: headVal
+Property: assert
+Result: ✅ pass
+
+Obligation: TestPolyRoseTreeHavoc_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" polyRoseTreeHavocPgm Inhabited.default Options.quiet
 
 end Strata.DatatypeRoseTreeTest

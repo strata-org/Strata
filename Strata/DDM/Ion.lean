@@ -424,6 +424,9 @@ private protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeEx
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ =>
         e.toIon refs
       return Ion.sexp s
+    -- A polymorphic type variable with the given name.
+    | .tvar ann name =>
+      return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
     | .arrow ann l r => do
       return Ion.sexp #[
         .symbol ionSymbol! "arrow",
@@ -450,6 +453,11 @@ private protected def fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (T
     return .bvar
       (← FromIon.fromIon args[1])
       (← .asNat "Type expression bvar" args[2])
+  | "tvar" =>
+    let ⟨p⟩ ← .checkArgCount "Type expression tvar" args 3
+    return .tvar
+      (← FromIon.fromIon args[1])
+      (← .asString "Type expression tvar name" args[2])
   | "fvar" =>
     let ⟨p⟩ ← .checkArgMin "Type expression free variable" args 4
     let ann ← FromIon.fromIon args[1]
@@ -970,6 +978,9 @@ private protected def toIon (refs : SymbolIdCache) (tpe : PreType) : InternM (Io
       let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon loc, .int idx, ← toIon name]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ => e.toIon refs
       return Ion.sexp s
+    -- A polymorphic type variable with the given name.
+    | .tvar loc name =>
+      return Ion.sexp #[ionSymbol! "tvar", ← toIon loc, .string name]
     | .arrow loc l r => do
       return Ion.sexp #[ionSymbol! "arrow", ← toIon loc, ← l.toIon refs, ← r.toIon refs]
     | .funMacro loc i r =>
@@ -993,6 +1004,11 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM PreType := do
     return PreType.bvar
       (← fromIon args[1])
       (← .asNat "TypeExpr bvar" args[2])
+  | "tvar" =>
+    let ⟨p⟩ ← .checkArgCount "PreType tvar" args 3
+    return PreType.tvar
+      (← fromIon args[1])
+      (← .asString "PreType tvar name" args[2])
   | "fvar" =>
     let ⟨p⟩ ← .checkArgMin "fvar" args 4
     let ann ← fromIon args[1]

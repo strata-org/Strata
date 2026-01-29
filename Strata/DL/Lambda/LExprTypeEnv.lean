@@ -581,89 +581,6 @@ def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
       | .ok S =>
         (alias_def.subst S.subst, Env.updateSubst S)
 
--- Only `FooAlias` is dealiased, not `BarAlias`. Note that the type variables
--- are instantiated appropriately and the global substitution is updated.
--- See `resolveAliases` for a version that also de-aliases `BarAlias`.
-/--
-info: Ans: some (Foo $__ty0 (BarAlias $__ty0 $__ty0))
-Subst:
-[(p, $__ty0) ($__ty1, (BarAlias $__ty0 $__ty0))]
--/
-#guard_msgs in
-open LTy.Syntax in
-#eval let (ans, Env) := LMonoTy.aliasDef?
-        mty[FooAlias %p (BarAlias %p %p)]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]})
-      format f!"Ans: {ans}\n\
-                Subst:\n{Env.stateSubstInfo.subst}"
-
-/-- info: some (Foo $__ty0 (BarAlias q $__ty0)) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef?
-        mty[FooAlias %p (BarAlias %q %p)]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]} )
-      |>.fst |> format
-
-/-- info: some int -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myInt]
-      ( (@TEnv.default String).updateContext
-                  { aliases := [{ typeArgs := [],
-                                  name := "myInt",
-                                  type := mty[int]}]} )
-      |>.fst |> format
-
-/-- info: some bool -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef?
-        mty[BadBoolAlias %p %q]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "BadBoolAlias",
-                                     type := mty[bool]}]} )
-      |>.fst |> format
-
-/-- info: none -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myInt]
-                    ( (@TEnv.default String).updateContext
-                      { aliases := [{
-                         typeArgs := ["a"],
-                         name := "myInt",
-                         type := mty[int]}] })
-      |>.fst |> format
-
-/-- info: some (myDef int) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myAlias int bool]
-                    ( (@TEnv.default String).updateContext
-                      { aliases := [{
-                        typeArgs := ["a", "b"],
-                        name := "myAlias",
-                        type := mty[myDef %a]}] })
-      |>.fst |> format
-
 mutual
 /--
 De-alias `mty`, including at the subtrees.
@@ -737,44 +654,12 @@ def MutualDatatype.resolveAliases [ToFormat IDMeta] (block : MutualDatatype IDMe
       ({ d with constrs := constrs', constrs_ne := h } :: acc, Env)) ([], Env)
 
 /--
-info: De-aliased type: some (Foo $__ty0 (Bar $__ty3 $__ty3))
-Subst:
-[(p, $__ty3) ($__ty1, (BarAlias $__ty3 $__ty3)) ($__ty0, $__ty3) ($__ty2, $__ty3)]
--/
-#guard_msgs in
-open LTy.Syntax in
-#eval let (ty, Env) := LMonoTy.resolveAliases
-        mty[FooAlias %p (BarAlias %p %p)]
-        ((@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]})
-      format f!"De-aliased type: {ty}\n\
-                Subst:\n{Env.stateSubstInfo.subst}"
-
-/--
 Instantiate and de-alias `ty`, including at the subtrees.
 -/
 def LTy.resolveAliases [ToFormat IDMeta] (ty : LTy) (Env : TEnv IDMeta) : Option LMonoTy × TEnv IDMeta :=
   let (mty, Env') := ty.instantiate Env.genEnv
   let Env := {Env with genEnv := Env'}
   LMonoTy.resolveAliases mty Env
-
-/-- info: some (arrow bool $__ty0) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LTy.resolveAliases
-        t[∀x. (FooAlias %x %x) → %x]
-        ((@TEnv.default String).updateContext { aliases := [{
-                                        typeArgs := ["x", "y"],
-                                        name := "FooAlias",
-                                        type := mty[bool]}]} )
-      |>.fst |>.format
 
 mutual
 /--
@@ -835,36 +720,6 @@ def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env
   else .error f!"Type {ty} is not an instance of a previously registered type!\n\
                  Known Types: {C.knownTypes}"
 
-section
-
-open LTy.Syntax
-
-/-- info: false -/
-#guard_msgs in
-#eval isInstanceOfKnownType mty[myTy (myTy)]
-                            { @LContext.default ⟨Unit, String⟩ with
-                                knownTypes := makeKnownTypes [LTy.toKnownType! t[∀a. myTy %a],
-                                               LTy.toKnownType! t[int]] }
-
-abbrev TTyDefault: LExprParams := {Metadata := Unit, IDMeta := TyIdentifier}
-/-- info: false -/
-#guard_msgs in
-#eval isInstanceOfKnownType mty[Foo] (@LContext.default TTyDefault)
-
-/--
-info: error: Type (arrow int Foo) is not an instance of a previously registered type!
-Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
--/
-#guard_msgs in
-#eval do let ans ← t[int → Foo].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
-         return format ans
-
-/-- info: ok: (arrow int bool) -/
-#guard_msgs in
-#eval do let ans ← t[int → bool].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
-         return format ans.fst
-end
-
 /--
 Instantiate the scheme `ty` and apply the global substitution `Env.state.subst` to
 it.
@@ -907,11 +762,6 @@ def Identifier.instantiateAndSubsts (xs : List T.Identifier) (C: LContext T)  (E
       | none => return none
       | some (xtys, Env) => return ((xty :: xtys), Env)
 
-/-- info: (arrow $__ty0 b) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)).fst
-
 /--
 Instantiate the scheme `∀tyArgs. s` by _consistently_ filling in fresh type
 variables for all the variables bound by the universal quantifier.
@@ -932,20 +782,6 @@ def LMonoTySignature.instantiate (C: LContext T)  (Env : TEnv T.IDMeta) (tyArgs 
       let (mt, Env) ← LTy.instantiateWithCheck t C Env
       let (mtrest, Env) ← go Env trest
       .ok (mt :: mtrest, Env)
-
-/--
-info: ok: (x : $__ty0) (y : int) (z : $__ty0)
--/
-#guard_msgs in
-open LTy.Syntax in
-#eval do let ans ← (LMonoTySignature.instantiate (@LContext.default {Metadata := Unit, IDMeta := Unit})
-                    ((@TEnv.default Unit).updateContext
-                                          { aliases := [{ typeArgs := ["a", "b"],
-                                                          name := "myInt",
-                                                          type := mty[int]}] })
-                    ["a", "b"]
-                    [("x", mty[%a]), ("y", mty[myInt %a %b]), ("z", mty[%a])])
-         return Signature.format ans.fst
 
 /--
 Trivial conversion of a `MonoTySignature` to a `TySignature`, with an empty list
