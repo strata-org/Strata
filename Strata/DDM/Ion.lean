@@ -416,6 +416,9 @@ private protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeEx
       let args : Array (Ion SymbolId) := #[ionSymbol! "ident", ← toIon ann, v]
       Ion.sexp <$> a.attach.mapM_off (init := args) fun ⟨e, _⟩ =>
         e.toIon refs
+    -- A polymorphic type variable with the given name.
+    | .tvar ann name =>
+      return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
     -- A bound type variable with the given index.
     | .bvar ann vidx =>
       return Ion.sexp #[ionSymbol! "bvar", ← toIon ann, .int vidx]
@@ -424,9 +427,6 @@ private protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeEx
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ =>
         e.toIon refs
       return Ion.sexp s
-    -- A polymorphic type variable with the given name.
-    | .tvar ann name =>
-      return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
     | .arrow ann l r => do
       return Ion.sexp #[
         .symbol ionSymbol! "arrow",
