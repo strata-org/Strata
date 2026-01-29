@@ -5,7 +5,6 @@
 -/
 
 
-
 import Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.Factory
 namespace Core
@@ -141,7 +140,6 @@ def elabCoreIdent : Syntax → MetaM Expr
     return ← mkAppM ``CoreIdent.unres #[mkStrLit s]
   | _ => throwUnsupportedSyntax
 
---
 instance : MkLExprParams ⟨CoreExprMetadata, Visibility⟩ where
   elabIdent := elabCoreIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (.const ``Visibility [])

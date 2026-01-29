@@ -46,12 +46,7 @@ def TypeConstructor.toType (t : TypeConstructor) : LTy :=
   let args := typeargs.mapIdx (fun i elem => LMonoTy.ftvar (elem ++ toString i))
   .forAll ids (.tcons t.name args)
 
-open Lambda.LTy.Syntax in
-/-- info: ∀[_ty0, _ty1, _ty2]. (Foo _ty0 _ty1 _ty2) -/
-#guard_msgs in
-#eval format $ TypeConstructor.toType { name := "Foo", numargs := 3 }
-
-/-! # Strata Core Type Synonyms -/
+---------------------------------------------------------------------
 
 structure TypeSynonym where
   name     : String

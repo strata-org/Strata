@@ -8,7 +8,6 @@ import StrataTest.Util.TestDiagnostics
 import StrataTest.Languages.Laurel.TestExamples
 
 open StrataTest.Util
-open Strata
 
 namespace Strata
 namespace Laurel
