@@ -3,10 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.PureExpr
 
 namespace Imperative
 open Std (ToFormat Format format)
@@ -17,7 +16,7 @@ open Std (ToFormat Format format)
 `EvalError` denotes the kinds of errors that may arise during (partial)
 evaluation of Imperative programs.
 -/
-inductive EvalError (P : PureExpr) where
+public inductive EvalError (P : PureExpr) where
   | InitVarExists (tid : P.TypedIdent) (existing_value : P.Expr)
   | AssignVarNotExists (tid : P.Ident) (value : P.Expr)
   | HavocVarNotExists (tid : P.Ident)
@@ -49,7 +48,7 @@ def EvalError.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
 instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] : ToFormat (EvalError P) where
   format := EvalError.toFormat
 
-inductive EvalWarning (P : PureExpr) where
+public inductive EvalWarning (P : PureExpr) where
   | AssumeFail (label : String) (b : P.Expr)
 
 def EvalWarning.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
