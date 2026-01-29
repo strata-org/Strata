@@ -77,6 +77,7 @@ namespace Core
 namespace WF
 
 open Imperative Std Lambda
+open Strata
 
 /- The default program is well-formed -/
 theorem Program.init.wf : WFProgramProp .init := by
@@ -296,6 +297,13 @@ syntax "split_contra_case" ident : tactic
 macro_rules
   | `(tactic|split_contra_case $t) =>
   `(tactic| split at $t:ident <;> (try contradiction); cases $t:ident)
+
+/-- If `Except.mapError` returns `.ok`, then the underlying result was also `.ok`. -/
+theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
+    Except.mapError f e = .ok v → e = .ok v := by
+  cases e with
+  | error _ => simp [Except.mapError]
+  | ok val => simp [Except.mapError]
 
 /--
 If a program typechecks successfully, then every identifier in the list of

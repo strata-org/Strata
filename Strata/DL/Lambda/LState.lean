@@ -13,7 +13,7 @@ See `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
 namespace Lambda
-
+open Strata
 open Std (ToFormat Format format)
 
 variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat (Scopes T)] [Inhabited (LExpr T.mono)]
@@ -87,7 +87,7 @@ instance : ToFormat (LState T) where
 Add function `func` to the existing factory of functions in `σ`. Redefinitions
 are not allowed.
 -/
-def LState.addFactoryFunc (σ : LState T) (func : (LFunc T)) : Except Format (LState T) := do
+def LState.addFactoryFunc (σ : LState T) (func : (LFunc T)) : Except DiagnosticModel (LState T) := do
   let F ← σ.config.factory.addFactoryFunc func
   .ok { σ with config := { σ.config with factory := F }}
 
@@ -95,7 +95,7 @@ def LState.addFactoryFunc (σ : LState T) (func : (LFunc T)) : Except Format (LS
 Append `Factory f` to the existing factory of functions in `σ`, checking for
 redefinitions.
 -/
-def LState.addFactory (σ : (LState T)) (F : @Factory T) : Except Format (LState T) := do
+def LState.addFactory (σ : (LState T)) (F : @Factory T) : Except DiagnosticModel (LState T) := do
   let oldF := σ.config.factory
   let newF ← oldF.addFactory F
   .ok { σ with config := { σ.config with factory := newF } }
