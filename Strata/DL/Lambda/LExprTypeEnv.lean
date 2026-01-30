@@ -552,113 +552,149 @@ instance : Inhabited (Option LMonoTy × TEnv IDMeta) where
   default := (none, TEnv.default)
 
 /--
-Return the instantiated definition of `mty` -- which is expected to be
-`.tcons name args` --  if it is a type alias registered in the typing
-environment `T`.
+Return the instantiated definition of `.tcons name args` if it is a registered
+type alias.
 
-This function does not descend into the subtrees of `mty`, nor does it check
-whether the de-aliased types are registered/known.
+This function does not descend into the subtrees of types in `args`, nor does it
+check whether the de-aliased types are registered/known.
 -/
-def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
-    (Option LMonoTy × TEnv IDMeta) :=
+def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
+    (Env : TEnv IDMeta) : Except Format (LMonoTy × TEnv IDMeta) := do
+  let inputMty := .tcons name args
+  -- Look for a matching alias with same name and arity.
+  let matchingAlias := Env.context.aliases.find?
+                        (fun a => a.name == name && a.typeArgs.length == args.length)
+  match matchingAlias with
+  | none => return (inputMty, Env)
+  | some alias =>
+    -- Create instantiation pair: [alias pattern, alias definition].
+    -- The alias pattern and definition share the same type variables here.
+    let aliasPattern := .tcons name (alias.typeArgs.map .ftvar)
+    let typesToInstantiate := [aliasPattern, alias.type]
+    -- Instantiate both types with fresh variables.
+    -- (FIXME) Would be nice to have the following LHS instead of
+    -- `instTypesWithEnv`, but Lean erases the RHS needed in the length proof
+    -- below if we do so.
+    -- let (instantiatedTypes, updatedEnv) := ...
+    let instTypesWithEnv := LMonoTys.instantiateEnv alias.typeArgs typesToInstantiate Env
+    have : 1 < instTypesWithEnv.fst.length := by
+      simp only [LMonoTys.instantiateEnv, liftGenEnv, instTypesWithEnv, typesToInstantiate]
+      have hlen := @LMonoTys.instantiate_length _ alias.typeArgs typesToInstantiate Env.genEnv _
+      simp [typesToInstantiate] at hlen
+      grind
+    -- Extract the instantiated pattern and definition.
+    let instantiatedPattern := instTypesWithEnv.fst[0]'(by grind)
+    let instantiatedDefinition := instTypesWithEnv.fst[1]'(by grind)
+    let newEnv := instTypesWithEnv.snd
+    -- Unify the input type with the instantiated alias pattern.
+    match Constraints.unify [(inputMty, instantiatedPattern)] newEnv.stateSubstInfo with
+    | .error e =>
+      -- We don't expect this unification to fail; after all,
+      -- `instantiatedPattern` is more general than `.tcons name args`.
+      .error f!"🚨 Implementation error: \
+                 Unification failed in LMonoTy.tconsAlias: {e}"
+    | .ok substInfo =>
+      -- Apply the substitution to get the final definition.
+      let finalDefinition := instantiatedDefinition.subst substInfo.subst
+      return (finalDefinition, newEnv.updateSubst substInfo)
+
+/--
+Return the instantiated definition of `mty` if it is a registered
+type alias.
+
+This function does not descend into any subtrees of types in `args`, nor does it
+check whether the de-aliased types are registered/known.
+-/
+def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta)
+    : Except Format (LMonoTy × TEnv IDMeta) := do
   match mty with
-  | .ftvar _ =>
-    -- We can't have a free variable be the LHS of an alias definition because
-    -- then it will unify with every type.
-    (none, Env)
-  | .bitvec _ =>
-    -- A bitvector cannot be a type alias.
-    (none, Env)
-  | .tcons name args =>
-    match Env.context.aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) with
-    | none => (none, Env)
-    | some alias =>
-      let (lst, Env) := LMonoTys.instantiateEnv alias.typeArgs [(.tcons name (alias.typeArgs.map (fun a => .ftvar a))), alias.type] Env
-      -- (FIXME): Use `LMonoTys.instantiate_length` to remove the `!` below.
-      let alias_inst := lst[0]!
-      let alias_def := lst[1]!
-      match Constraints.unify [(mty, alias_inst)] Env.stateSubstInfo with
-      | .error e =>
-        panic! s!"[LMonoTy.aliasDef?] {format e}"
-      | .ok S =>
-        (alias_def.subst S.subst, Env.updateSubst S)
+  | .tcons name args => LMonoTy.tconsAlias name args Env
+  | .bitvec _ | .ftvar _ => return (mty, Env)
 
 mutual
 /--
 De-alias `mty`, including at the subtrees.
 -/
-partial def LMonoTy.resolveAliases [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
-    (Option LMonoTy × TEnv IDMeta) :=
-  let (maybe_mty, Env) := LMonoTy.aliasDef? mty Env
-  match maybe_mty with
-  | some (.tcons name args) =>
-    let (args', Env) := LMonoTys.resolveAliases args Env.context.aliases Env
-    match args' with
-    | none => (some (.tcons name args), Env)
-    | some args' => (some (.tcons name args'), Env)
-  | some mty' => (some mty', Env)
-  | none =>
-    match mty with
-    | .ftvar _ => (some mty, Env)
-    | .bitvec _ => (some mty, Env)
-    | .tcons name mtys =>
-      let (maybe_mtys, Env) := LMonoTys.resolveAliases mtys Env.context.aliases Env
-      match maybe_mtys with
-      | none => (none, Env)
-      | some mtys' => (some (.tcons name mtys'), Env)
+def LMonoTy.resolveAliases [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
+    Except Format (LMonoTy × TEnv IDMeta) := do
+  match mty with
+  | .ftvar _ =>
+    -- Free variables cannot be type aliases (would unify with every type).
+    return (mty, Env)
+  | .bitvec _ =>
+    -- Bitvectors cannot be type aliases.
+    return (mty, Env)
+  | .tcons name args =>
+    let (args', Env) ← LMonoTys.resolveAliases args Env
+    let (mty', Env) ← LMonoTy.tconsAlias name args' Env
+    return (mty', Env)
 
 /--
 De-alias `mtys`, including at the subtrees.
 -/
-partial def LMonoTys.resolveAliases [ToFormat IDMeta] (mtys : LMonoTys) (aliases : List TypeAlias) (Env : (TEnv IDMeta)) :
-    (Option LMonoTys × (TEnv IDMeta)) :=
-    match mtys with
-    | [] => (some [], Env)
-    | mty :: mrest =>
-      let (mty', Env) := LMonoTy.resolveAliases mty Env
-      let (mrest', Env) := LMonoTys.resolveAliases mrest aliases Env
-      if h : mty'.isSome && mrest'.isSome then
-        ((mty'.get (by simp_all) :: mrest'.get (by simp_all)), Env)
-      else
-        (none, Env)
+def LMonoTys.resolveAliases [ToFormat IDMeta] (mtys : LMonoTys)
+    (Env : (TEnv IDMeta)) : Except Format (LMonoTys × (TEnv IDMeta)) := do
+  match mtys with
+  | [] => return ([], Env)
+  | mty :: mrest =>
+    let (mty', Env) ← LMonoTy.resolveAliases mty Env
+    let (mrest', Env) ← LMonoTys.resolveAliases mrest Env
+    return (mty' :: mrest', Env)
 end
 
 /--
 Resolve type aliases in a list of constructors.
 -/
-def LConstrs.resolveAliases [ToFormat IDMeta] (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
-    List (LConstr IDMeta) × TEnv IDMeta :=
-  constrs.foldr (fun c (acc, Env) =>
-    let names := c.args.map (·.fst)
-    let tys := c.args.map (·.snd)
-    let (tys', Env) := LMonoTys.resolveAliases tys Env.context.aliases Env
-    let args' := names.zip (tys'.getD tys)
-    ({ c with args := args' } :: acc, Env)) ([], Env)
+def LConstrs.resolveAliases [ToFormat IDMeta]
+    (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
+    Except Format (List (LConstr IDMeta) × TEnv IDMeta) := do
+  constrs.foldrM (fun c (acc, Env) => do
+    let (args', Env) ← go c.args Env
+    return ({ c with args := args' } :: acc, Env)) ([], Env)
+  where go args Env := do
+    let names := args.map (·.fst)
+    let tys := args.map (·.snd)
+    let (tys', Env) ← LMonoTys.resolveAliases tys Env
+    let args' := names.zip tys'
+    return (args', Env)
 
-theorem LConstrs.resolveAliases_length [ToFormat IDMeta] (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
-    (LConstrs.resolveAliases constrs Env).fst.length = constrs.length := by
-  simp only [LConstrs.resolveAliases]
-  induction constrs <;> grind
+theorem LConstrs.resolveAliases_length [ToFormat IDMeta]
+  (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta)
+  (result : List (LConstr IDMeta) × TEnv IDMeta)
+  (h : LConstrs.resolveAliases constrs Env = .ok result) :
+  result.fst.length = constrs.length := by
+  simp only [LConstrs.resolveAliases] at h
+  induction constrs generalizing result with
+  | nil => simp_all [List.foldrM, pure, Except.pure]; grind
+  | cons hd tl ih =>
+    simp [List.foldrM_cons, Bind.bind, Except.bind, Pure.pure, Except.pure] at h ih
+    split at h
+    case h_1 => simp_all
+    case h_2 x v heq =>
+      have ih' := @ih v.fst v.snd heq
+      grind
 
 /--
 Resolve type aliases in constructor argument types within a mutual datatype block.
 -/
 def MutualDatatype.resolveAliases [ToFormat IDMeta] (block : MutualDatatype IDMeta) (Env : TEnv IDMeta) :
-    MutualDatatype IDMeta × TEnv IDMeta :=
-  block.foldr (fun d (acc, Env)  =>
+    Except Format (MutualDatatype IDMeta × TEnv IDMeta) := do
+  block.foldrM (fun d (acc, Env) =>
     match h: LConstrs.resolveAliases d.constrs Env with
-    | (constrs', Env) =>
+    | .error e => .error e
+    | .ok (constrs', Env) =>
       have h : constrs'.length != 0 := by
         rename_i E
         have Hlen := LConstrs.resolveAliases_length d.constrs E
         rw[h] at Hlen
         cases d; grind
-      ({ d with constrs := constrs', constrs_ne := h } :: acc, Env)) ([], Env)
+      return ({ d with constrs := constrs', constrs_ne := h } :: acc, Env)) ([], Env)
 
 /--
 Instantiate and de-alias `ty`, including at the subtrees.
 -/
-def LTy.resolveAliases [ToFormat IDMeta] (ty : LTy) (Env : TEnv IDMeta) : Option LMonoTy × TEnv IDMeta :=
+def LTy.resolveAliases [ToFormat IDMeta] (ty : LTy) (Env : TEnv IDMeta) :
+    Except Format (LMonoTy × TEnv IDMeta) :=
   let (mty, Env') := ty.instantiate Env.genEnv
   let Env := {Env with genEnv := Env'}
   LMonoTy.resolveAliases mty Env
@@ -696,11 +732,14 @@ perform resolution of type aliases and subsequent checks for registered types.
 def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.IDMeta) :
     Except Format (LMonoTy × (TEnv T.IDMeta)) := do
   let ftvs := mty.freeVars
-  let (mtys, Env) := LMonoTys.instantiateEnv ftvs [mty] Env
-  let mtyi := mtys[0]!
-  let (mtyi, Env) := match mtyi.resolveAliases Env with
-                  | (some ty', Env) => (ty', Env)
-                  | (none, Env) => (mtyi, Env)
+  let instTypesWithEnv := LMonoTys.instantiateEnv ftvs [mty] Env
+  have : 0 < instTypesWithEnv.fst.length := by
+    simp [instTypesWithEnv, LMonoTys.instantiateEnv, liftGenEnv]
+    have := @LMonoTys.instantiate_length _ ftvs [mty] Env.genEnv _
+    grind
+  let mtyi := instTypesWithEnv.fst[0]'(by exact this)
+  let Env := instTypesWithEnv.snd
+  let (mtyi, Env) ← mtyi.resolveAliases Env
   if isInstanceOfKnownType mtyi C
   then return (mtyi, Env)
   else .error f!"Type {mty} is not an instance of a previously registered type!\n\
@@ -712,11 +751,7 @@ for registered types.
 -/
 def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) :
     Except Format (LMonoTy × TEnv T.IDMeta) := do
-  let (mty, Env) := match ty.resolveAliases Env with
-                  | (some ty', Env) => (ty', Env)
-                  | (none, Env) =>
-                    let (ty, Env') := ty.instantiate Env.genEnv
-                    (ty, {Env with genEnv := Env'})
+  let (mty, Env) ← ty.resolveAliases Env
   if isInstanceOfKnownType mty C
   then return (mty, Env)
   else .error f!"Type {ty} is not an instance of a previously registered type!\n\
@@ -726,7 +761,8 @@ def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env
 Instantiate the scheme `ty` and apply the global substitution `Env.state.subst` to
 it.
 -/
-def LTy.instantiateAndSubst (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) : Except Format (LMonoTy × TEnv T.IDMeta) := do
+def LTy.instantiateAndSubst (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta)
+    : Except Format (LMonoTy × TEnv T.IDMeta) := do
   let (mty, Env) ← LTy.instantiateWithCheck ty C Env
   let mty := LMonoTy.subst Env.stateSubstInfo.subst mty
   return (mty, Env)
