@@ -33,7 +33,10 @@ private def lookupType (env : TypeEnv) (name : Identifier) : HighType :=
   | none => .TInt  -- Default fallback
 
 structure SequenceState where
-  insideCondition : Bool
+  -- Stack of conditions we've entered (for wrapping lifted assignments)
+  -- When entering a then-branch, we push the condition
+  -- When entering an else-branch, we push the negated condition
+  conditionStack : List StmtExpr := []
   prependedStmts : List StmtExpr := []
   diagnostics : List DiagnosticModel
   -- Maps variable names to their counter for generating unique temp names
@@ -53,24 +56,35 @@ def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
 def SequenceM.addDiagnostic (d : DiagnosticModel) : SequenceM Unit :=
   modify fun s => { s with diagnostics := d :: s.diagnostics }
 
-def checkOutsideCondition(md: Imperative.MetaData Core.Expression): SequenceM Unit := do
-  let state <- get
-  if state.insideCondition then
-    let fileRange := (Imperative.getFileRange md).get!
-    SequenceM.addDiagnostic {
-        fileRange := fileRange,
-        message := "Could not lift assigment in expression that is evaluated conditionally"
-    }
+/-- Push a condition onto the stack (entering a conditional branch) -/
+def SequenceM.pushCondition (cond : StmtExpr) : SequenceM Unit :=
+  modify fun s => { s with conditionStack := cond :: s.conditionStack }
 
-def SequenceM.setInsideCondition : SequenceM Unit := do
-  modify fun s => { s with insideCondition := true }
+/-- Pop a condition from the stack (leaving a conditional branch) -/
+def SequenceM.popCondition : SequenceM Unit :=
+  modify fun s => { s with conditionStack := s.conditionStack.drop 1 }
 
-def SequenceM.withInsideCondition (m : SequenceM α) : SequenceM α := do
-  let oldInsideCondition := (← get).insideCondition
-  modify fun s => { s with insideCondition := true }
+/-- Get the current condition stack -/
+def SequenceM.getConditionStack : SequenceM (List StmtExpr) := do
+  return (← get).conditionStack
+
+/-- Negate a condition expression -/
+def negateCondition (cond : StmtExpr) : StmtExpr :=
+  .PrimitiveOp .Not [cond]
+
+/-- Execute action with a condition pushed onto the stack -/
+def SequenceM.withCondition (cond : StmtExpr) (m : SequenceM α) : SequenceM α := do
+  SequenceM.pushCondition cond
   let result ← m
-  modify fun s => { s with insideCondition := oldInsideCondition }
+  SequenceM.popCondition
   return result
+
+/-- Wrap a statement in conditionals based on the condition stack.
+    If conditionStack = [c1, c2, c3], we wrap as:
+    if c3 { if c2 { if c1 { stmt } } }
+    (innermost condition is first in the list) -/
+def wrapInConditions (stmt : StmtExpr) (conditions : List StmtExpr) : StmtExpr :=
+  conditions.foldl (fun inner cond => .IfThenElse cond inner none) stmt
 
 def SequenceM.takePrependedStmts : SequenceM (List StmtExpr) := do
   let stmts := (← get).prependedStmts
@@ -113,26 +127,30 @@ Returns the transformed expression with assignments replaced by variable referen
 partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign targets value md =>
-      checkOutsideCondition md
       -- This is an assignment in expression context
       -- We need to: 1) execute the assignment, 2) capture the value in a temporary
       -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← transformExpr value
+      let condStack ← SequenceM.getConditionStack
+      -- Wrap the assignment in conditionals if we're inside conditional branches
       let assignStmt := StmtExpr.Assign targets seqValue md
-      SequenceM.addPrependedStmt assignStmt
+      let wrappedAssign := wrapInConditions assignStmt condStack
+      SequenceM.addPrependedStmt wrappedAssign
       -- For each target, create a snapshot variable so subsequent references
       -- to that variable will see the value after this assignment
+      -- The snapshot is created AFTER the (possibly wrapped) assignment,
+      -- so it captures the correct value whether the condition was true or not
       for target in targets do
         match target with
         | .Identifier varName =>
             let snapshotName ← SequenceM.freshTempFor varName
             let snapshotType ← SequenceM.getVarType varName
+            -- Declare snapshot AFTER the conditional - it gets current value of y
             let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
             SequenceM.addPrependedStmt snapshotDecl
             SequenceM.setSnapshot varName snapshotName
         | _ => pure ()
       -- Create a temporary variable to capture the assigned value (for expression result)
-      -- Use TInt as the type (could be refined with type inference)
       -- For multi-target assigns, use the first target
       let firstTarget := targets.head?.getD (.Identifier "__unknown")
       let tempName ← match firstTarget with
@@ -149,12 +167,13 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
-      SequenceM.withInsideCondition do
-        let seqThen ← transformExpr thenBranch
-        let seqElse ← match elseBranch with
-          | some e => transformExpr e >>= (pure ∘ some)
-          | none => pure none
-        return .IfThenElse seqCond seqThen seqElse
+      -- Process then-branch with condition pushed onto stack
+      let seqThen ← SequenceM.withCondition seqCond (transformExpr thenBranch)
+      -- Process else-branch with negated condition pushed onto stack
+      let seqElse ← match elseBranch with
+        | some e => SequenceM.withCondition (negateCondition seqCond) (transformExpr e >>= (pure ∘ some))
+        | none => pure none
+      return .IfThenElse seqCond seqThen seqElse
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -249,18 +268,21 @@ partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
-      SequenceM.withInsideCondition do
-        let seqThen ← transformStmt thenBranch
-        let thenBlock := .Block seqThen none
+      -- Process then-branch with condition pushed onto stack
+      let seqThen ← SequenceM.withCondition seqCond do
+        let stmts ← transformStmt thenBranch
+        pure (.Block stmts none)
 
-        let seqElse ← match elseBranch with
-          | some e =>
+      -- Process else-branch with negated condition pushed onto stack
+      let seqElse ← match elseBranch with
+        | some e =>
+            SequenceM.withCondition (negateCondition seqCond) do
               let se ← transformStmt e
               pure (some (.Block se none))
-          | none => pure none
+        | none => pure none
 
-        SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
-        SequenceM.takePrependedStmts
+      SequenceM.addPrependedStmt <| .IfThenElse seqCond seqThen seqElse
+      SequenceM.takePrependedStmts
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -283,7 +305,7 @@ def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type))
   -- Reset state for each procedure to avoid cross-procedure contamination
-  modify fun s => { s with insideCondition := false, varSnapshots := [], varCounters := [], env := initEnv }
+  modify fun s => { s with conditionStack := [], varSnapshots := [], varCounters := [], env := initEnv }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody bodyExpr
@@ -295,7 +317,7 @@ Transform a program to lift all assignments that occur in an expression context.
 -/
 def liftExpressionAssignments (program : Program) : Except (Array DiagnosticModel) Program :=
   let (seqProcedures, afterState) := (program.staticProcedures.mapM transformProcedure).run
-    { insideCondition := false, diagnostics := [] }
+    { conditionStack := [], diagnostics := [] }
   if !afterState.diagnostics.isEmpty then
     .error afterState.diagnostics.toArray
   else

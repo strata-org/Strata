@@ -27,6 +27,18 @@ procedure multipleAssignments() {
   var y: int := ((x := 1;) + x) + (x := 2;);
   assert y == 4;
 }
+
+procedure conditionalAssignmentInExpression(x: int) {
+  var y: int := 0;
+  var z: int := (if (x > 0) { y := y + 1; } else { 0 }) + y;
+  if (x > 0) {
+    assert y == 1;
+    assert z == 2;
+  } else {
+    assert z == 0;
+    assert y == 0;
+  }
+}
 "
 
 #guard_msgs (error, drop all) in
