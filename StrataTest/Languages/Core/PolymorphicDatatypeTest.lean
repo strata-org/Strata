@@ -176,7 +176,7 @@ assert [lValue] (((~Either..l : (arrow (Either int bool) int)) (x : (Either int 
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
 
 ---------------------------------------------------------------------
--- Test 9: Nested Polymorphic Types (Option of List)
+-- Test 5: Nested Polymorphic Types (Option of List)
 ---------------------------------------------------------------------
 
 def nestedPolyPgm : Program :=
@@ -315,5 +315,59 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" multiInstSMTPgm Inhabited.default Options.quiet
+
+
+---------------------------------------------------------------------
+-- Test 8: Multiple polymorphic arguments, constructor only needs 1
+---------------------------------------------------------------------
+
+def eitherHavocPgm : Program :=
+#strata
+program Core;
+
+datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
+
+procedure TestEitherHavoc() returns ()
+spec {
+  ensures true;
+}
+{
+  var x : Either int bool;
+
+  x := Left(0);
+  havoc x;
+
+  assume (x == Left(42));
+
+  assert [isLeft]: Either..isLeft(x);
+  assert [notRight]: !Either..isRight(x);
+  assert [leftVal]: Either..l(x) == 42;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram eitherHavocPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: isLeft
+Property: assert
+Result: ✅ pass
+
+Obligation: notRight
+Property: assert
+Result: ✅ pass
+
+Obligation: leftVal
+Property: assert
+Result: ✅ pass
+
+Obligation: TestEitherHavoc_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" eitherHavocPgm Inhabited.default Options.quiet
 
 end Strata.PolymorphicDatatypeTest

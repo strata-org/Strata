@@ -36,8 +36,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
     let fileRange := Imperative.getFileRange decl.metadata |>.getD FileRange.unknown
     -- Add all names from the declaration (multiple for mutual datatypes)
     let idents ← C.idents.addListWithError decl.names (fun n =>
-      (DiagnosticModel.withRange fileRange f!"Error in {decl.kind} {n}: a declaration of this name already exists.")
-    )
+      (DiagnosticModel.withRange fileRange f!"Error in {decl.kind} {n}: a declaration of this name already exists."))
     let C := {C with idents}
     let (decl', C, Env) ←
       match decl with
@@ -65,7 +64,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
                |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
             .ok (.type td, C, Env)
           | .data block =>
-            let (block, Env) := MutualDatatype.resolveAliases block Env
+            let (block, Env) ← MutualDatatype.resolveAliases block Env |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
             let C ← C.addMutualBlock block
             .ok (.type (.data block), C, Env)
           catch e =>
