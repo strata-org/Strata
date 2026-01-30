@@ -372,8 +372,6 @@ def translateForwardTypeDecl (bindings : TransBindings) (op : Operation) :
                           s!"translateForwardTypeDecl expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
   let md ← getOpMetaData op
-  -- Create a placeholder type constructor that will be replaced by the actual
-  -- datatype definition in a mutual block
   let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
@@ -1343,6 +1341,88 @@ def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg
   let constructorInfos := GlobalContext.extractConstructorInfo p.dialects arg
   constructorInfos.mapM (translateConstructorInfo bindings)
 
+---------------------------------------------------------------------
+-- Common helpers for datatype translation
+
+/--
+Extract type arguments from a datatype's optional bindings argument.
+-/
+def translateDatatypeTypeArgs (bindings : TransBindings) (arg : Arg) (errorContext : String) :
+    TransM (List TyIdentifier × TransBindings) :=
+  translateOption
+    (fun maybearg => do
+      match maybearg with
+      | none => pure ([], bindings)
+      | some arg =>
+        let bargs ← checkOpArg arg q`Core.mkBindings 1
+        match bargs[0]! with
+        | .seq _ .comma args =>
+          let (arr, bindings) ← translateTypeBindings bindings args
+          return (arr.toList, bindings)
+        | _ => TransM.error s!"{errorContext} expects a comma separated list: {repr bargs[0]!}")
+    arg
+
+/--
+Create a placeholder LDatatype for recursive type references.
+-/
+def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDatatype Visibility :=
+  { name := name
+    typeArgs := typeArgs
+    constrs := [{ name := name, args := [], testerName := "" }]
+    constrs_ne := by simp }
+
+/--
+Filter factory function declarations to extract constructor, tester, and field accessor decls
+for a single datatype.
+-/
+def filterDatatypeDecls (ldatatype : LDatatype Visibility) (funcDecls : List Core.Decl) :
+    List Core.Decl × List Core.Decl × List Core.Decl :=
+  let constructorNames := ldatatype.constrs.map fun c => c.name.name
+  let testerNames := ldatatype.constrs.map fun c => c.testerName
+  let fieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
+    acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name)) []
+
+  let constructorDecls := funcDecls.filter fun decl =>
+    match decl with
+    | .func f => constructorNames.contains f.name.name
+    | _ => false
+
+  let testerDecls := funcDecls.filter fun decl =>
+    match decl with
+    | .func f => testerNames.contains f.name.name
+    | _ => false
+
+  let fieldAccessorDecls := funcDecls.filter fun decl =>
+    match decl with
+    | .func f => fieldAccessorNames.contains f.name.name
+    | _ => false
+
+  (constructorDecls, testerDecls, fieldAccessorDecls)
+
+/--
+Build LConstr list from TransConstructorInfo array.
+-/
+def buildLConstrs (datatypeName : String) (constructors : Array TransConstructorInfo) :
+    List (LConstr Visibility) :=
+  let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
+  constructors.toList.map fun constr =>
+    let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
+    { name := constr.name
+      args := constr.fields.toList.map fun (fieldName, fieldType) => (fieldName, fieldType)
+      testerName := testerName }
+
+/--
+Generate factory function declarations from a list of LDatatypes.
+-/
+def genDatatypeFactory (ldatatypes : List (LDatatype Visibility)) :
+    TransM (List Core.Decl) := do
+  let factory ← match genBlockFactory ldatatypes (T := CoreLParams) with
+    | .ok f => pure f
+    | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
+  return factory.toList.map fun func => Core.Decl.func func
+
+---------------------------------------------------------------------
+
 /--
 Translate a datatype declaration to Boogie declarations, updating bindings
 appropriately.
@@ -1365,31 +1445,12 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
   let datatypeName ← translateIdent String op.args[0]!
 
   -- Extract type arguments (optional bindings)
-  let (typeArgs, bindings) ←
-    translateOption
-      (fun maybearg =>
-            do match maybearg with
-            | none => pure ([], bindings)
-            | some arg =>
-              let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let args ←
-                  match bargs[0]! with
-                  | .seq _ .comma args =>
-                    let (arr, bindings) ← translateTypeBindings bindings args
-                    return (arr.toList, bindings)
-                  | _ => TransM.error
-                          s!"translateDatatype expects a comma separated list: {repr bargs[0]!}")
-                    op.args[1]!
+  let (typeArgs, bindings) ← translateDatatypeTypeArgs bindings op.args[1]! "translateDatatype"
 
   /- Note: Add a placeholder for the datatype type BEFORE translating
   constructors, for recursive constructors. Replaced with actual declaration
   later. -/
-  let placeholderLDatatype : LDatatype Visibility :=
-    { name := datatypeName
-      typeArgs := typeArgs
-      constrs := [{ name := datatypeName, args := [], testerName := "" }]
-      constrs_ne := by simp }
-  let placeholderDecl := Core.Decl.type (.data [placeholderLDatatype])
+  let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
   let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
 
   -- Extract constructor information (possibly recursive)
@@ -1399,15 +1460,10 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
     TransM.error s!"Datatype {datatypeName} must have at least one constructor"
   else
     -- Build LConstr list from TransConstructorInfo
-    let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
-    let lConstrs : List (LConstr Visibility) := constructors.toList.map fun constr =>
-      let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
-      { name := constr.name
-        args := constr.fields.toList.map fun (fieldName, fieldType) => (fieldName, fieldType)
-        testerName := testerName }
+    let lConstrs := buildLConstrs datatypeName constructors
 
     have constrs_ne : lConstrs.length != 0 := by
-      simp [lConstrs]
+      simp [lConstrs, buildLConstrs]
       intro heq; subst_vars; apply h; rfl
 
     let ldatatype : LDatatype Visibility :=
@@ -1416,57 +1472,21 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
         constrs := lConstrs
         constrs_ne := constrs_ne }
 
-    -- Generate factory from LDatatype and convert to Core.Decl
-    -- (used only for bindings.freeVars, not for allDecls)
-    let factory ← match genBlockFactory [ldatatype] (T := CoreLParams) with
-      | .ok f => pure f
-      | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
-    let funcDecls : List Core.Decl := factory.toList.map fun func =>
-      Core.Decl.func func
+    -- Generate factory from LDatatype
+    let funcDecls ← genDatatypeFactory [ldatatype]
 
     -- Only includes typeDecl, factory functions generated later
     let md ← getOpMetaData op
     let typeDecl := Core.Decl.type (.data [ldatatype]) md
-    let allDecls := [typeDecl]
 
-    /-
-    We must add to bindings.freeVars in the same order as the DDM's
-    `addDatatypeBindings`: type, constructors, template functions. We do NOT
-    include eliminators here because the DDM does not (yet) produce them.
-    -/
-
-    let constructorNames : List String := lConstrs.map fun c => c.name.name
-    let testerNames : List String := lConstrs.map fun c => c.testerName
-
-    -- Extract all field accessor names across all constructors for field projections
-    -- Note: DDM validates that field names are unique across constructors
-    -- Field accessors are named as "Datatype..fieldName"
-    let fieldAccessorNames : List String := lConstrs.foldl (fun acc c =>
-      acc ++ (c.args.map fun (fieldName, _) => datatypeName ++ ".." ++ fieldName.name)) []
-
-    -- Filter factory functions to get constructors, testers, projections
-    -- TODO: this could be more efficient via `LDatatype.genFunctionMaps`
-    let constructorDecls := funcDecls.filter fun decl =>
-      match decl with
-      | .func f => constructorNames.contains f.name.name
-      | _ => false
-
-    let testerDecls := funcDecls.filter fun decl =>
-      match decl with
-      | .func f => testerNames.contains f.name.name
-      | _ => false
-
-    let fieldAccessorDecls := funcDecls.filter fun decl =>
-      match decl with
-      | .func f => fieldAccessorNames.contains f.name.name
-      | _ => false
-
+    -- Filter and add declarations to bindings
+    let (constructorDecls, testerDecls, fieldAccessorDecls) := filterDatatypeDecls ldatatype funcDecls
     let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls
     let bindings := bindingDecls.foldl (fun b d =>
       { b with freeVars := b.freeVars.push d }
     ) bindings
 
-    return (allDecls, bindings)
+    return ([typeDecl], bindings)
 
 /--
 Translate a mutual block containing mutually recursive datatype definitions.
@@ -1491,39 +1511,15 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
     TransM.error "Mutual block must contain at least one datatype"
   else
     -- First pass: collect all datatype names, type args, and their indices in freeVars
-    -- The forward declarations should already be in bindings.freeVars
+    -- Forward declarations MUST already be in bindings.freeVars
     let mut datatypeInfos : Array (String × List TyIdentifier × Nat) := #[]
     let mut bindingsWithPlaceholders := bindings
 
     for dtOp in datatypeOps do
       let datatypeName ← translateIdent String dtOp.args[0]!
-      let (typeArgs, _) ←
-        translateOption
-          (fun maybearg =>
-                do match maybearg with
-                | none => pure ([], bindings)
-                | some arg =>
-                  let bargs ← checkOpArg arg q`Core.mkBindings 1
-                  let args ←
-                      match bargs[0]! with
-                      | .seq _ .comma args =>
-                        let (arr, _) ← translateTypeBindings bindings args
-                        return (arr.toList, bindings)
-                      | _ => TransM.error
-                              s!"translateMutualBlock expects a comma separated list: {repr bargs[0]!}")
-                        dtOp.args[1]!
+      let (typeArgs, _) ← translateDatatypeTypeArgs bindings dtOp.args[1]! "translateMutualBlock"
 
       -- Find the index of this datatype in freeVars (from forward declaration)
-      -- or add a new placeholder if not forward-declared
-      let idx := bindingsWithPlaceholders.freeVars.size
-      let placeholderLDatatype : LDatatype Visibility :=
-        { name := datatypeName
-          typeArgs := typeArgs
-          constrs := [{ name := datatypeName, args := [], testerName := "" }]
-          constrs_ne := by simp }
-      let placeholderDecl := Core.Decl.type (.data [placeholderLDatatype])
-
-      -- Check if there's already an entry for this datatype (from forward declaration)
       let existingIdx := bindings.freeVars.findIdx? fun decl =>
         match decl with
         | .type t _ => t.names.contains datatypeName
@@ -1531,15 +1527,12 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
 
       match existingIdx with
       | some i =>
-        -- Update existing entry with placeholder
+        let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
         datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, i)
         bindingsWithPlaceholders := { bindingsWithPlaceholders with
           freeVars := bindingsWithPlaceholders.freeVars.set! i placeholderDecl }
       | none =>
-        -- Add new placeholder
-        datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, idx)
-        bindingsWithPlaceholders := { bindingsWithPlaceholders with
-          freeVars := bindingsWithPlaceholders.freeVars.push placeholderDecl }
+        TransM.error s!"Mutual datatype {datatypeName} requires a forward declaration"
 
     -- Second pass: translate all constructors with all placeholders in scope
     let mut ldatatypes : List (LDatatype Visibility) := []
@@ -1552,15 +1545,10 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
         TransM.error s!"Datatype {datatypeName} must have at least one constructor"
       else
         -- Build LConstr list
-        let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
-        let lConstrs : List (LConstr Visibility) := constructors.toList.map fun constr =>
-          let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
-          { name := constr.name
-            args := constr.fields.toList.map fun (fieldName, fieldType) => (fieldName, fieldType)
-            testerName := testerName }
+        let lConstrs := buildLConstrs datatypeName constructors
 
         have constrs_ne : lConstrs.length != 0 := by
-          simp [lConstrs]
+          simp [lConstrs, buildLConstrs]
           intro heq; subst_vars; apply h; rfl
 
         let ldatatype : LDatatype Visibility :=
@@ -1572,11 +1560,7 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
         ldatatypes := ldatatypes ++ [ldatatype]
 
     -- Generate factory functions for the ENTIRE mutual block at once
-    let factory ← match genBlockFactory ldatatypes (T := CoreLParams) with
-      | .ok f => pure f
-      | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
-    let allFuncDecls : List Core.Decl := factory.toList.map fun func =>
-      Core.Decl.func func
+    let allFuncDecls ← genDatatypeFactory ldatatypes
 
     -- Create the mutual TypeDecl with all datatypes
     let md ← getOpMetaData op
@@ -1596,26 +1580,7 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
 
     -- Add constructor, tester, and accessor functions for each datatype
     for ldatatype in ldatatypes do
-      let constructorNames := ldatatype.constrs.map fun c => c.name.name
-      let testerNames := ldatatype.constrs.map fun c => c.testerName
-      let fieldNames := ldatatype.constrs.foldl (fun acc c =>
-        acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name)) []
-
-      let constructorDecls := allFuncDecls.filter fun decl =>
-        match decl with
-        | .func f => constructorNames.contains f.name.name
-        | _ => false
-
-      let testerDecls := allFuncDecls.filter fun decl =>
-        match decl with
-        | .func f => testerNames.contains f.name.name
-        | _ => false
-
-      let fieldAccessorDecls := allFuncDecls.filter fun decl =>
-        match decl with
-        | .func f => fieldNames.contains f.name.name
-        | _ => false
-
+      let (constructorDecls, testerDecls, fieldAccessorDecls) := filterDatatypeDecls ldatatype allFuncDecls
       for d in constructorDecls ++ testerDecls ++ fieldAccessorDecls do
         finalBindings := { finalBindings with freeVars := finalBindings.freeVars.push d }
 
