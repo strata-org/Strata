@@ -106,8 +106,18 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   }
   return output
 
--- def readLinesUntilVerdict (lines : List String) : List String × List String :=
+def isVerdict (s : String) : Bool :=
+  s ∈ ["unsat", "sat", "unknown"]
 
+def readLinesUntilVerdict (lines : List String) : List String × List String :=
+  match lines with
+  | [] => ([], [])
+  | head :: tail =>
+    if isVerdict head then
+      ([], lines)
+    else
+      let (pfx, rest) := readLinesUntilVerdict tail
+      (head :: pfx, rest)
 
 def parseVerdictWithModel (vars : List (IdentT LMonoTy Visibility))
     (verdict model : String) (ctx : SMT.Context) (E : EncoderState) :
@@ -128,27 +138,18 @@ def parseVerdictWithModel (vars : List (IdentT LMonoTy Visibility))
 partial def parseVerdictsWithModel (vars : List (IdentT LMonoTy Visibility))
     (lines : List String) (ctx : SMT.Context) (E : EncoderState) :
     Except Format (List Result) := do
-  dbg_trace f!"lines: {lines}"
   match lines with
   | [] =>
     .ok []
-  | verdict :: model :: rest =>
-    if !isVerdict verdict then
-      .error f!"SMT Solver Error! Ill-formed verdict: {verdict}"
-    else
-      let (modelStr, restLines) := if isVerdict model then ("", model :: rest) else (model, rest)
-      let result ← parseVerdictWithModel vars verdict modelStr ctx E
-      let restResult ← parseVerdictsWithModel vars restLines ctx E
-      return (result :: restResult)
   | verdict :: rest =>
     if !isVerdict verdict then
       .error f!"SMT Solver Error! Ill-formed verdict: {verdict}"
     else
-      let result ← parseVerdictWithModel vars verdict "" ctx E
-      let restResult ← parseVerdictsWithModel vars rest ctx E
+      let (modelLines, restLines) := readLinesUntilVerdict rest
+      let modelStr := String.intercalate "\n" modelLines
+      let result ← parseVerdictWithModel vars verdict modelStr ctx E
+      let restResult ← parseVerdictsWithModel vars restLines ctx E
       return (result :: restResult)
-  where isVerdict (s : String) : Bool :=
-    s ∈ ["unsat", "sat", "unknown"]
 
 /--
 Parse SMT solver output from (possibly) multiple `check-sat` calls.
@@ -474,7 +475,6 @@ def getObligationResult (ob : SMT.Obligation) (ctx : SMT.Context)
 def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options)
     (counter : IO.Ref Nat) (tempDir : System.FilePath) :
     EIO DiagnosticModel VCResults := do
-  dbg_trace f!"Verify single env: {pE.snd.deferred}\n"
   let (p, E) := pE
   match E.error with
   | some err =>
