@@ -30,7 +30,8 @@ structure SequenceState where
   insideCondition : Bool
   prependedStmts : List StmtExpr := []
   diagnostics : List DiagnosticModel
-  tempCounter : Nat := 0
+  -- Maps variable names to their counter for generating unique temp names
+  varCounters : List (Identifier × Nat) := []
   -- Maps variable names to their current snapshot variable name
   -- When an assignment is lifted, we create a snapshot and record it here
   -- Subsequent references to the variable should use the snapshot
@@ -68,10 +69,11 @@ def SequenceM.takePrependedStmts : SequenceM (List StmtExpr) := do
   modify fun s => { s with prependedStmts := [] }
   return stmts.reverse
 
-def SequenceM.freshTemp : SequenceM Identifier := do
-  let counter := (← get).tempCounter
-  modify fun s => { s with tempCounter := s.tempCounter + 1 }
-  return s!"__t{counter}"
+def SequenceM.freshTempFor (varName : Identifier) : SequenceM Identifier := do
+  let counters := (← get).varCounters
+  let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
+  modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
+  return s!"{varName}_{counter}"
 
 def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
   return (← get).varSnapshots.find? (·.1 == varName) |>.map (·.2)
@@ -111,7 +113,7 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
         match target with
         | .Identifier varName =>
             if varName == "heap_out" then
-              let snapshotName ← SequenceM.freshTemp
+              let snapshotName ← SequenceM.freshTempFor varName
               let snapshotDecl := StmtExpr.LocalVariable snapshotName .THeap (some (.Identifier varName))
               SequenceM.addPrependedStmt snapshotDecl
               SequenceM.setSnapshot varName snapshotName
@@ -119,8 +121,10 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       -- Create a temporary variable to capture the assigned value (for expression result)
       -- Use TInt as the type (could be refined with type inference)
       -- For multi-target assigns, use the first target
-      let tempName ← SequenceM.freshTemp
-      let firstTarget := targets.head?.getD (.Identifier tempName)
+      let firstTarget := targets.head?.getD (.Identifier "__unknown")
+      let tempName ← match firstTarget with
+        | .Identifier name => SequenceM.freshTempFor name
+        | _ => SequenceM.freshTempFor "__expr"
       let tempDecl := StmtExpr.LocalVariable tempName .TInt (some firstTarget)
       SequenceM.addPrependedStmt tempDecl
       -- Return the temporary variable as the expression value
@@ -172,7 +176,7 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
                   | .Identifier varName =>
                       -- Only snapshot heap variables (heap_out)
                       if varName == "heap_out" then
-                        let snapshotName ← SequenceM.freshTemp
+                        let snapshotName ← SequenceM.freshTempFor varName
                         let snapshotDecl := StmtExpr.LocalVariable snapshotName .THeap (some (.Identifier varName))
                         SequenceM.addPrependedStmt snapshotDecl
                         SequenceM.setSnapshot varName snapshotName
@@ -264,7 +268,7 @@ def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
 
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   -- Reset state for each procedure to avoid cross-procedure contamination
-  modify fun s => { s with insideCondition := false, varSnapshots := [] }
+  modify fun s => { s with insideCondition := false, varSnapshots := [], varCounters := [] }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody bodyExpr

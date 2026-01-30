@@ -64,7 +64,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) 
         -- We just reference them as operations without application
         .op () ident none
       else
-        -- Regular variables are local identifiers (including heap parameter)
+        -- Regular variables are local identifiers
         let ident := Core.CoreIdent.locl name
         .fvar () ident (some (lookupType env name))
   | .PrimitiveOp op [e] =>
@@ -176,7 +176,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
           (env, [Core.Statement.set ident boogieExpr])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
-          -- This is used for heap-modifying procedure calls: (result, heap) := f(heap, args)
+          -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
           match value with
           | .StaticCall callee args =>
               let boogieArgs := args.map (translateExpr constants env)
