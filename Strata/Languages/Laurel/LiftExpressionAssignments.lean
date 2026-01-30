@@ -86,7 +86,7 @@ def SequenceM.freshTempFor (varName : Identifier) : SequenceM Identifier := do
 def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
   return (← get).varSnapshots.find? (·.1 == varName) |>.map (·.2)
 
-def SequenceM.setSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit :=
+def SequenceM.setSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit := do
   modify fun s => { s with varSnapshots := (varName, snapshotName) :: s.varSnapshots.filter (·.1 != varName) }
 
 def SequenceM.getVarType (varName : Identifier) : SequenceM HighType := do
@@ -204,15 +204,9 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   | .LiteralInt _ => return expr
   | .Identifier varName => do
       -- If this variable has a snapshot (from a lifted assignment), use the snapshot
-      let snapshots := (← get).varSnapshots
-      dbg_trace s!"[LIFT] Processing Identifier '{varName}', snapshots: {snapshots}"
       match ← SequenceM.getSnapshot varName with
-      | some snapshotName =>
-          dbg_trace s!"[LIFT]   -> Using snapshot '{snapshotName}'"
-          return .Identifier snapshotName
-      | none =>
-          dbg_trace s!"[LIFT]   -> No snapshot, keeping '{varName}'"
-          return expr
+      | some snapshotName => return .Identifier snapshotName
+      | none => return expr
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
 
