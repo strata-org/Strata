@@ -73,9 +73,7 @@ def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   termination_by e.sizeOf
 
 /--
-Check if `e` is a constructor application (regardless of whether its arguments are values).
-This is used for `inline_if_constr` attribute to allow inlining testers when the argument
-is a constructor application like `from_bool(b)` even when `b` is symbolic.
+Check if `e` is a constructor application.
 -/
 def isConstrApp (F : @Factory T.base) (e : LExpr T) : Bool :=
   match Factory.callOfLFunc F e true with
@@ -168,7 +166,12 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
         else
           let new_e := @mkApp TBase.mono e.metadata op_expr args
           if args.all (isCanonicalValue σ.config.factory) ||
-             ("eval_if_constr" ∈ lfunc.attr && firstArgIsConstr) then
+            -- All arguments in the function call are concrete.
+            -- We can, provided a denotation function, evaluate this function
+            -- call.
+            ("eval_if_constr" ∈ lfunc.attr && firstArgIsConstr) then
+            -- Other functions (e.g. Eliminators) only require the first arg
+            -- to be a constructor
             match lfunc.concreteEval with
             | none => new_e
             | some ceval =>
