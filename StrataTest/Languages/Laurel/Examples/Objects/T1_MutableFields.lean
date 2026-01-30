@@ -51,7 +51,8 @@ procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
 }
 
 procedure subsequentHeapMutations(c: Container) {
-  var sum: int := (c#intValue := 1;); // + c#intValue + (c#intValue := 2)
+  // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
+  var sum: int := ((c#intValue := 1;) + c#intValue) + (c#intValue := 2;);
   assert sum == 4;
 }
 
