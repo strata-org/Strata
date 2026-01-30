@@ -262,19 +262,24 @@ def Statements.collectAsserts (ss : Statements) : List (String × Imperative.Met
   termination_by Imperative.Block.sizeOf ss
 end
 
-def createFailingCoverObligations
+private def createUnreachableCoverObligations
     (covers : List (String × Imperative.MetaData Expression)) :
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover [] (LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover
+        false
+        [[("unreachable", (LExpr.false ()))]]
+        (LExpr.false ()) md))
 
-def createPassingAssertObligations
+private def createUnreachableAssertObligations
     (asserts : List (String × Imperative.MetaData Expression)) :
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .assert [] (LExpr.true ()) md))
+      (Imperative.ProofObligation.mk label .assert false
+        [[("unreachable", (LExpr.false ()))]]
+        (LExpr.true ()) md))
 
 abbrev StmtsStack := List Statements
 
@@ -371,8 +376,8 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                 if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
                   let ss_f_covers := Statements.collectCovers ss_f
                   let ss_f_asserts := Statements.collectAsserts ss_f
-                  let deferred := createFailingCoverObligations ss_f_covers
-                  let deferred := deferred ++ createPassingAssertObligations ss_f_asserts
+                  let deferred := createUnreachableCoverObligations ss_f_covers
+                  let deferred := deferred ++ createUnreachableAssertObligations ss_f_asserts
                   [{ Ewn with env.deferred := Ewn.env.deferred ++ deferred }]
                 else
                   []

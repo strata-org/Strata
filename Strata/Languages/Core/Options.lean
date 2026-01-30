@@ -43,6 +43,7 @@ structure Options where
   checkOnly : Bool
   stopOnFirstError : Bool
   removeIrrelevantAxioms : Bool
+  checkAssumptionsSat : Bool
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
   /-- Output results in SARIF format -/
@@ -55,6 +56,7 @@ def Options.default : Options := {
   checkOnly := false,
   stopOnFirstError := false,
   removeIrrelevantAxioms := false,
+  checkAssumptionsSat := false,
   solverTimeout := 10,
   outputSarif := false
 }

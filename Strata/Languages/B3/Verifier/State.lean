@@ -138,7 +138,8 @@ def prove (state : B3VerificationState) (term : Term) (ctx : VerificationContext
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
     Solver.assert s!"(not {formatTermDirect term})"
-    let decision ← Solver.checkSat []
+    let _ ← Solver.checkSat
+    let decision ← Solver.getDecision []
     let model := if decision == .sat then some "model available" else none
     return (decision, model)
   let (decision, model) ← runCheck.run state.smtState.solver
@@ -154,7 +155,8 @@ def reach (state : B3VerificationState) (term : Term) (ctx : VerificationContext
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
     Solver.assert (formatTermDirect term)
-    let decision ← Solver.checkSat []
+    let _ ← Solver.checkSat
+    let decision ← Solver.getDecision []
     let model := if decision == .sat then some "reachable" else none
     return (decision, model)
   let (decision, model) ← runCheck.run state.smtState.solver

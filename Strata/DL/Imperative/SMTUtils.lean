@@ -151,7 +151,8 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
   let (ids, estate) ← encodeTerms terms solver
-  let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
+  let _ ← solver.checkSat
+  let _ ← solver.getDecision ids -- Will return unknown for Solver.fileWriter
   let produce_models ←
     if smtsolver.endsWith "z3" then
       -- No need to specify -model because we already have `get-value` in the

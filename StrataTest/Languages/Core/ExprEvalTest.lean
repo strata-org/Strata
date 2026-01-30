@@ -70,9 +70,9 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let ans ← Core.SMT.dischargeObligation
         { Options.default with verbose := .quiet }
         (LExpr.freeVars e) "z3" filename.toString
-        [smt_term] ctx
+        {assumptions := [], obligation := smt_term} ctx
       match ans with
-      | .ok (.sat _,_) => return true
+      | .ok ([.sat _],_) => return true
       | _ =>
         IO.println s!"Test failed on {e}"
         IO.println s!"The query: {repr smt_term}"

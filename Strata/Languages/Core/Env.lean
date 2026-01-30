@@ -107,7 +107,7 @@ def ProofObligation.create
     dbg_trace f!"{Format.line}Obligation {label} is free!{Format.line}"
     none
   else
-    some (ProofObligation.mk label propertyType assumptions obligation.expr obligation.md)
+    some (ProofObligation.mk label propertyType false assumptions obligation.expr obligation.md)
 
 def ProofObligations.createAssertions
   (assumptions : PathConditions Expression)

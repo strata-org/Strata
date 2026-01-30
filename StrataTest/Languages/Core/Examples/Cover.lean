@@ -25,41 +25,49 @@ procedure Test() returns ()
     cover [reachable_cover]: (true);
     cover [unsatisfiable_cover]: (x == -1);
     assert [reachable_assert]: (true);
+
   }
 };
 #end
-
 
 /--
 info:
 Obligation: unreachable_cover1
 Property: cover
+Assumptions Sat Check: ❌ fail
 Result: ❌ fail
 
 Obligation: unreachable_cover2
 Property: cover
+Assumptions Sat Check: ❌ fail
 Result: ❌ fail
 
 Obligation: unreachable_assert
 Property: assert
+Assumptions Sat Check: ❌ fail
 Result: ✅ pass
 
 Obligation: reachable_cover
 Property: cover
+Assumptions Sat Check: ✅ pass
 Result: ✅ pass
 Model:
 (init_x_0, 0)
 
 Obligation: unsatisfiable_cover
 Property: cover
+Assumptions Sat Check: ✅ pass
 Result: ❌ fail
 
 Obligation: reachable_assert
 Property: assert
+Assumptions Sat Check: ✅ pass
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" coverPgm1 (options := Options.quiet)
+#eval verify "z3" coverPgm1
+          (options := {Options.quiet with solverTimeout := 1,
+                                          checkAssumptionsSat := true})
 
 ---------------------------------------------------------------------
 
@@ -84,19 +92,23 @@ spec {
 info:
 Obligation: ctest1
 Property: cover
+Assumptions Sat Check: ❌ fail
 Result: ❌ fail
 
 Obligation: ctest2
 Property: cover
+Assumptions Sat Check: ✅ pass
 Result: ✅ pass
 Model:
 ($__x0, 3)
 
 Obligation: atest2
 Property: assert
+Assumptions Sat Check: ✅ pass
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" coverPgm2 (options := Options.quiet)
+#eval verify "z3" coverPgm2
+      (options := {Options.quiet with checkAssumptionsSat := true})
 
 ---------------------------------------------------------------------

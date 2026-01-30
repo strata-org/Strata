@@ -85,6 +85,8 @@ decision procedure or via denotation into Lean.
 structure ProofObligation (P : PureExpr) where
   label : String
   property : PropertyType
+  /-- Check if assumptions are satisfiable. -/
+  checkAssumptionsSat : Bool := false
   assumptions : PathConditions P
   obligation : P.Expr
   metadata : MetaData P

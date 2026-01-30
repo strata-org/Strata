@@ -58,14 +58,14 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let c' := .assert label e md
       match EC.denoteBool e with
       | some true => -- Proved via evaluation.
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label .assert false assumptions e md))
       | some false =>
         if assumptions.isEmpty then
           (c', EC.updateError σ (.AssertFail label e))
         else
-          (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+          (c', EC.deferObligation σ (ProofObligation.mk label .assert false assumptions e md))
       | none =>
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label .assert false assumptions e md))
 
     | .assume label e md =>
       let (e, σ) := EC.preprocess σ c e
@@ -85,7 +85,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let e := EC.eval σ e
       let assumptions := EC.getPathConditions σ
       let c' := .cover label e md
-      (c', EC.deferObligation σ (ProofObligation.mk label .cover assumptions e md))
+      (c', EC.deferObligation σ (ProofObligation.mk label .cover false assumptions e md))
 
 /--
 Partial evaluator for Imperative's Commands.
