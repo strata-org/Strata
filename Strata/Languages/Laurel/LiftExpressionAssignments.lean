@@ -8,7 +8,6 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Core.Verifier
 
-
 namespace Strata
 namespace Laurel
 
@@ -26,6 +25,13 @@ Becomes:
   if (x1 == y1) { ... }
 -/
 
+private abbrev TypeEnv := List (Identifier × HighType)
+
+private def lookupType (env : TypeEnv) (name : Identifier) : HighType :=
+  match env.find? (fun (n, _) => n == name) with
+  | some (_, ty) => ty
+  | none => .TInt  -- Default fallback
+
 structure SequenceState where
   insideCondition : Bool
   prependedStmts : List StmtExpr := []
@@ -36,6 +42,8 @@ structure SequenceState where
   -- When an assignment is lifted, we create a snapshot and record it here
   -- Subsequent references to the variable should use the snapshot
   varSnapshots : List (Identifier × Identifier) := []
+  -- Type environment mapping variable names to their types
+  env : TypeEnv := []
 
 abbrev SequenceM := StateM SequenceState
 
@@ -81,6 +89,12 @@ def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier)
 def SequenceM.setSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit :=
   modify fun s => { s with varSnapshots := (varName, snapshotName) :: s.varSnapshots.filter (·.1 != varName) }
 
+def SequenceM.getVarType (varName : Identifier) : SequenceM HighType := do
+  return lookupType (← get).env varName
+
+def SequenceM.addToEnv (varName : Identifier) (ty : HighType) : SequenceM Unit := do
+  modify fun s => { s with env := (varName, ty) :: s.env }
+
 partial def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .PrimitiveOp op args =>
@@ -108,15 +122,14 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       SequenceM.addPrependedStmt assignStmt
       -- For each target, create a snapshot variable so subsequent references
       -- to that variable will see the value after this assignment
-      -- Only create snapshots for heap variables (heap_out)
       for target in targets do
         match target with
         | .Identifier varName =>
-            if varName == "heap_out" then
-              let snapshotName ← SequenceM.freshTempFor varName
-              let snapshotDecl := StmtExpr.LocalVariable snapshotName .THeap (some (.Identifier varName))
-              SequenceM.addPrependedStmt snapshotDecl
-              SequenceM.setSnapshot varName snapshotName
+            let snapshotName ← SequenceM.freshTempFor varName
+            let snapshotType ← SequenceM.getVarType varName
+            let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
+            SequenceM.addPrependedStmt snapshotDecl
+            SequenceM.setSnapshot varName snapshotName
         | _ => pure ()
       -- Create a temporary variable to capture the assigned value (for expression result)
       -- Use TInt as the type (could be refined with type inference)
@@ -168,18 +181,16 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
                 let seqValue ← transformExpr value
                 let assignStmt := StmtExpr.Assign seqTargets seqValue md
                 SequenceM.addPrependedStmt assignStmt
-                -- Create snapshot for heap_out so subsequent reads
+                -- Create snapshot for variables so subsequent reads
                 -- see the value after this assignment (not after later assignments)
-                -- Only create snapshots for heap variables (heap_out)
                 for target in seqTargets do
                   match target with
                   | .Identifier varName =>
-                      -- Only snapshot heap variables (heap_out)
-                      if varName == "heap_out" then
-                        let snapshotName ← SequenceM.freshTempFor varName
-                        let snapshotDecl := StmtExpr.LocalVariable snapshotName .THeap (some (.Identifier varName))
-                        SequenceM.addPrependedStmt snapshotDecl
-                        SequenceM.setSnapshot varName snapshotName
+                      let snapshotName ← SequenceM.freshTempFor varName
+                      let snapshotType ← SequenceM.getVarType varName
+                      let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
+                      SequenceM.addPrependedStmt snapshotDecl
+                      SequenceM.setSnapshot varName snapshotName
                   | _ => pure ()
             | _ =>
                 let seqStmt ← transformStmt stmt
@@ -193,9 +204,15 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   | .LiteralInt _ => return expr
   | .Identifier varName => do
       -- If this variable has a snapshot (from a lifted assignment), use the snapshot
+      let snapshots := (← get).varSnapshots
+      dbg_trace s!"[LIFT] Processing Identifier '{varName}', snapshots: {snapshots}"
       match ← SequenceM.getSnapshot varName with
-      | some snapshotName => return .Identifier snapshotName
-      | none => return expr
+      | some snapshotName =>
+          dbg_trace s!"[LIFT]   -> Using snapshot '{snapshotName}'"
+          return .Identifier snapshotName
+      | none =>
+          dbg_trace s!"[LIFT]   -> No snapshot, keeping '{varName}'"
+          return expr
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
 
@@ -221,6 +238,7 @@ partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       return [.Block (seqStmts.flatten) metadata]
 
   | .LocalVariable name ty initializer =>
+      SequenceM.addToEnv name ty
       match initializer with
       | some initExpr => do
           let seqInit ← transformExpr initExpr
@@ -267,8 +285,11 @@ def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
   | multiple => pure <| .Block multiple.reverse none
 
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
+  -- Initialize environment with procedure parameters
+  let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
+                           proc.outputs.map (fun p => (p.name, p.type))
   -- Reset state for each procedure to avoid cross-procedure contamination
-  modify fun s => { s with insideCondition := false, varSnapshots := [], varCounters := [] }
+  modify fun s => { s with insideCondition := false, varSnapshots := [], varCounters := [], env := initEnv }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody bodyExpr

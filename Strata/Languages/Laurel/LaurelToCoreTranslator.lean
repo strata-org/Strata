@@ -447,7 +447,7 @@ Translate Laurel Program to Core Program
 def translate (program : Program) : Except (Array DiagnosticModel) Core.Program := do
   let program := heapParameterization program
   let program ← liftExpressionAssignments program
-  dbg_trace "===  Program after heapParameterization==="
+  dbg_trace "===  Program after heapParameterization + liftExpressionAssignments ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
   -- Separate procedures that can be functions from those that must be procedures
