@@ -214,13 +214,14 @@ import sys
 new_args : list[tuple[type, str]]
 if sys.version_info >= (3, 13):
     new_args = []
-else:
-    assert sys.version_info >= (3, 12)
+elif sys.version_info >= (3, 12):
     new_args = [
         (ast.TypeVar, "default_value"),
         (ast.ParamSpec, "default_value"),
         (ast.TypeVarTuple, "default_value"),
     ]
+else:
+    new_args = []
 
 def check_op(d : strata.Dialect, name, op : type):
     opd = getattr(d, name)
