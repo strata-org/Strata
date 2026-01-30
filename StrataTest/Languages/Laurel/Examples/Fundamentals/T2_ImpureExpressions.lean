@@ -13,7 +13,7 @@ open Strata
 namespace Strata.Laurel
 
 def program: String := r"
-procedure NestedImpureStatements() {
+procedure nestedImpureStatements() {
   var y: int := 0;
   var x: int := y;
   var z: int := y := y + 1;;
