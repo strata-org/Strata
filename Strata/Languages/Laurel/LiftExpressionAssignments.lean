@@ -73,12 +73,28 @@ def SequenceM.freshTemp : SequenceM Identifier := do
   modify fun s => { s with tempCounter := s.tempCounter + 1 }
   return s!"__t{counter}"
 
+def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
+  return (← get).varSnapshots.find? (·.1 == varName) |>.map (·.2)
+
+def SequenceM.setSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit :=
+  modify fun s => { s with varSnapshots := (varName, snapshotName) :: s.varSnapshots.filter (·.1 != varName) }
+
+partial def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
+  match expr with
+  | .PrimitiveOp op args =>
+      let seqArgs ← args.mapM transformTarget
+      return .PrimitiveOp op seqArgs
+  | .StaticCall name args =>
+      let seqArgs ← args.mapM transformTarget
+      return .StaticCall name seqArgs
+  | _ => return expr  -- Identifiers and other targets stay as-is (no snapshot substitution)
+
 mutual
 /-
 Process an expression, extracting any assignments to preceding statements.
 Returns the transformed expression with assignments replaced by variable references.
 -/
-def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
+partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign targets value md =>
       checkOutsideCondition md
@@ -183,7 +199,7 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original one may be split into multiple).
 -/
-def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
+partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   match stmt with
   | @StmtExpr.Assert cond md =>
       -- Process the condition, extracting any assignments
