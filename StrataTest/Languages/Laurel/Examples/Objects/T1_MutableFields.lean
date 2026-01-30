@@ -50,6 +50,11 @@ procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
   assert d#intValue == 3;
 }
 
+procedure subsequentHeapMutations(c: Container) {
+  var sum: int := (c#intValue := 1;); // + c#intValue + (c#intValue := 2)
+  assert sum == 4;
+}
+
 procedure implicitEquality(c: Container, d: Container) {
   c#intValue := 1;
   d#intValue := 2;

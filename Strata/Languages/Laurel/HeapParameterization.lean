@@ -199,8 +199,10 @@ partial def heapTransformExpr (heapVar : Identifier) (expr : StmtExpr) : Transfo
           | none => addFieldConstant fieldName .TInt  -- Fallback to int if type unknown
           let target' ← heapTransformExpr heapVar target
           let v' ← heapTransformExpr heapVar v
-          -- Assign to heap variable
-          return .Assign [StmtExpr.Identifier heapVar] (.StaticCall "heapStore" [.Identifier heapVar, target', .Identifier fieldName, v']) md
+          -- Assign to heap variable, but wrap in a block that returns the stored value
+          -- This ensures that when used in expression context, the value is the stored value, not the heap
+          let heapAssign := StmtExpr.Assign [StmtExpr.Identifier heapVar] (.StaticCall "heapStore" [.Identifier heapVar, target', .Identifier fieldName, v']) md
+          return .Block [heapAssign, v'] none
       | _ =>
           -- Transform all targets and value
           let targets' ← targets.mapM (heapTransformExpr heapVar)
@@ -296,7 +298,7 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     -- This procedure doesn't read or write the heap - no changes needed
     return proc
 
-def heapParameterization (program : Program) : Program × List Identifier :=
+def heapParameterization (program : Program) : Program :=
   let heapReaders := computeReadsHeap program.staticProcedures
   let heapWriters := computeWritesHeap program.staticProcedures
   -- Extract field types from composite type definitions
@@ -308,6 +310,6 @@ def heapParameterization (program : Program) : Program × List Identifier :=
   dbg_trace s!"Heap readers: {heapReaders}"
   dbg_trace s!"Heap writers: {heapWriters}"
   let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders, heapWriters, fieldTypes }
-  ({ program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }, heapWriters)
+  { program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }
 
 end Strata.Laurel
