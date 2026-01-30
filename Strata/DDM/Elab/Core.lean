@@ -1050,11 +1050,15 @@ partial def runSyntaxElaborator
             | .ofIdentInfo info => info.val
             | _ => panic! "Expected identifier for datatype name"
           let baseCtx := typeParamsT.resultContext
-          -- Extract type parameter names from the bindings
-          let typeParamNames := baseCtx.bindings.toArray.filterMap fun b =>
-            match b.kind with
-            | .type _ [] _ => some b.ident
-            | _ => none
+          /- Extract type parameter names only from NEW bindings added by
+          typeParams, not inherited bindings (which may include datatypes from
+          previous commands) -/
+          let inheritedCount := tctx0.bindings.size
+          let typeParamNames := baseCtx.bindings.toArray.extract inheritedCount baseCtx.bindings.size
+            |>.filterMap fun b =>
+              match b.kind with
+              | .type _ [] _ => some b.ident
+              | _ => none
           -- Add the datatype name to the GlobalContext as a type
           let gctx := baseCtx.globalContext
           let gctx :=
