@@ -53,12 +53,12 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Return v => if let some x := v then collectExpr x
   | .Assign targets v _ =>
       -- Check if any target is a field assignment (heap write)
-      for t in targets.attach do
-        match t.val with
+      for t in targets do
+        match t with
         | .FieldSelect target _ =>
             modify fun s => { s with writesHeapDirectly := true }
             collectExpr target
-        | _ => collectExpr t.val
+        | _ => collectExpr t
       collectExpr v
   | .PureFieldUpdate t _ v => collectExpr t; collectExpr v
   | .PrimitiveOp _ args => for a in args do collectExpr a

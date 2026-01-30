@@ -44,6 +44,12 @@ procedure caller(c: Container, d: Container) {
   assert d#intValue == 3;
 }
 
+procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
+  assume d#intValue == 1;
+  var x: int := foo(c, d) + 1;
+  assert d#intValue == 3;
+}
+
 procedure implicitEquality(c: Container, d: Container) {
   c#intValue := 1;
   d#intValue := 2;
