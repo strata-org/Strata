@@ -15,9 +15,13 @@ import Strata.DL.SMT.SMT
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.Imperative
 
-/- Strata Core -/
+/- Utilities -/
+import Strata.Util.Sarif
+
+/- Strata Languages -/
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Core.SarifOutput
 
 /- Backends -/
 import Strata.Backends.CBMC.CProver

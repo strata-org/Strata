@@ -127,7 +127,7 @@ def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
 
 def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
-  Except Std.Format Core.Program := do
+  Except DiagnosticModel Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
