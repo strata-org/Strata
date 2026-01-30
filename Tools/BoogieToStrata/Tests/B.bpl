@@ -14,13 +14,13 @@ procedure Q0()
 
   Then:
     h := 15;
-    goto end;
+    goto _exit;
 
   Else:
     assume h == 0;
-    goto end;
+    goto _exit;
 
-  end:
+  _exit:
     assert 0 <= h;
     return;
 }
@@ -34,13 +34,13 @@ procedure Q1()
 
   Then:
     h := -15;
-    goto end;
+    goto _exit;
 
   Else:
     assume h == 0;
-    goto end;
+    goto _exit;
 
-  end:
+  _exit:
     h := -h;
     assert 0 <= h;
     return;
@@ -54,13 +54,13 @@ procedure P0(this: ref)
 
   Then:
     Heap[this, N] := 15;
-    goto end;
+    goto _exit;
 
   Else:
     assume Heap[this, N] == 0;
-    goto end;
+    goto _exit;
 
-  end:
+  _exit:
     assert 0 <= Heap[this, N];
     return;
 }
@@ -73,13 +73,13 @@ procedure P1(this: ref)
 
   Then:
     Heap[this, N] := -15;
-    goto end;
+    goto _exit;
 
   Else:
     assume Heap[this, N] == 0;
-    goto end;
+    goto _exit;
 
-  end:
+  _exit:
     Heap[this, N] := -Heap[this, N];
     assert 0 <= Heap[this, N];
     return;

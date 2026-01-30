@@ -164,6 +164,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   -- Metadata for marking an operation as a constructor list push (list followed by constructor)
   declareMetadata { name := "constructorListPush", args := #[.mk "list" .ident, .mk "constructor" .ident] }
   declareMetadata { name := "declareType", args := #[.mk "name" .ident, .mk "args" (.opt .ident)] }
+  declareMetadata { name := "declareTypeForward", args := #[.mk "name" .ident, .mk "args" (.opt .ident)] }
   declareMetadata { name := "aliasType",   args := #[.mk "name" .ident, .mk "args" (.opt .ident), .mk "def" .ident] }
   declareMetadata { name := "declare",     args := #[.mk "name" .ident, .mk "type" .ident] }
   declareMetadata { name := "declareFn",   args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }

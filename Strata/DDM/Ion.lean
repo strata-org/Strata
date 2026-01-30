@@ -309,12 +309,28 @@ private def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromI
   | .ok res =>
     pure res
 
+protected def fromIonString (v : Ion SymbolId) : FromIonM String :=
+  match v.app with
+  | .string s => pure s
+  | _ => throw s!"Expected string, got {repr v}"
+
+protected def fromIonOption {α} (f : Ion SymbolId → FromIonM α) (v : Ion SymbolId) : FromIonM (Option α) :=
+  match v.app with
+  | .null => pure none
+  | _ => some <$> f v
+
 end FromIonM
 
 class FromIon (α : Type) where
   fromIon : Ion SymbolId → FromIonM α
 
 export FromIon (fromIon)
+
+instance : FromIon String where
+  fromIon := FromIonM.fromIonString
+
+instance {α} [FromIon α] : FromIon (Option α) where
+  fromIon := FromIonM.fromIonOption fromIon
 
 namespace FromIon
 
@@ -350,6 +366,14 @@ private class ToIon (α : Type) where
   toIon : α → InternM (Ion SymbolId)
 
 private abbrev toIon := @ToIon.toIon
+
+private instance : ToIon String where
+  toIon s := pure (.string s)
+
+private instance {α} [ToIon α] : ToIon (Option α) where
+  toIon
+    | some a => toIon a
+    | none => pure .null
 
 namespace SyntaxCatF
 
@@ -392,14 +416,14 @@ private protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeEx
       let args : Array (Ion SymbolId) := #[ionSymbol! "ident", ← toIon ann, v]
       Ion.sexp <$> a.attach.mapM_off (init := args) fun ⟨e, _⟩ =>
         e.toIon refs
-    -- A bound type variable with the given index.
-    | .bvar ann vidx =>
-      return Ion.sexp #[ionSymbol! "bvar", ← toIon ann, .int vidx]
     -- A polymorphic type variable with the given name.
     | .tvar ann name =>
       return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
-    | .fvar ann idx a => do
-      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon ann, .int idx]
+    -- A bound type variable with the given index.
+    | .bvar ann vidx =>
+      return Ion.sexp #[ionSymbol! "bvar", ← toIon ann, .int vidx]
+    | .fvar ann idx name a => do
+      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon ann, .int idx, ← toIon name]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ =>
         e.toIon refs
       return Ion.sexp s
@@ -435,12 +459,13 @@ private protected def fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (T
       (← FromIon.fromIon args[1])
       (← .asString "Type expression tvar name" args[2])
   | "fvar" =>
-    let ⟨p⟩ ← .checkArgMin "Type expression free variable" args 3
+    let ⟨p⟩ ← .checkArgMin "Type expression free variable" args 4
     let ann ← FromIon.fromIon args[1]
     let idx ← .asNat "Type expression free variable index" args[2]
-    let a ← args.attach.mapM_off (start := 3) fun ⟨e, _⟩ =>
+    let name ← FromIon.fromIon args[3]
+    let a ← args.attach.mapM_off (start := 4) fun ⟨e, _⟩ =>
       TypeExprF.fromIon e
-    pure <| .fvar ann idx a
+    pure <| .fvar ann idx name a
   | "ident" =>
     let ⟨p⟩ ← .checkArgMin "TypeExpr identifier" args 3
     let ann ← FromIon.fromIon args[1]
@@ -949,13 +974,13 @@ private protected def toIon (refs : SymbolIdCache) (tpe : PreType) : InternM (Io
     -- A bound type variable with the given index.
     | .bvar loc vidx =>
       return Ion.sexp #[ionSymbol! "bvar", ← toIon loc, .int vidx]
+    | .fvar loc idx name a => do
+      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon loc, .int idx, ← toIon name]
+      let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ => e.toIon refs
+      return Ion.sexp s
     -- A polymorphic type variable with the given name.
     | .tvar loc name =>
       return Ion.sexp #[ionSymbol! "tvar", ← toIon loc, .string name]
-    | .fvar loc idx a => do
-      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon loc, .int idx]
-      let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ => e.toIon refs
-      return Ion.sexp s
     | .arrow loc l r => do
       return Ion.sexp #[ionSymbol! "arrow", ← toIon loc, ← l.toIon refs, ← r.toIon refs]
     | .funMacro loc i r =>
@@ -985,12 +1010,13 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM PreType := do
       (← fromIon args[1])
       (← .asString "PreType tvar name" args[2])
   | "fvar" =>
-    let ⟨p⟩ ← .checkArgMin "fvar" args 3
+    let ⟨p⟩ ← .checkArgMin "fvar" args 4
     let ann ← fromIon args[1]
     let idx ← .asNat "fvar" args[2]
-    let a ← args.attach.mapM_off (start := 3) fun ⟨e, _⟩ =>
+    let name ← fromIon args[3]
+    let a ← args.attach.mapM_off (start := 4) fun ⟨e, _⟩ =>
       PreType.fromIon e
-    pure <| .fvar ann idx a
+    pure <| .fvar ann idx name a
   | "ident" =>
     let ⟨p⟩ ← .checkArgMin "ident" args 3
     let ann ← fromIon args[1]

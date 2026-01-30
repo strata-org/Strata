@@ -128,9 +128,9 @@ private protected def toExpr {α} [ToExpr α] : TypeExprF α → Lean.Expr
   astAnnExpr! bvar ann (toExpr idx)
 | .tvar ann name =>
   astAnnExpr! tvar ann (toExpr name)
-| .fvar ann idx a =>
+| .fvar ann idx name a =>
   let ae := arrayToExpr levelZero (TypeExprF.typeExpr (toTypeExpr α)) (a.map (·.toExpr))
-  astAnnExpr! fvar ann (toExpr idx) ae
+  astAnnExpr! fvar ann (toExpr idx) (toExpr name) ae
 | .arrow ann a r =>
   astAnnExpr! arrow ann a.toExpr r.toExpr
 
@@ -221,9 +221,9 @@ private protected def toExpr : PreType → Lean.Expr
   astExpr! ident (toExpr loc) (toExpr nm) args
 | .bvar loc idx => astExpr! bvar (toExpr loc) (toExpr idx)
 | .tvar loc name => astExpr! tvar (toExpr loc) (toExpr name)
-| .fvar loc idx a =>
+| .fvar loc idx name a =>
     let args := arrayToExpr .zero PreType.typeExpr (a.map (·.toExpr))
-    astExpr! fvar (toExpr loc) (toExpr idx) args
+    astExpr! fvar (toExpr loc) (toExpr idx) (toExpr name) args
 | .arrow loc a r =>
   astExpr! arrow (toExpr loc) a.toExpr r.toExpr
 | .funMacro loc i r =>
@@ -422,6 +422,7 @@ private def toExpr {argDecls} (bi : BindingSpec argDecls) (argDeclsExpr : Lean.E
   match bi with
   | .value b => astExpr! value argDeclsExpr (b.toExpr argDeclsExpr)
   | .type b => astExpr! type argDeclsExpr (b.toExpr argDeclsExpr)
+  | .typeForward b => astExpr! typeForward argDeclsExpr (b.toExpr argDeclsExpr)
   | .datatype b => astExpr! datatype argDeclsExpr (b.toExpr argDeclsExpr)
   | .tvar b => astExpr! tvar argDeclsExpr (b.toExpr argDeclsExpr)
 

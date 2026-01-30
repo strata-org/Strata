@@ -53,7 +53,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   match f with
   | .ident loc i a => .ident loc i <$> a.mapM fun e => expandMacros m e args
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
-  | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
+  | .fvar loc i name a => .fvar loc i name <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
   | .tvar loc name => pure (.tvar loc name)
   | .funMacro loc i r => do
@@ -81,7 +81,7 @@ the head is in a normal form.
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
   | .arrow .. | .ident .. | .tvar .. => e
-  | .fvar _ idx args =>
+  | .fvar _ idx _ args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
@@ -203,7 +203,7 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
             | logErrorMF c.info.loc mf!"Expected type"
           tpArgs := tpArgs.push cinfo.typeExpr
           children := children.push c
-        let tp :=  .fvar loc fidx tpArgs
+        let tp := .fvar loc fidx (some name) tpArgs
         let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := tp, isInferred := false }
         return .node (.ofTypeInfo info) children
       else if let some a := args[params.size]? then
@@ -334,7 +334,7 @@ N.B. This expects that macros have already been expanded in e.
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
   | .arrow .. | .ident .. | .bvar .. | .tvar .. => e
-  | .fvar _ idx args =>
+  | .fvar _ idx _ args =>
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
     | .type params (some d) =>
@@ -368,7 +368,7 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
       return false
   | .bvar _ ii, .bvar _ ri =>
     return ii = ri
-  | .fvar _ ii ia, .fvar _ ri ra =>
+  | .fvar _ ii _ ia, .fvar _ ri _ ra =>
     if p : ii = ri ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
         if !(← checkExpressionType tctx ia[i] ra[i]) then
@@ -446,9 +446,9 @@ partial def unifyTypes
     | _ =>
       logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
       return args
-  | .fvar _ eid ea =>
+  | .fvar _ eid _ ea =>
     match tctx.hnf inferredType with
-    | .fvar _ iid ia =>
+    | .fvar _ iid _ ia =>
       if eid != iid then
         logErrorMF exprLoc mf!"Encountered {inferredType} expression when {expectedType} expected."
         return args
@@ -749,7 +749,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
           | .type params _ =>
             let params := params.toArray
             if params.size = tpArgs.size then
-              return .expr (.fvar nameLoc fidx tpArgs)
+              return .expr (.fvar nameLoc fidx (some name) tpArgs)
             else if let some a := tpArgs[params.size]? then
               logErrorMF a.ann mf!"Unexpected argument to {name}."
               return default
@@ -799,6 +799,18 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     logInternalError argInfo.loc s!"translateArgDeclKind given invalid kind {opInfo.op.name}"
     return default
 
+/-- Extract type parameter names from a bindings argument. -/
+def elabTypeParams {n} (initSize : Nat) (args : Vector Tree n)
+    (idx : Option (DebruijnIndex n)) : ElabM (List String) := do
+  let params ← elabArgIndex initSize args idx fun argLoc b => do
+    match b.kind with
+    | .type _ [] _ => pure ()
+    | .tvar _ _ => pure ()
+    | .type .. | .expr _ | .cat _ =>
+      logError argLoc s!"{b.ident} must have type Type instead of {repr b.kind}."
+    return b.ident
+  pure params.toList
+
 /--
 Construct a binding from a binding spec and the arguments to an operation.
 -/
@@ -844,17 +856,9 @@ def evalBindingSpec
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
     -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
     pure { ident, kind }
-  | .type b =>
+  | .type b | .typeForward b =>
     let ident := evalBindingNameIndex args b.nameIndex
-    let params ← elabArgIndex initSize args b.argsIndex fun argLoc b => do
-          match b.kind with
-          | .type _ [] _ =>
-            pure ()
-          | .tvar _ _ =>
-            pure ()
-          | .type .. | .expr _ | .cat _ => do
-            logError argLoc s!"{b.ident} must be have type Type instead of {repr b.kind}."
-          return b.ident
+    let params ← elabTypeParams initSize args b.argsIndex
     let value : Option TypeExpr :=
           match b.defIndex with
           | none => none
@@ -864,10 +868,11 @@ def evalBindingSpec
               some info.typeExpr
             | _ =>
               panic! "Bad arg"
-    pure { ident, kind := .type loc params.toList value }
+    pure { ident, kind := .type loc params value }
   | .datatype b =>
     let ident := evalBindingNameIndex args b.nameIndex
-    pure { ident, kind := .type loc [] none }
+    let params ← elabTypeParams initSize args (some b.typeParamsIndex)
+    pure { ident, kind := .type loc params none }
   | .tvar b =>
     let ident := evalBindingNameIndex args b.nameIndex
     pure { ident, kind := .tvar loc ident }
@@ -1045,11 +1050,15 @@ partial def runSyntaxElaborator
             | .ofIdentInfo info => info.val
             | _ => panic! "Expected identifier for datatype name"
           let baseCtx := typeParamsT.resultContext
-          -- Extract type parameter names from the bindings
-          let typeParamNames := baseCtx.bindings.toArray.filterMap fun b =>
-            match b.kind with
-            | .type _ [] _ => some b.ident
-            | _ => none
+          /- Extract type parameter names only from NEW bindings added by
+          typeParams, not inherited bindings (which may include datatypes from
+          previous commands) -/
+          let inheritedCount := tctx0.bindings.size
+          let typeParamNames := baseCtx.bindings.toArray.extract inheritedCount baseCtx.bindings.size
+            |>.filterMap fun b =>
+              match b.kind with
+              | .type _ [] _ => some b.ident
+              | _ => none
           -- Add the datatype name to the GlobalContext as a type
           let gctx := baseCtx.globalContext
           let gctx :=
@@ -1057,7 +1066,9 @@ partial def runSyntaxElaborator
             else gctx.push datatypeName (GlobalKind.type typeParamNames.toList none)
           -- Add .tvar bindings for type parameters
           let loc := typeParamsT.info.loc
-          let tctx := typeParamNames.foldl (init := baseCtx.withGlobalContext gctx) fun ctx name =>
+          -- Start with empty local bindings - don't inherit from baseCtx
+          -- This prevents datatype names from leaking between mutual block entries
+          let tctx := typeParamNames.foldl (init := TypingContext.empty gctx) fun ctx name =>
             ctx.push { ident := name, kind := .tvar loc name }
           pure tctx
         | _, _ => continue
