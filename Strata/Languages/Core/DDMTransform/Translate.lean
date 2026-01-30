@@ -1438,7 +1438,7 @@ duplicates.
 - `op`: The `command_datatype` operation to translate
 -/
 def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
-    TransM (Core.Decls × TransBindings) := do
+    TransM (Core.Decl × TransBindings) := do
   -- Check operation has correct name and argument count
   let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatype 3
 
@@ -1475,7 +1475,6 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
     -- Generate factory from LDatatype
     let funcDecls ← genDatatypeFactory [ldatatype]
 
-    -- Only includes typeDecl, factory functions generated later
     let md ← getOpMetaData op
     let typeDecl := Core.Decl.type (.data [ldatatype]) md
 
@@ -1486,7 +1485,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
       { b with freeVars := b.freeVars.push d }
     ) bindings
 
-    return ([typeDecl], bindings)
+    return (typeDecl, bindings)
 
 /--
 Translate a mutual block containing mutually recursive datatype definitions.
@@ -1494,7 +1493,7 @@ This collects all datatypes, creates a single TypeDecl.data with all of them,
 and updates the forward-declared entries in bindings.freeVars.
 -/
 def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operation) :
-    TransM (Core.Decls × TransBindings) := do
+    TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_mutual 1
 
   -- Extract commands from the SpacePrefixSepBy
@@ -1535,29 +1534,16 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
         TransM.error s!"Mutual datatype {datatypeName} requires a forward declaration"
 
     -- Second pass: translate all constructors with all placeholders in scope
-    let mut ldatatypes : List (LDatatype Visibility) := []
-
-    for (dtOp, (datatypeName, typeArgs, _idx)) in datatypeOps.zip datatypeInfos do
-      -- Extract constructor information
+    let ldatatypes ← (datatypeOps.zip datatypeInfos).toList.mapM fun (dtOp, (datatypeName, typeArgs, _idx)) => do
       let constructors ← translateConstructorList p bindingsWithPlaceholders dtOp.args[2]!
-
       if h : constructors.size == 0 then
         TransM.error s!"Datatype {datatypeName} must have at least one constructor"
       else
-        -- Build LConstr list
         let lConstrs := buildLConstrs datatypeName constructors
-
         have constrs_ne : lConstrs.length != 0 := by
           simp [lConstrs, buildLConstrs]
           intro heq; subst_vars; apply h; rfl
-
-        let ldatatype : LDatatype Visibility :=
-          { name := datatypeName
-            typeArgs := typeArgs
-            constrs := lConstrs
-            constrs_ne := constrs_ne }
-
-        ldatatypes := ldatatypes ++ [ldatatype]
+        pure { name := datatypeName, typeArgs := typeArgs, constrs := lConstrs, constrs_ne := constrs_ne }
 
     -- Generate factory functions for the ENTIRE mutual block at once
     let allFuncDecls ← genDatatypeFactory ldatatypes
@@ -1584,7 +1570,7 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
       for d in constructorDecls ++ testerDecls ++ fieldAccessorDecls do
         finalBindings := { finalBindings with freeVars := finalBindings.freeVars.push d }
 
-    return ([mutualTypeDecl], finalBindings)
+    return (mutualTypeDecl, finalBindings)
 
 ---------------------------------------------------------------------
 
@@ -1609,50 +1595,39 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   | 0 => return ([], bindings)
   | _ + 1 =>
     let op := ops[count]!
-    -- Commands that produce multiple declarations
     let (newDecls, bindings) ←
       match op.name with
-      | q`Core.command_datatype =>
-        translateDatatype p bindings op
-      | q`Core.command_mutual =>
-        translateMutualBlock p bindings op
+      | q`Core.command_forward_typedecl =>
+        -- Forward declarations do NOT produce AST nodes - they only update bindings
+        let (_, bindings) ← translateForwardTypeDecl bindings op
+        pure ([], bindings)
       | _ =>
-        -- All other commands produce a single declaration
-        let (decls, bindings) ←
+        let (decl, bindings) ←
           match op.name with
+          | q`Core.command_datatype =>
+            translateDatatype p bindings op
+          | q`Core.command_mutual =>
+            translateMutualBlock p bindings op
           | q`Core.command_var =>
-            let (decl, bindings) ← translateGlobalVar bindings op
-            pure ([decl], bindings)
+            translateGlobalVar bindings op
           | q`Core.command_constdecl =>
-            let (decl, bindings) ← translateConstant bindings op
-            pure ([decl], bindings)
+            translateConstant bindings op
           | q`Core.command_typedecl =>
-            let (decl, bindings) ← translateTypeDecl bindings op
-            pure ([decl], bindings)
-          | q`Core.command_forward_typedecl =>
-            -- Forward declarations do NOT produce AST nodes - they only update bindings
-            let (_, bindings) ← translateForwardTypeDecl bindings op
-            pure ([], bindings)
+            translateTypeDecl bindings op
           | q`Core.command_typesynonym =>
-            let (decl, bindings) ← translateTypeSynonym bindings op
-            pure ([decl], bindings)
+            translateTypeSynonym bindings op
           | q`Core.command_axiom =>
-            let (decl, bindings) ← translateAxiom p bindings op
-            pure ([decl], bindings)
+            translateAxiom p bindings op
           | q`Core.command_distinct =>
-            let (decl, bindings) ← translateDistinct p bindings op
-            pure ([decl], bindings)
+            translateDistinct p bindings op
           | q`Core.command_procedure =>
-            let (decl, bindings) ← translateProcedure p bindings op
-            pure ([decl], bindings)
+            translateProcedure p bindings op
           | q`Core.command_fndef =>
-            let (decl, bindings) ← translateFunction .Definition p bindings op
-            pure ([decl], bindings)
+            translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
-            let (decl, bindings) ← translateFunction .Declaration p bindings op
-            pure ([decl], bindings)
+            translateFunction .Declaration p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
-        pure (decls, bindings)
+        pure ([decl], bindings)
     let (decls, bindings) ← go (count + 1) max bindings ops
     return (newDecls ++ decls, bindings)
 
