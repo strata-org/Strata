@@ -156,7 +156,6 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
         let args := args.map (fun a => eval n' σ a)
         let firstArgIsConstr := (args.head?.map (isConstrApp σ.config.factory)).getD false
         if h: lfunc.body.isSome && ("inline" ∈ lfunc.attr ||
-          ("inline_if_val" ∈ lfunc.attr && args.all (isCanonicalValue σ.config.factory)) ||
           ("inline_if_constr" ∈ lfunc.attr && firstArgIsConstr)) then
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
