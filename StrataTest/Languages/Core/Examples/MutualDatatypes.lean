@@ -10,13 +10,6 @@ import Strata.Languages.Core.Verifier
 # Mutual Datatype Integration Tests
 
 Tests mutually recursive datatypes using the DDM datatype declaration syntax.
-
-Verifies:
-- Parsing of mutually recursive datatype declarations
-- Tester functions for both types
-- Destructor functions for field access
-- Type-checking and verification with mutually recursive types
-- Polymorphic mutually recursive types
 -/
 
 namespace Strata.MutualDatatypeTest
@@ -29,8 +22,6 @@ def roseTreeTesterPgm : Program :=
 #strata
 program Core;
 
-// Define mutually recursive Rose Tree and Forest datatypes using mutual block
-// Forest is a list of RoseTrees
 forward type RoseTree;
 forward type Forest;
 mutual
@@ -46,28 +37,15 @@ spec {
   var t : RoseTree;
   var f : Forest;
 
-  // Create an empty forest
   f := FNil();
-
-  // Test that f is FNil
   assert [isFNil]: Forest..isFNil(f);
-
-  // Test that f is not FCons
   assert [notFCons]: !Forest..isFCons(f);
 
-  // Create a leaf node (node with empty forest)
   t := Node(42, FNil());
-
-  // Test that t is Node
   assert [isNode]: RoseTree..isNode(t);
 
-  // Create a non-empty forest
   f := FCons(Node(1, FNil()), FNil());
-
-  // Test that f is FCons
   assert [isFCons]: Forest..isFCons(f);
-
-  // Test that f is not FNil
   assert [notFNil]: !Forest..isFNil(f);
 };
 #end
@@ -130,26 +108,20 @@ spec {
   var v : int;
   var c : Forest;
 
-  // Create a leaf node
   t := Node(42, FNil());
 
-  // Extract the value
   v := RoseTree..val(t);
   assert [valIs42]: v == 42;
 
-  // Extract the children (should be empty forest)
   c := RoseTree..children(t);
   assert [childrenIsNil]: Forest..isFNil(c);
 
-  // Create a forest with one tree
   f := FCons(Node(10, FNil()), FNil());
 
-  // Extract the head
   t := Forest..head(f);
   assert [headIsNode]: RoseTree..isNode(t);
   assert [headVal]: RoseTree..val(t) == 10;
 
-  // Extract the tail
   f := Forest..tail(f);
   assert [tailIsNil]: Forest..isFNil(f);
 };
@@ -213,17 +185,14 @@ spec {
   var f1 : Forest;
   var f2 : Forest;
 
-  // Create two identical leaf nodes
   t1 := Node(42, FNil());
   t2 := Node(42, FNil());
   assert [leafEquality]: t1 == t2;
 
-  // Create two identical empty forests
   f1 := FNil();
   f2 := FNil();
   assert [emptyForestEquality]: f1 == f2;
 
-  // Create two identical non-empty forests
   f1 := FCons(Node(1, FNil()), FNil());
   f2 := FCons(Node(1, FNil()), FNil());
   assert [forestEquality]: f1 == f2;
@@ -319,8 +288,7 @@ Result: ✅ pass
 -- Test 5: Imperative Stmt/StmtList with Havoc (SMT verification)
 ---------------------------------------------------------------------
 
-/-- Mutually recursive Stmt/StmtList modeling the Imperative dialect's
-    statement structure with explicit list type instead of nested List. -/
+/-- Mutually recursive Stmt/StmtList modeling Imperative.Stmt -/
 def stmtListHavocPgm : Program :=
 #strata
 program Core;
