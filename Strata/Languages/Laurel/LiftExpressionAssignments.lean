@@ -31,6 +31,10 @@ structure SequenceState where
   prependedStmts : List StmtExpr := []
   diagnostics : List DiagnosticModel
   tempCounter : Nat := 0
+  -- Maps variable names to their current snapshot variable name
+  -- When an assignment is lifted, we create a snapshot and record it here
+  -- Subsequent references to the variable should use the snapshot
+  varSnapshots : List (Identifier × Identifier) := []
 
 abbrev SequenceM := StateM SequenceState
 
@@ -84,7 +88,19 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       let seqValue ← transformExpr value
       let assignStmt := StmtExpr.Assign targets seqValue md
       SequenceM.addPrependedStmt assignStmt
-      -- Create a temporary variable to capture the assigned value
+      -- For each target, create a snapshot variable so subsequent references
+      -- to that variable will see the value after this assignment
+      -- Only create snapshots for heap variables (heap_out)
+      for target in targets do
+        match target with
+        | .Identifier varName =>
+            if varName == "heap_out" then
+              let snapshotName ← SequenceM.freshTemp
+              let snapshotDecl := StmtExpr.LocalVariable snapshotName .THeap (some (.Identifier varName))
+              SequenceM.addPrependedStmt snapshotDecl
+              SequenceM.setSnapshot varName snapshotName
+        | _ => pure ()
+      -- Create a temporary variable to capture the assigned value (for expression result)
       -- Use TInt as the type (could be refined with type inference)
       -- For multi-target assigns, use the first target
       let tempName ← SequenceM.freshTemp
@@ -113,21 +129,53 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
-      let rec next (remStmts: List StmtExpr) := match remStmts with
-        | [last] => transformExpr last
-        | head :: tail => do
-            let seqStmt ← transformStmt head
-            for s in seqStmt do
-              SequenceM.addPrependedStmt s
-            next tail
-        | [] => return .Block [] metadata
-
-      next stmts
+      -- Process statements in order, handling assignments specially to set snapshots
+      match stmts with
+      | [] => return .Block [] metadata
+      | [last] => transformExpr last
+      | _ =>
+          -- Process all but the last statement
+          let allButLast := stmts.dropLast
+          let last := stmts.getLast!
+          for stmt in allButLast do
+            match stmt with
+            | .Assign targets value md =>
+                -- For assignments in block context, we need to set snapshots
+                -- so that subsequent expressions see the correct values
+                -- IMPORTANT: Use transformTarget for targets (no snapshot substitution)
+                -- and transformExpr for values (with snapshot substitution)
+                let seqTargets ← targets.mapM transformTarget
+                let seqValue ← transformExpr value
+                let assignStmt := StmtExpr.Assign seqTargets seqValue md
+                SequenceM.addPrependedStmt assignStmt
+                -- Create snapshot for heap_out so subsequent reads
+                -- see the value after this assignment (not after later assignments)
+                -- Only create snapshots for heap variables (heap_out)
+                for target in seqTargets do
+                  match target with
+                  | .Identifier varName =>
+                      -- Only snapshot heap variables (heap_out)
+                      if varName == "heap_out" then
+                        let snapshotName ← SequenceM.freshTemp
+                        let snapshotDecl := StmtExpr.LocalVariable snapshotName .THeap (some (.Identifier varName))
+                        SequenceM.addPrependedStmt snapshotDecl
+                        SequenceM.setSnapshot varName snapshotName
+                  | _ => pure ()
+            | _ =>
+                let seqStmt ← transformStmt stmt
+                for s in seqStmt do
+                  SequenceM.addPrependedStmt s
+          -- Process the last statement as an expression
+          transformExpr last
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
   | .LiteralInt _ => return expr
-  | .Identifier _ => return expr
+  | .Identifier varName => do
+      -- If this variable has a snapshot (from a lifted assignment), use the snapshot
+      match ← SequenceM.getSnapshot varName with
+      | some snapshotName => return .Identifier snapshotName
+      | none => return expr
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
 
@@ -162,7 +210,7 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
           return [stmt]
 
   | .Assign targets value md =>
-      let seqTargets ← targets.mapM transformExpr
+      let seqTargets ← targets.mapM transformTarget
       let seqValue ← transformExpr value
       SequenceM.addPrependedStmt <| .Assign seqTargets seqValue md
       SequenceM.takePrependedStmts
@@ -199,8 +247,8 @@ def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
   | multiple => pure <| .Block multiple.reverse none
 
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
-  -- Reset insideCondition for each procedure to avoid cross-procedure contamination
-  modify fun s => { s with insideCondition := false }
+  -- Reset state for each procedure to avoid cross-procedure contamination
+  modify fun s => { s with insideCondition := false, varSnapshots := [] }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody bodyExpr
