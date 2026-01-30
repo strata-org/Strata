@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-!
 Based on Cedar's Term language.
@@ -11,6 +12,7 @@ This file defines the types of Terms.  See `Term.lean` for the
 definition of the Term language.
 -/
 
+public section
 namespace Strata.SMT
 
 inductive TermPrimType where
@@ -191,3 +193,4 @@ def TermType.isConstrType : TermType → Bool
   | _         => false
 
 end Strata.SMT
+end

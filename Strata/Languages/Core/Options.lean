@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-inductive VerboseMode where
+public inductive VerboseMode where
   | quiet
   | normal
   | debug
@@ -36,7 +37,7 @@ instance : LE VerboseMode where
 instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
   fun a b => decidable_of_iff (a.toNat ≤ b.toNat) Iff.rfl
 
-structure Options where
+public structure Options where
   verbose : VerboseMode
   parseOnly : Bool
   typeCheckOnly : Bool
