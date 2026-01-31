@@ -377,6 +377,122 @@ Proof Obligation:
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |>.snd |> format
 
+/--
+Test funcDecl: declare a helper function and use it
+-/
+def testFuncDecl : List Statement :=
+  let doubleFunc : PureFunc Expression := {
+    name := CoreIdent.unres "double",
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) x)],
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .funcDecl doubleFunc,
+    .init "y" t[int] eb[(~double #5)],
+    .assert "y_eq_10" eb[y == #10]
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(y : int) → (~double #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func double :  ((x : int)) → int :=
+  (((~Int.Add x) x))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: y_eq_10
+Property: assert
+Assumptions:
+Proof Obligation:
+((~double #5) == #10)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
+
+/--
+Test funcDecl with variable capture: function captures variable value at declaration time,
+not affected by subsequent mutations
+-/
+def testFuncDeclSymbolic : List Statement :=
+  let addNFunc : PureFunc Expression := {
+    name := CoreIdent.unres "addN",
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) n)],  -- Captures 'n' at declaration time
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .init "n" t[int] eb[#10],  -- Initialize n to 10
+    .funcDecl addNFunc,  -- Function captures n = 10 at declaration time
+    .set "n" eb[#20],  -- Mutate n to 20
+    .init "result" t[int] eb[(~addN #5)],  -- Call function
+    .assert "result_eq_15" eb[result == #15]  -- Result is 5 + 10 = 15 (uses captured value)
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(n : int) → #20
+(result : int) → (~addN #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func addN :  ((x : int)) → int :=
+  (((~Int.Add x) #10))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: result_eq_15
+Property: assert
+Assumptions:
+Proof Obligation:
+((~addN #5) == #15)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format
+
 end Tests
 ---------------------------------------------------------------------
 end Core

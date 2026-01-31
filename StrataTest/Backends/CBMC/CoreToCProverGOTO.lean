@@ -27,6 +27,7 @@ abbrev Core.ExprStr : Imperative.PureExpr :=
    { Ident := CoreParams.Identifier,
      Expr := Lambda.LExpr CoreParams.mono,
      Ty := Lambda.LTy,
+     ExprMetadata := CoreParams.Metadata,
      TyEnv := @Lambda.TEnv CoreParams.IDMeta,
      TyContext := @Lambda.LContext CoreParams,
      EvalEnv := Lambda.LState CoreParams

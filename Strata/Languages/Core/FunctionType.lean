@@ -40,12 +40,12 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   | some body =>
     -- Temporarily add formals in the context.
     let Env := Env.pushEmptyContext
-    let Env := Env.addToContext func.inputPolyTypes
+    let Env := Env.addToContext (LFunc.inputPolyTypes func)
     -- Type check and annotate the body, and ensure that it unifies with the
     -- return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
-    let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
+    let (retty, Env) ← (LFunc.outputPolyType func).instantiateWithCheck C Env
     let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo |>.mapError format
     let Env := Env.updateSubst S
     let Env := Env.popContext

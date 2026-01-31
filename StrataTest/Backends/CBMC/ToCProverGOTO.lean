@@ -21,6 +21,7 @@ private abbrev LExprTP : Imperative.PureExpr :=
    { Ident := TestParams.Identifier,
      Expr := Lambda.LExprT TestParams.mono,
      Ty := Lambda.LMonoTy,
+     ExprMetadata := TestParams.Metadata,
      TyEnv := @Lambda.TEnv TestParams.IDMeta,
      TyContext := @Lambda.LContext TestParams,
      EvalEnv := Lambda.LState TestParams
