@@ -4,11 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Lambda.LTy
 import Strata.DL.Util.Map
-import Strata.DDM.AST
+import Strata.Util.FileRange
 
 ---------------------------------------------------------------------
 
