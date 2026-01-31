@@ -150,8 +150,10 @@ private def readlnD (dflt : String) : SolverM String := do
   | .some stdout => stdout.getLine
   | .none        => pure dflt
 
-def checkSat (vars : List String) : SolverM Decision := do
+def checkSat : SolverM Unit :=
   emitln "(check-sat)"
+
+def getDecision (vars : List String) : SolverM Decision := do
   let result := (← readlnD "unknown").trim
   match result with
   | "sat"     =>

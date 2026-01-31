@@ -75,12 +75,15 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
+  /-- Metadata value in the form of a boolean switch. -/
+  | switch (b : Bool)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with
               | .expr e => f!"{e}"
               | .msg s => f!"{s}"
               | .fileRange r => f!"{r}"
+              | .switch a => f!"{a}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -89,6 +92,7 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       | .expr e => f!".expr {reprPrec e prec}"
       | .msg s => f!".msg {s}"
       | .fileRange fr => f!".fileRange {fr}"
+      | .switch a => f!".switch {a}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -96,6 +100,7 @@ def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
   | .fileRange r1, .fileRange r2 => r1 == r2
+  | .switch r1, .switch r2 => r1 == r2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -172,7 +177,7 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
 def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
-  let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
+  let fileRangeElement ← md.findElem Imperative.MetaData.fileRange
   match fileRangeElement.value with
     | .fileRange fileRange =>
       some fileRange
@@ -192,10 +197,19 @@ def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg :
 /-- Get the file range from metadata as a DiagnosticModel (for formatting).
     This is a compatibility function that formats the file range using byte offsets.
     For proper line/column display, use toDiagnostic and format with a FileMap at the top level. -/
-def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fileMap : Option Lean.FileMap := none) (includeEnd? : Bool := false) : Format :=
+def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P)
+    (fileMap : Option Lean.FileMap := none) (includeEnd? : Bool := false) : Format :=
   match getFileRange md with
   | some fr => fr.format fileMap includeEnd?
   | none => f!""
+
+def MetaData.checkAssumptionsSat : MetaDataElem.Field P := .label "checkAssumptionsSat"
+
+def MetaData.getCheckAssumptionsSat {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option Bool := do
+  let elem ← md.findElem Imperative.MetaData.checkAssumptionsSat
+  match elem.value with
+    | .switch b => some b
+    | _ => none
 
 ---------------------------------------------------------------------
 

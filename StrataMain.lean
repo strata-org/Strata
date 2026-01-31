@@ -226,7 +226,7 @@ def pyAnalyzeCommand : Command where
                                       (moreFns := Strata.Python.ReFactory)))
       let mut s := ""
       for vcResult in vcResults do
-        s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+        s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result.result}\n"
       IO.println s
 
 def javaGenCommand : Command where

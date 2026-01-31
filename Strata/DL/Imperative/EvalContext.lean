@@ -73,6 +73,12 @@ inductive PropertyType where
   | assert
   deriving Repr, DecidableEq
 
+inductive AssumptionSatCheckMode where
+  | check
+  | noCheck
+  | globalDefault
+  deriving Repr, DecidableEq
+
 instance : ToFormat PropertyType where
   format p := match p with
     | .cover => "cover"
@@ -85,6 +91,8 @@ decision procedure or via denotation into Lean.
 structure ProofObligation (P : PureExpr) where
   label : String
   property : PropertyType
+  /-- Check if assumptions are satisfiable. -/
+  checkAssumptionsSat : AssumptionSatCheckMode := .globalDefault
   assumptions : PathConditions P
   obligation : P.Expr
   metadata : MetaData P

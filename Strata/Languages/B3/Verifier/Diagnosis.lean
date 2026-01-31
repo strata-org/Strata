@@ -91,7 +91,8 @@ partial def diagnoseFailureGeneric
       let _ ← push checkState
       let runCheck : SolverM Decision := do
         Solver.assert (formatTermDirect convResult.term)
-        Solver.checkSat []
+        Solver.checkSat
+        Solver.getDecision []
       let decision ← runCheck.run checkState.smtState.solver
       let _ ← pop checkState
       let isProvablyFalse := decision == .unsat
