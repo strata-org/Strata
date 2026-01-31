@@ -39,6 +39,12 @@ lake build && lake test
 
 Unit tests are run with `#guard_msgs` commands. No output means the tests passed.
 
+To build executable files only and omit proof checks that might take a long time, use
+
+```bash
+lake build strata:exe StrataVerify StrataToCBMC StrataCoreToGoto
+```
+
 ## Running Analyses on Existing Strata Programs
 
 Strata programs use the `.st` file extension, preceded by the dialect name,
