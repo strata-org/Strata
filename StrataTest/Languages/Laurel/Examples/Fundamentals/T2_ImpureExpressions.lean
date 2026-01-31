@@ -13,13 +13,31 @@ open Strata
 namespace Strata.Laurel
 
 def program: String := r"
-procedure NestedImpureStatements() {
+procedure nestedImpureStatements() {
   var y: int := 0;
   var x: int := y;
   var z: int := y := y + 1;;
     assert x == y;
 //  ^^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y;
+}
+
+procedure multipleAssignments() {
+  var x: int;
+  var y: int := ((x := 1;) + x) + (x := 2;);
+  assert y == 4;
+}
+
+procedure conditionalAssignmentInExpression(x: int) {
+  var y: int := 0;
+  var z: int := (if (x > 0) { y := y + 1; } else { 0 }) + y;
+  if (x > 0) {
+    assert y == 1;
+    assert z == 2;
+  } else {
+    assert z == 0;
+    assert y == 0;
+  }
 }
 "
 

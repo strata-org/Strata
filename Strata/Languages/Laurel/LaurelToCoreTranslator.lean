@@ -56,17 +56,13 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) 
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
-      -- Check if this is a constant (field constant), global variable, or local variable
+      -- Check if this is a constant (field constant) or local variable
       if isConstant constants name then
         -- Constants are global identifiers (functions with no arguments)
         let ident := Core.CoreIdent.glob name
         -- Field constants are declared as functions () → Field T
         -- We just reference them as operations without application
         .op () ident none
-      else if name == "$heap" then
-        -- Global heap variable
-        let ident := Core.CoreIdent.glob name
-        .fvar () ident (some (.tcons "Heap" []))
       else
         -- Regular variables are local identifiers
         let ident := Core.CoreIdent.locl name
@@ -126,7 +122,8 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
 Translate Laurel StmtExpr to Core Statements
 Takes the constants list, type environment and output parameter names
 -/
-def translateStmt (constants : List Constant) (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtExpr) : TypeEnv × List Core.Statement :=
+def translateStmt (constants : List Constant) (env : TypeEnv)
+  (outputParams : List Parameter) (stmt : StmtExpr) : TypeEnv × List Core.Statement :=
   match stmt with
   | @StmtExpr.Assert cond md =>
       let boogieExpr := translateExpr constants env cond
@@ -171,19 +168,25 @@ def translateStmt (constants : List Constant) (env : TypeEnv) (outputParams : Li
                             | .TBool => .const () (.boolConst false)
                             | _ => .const () (.intConst 0)
           (env', [Core.Statement.init ident boogieType defaultExpr])
-  | .Assign target value _ =>
-      match target with
-      | .Identifier name =>
-          -- Check if this is the global heap variable
-          if name == "$heap" then
-            let heapIdent := Core.CoreIdent.glob "$heap"
-            let boogieExpr := translateExpr constants env value
-            (env, [Core.Statement.set heapIdent boogieExpr])
-          else
-            let ident := Core.CoreIdent.locl name
-            let boogieExpr := translateExpr constants env value
-            (env, [Core.Statement.set ident boogieExpr])
-      | _ => (env, [])
+  | .Assign targets value _ =>
+      match targets with
+      | [.Identifier name] =>
+          let ident := Core.CoreIdent.locl name
+          let boogieExpr := translateExpr constants env value
+          (env, [Core.Statement.set ident boogieExpr])
+      | _ =>
+          -- Parallel assignment: (var1, var2, ...) := expr
+          -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
+          match value with
+          | .StaticCall callee args =>
+              let boogieArgs := args.map (translateExpr constants env)
+              let lhsIdents := targets.filterMap fun t =>
+                match t with
+                | .Identifier name => some (Core.CoreIdent.locl name)
+                | _ => none
+              (env, [Core.Statement.call lhsIdents callee boogieArgs])
+          | _ =>
+              panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr constants env cond
       let (_, bthen) := translateStmt constants env outputParams thenBranch
@@ -226,7 +229,7 @@ def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :
 /--
 Translate Laurel Procedure to Core Procedure
 -/
-def translateProcedure (constants : List Constant) (heapWriters : List Identifier) (proc : Procedure) : Core.Procedure :=
+def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Procedure :=
   let inputPairs := proc.inputs.map translateParameterToCore
   let inputs := inputPairs
 
@@ -255,7 +258,7 @@ def translateProcedure (constants : List Constant) (heapWriters : List Identifie
         let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond }
         [("ensures", check)]
     | _ => []
-  let modifies := if heapWriters.contains proc.name then [Core.CoreIdent.glob "$heap"] else []
+  let modifies : List Core.Expression.Ident := []
   let spec : Core.Procedure.Spec := {
     modifies,
     preconditions,
@@ -442,29 +445,21 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) Core.Program := do
-  let sequencedProgram ← liftExpressionAssignments program
-  let (heapProgram, heapWriters) := heapParameterization sequencedProgram
-  dbg_trace "===  Program after heapParameterization==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format heapProgram)))
+  let program := heapParameterization program
+  let program ← liftExpressionAssignments program
+  dbg_trace "===  Program after heapParameterization + liftExpressionAssignments ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
   -- Separate procedures that can be functions from those that must be procedures
-  let (funcProcs, procProcs) := heapProgram.staticProcedures.partition canBeBoogieFunction
-  let procedures := procProcs.map (translateProcedure heapProgram.constants heapWriters)
+  let (funcProcs, procProcs) := program.staticProcedures.partition canBeBoogieFunction
+  let procedures := procProcs.map (translateProcedure program.constants)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
-  let laurelFuncDecls := funcProcs.map (translateProcedureToFunction heapProgram.constants)
-  let constDecls := heapProgram.constants.map translateConstant
+  let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
+  let constDecls := program.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
   let funcDecls := [readFunction, updateFunction]
   let axiomDecls := [readUpdateSameAxiom, readUpdateDiffAxiom]
-  -- Add global heap variable declaration with a free variable as initializer
-  let heapTy := LMonoTy.tcons "Heap" []
-  let heapInitVar := LExpr.fvar () (Core.CoreIdent.glob "$heap_init") (some heapTy)
-  let heapVarDecl := Core.Decl.var
-    (Core.CoreIdent.glob "$heap")
-    (LTy.forAll [] heapTy)
-    heapInitVar
-    .empty
-  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ [heapVarDecl] ++ constDecls ++ laurelFuncDecls ++ procDecls }
+  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }
 
 /--
 Verify a Laurel program using an SMT solver
