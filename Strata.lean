@@ -18,8 +18,9 @@ import Strata.DL.Imperative.Imperative
 /- Utilities -/
 import Strata.Util.Sarif
 
-/- Strata Core -/
+/- Strata Languages -/
 import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Core.SarifOutput
 
 /- Backends -/
