@@ -56,8 +56,8 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
-  let level := outcomeToLevel vcr.result
-  let messageText := outcomeToMessage vcr.result vcr.smtResult
+  let level := outcomeToLevel vcr.result.result
+  let messageText := outcomeToMessage vcr.result.result vcr.result.solverResult
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation files vcr.obligation.metadata with

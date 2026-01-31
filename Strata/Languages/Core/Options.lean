@@ -43,7 +43,9 @@ structure Options where
   checkOnly : Bool
   stopOnFirstError : Bool
   removeIrrelevantAxioms : Bool
-  checkAssumptionsSat : Bool
+  /-- Check if assumptions are satisfiable; global setting can be overridden by
+    obligation-specific setting. -/
+  checkAssumptionsSat : Bool := false
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
   /-- Output results in SARIF format -/

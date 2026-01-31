@@ -97,32 +97,6 @@ instance : ToFormat (ProofObligation Expression) where
 instance : ToFormat (ProofObligations Expression) where
   format os := Std.Format.joinSep (Array.map format os).toList Format.line
 
--- (FIXME) Parameterize by EvalContext typeclass.
-def ProofObligation.create
-  (label : String) (propertyType : PropertyType)
-  (assumptions : PathConditions Expression) (obligation : Procedure.Check):
-  Option (ProofObligation Expression) :=
-  open Lambda.LExpr.SyntaxMono in
-  if obligation.attr == .Free then
-    dbg_trace f!"{Format.line}Obligation {label} is free!{Format.line}"
-    none
-  else
-    some (ProofObligation.mk label propertyType false assumptions obligation.expr obligation.md)
-
-def ProofObligations.createAssertions
-  (assumptions : PathConditions Expression)
-  (obligations : ListMap String Procedure.Check)
-  : ProofObligations Expression :=
-  match obligations with
-  | [] => #[]
-  | o :: orest =>
-    let orest' := ProofObligations.createAssertions assumptions orest
-    let o' :=
-      match (ProofObligation.create o.fst .assert assumptions o.snd) with
-      | none => #[]
-      | some o' => #[o']
-    o' ++ orest'
-
 /--
 A substitution map from variable identifiers to expressions.
 -/

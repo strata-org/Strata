@@ -14,10 +14,16 @@ open Std (ToFormat Format format)
 
 --------------------------------------------------------------------
 
+def checkAssumptionsSatMode [BEq P.Ident] (md : MetaData P) :
+    Imperative.AssumptionSatCheckMode :=
+  match Imperative.MetaData.getCheckAssumptionsSat md with
+    | none => .globalDefault
+    | some b => if b then .check else .noCheck
+
 /--
 Partial evaluator for an Imperative Command.
 -/
-def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
+def Cmd.eval [EC : EvalContext P S] [BEq P.Ident] (σ : S) (c : Cmd P) : Cmd P × S :=
   match EC.lookupError σ with
   | some _ => (c, σ)
   | none =>
@@ -56,16 +62,17 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let e := EC.eval σ e
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
+      let checkAssum := checkAssumptionsSatMode md
       match EC.denoteBool e with
       | some true => -- Proved via evaluation.
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert false assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label .assert checkAssum assumptions e md))
       | some false =>
         if assumptions.isEmpty then
           (c', EC.updateError σ (.AssertFail label e))
         else
-          (c', EC.deferObligation σ (ProofObligation.mk label .assert false assumptions e md))
+          (c', EC.deferObligation σ (ProofObligation.mk label .assert checkAssum assumptions e md))
       | none =>
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert false assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label .assert checkAssum assumptions e md))
 
     | .assume label e md =>
       let (e, σ) := EC.preprocess σ c e
@@ -85,12 +92,13 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let e := EC.eval σ e
       let assumptions := EC.getPathConditions σ
       let c' := .cover label e md
-      (c', EC.deferObligation σ (ProofObligation.mk label .cover false assumptions e md))
+      let checkAssum := checkAssumptionsSatMode md
+      (c', EC.deferObligation σ (ProofObligation.mk label .cover checkAssum assumptions e md))
 
 /--
 Partial evaluator for Imperative's Commands.
 -/
-def Cmds.eval [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
+def Cmds.eval [EvalContext P S] [BEq P.Ident] (σ : S) (cs : Cmds P) : Cmds P × S :=
   match cs with
   | [] => ([], σ)
   | c :: crest =>

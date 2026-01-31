@@ -568,7 +568,7 @@ def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context
 structure SMT.Obligation where
   assumptions : List Term
   obligation : Term
-  checkAssumptionsSat : Bool := false
+  checkAssumptionsSat : Bool
 
 /--
 Encode a proof obligation -- which may be of type `assert` or `cover` -- into
@@ -595,6 +595,13 @@ cover is violated. If the result is `sat`, then the cover succeeds.
 def ProofObligation.toSMTObligation (E : Env)
     (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default) :
     Except Format (SMT.Obligation × SMT.Context) := do
+  let checkAssumptionsSat ← match d.checkAssumptionsSat with
+    | .check => .ok true
+    | .noCheck => .ok false
+    | .globalDefault =>
+      .error "Implementation Error in ProofObligation.toSMTObligation: \
+              Global default for checking satisfiability of assumptions \
+              not supported in this context."
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx; pure (ctx', ts :: tss)) (ctx, [])
@@ -609,7 +616,7 @@ def ProofObligation.toSMTObligation (E : Env)
       Factory.not obligation_pos_term
   .ok ({assumptions := distinct_assumptions ++ assumptions_terms,
         obligation := obligation_term,
-        checkAssumptionsSat := d.checkAssumptionsSat },
+        checkAssumptionsSat := checkAssumptionsSat },
        ctx)
 
 ---------------------------------------------------------------------

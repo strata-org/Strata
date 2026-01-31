@@ -54,10 +54,9 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
     metadata := md }
 
 /-- Create a VCResult for testing -/
-def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .unknown) (md : MetaData Expression := #[]) : VCResult :=
+def makeVCResult (label : String) (outcome : Outcome) (solverResult : Result := .unknown) (md : MetaData Expression := #[]) : VCResult :=
   { obligation := makeObligation label md
-    smtResult := smtResult
-    result := outcome
+    result := { solverResult := solverResult, result := outcome }
     verbose := .normal }
 
 /-! ## Level Conversion Tests -/

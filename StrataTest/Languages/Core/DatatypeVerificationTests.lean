@@ -115,9 +115,9 @@ def runVerificationTest (testName : String) (program : Program) : IO String := d
     | .ok results =>
       let mut output := s!"{testName}: PASSED\n"
       output := output ++ s!"  Verified {results.size} obligation(s)\n"
-      for result in results do
-        if result.result != .pass then
-          output := output ++ s!"  WARNING: {result.obligation.label}: {Std.format result.result}\n"
+      for r in results do
+        if r.result.result != .pass then
+          output := output ++ s!"  WARNING: {r.obligation.label}: {Std.format r.result}\n"
       return output
   catch e =>
     return s!"{testName}: FAILED (exception)\n  Error: {e}"

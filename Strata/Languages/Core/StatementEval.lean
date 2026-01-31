@@ -111,6 +111,36 @@ Get current values of global variables for old expression substitution.
 private def getCurrentGlobals (E : Env) : VarSubst :=
   E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
 
+open Imperative in
+private def ProofObligation.create
+  (label : String) (propertyType : PropertyType)
+  (assumptions : PathConditions Expression) (obligation : Procedure.Check)
+  (assumptionSatCheckMode : AssumptionSatCheckMode) :
+  Option (ProofObligation Expression) :=
+  open Lambda.LExpr.SyntaxMono in
+  if obligation.attr == .Free then
+    dbg_trace f!"{Format.line}Obligation {label} is free!{Format.line}"
+    none
+  else
+    some (ProofObligation.mk label propertyType assumptionSatCheckMode assumptions obligation.expr obligation.md)
+
+open Imperative in
+private def ProofObligations.createAssertions
+  (assumptions : PathConditions Expression)
+  (obligations : ListMap String Procedure.Check)
+  : ProofObligations Expression :=
+  match obligations with
+  | [] => #[]
+  | o :: orest =>
+    let orest' := ProofObligations.createAssertions assumptions orest
+    let o' :=
+      -- TODO: Assumption sat checking is hardcoded to `.noCheck` here; we
+      -- don't yet have syntax to specify it per-contract yet.
+      match (ProofObligation.create o.fst .assert assumptions o.snd .noCheck) with
+      | none => #[]
+      | some o' => #[o']
+    o' ++ orest'
+
 /--
 Evaluate a procedure call `lhs := pname(args)`.
 -/
@@ -268,7 +298,7 @@ private def createUnreachableCoverObligations
   covers.toArray.map
     (fun (label, md) =>
       (Imperative.ProofObligation.mk label .cover
-        false
+        (Imperative.checkAssumptionsSatMode md)
         [[("unreachable", (LExpr.false ()))]]
         (LExpr.false ()) md))
 
@@ -277,7 +307,8 @@ private def createUnreachableAssertObligations
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .assert false
+      (Imperative.ProofObligation.mk label .assert
+        (Imperative.checkAssumptionsSatMode md)
         [[("unreachable", (LExpr.false ()))]]
         (LExpr.true ()) md))
 

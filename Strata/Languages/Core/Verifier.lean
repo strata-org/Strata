@@ -268,16 +268,33 @@ instance : ToFormat Outcome where
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
 /--
+All results from analyzing a proof obligation.
+-/
+structure ObligationResult where
+  -- `.none` when the proof obligation doesn't require assumption sat checks.
+  assumptionsSat : Option Outcome := .none
+  assumptionSatSolverResult : SMT.Result := .unknown
+  result : Outcome := .unknown
+  solverResult : SMT.Result := .unknown
+  deriving Repr, Inhabited
+
+instance : ToFormat ObligationResult where
+  format r :=
+  let obResult := f!"{r.result}{r.solverResult.formatModelIfSat true}"
+  let finalResult :=
+    match r.assumptionsSat with
+    | .none => f!"Result: {obResult}"
+    | some r => f!"Assumptions Sat Check: {r}\n\
+                   Result: {obResult}"
+  finalResult
+
+/--
 A collection of all information relevant to a verification condition's
 analysis.
 -/
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
-  -- `.none` when the proof obligation doesn't require assumption sat checks.
-  assumptionsSat : Option Outcome := .none
-  assumptionSatSMTResult : SMT.Result := .unknown
-  result : Outcome := .unknown
-  smtResult : SMT.Result := .unknown
+  result : ObligationResult
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
 
@@ -295,27 +312,21 @@ def smtResultToOutcome (r : SMT.Result) (satIsPass : Bool) : Outcome :=
 
 instance : ToFormat VCResult where
   format r :=
-  let assumptionCheckResult :=
-    match r.assumptionsSat with
-    | .none => f!""
-    | some r => f!"Assumptions Sat Check: {r}\n"
   f!"Obligation: {r.obligation.label}\n\
                  Property: {r.obligation.property}\n\
-                 {assumptionCheckResult}\
-                 Result: {r.result}\
-                 {r.smtResult.formatModelIfSat true}"
+                 {r.result}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
-  match vr.result with | .pass => true | _ => false
+  match vr.result.result with | .pass => true | _ => false
 
 def VCResult.isFailure (vr : VCResult) : Bool :=
-  match vr.result with | .fail => true | _ => false
+  match vr.result.result with | .fail => true | _ => false
 
 def VCResult.isUnknown (vr : VCResult) : Bool :=
-  match vr.result with | .unknown => true | _ => false
+  match vr.result.result with | .unknown => true | _ => false
 
 def VCResult.isImplementationError (vr : VCResult) : Bool :=
-  match vr.result with | .implementationError _ => true | _ => false
+  match vr.result.result with | .implementationError _ => true | _ => false
 
 def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
   !Core.VCResult.isSuccess vcResult
@@ -341,7 +352,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
   -- satisfiability of assumptions alone.
   let checkAssumptionsStatus :=
     match obligation.checkAssumptionsSat with
-    | true =>
+    | .check =>
       if obligation.assumptions.isEmpty then
         -- No assumptions to check; can process consequent next.
         some Outcome.pass
@@ -350,17 +361,19 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         some Outcome.fail
       else -- Exit to use a backend solver.
         some Outcome.unknown
-    | false =>
+    | _ =>
       -- Assumption satisfiability check not requested.
       -- Can process consequent next.
       .none
   match checkAssumptionsStatus with
   | some .fail => -- Exit early.
     let result := { obligation,
-                    assumptionsSat := checkAssumptionsStatus,
-                    result := (match obligation.property with
-                              | .assert => .pass
-                              | .cover => .fail),
+                    result := {
+                        assumptionsSat := checkAssumptionsStatus,
+                        result := (match obligation.property with
+                                    | .assert => .pass
+                                    | .cover => .fail),
+                    }
                     verbose := options.verbose }
     return (obligation, some result)
   | .some .unknown =>
@@ -372,8 +385,10 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       if obligation.obligation.isFalse then
         -- If PE determines that the consequent is false, then the cover fails.
         let result := { obligation,
-                        assumptionsSat := checkAssumptionsStatus,
-                        result := .fail, verbose := options.verbose }
+                        result := {
+                          assumptionsSat := checkAssumptionsStatus,
+                          result := .fail },
+                        verbose := options.verbose }
         return (obligation, some result)
       else
         return (obligation, none)
@@ -382,8 +397,9 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         -- We don't need the SMT solver if PE (partial evaluation) is enough to
         -- reduce the consequent to true.
         let result := { obligation,
-                        assumptionsSat := checkAssumptionsStatus,
-                        result := .pass, verbose := options.verbose }
+                        result := {assumptionsSat := checkAssumptionsStatus,
+                                   result := .pass},
+                        verbose := options.verbose }
         return (obligation, some result)
       else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
         -- If PE determines that the consequent is false and the path conditions
@@ -396,8 +412,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
                      \n\nResult obtained during partial evaluation.\
                      {if options.verbose >= .normal then prog else ""}"
         let result := { obligation,
-                        assumptionsSat := checkAssumptionsStatus,
-                        result := .fail,
+                        result := { assumptionsSat := checkAssumptionsStatus,
+                                    result := .fail },
                         verbose := options.verbose }
         return (obligation, some result)
       else if options.removeIrrelevantAxioms then
@@ -412,6 +428,35 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         return ({ obligation with assumptions := new_assumptions }, none)
       else
         return (obligation, none)
+
+def smtResultsToObligationResult (name : String) (property : PropertyType)
+    (checkAssumptionsSat : Bool) (smt_results : List SMT.Result) :
+    Except Format ObligationResult := do
+  let (assumptions_sat_res, assumptions_solver_res, obligation_res) ←
+    if checkAssumptionsSat then
+      if h1 : smt_results.length == 2 then
+        .ok (some (smtResultToOutcome (smt_results[0]'(by grind)) true),
+             smt_results[0]'(by grind),
+             smt_results[1]'(by grind))
+      else
+        let f :=
+          f!"🚨 \n\nObligation {name}: SMT Solver Implementation Error! \
+              Expected 2 results \
+              (assumptions sat check and main obligation check), \
+              but got {smt_results.length} results instead."
+        .error f
+    else if h2 : smt_results.length == 1 then
+      .ok (none, .unknown, smt_results[0]'(by grind))
+    else
+      let f :=
+        f!"🚨 \n\nObligation {name}: SMT Solver Implementation Error! \
+            Expected 1 result (main obligation check), \
+            but got {smt_results.length} results instead."
+      .error f
+  return { assumptionsSat := assumptions_sat_res
+           assumptionSatSolverResult := assumptions_solver_res,
+           result := smtResultToOutcome obligation_res (property == .cover)
+           solverResult := obligation_res }
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -439,35 +484,12 @@ def getObligationResult (ob : SMT.Obligation) (ctx : SMT.Context)
                  {if options.verbose >= .normal then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (smt_results, estate) =>
-
-    let (assumptions_sat_res, assumptions_solver_res, obligation_res) ←
-      if ob.checkAssumptionsSat then
-        if h1 : smt_results.length == 2 then
-          .ok (some (smtResultToOutcome (smt_results[0]'(by grind)) true),
-               smt_results[0]'(by grind),
-               smt_results[1]'(by grind))
-        else
-          let f :=
-            f!"🚨 SMT Solver Implementation Error! Expected 2 results \
-                (assumptions sat check and main obligation check), \
-                but got {smt_results.length} results instead."
-          dbg_trace f!"\n\nObligation {obligation.label}: {f}\
-                       {if options.verbose >= .normal then prog else ""}"
-          .error <| DiagnosticModel.fromFormat f
-      else if h2 : smt_results.length == 1 then
-        .ok (none, .unknown, smt_results[0]'(by grind))
-      else
-        let f :=
-          f!"🚨 SMT Solver Implementation Error! Expected 1 result (main obligation check), \
-              but got {smt_results.length} results instead."
-        dbg_trace f!"\n\nObligation {obligation.label}: {f}\
-                     {if options.verbose >= .normal then prog else ""}"
-        .error <| DiagnosticModel.fromFormat f
+    let obresult ←
+      match smtResultsToObligationResult obligation.label obligation.property ob.checkAssumptionsSat smt_results with
+      | .ok result => pure result
+      | .error fmt => throw (DiagnosticModel.fromFormat fmt)
     let result :=  { obligation,
-                     assumptionsSat := assumptions_sat_res
-                     assumptionSatSMTResult := assumptions_solver_res,
-                     result := smtResultToOutcome obligation_res (obligation.property == .cover)
-                     smtResult := obligation_res,
+                     result := obresult
                      estate,
                      verbose := options.verbose }
     return result
@@ -484,10 +506,12 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
-      -- `options.checkAssumptionsSat := true` is a global setting that overrides
-      -- per-obligation assumption satisfiability setting (`false` by default).
-      let obligation := if options.checkAssumptionsSat then
-        { obligation with checkAssumptionsSat := true }
+      let obligation :=
+        -- Set the obligation's assumption satisfiability check mode to the
+        -- global setting, unless the local setting overrides it.
+        if obligation.checkAssumptionsSat == .globalDefault then
+          { obligation with checkAssumptionsSat :=
+              if options.checkAssumptionsSat then .check else .noCheck }
       else
         obligation
       let (obligation, maybeResult) ← preprocessObligation obligation p options
@@ -508,7 +532,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
       | .error err =>
         let err := f!"SMT Encoding Error! " ++ err
         let result := { obligation,
-                        result := .implementationError (toString err),
+                        result := { result := .implementationError (toString err) },
                         verbose := options.verbose }
         if options.verbose >= .normal then
           let prog := f!"\n\nEvaluated program:\n{p}"
@@ -588,7 +612,7 @@ def verify
     panic! s!"DDM Transform Error: {repr errors}"
 
 def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
-  match vcr.result with
+  match vcr.result.result with
   | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
     let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange

@@ -70,7 +70,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let ans ← Core.SMT.dischargeObligation
         { Options.default with verbose := .quiet }
         (LExpr.freeVars e) "z3" filename.toString
-        {assumptions := [], obligation := smt_term} ctx
+        {assumptions := [], obligation := smt_term, checkAssumptionsSat := false} ctx
       match ans with
       | .ok ([.sat _],_) => return true
       | _ =>

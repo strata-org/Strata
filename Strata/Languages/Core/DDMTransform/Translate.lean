@@ -133,6 +133,19 @@ def translateReal (arg : Arg) : TransM Decimal := do
     | TransM.error s!"translateReal expects decimal lit"
   return d
 
+def translateOptionCheckAssum (arg : Arg) : TransM (Option Bool) := do
+  translateOption
+    (fun maybe_arg => do
+        match maybe_arg with
+        | none => return default
+        | some c =>
+          let .op op := c | TransM.error s!"translateLhs expected op {repr arg}"
+          match op.name with
+          | q`Core.checkAssumOn => return (some true)
+          | q`Core.checkAssumOff => return (some false)
+          | _ => return .none)
+    arg
+
 ---------------------------------------------------------------------
 
 inductive GenKind where
@@ -976,19 +989,27 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent CoreIdent ida
     let md ← getOpMetaData op
     return ([.havoc id md], bindings)
-  | q`Core.assert, #[la, ca] =>
+  | q`Core.assert, #[checkAssum, la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"assert_{bindings.gen.assert_def}"
     let bindings := incrNum .assert_def bindings
     let l ← translateOptionLabel default_name la
+    let checkAssumMode ← translateOptionCheckAssum checkAssum
     let md ← getOpMetaData op
+    let md := if h: checkAssumMode.isSome then
+                md.pushElem Imperative.MetaData.checkAssumptionsSat (.switch (checkAssumMode.get h))
+              else md
     return ([.assert l c md], bindings)
-  | q`Core.cover, #[la, ca] =>
+  | q`Core.cover, #[checkAssum, la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"cover_{bindings.gen.assert_def}"
     let bindings := incrNum .cover_def bindings
     let l ← translateOptionLabel default_name la
+    let checkAssumMode ← translateOptionCheckAssum checkAssum
     let md ← getOpMetaData op
+    let md := if h: checkAssumMode.isSome then
+                md.pushElem Imperative.MetaData.checkAssumptionsSat (.switch (checkAssumMode.get h))
+              else md
     return ([.cover l c md], bindings)
   | q`Core.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
