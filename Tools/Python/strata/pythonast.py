@@ -191,7 +191,13 @@ def create_opmap(PythonAST : strata.Dialect) -> dict[type, Op]:
             arg = decl.args[idx]
             cat = arg.kind
             assert isinstance(cat, SyntaxCat)
-            missing = strata.OptionArg(None)
+            # Default value depends on the category type
+            if cat.name == Init.Option.ident:
+                missing = strata.OptionArg(None)
+            elif cat.name == Init.Seq.ident:
+                missing = strata.Seq(())
+            else:
+                raise ValueError(f"Unexpected category type for missing field: {cat.name}")
             op_args.append(OpArg(None, cat, missing=missing))
 
         return Op(decl, op_args)
@@ -214,13 +220,21 @@ import sys
 new_args : list[tuple[type, str]]
 if sys.version_info >= (3, 13):
     new_args = []
-else:
-    assert sys.version_info >= (3, 12)
+elif sys.version_info >= (3, 12):
     new_args = [
         (ast.TypeVar, "default_value"),
         (ast.ParamSpec, "default_value"),
         (ast.TypeVarTuple, "default_value"),
     ]
+else:
+    # Python 3.11 - missing type_params added in 3.12 and type parameter nodes
+    new_args = [
+        (ast.FunctionDef, "type_params"),
+        (ast.AsyncFunctionDef, "type_params"),
+        (ast.ClassDef, "type_params"),
+    ]
+    # TypeVar, ParamSpec, TypeVarTuple nodes don't exist in 3.11 but are in the 3.14 dialect
+    # We need to handle them separately since we can't reference non-existent AST nodes
 
 def check_op(d : strata.Dialect, name, op : type):
     opd = getattr(d, name)
@@ -238,7 +252,8 @@ def check_op(d : strata.Dialect, name, op : type):
         assert (op, arg.name) in new_args, f"Extra field name {arg.name} in {opd.name}"
         k = arg.kind
         assert isinstance(k, SyntaxCat)
-        assert k.name == Init.Option.ident, f"Bad type for {op} {arg.name}"
+        # Extra fields can be Option (defaults to None) or Seq (defaults to empty list)
+        assert k.name == Init.Option.ident or k.name == Init.Seq.ident, f"Bad type for {op} {arg.name}: {k.name}"
         l += 1
 
 def check_ast(d : strata.Dialect):
