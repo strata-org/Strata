@@ -218,4 +218,22 @@ theorem eval_stmts_set_comm
   EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [(.cmd (Cmd.set x1 v1)), (.cmd (Cmd.set x2 v2))] σ' φ' →
   EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [(.cmd (Cmd.set x2 v2)), (.cmd (Cmd.set x1 v1))] σ'' φ'' →
   σ' = σ'' := by
-  sorry -- TODO: Fix proof after FuncContext refactor
+  intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
+  -- Decompose first evaluation: [set x1 v1, set x2 v2]
+  cases Heval1 with
+  | stmts_some_sem Hs1 Hrest1 =>
+    cases Hrest1 with
+    | stmts_some_sem Hs2 Hempty1 =>
+      cases Hempty1
+      -- Decompose second evaluation: [set x2 v2, set x1 v1]
+      cases Heval2 with
+      | stmts_some_sem Hs3 Hrest2 =>
+        cases Hrest2 with
+        | stmts_some_sem Hs4 Hempty2 =>
+          cases Hempty2
+          -- Extract the cmd evaluations from stmt evaluations
+          cases Hs1 with | cmd_sem Hc1 _ =>
+          cases Hs2 with | cmd_sem Hc2 _ =>
+          cases Hs3 with | cmd_sem Hc3 _ =>
+          cases Hs4 with | cmd_sem Hc4 _ =>
+          exact eval_cmd_set_comm Hwf Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
