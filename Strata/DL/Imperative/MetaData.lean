@@ -10,6 +10,7 @@ import Strata.DDM.AST
 import Lean.Data.Position
 
 namespace Imperative
+open Strata (DiagnosticModel FileRange)
 
 ---------------------------------------------------------------------
 
@@ -198,11 +199,24 @@ def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? :
       return f!"{baseName}({m.start.line}, {m.start.column})"
   | _ => none
 
-def MetaData.formatFileRangeD {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false)
-    : Std.Format :=
-  match formatFileRange? md includeEnd? with
-  | .none => ""
-  | .some f => f
+/-- Create a DiagnosticModel from metadata and a message.
+    Uses the file range from metadata if available, otherwise uses a default location. -/
+def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) : DiagnosticModel :=
+  match getFileRange md with
+  | some fr => DiagnosticModel.withRange fr msg
+  | none => DiagnosticModel.fromMessage msg
+
+/-- Create a DiagnosticModel from metadata and a Format message. -/
+def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) : DiagnosticModel :=
+  MetaData.toDiagnostic md (toString msg)
+
+/-- Get the file range from metadata as a DiagnosticModel (for formatting).
+    This is a compatibility function that formats the file range using byte offsets.
+    For proper line/column display, use toDiagnostic and format with a FileMap at the top level. -/
+def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fileMap : Option Lean.FileMap := none) (includeEnd? : Bool := false) : Format :=
+  match getFileRange md with
+  | some fr => fr.format fileMap includeEnd?
+  | none => f!""
 
 ---------------------------------------------------------------------
 

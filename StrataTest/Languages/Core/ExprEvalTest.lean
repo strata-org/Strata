@@ -40,7 +40,7 @@ def encode (e:LExpr CoreLParams.mono)
            (init_state:LState CoreLParams):
     Except Format (Option (Strata.SMT.Term × SMT.Context))
   := do
-  let init_state ← init_state.addFactory Core.Factory
+  let init_state ← init_state.addFactory Core.Factory |>.mapError (fun dm => f!"{dm.message}")
   let lcont := { Lambda.LContext.default with
     functions := Core.Factory, knownTypes := Core.KnownTypes }
   let (e,_T) ← LExpr.annotate lcont tenv e

@@ -17,6 +17,8 @@ for test_file in tests/test_*.py; do
                 echo "ERROR: Analysis output for $base_name does not match expected result"
                 echo "$output" | diff "$expected_file" -
                 failed=1
+            else
+                echo "Test passed: " $base_name
             fi
         fi
     fi

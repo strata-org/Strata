@@ -30,9 +30,9 @@ open Verso.Genre.Manual.InlineLean
 set_option pp.rawOnError true
 set_option verso.docstring.allowMissing false
 
-#doc (Manual) "The Strata Language Definition" =>
+#doc (Manual) "The Strata Core Language Definition" =>
 %%%
-shortTitle := "The Strata Language"
+shortTitle := "The Strata Core Language"
 %%%
 
 # Introduction

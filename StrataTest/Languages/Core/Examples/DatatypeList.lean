@@ -13,7 +13,7 @@ Tests recursive List datatypes using the DDM datatype declaration syntax.
 Verifies:
 - Parsing of List datatype declarations with Nil() and Cons(head: int, tail: List) constructors
 - Tester functions (List..isNil, List..isCons)
-- Destructor functions (head, tail) for field access
+- Destructor functions (List..head, List..tail) for field access
 - Type-checking and verification with recursive type
 
 -/
@@ -346,23 +346,23 @@ spec {
   xs := Cons(42, Nil());
 
   // Extract the head using the destructor function
-  h := head(xs);
+  h := List..head(xs);
 
   // Assert the extracted head is correct
   assert [headIs42]: h == 42;
 
   // Extract the tail using the destructor function
-  t := tail(xs);
+  t := List..tail(xs);
 
   // Assert the tail is Nil
   assert [tailIsNil]: List..isNil(t);
 
   // Test with a longer list
   xs := Cons(10, Cons(20, Nil()));
-  h := head(xs);
+  h := List..head(xs);
   assert [headIs10]: h == 10;
 
-  t := tail(xs);
+  t := List..tail(xs);
   assert [tailIsCons]: List..isCons(t);
 };
 #end
@@ -418,7 +418,7 @@ spec {
   xs := Cons(1, Cons(2, Nil()));
 
   // Get the second element (head of tail)
-  second := head(tail(xs));
+  second := List..head(List..tail(xs));
 
   // Assert the second element is 2
   assert [secondIs2]: second == 2;
@@ -468,7 +468,7 @@ spec {
   assume xs == Cons(100, Nil());
 
   // Extract head
-  h := head(xs);
+  h := List..head(xs);
 
   // Assert head is 100
   assert [headIs100]: h == 100;

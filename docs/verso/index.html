@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strata Manual</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
+        .logo { text-align: center; margin-bottom: 2rem; }
+        .logo img { max-width: 200px; }
+        h1 { text-align: center; color: #333; }
+        .docs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-top: 2rem; }
+        .doc-card { border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; text-decoration: none; color: inherit; transition: box-shadow 0.2s; }
+        .doc-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .doc-card h2 { margin-top: 0; color: #0066cc; }
+    </style>
+</head>
+<body>
+    <div class="logo">
+        <img src="strata_logo.png" alt="Strata Logo">
+    </div>
+    <h1>Strata Manual</h1>
+    <p>Strata offers a unified platform for formalizing language syntax and semantics, and implementing automated reasoning applications.</p>
+    
+    <div class="docs-grid">
+        <a href="ddm/html-single/" class="doc-card">
+            <h2>DDM Documentation</h2>
+            <p>Documentation for Strata's Dialect Definition Metalanguage (DDM) system.</p>
+        </a>
+        
+        <a href="langdef/html-single/" class="doc-card">
+            <h2>Strata Core Language Definition Documentation</h2>
+            <p>Documentation for Strata Core language definition.</p>
+        </a>
+        <a href="api/Strata.html" class="doc-card">
+            <h2>API Reference</h2>
+            <p>API documentation for Strata and StrataTest.</p>
+        </a>
+    </div>
+</body>
+</html>

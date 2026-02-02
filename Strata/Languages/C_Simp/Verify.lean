@@ -105,8 +105,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
 
 -- C_Simp functions are Strata Core procedures
 def loop_elimination_function(f : C_Simp.Function) : Core.Procedure :=
-  let core_preconditions := [("pre", {expr := translate_expr f.pre })]
-  let core_postconditions := [("post", {expr := translate_expr f.post })]
+  let core_preconditions := [("pre", {expr := translate_expr f.pre, md := .empty })]
+  let core_postconditions := [("post", {expr := translate_expr f.post, md := .empty })]
   {header := {name := f.name.name, typeArgs := [],
               inputs := f.inputs.map (λ p => (p.fst.name, p.snd)),
               outputs := [("return", f.ret_ty)]},
@@ -127,7 +127,7 @@ def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
 
 def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
-  Except Std.Format Core.Program := do
+  Except DiagnosticModel Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 

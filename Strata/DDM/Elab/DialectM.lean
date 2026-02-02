@@ -29,6 +29,7 @@ private def foldBoundTypeVars {α} (tp : PreType) (init : α) (f : α → Nat �
   | .ident _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
   | .fvar _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
   | .bvar _ i => f init i
+  | .tvar _ _ => init
   | .arrow _ a r => r.foldBoundTypeVars (a.foldBoundTypeVars init f) f
   | .funMacro _ _ r => r.foldBoundTypeVars init f
 

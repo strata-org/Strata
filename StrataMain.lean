@@ -189,8 +189,8 @@ def pyTranslateCommand : Command where
   help := "Translate a Strata Python Ion file to Strata Core. Write results to stdout."
   callback := fun _ v => do
     let pgm ← readPythonStrata v[0]
-    let preludePgm := Strata.Python.Internal.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.Internal.signatures pgm
+    let preludePgm := Strata.Python.Core.prelude
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
 
@@ -203,8 +203,8 @@ def pyAnalyzeCommand : Command where
     let pgm ← readPythonStrata v[0]
     if verbose then
       IO.print pgm
-    let preludePgm := Strata.Python.Internal.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.Internal.signatures pgm
+    let preludePgm := Strata.Python.Core.prelude
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm

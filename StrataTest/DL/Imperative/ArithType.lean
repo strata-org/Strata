@@ -7,6 +7,8 @@
 import Strata.DL.Imperative.CmdType
 import StrataTest.DL.Imperative.ArithExpr
 
+open Strata
+
 namespace Arith
 
 /-! ## Instantiate `Imperative`'s Type Checker
@@ -24,10 +26,10 @@ open Imperative
 def isBoolType (ty : Ty) : Bool :=
   match ty with | .Bool => true | _ => false
 
-def preprocess (T : TEnv) (ty : Ty) : Except Format (Ty × TEnv) :=
+def preprocess (T : TEnv) (ty : Ty) : Except DiagnosticModel (Ty × TEnv) :=
   .ok (ty, T)
 
-def postprocess (T : TEnv) (ty : Ty) : Except Format (Ty × TEnv) :=
+def postprocess (T : TEnv) (ty : Ty) : Except DiagnosticModel (Ty × TEnv) :=
   .ok (ty, T)
 
 def update (T : TEnv) (x : String) (ty : Ty) : TEnv :=
@@ -37,7 +39,7 @@ def lookup (T : TEnv) (x : String) : Option Ty :=
   T.find? x
 
 /-- Type inference for `ArithPrograms`' commands. -/
-def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × Ty × TEnv) := do
+def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except DiagnosticModel (Expr × Ty × TEnv) := do
   match e with
   | .Num _ => .ok (e, .Num, T)
   | .Bool _ => .ok (e, .Bool, T)
@@ -48,8 +50,8 @@ def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × 
       | .init _ _ init_e _ =>
         let init_e_fvs := Expr.freeVars init_e
         if init_e_fvs.any (fun (_, ty) => ty.isNone) then
-          .error f!"Cannot infer the types of free variables in the initialization expression!\n\
-                    {e}"
+          .error (DiagnosticModel.fromFormat f!"Cannot infer the types of free variables in the initialization expression!\n\
+                    {e}")
         else
           let init_e_fvs := init_e_fvs.map (fun (x, ty) => (x, ty.get!))
           .ok (List.foldl (fun T (x, ty) => Map.insert T x ty) T init_e_fvs)
@@ -62,37 +64,37 @@ def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × 
         if xty == ty then
           .ok (e, ty, T)
         else
-          .error f!"Variable {x} annotated with {xty} but has type {ty} in the context!"
-    | none => .error f!"Variable {x} not found in type context!"
+          .error (DiagnosticModel.fromFormat f!"Variable {x} annotated with {xty} but has type {ty} in the context!")
+    | none => .error (DiagnosticModel.fromFormat f!"Variable {x} not found in type context!")
   | .Plus e1 e2 | .Mul e1 e2 =>
     let (_, e1t, T) ← inferType T c e1
     let (_, e2t, T) ← inferType T c e2
     if e1t == .Num && e2t == .Num then
       .ok (e, .Num, T)
     else
-      .error f!"Type checking failed for {e}"
+      .error (DiagnosticModel.fromFormat f!"Type checking failed for {e}")
   | .Eq e1 e2 =>
     let (_, e1t, T) ← inferType T c e1
     let (_, e2t, T) ← inferType T c e2
     if e1t == .Num && e2t == .Num then
       .ok (e, .Bool, T)
     else
-      .error f!"Type checking failed for {e}"
+      .error (DiagnosticModel.fromFormat f!"Type checking failed for {e}")
 
 /-- Unify `ArithPrograms`' types. -/
-def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :=
+def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except DiagnosticModel TEnv :=
   match constraints with
   | [] => .ok T
   | (t1, t2) :: crest =>
     if t1 == t2 then
       unifyTypes T crest
     else
-      .error f!"Types {t1} and {t2} cannot be unified!"
+      .error (DiagnosticModel.fromFormat f!"Types {t1} and {t2} cannot be unified!")
 
 /--
 Instantiation of `TypeContext` for `ArithPrograms`.
 -/
-instance : TypeContext PureExpr Unit TEnv Std.Format where
+instance : TypeContext PureExpr Unit TEnv DiagnosticModel where
   isBoolType := Arith.TypeCheck.isBoolType
   freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))
   preprocess := fun _ => Arith.TypeCheck.preprocess
@@ -101,7 +103,7 @@ instance : TypeContext PureExpr Unit TEnv Std.Format where
   lookup := Arith.TypeCheck.lookup
   inferType := fun _ => Arith.TypeCheck.inferType
   unifyTypes := Arith.TypeCheck.unifyTypes
-  typeErrorFmt := id
+  typeErrorFmt := fun dm => f!"{dm.message}"
 
 instance : ToFormat (Cmds PureExpr × TEnv) where
   format arg :=

@@ -228,8 +228,13 @@ private partial def whitespace : ParserFn := fun c s =>
       let curr := c.get j
       match curr with
       | '/' =>
-        -- // is always a line comment, regardless of whether / is a token
-        andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
+        -- Check if // starts a token (like //@pre in C_Simp)
+        match c.tokens.matchPrefix c.inputString i with
+        | some tk =>
+          if tk.length >= 2 then s  -- It's a token like //@pre
+          else andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
+        | none =>
+          andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
       | '*' =>
         match c.tokens.matchPrefix c.inputString i with
         | some _ => s

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 import sys
 import typing
-from typing import Any, Callable, Iterable, cast
+from typing import Any, Callable, Iterable, TypeVar, Generic, Union
 
 import amazon.ion.simpleion as ion
 
@@ -113,7 +113,8 @@ class SyntaxCat:
         self.args = () if args is None else args
 
     def strPrec(self, prec: int) -> str:
-        s = f'{str(self.name)}{"".join(' ' + a.strPrec(10) for a in self.args)}'
+        args = ''.join(' ' + a.strPrec(10) for a in self.args)
+        s = f'{str(self.name)}{args}'
         return f'({s})' if prec > 0 else s
 
     def __str__(self) -> str:
@@ -353,12 +354,14 @@ class StrLit:
     def __str__(self):
         return f'StrLit({repr(self.value)})'
 
+T = TypeVar('T', bound='Arg')
+
 @dataclass
-class OptionArg[T : 'Arg']:
-    value: T|None
+class OptionArg(Generic[T]):
+    value: Union[T, None]
     ann : Any
 
-    def __init__(self, value: T|None, *, ann = None):
+    def __init__(self, value: Union[T, None], *, ann = None):
         self.value = value
         self.ann = ann
 
@@ -372,7 +375,7 @@ class OptionArg[T : 'Arg']:
             return f'Some({self.value})'
 
 @dataclass
-class Seq[T : 'Arg']:
+class Seq(Generic[T]):
     values: tuple[T, ...]
     ann : Any
 
@@ -400,8 +403,7 @@ class CommaSepBy:
         self.values = values
         self.ann = ann
 
-type Arg = SyntaxCat | Operation | TypeExpr | Expr | Ident \
-    | BytesLit | NumLit | DecimalLit | StrLit | OptionArg['Arg'] | Seq['Arg'] | CommaSepBy
+Arg = Union[SyntaxCat, Operation, TypeExpr, Expr, Ident, BytesLit, NumLit, DecimalLit, StrLit, OptionArg['Arg'], Seq['Arg'], CommaSepBy]
 
 strlitSym = ion_symbol("strlit")
 numSym = ion_symbol("num")
@@ -493,7 +495,7 @@ class MetadataAttr:
     def to_ion(self):
         return ion_sexp(self.ident.to_ion(), *(metadata_arg_to_ion(a) for a in self.args))
 
-type Metadata = list[MetadataAttr]
+Metadata = list[MetadataAttr]
 
 def metadata_to_ion(values):
     return [ v.to_ion() for v in values ]
@@ -531,7 +533,7 @@ class SyntaxDefIndent(SyntaxDefAtomBase):
     def to_ion(self):
         return ion_sexp(ion_symbol("indent"), self.indent, *(syntaxdef_atom_to_ion(a) for a in self.args))
 
-type SyntaxDefAtom = SyntaxDefAtomBase | str
+SyntaxDefAtom = Union[SyntaxDefAtomBase, str]
 
 def syntaxdef_atom_to_ion(atom : SyntaxDefAtom) -> object:
     if isinstance(atom, str):
@@ -846,7 +848,9 @@ def read_string(reader) -> str:
     assert isinstance(scalar, str)
     return scalar
 
-def read_list[X](reader : object, f : Callable[[object, ion.IonEvent], X] ) -> tuple[X, ...]:
+X = TypeVar('X')
+
+def read_list(reader : object, f : Callable[[object, ion.IonEvent], X] ) -> tuple[X, ...]:
     res = []
     while True:
         event = read_event(reader)
@@ -855,7 +859,7 @@ def read_list[X](reader : object, f : Callable[[object, ion.IonEvent], X] ) -> t
         v = f(reader, event)
         res.append(v)
 
-def read_sexpr[X](reader : object, f : Callable[[object, ion.IonEvent], X] ) -> tuple[X, ...]:
+def read_sexpr(reader : object, f : Callable[[object, ion.IonEvent], X] ) -> tuple[X, ...]:
     res = []
     while True:
         event = read_event(reader)
