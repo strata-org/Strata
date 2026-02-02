@@ -198,11 +198,12 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
     | _ => none)
 
 /--
-Filter program to keep only target procedures, applying call elimination
-to replace calls to dependency procedures with their contracts.
+Filter program to keep only target procedures, applying the specified transform
+to them and pruning away all other procedures.
 -/
 def Program.filterProcedures (prog : Program) (targetProcs : List String)
-    : Program :=
+    (transform : Program → Transform.CoreTransformM Program) :
+    Except Core.Transform.Err Program := do
   let cg := prog.toProcedureCG
   let allNeededProcs := (targetProcs ++ cg.getAllCalleesClosure targetProcs).dedup
   let neededProcsSet := allNeededProcs.toArray.qsort (· < ·)
@@ -218,10 +219,8 @@ def Program.filterProcedures (prog : Program) (targetProcs : List String)
 
   let intermediateProg := { prog with decls := intermediateDecls }
 
-  -- Apply call elimination to replace calls with contracts.
-  let elimProg := match Transform.run intermediateProg CallElim.callElim' with
-    | .ok result => result
-    | .error _ => intermediateProg -- Fallback if call elimination fails.
+  -- Apply the specified transform.
+  let elimProg ← Transform.run intermediateProg transform
 
   -- Remove non-target procedures from the result.
   let finalDecls := elimProg.decls.filter (fun decl =>
@@ -231,7 +230,7 @@ def Program.filterProcedures (prog : Program) (targetProcs : List String)
       targetProcsSet.binSearch procName (· < ·) |>.isSome
     | _ => true) -- Keep all non-procedure declarations
 
-  { elimProg with decls := finalDecls }
+  return { elimProg with decls := finalDecls }
 
 ---------------------------------------------------------------------
 
