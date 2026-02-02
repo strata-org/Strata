@@ -397,6 +397,33 @@ category Statement;
 op varStatement (dl : DeclList) : Statement => "var " dl ";";
 ```
 
+### Polymorphic Type Variables
+
+The `@[declareTVar]` annotation allows polymorphic function declarations
+where type parameters (like `<a, b>`)
+need to be in scope when parsing parameter types and return types.
+For example, function declarations in Strata.Core are defined as 
+the following:
+
+```
+category TypeVar;
+@[declareTVar(name)]
+op type_var (name : Ident) : TypeVar => name;
+
+category TypeArgs;
+@[scope(args)]
+op type_args (args : CommaSepBy TypeVar) : TypeArgs => "<" args ">";
+
+@[declareFn(name, b, r)]
+op command_fndecl (name : Ident,
+                   typeArgs : Option TypeArgs,
+                   @[scope(typeArgs)] b : Bindings,
+                   @[scope(typeArgs)] r : Type) : Command =>
+  "function " name typeArgs b ":" r ";";
+```
+
+This allows parsing declarations like `function identity<a>(x: a): a`.
+
 ## The `Init` dialect
 %%%
 tag := "init"

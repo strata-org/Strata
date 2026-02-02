@@ -102,7 +102,10 @@ def Statement.labels (s : Core.Statement) : List String :=
   | .loop _ _ _ body _ => Block.labels body
   | .assume lbl _ _ => [lbl]
   | .assert lbl _ _ => [lbl]
-  | _ => []
+  | .cover lbl _ _ => [lbl]
+  | .goto _ _ => []
+  -- No other labeled commands.
+  | .cmd _ => []
   termination_by s.sizeOf
 end
 
@@ -128,7 +131,8 @@ def Statement.replaceLabels
     .loop g measure inv (Block.replaceLabels body map) m
   | .assume lbl e m => .assume (app lbl) e m
   | .assert lbl e m => .assert (app lbl) e m
-  | _ => s
+  | .cover lbl e m => .cover (app lbl) e m
+  | .cmd _ => s
   termination_by s.sizeOf
 end
 

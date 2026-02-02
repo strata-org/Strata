@@ -261,7 +261,7 @@ def laurelAnalyzeCommand : Command where
 
     let strataFiles ← deserializeIonToLaurelFiles stdinBytes
 
-    let mut combinedProgram : Laurel.Program := {
+    let mut combinedProgram : Strata.Laurel.Program := {
       staticProcedures := []
       staticFields := []
       types := []
@@ -269,7 +269,7 @@ def laurelAnalyzeCommand : Command where
 
     for strataFile in strataFiles do
 
-      let transResult := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
+      let transResult := Strata.Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Strata.Laurel.parseProgram strataFile.program)
       match transResult with
       | .error transErrors => exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
       | .ok laurelProgram =>
@@ -280,7 +280,7 @@ def laurelAnalyzeCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Laurel.verifyToDiagnosticModels "z3" combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels "z3" combinedProgram
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do

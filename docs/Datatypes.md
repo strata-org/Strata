@@ -94,13 +94,16 @@ The naming pattern is `<Datatype>..is<Constructor>`.
 
 ### Field Accessors (Destructors)
 
-For each field, an accessor function is generated:
-- `val(x: Option<T>) : T` - extracts the value from a `Some`
-- `head(x: List<T>) : T` - extracts the head from a `Cons`
-- `tail(x: List<T>) : List<T>` - extracts the tail from a `Cons`
+For each field, an accessor function is generated with the naming pattern `<Datatype>..<fieldName>`:
+- `Option..val(x: Option<T>) : T` - extracts the value from a `Some`
+- `List..head(x: List<T>) : T` - extracts the head from a `Cons`
+- `List..tail(x: List<T>) : List<T>` - extracts the tail from a `Cons`
+
+This naming convention ensures that field accessors are unique across datatypes,
+allowing multiple datatypes to have fields with the same name.
 
 These functions all have the expected computational behavior for the partial
-evaluator (e.g. `val (Some 1)` evaluates to `1`).
+evaluator (e.g. `Option..val(Some(1))` evaluates to `1`).
 
 **Note:** Field accessors are partial functions - calling them on the wrong constructor variant is undefined behavior.
 
@@ -112,7 +115,7 @@ Datatypes are encoded in SMT-LIB using the `declare-datatypes` command:
 (declare-datatypes ((Option 1)) (
   (par (T) (
     (None)
-    (Some (val T))
+    (Some (Option..val T))
   ))
 ))
 ```

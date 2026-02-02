@@ -394,7 +394,6 @@ def elabDialect
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
 
 def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (input : InputContext) : IO Strata.Program := do
-
   let leanEnv ← Lean.mkEmptyEnvironment 0
 
   let isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))

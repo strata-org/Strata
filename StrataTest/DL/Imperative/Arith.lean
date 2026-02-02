@@ -14,6 +14,7 @@ open Std (ToFormat Format format)
 
 def typeCheckAndPartialEval (cmds : Commands) : Except Format (Commands × Eval.State) := do
   let (cmds, _T) ← Imperative.Cmds.typeCheck () TEnv.init cmds
+    |>.mapError (fun dm => dm.message)
   let (cmds, S) := Imperative.Cmds.eval Eval.State.init cmds
   return (cmds, S)
 

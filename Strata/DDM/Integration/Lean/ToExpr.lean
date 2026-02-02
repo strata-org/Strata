@@ -126,6 +126,8 @@ private protected def toExpr {α} [ToExpr α] : TypeExprF α → Lean.Expr
   astAnnExpr! ident ann (toExpr nm) ae
 | .bvar ann idx =>
   astAnnExpr! bvar ann (toExpr idx)
+| .tvar ann name =>
+  astAnnExpr! tvar ann (toExpr name)
 | .fvar ann idx a =>
   let ae := arrayToExpr levelZero (TypeExprF.typeExpr (toTypeExpr α)) (a.map (·.toExpr))
   astAnnExpr! fvar ann (toExpr idx) ae
@@ -218,6 +220,7 @@ private protected def toExpr : PreType → Lean.Expr
   let args := arrayToExpr .zero PreType.typeExpr (a.map (·.toExpr))
   astExpr! ident (toExpr loc) (toExpr nm) args
 | .bvar loc idx => astExpr! bvar (toExpr loc) (toExpr idx)
+| .tvar loc name => astExpr! tvar (toExpr loc) (toExpr name)
 | .fvar loc idx a =>
     let args := arrayToExpr .zero PreType.typeExpr (a.map (·.toExpr))
     astExpr! fvar (toExpr loc) (toExpr idx) args
@@ -397,6 +400,15 @@ protected def toExpr {argDecls} (b : DatatypeBindingSpec argDecls) (argDeclsExpr
 
 end DatatypeBindingSpec
 
+namespace TvarBindingSpec
+
+protected def toExpr {argDecls} (b : TvarBindingSpec argDecls) (argDeclsExpr : Lean.Expr) : Lean.Expr :=
+  astExpr! mk
+    argDeclsExpr
+    (toExpr b.nameIndex)
+
+end TvarBindingSpec
+
 namespace BindingSpec
 
 private def typeExpr (argDeclsExpr : Lean.Expr) : Lean.Expr := mkApp (mkConst ``BindingSpec) argDeclsExpr
@@ -411,6 +423,7 @@ private def toExpr {argDecls} (bi : BindingSpec argDecls) (argDeclsExpr : Lean.E
   | .value b => astExpr! value argDeclsExpr (b.toExpr argDeclsExpr)
   | .type b => astExpr! type argDeclsExpr (b.toExpr argDeclsExpr)
   | .datatype b => astExpr! datatype argDeclsExpr (b.toExpr argDeclsExpr)
+  | .tvar b => astExpr! tvar argDeclsExpr (b.toExpr argDeclsExpr)
 
 end BindingSpec
 

@@ -103,6 +103,3 @@ def tarjan {n} (g : OutGraph n) : Array (Array (Node n)) :=
 
 end Strata.OutGraph
 end
-
-open Strata.OutGraph
-#guard tarjan (.ofEdges! 5 [(0, 1), (1, 2), (2, 3), (2, 0), (2, 4), (4, 3), (4, 1)]) == #[#[0, 1, 2, 4], #[3]]

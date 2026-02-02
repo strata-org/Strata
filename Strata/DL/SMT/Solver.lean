@@ -131,6 +131,20 @@ def declareDatatype (id : String) (params : List String) (constructors : List St
   then emitln s!"(declare-datatype {id} ({cInline}))"
   else emitln s!"(declare-datatype {id} (par ({pInline}) ({cInline})))"
 
+/-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
+def declareDatatypes (dts : List (String × List String × List String)) : SolverM Unit := do
+  if dts.isEmpty then return
+  let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
+  let sortDeclStr := String.intercalate " " sortDecls
+  let bodies := dts.map fun (_, params, constrs) =>
+    let cInline := String.intercalate " " constrs
+    if params.isEmpty then s!"({cInline})"
+    else
+      let pInline := String.intercalate " " params
+      s!"(par ({pInline}) ({cInline}))"
+  let bodyStr := String.intercalate "\n  " bodies
+  emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
+
 private def readlnD (dflt : String) : SolverM String := do
   match (← read).smtLibOutput with
   | .some stdout => stdout.getLine
