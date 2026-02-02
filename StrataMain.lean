@@ -192,32 +192,16 @@ def pySpecsCommand : Command where
         exitFailure s!"Expected Strata to be a directory."
     | .error _ =>
       IO.FS.createDir strataDir
-    let some searchPath := pythonFile.parent
-      | exitFailure s!"{pythonFile} directory unknown"
-    let contents ←
-          match ← IO.FS.readFile pythonFile |>.toBaseIO with
-          | .ok b => pure b
-          | .error msg =>
-            exitFailure s!"Could not read {pythonFile}"
-    let body ←
-      match ← Strata.Python.pythonToStrata dialectFile pythonFile |>.toBaseIO with
-      | .ok r => pure r
-      | .error msg =>
-        exitFailure msg
-
-    let (fmm, sigs, errors) ←
-      Strata.Python.Specs.translateModule
+    let r ← Strata.Python.Specs.translateFile
         (dialectFile := dialectFile)
-        (searchPath := searchPath)
         (strataDir := strataDir)
-        (pythonFile := pythonFile)
-        (.ofString contents)
-        body
-    if errors.size > 0 then
-      IO.eprintln "Translation errors:"
-      for e in errors do
-        IO.eprintln s!"{fmm.ppSourceRange pythonFile e.loc}: {e.message}"
-      IO.Process.exit 1
+        (pythonFile := pythonFile) |>.toBaseIO
+
+    let sigs ←
+      match r with
+      | .ok t => pure t
+      | .error msg => exitFailure msg
+
     let some mod := pythonFile.fileStem
       | exitFailure s!"No stem {pythonFile}"
     let .ok mod := Strata.Python.Specs.ModuleName.ofString mod

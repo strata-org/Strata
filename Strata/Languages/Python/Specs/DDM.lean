@@ -142,11 +142,11 @@ def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   | .typeIdent _ ⟨_, ident⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
     if let some pyIdent := PythonIdent.ofString ident then
-      .ofAtom <| .ident pyIdent a
+      .ident pyIdent a
     else
       panic! "Bad identifier"
   | .typeIntLiteral _ i => .ofAtom <| .intLiteral i.ofDDM
-  | .typeNoneType _ => .NoneType
+  | .typeNoneType _ => .ident .noneType
   | .typeStringLiteral _ ⟨_, s⟩ => .ofAtom <| .stringLiteral s
   | .typeTypedDict _ ⟨_, fields⟩ ⟨_, isTotal⟩ =>
     let names := fields.map fun (.mkFieldDecl _ ⟨_, name⟩ _) => name

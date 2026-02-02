@@ -148,7 +148,9 @@ def typeIdent (tp : PythonIdent) : SpecValue := .typeValue  (.ident tp)
 def preludeSig :=
   TypeSignature.ofList [
     .mk .builtinsBool (typeIdent .builtinsBool),
+    .mk .builtinsBytearray (typeIdent .builtinsBytearray),
     .mk .builtinsBytes (typeIdent .builtinsBytes),
+    .mk .builtinsComplex (typeIdent .builtinsComplex),
     .mk .builtinsDict (typeIdent .builtinsDict),
     .mk .builtinsFloat (typeIdent .builtinsFloat),
     .mk .builtinsInt (typeIdent .builtinsInt),
@@ -162,6 +164,7 @@ def preludeSig :=
     .mk .typingLiteral (.metaType .typingLiteral),
     .mk .typingMapping (.metaType .typingMapping),
     .mk .typingOverload .typingOverload,
+    .mk .typingSequence (.metaType .typingSequence),
     .mk .typingTypedDict .typingTypedDict,
     .mk .typingUnion (.metaType .typingUnion),
   ]
@@ -174,6 +177,8 @@ inductive ClassRef where
 abbrev ModuleReader := ModuleName → EIO String System.FilePath
 
 structure PySpecContext where
+  /-- Command to run for Python -/
+  pythonCmd : String
   /-- Path to Python dialect. -/
   dialectFile : System.FilePath
   /-- Path of current Python file being read. -/
@@ -183,6 +188,17 @@ structure PySpecContext where
   /-- Callback that takes a module name and provides filepath to module  -/
   moduleReader : ModuleReader
 
+def preludeAtoms : List (String × SpecType) := [
+  ("bool", .ident .builtinsBool),
+  ("bytearray", .ident .builtinsBytearray),
+  ("bytes", .ident .builtinsBytes),
+  ("complex", .ident .builtinsComplex),
+  ("dict", .ident .builtinsDict),
+  ("float", .ident .builtinsFloat),
+  ("int", .ident .builtinsInt),
+  ("str", .ident .builtinsStr),
+]
+
 structure PySpecState where
   typeSigs : TypeSignature := preludeSig
   errors : Array SpecError := #[]
@@ -190,7 +206,7 @@ structure PySpecState where
   This maps global identifiers to their value.
   -/
   nameMap : Std.HashMap String SpecValue :=
-    SpecType.preludeAtoms.foldl (init := {}) fun m (nm, tp) =>
+    preludeAtoms.foldl (init := {}) fun m (nm, tp) =>
       m.insert nm (.typeValue tp)
   typeReferences : Std.HashMap String ClassRef := {}
 
@@ -257,32 +273,29 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
   | .noneConst =>
     return .ofAtom .noneType
   | .stringConst loc val =>
-    recordTypeRef loc val
-    return .ofAtom (.pyClass val #[])
+    -- Check if this is a known built-in type first
+    match ← getNameValue? val with
+    | some (.typeValue tp) =>
+      return tp
+    | _ =>
+      recordTypeRef loc val
+      return .ofAtom (.pyClass val #[])
   | _ =>
     specError loc s!"Expected type instead of {repr v}."
     return default
 
-def fixedTranslator (t : PreludeType) (arity : Nat) : TypeTranslator where
+def fixedTranslator (t : PythonIdent) (arity : Nat) : TypeTranslator where
   callback := fun loc arg => do
     if arity = 1 then
       let tp ← valueAsType loc arg
-      return .ident t.ident #[tp]
+      return .ident t #[tp]
     else
       let .tuple args := arg
         | specError loc s!"Expected multiple args instead of {repr arg}."; return default
       let some ⟨_⟩ ← checkEq loc (toString t) args arity
           | return default
       let args ← args.mapM (valueAsType loc)
-      return .ident t.ident args
-
-def dictTranslator : TypeTranslator := fixedTranslator .typingDict 2
-
-def listTranslator : TypeTranslator := fixedTranslator .typingList 1
-
-def mappingTranslator := fixedTranslator .typingMapping 2
-
-def generatorTranslator := fixedTranslator .typingGenerator 3
+      return .ident t args
 
 def unionTranslator : TypeTranslator where
   callback := fun loc arg => do
@@ -314,11 +327,12 @@ def literalTranslator : TypeTranslator where
     return .ofArray (← args.mapM trans)
 
 def metadataProcessor : MetadataType → TypeTranslator
-| .typingDict => dictTranslator
-| .typingGenerator => generatorTranslator
-| .typingList => listTranslator
+| .typingDict => fixedTranslator .typingDict 2
+| .typingGenerator => fixedTranslator .typingGenerator 3
+| .typingList => fixedTranslator .typingList 1
 | .typingLiteral => literalTranslator
-| .typingMapping => mappingTranslator
+| .typingMapping => fixedTranslator .typingMapping 2
+| .typingSequence => fixedTranslator .typingSequence 1
 | .typingUnion => unionTranslator
 
 def translateCall (loc : SourceRange) (func : SpecValue)
@@ -379,7 +393,7 @@ def translateSubscript (paramLoc : SourceRange) (paramType : String) (sargs  : S
       | specError paramLoc "Expected an identifier"
         return default
     if tpId == .builtinsDict ∧ tpParams.size = 0 then
-        .typeValue <$> dictTranslator.callback paramLoc sargs
+        .typeValue <$> (fixedTranslator .typingDict 2 |>.callback paramLoc sargs)
     else
       specError paramLoc s!"Unsupported type {repr tpId}"
       return default
@@ -686,7 +700,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
   let argDecls : ArgDecls := { args := specArgs, kwonly := kwSpecArgs }
   let returnType : SpecType ←
         match returns with
-        | none => pure .NoneType
+        | none => pure <| .ident .typingAny
         | some tp => pySpecType tp
   let as ← collectAssertions argDecls returnType <| body.forM blockStmt
 
@@ -700,6 +714,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     preconditions := as.assertions
     postconditions := as.postconditions
   }
+
 
 def pySpecClassBody (loc : SourceRange) (className : String) (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
   let mut usedNames : Std.HashSet String := {}
@@ -808,9 +823,10 @@ partial def resolveModule (loc : SourceRange) (modName : String) :
       return default
 
   logEvent importEvent s!"Importing {modName} from Python"
+  let pythonCmd := (←read).pythonCmd
   let dialectFile := (←read).dialectFile
   let commands ←
-    match ← pythonToStrata dialectFile pythonFile |>.toBaseIO with
+    match ← pythonToStrata (pythonCmd := pythonCmd) dialectFile pythonFile |>.toBaseIO with
     | .ok r => pure r
     | .error msg =>
       specError loc msg
@@ -909,6 +925,8 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
       assert! decorators.val.size = 0
       assert! typeParams.val.size = 0
       let (success, _) ← runChecked <| recordTypeDef loc className
+      -- Add the class to nameMap so it can be used in forward references
+      setNameValue className (.typeValue (.pyClass className #[]))
       let d ← pySpecClassBody loc className stmts.val
       if success then
         elements := elements.push (.classDef d)
@@ -944,12 +962,14 @@ def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.F
 def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
     (fileMap : Lean.FileMap)
-    (body : Array (Strata.Python.stmt Strata.SourceRange)) :
+    (body : Array (Strata.Python.stmt Strata.SourceRange))
+    (pythonCmd : String := "python") :
     BaseIO (FileMaps × Array Signature × Array SpecError) := do
   let fmm : FileMaps := {}
   let fmm := fmm.insert pythonFile fileMap
   let fileMapsRef : IO.Ref FileMaps ← IO.mkRef fmm
   let ctx : PySpecContext := {
+    pythonCmd := pythonCmd
     dialectFile := dialectFile.toString
     moduleReader := fun (mod : ModuleName) => do
       let pythonPath ← mod.findInPath searchPath
@@ -966,5 +986,46 @@ def translateModule
   }
   let (res, s) ← translateModuleAux body |>.run ctx |>.run {}
   pure (←fileMapsRef.get, res, s.errors)
+
+def translateFile
+    (dialectFile strataDir pythonFile : System.FilePath)
+    (pythonCmd : String := "python")
+    (searchPath : Option System.FilePath := none) :
+    EIO String (Array Signature) := do
+  let searchPath ←
+      match searchPath with
+      | some p => pure p
+      | none =>
+        match pythonFile.parent with
+        | some p => pure p
+        | none => throw s!"{pythonFile} directory unknown"
+  let contents ←
+        match ← IO.FS.readFile pythonFile |>.toBaseIO with
+        | .ok b => pure b
+        | .error msg =>
+          match msg with
+          | .inappropriateType .. =>
+            throw s!"{pythonFile} must be a file."
+          | _ =>
+            throw s!"{pythonFile} could not be read: {msg}"
+  let body ←
+    match ← pythonToStrata (pythonCmd := pythonCmd) dialectFile pythonFile |>.toBaseIO with
+    | .ok r => pure r
+    | .error msg => throw msg
+  let (fmm, sigs, errors) ←
+      Strata.Python.Specs.translateModule
+        (pythonCmd := pythonCmd)
+        (dialectFile := dialectFile)
+        (searchPath := searchPath)
+        (strataDir := strataDir)
+        (pythonFile := pythonFile)
+        (.ofString contents)
+        body
+  if errors.size > 0 then
+    let msg := "Translation errors:\n"
+    let msg := errors.foldl (init := msg) fun msg e =>
+      s!"{msg}{fmm.ppSourceRange pythonFile e.loc}: {e.message}\n"
+    throw msg
+  pure sigs
 
 end Strata.Python.Specs

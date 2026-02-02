@@ -46,16 +46,18 @@ Python file into a Strata file, and then reads it in.
 This function if the environment isn't configured correctly
 or the Python file cannot be parsed.
 -/
-def pythonToStrata (dialectFile pythonFile : System.FilePath) :
+def pythonToStrata (dialectFile pythonFile : System.FilePath)
+    (pythonCmd : String := "python") :
     EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
   let (_handle, strataFile) ←
     match ← IO.FS.createTempFile |>.toBaseIO with
     | .ok p => pure p
     | .error msg =>
       throw s!"Cannot create temporary file: {msg}"
+  let _ ← IO.println s!"Running {pythonCmd}" |>.toBaseIO
   try
     let spawnArgs : IO.Process.SpawnArgs := {
-        cmd := "python"
+        cmd := pythonCmd
         args := #["-m", "strata.gen", "py_to_strata",
             "--dialect", dialectFile.toString,
             pythonFile.toString,
@@ -88,11 +90,11 @@ def pythonToStrata (dialectFile pythonFile : System.FilePath) :
       if let some msg := formatParseFailureStderr stderr then
         throw <| s!"{pythonFile} parse error:\n  {msg}"
     if exitCode ≠ 0 then
-      let msg := s!"Internal: Python translation failed (exitCode = {exitCode})\n"
+      let msg := s!"Internal: Python strata.gen failed (exitCode = {exitCode})\n"
       let msg := s!"{msg}Standard output:\n"
-      let msg := stdout.splitOn.foldl (init := msg) fun msg ln => s!"{msg}. {ln}\n"
+      let msg := stdout.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
       let msg := s!"{msg}Standard error:\n"
-      let msg := stderr.splitOn.foldl (init := msg) fun msg ln => s!"{msg}. {ln}\n"
+      let msg := stderr.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
       throw <| msg
     let bytes ←
           match ← IO.FS.readBinFile strataFile |>.toBaseIO with

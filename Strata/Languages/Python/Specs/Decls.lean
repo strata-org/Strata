@@ -30,7 +30,9 @@ instance : ToString PythonIdent where
   toString i := s!"{i.pythonModule}.{i.name}"
 
 def builtinsBool := mk "builtins" "bool"
+def builtinsBytearray := mk "builtins" "bytearray"
 def builtinsBytes := mk "builtins" "bytes"
+def builtinsComplex := mk "builtins" "complex"
 def builtinsDict := mk "builtins" "dict"
 def builtinsFloat := mk "builtins" "float"
 def builtinsInt := mk "builtins" "int"
@@ -44,6 +46,7 @@ def typingList := mk "typing" "List"
 def typingLiteral := mk "typing" "Literal"
 def typingMapping := mk "typing" "Mapping"
 def typingOverload := mk "typing" "overload"
+def typingSequence := mk "typing" "Sequence"
 def typingTypedDict := mk "typing" "TypedDict"
 def typingUnion := mk "typing" "Union"
 
@@ -55,39 +58,20 @@ inductive MetadataType where
   | typingList
   | typingLiteral
   | typingMapping
+  | typingSequence
   | typingUnion
   deriving Repr
 
-inductive PreludeType where
-| builtinsBool
-| builtinsBytes
-| builtinsDict
-| builtinsFloat
-| builtinsInt
-| builtinsStr
-| typingAny
-| typingDict
-| typingGenerator
-| typingList
-| typingMapping
-| noneType
-deriving DecidableEq, Hashable, Ord, Repr
-
-def PreludeType.ident : PreludeType -> PythonIdent
-| .builtinsBool => .builtinsBool
-| .builtinsBytes => .builtinsBytes
-| .builtinsDict => .builtinsDict
-| .builtinsFloat => .builtinsFloat
-| .builtinsInt => .builtinsInt
-| .builtinsStr => .builtinsStr
-| .typingAny => .typingAny
+def MetadataType.ident : MetadataType -> PythonIdent
 | .typingDict => .typingDict
 | .typingGenerator => .typingGenerator
 | .typingList => .typingList
+| .typingLiteral => .typingLiteral
 | .typingMapping => .typingMapping
-| .noneType => .noneType
+| .typingSequence => .typingSequence
+| .typingUnion => .typingUnion
 
-instance : ToString PreludeType where
+instance : ToString MetadataType where
   toString tp := toString tp.ident
 
 mutual
@@ -170,25 +154,10 @@ instance : OrOp SpecType where
 
 def ofAtom (atom : SpecAtomType) : SpecType := { atoms := #[atom] }
 
+def ofArray (atoms : Array SpecAtomType) : SpecType := { atoms := atoms.qsort (· < ·) }
+
 def ident (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
   .ofAtom (.ident i args)
-
-def preludeAtoms : List (String × SpecType) := [
-  ("bool", .ident .builtinsBool),
-  ("bytes", .ident .builtinsBytes),
-  ("dict", .ident .builtinsDict),
-  ("float", .ident .builtinsFloat),
-  ("int", .ident .builtinsInt),
-  ("str", .ident .builtinsStr),
-]
-
-def dict (key value : SpecType) : SpecType := .ident .typingDict #[key, value]
-
-def mapping (key value : SpecType) : SpecType := .ident .typingMapping #[key, value]
-
-def NoneType : SpecType := .ident .noneType #[]
-
-def ofArray (atoms : Array SpecAtomType) : SpecType := { atoms := atoms.qsort (· < ·) }
 
 def pyClass (name : String) (params : Array SpecType) : SpecType := ofAtom <| .pyClass name params
 
