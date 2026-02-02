@@ -196,6 +196,23 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
       if hasRelevantOp then none else some a.name
     | _ => none)
 
+/--
+Filter program to keep only target procedures and their dependencies,
+preserving all non-procedure declarations
+-/
+def Program.filterProcedures (prog : Program) (targetProcs : List String)
+    : Program :=
+  let cg := prog.toProcedureCG
+  let allNeededProcs := (targetProcs ++ cg.getAllCalleesClosure targetProcs).dedup
+  let neededProcsSet := allNeededProcs.toArray.qsort (· < ·)
+  let filteredDecls := prog.decls.filter (fun decl =>
+    match decl with
+    | .proc p _ =>
+      let procName := CoreIdent.toPretty p.header.name
+      neededProcsSet.binSearch procName (· < ·) |>.isSome
+    | _ => true) -- Keep all non-procedure declarations
+  { prog with decls := filteredDecls }
+
 ---------------------------------------------------------------------
 
 end Core
