@@ -208,6 +208,4 @@ info: true
 -- #eval callElim tests[0]!.fst
 -- #eval tests[0]!.snd
 
-
-
 end CallElimExamples
