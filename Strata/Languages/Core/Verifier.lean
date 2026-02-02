@@ -415,7 +415,9 @@ def verify (smtsolver : String) (program : Program)
   let finalProgram ← match proceduresToVerify with
     | none => .ok program  -- Verify all procedures (default).
     | some procs =>
-       -- Verify specific procedures.
+       -- Verify specific procedures. By default, we apply the call elimination
+       -- transform to the targeted procedures to inline the contracts of any
+       -- callees.
       match program.filterProcedures procs (transform := CallElim.callElim') with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
