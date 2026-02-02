@@ -283,10 +283,6 @@ def test9 := TestCase.mk
 #guard_msgs in
 #eval check test9
 
--- Note: this case diverges from concrete evaluator, because 'x' is not a
--- canonical value! Small step reduces only when the arguments are values,
--- to avoid nondeterminism in the small-step semantics (unless this becomes
--- explicitly allowed in the future).
 example: steps_well test9 := by
   unfold steps_well Scopes.toEnv test9
   take_step; apply Step.expand_fn <;> discharge_isCanonicalValue
