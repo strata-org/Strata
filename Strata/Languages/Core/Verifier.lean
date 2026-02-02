@@ -407,7 +407,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
 
 def verify (smtsolver : String) (program : Program)
     (tempDir : System.FilePath)
-    (options : Options := Options.default)
+    (options : Options := default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO Format VCResults := do
   match Core.typeCheckAndPartialEval options program moreFns with
@@ -428,7 +428,7 @@ namespace Strata
 
 open Lean.Parser
 
-def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
+def typeCheck (ictx : InputContext) (env : Program) (options : Options := default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
   Except Std.Format Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
@@ -446,7 +446,7 @@ def Core.getProgram
 def verify
     (smtsolver : String) (env : Program)
     (ictx : InputContext := Inhabited.default)
-    (options : Options := Options.default)
+    (options : Options := default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (tempDir : Option String := .none)
     : IO Core.VCResults := do

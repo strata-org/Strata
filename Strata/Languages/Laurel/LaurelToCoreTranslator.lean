@@ -470,7 +470,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) Core.Program 
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)
-    (options : Options := Options.default)
+    (options : Options := default)
     (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
   let strataCoreProgramExcept := translate program

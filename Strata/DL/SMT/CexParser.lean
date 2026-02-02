@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
+module
 
 import Std.Internal.Parsec.String
 
@@ -15,7 +15,7 @@ open Std (Format ToFormat format)
 Represents a key-value pair, representing the value of a variable (key) in a
 counterexample.
 -/
-structure KeyValue where
+public structure KeyValue where
   key: String
   value: String
 deriving Repr
@@ -24,11 +24,11 @@ instance : ToFormat KeyValue where
   format kv := f!"({kv.key} {kv.value})"
 
 /-- Represents a counterexample as a list of key-value pairs -/
-structure CEx where
+public structure CEx where
   pairs: List KeyValue
 deriving Repr
 
-def CEx.format (cex : CEx) : Format :=
+public def CEx.format (cex : CEx) : Format :=
   go cex.pairs
   where go pairs :=
   match pairs with
@@ -90,7 +90,7 @@ def parseCEx1 : Parser CEx := do
     ws
     return { pairs := [] }))
 
-def parseCEx (cex : String) : Except Format CEx :=
+public def parseCEx (cex : String) : Except Format CEx :=
   match parseCEx1 ⟨cex, cex.startValidPos⟩ with
   | Std.Internal.Parsec.ParseResult.success _ result => Except.ok result
   | Std.Internal.Parsec.ParseResult.error ⟨_, pos⟩ msg => Except.error s!"Parse error at {pos.offset}: {msg}"

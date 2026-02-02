@@ -47,7 +47,7 @@ public structure Options where
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
 
-def Options.default : Options := {
+public def Options.default : Options := {
   verbose := .normal,
   parseOnly := false,
   typeCheckOnly := false,
@@ -60,8 +60,8 @@ def Options.default : Options := {
 instance : Inhabited Options where
   default := .default
 
-def Options.quiet : Options :=
+public def Options.quiet : Options :=
   { Options.default with verbose := .quiet }
 
-def Options.debug : Options :=
+public def Options.debug : Options :=
   { Options.default with verbose := .debug }

@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+module
+
 namespace Strata
 namespace Python
 
@@ -18,6 +20,8 @@ for a reference implementation.
 -/
 
 -------------------------------------------------------------------------------
+
+public section
 
 inductive ParseError where
   /--
@@ -309,6 +313,8 @@ set_option backwards.match.sparseCases true
 /-- Parse entire regex string (implicit top-level group). -/
 def parseTop (s : String) : Except ParseError RegexAST :=
   parseGroup s 0 none |>.map (fun (r, _) => r)
+
+end -- public section
 
 -------------------------------------------------------------------------------
 end Strata.Python

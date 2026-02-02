@@ -72,17 +72,17 @@ theorem nodup_notin : (l ++ h :: l').Nodup → ¬h ∈ l ∧ ¬ h ∈ l' := by
     specialize left h'
     unfold Not; intros Heq; simp_all
 
-theorem nodup_swap :
+public theorem nodup_swap :
   List.Nodup (l ++ l') → List.Nodup (l' ++ l) := by
   intros Hnodup
   simp [List.Nodup] at *
   refine (List.pairwise_append_comm ?_).mp Hnodup
   exact fun {x y} a a_1 => a (Eq.symm a_1)
 
-theorem nodup_swap' :
+public theorem nodup_swap' :
   List.Nodup (l ++ l') = List.Nodup (l' ++ l) := propext ⟨nodup_swap, nodup_swap⟩
 
-theorem nodup_reverse :
+public theorem nodup_reverse :
   List.Nodup l → List.Nodup l.reverse := by
   intros Hnodup
   simp [List.Nodup] at *
@@ -93,20 +93,20 @@ theorem nodup_reverse :
   cases Hnodup with
   | intro left _ => exact fun a => left a' Ha' (Eq.symm a)
 
-theorem nodup_reverse' :
+public theorem nodup_reverse' :
   List.Nodup l.reverse → List.Nodup l:= by
   intros Hnodup
   rw [← @List.reverse_reverse _ l]
   exact nodup_reverse Hnodup
 
-theorem nodup_middle:
+public theorem nodup_middle:
   List.Nodup (l ++ h :: l') → List.Nodup (h :: (l ++ l')) := by
   intros Hnodup
   simp only [List.Nodup] at *
   refine (List.pairwise_middle fun {x y} a => (Ne.symm a)).mp ?_
   simp_all
 
-theorem nodup_middle':
+public theorem nodup_middle':
   List.Nodup (h :: (l ++ l')) → List.Nodup (l ++ h :: l') := by
   intros Hnodup
   simp only [List.Nodup] at *
@@ -212,7 +212,7 @@ theorem loop_insert_nodup : ∀ α {h : α} {t l l': List α} [BEq α] [LawfulBE
       simp_all
       exact fun a => heq' (Eq.symm a)
 
-theorem eraseDups_Nodup : ∀ α {l : List α} [BEq α] [LawfulBEq α], l.eraseDups.Nodup := by
+public theorem eraseDups_Nodup : ∀ α {l : List α} [BEq α] [LawfulBEq α], l.eraseDups.Nodup := by
   intros α l inst inst2
   simp [List.eraseDups]
   induction l
@@ -269,7 +269,7 @@ theorem eraseDupsBy.loop_mem_as {α : Type u} [BEq α] [LawfulBEq α] {h : α} {
           apply ih
           exact List.not_mem_cons_of_ne_of_not_mem (fun a => hne (Eq.symm a)) Hnin
 
-theorem eraseDupsBy.sound {α : Type u} [BEq α] [LawfulBEq α] {a : α} {as : List α}:
+public theorem eraseDupsBy.sound {α : Type u} [BEq α] [LawfulBEq α] {a : α} {as : List α}:
 a ∈ as → a ∈ as.eraseDups := by
 intros Hin
 simp [List.eraseDups]
@@ -293,7 +293,7 @@ case cons h t ih =>
       apply loop_mem_as ?_ eq
       simp_all
 
-theorem filter_nodup : as.Nodup → (List.filter p as).Nodup := by
+public theorem filter_nodup : as.Nodup → (List.filter p as).Nodup := by
   intros H
   induction as <;> simp [List.filter]
   case cons h t ih =>
