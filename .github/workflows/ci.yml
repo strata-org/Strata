@@ -142,7 +142,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        python_version: [3.12, 3.13, 3.14]
+        python_version: [3.11, 3.12, 3.13, 3.14]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
