@@ -117,7 +117,8 @@ Check that no datatypes in mutual block `block` appear nested inside another
 type constructor's arguments.
 The format `c` appears only for error message information.
 -/
-def checkNotNested (c: Format) (block: MutualDatatype IDMeta) (t: LMonoTy) : Except DiagnosticModel Unit :=
+def checkNotNested (c: Format) (block: MutualDatatype IDMeta) (t: LMonoTy) :
+Except DiagnosticModel Unit :=
   match t with
   | .arrow t1 t2 => do
     checkNotNested c block t1

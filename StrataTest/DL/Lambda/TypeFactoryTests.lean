@@ -550,15 +550,14 @@ def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constr
 #eval format $ typeCheckAndPartialEval #[[listTy], [nonUnifTy1]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-6. Nested types not allowed
+6. Nested types are not allowed
 type Nest a := | Base | C (List (Nest a))
->>>>>>> main
 -/
 def nestConstr1: LConstr Unit := {name := "C", args := [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩], testerName := "isC"}
 def nestConstr1Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
 def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"], constrs := [nestConstr1Base, nestConstr1], constrs_ne := rfl}
 
-/-- info: Error in constructor C: Nested datatypes are not 
+/-- info: Error in constructor C: Nested datatypes are not
           supported in Strata. Datatype Nest appears nested inside (List (Nest a)).
 -/
 #guard_msgs in
@@ -571,7 +570,7 @@ type Nest2 a := | C (Map int (Nest2 a))
 def nestConstr2: LConstr Unit := {name := "C", args := [⟨"x", .tcons "Map" [.int, .tcons "Nest2" [.ftvar "a"]]⟩], testerName := "isC"}
 def nestTy2 : LDatatype Unit := {name := "Nest2", typeArgs := ["a"], constrs := [nestConstr1Base, nestConstr2], constrs_ne := rfl}
 
-/-- info: Error in constructor C: Nested datatypes are not 
+/-- info: Error in constructor C: Nested datatypes are not
           supported in Strata. Datatype Nest2 appears nested inside (Map int (Nest2 a)).
 -/
 #guard_msgs in
@@ -589,7 +588,7 @@ def mutNestBConstr: LConstr Unit := {name := "MkB", args := [⟨"x", .tcons "Mut
 def mutNestBBase: LConstr Unit := {name := "BBase", args := [], testerName := "isBBase"}
 def mutNestBTy : LDatatype Unit := {name := "MutNestB", typeArgs := ["a"], constrs := [mutNestBBase, mutNestBConstr], constrs_ne := rfl}
 
-/-- info: Error in constructor MkA: Nested datatypes are not 
+/-- info: Error in constructor MkA: Nested datatypes are not
           supported in Strata. Datatype MutNestB appears nested inside (List (MutNestB a)).
 -/
 #guard_msgs in
