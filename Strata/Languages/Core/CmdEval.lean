@@ -75,13 +75,36 @@ def addWarning (E : Env) (w : EvalWarning Expression) : Env :=
 def getPathConditions (E : Env) : PathConditions Expression :=
   E.pathConditions
 
+private def findUnique (xs :  List String) (label : String) (counter : Nat)
+    : String :=
+  let candidate := s!"{label}_{counter}"
+  match xs with
+  | [] => candidate
+  | y :: ys =>
+    if y == candidate then
+      findUnique ys label (counter + 1)
+    else
+      findUnique ys label counter
+
+
+private def generateUniqueLabel (pathConditions : PathConditions Expression)
+    (baseLabel : String) : String :=
+  let labels := pathConditions.flatten.map (fun (label, _) => label)
+  if labels.contains baseLabel then
+    findUnique labels.mergeSort baseLabel 1
+  else
+    baseLabel
+
+
 def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
   match p with
   | [] => E
   | (label, e) :: prest =>
-    let new_path_conditions := E.pathConditions.insert label e
+    -- Generate a unique label if there's a clash.
+    let uniqueLabel := generateUniqueLabel E.pathConditions label
+    let new_path_conditions := E.pathConditions.insert uniqueLabel e
     let E := { E with pathConditions := new_path_conditions }
-    addPathCondition E prest
+  addPathCondition E prest
 
 def deferObligation (E : Env) (ob : ProofObligation Expression) : Env :=
   { E with deferred := E.deferred.push ob }
