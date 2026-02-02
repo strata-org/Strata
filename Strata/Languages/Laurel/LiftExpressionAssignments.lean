@@ -95,7 +95,7 @@ def SequenceM.getVarType (varName : Identifier) : SequenceM HighType := do
 def SequenceM.addToEnv (varName : Identifier) (ty : HighType) : SequenceM Unit := do
   modify fun s => { s with env := (varName, ty) :: s.env }
 
-partial def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
+def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .PrimitiveOp op args =>
       let seqArgs ← args.mapM transformTarget
@@ -110,7 +110,7 @@ mutual
 Process an expression, extracting any assignments to preceding statements.
 Returns the transformed expression with assignments replaced by variable references.
 -/
-partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
+def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign targets value md =>
       checkOutsideCondition md
@@ -164,7 +164,7 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       -- Block in expression position: move all but last statement to prepended
       -- Process statements in order, handling assignments specially to set snapshots
       let rec processBlock (remStmts : List StmtExpr) : SequenceM StmtExpr := do
-        match remStmts with
+        match _: remStmts with
         | [] => return .Block [] metadata
         | [last] => transformExpr last
         | head :: tail =>
@@ -196,7 +196,13 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
                 for s in seqStmt do
                   SequenceM.addPrependedStmt s
             processBlock tail
+        termination_by SizeOf.sizeOf remStmts
+        decreasing_by
+        all_goals (simp_wf; try omega)
+        subst_vars; rename_i heq; cases heq; omega
       processBlock stmts
+
+
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
@@ -208,12 +214,13 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       | none => return expr
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
+  termination_by SizeOf.sizeOf expr
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original one may be split into multiple).
 -/
-partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
+def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   match stmt with
   | @StmtExpr.Assert cond md =>
       -- Process the condition, extracting any assignments
@@ -268,6 +275,7 @@ partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
   | _ =>
       return [stmt]
+  termination_by SizeOf.sizeOf stmt
 
 end
 
