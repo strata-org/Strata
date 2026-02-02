@@ -86,7 +86,6 @@ private def findUnique (xs :  List String) (label : String) (counter : Nat)
     else
       findUnique ys label counter
 
-
 private def generateUniqueLabel (pathConditions : PathConditions Expression)
     (baseLabel : String) : String :=
   let labels := pathConditions.flatten.map (fun (label, _) => label)
@@ -98,7 +97,6 @@ private def generateUniqueLabel (pathConditions : PathConditions Expression)
   else
     baseLabel
 
-
 def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
   match p with
   | [] => E
@@ -107,7 +105,7 @@ def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
     let uniqueLabel := generateUniqueLabel E.pathConditions label
     let new_path_conditions := E.pathConditions.insert uniqueLabel e
     let E := { E with pathConditions := new_path_conditions }
-  addPathCondition E prest
+    addPathCondition E prest
 
 def deferObligation (E : Env) (ob : ProofObligation Expression) : Env :=
   { E with deferred := E.deferred.push ob }
