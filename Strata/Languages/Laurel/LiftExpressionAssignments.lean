@@ -81,7 +81,7 @@ def SequenceM.freshTempFor (varName : Identifier) : SequenceM Identifier := do
   let counters := (← get).varCounters
   let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
   modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
-  return s!"{varName}_{counter}"
+  return s!"${varName}_{counter}"
 
 def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
   return (← get).varSnapshots.find? (·.1 == varName) |>.map (·.2)
@@ -163,15 +163,12 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
       -- Process statements in order, handling assignments specially to set snapshots
-      match stmts with
-      | [] => return .Block [] metadata
-      | [last] => transformExpr last
-      | _ =>
-          -- Process all but the last statement
-          let allButLast := stmts.dropLast
-          let last := stmts.getLast!
-          for stmt in allButLast do
-            match stmt with
+      let rec processBlock (remStmts : List StmtExpr) : SequenceM StmtExpr := do
+        match remStmts with
+        | [] => return .Block [] metadata
+        | [last] => transformExpr last
+        | head :: tail =>
+            match head with
             | .Assign targets value md =>
                 -- For assignments in block context, we need to set snapshots
                 -- so that subsequent expressions see the correct values
@@ -193,11 +190,11 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
                       SequenceM.setSnapshot varName snapshotName
                   | _ => pure ()
             | _ =>
-                let seqStmt ← transformStmt stmt
+                let seqStmt ← transformStmt head
                 for s in seqStmt do
                   SequenceM.addPrependedStmt s
-          -- Process the last statement as an expression
-          transformExpr last
+            processBlock tail
+      processBlock stmts
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr

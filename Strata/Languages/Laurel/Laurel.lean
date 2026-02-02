@@ -132,8 +132,7 @@ inductive StmtExpr : Type where
   | LiteralInt (value: Int)
   | LiteralBool (value: Bool)
   | Identifier (name : Identifier)
-  /- Assign is only allowed in an impure context.
-     For single target assignments, use a single-element list.
+  /- For single target assignments, use a single-element list.
      Multiple targets are only allowed when the value is a StaticCall to a procedure
      with multiple outputs, and the number of targets must match the number of outputs. -/
   | Assign (targets : List StmtExpr) (value : StmtExpr) (md : Imperative.MetaData Core.Expression)
