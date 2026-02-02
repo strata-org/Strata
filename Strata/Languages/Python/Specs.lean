@@ -220,6 +220,10 @@ structure PySpecState where
     preludeAtoms.foldl (init := {}) fun m (nm, tp) =>
       m.insert nm (.typeValue tp)
   typeReferences : Std.HashMap String ClassRef := {}
+  /--
+  Signatures being generated (declarations, functions, classes, etc).
+  -/
+  elements : Array Signature := #[]
 
 class PySpecMClass (m : Type → Type) where
   specError (loc : SourceRange) (message : String) : m Unit
@@ -261,6 +265,12 @@ def recordTypeRef (loc : SourceRange) (cl : String) : PySpecM Unit := do
   modify fun s => { s with
     typeReferences := s.typeReferences.insertIfNew cl (.unresolved loc)
   }
+
+def pushSignature (sig : Signature) : PySpecM Unit :=
+  modify fun s => { s with elements := s.elements.push sig }
+
+def pushSignatures (sigs : Array Signature) : PySpecM Unit :=
+  modify fun s => { s with elements := s.elements ++ sigs }
 
 /--
 Type for converting AST expressions to PySpec types
@@ -760,6 +770,8 @@ def checkLevel (loc : SourceRange) (level : Option (int SourceRange)) : PySpecM 
 
 
 def translateImportFrom (mod : String) (types : Std.HashMap String SpecValue) (names : Array (alias SourceRange)) : PySpecM Unit := do
+  -- Check if module is a builtin (in prelude) - if so, don't generate extern declarations
+  let isBuiltinModule := preludeSig.rank.contains mod
   for a in names do
     let name := a.name
     match types[name]? with
@@ -768,6 +780,14 @@ def translateImportFrom (mod : String) (types : Std.HashMap String SpecValue) (n
     | some tpv =>
       let asname := a.asname.getD name
       setNameValue asname tpv
+      -- Generate extern declaration for imported types (but not for builtin modules)
+      if !isBuiltinModule then
+        if let .typeValue _ := tpv then
+          let source : PythonIdent := {
+            pythonModule := mod
+            name := name
+          }
+          pushSignature (.externTypeDecl asname source)
 
 def getModifiedTime (f : System.FilePath) : IO IO.FS.SystemTime := do
   let md ← f.metadata
@@ -872,8 +892,7 @@ partial def tryCachedResolveModule (loc : SourceRange) (modName : String)
     modify fun s => { s with typeSigs := s.typeSigs.insert modName r }
     return r
 
-partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM (Array Signature) := do
-  let mut elements : Array Signature := #[]
+partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM Unit := do
   for stmt in body do
     match stmt with
     | .Assign loc ⟨_, targets⟩ value _typeAnn =>
@@ -895,7 +914,7 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
           name := name
           definition := tp
         }
-        elements := elements.push <| .typeDef d
+        pushSignature <| .typeDef d
       | _ =>
         pure ()
     | .Expr .. =>
@@ -918,7 +937,7 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
       assert! _typeParamsLoc.isNone
       assert! typeParams.size = 0
       let d ← pySpecFunctionArgs (className := none) loc funName args body decorators returns
-      elements := elements.push (.functionDecl d)
+      pushSignature (.functionDecl d)
     | .Import loc names =>
       specError loc s!"Import of {repr names} not supported."
     | .ImportFrom loc ⟨_, pyModule⟩ ⟨_, names⟩ ⟨_, level⟩ =>
@@ -940,18 +959,17 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
       setNameValue className (.typeValue (.pyClass className #[]))
       let d ← pySpecClassBody loc className stmts.val
       if success then
-        elements := elements.push (.classDef d)
+        pushSignature (.classDef d)
     | _ => specError stmt.ann s!"Unknown statement {stmt}"
-  return elements
 
 partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRange))
   : PySpecM (Array Signature) := do
-  let sig ← translate body
+  translate body
   let s ← get
   for ⟨cl, t⟩ in s.typeReferences do
     if let .unresolved loc := t then
       specError loc s!"Class {cl} not defined."
-  return sig
+  return s.elements
 
 end
 

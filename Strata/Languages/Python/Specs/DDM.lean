@@ -44,10 +44,10 @@ op mkFunDecl (name : Str,
               isOverload : Bool) : FunDecl =>
   "function " name "{\n"
   indent(2,
-    "args" ": " "[ \n"
+    "args" ": " "[\n"
     indent(2, args)
     "]\n"
-    "kwonly" ": " "[ \n"
+    "kwonly" ": " "[\n"
     indent(2, kwonly)
     "]\n"
     "return" ": " returnType "\n"
@@ -55,7 +55,7 @@ op mkFunDecl (name : Str,
   "}\n";
 
 op externTypeDecl (name : Ident, source : Ident) : Command =>
-  "extern " name " from " source ";";
+  "extern " name " from " source ";\n";
 op classDef (name : Str, methods : Seq FunDecl) : Command =>
   "class " name " {\n"
   indent(2, methods)

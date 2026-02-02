@@ -11,59 +11,60 @@ namespace Strata.Python.Specs
 
 /--
 info: program PythonSpecs;
+extern BaseClass from basetypes.BaseClass;
 function "dict_function"{
-  args: [ 
+  args: [
     x : ident(typing.Dict, ident(builtins.int), ident(typing.Any)) [hasDefault: false]
   ]
-  kwonly: [ 
+  kwonly: [
   ]
   return: ident(typing.Any)
   overload: false
 }
 function "list_function"{
-  args: [ 
+  args: [
     x : ident(typing.List, ident(builtins.int)) [hasDefault: false]
   ]
-  kwonly: [ 
+  kwonly: [
   ]
   return: ident(typing.Any)
   overload: false
 }
 function "sequence_function"{
-  args: [ 
+  args: [
     x : ident(typing.Sequence, ident(builtins.int)) [hasDefault: false]
   ]
-  kwonly: [ 
+  kwonly: [
   ]
   return: ident(typing.Any)
   overload: false
 }
 function "base_function"{
-  args: [ 
+  args: [
     x : ident(basetypes.BaseClass) [hasDefault: false]
   ]
-  kwonly: [ 
+  kwonly: [
   ]
   return: ident(typing.Any)
   overload: false
 }
 class "MainClass" {
   function "main_method"{
-    args: [ 
+    args: [
       self : class(MainClass) [hasDefault: false]
       x : ident(basetypes.BaseClass) [hasDefault: false]
     ]
-    kwonly: [ 
+    kwonly: [
     ]
     return: ident(typing.Any)
     overload: false
   }
 }
 function "main_function"{
-  args: [ 
+  args: [
     x : class(MainClass) [hasDefault: false]
   ]
-  kwonly: [ 
+  kwonly: [
   ]
   return: ident(typing.Any)
   overload: false
