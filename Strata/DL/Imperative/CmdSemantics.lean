@@ -27,6 +27,45 @@ abbrev SemanticStore := P.Ident → Option P.Expr
 abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
 abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
 
+/-- Function context: maps function identifiers to their definitions -/
+abbrev FuncContext := P.Ident → Option (Lambda.PureFunc P)
+
+/-! ### Closure Capture for Function Declarations -/
+
+/--
+Build a list of substitutions from the store for the given identifiers.
+Returns pairs of (identifier, value) for each identifier that has a value in the store.
+-/
+def buildSubstitutions [HasFvar P] (σ : SemanticStore P) (ids : List P.Ident) : List (P.Ident × P.Expr) :=
+  ids.filterMap (fun id =>
+    match σ id with
+    | some v => some (id, v)
+    | none => none)
+
+/--
+Apply closure capture to a function declaration by substituting current variable
+values into the function body and axioms. Variables that are function parameters
+are not substituted (they are bound, not free in the closure sense).
+-/
+def closureCapture [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [HasFvar P]
+    (σ : SemanticStore P) (decl : Lambda.PureFunc P) : Lambda.PureFunc P :=
+  let paramNames := decl.inputs.map (·.1)
+  -- Get free variables from body (if it exists), excluding parameters
+  let bodyFreeVars := match decl.body with
+    | some body => (HasVarsPure.getVars body).filter (· ∉ paramNames)
+    | none => []
+  -- Get free variables from axioms, excluding parameters
+  let axiomFreeVars := decl.axioms.flatMap (fun ax =>
+    (HasVarsPure.getVars ax).filter (· ∉ paramNames))
+  -- Combine and deduplicate
+  let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
+  -- Build substitutions from the store
+  let substs := buildSubstitutions P σ allFreeVars
+  -- Apply substitutions to body and axioms
+  { decl with
+    body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
+    axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }
+
 
 /--
 Evaluation relation of an Imperative command `Cmd`.

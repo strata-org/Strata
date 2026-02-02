@@ -29,30 +29,30 @@ open Imperative Core
   error message similar to "(kernel) application type mismatch".
 -/
 theorem StmtToNondetCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   (∀ st,
     Stmt.sizeOf st ≤ m →
-    EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' →
+    EvalStmt P (Cmd P) (EvalCmd P) δ σ φ st σ' φ' →
     EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
   (∀ ss,
     Block.sizeOf ss ≤ m →
-    EvalBlock P (Cmd P) (EvalCmd P) δ σ ss σ' →
+    EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
     EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ') := by
   intros Hwfb Hwfvl
   apply Nat.strongRecOn (motive := λ m ↦
-    ∀ σ σ',
+    ∀ σ σ' φ φ',
     (∀ st,
       Stmt.sizeOf st ≤ m →
-      EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' →
+      EvalStmt P (Cmd P) (EvalCmd P) δ σ φ st σ' φ' →
       EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
     (∀ ss,
       Block.sizeOf ss ≤ m →
-      EvalBlock P (Cmd P) (EvalCmd P) δ σ ss σ' →
+      EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
       EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ')
   )
-  intros n ih σ σ'
+  intros n ih σ σ' φ φ'
   refine ⟨?_, ?_⟩
   . intros st Hsz Heval
     match st with
@@ -64,7 +64,7 @@ theorem StmtToNondetCorrect
       | block_sem Heval =>
       next label b =>
       specialize ih (Block.sizeOf bss) (by simp_all; omega)
-      apply (ih _ _).2
+      apply (ih _ _ _ _).2
       omega
       assumption
     | .ite c tss ess =>
@@ -76,7 +76,7 @@ theorem StmtToNondetCorrect
         . apply EvalNondetStmt.cmd_sem
           exact EvalCmd.eval_assume Htrue Hwfb
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply (ih _ _).2
+        . apply (ih _ _ _ _).2
           omega
           assumption
       | ite_false_sem Hfalse Hwfb Heval =>
@@ -89,7 +89,7 @@ theorem StmtToNondetCorrect
           simp [WellFormedSemanticEvalBool] at Hwfb
           exact (Hwfb σ c).2.mp Hfalse
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply (ih _ _).2
+        . apply (ih _ _ _ _).2
           omega
           assumption
     | .goto _ =>
@@ -98,6 +98,18 @@ theorem StmtToNondetCorrect
     | .loop _ _ _ _ =>
       -- because loop has no semantics now, it also does not correspond to anything in the nondeterministic semantics
       cases Heval
+    | .funcDecl _ _ =>
+      -- funcDecl updates function context but not state; transformation produces assume true
+      cases Heval with
+      | funcDecl_sem =>
+        simp [StmtToNondetStmt]
+        apply EvalNondetStmt.cmd_sem
+        · apply EvalCmd.eval_assume
+          · simp [WellFormedSemanticEvalVal] at Hwfvl
+            exact Hwfvl.2 HasBool.tt σ HasBoolVal.bool_is_val.1
+          · exact Hwfb
+        · intros id Hin
+          simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
   . intros ss Hsz Heval
     cases ss <;>
     cases Heval
@@ -105,45 +117,42 @@ theorem StmtToNondetCorrect
       simp [BlockToNondetStmt]
       constructor
       constructor
-      next wfvl wffv wfb wfbv wfn =>
-        expose_names
-        simp [WellFormedSemanticEvalVal] at Hwfvl
-        have Hval := wfbv.bool_is_val.1
-        have Hv := Hwfvl.2 HasBool.tt σ Hval
-        exact Hv
-      assumption
-      intros id Hin
-      simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
-    case stmts_some_sem h t σ'' Heval Hevals =>
+      · simp [WellFormedSemanticEvalVal] at Hwfvl
+        have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
+        exact Hwfvl.2 HasBool.tt σ Hval
+      · assumption
+      · intros id Hin
+        simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
+    case stmts_some_sem h t σ'' φ'' Heval Hevals =>
       simp [BlockToNondetStmt]
       simp [Block.sizeOf] at Hsz
       specialize ih (h.sizeOf + Block.sizeOf t) (by omega)
       constructor
-      . apply (ih _ _).1
+      . apply (ih _ _ _ _).1
         omega
         exact Heval
-      . apply (ih _ _).2
+      . apply (ih _ _ _ _).2
         omega
         exact Hevals
 
 /-- Proof that the Deterministic-to-nondeterministic transformation is correct
 for a single (deterministic) statement -/
 theorem StmtToNondetStmtCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ st σ' φ' →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ' := by
   intros Hwfb Hwfv Heval
-  apply (StmtToNondetCorrect Hwfb Hwfv (m:=st.sizeOf)).1 <;> simp_all
+  exact (StmtToNondetCorrect Hwfb Hwfv (m:=st.sizeOf)).1 st (Nat.le_refl _) Heval
 
 /-- Proof that the Deterministic-to-nondeterministic transformation is correct
 for multiple (deterministic) statements -/
 theorem BlockToNondetStmtCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ ss σ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Heval
-  apply (StmtToNondetCorrect Hwfb Hwfv (m:=Block.sizeOf ss)).2 <;> simp_all
+  exact (StmtToNondetCorrect Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Heval

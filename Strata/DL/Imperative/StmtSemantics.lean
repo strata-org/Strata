@@ -22,8 +22,9 @@ Note that `EvalStmt` is parameterized by commands `Cmd` as well as their
 evaluation relation `EvalCmd`.
 -/
 inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → Stmt P Cmd → SemanticStore P → Prop where
+  SemanticEval P → SemanticStore P → FuncContext P → Stmt P Cmd → SemanticStore P → FuncContext P → Prop where
   | cmd_sem :
     EvalCmd δ σ c σ' →
     -- We only require definedness on the statement level so that the requirement is fine-grained
@@ -31,57 +32,64 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     -- a block containing init x; havoc x, because it will require x to exist prior to the block
     isDefinedOver (HasVarsImp.modifiedVars) σ c →
     ----
-    EvalStmt P Cmd EvalCmd δ σ (Stmt.cmd c) σ'
+    EvalStmt P Cmd EvalCmd δ σ φ (Stmt.cmd c) σ' φ
 
   | block_sem :
-    EvalBlock P Cmd EvalCmd δ σ b σ' →
+    EvalBlock P Cmd EvalCmd δ σ φ b σ' φ' →
     ----
-    EvalStmt P Cmd EvalCmd δ σ (.block _ b) σ'
+    EvalStmt P Cmd EvalCmd δ σ φ (.block _ b) σ' φ'
 
   | ite_true_sem :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd δ σ t σ' →
+    EvalBlock P Cmd EvalCmd δ σ φ t σ' φ' →
     ----
-    EvalStmt P Cmd EvalCmd δ σ (.ite c t e) σ'
+    EvalStmt P Cmd EvalCmd δ σ φ (.ite c t e) σ' φ'
 
   | ite_false_sem :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd δ σ e σ' →
+    EvalBlock P Cmd EvalCmd δ σ φ e σ' φ' →
     ----
-    EvalStmt P Cmd EvalCmd δ σ (.ite c t e) σ'
+    EvalStmt P Cmd EvalCmd δ σ φ (.ite c t e) σ' φ'
+
+  | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
+    EvalStmt P Cmd EvalCmd δ σ φ (.funcDecl decl md) σ
+      (fun id => if id == decl.name then some (closureCapture P σ decl) else φ id)
 
   -- (TODO): Define semantics of `goto`.
 
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-    SemanticEval P → SemanticStore P → List (Stmt P Cmd) → SemanticStore P → Prop where
+    SemanticEval P → SemanticStore P → FuncContext P → List (Stmt P Cmd) → SemanticStore P → FuncContext P → Prop where
   | stmts_none_sem :
-    EvalBlock P _ _ δ σ [] σ
+    EvalBlock P _ _ δ σ φ [] σ φ
   | stmts_some_sem :
-    EvalStmt P Cmd EvalCmd δ σ s σ' →
-    EvalBlock P Cmd EvalCmd δ σ' ss σ'' →
-    EvalBlock P Cmd EvalCmd δ σ (s :: ss) σ''
+    EvalStmt P Cmd EvalCmd δ σ φ s σ' φ' →
+    EvalBlock P Cmd EvalCmd δ σ' φ' ss σ'' φ'' →
+    EvalBlock P Cmd EvalCmd δ σ φ (s :: ss) σ'' φ''
 
 end
 
 theorem eval_stmts_singleton
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ [cmd] σ' ↔
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ cmd σ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [cmd] σ' φ' ↔
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ cmd σ' φ' := by
   constructor <;> intro Heval
-  cases Heval with | @stmts_some_sem _ _ _ σ1 _ _ Heval Hempty =>
+  cases Heval with | @stmts_some_sem _ _ _ _ σ1 _ _ _ φ1 Heval Hempty =>
     cases Hempty; assumption
   apply EvalBlock.stmts_some_sem Heval (EvalBlock.stmts_none_sem)
 
 theorem eval_stmts_concat
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ cmds1 σ' →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ' cmds2 σ'' →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ (cmds1 ++ cmds2) σ'' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ cmds1 σ' φ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ' φ' cmds2 σ'' φ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ (cmds1 ++ cmds2) σ'' φ'' := by
   intro Heval1 Heval2
-  induction cmds1 generalizing cmds2 σ
+  induction cmds1 generalizing cmds2 σ φ
   simp only [List.nil_append]
   cases Heval1
   assumption
@@ -101,17 +109,19 @@ theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   next _ _ Hup => exact UpdateStateDefMonotone Hdef Hup
 
 theorem EvalBlockEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
-  { σ σ': SemanticStore P } { δ : SemanticEval P }
+  { σ σ': SemanticStore P } { φ φ' : FuncContext P } { δ : SemanticEval P }
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P Cmd EvalCmd δ σ ([]: (List (Stmt P Cmd))) σ' → σ = σ' := by
+  EvalBlock P Cmd EvalCmd δ σ φ ([]: (List (Stmt P Cmd))) σ' φ' → σ = σ' ∧ φ = φ' := by
   intros H; cases H <;> simp
 
 mutual
 theorem EvalStmtDefMonotone
+  [DecidableEq P.Ident]
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ s σ' →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ s σ' φ' →
   isDefined σ' v := by
   intros Hdef Heval
   match s with
@@ -128,25 +138,27 @@ theorem EvalStmtDefMonotone
       apply EvalBlockDefMonotone <;> assumption
   | .goto _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
+  | .funcDecl _ _ => cases Heval; assumption
   termination_by (Stmt.sizeOf s)
   decreasing_by all_goals simp [*] at * <;> omega
 
 theorem EvalBlockDefMonotone
+  [DecidableEq P.Ident]
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ ss σ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases ss with
   | nil =>
     have Heq := EvalBlockEmpty Heval
-    simp [← Heq]
+    simp [← Heq.1]
     assumption
   | cons h t =>
     cases Heval <;> try assumption
-    next σ1 Heval1 Heval2 =>
-    apply EvalBlockDefMonotone (σ:=σ1)
+    next σ1 φ1 Heval1 Heval2 =>
+    apply EvalBlockDefMonotone (σ:=σ1) (φ:=φ1)
     apply EvalStmtDefMonotone <;> assumption
     assumption
   termination_by (Block.sizeOf ss)

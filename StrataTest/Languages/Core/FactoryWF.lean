@@ -36,25 +36,22 @@ theorem Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWF.mk
-        rotate_left
-        · decide -- LFuncWF.body_freevars
-        rotate_left
-        · apply FuncWF.mk
-          · decide -- LFuncWF.arg_nodup
-          · -- LFuncWf.concreteEval_argmatch
-            simp (config := { ground := true })
-            try (
-              try unfold unOpCeval
-              try unfold binOpCeval
-              try unfold cevalIntDiv
-              try unfold cevalIntMod
-              try unfold bvUnaryOp
-              try unfold bvBinaryOp
-              try unfold bvShiftOp
-              try unfold bvBinaryPred
-              intros lf md args res
-              repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+      · apply FuncWF.mk
+        · decide -- FuncWF.arg_nodup
+        · decide -- FuncWF.body_freevars
+        · -- FuncWF.concreteEval_argmatch
+          simp (config := { ground := true })
+          try (
+            try unfold unOpCeval
+            try unfold binOpCeval
+            try unfold cevalIntDiv
+            try unfold cevalIntMod
+            try unfold bvUnaryOp
+            try unfold bvBinaryOp
+            try unfold bvShiftOp
+            try unfold bvBinaryPred
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
 end Core

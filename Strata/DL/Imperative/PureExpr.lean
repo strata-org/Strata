@@ -65,4 +65,14 @@ class HasVal (P : PureExpr) where
 class HasBoolVal (P : PureExpr) [HasBool P] [HasVal P] where
   bool_is_val : (@HasVal.value P) HasBool.tt ∧ (@HasVal.value P) HasBool.ff
 
+/-- Substitution of free variables in expressions.
+    Used for closure capture in function declarations. -/
+class HasSubstFvar (P : PureExpr) where
+  /-- Substitute a single free variable with an expression -/
+  substFvar : P.Expr → P.Ident → P.Expr → P.Expr
+
+/-- Substitute multiple free variables with expressions -/
+def HasSubstFvar.substFvars [HasSubstFvar P] (e : P.Expr) (substs : List (P.Ident × P.Expr)) : P.Expr :=
+  substs.foldl (fun e (id, val) => HasSubstFvar.substFvar e id val) e
+
 end Imperative

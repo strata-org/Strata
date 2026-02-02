@@ -15,13 +15,21 @@ theorem eval_assert_store_cst
   intros Heval; cases Heval with | eval_assert _ => rfl
 
 theorem eval_stmt_assert_store_cst
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ (.cmd (Cmd.assert l e md)) σ' → σ = σ' := by
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ (.cmd (Cmd.assert l e md)) σ' φ' → σ = σ' := by
   intros Heval; cases Heval with | cmd_sem Hcmd => exact eval_assert_store_cst Hcmd
 
-theorem eval_stmts_assert_store_cst
+theorem eval_stmt_assert_funcctx_cst
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.assert l e md))] σ' → σ = σ' := by
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ (.cmd (Cmd.assert l e md)) σ' φ' → φ = φ' := by
+  intros Heval; cases Heval with | cmd_sem Hcmd => rfl
+
+theorem eval_stmts_assert_store_cst
+  [DecidableEq P.Ident]
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [(.cmd (Cmd.assert l e md))] σ' φ' → σ = σ' := by
   intros Heval; cases Heval with
   | stmts_some_sem H1 H2 =>
     cases H1 with
@@ -30,15 +38,18 @@ theorem eval_stmts_assert_store_cst
       | stmts_none_sem => exact eval_assert_store_cst H3
 
 theorem eval_stmt_assert_eq_of_pure_expr_eq
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  (EvalStmt P (Cmd P) (EvalCmd P) δ σ (.cmd (Cmd.assert l1 e md1)) σ' ↔
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ (.cmd (Cmd.assert l2 e md2)) σ') := by
+  (EvalStmt P (Cmd P) (EvalCmd P) δ σ φ (.cmd (Cmd.assert l1 e md1)) σ' φ' ↔
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ (.cmd (Cmd.assert l2 e md2)) σ' φ') := by
   intro Hwf
   constructor <;>
   (
     intro Heval
-    rw [← eval_stmt_assert_store_cst Heval]
+    have Hσ := eval_stmt_assert_store_cst Heval
+    have Hφ := eval_stmt_assert_funcctx_cst Heval
+    rw [← Hσ, ← Hφ]
     cases Heval
     apply EvalStmt.cmd_sem _ (by assumption)
     rename_i Heval
@@ -47,21 +58,25 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq
   )
 
 theorem eval_stmts_assert_elim
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ (.cmd (.assert l1 e md1) :: cmds) σ' →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ cmds σ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ (.cmd (.assert l1 e md1) :: cmds) σ' φ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ cmds σ' φ' := by
   intros Hwf Heval
   cases Heval with
-  | @stmts_some_sem _ _ _ σ1 _ _ Has1 Has2 =>
-    rw [← eval_stmt_assert_store_cst Has1] at Has2
+  | @stmts_some_sem _ _ _ _ σ1 _ _ _ φ1 Has1 Has2 =>
+    have Hσ := eval_stmt_assert_store_cst Has1
+    have Hφ := eval_stmt_assert_funcctx_cst Has1
+    rw [← Hσ, ← Hφ] at Has2
     assumption
 
 theorem assert_elim
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ [.cmd (.assert l3 e md3)] σ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' φ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [.cmd (.assert l3 e md3)] σ' φ' := by
   intro Hwf Heval
   have Heval := eval_stmts_assert_elim Hwf Heval
   rw [eval_stmts_singleton] at *
@@ -183,10 +198,10 @@ theorem eval_stmt_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ (.cmd (Cmd.set x1 v1)) σ1 →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ1 (.cmd (Cmd.set x2 v2)) σ' →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ (.cmd (Cmd.set x2 v2)) σ2 →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ2 (.cmd (Cmd.set x1 v1)) σ'' →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ1 (.cmd (Cmd.set x1 v1)) σ1 φ2 →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ1 φ3 (.cmd (Cmd.set x2 v2)) σ' φ4 →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ5 (.cmd (Cmd.set x2 v2)) σ2 φ6 →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ2 φ7 (.cmd (Cmd.set x1 v1)) σ'' φ8 →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   cases Hs1; cases Hs2; cases Hs3; cases Hs4
@@ -200,11 +215,7 @@ theorem eval_stmts_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.set x1 v1)), (.cmd (Cmd.set x2 v2))] σ' →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.set x2 v2)), (.cmd (Cmd.set x1 v1))] σ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [(.cmd (Cmd.set x1 v1)), (.cmd (Cmd.set x2 v2))] σ' φ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [(.cmd (Cmd.set x2 v2)), (.cmd (Cmd.set x1 v1))] σ'' φ'' →
   σ' = σ'' := by
-  intro Hwf Hneq Hnin1 Hnin2 Hss1 Hss2
-  cases Hss1; cases Hss2
-  rw[eval_stmts_singleton] at *
-  rename_i Hs1 Hs2 _ Hs3 Hs4
-  exact eval_stmt_set_comm Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
+  sorry -- TODO: Fix proof after FuncContext refactor

@@ -610,9 +610,9 @@ theorem EvalStatementContractInitVar :
   Imperative.WellFormedSemanticEvalVar δ →
   σ v = some vv →
   σ v' = none →
-  EvalStatementContract π δ σ
+  EvalStatementContract π δ σ φ
     (createInitVar ((v', ty), v))
-    (updatedState σ v' vv) := by
+    (updatedState σ v' vv) φ := by
   intros Hwf Hsome Hnone
   simp [createInitVar]
   constructor
@@ -639,10 +639,10 @@ theorem EvalStatementsContractInitVars :
   List.Nodup ((trips.unzip.fst.unzip.fst) ++ (trips.unzip.snd)) →
   ReadValues σ (trips.unzip.snd) vvs →
   Imperative.isNotDefined σ (trips.unzip.fst.unzip.fst) →
-  EvalStatementsContract π δ σ
+  EvalStatementsContract π δ σ φ
     (createInitVars trips)
     (updatedStates σ
-      (trips.unzip.fst.unzip.fst) vvs) := by
+      (trips.unzip.fst.unzip.fst) vvs) φ := by
   intros Hwf Hndup Hdef Hndef
   induction trips generalizing σ vvs with
   | nil =>
@@ -680,9 +680,9 @@ theorem EvalStatementContractInit :
   Imperative.WellFormedSemanticEvalVar δ →
   δ σ e = some vv →
   σ v' = none →
-  EvalStatementContract π δ σ
+  EvalStatementContract π δ σ φ
     (createInit ((v', ty), e))
-    (updatedState σ v' vv) := by
+    (updatedState σ v' vv) φ := by
   intros Hwf Hsome Hnone
   simp [createInit]
   constructor
@@ -710,10 +710,10 @@ theorem EvalStatementsContractInits :
   EvalExpressions (P:=Core.Expression) δ σ (trips.unzip.2) vvs →
   -- ReadValues σ (trips.unzip.2) vvs →
   Imperative.isNotDefined σ (trips.unzip.1.unzip.1) →
-  EvalStatementsContract π δ σ
+  EvalStatementsContract π δ σ φ
     (createInits trips)
     (updatedStates σ
-      (trips.unzip.1.unzip.1) vvs) := by
+      (trips.unzip.1.unzip.1) vvs) φ := by
   intros Hwfvr Hwfvl Hwfc Hdisj Hndup Hdef Hndef
   induction trips generalizing σ vvs with
   | nil =>
@@ -751,9 +751,9 @@ theorem EvalStatementContractHavocUpdated :
   ∀ vv,
   Imperative.WellFormedSemanticEvalVar δ →
   σ v = some vv' →
-  EvalStatementContract π δ σ
+  EvalStatementContract π δ σ φ
     (createHavoc v)
-    (updatedState σ v vv) := by
+    (updatedState σ v vv) φ := by
   intros vv Hwf Hsome
   simp [createHavoc]
   constructor
@@ -839,8 +839,8 @@ theorem EvalStatementsContractHavocVars :
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.isDefined σ vs →
   HavocVars σ vs σ' →
-  EvalStatementsContract π δ σ
-    (createHavocs vs) σ' := by
+  EvalStatementsContract π δ σ φ
+    (createHavocs vs) σ' φ := by
   intros Hwfv Hdef Hhav
   simp [createHavocs]
   induction vs generalizing σ
@@ -1585,7 +1585,7 @@ theorem createAssertsCorrect :
   EvalExpressions δ σ (createFvars ks') vals →
   ReadValues σA ks vals →
   Imperative.substStores σ' σA (ks'.zip ks) →
-  EvalStatementsContract π δ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' := by
+  EvalStatementsContract π δ σ' φ (createAsserts pres (ks.zip (createFvars ks'))) σ' φ := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hpres Heval Hrd Hsubst2
    simp [createAsserts]
    -- Make index parameter `i` explicit so that we can induct generalizing `i`.
@@ -1595,9 +1595,9 @@ theorem createAssertsCorrect :
          ((Imperative.HasVarsPure.getVars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
        ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) pre) ∧
        δ σA pre = some Imperative.HasBool.tt) →
-     EvalStatementsContract π δ σ'
+     EvalStatementsContract π δ σ' φ
        (List.mapIdx (fun j pred => Statement.assert s!"assert_{i + j}"
-         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ'
+         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ' φ
    by
     have := @h 0 pres Hpres
     simp at this; exact this
@@ -1641,7 +1641,7 @@ theorem createAssumesCorrect :
     ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) post) ∧
     δ σA post = some Imperative.HasBool.tt) →
   Imperative.substStores σA σ' (ks.zip ks') →
-  EvalStatementsContract π δ σ' (createAssumes posts (ks.zip (createFvars ks'))) σ' := by
+  EvalStatementsContract π δ σ' φ (createAssumes posts (ks.zip (createFvars ks'))) σ' φ := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hposts Hsubst2
    simp [createAssumes]
    -- Make index parameter `i` explicit so that we can induct generalizing `i`.
@@ -1651,9 +1651,9 @@ theorem createAssumesCorrect :
          ((Imperative.HasVarsPure.getVars (P:=Expression) post).removeAll (ks ++ ks')) ∧
        ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) post) ∧
        δ σA post = some Imperative.HasBool.tt) →
-     EvalStatementsContract π δ σ'
+     EvalStatementsContract π δ σ' φ
        (List.mapIdx (fun j pred => Statement.assume s!"assume_{i + j}"
-         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ'
+         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ' φ
    by
     have := @h 0 posts Hposts
     simp at this; exact this
@@ -3276,7 +3276,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   (∀ pname, π pname = (Program.Procedure.find? p (.unres pname))) →
   -- all global variables in p exist in σ
   (∀ gk, (p.find? .var gk).isSome → (σ gk).isSome) →
-  EvalStatementsContract π δ σ [st] σ' →
+  EvalStatementsContract π δ σ φ [st] σ' φ' →
   WellFormedCoreEvalCong δ →
   WF.WFStatementsProp p [st] →
   WF.WFProgramProp p →
@@ -3286,7 +3286,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧
-    EvalStatementsContract π δ σ sts σ''
+    EvalStatementsContract π δ σ φ sts σ'' φ'
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>

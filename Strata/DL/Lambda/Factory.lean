@@ -129,63 +129,77 @@ def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifi
   Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms
 
 /--
+Type class for extracting free variable names from expressions.
+-/
+class GetVarNames (ExprT : Type) (NameT : Type) where
+  getVarNames : ExprT → List NameT
+
+/-- Instance for LExpr: extract variable names from free variables. -/
+instance {T : LExprParams} {GenericTy : Type} : GetVarNames (LExpr ⟨T, GenericTy⟩) String where
+  getVarNames e := (LExpr.freeVars e).map (·.1.name)
+
+/--
 Well-formedness properties of Func. These are split from Func because
 otherwise it becomes impossible to create a 'temporary' Func object whose
 wellformedness might not hold yet.
+
+The `GetVarNames` type class is used to extract variable names from the body
+expression, allowing this structure to work with different expression types.
 -/
-structure FuncWF {IdentT ExprT TyT MetadataT : Type} (f : Func IdentT ExprT TyT MetadataT) where
+structure FuncWF {IdentT ExprT TyT MetadataT : Type}
+    (getName : IdentT → String) (getVarNames : ExprT → List String)
+    (f : Func IdentT ExprT TyT MetadataT) where
   -- No args have same name.
   arg_nodup:
-    List.Nodup (f.inputs.map (·.1))
+    List.Nodup (f.inputs.map (getName ·.1))
+  -- Free variables of body must be arguments.
+  body_freevars:
+    ∀ b, f.body = .some b →
+      (∀ fv, fv ∈ getVarNames b →
+        ∃ arg, List.Mem arg f.inputs ∧ fv = getName arg.1)
   -- concreteEval does not succeed if the length of args is incorrect.
   concreteEval_argmatch:
     ∀ fn md args res, f.concreteEval = .some fn
       → fn md args = .some res
       → args.length = f.inputs.length
 
-/--
-Well-formedness properties of LFunc - extends FuncWF with Lambda-specific properties.
--/
-structure LFuncWF {T : LExprParams} (f : LFunc T) extends FuncWF f where
-  -- Free variables of body must be arguments.
-  body_freevars:
-    ∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)
+/-- Abbreviation for FuncWF specialized to LFunc. -/
+abbrev LFuncWF {T : LExprParams} (f : LFunc T) :=
+  FuncWF (·.name) GetVarNames.getVarNames f
 
-instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type} [DecidableEq IdentT]
+instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type}
+    (getName : IdentT → String) (_ : ExprT → List String)
     (f : Func IdentT ExprT TyT MetadataT):
-    Decidable (List.Nodup (f.inputs.map (·.1))) := by
+    Decidable (List.Nodup (f.inputs.map (getName ·.1))) := by
   apply List.nodupDecidable
 
-instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)) :=
+instance FuncWF.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
+    (getName : IdentT → String) (getVarNames : ExprT → List String)
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (∀ b, f.body = .some b →
+      (∀ fv, fv ∈ getVarNames b →
+        ∃ arg, List.Mem arg f.inputs ∧ fv = getName arg.1)) :=
   match Hbody: f.body with
   | .some b =>
-    if Hall:(LExpr.freeVars b).all
-        (fun fv => List.any f.inputs (fun arg => fv.1.name == arg.1.name))
+    if Hall:(getVarNames b).all
+        (fun fv => List.any f.inputs (fun arg => fv == getName arg.1))
     then by
       apply isTrue
-      intros b' freevars Hb' Hfreevars fv' Hmem
+      intros b' Hb' fv' Hmem
       cases Hb'
-      rw [← Hfreevars] at Hall
       rw [List.all_eq_true] at Hall
       have Hall' := Hall fv' Hmem
       rw [List.any_eq_true] at Hall'
       rcases Hall' with ⟨arg', H⟩
       exists arg'
-      solve | (simp at H ; congr)
+      simp at H
+      exact H
     else by
       apply isFalse
       grind
   | .none => by
     apply isTrue; grind
 
--- FuncWF.concreteEval_argmatch and LFuncWF.concreteEval_argmatch are not decidable.-- FuncWF.body_freevars is commented out as it's expression-type specific
 -- FuncWF.concreteEval_argmatch is not decidable.
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
