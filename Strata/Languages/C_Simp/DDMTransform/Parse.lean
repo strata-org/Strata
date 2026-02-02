@@ -71,10 +71,10 @@ fn get (a : intArr, i: int) : int => "get(" a ", " i ")";
 category Statement;
 
 category Block;
-op block (stmts : Seq Statement) : Block => "{\n" stmts "}\n";
+op block (stmts : NewlineSepBy Statement) : Block => "{" indent(2, "\n" stmts) "\n}";
 
 @[declare(v, tp)]
-op init_decl (v : Ident, tp : Type) : Statement => "var " v ":" tp ";\n";
+op init_decl (v : Ident, tp : Type) : Statement => "var " v ":" tp ";";
 
 category Else;
 op if_command (c : bool, t : Block, f : Else) : Statement => "if (" c ") " t f;
@@ -100,8 +100,8 @@ op while_command (g : bool,
                   invariant: Option InvariantCat,
                   b : Block) : Statement => "while (" g ")\n" measure "\n" invariant "\n" b;
 
-op assign (tp : Type, v : Ident, val : tp) : Statement => v " = " val ";\n";
-op return (tp: Type, e : tp) : Statement => "return " e ";\n";
+op assign (tp : Type, v : Ident, val : tp) : Statement => v " = " val ";";
+op return (tp: Type, e : tp) : Statement => "return " e ";";
 
 op procedure (retType: Type,
               typeArgs: Option TypeArgs,
@@ -110,13 +110,13 @@ op procedure (retType: Type,
               @[scope(b)] pre: bool,
               @[scope(b)] post: bool,
               @[scope(b)] body : Block) : Command => retType " procedure " name typeArgs b
-                                                     "\n//@pre " indent(2, pre) ";"
-                                                     "\n//@post " indent(2, post) ";\n"
-                                                     indent(2, body);
+                                                     indent(2, "\n//@pre " pre ";"
+                                                     "\n//@post " post ";\n")
+                                                     body;
 
 category Annotation;
-op assert (lbl : Ident, c: bool) : Annotation => "//@assert [" lbl "] " c ";\n";
-op assume (lbl : Ident, c: bool) : Annotation => "//@assume [" lbl "] " c ";\n";
+op assert (lbl : Ident, c: bool) : Annotation => "//@assert [" lbl "] " c ";";
+op assume (lbl : Ident, c: bool) : Annotation => "//@assume [" lbl "] " c ";";
 op annotation (a : Annotation) : Statement => a;
 
 #end
