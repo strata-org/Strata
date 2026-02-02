@@ -413,8 +413,8 @@ def verify (smtsolver : String) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO DiagnosticModel VCResults := do
   let finalProgram := match proceduresToVerify with
-    | none => program  -- Verify all procedures
-    | some procs => program.filterProcedures procs  -- Verify specific procedures
+    | none => program  -- Verify all procedures (default).
+    | some procs => program.filterProcedures procs  -- Verify specific procedures.
   match Core.typeCheckAndPartialEval options finalProgram moreFns with
   | .error err =>
     .error { err with message := s!"❌ Type checking error.\n{err.message}" }

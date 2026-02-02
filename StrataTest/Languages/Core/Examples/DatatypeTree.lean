@@ -85,7 +85,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeTesterPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeTesterPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Tree with Havoc (requires SMT reasoning)
@@ -131,7 +131,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Tree Exhaustiveness (exactly one tester is true)
@@ -174,7 +174,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeExhaustivePgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeExhaustivePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: Tree Mutual Exclusion (testers are mutually exclusive)
@@ -220,7 +220,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeMutualExclusionPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeMutualExclusionPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: Tree Constructor Equality
@@ -275,7 +275,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeEqualityPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeEqualityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: Tree Constructor Inequality
@@ -319,7 +319,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeInequalityPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeInequalityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: Tree Destructor Functions (val, left, right)
@@ -400,7 +400,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeDestructorPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeDestructorPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8: Nested Tree Operations (deeper tree structure)
@@ -462,7 +462,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeNestedPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeNestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: Tree Destructor with Havoc (requires SMT reasoning)
@@ -512,7 +512,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeDestructorHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeDestructorHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: Tree with Different Values (inequality of different vals)
@@ -567,6 +567,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" treeDifferentValuesPgm Inhabited.default Options.quiet
+#eval verify "cvc5" treeDifferentValuesPgm (options := .quiet)
 
 end Strata.DatatypeTreeTest

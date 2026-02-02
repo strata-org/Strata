@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Program
+import Strata.Transform.CallElim
 
 ---------------------------------------------------------------------
 namespace Core
@@ -197,21 +198,40 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
     | _ => none)
 
 /--
-Filter program to keep only target procedures and their dependencies,
-preserving all non-procedure declarations
+Filter program to keep only target procedures, applying call elimination
+to replace calls to dependency procedures with their contracts.
 -/
 def Program.filterProcedures (prog : Program) (targetProcs : List String)
     : Program :=
   let cg := prog.toProcedureCG
   let allNeededProcs := (targetProcs ++ cg.getAllCalleesClosure targetProcs).dedup
   let neededProcsSet := allNeededProcs.toArray.qsort (· < ·)
-  let filteredDecls := prog.decls.filter (fun decl =>
+  let targetProcsSet := targetProcs.toArray.qsort (· < ·)
+
+  -- Create intermediate program with target procedures + dependencies.
+  let intermediateDecls := prog.decls.filter (fun decl =>
     match decl with
     | .proc p _ =>
       let procName := CoreIdent.toPretty p.header.name
       neededProcsSet.binSearch procName (· < ·) |>.isSome
     | _ => true) -- Keep all non-procedure declarations
-  { prog with decls := filteredDecls }
+
+  let intermediateProg := { prog with decls := intermediateDecls }
+
+  -- Apply call elimination to replace calls with contracts.
+  let elimProg := match Transform.run intermediateProg CallElim.callElim' with
+    | .ok result => result
+    | .error _ => intermediateProg -- Fallback if call elimination fails.
+
+  -- Remove non-target procedures from the result.
+  let finalDecls := elimProg.decls.filter (fun decl =>
+    match decl with
+    | .proc p _ =>
+      let procName := CoreIdent.toPretty p.header.name
+      targetProcsSet.binSearch procName (· < ·) |>.isSome
+    | _ => true) -- Keep all non-procedure declarations
+
+  { elimProg with decls := finalDecls }
 
 ---------------------------------------------------------------------
 

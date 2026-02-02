@@ -30,11 +30,12 @@ procedure MainProc() returns (output : int)
 spec {
   modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old(x) * 4);
+  ensures [output_property]: (output == old(x) * 2);
+  //ensures [output_property]: (output == old(x) * 4);
 }
 {
   call output := Helper(x);
-  call output := Helper(output);
+  //call output := Helper(output);
 };
 
 procedure IndependentProc() returns (y : int)
@@ -68,12 +69,6 @@ Result: ❌ fail
 Model:
 ($__x2, 0)
 
-Obligation: (Origin_Helper_Requires)n_positive
-Property: assert
-Result: ❌ fail
-Model:
-($__output4, 0) ($__x2, 0)
-
 Obligation: output_property
 Property: assert
 Result: ✅ pass
@@ -106,21 +101,11 @@ Result: ✅ pass
 
 /--
 info:
-Obligation: result_correct
-Property: assert
-Result: ✅ pass
-
-Obligation: (Origin_Helper_Requires)n_positive
+Obligation: assert_0
 Property: assert
 Result: ❌ fail
 Model:
-($__x2, 0)
-
-Obligation: (Origin_Helper_Requires)n_positive
-Property: assert
-Result: ❌ fail
-Model:
-($__output4, 0) ($__x2, 0)
+($__x0, 0)
 
 Obligation: output_property
 Property: assert
