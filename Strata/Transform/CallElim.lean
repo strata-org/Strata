@@ -60,9 +60,11 @@ def callElimCmd (cmd: Command) (p : Program)
 
         -- only need to substitute post conditions.
         let postconditions := OldExpressions.substsOldExprs oldSubst postconditions
+        let newPostconditions := Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions
 
         -- generate havoc for return variables, modified variables
-        let havoc_ret := createHavocs lhs
+        let newRetVars := outTrips.map (fun ((id, _ty), _orig) => id)
+        let havoc_ret := createHavocs newRetVars
         let havoc_mod := createHavocs proc.spec.modifies
         let havocs := havoc_ret ++ havoc_mod
 
@@ -70,19 +72,23 @@ def callElimCmd (cmd: Command) (p : Program)
         let arg_subst : List (Expression.Ident × Expression.Expr)
                       := (ListMap.keys proc.header.inputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
         let ret_subst : List (Expression.Ident × Expression.Expr)
-                      := (ListMap.keys proc.header.outputs).zip $ createFvars lhs
+                      := (ListMap.keys proc.header.outputs).zip $ createFvars newRetVars -- (newRetVars.map (fun id => .fvar () id none))
 
         -- construct assumes and asserts in place of pre/post conditions
         -- generate asserts based on pre-conditions, substituting procedure arguments
         let asserts := createAsserts
-                        (Procedure.Spec.getCheckExprs
-                          proc.spec.preconditions)
+                        proc.spec.preconditions
                         (arg_subst ++ ret_subst)
         -- generate assumes based on post-conditions, substituting procedure arguments and returns
-        let assumes := createAssumes postconditions
+        let assumes := createAssumes newPostconditions
                         (arg_subst ++ ret_subst)
 
-        return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
+        -- Set LHS to the new return variables.
+        let assignLhs :=
+          outTrips.map (fun ((id, _), orig) =>
+            Statement.set orig (.fvar () id none))
+
+        return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes ++ assignLhs
       | _ => return [ .cmd cmd ]
 
 -- Visits top-level statements and do call elimination
