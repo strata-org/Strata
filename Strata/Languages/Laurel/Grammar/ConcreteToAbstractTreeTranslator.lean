@@ -308,7 +308,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
     -- Parse preconditions (requires clauses)
     let preconditions ← match requiresArg with
-      | .seq _ .none clauses => clauses.toList.mapM fun arg => match arg with
+      | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
           | .op reqOp => match reqOp.name, reqOp.args with
             | q`Laurel.requiresClause, #[exprArg] => translateStmtExpr exprArg
             | _, _ => TransM.error "Expected requiresClause"
@@ -316,7 +316,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | _ => pure []
     -- Parse postconditions (ensures clauses)
     let postconditions ← match ensuresArg with
-      | .seq _ .none clauses => clauses.toList.mapM fun arg => match arg with
+      | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
           | .op ensOp => match ensOp.name, ensOp.args with
             | q`Laurel.ensuresClause, #[exprArg] => translateStmtExpr exprArg
             | _, _ => TransM.error "Expected ensuresClause"

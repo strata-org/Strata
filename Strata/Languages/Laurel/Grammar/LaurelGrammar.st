@@ -78,10 +78,10 @@ op block (stmts : NewlineSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" indent(
 
 // While loops
 category InvariantClause;
-op invariantClause (cond: StmtExpr): InvariantClause => "\n  invariant " cond:0;
+op invariantClause (cond: StmtExpr): InvariantClause => "invariant " cond:0;
 
-op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
-  => "while" "(" cond ")" invariants body:0;
+op while (cond: StmtExpr, invariants: NewlineSepBy InvariantClause, body: StmtExpr): StmtExpr
+  => "while (" cond ")" indent(2, "\n" invariants) "\n" body:0;
 
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
@@ -99,10 +99,10 @@ category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
 category RequiresClause;
-op requiresClause(cond: StmtExpr): RequiresClause => "\n  requires " cond:0;
+op requiresClause(cond: StmtExpr): RequiresClause => "requires " cond:0;
 
 category EnsuresClause;
-op ensuresClause(cond: StmtExpr): EnsuresClause => "\n  ensures " cond:0;
+op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures " cond:0;
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "returns" "(" parameters ")";
@@ -111,10 +111,10 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Seq RequiresClause,
-  ensures: Seq EnsuresClause,
+  requires: NewlineSepBy RequiresClause,
+  ensures: NewlineSepBy EnsuresClause,
   body : StmtExpr) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires ensures "\n" body:0;
+  "procedure " name "(" parameters ")" returnType returnParameters indent(2, "\n" requires "\n" ensures) "\n" body:0;
 
 // Constrained types
 category ConstrainedType;

@@ -22,12 +22,11 @@ bool procedure trivial ()
 
 /--
 info: program C_Simp;
-(bool)proceduretrivial()//@pretrue;
-//@posttrue;
-  ({
-  returntrue;
+bool procedure trivial()//@pre true;
+//@post true;
+  {
+  return true;
   }
-  )
 -/
 #guard_msgs in
 #eval IO.println TrivialPgm
