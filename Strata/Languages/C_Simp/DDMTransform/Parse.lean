@@ -77,8 +77,8 @@ op block (stmts : NewlineSepBy Statement) : Block => "{" indent(2, "\n" stmts) "
 op init_decl (v : Ident, tp : Type) : Statement => "var " v ":" tp ";";
 
 category Else;
-op if_command (c : bool, t : Block, f : Else) : Statement => "if (" c ") " t f;
-op else1 (f : Block) : Else => "else " f;
+op if_command (c : bool, t : Block, f : Else) : Statement => "if" " (" c ") " t f;
+op else1 (f : Block) : Else => " else " f;
 op else0 () : Else =>;
 
 category Binding;
@@ -98,7 +98,7 @@ op invariant (e : bool) : InvariantCat => "//@invariant " e;
 op while_command (g : bool,
                   measure: Option MeasureCat,
                   invariant: Option InvariantCat,
-                  b : Block) : Statement => "while (" g ")\n" measure "\n" invariant "\n" b;
+                  b : Block) : Statement => "while" " (" g ")" "\n" measure "\n" invariant "\n" b;
 
 op assign (tp : Type, v : Ident, val : tp) : Statement => v " = " val ";";
 op return (tp: Type, e : tp) : Statement => "return " e ";";

@@ -55,7 +55,7 @@ category DeclList;
 @[scope(b)]
 op declAtom (b : Bind) : DeclList => b;
 @[scope(b)]
-op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl "," b;
+op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl ", " b;
 
 category MonoBind;
 @[declare(v, tp)]
@@ -67,7 +67,7 @@ category MonoDeclList;
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl "," b;
+  dl ", " b;
 
 fn not (b : bool) : bool => "!" b;
 
@@ -166,15 +166,15 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
 
 // Quantifiers without triggers
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>
-  "forall" d "::" b:3;
+  "forall " d "::" b:3;
 fn exists (d : DeclList, @[scope(d)] b : bool) : bool =>
-  "exists" d "::" b:3;
+  "exists " d "::" b:3;
 
 // Quantifiers with triggers
 fn forallT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "forall" d "::" triggers b:3;
+  "forall " d "::" triggers b:3;
 fn existsT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "exists" d "::" triggers b:3;
+  "exists " d "::" triggers b:3;
 
 category Lhs;
 op lhsIdent (v : Ident) : Lhs => v;
@@ -185,7 +185,7 @@ category Block;
 category Else;
 category Label;
 
-op label (l : Ident) : Label => "[" l "]:";
+op label (l : Ident) : Label => "[" l "]: ";
 
 @[scope(dl)]
 op varStatement (dl : DeclList) : Statement => "var " dl ";\n";

@@ -40,7 +40,7 @@ procedure caller() {
   assert x > 0;
   var y: int := noFunctionBecauseStatements();
     assert y == 4;
-//. ^^^^^^^^^^^^^^ error: assertion could not be proved
+//. ^^^^^^^^^^^^^^ error: assertion does not hold
 }
 "
 

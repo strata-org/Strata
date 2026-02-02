@@ -78,10 +78,10 @@ op block (stmts : NewlineSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" indent(
 
 // While loops
 category InvariantClause;
-op invariantClause (cond: StmtExpr): InvariantClause => "invariant " cond:0;
+op invariantClause (cond: StmtExpr): InvariantClause => "\n  invariant " cond:0;
 
-op while (cond: StmtExpr, invariants: NewlineSepBy InvariantClause, body: StmtExpr): StmtExpr
-  => "while (" cond ")" indent(2, "\n" invariants) "\n" body:0;
+op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
+  => "while" "(" cond ")" invariants body:0;
 
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;

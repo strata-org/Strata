@@ -633,7 +633,7 @@ info: B3: .binaryOp
     (.literal () (.boolLit () false))
     (.literal () (.boolLit () true)))
 ---
-info: true <== (false <== true)
+info: true <== false <== true
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check true <== (false <== true) #end
@@ -688,7 +688,7 @@ info: B3: .binaryOp
     (.literal () (.boolLit () false)))
   (.literal () (.boolLit () true))
 ---
-info: (true ==> false) ==> true
+info: true ==> false ==> true
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check (true ==> false) ==> true #end

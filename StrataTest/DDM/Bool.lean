@@ -45,7 +45,7 @@ print if true then false else true;
 #end
 
 /--
-info: "program TestBool;\nprint if true then false else (true);"
+info: "program TestBool;\nprint if true then false else true;"
 -/
 #guard_msgs in
 #eval toString testIfThenElse.format
@@ -57,7 +57,7 @@ print if true then if false then true else false else true;
 #end
 
 /--
-info: "program TestBool;\nprint if true then if false then true else (false) else (true);"
+info: "program TestBool;\nprint if true then if false then true else false else true;"
 -/
 #guard_msgs in
 #eval toString testNested.format

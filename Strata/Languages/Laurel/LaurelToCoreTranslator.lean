@@ -168,6 +168,9 @@ def translateUnaryOp (op : Operation) (e : Core.Expression.Expr) : Except String
   | .Neg => pure (.app () intNegOp e)
   | _ => throw s!"translateUnaryOp: unsupported {repr op}"
 
+def isHeapFunction (name : Identifier) : Bool :=
+  name == "heapRead" || name == "heapStore"
+
 /-- Translate simple expressions (for constraints - no quantifiers) -/
 partial def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExprMd) : Except String Core.Expression.Expr :=
   match expr.val with
@@ -343,7 +346,9 @@ partial def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
   | .StaticCall name args => do
       let normName := normalizeCallee name
       let fnTy := ftMap.get? normName
-      let fnOp := LExpr.op () (Core.CoreIdent.glob normName) fnTy
+      -- Use unres for heap functions since they're defined with unres visibility
+      let fnIdent := if isHeapFunction normName then Core.CoreIdent.unres normName else Core.CoreIdent.glob normName
+      let fnOp := LExpr.op () fnIdent fnTy
       let translatedArgs ← args.mapM (translateExpr ctMap tcMap ftMap env)
       let expandedArgs := expandArrayArgs env args translatedArgs
       pure (expandedArgs.foldl (fun acc a => .app () acc a) fnOp)
@@ -398,9 +403,6 @@ def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Except S
   | .TBool => pure (.const () (.boolConst false))
   | other => throw s!"No default value for type {repr other}"
 
-def isHeapFunction (name : Identifier) : Bool :=
-  name == "heapRead" || name == "heapStore"
-
 /-- Check if a StaticCall should be translated as an expression (not a procedure call) -/
 def isExpressionCall (callee : Identifier) : Bool :=
   let norm := normalizeCallee callee
@@ -411,6 +413,15 @@ Translate Laurel StmtExpr to Core Statements
 Takes the type environment, output parameter names, and postconditions to assert at returns
 -/
 partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (ftMap : FunctionTypeMap) (env : TypeEnv) (outputParams : List Parameter) (postconds : List (String × Core.Expression.Expr)) (stmt : StmtExprMd) : Except String (TypeEnv × List Core.Statement) :=
+  let mkReturnStmts (valueOpt : Option Core.Expression.Expr) : Except String (TypeEnv × List Core.Statement) := do
+    let postAsserts := postconds.map fun (label, expr) => Core.Statement.assert label expr stmt.md
+    let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) stmt.md
+    match valueOpt, outputParams.head? with
+    | some value, some outParam =>
+        let assignStmt := Core.Statement.set (Core.CoreIdent.locl outParam.name) value
+        pure (env, [assignStmt] ++ postAsserts ++ [noFallThrough])
+    | none, _ => pure (env, postAsserts ++ [noFallThrough])
+    | some _, none => throw "Return statement with value but procedure has no output parameters"
   match stmt.val with
   | .Assert cond => do
       let boogieExpr ← translateExpr ctMap tcMap ftMap env cond
@@ -496,22 +507,18 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
         let boogieArgs ← args.mapM (translateExpr ctMap tcMap ftMap env)
         pure (env, [Core.Statement.call [] name boogieArgs])
   | .Return valueOpt => do
-      -- Generate postcondition assertions before assuming false
-      let postAsserts := postconds.map fun (label, expr) =>
-        Core.Statement.assert label expr stmt.md
-      match valueOpt, outputParams.head? with
-      | some value, some outParam => do
-          let ident := Core.CoreIdent.locl outParam.name
+      match valueOpt with
+      | some value => do
           let boogieExpr ← translateExpr ctMap tcMap ftMap env value
-          let assignStmt := Core.Statement.set ident boogieExpr
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) stmt.md
-          pure (env, [assignStmt] ++ postAsserts ++ [noFallThrough])
-      | none, _ =>
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) stmt.md
-          pure (env, postAsserts ++ [noFallThrough])
-      | some _, none =>
-          throw "Return statement with value but procedure has no output parameters"
-  | _ => throw s!"translateStmt: unsupported {Std.Format.pretty (Std.ToFormat.format stmt.val)}"
+          mkReturnStmts (some boogieExpr)
+      | none => mkReturnStmts none
+  | _ =>
+      -- Expression-like statements: treat as implicit return if output param exists
+      match outputParams.head? with
+      | some _ => do
+          let boogieExpr ← translateExpr ctMap tcMap ftMap env stmt
+          mkReturnStmts (some boogieExpr)
+      | none => pure (env, [])  -- No output param - ignore expression result
 
 /--
 Translate Laurel Parameter to Core Signature entry

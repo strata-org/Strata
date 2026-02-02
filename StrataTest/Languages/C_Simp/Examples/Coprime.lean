@@ -37,24 +37,26 @@ bool procedure coprime (a: int, b: int)
 
 /--
 info: program C_Simp;
-(bool)procedurecoprime(a:int, b:int)//@pre((a)>(0))&&((b)>(0));
-//@posttrue;
-  ({
-  vari:int;
-  (i)=a;
-  if((b)<(a)){
-  (i)=b;
+bool procedure coprime(a:int, b:int)
+  //@pre a > 0 && b > 0;
+  //@post true;
+{
+  var i:int;
+  i = a;
+  if (b < a) {
+    i = b;
   }
-  ()while((i)>(1))
-  //@decreases(i)//@invariant(true)({
-  if((((b)%(i))==(0))&&(((a)%(i))==(0))){
-  returnfalse;
+  while (i > 1)
+  //@decreases i
+  //@invariant true
+  {
+    if (b % i == 0 && a % i == 0) {
+      return false;
+    }
+    i = i - 1;
   }
-  ()(i)=(i)-(1);
-  }
-  )returntrue;
-  }
-  )
+  return true;
+}
 -/
 #guard_msgs in
 #eval IO.println CoprimePgm
