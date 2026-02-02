@@ -91,7 +91,10 @@ private def generateUniqueLabel (pathConditions : PathConditions Expression)
     (baseLabel : String) : String :=
   let labels := pathConditions.flatten.map (fun (label, _) => label)
   if labels.contains baseLabel then
-    findUnique labels.mergeSort baseLabel 1
+    let newLabel := findUnique labels.mergeSort baseLabel 1
+    dbg_trace f!"⚠️ [addPathCondition] Label clash detected for \
+                {baseLabel}, using unique label {newLabel}."
+    newLabel
   else
     baseLabel
 

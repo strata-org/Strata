@@ -33,6 +33,30 @@ spec {
 
 
 /--
+info: [Strata.Core] Type checking succeeded.
+
+⚠️ [addPathCondition] Label clash detected for test, using unique label test_1.
+
+VCs:
+Label: after_double_internal
+Property: assert
+Assumptions:
+(test, ((~Int.Ge $__n0) #2))
+(test_1, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+((~Int.Ge ((~Int.Add $__n0) $__n0)) #4)
+
+Label: double_correct
+Property: assert
+Assumptions:
+(test, ((~Int.Ge $__n0) #2))
+(test_1, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+(((~Int.Add $__n0) $__n0) == ((~Int.Mul $__n0) #2))
+
+---
 info:
 Obligation: after_double_internal
 Property: assert
@@ -43,6 +67,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" duplicateAssumes (options := .quiet)
+#eval verify "cvc5" duplicateAssumes (options := .default)
 
 ---------------------------------------------------------------------
