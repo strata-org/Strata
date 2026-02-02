@@ -493,6 +493,83 @@ Proof Obligation:
 #guard_msgs in
 #eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format
 
+/--
+Test polymorphic funcDecl: declare a polymorphic function `choose` that takes a boolean
+and two values of type `a`, returning the first if true, second if false.
+Then use it with multiple concrete type instantiations (int and bool).
+
+The function has the `inline` attribute so its body gets expanded during evaluation,
+allowing us to verify that the function definition is actually being used.
+-/
+def testPolymorphicFuncDecl : List Statement :=
+  let chooseFunc : PureFunc Expression := {
+    name := CoreIdent.unres "choose",
+    typeArgs := ["a"],  -- Polymorphic type parameter
+    isConstr := false,
+    inputs := [
+      (CoreIdent.unres "cond", .forAll [] .bool),
+      (CoreIdent.unres "x", .forAll [] (.ftvar "a")),
+      (CoreIdent.unres "y", .forAll [] (.ftvar "a"))
+    ],
+    output := .forAll [] (.ftvar "a"),
+    body := some eb[(if cond then x else y)],
+    attr := #["inline"],  -- Enable inlining so body is expanded during evaluation
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .funcDecl chooseFunc,
+    -- Use with int type (curried application)
+    .init "intResult" t[int] eb[(((~choose #true) #1) #2)],
+    .assert "intResult_eq_1" eb[intResult == #1],
+    -- Use with bool type (curried application)
+    .init "boolResult" t[bool] eb[(((~choose #false) #true) #false)],
+    .assert "boolResult_eq_false" eb[boolResult == #false]
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(intResult : int) → #1
+(boolResult : bool) → #false]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+@[#[inline]]
+func choose : ∀[a]. ((cond : bool) (x : a) (y : a)) → a :=
+  ((if cond then x else y))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: intResult_eq_1
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+
+Label: boolResult_eq_false
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |>.snd |> format
+
 end Tests
 ---------------------------------------------------------------------
 end Core
