@@ -31,22 +31,22 @@ int procedure simpleTest (x: int, y: int)
 
 /--
 info: program C_Simp;
-(int)proceduresimpleTest(x:int, y:int)//@pre(y)>(0);
-//@posttrue;
-  ({
-  varz:int;
-  (z)=(x)+(y);
-  //@assert [test_assert](z)>(x);
-  if((z)>(10)){
-  (z)=(z)-(1);
+int procedure simpleTest(x:int, y:int)
+//@pre y > 0;
+//@post true;
+  {
+  var z:int;
+  z = x + y;
+  //@assert [test_assert] z > x;
+  if (z > 10) {
+  z = z - 1;
   }
-  (else({
-  (z)=(z)+(1);
+  else {
+  z = z + 1;
   }
-  ))//@assume [test_assume](z)>(0);
-  return0;
+  //@assume [test_assume] z > 0;
+  return 0;
   }
-  )
 -/
 #guard_msgs in
 #eval IO.println SimpleTestEnv

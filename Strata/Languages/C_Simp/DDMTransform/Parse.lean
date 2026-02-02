@@ -90,15 +90,15 @@ category Bindings;
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => "(" bindings ")";
 
 category MeasureCat;
-op measure (e : int) : MeasureCat => "//@decreases" e;
+op measure (e : int) : MeasureCat => "//@decreases " e;
 
 category InvariantCat;
-op invariant (e : bool) : InvariantCat => "//@invariant" e;
+op invariant (e : bool) : InvariantCat => "//@invariant " e;
 
 op while_command (g : bool,
                   measure: Option MeasureCat,
                   invariant: Option InvariantCat,
-                  b : Block) : Statement => "while (" g ")\n" measure invariant b;
+                  b : Block) : Statement => "while (" g ")\n" measure "\n" invariant "\n" b;
 
 op assign (tp : Type, v : Ident, val : tp) : Statement => v " = " val ";\n";
 op return (tp: Type, e : tp) : Statement => "return " e ";\n";
