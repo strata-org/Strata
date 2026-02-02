@@ -21,7 +21,9 @@ category FieldDecl;
 
 op mkFieldDecl(name : Ident, fieldType : SpecType) : FieldDecl => name " : " fieldType;
 
+op typeIdentNoArgs (x : Ident) : SpecType => "ident" "(" x ")";
 op typeIdent (x : Ident, y : CommaSepBy SpecType) : SpecType => "ident" "(" x ", " y ")";
+op typeClassNoArgs (x : Ident) : SpecType => "class" "(" x ")";
 op typeClass (x : Ident, y : CommaSepBy SpecType) : SpecType => "class" "(" x ", " y ")";
 op typeIntLiteral (x : Int) : SpecType => x;
 op typeStringLiteral (x : Str) : SpecType => x;
@@ -31,8 +33,8 @@ op typeTypedDict (fields : CommaSepBy FieldDecl, isTotal : Bool): SpecType =>
   "dict" "(" fields ")" "[" "isTotal" "=" isTotal "]";
 
 category ArgDecl;
-op mkArgDecl (name : Str, argType : SpecType, hasDefault : Bool) : ArgDecl =>
-  name " : " argType " (" "hasDefault" ": " hasDefault ")";
+op mkArgDecl (name : Ident, argType : SpecType, hasDefault : Bool) : ArgDecl =>
+  name " : " argType " [" "hasDefault" ": " hasDefault "]\n";
 
 category FunDecl;
 op mkFunDecl (name : Str,
@@ -42,11 +44,15 @@ op mkFunDecl (name : Str,
               isOverload : Bool) : FunDecl =>
   "function " name "{\n"
   indent(2,
-    "args" ": " args "\n"
-    "kwonly" ": " kwonly "\n"
+    "args" ": " "[ \n"
+    indent(2, args)
+    "]\n"
+    "kwonly" ": " "[ \n"
+    indent(2, kwonly)
+    "]\n"
     "return" ": " returnType "\n"
     "overload" ": " isOverload "\n")
-  "}";
+  "}\n";
 
 op externTypeDecl (name : Ident, source : Ident) : Command =>
   "extern " name " from " source ";";
@@ -82,8 +88,16 @@ mutual
 
 def SpecAtomType.toDDM (d : SpecAtomType) : DDM.SpecType SourceRange :=
   match d with
-  | .ident nm args => .typeIdent .none nm.toDDM ⟨.none, args.map (·.toDDM)⟩
-  | .pyClass name args => .typeClass .none ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
+  | .ident nm args =>
+    if args.isEmpty then
+      .typeIdentNoArgs .none nm.toDDM
+    else
+      .typeIdent .none nm.toDDM ⟨.none, args.map (·.toDDM)⟩
+  | .pyClass name args =>
+    if args.isEmpty then
+      .typeClassNoArgs .none ⟨.none, name⟩
+    else
+      .typeClass .none ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
   | .intLiteral i => .typeIntLiteral .none (toDDMInt .none i)
   | .stringLiteral v => .typeStringLiteral .none ⟨.none, v⟩
   | .noneType => .typeNoneType .none
@@ -136,9 +150,16 @@ def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
 
 def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
+  | .typeClassNoArgs _ ⟨_, cl⟩ =>
+    .ofAtom <| .pyClass cl #[]
   | .typeClass _ ⟨_, cl⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
     .ofAtom <| .pyClass cl a
+  | .typeIdentNoArgs _ ⟨_, ident⟩ =>
+    if let some pyIdent := PythonIdent.ofString ident then
+      .ident pyIdent #[]
+    else
+      panic! "Bad identifier"
   | .typeIdent _ ⟨_, ident⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
     if let some pyIdent := PythonIdent.ofString ident then
@@ -232,13 +253,15 @@ def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
     | .error msg => throw msg
   | .error msg => throw msg
 
-def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
-  let pgm : Strata.Program := {
+def toDDMProgram (sigs : Array Signature) : Strata.Program := {
     dialects := DDM.PythonSpecs_map
     dialect := DDM.PythonSpecs.name
     commands := sigs.map fun s => s.toDDM.toAst
   }
-  IO.FS.writeBinFile path pgm.toIon
+
+def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
+  let pgm := toDDMProgram sigs
+  IO.FS.writeBinFile path <| pgm.toIon
 
 
 end Strata.Python.Specs

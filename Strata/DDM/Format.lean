@@ -73,7 +73,7 @@ deriving Inhabited
 
 namespace PrecFormat
 
-private def atom (format : Format) : PrecFormat := { format, prec := maxPrec }
+private def atom (format : Format) : PrecFormat := { format, prec := maxPrec + 1 }
 
 private def ofFormat {α} [Std.ToFormat α] (x : α) (prec : Nat := maxPrec) : PrecFormat := { format := Std.format x, prec }
 

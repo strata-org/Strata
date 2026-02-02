@@ -54,7 +54,6 @@ def pythonToStrata (dialectFile pythonFile : System.FilePath)
     | .ok p => pure p
     | .error msg =>
       throw s!"Cannot create temporary file: {msg}"
-  let _ ← IO.println s!"Running {pythonCmd}" |>.toBaseIO
   try
     let spawnArgs : IO.Process.SpawnArgs := {
         cmd := pythonCmd
