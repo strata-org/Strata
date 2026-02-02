@@ -6,16 +6,29 @@
 import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.ReadPython
 import Strata.DDM.Util.Fin
+import Strata.Util.DecideProp
 
 namespace Strata.Python.Specs
 
-def decideProp (p : Prop) [h : Decidable p] : Decidable p := h
-
+/-- String identifier for event types. -/
 abbrev EventType := String
+
+/-- Event type for module imports. -/
 def importEvent : EventType := "import"
 
+/--
+Set of event types to log to stderr. Test code can modify this to
+enable/disable logging.
+-/
+initialize stdoutEventsRef : IO.Ref (Std.HashSet EventType) ← IO.mkRef {}
+
+/--
+Log message for event type if enabled in `stdoutEventsRef`.
+Output format: `[event]: message`
+-/
 def logEvent (event : EventType) (message : String) : BaseIO Unit := do
-  if event = importEvent then
+  let events ← stdoutEventsRef.get
+  if event ∈ events then
     let _ ← IO.eprintln s!"[{event}]: {message}" |>.toBaseIO
   pure ()
 
@@ -32,8 +45,6 @@ end Pred
 
 inductive Iterable where
 | list
-
-
 
 structure SpecError where
   file : System.FilePath
