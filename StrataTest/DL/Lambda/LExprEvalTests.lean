@@ -244,7 +244,7 @@ private def testBuiltIn : @Factory TestParams :=
                               | _ => .none) },
 
     { name := "IntAddAlias",
-      attr := #["inline"],
+      attr := #[inline_attr],
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
       body := some esM[((~Int.Add x) y)]

@@ -1235,7 +1235,7 @@ def translateOptionInline (arg : Arg) : TransM (Array String) := do
   match inline with
   | some f =>
     let _ ← checkOpArg f q`Core.inline 0
-    return #["inline"]
+    return #[inline_attr]
   | none => return #[]
 
 def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :

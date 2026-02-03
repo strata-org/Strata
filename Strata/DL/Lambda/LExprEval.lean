@@ -155,8 +155,8 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
       | some (op_expr, args, lfunc) =>
         let args := args.map (fun a => eval n' σ a)
         let firstArgIsConstr := (args.head?.map (isConstrApp σ.config.factory)).getD false
-        if h: lfunc.body.isSome && ("inline" ∈ lfunc.attr ||
-          ("inline_if_constr" ∈ lfunc.attr && firstArgIsConstr)) then
+        if h: lfunc.body.isSome && (inline_attr ∈ lfunc.attr ||
+          (inline_if_constr_attr ∈ lfunc.attr && firstArgIsConstr)) then
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           let input_map := lfunc.inputs.keys.zip args
@@ -168,7 +168,7 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
-            ("eval_if_constr" ∈ lfunc.attr && firstArgIsConstr) then
+            (eval_if_constr_attr ∈ lfunc.attr && firstArgIsConstr) then
             -- Other functions (e.g. Eliminators) only require the first arg
             -- to be a constructor
             match lfunc.concreteEval with
