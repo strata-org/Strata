@@ -348,7 +348,6 @@ def Statement.substFvar (s : Core.Statement)
           metadata
   | .goto _ _ => s
   termination_by s.sizeOf
-  decreasing_by all_goals(simp_wf; try omega)
 end
 
 ---------------------------------------------------------------------

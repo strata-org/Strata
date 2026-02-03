@@ -52,8 +52,8 @@ procedure Q2() returns () {
 #end
 
 /--
-info: { callees := Std.HashMap.ofList [("Inc", []), ("Q2", ["Q1"]), ("P", ["Inc"]), ("Q1", [])],
-  callers := Std.HashMap.ofList [("Inc", ["P"]), ("Q1", ["Q2"])] }
+info: { callees := Std.HashMap.ofList [("Inc", []), ("Q2", [("Q1", 1)]), ("P", [("Inc", 2)]), ("Q1", [])],
+  callers := Std.HashMap.ofList [("Inc", [("P", 2)]), ("Q1", [("Q2", 1)])] }
 -/
 #guard_msgs in
 #eval let (program, _) := Core.getProgram globalCounterPgm

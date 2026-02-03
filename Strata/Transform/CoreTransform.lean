@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Statement
+import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.Core
 import Strata.Languages.Core.CoreGen
 import Strata.DL.Util.LabelGen
@@ -76,9 +77,43 @@ def genOldExprIdents (idents : List Expression.Ident)
 def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
   (p.find? .var ident).isSome
 
+
+/-- Cached results of program analyses that are helpful for program
+    transformation. -/
+structure CachedAnalyses where
+  callGraph: Option CallGraph := .none
+
+@[simp]
+def CachedAnalyses.emp : CachedAnalyses := {}
+
+/-- Define the state of transformation in Strata Core.
+  It is a pair of
+  (fresh variable state (CoreGenState), a set of cached analysis).
+  It is the duty of the transformation to keep the analysis correct after
+  transformation, or one should simply drop the cached result.
+-/
+structure CoreTransformState where
+  genState: CoreGenState
+  cachedAnalyses: CachedAnalyses
+
+@[simp]
+def CoreTransformState.emp : CoreTransformState :=
+  { genState := .emp, cachedAnalyses := .emp }
+
 abbrev Err := String
 
-abbrev CoreTransformM := ExceptT Err CoreGenM
+abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
+
+/-- A lifter from CoreGenM to (StateM CoreTransformState) -/
+def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α :=
+  fun coreTransformState =>
+    let res := cgm coreTransformState.genState
+    (res.1, {
+      genState := res.2,
+      cachedAnalyses := coreTransformState.cachedAnalyses })
+
+instance : MonadLift CoreGenM (StateM CoreTransformState) where
+  monadLift := liftCoreGenM
 
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
 
@@ -253,13 +288,13 @@ def runProgram (f : Command → Program → CoreTransformM (List Statement))
 
 @[simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)
-    (s : CoreGenState):
-  Except Err β × CoreGenState :=
+    (s : CoreTransformState):
+  Except Err β × CoreTransformState :=
   (StateT.run (f p) s)
 
 @[simp]
 def run {α : Type} (p : α) (f : α → CoreTransformM β)
-      (s : CoreGenState := .emp):
+      (s : CoreTransformState := .emp):
   Except Err β :=
   (runWith p f s).fst
 

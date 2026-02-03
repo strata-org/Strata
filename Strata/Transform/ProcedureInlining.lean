@@ -20,46 +20,6 @@ namespace ProcedureInlining
 open Transform
 
 mutual
-def Block.substFvar (b : Block) (fr:Expression.Ident)
-      (to:Expression.Expr) : Block :=
-  List.map (fun s => Statement.substFvar s fr to) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
-
-def Statement.substFvar (s : Core.Statement)
-      (fr:Expression.Ident)
-      (to:Expression.Expr) : Statement :=
-  match s with
-  | .init lhs ty rhs metadata =>
-    .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
-  | .set lhs rhs metadata =>
-    .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
-  | .havoc _ _ => s
-  | .assert lbl b metadata =>
-    .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .assume lbl b metadata =>
-    .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .cover lbl b metadata =>
-    .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .call lhs pname args metadata =>
-    .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
-
-  | .block lbl b metadata =>
-    .block lbl (Block.substFvar b fr to) metadata
-  | .ite cond thenb elseb metadata =>
-    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
-          (Block.substFvar elseb fr to) metadata
-  | .loop guard measure invariant body metadata =>
-    .loop (Lambda.LExpr.substFvar guard fr to)
-          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
-          (Block.substFvar body fr to)
-          metadata
-  | .goto _ _ => s
-  termination_by s.sizeOf
-end
-
-mutual
 def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
   termination_by b.sizeOf
@@ -196,14 +156,16 @@ This function does not update the specification because inlineCallStmt will not
 use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
-def inlineCallCmd (excluded_calls:List String := [])
-                  (cmd: Command) (p : Program)
+def inlineCallCmd
+    (doInline:String -> CachedAnalyses -> Bool := λ _ _ => true)
+    (cmd: Command) (p : Program)
   : CoreTransformM (List Statement) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args _ =>
 
-        if procName ∈ excluded_calls then return [.cmd cmd] else
+        let st ← get
+        if ¬ doInline procName st.cachedAnalyses then return [.cmd cmd] else
 
         let some proc := Program.Procedure.find? p procName
           | throw s!"Procedure {procName} not found in program"
@@ -259,14 +221,6 @@ def inlineCallCmd (excluded_calls:List String := [])
         return [.block (procName ++ "$inlined") stmts]
 
       | _ => return [.cmd cmd]
-
-def inlineCallStmtsRec (ss: List Statement) (prog : Program)
-  : CoreTransformM (List Statement) :=
-  runStmtsRec inlineCallCmd ss prog
-
-def inlineCallL (dcls : List Decl) (prog : Program)
-  : CoreTransformM (List Decl) :=
-  runProcedures inlineCallCmd dcls prog
 
 end ProcedureInlining
 end Core

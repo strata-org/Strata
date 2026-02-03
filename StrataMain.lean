@@ -209,7 +209,8 @@ def pyAnalyzeCommand : Command where
     if verbose then
       IO.print newPgm
     match Core.Transform.runProgram
-          (Core.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
+          (Core.ProcedureInlining.inlineCallCmd
+            (doInline := λ name _ => name ≠ "main"))
           newPgm .emp with
     | ⟨.error e, _⟩ => panic! e
     | ⟨.ok newPgm, _⟩ =>
