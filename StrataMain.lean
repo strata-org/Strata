@@ -179,7 +179,7 @@ def readPythonStrata (strataPath : String) : IO Strata.Program := do
 def pySpecsCommand : Command where
   name := "pySpecs"
   args := [ "python_path", "strata_path" ]
-  help := "Translate a Python specification source file into binary pySpec file."
+  help := "Experimental command to translate a Python specification source file."
   callback := fun _ v => do
     let dialectFile := "Tools/Python/dialects/Python.dialect.st.ion"
     let pythonFile : System.FilePath := v[0]
