@@ -90,7 +90,7 @@ def testCase : IO Unit := do
   if not (← pythonCheckModule pythonCmd "strata.gen") then
     -- We may skip tests if stratal.gen is not available.
     if ← pythonTestRequired then
-      throw <| .userError "Python Strata libraries not installed."
+      throw <| .userError "Python Strata libraries not installed in {pythonCmd}."
     return ()
   let dialectFile : System.FilePath := "Tools/Python/dialects/Python.dialect.st.ion"
   let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/main.py"
