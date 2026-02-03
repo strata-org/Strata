@@ -408,10 +408,20 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
 
 def verify (smtsolver : String) (program : Program)
     (tempDir : System.FilePath)
+    (proceduresToVerify : Option (List String) := none)
     (options : Options := Options.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO DiagnosticModel VCResults := do
-  match Core.typeCheckAndPartialEval options program moreFns with
+  let finalProgram ← match proceduresToVerify with
+    | none => .ok program  -- Verify all procedures (default).
+    | some procs =>
+       -- Verify specific procedures. By default, we apply the call elimination
+       -- transform to the targeted procedures to inline the contracts of any
+       -- callees.
+      match program.filterProcedures procs (transform := CallElim.callElim') with
+      | .ok prog => .ok prog
+      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+  match Core.typeCheckAndPartialEval options finalProgram moreFns with
   | .error err =>
     .error { err with message := s!"❌ Type checking error.\n{err.message}" }
   | .ok pEs =>
@@ -448,16 +458,16 @@ def Core.getProgram
 def verify
     (smtsolver : String) (env : Program)
     (ictx : InputContext := Inhabited.default)
+    (proceduresToVerify : Option (List String) := none)
     (options : Options := Options.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (tempDir : Option String := .none)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
-    -- dbg_trace f!"AST: {program}"
     let runner tempDir :=
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-                  (Core.verify smtsolver program tempDir options moreFns)
+                  (Core.verify smtsolver program tempDir proceduresToVerify options moreFns)
     match tempDir with
     | .none =>
       IO.FS.withTempDir runner
