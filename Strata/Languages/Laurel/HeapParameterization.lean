@@ -40,8 +40,8 @@ structure AnalysisResult where
   writesHeapDirectly : Bool := false
   callees : List Identifier := []
 
-partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
-  match expr with
+def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
+  match _: expr with
   | .FieldSelect target _ =>
       modify fun s => { s with readsHeapDirectly := true }; collectExpr target
   | .InstanceCall target _ args => collectExpr target; for a in args do collectExpr a
@@ -51,14 +51,15 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .LocalVariable _ _ i => if let some x := i then collectExpr x
   | .While c i d b => collectExpr c; collectExpr b; if let some x := i then collectExpr x; if let some x := d then collectExpr x
   | .Return v => if let some x := v then collectExpr x
-  | .Assign targets v _ =>
+  | .Assign assignTargets v _ =>
       -- Check if any target is a field assignment (heap write)
-      for t in targets do
-        match t with
-        | .FieldSelect target _ =>
+      for ⟨assignTarget, ht⟩ in assignTargets.attach do
+        match teq: assignTarget with
+        | .FieldSelect selectTarget _ =>
             modify fun s => { s with writesHeapDirectly := true }
-            collectExpr target
-        | _ => collectExpr t
+            have h: sizeOf selectTarget < sizeOf assignTargets := by (have := List.sizeOf_lt_of_mem ht; simp_all; try omega)
+            collectExpr selectTarget
+        | _ => collectExpr assignTarget
       collectExpr v
   | .PureFieldUpdate t _ v => collectExpr t; collectExpr v
   | .PrimitiveOp _ args => for a in args do collectExpr a
@@ -75,6 +76,12 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ProveBy v p => collectExpr v; collectExpr p
   | .ContractOf _ f => collectExpr f
   | _ => pure ()
+  decreasing_by
+    all_goals (simp_wf; try omega)
+    all_goals (try subst_vars; try (rename_i x_in; have := List.sizeOf_lt_of_mem x_in); omega)
+
+
+
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
