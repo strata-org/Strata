@@ -283,28 +283,10 @@ def test9 := TestCase.mk
 #guard_msgs in
 #eval check test9
 
--- Note: this case diverges from concrete evaluator, because 'x' is not a
--- canonical value! Small step reduces only when the arguments are values,
--- to avoid nondeterminism in the small-step semantics (unless this becomes
--- explicitly allowed in the future).
-example: stuck test9 := by
-  intro e H; cases H
-  case reduce_2 => contradiction
-  case reduce_1 => contradiction
-  case expand_fn =>
-    rename_i Hlfunc Hfv
-    conv at Hlfunc => lhs; reduce
-    cases Hlfunc
-    rename_i Hconst Htmp
-    conv at Hconst => lhs; reduce; unfold isCanonicalValue; reduce
-    contradiction
-  case eval_fn =>
-    rename_i Hlfunc _
-    conv at Hlfunc => lhs; reduce
-    cases Hlfunc
-    rename_i Hconst Htmp
-    conv at Hconst => lhs; reduce; unfold isCanonicalValue; reduce
-    contradiction
+example: steps_well test9 := by
+  unfold steps_well Scopes.toEnv test9
+  take_step; apply Step.expand_fn <;> discharge_isCanonicalValue
+  take_refl
 
 
 -- A sanity check that confirms the parse tree of λλ x y
@@ -426,19 +408,17 @@ example: stuck test15 := by
     cases a <;> try contradiction
     · rename_i a a2 _
       cases a2; cases a
-    · rename_i a a2 a3 _
+    · rename_i a a2 a3 he2
       cases a3
-      conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
-      contradiction
+      cases a2; unfold denoteInt at he2; contradiction
   case expand_fn =>
     rename_i a a2 a3
     cases a2
     contradiction
   case eval_fn =>
-    rename_i a a2 a3 _
+    rename_i a a2 a3 he
     cases a3
-    conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
-    contradiction
+    cases a2; unfold denoteInt at he; contradiction
 
 
 def test16 := TestCase.mk
@@ -463,10 +443,9 @@ example: stuck test16 := by
     cases a2
     contradiction
   case eval_fn =>
-    rename_i a a2 a3 _
+    rename_i a a2 a3 he
     cases a3
-    conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
-    contradiction
+    cases a2; unfold denoteInt at he; contradiction
 
 
 def test17 := TestCase.mk
@@ -530,8 +509,7 @@ example: steps_well test19 := by
       · inhabited_metadata
   take_step
   · apply Step.eval_fn <;> try rfl
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-    · inhabited_metadata
+    . inhabited_metadata
   take_refl
 
 
