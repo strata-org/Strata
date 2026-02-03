@@ -117,24 +117,23 @@ as `ite x (λ.e1) (λ.e2)`.  -/
 /-- Evaluate a built-in function when a body expression is available in the
 `Factory` argument `F`. This is consistent with what `LExpr.eval` does (modulo
 the `inline` flag). Note that it might also be possible to evaluate with
-`eval_fn`. A key correctnes property is that doing so will yield the same
-result. -/
+`eval_fn`. A key correctness property is that doing so will yield the same
+result. Note that this rule does not enforce an evaluation order. -/
 | expand_fn:
   ∀ (e callee fnbody new_body:LExpr Tbase.mono) args fn,
     F.callOfLFunc e = .some (callee,args,fn) →
-    args.all (LExpr.isCanonicalValue F) →
     fn.body = .some fnbody →
     new_body = LExpr.substFvars fnbody (fn.inputs.keys.zip args) →
     Step F rf e new_body
 
 /-- Evaluate a built-in function when a concrete evaluation function is
 available in the `Factory` argument `F`.  Note that it might also be possible to
-evaluate with `expand_fn`. A key correctnes property is that doing so will yield
-the same result. -/
+evaluate with `expand_fn`. A key correctness property is that doing so will
+yield the same result. Note that this rule does not enforce an evaluation
+order. -/
 | eval_fn:
   ∀ (e callee e':LExpr Tbase.mono) args fn denotefn,
     F.callOfLFunc e = .some (callee,args,fn) →
-    args.all (LExpr.isCanonicalValue F) →
     fn.concreteEval = .some denotefn →
     .some e' = denotefn m args →
     Step F rf e e'
