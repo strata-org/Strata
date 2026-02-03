@@ -2085,10 +2085,8 @@ theorem EvalStmtRefinesContract :
   | ite_false_sem Hdef Hwf Heval =>
     apply EvalStmt.ite_false_sem <;> try assumption
     apply EvalBlockRefinesContract <;> assumption
-  | funcDecl_sem =>
-    -- funcDecl_sem requires extendEval parameter which is existentially quantified
-    -- in the hypothesis but needs to be provided explicitly for the conclusion
-    sorry
+  | funcDecl_sem extendEval =>
+    exact EvalStmt.funcDecl_sem extendEval
 
 /-- Currently we cannot prove this theorem,
     since the WellFormedSemanticEval definition does not assert
