@@ -15,7 +15,44 @@ namespace Strata
 
 ---------------------------------------------------------------------
 
-/- Conversion between CoreCST and CoreAST -/
+/- 
+Bidirectional conversion between CoreCST and CoreAST
+
+This module provides conversion functions between the concrete syntax tree (CST)
+and abstract syntax tree (AST) representations of Strata Core programs.
+
+Key components:
+- Name resolution: Converting identifiers to de Bruijn indices
+- Name generation: Converting de Bruijn indices back to identifiers  
+- Context management: Tracking variable bindings and scopes
+- Error handling: Comprehensive error types for conversion failures
+
+Conversion process:
+1. CST → AST: Resolve all identifiers to de Bruijn indices using NameContext
+2. AST → CST: Generate fresh names for de Bruijn indices using GenContext
+3. Round-trip: CST → AST → CST should preserve semantics
+
+Error handling:
+- CSTToASTError: Unresolved identifiers, type mismatches, unsupported constructs
+- ASTToCSTError: Out-of-bounds indices, invalid metadata, unsupported constructs
+
+Context management:
+- NameContext: Maintains list of bound variables for name resolution
+- GenContext: Generates fresh names and tracks naming state
+
+Example usage:
+```lean
+let cst := CoreCSTDDM.Statement.var_decl ⟨"x"⟩ (.builtin "int")
+let ast_result := cstToAST cst  -- Result: var_decl(int)
+let cst_result := ast_result >>= astToCST  -- Result: var_decl ⟨"x0"⟩ (.builtin "int")
+```
+
+Current limitations:
+- Function calls not fully implemented
+- Complex expressions (quantifiers, let) need more work
+- Declaration conversions are placeholders
+- Metadata handling is basic
+-/
 
 -- Error types for conversion
 inductive CSTToASTError

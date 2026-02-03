@@ -14,7 +14,38 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
-/- DDM support for abstract syntax with de Bruijn indices for Strata Core -/
+/- 
+DDM support for abstract syntax with de Bruijn indices for Strata Core
+
+This module defines an abstract syntax tree (AST) dialect for Strata Core
+that uses canonical forms and de Bruijn indices for variable binding.
+The AST is designed to be the target of conversion from concrete syntax
+and the source for conversion to Core.Statement.
+
+Key features:
+- De Bruijn indices for all variable references
+- Canonical forms (no syntactic sugar)
+- Explicit binding structure for quantifiers and let expressions
+- Metadata transformation support
+
+Design principles:
+- Variables are represented as de Bruijn indices (#0, #1, etc.)
+- All operators use prefix notation for consistency
+- No syntactic sugar (e.g., no infix operators in AST)
+- Explicit type information where needed
+- Metadata can be transformed via mapMetadata functions
+
+Example AST representation:
+```
+var_decl_init(int, nat_lit(42))     // var x : int := 42
+assign(#0, add(var_ref(#0), nat_lit(1)))  // x := x + 1
+assert(gt(var_ref(#0), nat_lit(0)))       // assert x > 0
+```
+
+The AST is designed to be easily convertible to/from concrete syntax
+while maintaining precise binding information and canonical forms
+suitable for analysis and transformation.
+-/
 
 #dialect
 dialect CoreAST;

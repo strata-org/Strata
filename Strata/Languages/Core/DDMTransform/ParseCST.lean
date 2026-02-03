@@ -14,7 +14,41 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
-/- DDM support for B3-like concrete syntax for Strata Core -/
+/- 
+DDM support for B3-like concrete syntax for Strata Core
+
+This module defines a concrete syntax tree (CST) dialect for Strata Core
+that closely follows B3 syntax conventions. The dialect includes:
+
+- Expression syntax with B3-like operators and precedence
+- Statement syntax without semicolons (like B3)
+- Function declarations (without when/injective/taggers)
+- Datatype declarations (matching Strata Core syntax)
+- Type declarations
+
+Key features:
+- Almost a superset of B3 (except no axioms, only assumes)
+- No semicolons required
+- Support for quantifiers with patterns
+- Labeled expressions and statements
+- Choice and forall statements
+
+Limitations:
+- No axiom statements (only assume statements)
+- No procedure declarations yet (will be added later)
+- Function calls are basic (no complex argument patterns)
+
+Example syntax:
+```
+var x : int := 42
+assume x > 0
+assert x != 0
+if (x > 10) {
+  var y : int := x * 2
+  assert y > 20
+}
+```
+-/
 
 #dialect
 dialect CoreCST;
