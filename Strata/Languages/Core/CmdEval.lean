@@ -75,25 +75,20 @@ def addWarning (E : Env) (w : EvalWarning Expression) : Env :=
 def getPathConditions (E : Env) : PathConditions Expression :=
   E.pathConditions
 
-private def findUnique (xs : List String) (label : String) (counter : Nat)
-    : String :=
-  let xs := xs.mergeSort
-  go xs label counter
-  where go xs label counter :=
+private def findUnique (xs : List String) (label : String) (counter : Nat) : String :=
   let candidate := s!"{label}_{counter}"
-  match xs with
-  | [] => candidate
-  | y :: ys =>
-    if y == candidate then
-      go ys label (counter + 1)
-    else
-      go ys label counter
+  if h : xs.contains candidate then
+    have : (xs.erase candidate).length < xs.length := by grind
+    findUnique (xs.erase candidate) label (counter + 1)
+  else
+    candidate
+  termination_by xs.length
 
 private def generateUniqueLabel (pathConditions : PathConditions Expression)
     (baseLabel : String) : String :=
   let labels := pathConditions.flatten.map (fun (label, _) => label)
   if labels.contains baseLabel then
-    let newLabel := findUnique labels baseLabel 1
+    let newLabel := findUnique labels baseLabel 0
     dbg_trace f!"⚠️ [addPathCondition] Label clash detected for \
                 {baseLabel}, using unique label {newLabel}."
     newLabel
