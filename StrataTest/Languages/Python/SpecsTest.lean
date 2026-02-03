@@ -75,7 +75,7 @@ function "main_function"{
 -- We use an environment variable to allow the build process
 -- to require the Python test is run.
 def pythonTestRequired : IO Bool :=
-  return (← IO.getEnv "PYTHON_TEST").isSome || true
+  return (← IO.getEnv "PYTHON_TEST").isSome
 
 def testCase : IO Unit := do
   let pythonCmd ←
