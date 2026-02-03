@@ -170,9 +170,7 @@ where
         | none => addFieldConstant fieldName .TInt
         return .StaticCall "heapRead" [.Identifier heapVar, ← recurse selectTarget, .Identifier fieldName]
     | .StaticCall callee args =>
-        let mut args' := []
-        for ⟨a, _⟩ in args.attach do
-          args' := args' ++ [← recurse a]
+        let args' ← args.mapM recurse
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -192,21 +190,23 @@ where
           return .StaticCall callee args'
     | .InstanceCall callTarget callee args =>
         let t ← recurse callTarget
-        let mut args' := []
-        for ⟨a, _⟩ in args.attach do
-          args' := args' ++ [← recurse a]
+        let args' ← args.mapM recurse
         return .InstanceCall t callee args'
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
         return .IfThenElse (← recurse c) (← recurse t valueUsed) e'
     | .Block stmts label =>
         let n := stmts.length
-        let mut stmts' := []
-        let mut idx := 0
-        for ⟨s, _⟩ in stmts.attach do
-          let isLast := idx == n - 1
-          stmts' := stmts' ++ [← recurse s (isLast && valueUsed)]
-          idx := idx + 1
+        let rec processStmts (idx : Nat) (remaining : List StmtExpr) : TransformM (List StmtExpr) := do
+          match remaining with
+          | [] => pure []
+          | s :: rest =>
+              let isLast := idx == n - 1
+              let s' ← recurse s (isLast && valueUsed)
+              let rest' ← processStmts (idx + 1) rest
+              pure (s' :: rest')
+        termination_by SizeOf.sizeOf remaining
+        let stmts' ← processStmts 0 stmts
         return .Block stmts' label
     | .LocalVariable n ty i =>
         let i' ← match i with | some x => some <$> recurse x | none => pure none
@@ -236,17 +236,12 @@ where
             return .Assign [] (← recurse v) md
         | tgt :: rest =>
             let tgt' ← recurse tgt
-            let mut targets' := [tgt']
-            for ⟨t, h_in⟩ in rest.attach do
-              have _h : sizeOf t < sizeOf rest := List.sizeOf_lt_of_mem h_in
-              targets' := targets' ++ [← recurse t]
-            return .Assign targets' (← recurse v) md
+            let targets' ← rest.mapM recurse
+            return .Assign (tgt' :: targets') (← recurse v) md
     | .PureFieldUpdate t f v => return .PureFieldUpdate (← recurse t) f (← recurse v)
     | .PrimitiveOp op args =>
-        let mut args' := []
-        for ⟨a, _⟩ in args.attach do
-          args' := args' ++ [← recurse a]
-        return .PrimitiveOp op args'
+      let args' ← args.mapM recurse
+      return .PrimitiveOp op args'
     | .ReferenceEquals l r => return .ReferenceEquals (← recurse l) (← recurse r)
     | .AsType t ty => return .AsType (← recurse t) ty
     | .IsType t ty => return .IsType (← recurse t) ty
@@ -262,10 +257,10 @@ where
     | other => return other
   termination_by sizeOf expr
   decreasing_by
-    all_goals simp_wf
-    all_goals (try subst_vars)
+    all_goals (simp_wf; try subst_vars)
     all_goals (try (rename_i h_in; have := List.sizeOf_lt_of_mem h_in; omega))
-    all_goals omega
+    all_goals(try omega)
+    rename_i h_in _; have := List.sizeOf_lt_of_mem h_in; omega
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
   let heapInName := "$heap_in"
