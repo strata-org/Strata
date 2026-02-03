@@ -129,7 +129,7 @@ Except DiagnosticModel Unit :=
       match block.find? (fun d => args1.any (tyNameAppearsIn d.name)) with
       | some d =>
         .error <| DiagnosticModel.fromFormat
-        f!"Error in constructor {c}: Datatype {d.name} appears nested inside {t}. Nested datatypes are not supported in Strata."
+        f!"Error in constructor {c}: Datatype {d.name} appears nested inside {t}. Nested datatypes are not supported in Strata Core."
       | none => List.foldlM (fun _ => checkNotNested c block) () args1
   | _ => .ok ()
 
