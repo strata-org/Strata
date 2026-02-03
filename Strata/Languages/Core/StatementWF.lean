@@ -17,6 +17,13 @@ namespace WF
 
 open Std Lambda
 
+/-- Helper lemma: mapping only the values of a ListMap preserves the keys. -/
+private theorem listMap_keys_map_snd {α β γ : Type} (l : List (α × β)) (f : β → γ) :
+    ListMap.keys (l.map (fun (id, ty) => (id, f ty))) = ListMap.keys l := by
+  induction l with
+  | nil => simp [ListMap.keys]
+  | cons h t ih => simp [ListMap.keys, ih]
+
 theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   → WFCmdExtProp p c := by
   intro H
@@ -127,12 +134,45 @@ theorem Statement.typeCheckAux_go_WF :
       any_goals constructor
     | funcDecl decl md =>
       simp [Except.bind] at tcok
+      -- Split through the tryCatch and Function.typeCheck structure
+      simp only [tryCatch] at tcok
       repeat (split at tcok <;> try contradiction)
+      -- After splits, we need to extract the Function.typeCheck success
+      simp only [Except.mapError, tryCatchThe] at *
+      -- Now split on the Function.typeCheck result
+      split at * <;> try contradiction
+      rename_i v_go heq_go v_func heq_func_match heq_tryCatch
+      -- heq_func_match is: (match Function.typeCheck ... with | .error => ... | .ok v => .ok v) = .ok v_func
+      -- The match on .ok case is identity, so we can extract the equality
+      have heq_func_tc : Function.typeCheck C T
+        { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
+          inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+          output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+          body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
+        = .ok v_func := by
+          cases h : Function.typeCheck C T
+            { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
+              inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+              output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+              body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms } with
+          | error e => simp [h] at heq_func_match
+          | ok v => simp [h] at heq_func_match; simp [heq_func_match]
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
       apply ih tcok <;> try assumption
       simp [WFStatementsProp] at *
       simp [List.Forall_append, Forall, *]
+      constructor
+      -- Prove arg_nodup using Function.typeCheck_inputs_nodup
+      have h_nodup := Function.typeCheck_inputs_nodup C T
+        { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
+          inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+          output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+          body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
+        v_func.1 v_func.2 heq_func_tc
+      -- h_nodup : (decl.inputs.map ...).keys.Nodup, we need: decl.inputs.keys.Nodup
+      rw [listMap_keys_map_snd] at h_nodup
+      exact h_nodup
 
 /--
 A list of Statement `ss` that passes type checking is well formed with respect

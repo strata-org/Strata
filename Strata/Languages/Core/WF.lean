@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Util.Func
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
@@ -70,6 +71,11 @@ structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (me
 
 structure WFgotoProp  (p : Program) (label : String) : Prop where
 
+/-- Well-formedness for local function declarations.
+    Checks that function parameter names are unique. -/
+structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) : Prop where
+  arg_nodup : decl.inputs.keys.Nodup
+
 @[simp]
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .cmd   cmd => WFCmdExtProp p cmd
@@ -79,7 +85,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .goto (label : String) _ => WFgotoProp p label
-  | .funcDecl _ _ => True  -- TODO: Add well-formedness checks for function declarations
+  | .funcDecl decl _ => WFfuncDeclProp p decl
 
 abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 

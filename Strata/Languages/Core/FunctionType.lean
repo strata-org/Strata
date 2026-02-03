@@ -53,6 +53,16 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     let new_func := { func with body := some bodya.unresolved }
     .ok (new_func, Env)
 
+/-- If `Function.typeCheck` succeeds, then the input parameter names of the original function are unique. -/
+theorem typeCheck_inputs_nodup (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (func : Function) (func' : Function) (Env' : Core.Expression.TyEnv) :
+    typeCheck C Env func = .ok (func', Env') → func.inputs.keys.Nodup := by
+  intro H
+  simp only [typeCheck, bind, Except.bind] at H
+  split at H <;> try simp_all
+  rename_i ty Hty
+  exact LFunc.type_inputs_nodup func ty Hty
+
 end Function
 
 ---------------------------------------------------------------------

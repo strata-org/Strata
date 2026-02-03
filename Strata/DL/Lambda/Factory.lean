@@ -118,6 +118,15 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
+/-- If `LFunc.type` succeeds, then the input parameter names are unique. -/
+theorem LFunc.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
+    LFunc.type f = .ok ty → f.inputs.keys.Nodup := by
+  intro H
+  simp only [LFunc.type, bind, Except.bind] at H
+  split at H
+  · simp_all
+  · split at H <;> simp_all
+
 def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
