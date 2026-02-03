@@ -17,10 +17,12 @@ open Core.Transform
 The main call elimination transformation algorithm on a single command.
 The returned result is a sequence of statements
 -/
-def callElimCmd (cmd: Command) (p : Program)
+def callElimCmd (cmd: Command)
   : CoreTransformM (List Statement) := do
     match cmd with
       | .call lhs procName args _ =>
+
+        let some p := (← get).currentProgram | throw "program not available"
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
@@ -85,11 +87,13 @@ def callElimCmd (cmd: Command) (p : Program)
       | _ => return [ .cmd cmd ]
 
 -- Visits top-level statements and do call elimination
-def callElimStmts (ss: List Statement) (prog : Program) :=
-  runStmts callElimCmd ss prog
+def callElimStmts (ss: List Statement) (prog : Program) := do
+  modify (fun (σ:CoreTransformState) => { σ with currentProgram := .some prog })
+  runStmts callElimCmd ss
 
-def callElimL (dcls : List Decl) (prog : Program) :=
-  runProcedures callElimCmd dcls prog
+def callElimL (dcls : List Decl) (prog : Program) := do
+  modify (fun (σ:CoreTransformState) => { σ with currentProgram := .some prog })
+  runProcedures callElimCmd dcls
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/

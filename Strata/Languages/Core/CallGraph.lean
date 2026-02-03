@@ -13,27 +13,27 @@ namespace Core
 /-- Generic call graph structure -/
 structure CallGraph where
   -- A map from caller to a list of (callee, # of calls)
-  callees : Std.HashMap String (List (String × Nat))
+  callees : Std.HashMap String (Std.HashMap String Nat)
   -- A map from callee to a list of (caller, # of calls)
-  callers : Std.HashMap String (List (String × Nat))
+  callers : Std.HashMap String (Std.HashMap String Nat)
 
 def CallGraph.empty : CallGraph :=
   { callees := Std.HashMap.emptyWithCapacity,
     callers := Std.HashMap.emptyWithCapacity }
 
 def CallGraph.getCallees (cg : CallGraph) (name : String) : List String :=
-  if h : cg.callees.contains name then (cg.callees[name]'h).map (·.1) else []
+  if h : cg.callees.contains name then (cg.callees[name]'h).keys else []
 
 def CallGraph.getCalleesWithCount (cg : CallGraph) (name : String)
-  : List (String × Nat) :=
-  if h : cg.callees.contains name then (cg.callees[name]'h) else []
+  : Std.HashMap String Nat :=
+  if h : cg.callees.contains name then (cg.callees[name]'h) else {}
 
 def CallGraph.getCallers (cg : CallGraph) (name : String) : List String :=
-  if h : cg.callers.contains name then (cg.callers[name]'h).map (·.1) else []
+  if h : cg.callers.contains name then (cg.callers[name]'h).keys else []
 
 def CallGraph.getCallersWithCount (cg : CallGraph) (name : String)
-  : List (String × Nat) :=
-  if h : cg.callers.contains name then (cg.callers[name]'h) else []
+  : Std.HashMap String Nat :=
+  if h : cg.callers.contains name then (cg.callers[name]'h) else {}
 
 /-- Compute transitive closure of callees; the result does not contain `name`. -/
 partial def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
@@ -66,7 +66,8 @@ partial def CallGraph.getCallersClosure (cg : CallGraph) (name : String) : List 
 /-- Build call graph from name-callees pairs -/
 def buildCallGraph (items : List (String × List String)) : CallGraph :=
   let calleeMap := items.foldl (fun acc (name, calls) =>
-    acc.insert name calls.occurrences) Std.HashMap.emptyWithCapacity
+    acc.insert name (Std.HashMap.ofList calls.occurrences))
+    Std.HashMap.emptyWithCapacity
 
   let callerMapNodedup :=
     items.foldl (fun acc ⟨caller,callees⟩ =>
@@ -75,7 +76,8 @@ def buildCallGraph (items : List (String × List String)) : CallGraph :=
         acc'.insert callee (caller :: existingCallers))
       acc)
       Std.HashMap.emptyWithCapacity
-  let callerMap := callerMapNodedup.map (fun _ v => v.occurrences)
+  let callerMap := callerMapNodedup.map
+    (fun _ v => Std.HashMap.ofList v.occurrences)
 
   { callees := calleeMap, callers := callerMap }
 

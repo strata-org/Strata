@@ -94,11 +94,14 @@ def CachedAnalyses.emp : CachedAnalyses := {}
 -/
 structure CoreTransformState where
   genState: CoreGenState
+  currentProgram: Option Program
+  currentProcedure: Option Procedure -- TOOD: currentFunction, etc?
   cachedAnalyses: CachedAnalyses
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
-  { genState := .emp, cachedAnalyses := .emp }
+  { genState := .emp, currentProgram := .none,
+    currentProcedure := .none, cachedAnalyses := .emp }
 
 abbrev Err := String
 
@@ -110,6 +113,8 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
     let res := cgm coreTransformState.genState
     (res.1, {
       genState := res.2,
+      currentProgram := coreTransformState.currentProgram,
+      currentProcedure := coreTransformState.currentProcedure,
       cachedAnalyses := coreTransformState.cachedAnalyses })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
@@ -226,39 +231,38 @@ def createOldVarsSubst
 /- Generic runner functions -/
 
 -- Only visit top-level statements and run f
-def runStmts (f : Command → Program → CoreTransformM (List Statement))
-    (ss : List Statement) (inputProg : Program)
-    : CoreTransformM (List Statement) := do
+def runStmts (f : Command → CoreTransformM (List Statement))
+    (ss : List Statement) : CoreTransformM (List Statement) := do
   match ss with
   | [] => return []
   | s :: ss =>
     let s' := match s with
-      | .cmd c => f c inputProg
+      | .cmd c => f c
       | s => return [s]
-    let ss' := (runStmts f ss inputProg)
+    let ss' := (runStmts f ss)
     return (← s') ++ (← ss')
 
 -- Recursively visit all blocks and run f
-def runStmtsRec (f : Command → Program → CoreTransformM (List Statement))
-    (ss : List Statement) (inputProg : Program)
+def runStmtsRec (f : Command → CoreTransformM (List Statement))
+    (ss : List Statement)
     : CoreTransformM (List Statement) := do
   match ss with
   | [] => return []
   | s :: ss' =>
-    let ss'' ← (runStmtsRec f ss' inputProg)
+    let ss'' ← (runStmtsRec f ss')
     let sres ← (match s with
       | .cmd c => do
-        let res ← f c inputProg
+        let res ← f c
         return res
       | .block lbl b md => do
-        let b' ← runStmtsRec f b inputProg
+        let b' ← runStmtsRec f b
         return [.block lbl b' md]
       | .ite c thenb elseb md => do
-        let thenb' ← runStmtsRec f thenb inputProg
-        let elseb' ← runStmtsRec f elseb inputProg
+        let thenb' ← runStmtsRec f thenb
+        let elseb' ← runStmtsRec f elseb
         return [.ite c thenb' elseb' md]
       | .loop guard measure invariant body md => do
-        let body' ← runStmtsRec f body inputProg
+        let body' ← runStmtsRec f body
         return [.loop guard measure invariant body' md]
       | .goto _lbl _md =>
         return [s])
@@ -267,22 +271,23 @@ termination_by sizeOf ss
 decreasing_by
   all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
 
-def runProcedures (f : Command → Program → CoreTransformM (List Statement))
-    (dcls : List Decl) (inputProg : Program)
-    : CoreTransformM (List Decl) := do
+def runProcedures (f : Command → CoreTransformM (List Statement))
+    (dcls : List Decl) : CoreTransformM (List Decl) := do
   match dcls with
   | [] => return []
   | d :: ds =>
     match d with
-    | .proc p md =>
+    | .proc proc md =>
+      modify (fun σ => { σ with currentProcedure := .some proc })
       return Decl.proc {
-          p with body := ← (runStmtsRec f p.body inputProg)
-        } md :: (← (runProcedures f ds inputProg))
-    | _ => return d :: (← (runProcedures f ds inputProg))
+          proc with body := ← (runStmtsRec f proc.body)
+        } md :: (← (runProcedures f ds))
+    | _ => return d :: (← (runProcedures f ds))
 
-def runProgram (f : Command → Program → CoreTransformM (List Statement))
+def runProgram (f : Command → CoreTransformM (List Statement))
     (p : Program) : CoreTransformM Program := do
-  let newDecls ← runProcedures f p.decls p
+  modify (fun σ => { σ with currentProgram := .some p })
+  let newDecls ← runProcedures f p.decls
   return { decls := newDecls }
 
 
