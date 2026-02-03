@@ -194,17 +194,45 @@ def pyTranslateCommand : Command where
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
 
+/-- Derive Python source file path from Ion file path.
+    E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
+def ionPathToPythonPath (ionPath : String) : Option String :=
+  if ionPath.endsWith ".python.st.ion" then
+    let basePath := ionPath.dropRight ".python.st.ion".length
+    some (basePath ++ ".py")
+  else
+    none
+
+/-- Try to read Python source file and create a FileMap for line/column conversion -/
+def tryReadPythonSource (ionPath : String) : IO (Option (String × Lean.FileMap)) := do
+  match ionPathToPythonPath ionPath with
+  | none => return none
+  | some pyPath =>
+    try
+      let content ← IO.FS.readFile pyPath
+      let fileMap := Lean.FileMap.ofString content
+      return some (pyPath, fileMap)
+    catch _ =>
+      return none
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file", "verbose" ]
   help := "Analyze a Strata Python Ion file. Write results to stdout."
   callback := fun _ v => do
     let verbose := v[1] == "1"
-    let pgm ← readPythonStrata v[0]
+    let filePath := v[0]
+    let pgm ← readPythonStrata filePath
+    -- Try to read the Python source for line number conversion
+    let pySourceOpt ← tryReadPythonSource filePath
     if verbose then
       IO.print pgm
     let preludePgm := Strata.Python.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm
+    -- Use the Python source path if available, otherwise fall back to Ion path
+    let sourcePathForMetadata := match pySourceOpt with
+      | some (pyPath, _) => pyPath
+      | none => filePath
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm sourcePathForMetadata
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
@@ -226,7 +254,34 @@ def pyAnalyzeCommand : Command where
                                       (moreFns := Strata.Python.ReFactory)))
       let mut s := ""
       for vcResult in vcResults do
-        s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+        -- Build location string based on available metadata
+        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+          | some fr =>
+            if fr.range.isNone then ("", "")
+            else
+              -- Convert byte offset to line/column if we have the source
+              match pySourceOpt with
+              | some (pyPath, fileMap) =>
+                -- Check if this metadata is from the Python source (not CorePrelude)
+                match fr.file with
+                | .file path =>
+                  if path == pyPath then
+                    let pos := fileMap.toPosition fr.range.start
+                    -- For failures, show at beginning; for passes, show at end
+                    match vcResult.result with
+                    | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                    | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                  else
+                    -- From CorePrelude or other source, show byte offsets
+                    match vcResult.result with
+                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                    | _ => ("", s!" (at byte {fr.range.start})")
+              | none =>
+                match vcResult.result with
+                | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                | _ => ("", s!" (at byte {fr.range.start})")
+          | none => ("", "")
+        s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
       IO.println s
 
 def javaGenCommand : Command where
