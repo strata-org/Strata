@@ -220,8 +220,8 @@ op type_decl (name : Ident, param_count : Num) : TypeDecl =>
   "type_decl" "(" name "," param_count ")";
 
 // Metadata transformation functions
-category Metadata;
-op map_metadata (f : Ident, m : Metadata) : Metadata =>
+category ASTMetadata;
+op map_metadata (f : Ident, m : ASTMetadata) : ASTMetadata =>
   "map_metadata" "(" f "," m ")";
 
 #end

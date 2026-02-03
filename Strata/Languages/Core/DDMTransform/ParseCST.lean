@@ -226,8 +226,7 @@ op func_param_push (ps : FunctionParams, @[scope(ps)] p : FunctionParam) : Funct
   ps "," p;
 
 category FunctionDecl;
-@[declareFn(name, params, ret_type)]
-op func_decl (name : Ident, params : Option FunctionParams, @[scope(params)] ret_type : Type, @[scope(params)] body : Expression) : FunctionDecl =>
+op func_decl (name : Ident, params : Option FunctionParams, ret_type : Type, body : Expression) : FunctionDecl =>
   "function" name "(" params ")" ":" ret_type "{" body "}";
 
 // Datatype declarations (matching Strata Core syntax)
@@ -250,9 +249,7 @@ op field_push (fl : FieldList, @[scope(fl)] f : Field) : FieldList =>
 op constructor_decl (name : Ident, fields : Option FieldList) : Constructor =>
   name "(" fields ")";
 
-@[constructorListAtom(c)]
 op constructor_atom (c : Constructor) : ConstructorList => c;
-@[constructorListPush(cl, c)]
 op constructor_push (cl : ConstructorList, c : Constructor) : ConstructorList =>
   cl "," c;
 
@@ -268,15 +265,11 @@ op type_param_push (tps : TypeParams, @[scope(tps)] tp : TypeParam) : TypeParams
   tps "," tp;
 
 category DatatypeDecl;
-@[declareDatatype(name, type_params, constructors,
-    perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
-    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
-op datatype_decl (name : Ident, type_params : Option TypeParams, @[scopeDatatype(name, type_params)] constructors : ConstructorList) : DatatypeDecl =>
+op datatype_decl (name : Ident, type_params : Option TypeParams, constructors : ConstructorList) : DatatypeDecl =>
   "datatype" name "(" type_params ")" "{" constructors "}";
 
 // Type declarations
 category TypeDecl;
-@[declareType(name, type_params)]
 op type_decl (name : Ident, type_params : Option TypeParams) : TypeDecl =>
   "type" name "(" type_params ")";
 

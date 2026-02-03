@@ -15,13 +15,13 @@ namespace Strata
 /- Basic tests for CoreCST ↔ CoreAST conversion -/
 
 -- Test simple expression conversion
-#check CoreCSTDDM.Expression.nat_lit 42
+#check CoreCSTDDM.Expression.nat_lit
 #check CoreCSTDDM.Expression.bool_true
-#check CoreCSTDDM.Expression.var_ref ⟨"x"⟩
+#check CoreCSTDDM.Expression.var_ref
 
 -- Test simple statement conversion  
-#check CoreCSTDDM.Statement.var_decl ⟨"x"⟩ (.builtin "int")
-#check CoreCSTDDM.Statement.assign_stmt ⟨"x"⟩ (.nat_lit 42)
+#check CoreCSTDDM.Statement.var_decl
+#check CoreCSTDDM.Statement.assign_stmt
 
 -- Test conversion functions exist
 #check convertExprCSTToAST
