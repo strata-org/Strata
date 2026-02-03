@@ -57,7 +57,7 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalStmt P Cmd EvalCmd δ σ (.ite c t e) σ' δ'
 
   | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr]
-    (extendEval : SemanticEval P → SemanticStore P → Lambda.PureFunc P → SemanticEval P) :
+    (extendEval : SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P) :
     EvalStmt P Cmd EvalCmd δ σ (.funcDecl decl md) σ
       (extendEval δ σ decl)
 

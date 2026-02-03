@@ -7,7 +7,6 @@
 
 
 import Strata.DL.Imperative.Cmd
-import Strata.DL.Lambda.Factory
 
 namespace Imperative
 ---------------------------------------------------------------------
@@ -40,7 +39,7 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   programs that is purely untructured. -/
   | goto     (label : String) (md : MetaData P := .empty)
   /-- A function declaration within a statement block. -/
-  | funcDecl (decl : Lambda.PureFunc P) (md : MetaData P := .empty)
+  | funcDecl (decl : PureFunc P) (md : MetaData P := .empty)
   deriving Inhabited
 
 /-- A block is simply an abbreviation for a list of commands. -/
@@ -72,7 +71,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       motive (Stmt.loop guard measure invariant body md))
     (goto_case : ∀ (label : String) (md : MetaData P),
       motive (Stmt.goto label md))
-    (funcDecl_case : ∀ (decl : Lambda.PureFunc P) (md : MetaData P),
+    (funcDecl_case : ∀ (decl : PureFunc P) (md : MetaData P),
       motive (Stmt.funcDecl decl md))
     (s : Stmt P Cmd) : motive s :=
   match s with
@@ -167,10 +166,13 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
   | .loop _ _ _ bss _ => Block.getVars bss
   | .goto _ _  => []
   | .funcDecl decl _ =>
-    -- Get variables from function body (including parameters for simplicity)
+    -- Get free variables from function body, excluding formal parameters
     match decl.body with
     | none => []
-    | some body => HasVarsPure.getVars body
+    | some body =>
+      let bodyVars := HasVarsPure.getVars body
+      let formals := decl.inputs.map (·.1)
+      bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
   termination_by (Stmt.sizeOf s)
 
 def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=

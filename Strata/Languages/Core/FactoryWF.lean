@@ -15,6 +15,7 @@ import Strata.DL.Lambda.IntBoolFactory
 
 namespace Core
 open Lambda
+open Strata.DL.Util (FuncWF)
 
 set_option maxRecDepth 32768 in
 set_option maxHeartbeats 4000000 in

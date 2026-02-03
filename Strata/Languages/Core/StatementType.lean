@@ -77,27 +77,27 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program)
         .error <| e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
 
 def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except DiagnosticModel (List Statement × TEnv Visibility) :=
-  go Env ss []
+  Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
+  go C Env ss []
 where
-  go (Env : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
-    Except DiagnosticModel (List Statement × TEnv Visibility) :=
+  go (C : LContext CoreLParams) (Env : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
+    Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
     let errorWithSourceLoc := fun (e : DiagnosticModel) md =>
       e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
     match ss with
-    | [] => .ok (acc.reverse, Env)
+    | [] => .ok (acc.reverse, Env, C)
     | s :: srest => do
-      let (s', Env) ←
+      let (s', Env, C) ←
         match s with
         | .cmd cmd => do
           let (c', Env) ← typeCheckCmd C Env P cmd
-          .ok (Stmt.cmd c', Env)
+          .ok (Stmt.cmd c', Env, C)
 
         | .block label bss md => do
           let Env := Env.pushEmptyContext
-          let (ss', Env) ← go Env bss []
+          let (ss', Env, C) ← go C Env bss []
           let s' := Stmt.block label ss' md
-          .ok (s', Env.popContext)
+          .ok (s', Env.popContext, C)
 
         | .ite cond tss ess md => do try
           let _ ← Env.freeVarCheck cond f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
@@ -105,10 +105,10 @@ where
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
-            let (tb, Env) ← go Env [(Stmt.block "$_then" tss  #[])] []
-            let (eb, Env) ← go Env [(Stmt.block "$_else" ess  #[])] []
+            let (tb, Env, C) ← go C Env [(Stmt.block "$_then" tss  #[])] []
+            let (eb, Env, C) ← go C Env [(Stmt.block "$_else" ess  #[])] []
             let s' := Stmt.ite conda.unresolved tb eb md
-            .ok (s', Env)
+            .ok (s', Env, C)
           | _ => .error <| md.toDiagnosticF f!"[{s}]: If's condition {cond} is not of type `bool`!"
           catch e =>
             -- Add source location to error messages.
@@ -137,9 +137,9 @@ where
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
-            let (tb, Env) ← go Env [(Stmt.block "$_loop_body" bss #[])] []
+            let (tb, Env, C) ← go C Env [(Stmt.block "$_loop_body" bss #[])] []
             let s' := Stmt.loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
-            .ok (s', Env)
+            .ok (s', Env, C)
           | _ =>
             match condty with
             | .tcons "bool" [] =>
@@ -158,7 +158,7 @@ where
           match op with
           | .some p =>
             if Block.hasLabelInside label p.body then
-              .ok (s, Env)
+              .ok (s, Env, C)
             else
               .error <| md.toDiagnosticF f!"Label {label} does not exist in the body of {p.header.name}"
           | .none => .error <| md.toDiagnosticF f!"{s} occurs outside a procedure."
@@ -181,6 +181,8 @@ where
             axioms := decl.axioms
           }
           let (func', Env) ← Function.typeCheck C Env func |>.mapError DiagnosticModel.fromFormat
+          -- Add the function to the context so subsequent statements can use it
+          let C := C.addFactoryFunction func'
           -- Convert back by wrapping monotypes in trivial polytypes
           let decl' : PureFunc Expression := {
             name := func'.name,
@@ -193,11 +195,11 @@ where
             concreteEval := decl.concreteEval,  -- Preserve original
             axioms := func'.axioms
           }
-          .ok (.funcDecl decl' md, Env)
+          .ok (.funcDecl decl' md, Env, C)
           catch e =>
             .error (errorWithSourceLoc e md)
 
-      go Env srest (s' :: acc)
+      go C Env srest (s' :: acc)
     termination_by Block.sizeOf ss
     decreasing_by
     all_goals simp_wf <;> omega
@@ -261,7 +263,7 @@ inside a procedure).
 -/
 def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except DiagnosticModel (List Statement × Expression.TyEnv) := do
-  let (ss', Env) ← typeCheckAux C Env P op ss
+  let (ss', Env, _C) ← typeCheckAux C Env P op ss
   let context := TContext.subst Env.context Env.stateSubstInfo.subst
   let Env := Env.updateContext context
   let ss' := Statement.subst.go Env.stateSubstInfo.subst ss' []

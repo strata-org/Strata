@@ -104,7 +104,7 @@ inductive StepStmt
 
   /-- A function declaration extends the evaluator with the new function. -/
   | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr]
-    (extendEval : SemanticEval P → SemanticStore P → Lambda.PureFunc P → SemanticEval P) :
+    (extendEval : SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P) :
     StepStmt P EvalCmd
       (.stmt (.funcDecl decl md) σ δ)
       (.terminal σ (extendEval δ σ decl))

@@ -31,10 +31,10 @@ theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   sorry
   sorry
 
-theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go C p proc T ss (acc1 ++ acc2) = Except.ok (pp, T') ↔
-  (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go C p proc T ss acc1 = Except.ok (pp.drop acc2.length, T'))
+theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) = Except.ok (pp, T', C') ↔
+  (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go P op C T ss acc1 = Except.ok (pp.drop acc2.length, T', C'))
   := by
-  induction ss generalizing pp acc1 acc2 T
+  induction ss generalizing pp acc1 acc2 T C
   simp [Statement.typeCheckAux.go]
   constructor <;> intro H
   simp [← H]
@@ -48,19 +48,19 @@ theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go C p proc T ss
   any_goals simp
   any_goals rw [← List.cons_append, ind]
 
-theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go C p proc T ss [s] = Except.ok (pp, T') →
-  Statement.typeCheckAux.go C p proc T ss [] = Except.ok (pp.drop 1, T') := by
+theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go P op C T ss [s] = Except.ok (pp, T', C') →
+  Statement.typeCheckAux.go P op C T ss [] = Except.ok (pp.drop 1, T', C') := by
   intro H
   have : [s] = [] ++ [s] := by simp
   rw [this, Statement.typeCheckAux_elim_acc] at H; simp at H
   simp [H]
 
 theorem Statement.typeCheckAux_go_WF :
-  Statement.typeCheckAux.go C p proc T ss [] = Except.ok (pp', T') →
-  WF.WFStatementsProp p acc →
-  WF.WFStatementsProp p (acc ++ ss) := by
+  Statement.typeCheckAux.go P op C T ss [] = Except.ok (pp', T', C') →
+  WF.WFStatementsProp P acc →
+  WF.WFStatementsProp P (acc ++ ss) := by
   intros tcok h_acc_ok
-  induction ss generalizing acc T pp' T' with
+  induction ss generalizing acc C T pp' T' C' with
   | nil => simp_all [WFStatementsProp]
   | cons h t ih =>
     unfold Statement.typeCheckAux.go at tcok
@@ -139,14 +139,15 @@ A list of Statement `ss` that passes type checking is well formed with respect
 to the whole program `p`.
 -/
 theorem Statement.typeCheckWF :
-  Statement.typeCheck C T p proc ss = Except.ok (pp', T') →
-  WF.WFStatementsProp p ss := by
+  Statement.typeCheck C T P proc ss = Except.ok (pp', T') →
+  WF.WFStatementsProp P ss := by
   intros tcok
   simp [Statement.typeCheck, Statement.typeCheckAux, bind, Except.bind] at tcok
   split at tcok <;> simp_all
   rename_i x v heq
-  have h_tc_go := @Statement.typeCheckAux_go_WF C p proc T ss v.fst v.snd []
-  simp_all [WFStatementsProp, Forall]
+  have h_tc_go := Statement.typeCheckAux_go_WF (P := P) (op := proc) (C := C) (T := T) (ss := ss) (pp' := v.fst) (T' := v.snd.fst) (C' := v.snd.snd) (acc := []) heq
+  simp [WFStatementsProp] at h_tc_go
+  exact h_tc_go (by constructor)
   done
 
 /-

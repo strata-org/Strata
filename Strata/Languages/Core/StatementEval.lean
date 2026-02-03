@@ -276,6 +276,21 @@ def createPassingAssertObligations
     (fun (label, md) =>
       (Imperative.ProofObligation.mk label .assert [] (LExpr.true ()) md))
 
+/--
+Substitute free variables in an expression with their current values from the environment.
+This implements value capture semantics for local function declarations (`funcDecl`).
+
+Unlike global functions (which are evaluated at the top level with no local state),
+local functions capture the values of free variables at the point of declaration.
+-/
+def captureFreevars (env : Env) (e : Expression.Expr) : Expression.Expr :=
+  let freeVars := Lambda.LExpr.freeVars e
+  freeVars.foldl (fun body fv =>
+    match env.exprEnv.state.find? fv.fst with
+    | some (_, val) => Lambda.LExpr.substFvar body fv.fst val
+    | none => body
+  ) e
+
 abbrev StmtsStack := List Statements
 
 def StmtsStack.push (stk : StmtsStack) (ss : Statements) : StmtsStack :=
@@ -402,22 +417,13 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
 
           | .funcDecl decl _ =>
             -- Add function to factory with value capture semantics
-            -- Substitute current values of free variables into function body
             let func : Lambda.LFunc CoreLParams := {
               name := decl.name,
               typeArgs := decl.typeArgs,
               isConstr := decl.isConstr,
               inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
               output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-              body := decl.body.map (fun e =>
-                -- Substitute free variables with their current values from the environment
-                let freeVars := Lambda.LExpr.freeVars e
-                freeVars.foldl (fun body fv =>
-                  match Ewn.env.exprEnv.state.find? fv.fst with
-                  | some (_, val) => Lambda.LExpr.substFvar body fv.fst val
-                  | none => body
-                ) e
-              ),
+              body := decl.body.map (captureFreevars Ewn.env),
               attr := decl.attr,
               concreteEval := decl.concreteEval,
               axioms := decl.axioms
@@ -425,7 +431,6 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             match Ewn.env.addFactoryFunc func with
             | .ok env' => [{ Ewn with env := env' }]
             | .error e =>
-              -- If adding fails, set error but continue
               [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]

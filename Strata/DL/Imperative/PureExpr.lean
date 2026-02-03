@@ -4,9 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
+import Strata.DL.Util.Func
 
 namespace Imperative
+
+open Strata.DL.Util (Func)
 
 /--
 Expected interface for pure expressions that can be used to specialize the
@@ -74,5 +76,11 @@ class HasSubstFvar (P : PureExpr) where
 /-- Substitute multiple free variables with expressions -/
 def HasSubstFvar.substFvars [HasSubstFvar P] (e : P.Expr) (substs : List (P.Ident × P.Expr)) : P.Expr :=
   substs.foldl (fun e (id, val) => HasSubstFvar.substFvar e id val) e
+
+/--
+A function declaration for use with `PureExpr` - instantiation of `Func` for
+any expression system that implements the `PureExpr` interface.
+-/
+abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
 
 end Imperative

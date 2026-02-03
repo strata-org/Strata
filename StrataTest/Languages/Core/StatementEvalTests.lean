@@ -13,6 +13,7 @@ section Tests
 
 open Std (ToFormat Format format)
 open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Imperative (PureFunc)
 
 /--
 info: Error:

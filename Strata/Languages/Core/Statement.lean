@@ -391,12 +391,16 @@ def Statement.renameLhs (s : Core.Statement)
       if l.name == fr  then to else l)) pname args metadata
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
+  | .ite x thenb elseb m =>
+    .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
+  | .loop m g i b md =>
+    .loop m g i (Block.renameLhs b fr to) md
+  | .havoc l md => .havoc (if l.name == fr then to else l) md
   | .funcDecl decl md =>
     -- Rename function name if it matches
     let decl' := if decl.name == fr then { decl with name := to } else decl
     .funcDecl decl' md
-  | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
-  | .loop _ _ _ _ _ | .goto _ _ | .cover _ _ _ => s
+  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
   termination_by s.sizeOf
   decreasing_by all_goals(simp_wf; try omega)
 end

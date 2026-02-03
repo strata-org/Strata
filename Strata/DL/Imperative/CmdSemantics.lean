@@ -28,7 +28,7 @@ abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
 abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
 
 /-- Function context: maps function identifiers to their definitions -/
-abbrev FuncContext := P.Ident → Option (Lambda.PureFunc P)
+abbrev FuncContext := P.Ident → Option (PureFunc P)
 
 /-! ### Closure Capture for Function Declarations -/
 
@@ -48,7 +48,7 @@ values into the function body and axioms. Variables that are function parameters
 are not substituted (they are bound, not free in the closure sense).
 -/
 def closureCapture [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [HasFvar P]
-    (σ : SemanticStore P) (decl : Lambda.PureFunc P) : Lambda.PureFunc P :=
+    (σ : SemanticStore P) (decl : PureFunc P) : PureFunc P :=
   let paramNames := decl.inputs.map (·.1)
   -- Get free variables from body (if it exists), excluding parameters
   let bodyFreeVars := match decl.body with
