@@ -10,29 +10,34 @@ import Strata.Languages.Laurel.LaurelFormat
 /-
 Heap Parameterization Pass
 
-Transforms transparent procedures that read fields (or call procedures that read the heap)
-by adding an explicit `heap: Heap` parameter. Field reads are translated to calls to
-`read(heap, <fieldConstant>)`.
+Transforms procedures that interact with the heap using a global `$heap` variable.
 -/
 
 namespace Strata.Laurel
 
 structure AnalysisResult where
   readsHeapDirectly : Bool := false
+  writesHeapDirectly : Bool := false
   callees : List Identifier := []
 
 partial def collectExpr (expr : StmtExprMd) : StateM AnalysisResult Unit := do
   match expr.val with
   | .FieldSelect target _ =>
       modify fun s => { s with readsHeapDirectly := true }; collectExpr target
-  | .InstanceCall target _ args => modify fun s => { s with readsHeapDirectly := true }; collectExpr target; for a in args do collectExpr a
+  | .InstanceCall target _ args => collectExpr target; for a in args do collectExpr a
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExpr a
   | .IfThenElse c t e => collectExpr c; collectExpr t; if let some x := e then collectExpr x
   | .Block stmts _ => for s in stmts do collectExpr s
   | .LocalVariable _ _ i => if let some x := i then collectExpr x
-  | .While c invs d b => collectExpr c; collectExpr b; for i in invs do collectExpr i; if let some x := d then collectExpr x
+  | .While c invs d b => collectExpr c; for i in invs do collectExpr i; if let some x := d then collectExpr x; collectExpr b
   | .Return v => if let some x := v then collectExpr x
-  | .Assign t v => collectExpr t; collectExpr v
+  | .Assign t v =>
+      match t.val with
+      | .FieldSelect target _ =>
+          modify fun s => { s with writesHeapDirectly := true }
+          collectExpr target
+      | _ => collectExpr t
+      collectExpr v
   | .PureFieldUpdate t _ v => collectExpr t; collectExpr v
   | .PrimitiveOp _ args => for a in args do collectExpr a
   | .ReferenceEquals l r => collectExpr l; collectExpr r
@@ -50,11 +55,34 @@ partial def collectExpr (expr : StmtExprMd) : StateM AnalysisResult Unit := do
   | _ => pure ()
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
-  match proc.body with
-  | .Transparent b =>
-      dbg_trace s!"Analyzing proc {proc.name} body: {Std.Format.pretty (Std.ToFormat.format b)}"
-      (collectExpr b).run {} |>.2
-  | _ => {}
+  let bodyResult := match proc.body with
+    | .Transparent b => (collectExpr b).run {} |>.2
+    | .Opaque postconds impl _ _ =>
+        let r1 : AnalysisResult := postconds.foldl (fun acc p =>
+          let r := (collectExpr p).run {} |>.2
+          { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly,
+            writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly,
+            callees := acc.callees ++ r.callees }) {}
+        let r2 := match impl with
+          | some e => (collectExpr e).run {} |>.2
+          | none => {}
+        { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
+          writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
+          callees := r1.callees ++ r2.callees }
+    | .Abstract postconds =>
+        postconds.foldl (fun (acc : AnalysisResult) p =>
+          let r := (collectExpr p).run {} |>.2
+          { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly,
+            writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly,
+            callees := acc.callees ++ r.callees }) {}
+  let precondResult : AnalysisResult := proc.preconditions.foldl (fun acc p =>
+    let r := (collectExpr p).run {} |>.2
+    { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly,
+      writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly,
+      callees := acc.callees ++ r.callees }) {}
+  { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
+    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
+    callees := bodyResult.callees ++ precondResult.callees }
 
 def computeReadsHeap (procs : List Procedure) : List Identifier :=
   let info := procs.map fun p => (p.name, analyzeProc p)
@@ -70,85 +98,116 @@ def computeReadsHeap (procs : List Procedure) : List Identifier :=
       if next.length == current.length then current else fixpoint fuel' next
   fixpoint procs.length direct
 
+def computeWritesHeap (procs : List Procedure) : List Identifier :=
+  let info := procs.map fun p => (p.name, analyzeProc p)
+  let direct := info.filterMap fun (n, r) => if r.writesHeapDirectly then some n else none
+  let rec fixpoint (fuel : Nat) (current : List Identifier) : List Identifier :=
+    match fuel with
+    | 0 => current
+    | fuel' + 1 =>
+      let next := info.filterMap fun (n, r) =>
+        if current.contains n then some n
+        else if r.callees.any current.contains then some n
+        else none
+      if next.length == current.length then current else fixpoint fuel' next
+  fixpoint procs.length direct
+
 structure TransformState where
   fieldConstants : List Constant := []
   heapReaders : List Identifier
+  heapWriters : List Identifier
 
 abbrev TransformM := StateM TransformState
 
 def addFieldConstant (name : Identifier) : TransformM Unit :=
   modify fun s => if s.fieldConstants.any (·.name == name) then s
-    else { s with fieldConstants := { name := name, type := ⟨.TField, #[]⟩ } :: s.fieldConstants }
+    else { s with fieldConstants := { name := name, type := ⟨.TField, {}⟩ } :: s.fieldConstants }
 
-def readsHeap (name : Identifier) : TransformM Bool := do
-  return (← get).heapReaders.contains name
-
-/-- Helper to create a StmtExprMd with the same metadata as the input -/
-def mkStmtExprMdFrom (orig : StmtExprMd) (e : StmtExpr) : StmtExprMd := ⟨e, orig.md⟩
-
-/-- Helper to create a StmtExprMd with empty metadata -/
-def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
-
-partial def heapTransformExpr (heap : Identifier) (expr : StmtExprMd) : TransformM StmtExprMd := do
+partial def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) : TransformM StmtExprMd := do
   let md := expr.md
-  match expr.val with
+  let val' ← match expr.val with
   | .FieldSelect target fieldName =>
       addFieldConstant fieldName
-      let t ← heapTransformExpr heap target
-      return ⟨.StaticCall "heapRead" [mkStmtExprMdEmpty (.Identifier heap), t, mkStmtExprMdEmpty (.Identifier fieldName)], md⟩
+      let t ← heapTransformExpr heapVar target
+      pure <| .StaticCall "heapRead" [⟨.Identifier heapVar, md⟩, t, ⟨.Identifier fieldName, md⟩]
   | .StaticCall callee args =>
-      let args' ← args.mapM (heapTransformExpr heap)
-      return if ← readsHeap callee
-        then ⟨.StaticCall callee (mkStmtExprMdEmpty (.Identifier heap) :: args'), md⟩
-        else ⟨.StaticCall callee args', md⟩
+      let args' ← args.mapM (heapTransformExpr heapVar)
+      pure <| .StaticCall callee args'
   | .InstanceCall target callee args =>
-      let t ← heapTransformExpr heap target
-      let args' ← args.mapM (heapTransformExpr heap)
-      return ⟨.InstanceCall t callee (mkStmtExprMdEmpty (.Identifier heap) :: args'), md⟩
-  | .IfThenElse c t e => return ⟨.IfThenElse (← heapTransformExpr heap c) (← heapTransformExpr heap t) (← e.mapM (heapTransformExpr heap)), md⟩
-  | .Block stmts label => return ⟨.Block (← stmts.mapM (heapTransformExpr heap)) label, md⟩
-  | .LocalVariable n ty i => return ⟨.LocalVariable n ty (← i.mapM (heapTransformExpr heap)), md⟩
-  | .While c invs d b => return ⟨.While (← heapTransformExpr heap c) (← invs.mapM (heapTransformExpr heap)) (← d.mapM (heapTransformExpr heap)) (← heapTransformExpr heap b), md⟩
-  | .Return v => return ⟨.Return (← v.mapM (heapTransformExpr heap)), md⟩
+      let t ← heapTransformExpr heapVar target
+      let args' ← args.mapM (heapTransformExpr heapVar)
+      pure <| .InstanceCall t callee args'
+  | .IfThenElse c t e =>
+      pure <| .IfThenElse (← heapTransformExpr heapVar c) (← heapTransformExpr heapVar t) (← e.mapM (heapTransformExpr heapVar))
+  | .Block stmts label =>
+      pure <| .Block (← stmts.mapM (heapTransformExpr heapVar)) label
+  | .LocalVariable n ty i =>
+      pure <| .LocalVariable n ty (← i.mapM (heapTransformExpr heapVar))
+  | .While c invs d b =>
+      pure <| .While (← heapTransformExpr heapVar c) (← invs.mapM (heapTransformExpr heapVar)) (← d.mapM (heapTransformExpr heapVar)) (← heapTransformExpr heapVar b)
+  | .Return v =>
+      pure <| .Return (← v.mapM (heapTransformExpr heapVar))
   | .Assign t v =>
       match t.val with
       | .FieldSelect target fieldName =>
           addFieldConstant fieldName
-          let target' ← heapTransformExpr heap target
-          let v' ← heapTransformExpr heap v
-          -- heap := heapStore(heap, target, field, value)
-          return ⟨.Assign (mkStmtExprMdEmpty (.Identifier heap)) (⟨.StaticCall "heapStore" [mkStmtExprMdEmpty (.Identifier heap), target', mkStmtExprMdEmpty (.Identifier fieldName), v'], md⟩), md⟩
-      | _ => return ⟨.Assign (← heapTransformExpr heap t) (← heapTransformExpr heap v), md⟩
-  | .PureFieldUpdate t f v => return ⟨.PureFieldUpdate (← heapTransformExpr heap t) f (← heapTransformExpr heap v), md⟩
-  | .PrimitiveOp op args => return ⟨.PrimitiveOp op (← args.mapM (heapTransformExpr heap)), md⟩
-  | .ReferenceEquals l r => return ⟨.ReferenceEquals (← heapTransformExpr heap l) (← heapTransformExpr heap r), md⟩
-  | .AsType t ty => return ⟨.AsType (← heapTransformExpr heap t) ty, md⟩
-  | .IsType t ty => return ⟨.IsType (← heapTransformExpr heap t) ty, md⟩
-  | .Forall n ty b => return ⟨.Forall n ty (← heapTransformExpr heap b), md⟩
-  | .Exists n ty b => return ⟨.Exists n ty (← heapTransformExpr heap b), md⟩
-  | .Assigned n => return ⟨.Assigned (← heapTransformExpr heap n), md⟩
-  | .Old v => return ⟨.Old (← heapTransformExpr heap v), md⟩
-  | .Fresh v => return ⟨.Fresh (← heapTransformExpr heap v), md⟩
-  | .Assert c => return ⟨.Assert (← heapTransformExpr heap c), md⟩
-  | .Assume c => return ⟨.Assume (← heapTransformExpr heap c), md⟩
-  | .ProveBy v p => return ⟨.ProveBy (← heapTransformExpr heap v) (← heapTransformExpr heap p), md⟩
-  | .ContractOf ty f => return ⟨.ContractOf ty (← heapTransformExpr heap f), md⟩
-  | other => return ⟨other, md⟩
+          let target' ← heapTransformExpr heapVar target
+          let v' ← heapTransformExpr heapVar v
+          pure <| .Assign ⟨.Identifier heapVar, md⟩ ⟨.StaticCall "heapStore" [⟨.Identifier heapVar, md⟩, target', ⟨.Identifier fieldName, md⟩, v'], md⟩
+      | _ => pure <| .Assign (← heapTransformExpr heapVar t) (← heapTransformExpr heapVar v)
+  | .PureFieldUpdate t f v =>
+      pure <| .PureFieldUpdate (← heapTransformExpr heapVar t) f (← heapTransformExpr heapVar v)
+  | .PrimitiveOp op args =>
+      pure <| .PrimitiveOp op (← args.mapM (heapTransformExpr heapVar))
+  | .ReferenceEquals l r =>
+      pure <| .ReferenceEquals (← heapTransformExpr heapVar l) (← heapTransformExpr heapVar r)
+  | .AsType t ty => pure <| .AsType (← heapTransformExpr heapVar t) ty
+  | .IsType t ty => pure <| .IsType (← heapTransformExpr heapVar t) ty
+  | .Forall n ty b => pure <| .Forall n ty (← heapTransformExpr heapVar b)
+  | .Exists n ty b => pure <| .Exists n ty (← heapTransformExpr heapVar b)
+  | .Assigned n => pure <| .Assigned (← heapTransformExpr heapVar n)
+  | .Old v => pure <| .Old (← heapTransformExpr heapVar v)
+  | .Fresh v => pure <| .Fresh (← heapTransformExpr heapVar v)
+  | .Assert c => pure <| .Assert (← heapTransformExpr heapVar c)
+  | .Assume c => pure <| .Assume (← heapTransformExpr heapVar c)
+  | .ProveBy v p => pure <| .ProveBy (← heapTransformExpr heapVar v) (← heapTransformExpr heapVar p)
+  | .ContractOf ty f => pure <| .ContractOf ty (← heapTransformExpr heapVar f)
+  | other => pure other
+  pure ⟨val', md⟩
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
-  if (← get).heapReaders.contains proc.name then
-    match proc.body with
-    | .Transparent bodyExpr =>
-        let body' ← heapTransformExpr "heap" bodyExpr
-        return { proc with inputs := { name := "heap", type := ⟨.THeap, #[]⟩ } :: proc.inputs, body := .Transparent body' }
-    | _ => return proc
-  else return proc
+  let heapName := "$heap"
+  let readsHeap := (← get).heapReaders.contains proc.name
+  let writesHeap := (← get).heapWriters.contains proc.name
 
-def heapParameterization (program : Program) : Program :=
+  if readsHeap || writesHeap then
+    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName)
+    let body' ← match proc.body with
+      | .Transparent bodyExpr =>
+          pure (.Transparent (← heapTransformExpr heapName bodyExpr))
+      | .Opaque postconds impl det modif =>
+          let postconds' ← postconds.mapM (heapTransformExpr heapName)
+          let impl' ← impl.mapM (heapTransformExpr heapName)
+          let modif' ← modif.mapM (heapTransformExpr heapName)
+          pure (.Opaque postconds' impl' det modif')
+      | .Abstract postconds =>
+          pure (.Abstract (← postconds.mapM (heapTransformExpr heapName)))
+    return { proc with preconditions := preconditions', body := body' }
+  else
+    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName)
+    let body' ← match proc.body with
+      | .Transparent bodyExpr => pure (.Transparent bodyExpr)
+      | .Opaque postconds impl det modif =>
+          let postconds' ← postconds.mapM (heapTransformExpr heapName)
+          pure (.Opaque postconds' impl det modif)
+      | .Abstract postconds =>
+          pure (.Abstract (← postconds.mapM (heapTransformExpr heapName)))
+    return { proc with preconditions := preconditions', body := body' }
+
+def heapParameterization (program : Program) : Program × List Identifier :=
   let heapReaders := computeReadsHeap program.staticProcedures
-  dbg_trace s!"Heap readers: {heapReaders}"
-  let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders }
-  dbg_trace s!"Field constants: {finalState.fieldConstants.map (·.name)}"
-  { program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }
+  let heapWriters := computeWritesHeap program.staticProcedures
+  let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders, heapWriters }
+  ({ program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }, heapWriters)
 
 end Strata.Laurel

@@ -20,6 +20,10 @@ procedure double(n: nat) returns (r: nat)
 {
     return n + n;
 }
+
+procedure testQuantifier()
+  ensures forall(n: nat) => n + 1 > 0
+{}
 "
 
 #guard_msgs(drop info, error) in

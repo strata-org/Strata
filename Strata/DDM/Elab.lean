@@ -71,6 +71,10 @@ private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Op
     return commands
   let (some tree, true) ← runChecked <| elabCommand leanEnv
     | return commands
+  -- Safety: bail out if no progress was made to prevent infinite loops
+  let newPos := (←get).pos
+  if newPos <= iniPos then
+    return commands
   let cmd := tree.info.asOp!.op
   let dialects := (← read).loader.dialects
   modify fun s => { s with
