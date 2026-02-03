@@ -177,9 +177,12 @@ def findPython3 (minVersion : Nat := 12) (maxVersion : Nat := 14) : IO System.Fi
     let some foundMinor ← getPython3Version path
       | throw <| .userError
           "PYTHON environment variable not set to python executable."
-    if foundMinor ≥ foundMinor then
+    if foundMinor < minVersion then
       throw <| .userError
         s!"PYTHON variable is Python 3.{foundMinor} when at least 3.{minVersion} required."
+    if foundMinor > maxVersion then
+      throw <| .userError
+        s!"PYTHON variable is Python 3.{foundMinor} when at most 3.{maxVersion} required."
     return path
 
   -- Search versions in reverse order
