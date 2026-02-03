@@ -69,7 +69,7 @@ op bool_false : Expression => "false";
 op string_lit (s : Str) : Expression => s;
 op real_lit (d : Decimal) : Expression => d;
 
-// Variables
+// Variables using identifiers (not de Bruijn indices)
 op var_ref (name : Ident) : Expression => name;
 
 // Logical operators
@@ -153,11 +153,11 @@ op var_decl_init (v : Ident, tp : Type, init : Expression) : Statement =>
 op val_decl (v : Ident, tp : Type, val : Expression) : Statement =>
   "val" v ":" tp ":=" val;
 
-// Assignment
+// Assignment using identifier (not de Bruijn index)
 op assign_stmt (v : Ident, e : Expression) : Statement =>
   v ":=" e;
 
-// Havoc/reinit
+// Havoc/reinit using identifier
 op havoc_stmt (v : Ident) : Statement =>
   "havoc" v;
 
