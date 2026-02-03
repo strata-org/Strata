@@ -290,13 +290,14 @@ op command_fndef (name : Ident,
   inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
 
 // Function declaration statement
+@[declareFn(name, b, r)]
 op funcDecl_statement (name : Ident,
                        typeArgs : Option TypeArgs,
                        @[scope(typeArgs)] b : Bindings,
                        @[scope(typeArgs)] r : Type,
-                       @[scope(b)] body : r,
+                       body : r,
                        inline? : Option Inline) : Statement =>
-  inline? "function " name typeArgs b " : " r " {\n" indent(2, body) "\n};\n";
+  inline? "function " name typeArgs b " : " r " {\n" indent(2, body) "\n}";
 
 @[scope(b)]
 op command_var (b : Bind) : Command =>

@@ -412,6 +412,21 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
     pure (fst ++ ListMap.ofList [(id, mty)])
+  | q`Core.mkBindings =>
+    let args ← checkOpArg arg q`Core.mkBindings 1
+    let .seq _ _ bindingSeq := args[0]!
+      | TransM.error s!"mkBindings expects seq {repr args[0]!}"
+    let bindings ← bindingSeq.mapM (fun bindingArg => do
+      let .op bindingOp := bindingArg
+        | TransM.error s!"Expected binding op {repr bindingArg}"
+      if bindingOp.name == q`Core.mkBinding then
+        let bindingArgs ← checkOpArg bindingArg q`Core.mkBinding 2
+        let id ← translateIdent CoreIdent bindingArgs[0]!
+        let mty ← translateLMonoTy bindings bindingArgs[1]!
+        pure (id, mty)
+      else
+        TransM.error s!"Expected mkBinding, got {bindingOp.name}")
+    pure bindings.toList
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
 def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
@@ -1036,6 +1051,53 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateIdent String la
     let md ← getOpMetaData op
     return ([.goto l md], bindings)
+  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, _axiomsa, bodya] =>
+    let name ← translateIdent CoreIdent namea
+    let inputs ← translateMonoDeclList bindings bindingsa
+    let outputMono ← translateLMonoTy bindings returna
+    let output : Expression.Ty := .forAll [] outputMono
+    let inputsConverted : ListMap Expression.Ident Expression.Ty := 
+      inputs.map (fun (id, mty) => (id, .forAll [] mty))
+    
+    -- Add function parameters to bound variables for the function body
+    let paramExprs : Array (LExpr CoreLParams.mono) := 
+      inputs.map (fun (id, mty) => .fvar () id (.some mty)) |>.toArray
+    -- Use fresh bindings context with only the function parameters
+    let functionBindings := { bindings with boundVars := paramExprs }
+    
+    -- Add function parameters to bound variables for the function body
+    let paramExprs : Array (LExpr CoreLParams.mono) := 
+      inputs.map (fun (id, mty) => .fvar () id (.some mty)) |>.toArray
+    let functionBindings := { bindings with boundVars := paramExprs }
+    
+    let body ← match bodya with
+      | .option _ (.some bodyExpr) => do
+        let expr ← translateExpr p functionBindings bodyExpr
+        pure (some expr)
+      | .option _ .none => pure none
+      | _ => do
+        let bodyExpr ← translateExpr p functionBindings bodya
+        pure (some bodyExpr)
+    let decl : Lambda.PureFunc Expression := {
+      name := name,
+      inputs := inputsConverted,
+      output := output,
+      body := body,
+      axioms := []
+    }
+    let md ← getOpMetaData op
+    -- Create a Function for the freeVars
+    let func := { name := name,
+                  typeArgs := [],
+                  inputs := inputs,
+                  output := outputMono,
+                  body := body,
+                  attr := #[] }
+    let funcDecl := Core.Decl.func func md
+    -- Add the function to the local scope for subsequent statements
+    let newFreeVars := bindings.freeVars.push funcDecl
+    let updatedBindings := { bindings with freeVars := newFreeVars }
+    return ([.funcDecl decl md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
