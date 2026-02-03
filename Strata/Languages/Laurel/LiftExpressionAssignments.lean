@@ -170,12 +170,14 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
         | head :: tail =>
             match head with
             | .Assign targets value md =>
-                -- Because we are lifting all assignments
-                -- and the last one will overwrite the previous one
-                -- We need to store the current value after each assignment
-                -- Which we do using a snapshot variable
-                -- We will use transformTarget (no snapshot substitution) for targets
-                -- and transformExpr (with snapshot substitution) for values
+                /-
+                Because we are lifting all assignments
+                and the last one will overwrite the previous one
+                We need to store the current value after each assignment
+                Which we do using a snapshot variable
+                We will use transformTarget (no snapshot substitution) for targets
+                and transformExpr (with snapshot substitution) for values
+                -/
                 let seqTargets ← targets.mapM transformTarget
                 let seqValue ← transformExpr value
                 let assignStmt := StmtExpr.Assign seqTargets seqValue md
