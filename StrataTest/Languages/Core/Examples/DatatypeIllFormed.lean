@@ -10,9 +10,8 @@ import Strata.Languages.Core.Verifier
 # Ill-Formed Datatype Tests
 
 Tests that the Core typechecker correctly rejects ill-formed datatype declarations:
-- Duplicate datatype names across declarations
 - Non-strictly positive occurrences
-- Non-uniform type applications
+- Nested datatypes
 -/
 
 namespace Strata.DatatypeIllFormedTest
@@ -32,7 +31,7 @@ datatype Bad () { MkBad(f: Bad -> int) };
 #end
 
 /--
-info: error: (729-770) Error in constructor MkBad: Non-strictly positive occurrence of Bad in type (arrow Bad int)
+info: error: (669-710) Error in constructor MkBad: Non-strictly positive occurrence of Bad in type (arrow Bad int)
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonStrictlyPositivePgm) |>.fst)
@@ -52,8 +51,7 @@ datatype Nest (a : Type) { Base(), MkNest(xs: List (Nest a)) };
 #end
 
 /--
-info: error: (1348-1411) Error in constructor MkNest: Nested datatypes are not 
-          supported in Strata. Datatype Nest appears nested inside (List (Nest a)).
+info: error: (1288-1351) Error in constructor MkNest: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata.
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedDatatypePgm) |>.fst)
