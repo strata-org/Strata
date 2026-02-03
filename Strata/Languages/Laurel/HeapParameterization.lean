@@ -197,12 +197,8 @@ where
           args' := args' ++ [← recurse a]
         return .InstanceCall t callee args'
     | .IfThenElse c t e =>
-        let c' ← recurse c
-        let t' ← recurse t valueUsed
-        let e' ← match e with
-          | some x => pure (some (← recurse x valueUsed))
-          | none => pure none
-        return .IfThenElse c' t' e'
+        let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
+        return .IfThenElse (← recurse c) (← recurse t valueUsed) e'
     | .Block stmts label =>
         let n := stmts.length
         let mut stmts' := []
@@ -213,24 +209,14 @@ where
           idx := idx + 1
         return .Block stmts' label
     | .LocalVariable n ty i =>
-        let i' ← match i with
-          | some x => pure (some (← recurse x))
-          | none => pure none
+        let i' ← match i with | some x => some <$> recurse x | none => pure none
         return .LocalVariable n ty i'
     | .While c i d b =>
-        let c' ← recurse c
-        let i' ← match i with
-          | some x => pure (some (← recurse x))
-          | none => pure none
-        let d' ← match d with
-          | some x => pure (some (← recurse x))
-          | none => pure none
-        let b' ← recurse b false
-        return .While c' i' d' b'
+        let i' ← match i with | some x => some <$> recurse x | none => pure none
+        let d' ← match d with | some x => some <$> recurse x | none => pure none
+        return .While (← recurse c) i' d' (← recurse b false)
     | .Return v =>
-        let v' ← match v with
-          | some x => pure (some (← recurse x))
-          | none => pure none
+        let v' ← match v with | some x => some <$> recurse x | none => pure none
         return .Return v'
     | .Assign targets v md =>
         match targets with
