@@ -289,6 +289,15 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
 
+// Function declaration statement
+op funcDecl_statement (name : Ident,
+                       typeArgs : Option TypeArgs,
+                       @[scope(typeArgs)] b : Bindings,
+                       @[scope(typeArgs)] r : Type,
+                       @[scope(b)] body : r,
+                       inline? : Option Inline) : Statement =>
+  inline? "function " name typeArgs b " : " r " {\n" indent(2, body) "\n};\n";
+
 @[scope(b)]
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
