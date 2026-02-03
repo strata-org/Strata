@@ -9,10 +9,11 @@ import StrataTest.Util.Python
 
 namespace Strata.Python.Specs
 
-/--
-info: program PythonSpecs;
+def expectedPySpec :=
+#strata
+program PythonSpecs;
 extern BaseClass from basetypes.BaseClass;
-function "dict_function"{
+function "dict_function" {
   args: [
     x : ident(typing.Dict, ident(builtins.int), ident(typing.Any)) [hasDefault: false]
   ]
@@ -21,7 +22,7 @@ function "dict_function"{
   return: ident(typing.Any)
   overload: false
 }
-function "list_function"{
+function "list_function" {
   args: [
     x : ident(typing.List, ident(builtins.int)) [hasDefault: false]
   ]
@@ -30,7 +31,7 @@ function "list_function"{
   return: ident(typing.Any)
   overload: false
 }
-function "sequence_function"{
+function "sequence_function" {
   args: [
     x : ident(typing.Sequence, ident(builtins.int)) [hasDefault: false]
   ]
@@ -69,10 +70,28 @@ function "main_function"{
   return: ident(typing.Any)
   overload: false
 }
--/
-#guard_msgs in
-#eval do
-  let pythonCmd ← findPython3 12
+#end
+
+-- We use an environment variable to allow the build process
+-- to require the Python test is run.
+def pythonTestRequired : IO Bool :=
+  return (← IO.getEnv "PYTHON_TEST").isSome
+
+def testCase : IO Unit := do
+  let pythonCmd ←
+    match ← findPython3 (minVersion := 11) (maxVersion := 14) |>.toBaseIO with
+    | .ok cmd =>
+      pure cmd
+    | .error msg =>
+      -- We may skip tests if Python 3 is not available.
+      if ← pythonTestRequired then
+        throw msg
+      return ()
+  if not (← pythonCheckModule pythonCmd "strata.gen") then
+    -- We may skip tests if stratal.gen is not available.
+    if ← pythonTestRequired then
+      throw <| .userError "Python Strata libraries not installed."
+    return ()
   let dialectFile : System.FilePath := "Tools/Python/dialects/Python.dialect.st.ion"
   let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/main.py"
   IO.FS.withTempDir fun strataDir => do
@@ -86,8 +105,11 @@ function "main_function"{
     match r with
     | .ok sigs =>
       let pgm := toDDMProgram sigs
-      IO.println <| pgm
+      assert! pgm == expectedPySpec
+      pure ()
     | .error e =>
       throw <| IO.userError e
+
+#eval testCase
 
 end Strata.Python.Specs

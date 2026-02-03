@@ -28,45 +28,74 @@ N.B. The `mise` command can be replaced with another command if
 needed.
 -/
 def miseWhere (runtime : String) (miseCmd : String := "mise") : IO (Option System.FilePath) := do
-    let spawnArgs : IO.Process.SpawnArgs := {
-        cmd := miseCmd
-        args := #["where", runtime]
-        cwd := none
-        inheritEnv := true
-        stdin := .null
-        stdout := .piped
-        stderr := .piped
-    }
-    let child ←
-            match ← IO.Process.spawn spawnArgs |>.toBaseIO with
-            | .ok c => pure c
-            | .error msg => throw <| .userError s!"Could not run mise: {msg}"
-    let stdout ← IO.asTask child.stdout.readToEnd Task.Priority.dedicated
-    let stderr ←
-          match ← child.stderr.readToEnd |>.toBaseIO with
+  let spawnArgs : IO.Process.SpawnArgs := {
+      cmd := miseCmd
+      args := #["where", runtime]
+      cwd := none
+      inheritEnv := true
+      stdin := .null
+      stdout := .piped
+      stderr := .piped
+  }
+  let child ←
+          match ← IO.Process.spawn spawnArgs |>.toBaseIO with
           | .ok c => pure c
-          | .error msg => throw <| .userError s!"Could not read stderr from mise: {msg}"
-    let exitCode ←
-          match ← child.wait |>.toBaseIO with
-          | .ok c => pure c
-          | .error msg => throw <| .userError s!"Could not wait for process exit code: {msg}"
-    let stdout ←
-          match stdout.get with
-          | .ok c => pure c
-          | .error msg => throw <| .userError s!"Could not read stdout: {msg}"
-    if exitCode = 255 then
-      return none
-    -- This is the exit code if the version is not installed
-    if exitCode = 1 then
-      return none
-    if exitCode ≠ 0 then
-      let msg := s!"Internal: mise where failed (exitCode = {exitCode})\n"
-      let msg := s!"{msg}Standard output:\n"
-      let msg := stdout.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
-      let msg := s!"{msg}Standard error:\n"
-      let msg := stderr.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
-      throw <| .userError msg
-    pure <| some stdout.trim
+          | .error msg => throw <| .userError s!"Could not run mise: {msg}"
+  let stdout ← IO.asTask child.stdout.readToEnd Task.Priority.dedicated
+  let stderr ←
+        match ← child.stderr.readToEnd |>.toBaseIO with
+        | .ok c => pure c
+        | .error msg => throw <| .userError s!"Could not read stderr from mise: {msg}"
+  let exitCode ←
+        match ← child.wait |>.toBaseIO with
+        | .ok c => pure c
+        | .error msg => throw <| .userError s!"Could not wait for process exit code: {msg}"
+  let stdout ←
+        match stdout.get with
+        | .ok c => pure c
+        | .error msg => throw <| .userError s!"Could not read stdout: {msg}"
+  if exitCode = 255 then
+    return none
+  -- This is the exit code if the version is not installed
+  if exitCode = 1 then
+    return none
+  if exitCode ≠ 0 then
+    let msg := s!"Internal: mise where failed (exitCode = {exitCode})\n"
+    let msg := s!"{msg}Standard output:\n"
+    let msg := stdout.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
+    let msg := s!"{msg}Standard error:\n"
+    let msg := stderr.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
+    throw <| .userError msg
+  pure <| some stdout.trim
+
+/--
+This checks to see if a module is found.
+-/
+def pythonCheckModule (pythonCmd : System.FilePath) (moduleName : String) : IO Bool := do
+  let spawnArgs : IO.Process.SpawnArgs := {
+      cmd := toString pythonCmd
+      args := #["-c", s!"import {moduleName}"]
+      cwd := none
+      inheritEnv := true
+      stdin := .null
+      stdout := .null
+      stderr := .null
+  }
+  let child ← IO.Process.spawn spawnArgs
+  let exitCode ←
+        match ← child.wait |>.toBaseIO with
+        | .ok c => pure c
+        | .error msg => throw <| .userError s!"Could not wait for process exit code: {msg}"
+  match exitCode with
+  | 0 =>
+    return true
+  | 1 =>
+    return false
+  | 255 =>
+    throw <| .userError "{pythonCmd} not found."
+  | _ =>
+    throw <| .userError
+      s!"{pythonCmd} has unexpected exit code {exitCode}"
 
 /--
 info: none
@@ -166,7 +195,6 @@ def findPython3 (minVersion : Nat := 12) (maxVersion : Nat := 14) : IO System.Fi
       return defaultCmd
 
   throw <| IO.userError s!"Python 3.{minVersion} or later not found."
-
 
 end Strata.Python
 end
