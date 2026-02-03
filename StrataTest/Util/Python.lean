@@ -171,7 +171,7 @@ two checks:
 1. It attempts to run `mise` to see if the version is installed.
 2. Next it looks in the path for python3.{minVersion}.
 -/
-def findPython3 (minVersion : Nat := 12) (maxVersion : Nat := 14) : IO System.FilePath := do
+def findPython3 (minVersion : Nat) (maxVersion : Nat) : IO System.FilePath := do
   assert! minVersion ≤ maxVersion
   if let some path  ← IO.getEnv "PYTHON" then
     let some foundMinor ← getPython3Version path

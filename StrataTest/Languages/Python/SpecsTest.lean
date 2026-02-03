@@ -79,7 +79,7 @@ def pythonTestRequired : IO Bool :=
 
 def testCase : IO Unit := do
   let pythonCmd ←
-    match ← findPython3 (minVersion := 11) (maxVersion := 12) |>.toBaseIO with
+    match ← findPython3 (minVersion := 11) (maxVersion := 14) |>.toBaseIO with
     | .ok cmd =>
       pure cmd
     | .error msg =>
