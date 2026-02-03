@@ -22,19 +22,21 @@ Configuration for small-step semantics, representing the current execution
 state. A configuration consists of:
 - The current statement (or list of statements) being executed
 - The current store
-- The current function context
+- The current expression evaluator (threaded to support funcDecl)
 -/
 inductive Config (P : PureExpr) (CmdT : Type) : Type where
   /-- A single statement to execute next. -/
-  | stmt : Stmt P CmdT → SemanticStore P → FuncContext P → Config P CmdT
+  | stmt : Stmt P CmdT → SemanticStore P → SemanticEval P → Config P CmdT
   /-- A list of statements to execute next, in order. -/
-  | stmts : List (Stmt P CmdT) → SemanticStore P → FuncContext P → Config P CmdT
+  | stmts : List (Stmt P CmdT) → SemanticStore P → SemanticEval P → Config P CmdT
   /-- A terminal configuration, indicating that execution has finished. -/
-  | terminal : SemanticStore P → FuncContext P → Config P CmdT
+  | terminal : SemanticStore P → SemanticEval P → Config P CmdT
 
 /--
 Small-step operational semantics for statements. The relation `StepStmt`
 defines a single execution step from one configuration to another.
+The expression evaluator is part of the configuration and can be extended
+by funcDecl statements.
 -/
 inductive StepStmt
   {CmdT : Type}
@@ -44,21 +46,21 @@ inductive StepStmt
   [HasVarsImp P (List (Stmt P CmdT))]
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P] :
-  SemanticEval P → Config P CmdT → Config P CmdT → Prop where
+  Config P CmdT → Config P CmdT → Prop where
 
   /-- A command steps to terminal configuration if it evaluates successfully -/
   | step_cmd :
-    EvalCmd δ σ c σ' →
+    EvalCmd δ σ c σ' δ' →
     ----
-    StepStmt P EvalCmd δ
-      (.stmt (.cmd c) σ φ)
-      (.terminal σ' φ)
+    StepStmt P EvalCmd
+      (.stmt (.cmd c) σ δ)
+      (.terminal σ' δ')
 
   /-- A labeled block steps to its statement list. -/
   | step_block :
-    StepStmt P EvalCmd δ
-      (.stmt (.block _ ss _) σ φ)
-      (.stmts ss σ φ)
+    StepStmt P EvalCmd
+      (.stmt (.block _ ss _) σ δ)
+      (.stmts ss σ δ)
 
   /-- If the condition of an `ite` statement evaluates to true, step to the then
   branch. -/
@@ -66,9 +68,9 @@ inductive StepStmt
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd δ
-      (.stmt (.ite c tss ess _) σ φ)
-      (.stmts tss σ φ)
+    StepStmt P EvalCmd
+      (.stmt (.ite c tss ess _) σ δ)
+      (.stmts tss σ δ)
 
   /-- If the condition of an `ite` statement evaluates to false, step to the else
   branch. -/
@@ -76,50 +78,51 @@ inductive StepStmt
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd δ
-      (.stmt (.ite c tss ess _) σ φ)
-      (.stmts ess σ φ)
+    StepStmt P EvalCmd
+      (.stmt (.ite c tss ess _) σ δ)
+      (.stmts ess σ δ)
 
   /-- If a loop guard is true, execute the body and then loop again. -/
   | step_loop_enter :
     δ σ g = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd δ
-      (.stmt (.loop g m inv body md) σ φ)
-      (.stmts (body ++ [.loop g m inv body md]) σ φ)
+    StepStmt P EvalCmd
+      (.stmt (.loop g m inv body md) σ δ)
+      (.stmts (body ++ [.loop g m inv body md]) σ δ)
 
   /-- If a loop guard is false, terminate the loop. -/
   | step_loop_exit :
     δ σ g = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd δ
-      (.stmt (.loop g m inv body _) σ φ)
-      (.terminal σ φ)
+    StepStmt P EvalCmd
+      (.stmt (.loop g m inv body _) σ δ)
+      (.terminal σ δ)
 
   /- Goto: not implemented, because we plan to remove it. -/
 
-  /-- A function declaration adds the function to the context with closure capture. -/
-  | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr] :
-    StepStmt P EvalCmd δ
-      (.stmt (.funcDecl decl md) σ φ)
-      (.terminal σ (fun id => if id == decl.name then some (closureCapture P σ decl) else φ id))
+  /-- A function declaration extends the evaluator with the new function. -/
+  | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr]
+    (extendEval : SemanticEval P → SemanticStore P → Lambda.PureFunc P → SemanticEval P) :
+    StepStmt P EvalCmd
+      (.stmt (.funcDecl decl md) σ δ)
+      (.terminal σ (extendEval δ σ decl))
 
   /-- An empty list of statements steps to `.terminal` with no state changes. -/
   | step_stmts_nil :
-    StepStmt P EvalCmd δ
-      (.stmts [] σ φ)
-      (.terminal σ φ)
+    StepStmt P EvalCmd
+      (.stmts [] σ δ)
+      (.terminal σ δ)
 
   /-- To evaluate a sequence of statements, evaluate the first statement and
   then evaluate the remaining statements in the resulting state. -/
   | step_stmt_cons :
-    StepStmt P EvalCmd δ (.stmt s σ φ) (.terminal σ' φ') →
+    StepStmt P EvalCmd (.stmt s σ δ) (.terminal σ' δ') →
     ----
-    StepStmt P EvalCmd δ
-      (.stmts (s :: ss) σ φ)
-      (.stmts ss σ' φ')
+    StepStmt P EvalCmd
+      (.stmts (s :: ss) σ δ)
+      (.stmts ss σ' δ')
 
 /--
 Multi-step execution: reflexive transitive closure of single steps.
@@ -132,7 +135,7 @@ def StepStmtStar
   [HasVarsImp P (List (Stmt P CmdT))]
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P] :
-  SemanticEval P → Config P CmdT → Config P CmdT → Prop := fun δ => ReflTrans (StepStmt P EvalCmd δ)
+  Config P CmdT → Config P CmdT → Prop := ReflTrans (StepStmt P EvalCmd)
 
 /-- A statement evaluates successfully if it can step to a terminal
 configuration.
@@ -147,11 +150,10 @@ def EvalStmtSmall
   (EvalCmd : EvalCmdParam P CmdT)
   (δ : SemanticEval P)
   (σ : SemanticStore P)
-  (φ : FuncContext P)
   (s : Stmt P CmdT)
   (σ' : SemanticStore P)
-  (φ' : FuncContext P) : Prop :=
-  StepStmtStar P EvalCmd δ (.stmt s σ φ) (.terminal σ' φ')
+  (δ' : SemanticEval P) : Prop :=
+  StepStmtStar P EvalCmd (.stmt s σ δ) (.terminal σ' δ')
 
 /-- A list of statements evaluates successfully if it can step to a terminal
 configuration.
@@ -165,11 +167,10 @@ def EvalStmtsSmall
   (EvalCmd : EvalCmdParam P CmdT)
   (δ : SemanticEval P)
   (σ : SemanticStore P)
-  (φ : FuncContext P)
   (ss : List (Stmt P CmdT))
   (σ' : SemanticStore P)
-  (φ' : FuncContext P) : Prop :=
-  StepStmtStar P EvalCmd δ (.stmts ss σ φ) (.terminal σ' φ')
+  (δ' : SemanticEval P) : Prop :=
+  StepStmtStar P EvalCmd (.stmts ss σ δ) (.terminal σ' δ')
 
 ---------------------------------------------------------------------
 
@@ -186,9 +187,8 @@ theorem evalStmtsSmallNil
   [HasBool P] [HasNot P]
   (δ : SemanticEval P)
   (σ : SemanticStore P)
-  (φ : FuncContext P)
   (EvalCmd : EvalCmdParam P CmdT) :
-  EvalStmtsSmall P EvalCmd δ σ φ [] σ φ := by
+  EvalStmtsSmall P EvalCmd δ σ [] σ δ := by
     unfold EvalStmtsSmall
     apply ReflTrans.step
     · exact StepStmt.step_stmts_nil
@@ -204,10 +204,9 @@ def IsTerminal
   [HasVarsImp P (List (Stmt P CmdT))]
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P]
-  (δ : SemanticEval P)
   (EvalCmd : EvalCmdParam P CmdT)
   (c : Config P CmdT) : Prop :=
-  ∀ c', ¬ StepStmt P EvalCmd δ c c'
+  ∀ c', ¬ StepStmt P EvalCmd c c'
 
 /--
 Terminal configurations are indeed terminal.
@@ -220,10 +219,9 @@ theorem terminalIsTerminal
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P]
   (σ : SemanticStore P)
-  (φ : FuncContext P)
   (δ : SemanticEval P)
   (EvalCmd : EvalCmdParam P CmdT) :
-  IsTerminal P δ EvalCmd (.terminal σ φ) := by
+  IsTerminal P EvalCmd (.terminal σ δ) := by
   unfold IsTerminal
   intro c' h
   cases h

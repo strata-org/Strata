@@ -20,87 +20,90 @@ environment lookup and evaluation functions for expressions.
 
 Note that `EvalStmt` is parameterized by commands `Cmd` as well as their
 evaluation relation `EvalCmd`.
+
+The expression evaluator `δ` is threaded as state to support `funcDecl`,
+which extends the evaluator with new function definitions.
 -/
 inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → FuncContext P → Stmt P Cmd → SemanticStore P → FuncContext P → Prop where
+  SemanticEval P → SemanticStore P → Stmt P Cmd → SemanticStore P → SemanticEval P → Prop where
   | cmd_sem :
-    EvalCmd δ σ c σ' →
+    EvalCmd δ σ c σ' δ' →
     -- We only require definedness on the statement level so that the requirement is fine-grained
     -- For example, if we require definedness on a block, then we won't be able to evaluate
     -- a block containing init x; havoc x, because it will require x to exist prior to the block
     isDefinedOver (HasVarsImp.modifiedVars) σ c →
     ----
-    EvalStmt P Cmd EvalCmd δ σ φ (Stmt.cmd c) σ' φ
+    EvalStmt P Cmd EvalCmd δ σ (Stmt.cmd c) σ' δ'
 
   | block_sem :
-    EvalBlock P Cmd EvalCmd δ σ φ b σ' φ' →
+    EvalBlock P Cmd EvalCmd δ σ b σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd δ σ φ (.block _ b) σ' φ'
+    EvalStmt P Cmd EvalCmd δ σ (.block _ b) σ' δ'
 
   | ite_true_sem :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd δ σ φ t σ' φ' →
+    EvalBlock P Cmd EvalCmd δ σ t σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd δ σ φ (.ite c t e) σ' φ'
+    EvalStmt P Cmd EvalCmd δ σ (.ite c t e) σ' δ'
 
   | ite_false_sem :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd δ σ φ e σ' φ' →
+    EvalBlock P Cmd EvalCmd δ σ e σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd δ σ φ (.ite c t e) σ' φ'
+    EvalStmt P Cmd EvalCmd δ σ (.ite c t e) σ' δ'
 
-  | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
-    EvalStmt P Cmd EvalCmd δ σ φ (.funcDecl decl md) σ
-      (fun id => if id == decl.name then some (closureCapture P σ decl) else φ id)
+  | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr]
+    (extendEval : SemanticEval P → SemanticStore P → Lambda.PureFunc P → SemanticEval P) :
+    EvalStmt P Cmd EvalCmd δ σ (.funcDecl decl md) σ
+      (extendEval δ σ decl)
 
   -- (TODO): Define semantics of `goto`.
 
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-    SemanticEval P → SemanticStore P → FuncContext P → List (Stmt P Cmd) → SemanticStore P → FuncContext P → Prop where
+    SemanticEval P → SemanticStore P → List (Stmt P Cmd) → SemanticStore P → SemanticEval P → Prop where
   | stmts_none_sem :
-    EvalBlock P _ _ δ σ φ [] σ φ
+    EvalBlock P _ _ δ σ [] σ δ
   | stmts_some_sem :
-    EvalStmt P Cmd EvalCmd δ σ φ s σ' φ' →
-    EvalBlock P Cmd EvalCmd δ σ' φ' ss σ'' φ'' →
-    EvalBlock P Cmd EvalCmd δ σ φ (s :: ss) σ'' φ''
+    EvalStmt P Cmd EvalCmd δ σ s σ' δ' →
+    EvalBlock P Cmd EvalCmd δ' σ' ss σ'' δ'' →
+    EvalBlock P Cmd EvalCmd δ σ (s :: ss) σ'' δ''
 
 end
 
 theorem eval_stmts_singleton
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ [cmd] σ' φ' ↔
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ cmd σ' φ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ [cmd] σ' δ' ↔
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ cmd σ' δ' := by
   constructor <;> intro Heval
-  cases Heval with | @stmts_some_sem _ _ _ _ σ1 _ _ _ φ1 Heval Hempty =>
-    cases Hempty; assumption
-  apply EvalBlock.stmts_some_sem Heval (EvalBlock.stmts_none_sem)
+  · cases Heval with | @stmts_some_sem _ _ _ _ σ1 _ _ δ1 Heval Hempty =>
+      cases Hempty; exact Heval
+  · exact EvalBlock.stmts_some_sem Heval EvalBlock.stmts_none_sem
 
 theorem eval_stmts_concat
   [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ cmds1 σ' φ' →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ' φ' cmds2 σ'' φ'' →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ (cmds1 ++ cmds2) σ'' φ'' := by
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ cmds1 σ' δ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ' σ' cmds2 σ'' δ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ (cmds1 ++ cmds2) σ'' δ'' := by
   intro Heval1 Heval2
-  induction cmds1 generalizing cmds2 σ φ
-  simp only [List.nil_append]
-  cases Heval1
-  assumption
-  rename_i cmd cmds ind
-  cases Heval1
-  apply EvalBlock.stmts_some_sem (by assumption)
-  apply ind (by assumption) (by assumption)
+  induction cmds1 generalizing cmds2 σ δ
+  · simp only [List.nil_append]
+    cases Heval1; exact Heval2
+  · rename_i cmd cmds ind
+    cases Heval1
+    apply EvalBlock.stmts_some_sem (by assumption)
+    apply ind (by assumption) (by assumption)
 
 theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   isDefined σ v →
-  EvalCmd P δ σ c σ' →
+  EvalCmd P δ σ c σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
@@ -109,10 +112,10 @@ theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   next _ _ Hup => exact UpdateStateDefMonotone Hdef Hup
 
 theorem EvalBlockEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
-  { σ σ': SemanticStore P } { φ φ' : FuncContext P } { δ : SemanticEval P }
+  { σ σ': SemanticStore P } { δ δ' : SemanticEval P }
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P Cmd EvalCmd δ σ φ ([]: (List (Stmt P Cmd))) σ' φ' → σ = σ' ∧ φ = φ' := by
+  EvalBlock P Cmd EvalCmd δ σ ([]: (List (Stmt P Cmd))) σ' δ' → σ = σ' ∧ δ = δ' := by
   intros H; cases H <;> simp
 
 mutual
@@ -121,7 +124,7 @@ theorem EvalStmtDefMonotone
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ s σ' φ' →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ s σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
   match s with
@@ -147,7 +150,7 @@ theorem EvalBlockDefMonotone
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ ss σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases ss with
@@ -157,8 +160,8 @@ theorem EvalBlockDefMonotone
     assumption
   | cons h t =>
     cases Heval <;> try assumption
-    next σ1 φ1 Heval1 Heval2 =>
-    apply EvalBlockDefMonotone (σ:=σ1) (φ:=φ1)
+    next σ1 δ1 Heval1 Heval2 =>
+    apply EvalBlockDefMonotone (σ:=σ1) (δ:=δ1)
     apply EvalStmtDefMonotone <;> assumption
     assumption
   termination_by (Block.sizeOf ss)

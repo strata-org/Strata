@@ -69,10 +69,12 @@ def closureCapture [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
 
 /--
 Evaluation relation of an Imperative command `Cmd`.
+The relation now includes an output evaluator `δ'` to support commands
+that modify the expression evaluator (like `funcDecl`).
 -/
 -- (FIXME) Change to a type class?
 abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
-  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Prop
+  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → SemanticEval P → Prop
 
 /-- ### Well-Formedness of `SemanticStore`s -/
 
@@ -307,16 +309,17 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 /--
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`δ`) functions.
+Basic commands don't modify the evaluator, so they output the same `δ`.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Prop where
+  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → SemanticEval P → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
     δ σ e = .some v →
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ e _) σ'
+    EvalCmd δ σ (.init x _ e _) σ' δ
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
@@ -324,14 +327,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.set x e _) σ'
+    EvalCmd δ σ (.set x e _) σ' δ
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
   | eval_havoc :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.havoc x _) σ'
+    EvalCmd δ σ (.havoc x _) σ' δ
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
   does not have a concept of an erroneous execution. -/
@@ -339,20 +342,20 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assert _ e _) σ
+    EvalCmd δ σ (.assert _ e _) σ δ
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
   | eval_assume :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assume _ e _) σ
+    EvalCmd δ σ (.assume _ e _) σ δ
 
   /-- A cover, when encountered, is essentially a skip. -/
   | eval_cover :
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.cover _ e _) σ
+    EvalCmd δ σ (.cover _ e _) σ δ
 
 end section
 

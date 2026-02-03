@@ -50,7 +50,6 @@ instance : HasNot Core.Expression where
 
 abbrev CoreEval := SemanticEval Expression
 abbrev CoreStore := SemanticStore Expression
-abbrev CoreFuncContext := FuncContext Expression
 
 structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
     abscongr: (∀ σ σ' e₁ e₁' ,
@@ -187,11 +186,11 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       (∀ e σ, δ σ e = δ σ (normalizeOldExpr e))
 
 inductive EvalCommand : (String → Option Procedure)  → CoreEval →
-  CoreStore → Command → CoreStore → Prop where
-  | cmd_sem {π δ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ σ c σ' →
+  CoreStore → Command → CoreStore → CoreEval → Prop where
+  | cmd_sem {π δ σ c σ' δ'} :
+    Imperative.EvalCmd (P:=Expression) δ σ c σ' δ' →
     ----
-    EvalCommand π δ σ (CmdExt.cmd c) σ'
+    EvalCommand π δ σ (CmdExt.cmd c) σ' δ'
 
   /-
   NOTE: If π is NOT the first implicit variable below, Lean complains as
@@ -204,7 +203,7 @@ inductive EvalCommand : (String → Option Procedure)  → CoreEval →
   Here's a Zulip thread that can shed some light on this error message:
   https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
   -/
-  | call_sem {π δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ' φ φ'} :
+  | call_sem {π δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ' δ'} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ args vals →
     ReadValues σ lhs oVals →
@@ -227,7 +226,7 @@ inductive EvalCommand : (String → Option Procedure)  → CoreEval →
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    @Imperative.EvalBlock Expression Command (EvalCommand π) _ _ _ _ _ _ _ δ σAO φ p.body σR φ' →
+    @Imperative.EvalBlock Expression Command (EvalCommand π) _ _ _ _ _ _ _ δ σAO p.body σR δ' →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
@@ -236,22 +235,22 @@ inductive EvalCommand : (String → Option Procedure)  → CoreEval →
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommand π δ σ (CmdExt.call lhs n args) σ'
+    EvalCommand π δ σ (CmdExt.call lhs n args) σ' δ'
 
 abbrev EvalStatement (π : String → Option Procedure) : CoreEval →
-    CoreStore → CoreFuncContext → Statement → CoreStore → CoreFuncContext → Prop :=
+    CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommand π)
 
 abbrev EvalStatements (π : String → Option Procedure) : CoreEval →
-    CoreStore → CoreFuncContext → List Statement → CoreStore → CoreFuncContext → Prop :=
+    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommand π)
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
-  CoreStore → Command → CoreStore → Prop where
-  | cmd_sem {π δ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ σ c σ' →
+  CoreStore → Command → CoreStore → CoreEval → Prop where
+  | cmd_sem {π δ σ c σ' δ'} :
+    Imperative.EvalCmd (P:=Expression) δ σ c σ' δ' →
     ----
-    EvalCommandContract π δ σ (CmdExt.cmd c) σ'
+    EvalCommandContract π δ σ (CmdExt.cmd c) σ' δ'
 
   | call_sem {π δ σ args oVals vals σA σAO σO σR n p modvals lhs σ'} :
     π n = .some p →
@@ -285,12 +284,12 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommandContract π δ σ (.call lhs n args) σ'
+    EvalCommandContract π δ σ (.call lhs n args) σ' δ
 
 abbrev EvalStatementContract (π : String → Option Procedure) : CoreEval →
-    CoreStore → CoreFuncContext → Statement → CoreStore → CoreFuncContext → Prop :=
+    CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommandContract π)
 
 abbrev EvalStatementsContract (π : String → Option Procedure) : CoreEval →
-    CoreStore → CoreFuncContext → List Statement → CoreStore → CoreFuncContext → Prop :=
+    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommandContract π)

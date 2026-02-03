@@ -16,12 +16,14 @@ mutual
 /-- An inductively-defined operational semantics for non-deterministic
 statements that depends on environment lookup and evaluation functions for
 expressions.  **NOTE:** This will probably be replaced with a small-step
-semantics. -/
+semantics.
+Note: Nondeterministic statements don't track evaluator changes (δ' is ignored)
+since they represent a simplified model without function declarations. -/
 inductive EvalNondetStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → NondetStmt P Cmd → SemanticStore P → Prop where
   | cmd_sem :
-    EvalCmd δ σ c σ' →
+    EvalCmd δ σ c σ' δ' →
     -- We only require definedness on the statement level so that the requirement is fine-grained
     isDefinedOver (HasVarsImp.modifiedVars) σ c →
     ----

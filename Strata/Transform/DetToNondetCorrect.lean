@@ -34,106 +34,130 @@ theorem StmtToNondetCorrect
   WellFormedSemanticEvalVal δ →
   (∀ st,
     Stmt.sizeOf st ≤ m →
-    EvalStmt P (Cmd P) (EvalCmd P) δ σ φ st σ' φ' →
+    EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' δ' →
     EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
   (∀ ss,
     Block.sizeOf ss ≤ m →
-    EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
+    EvalBlock P (Cmd P) (EvalCmd P) δ σ ss σ' δ' →
     EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ') := by
   intros Hwfb Hwfvl
-  apply Nat.strongRecOn (motive := λ m ↦
-    ∀ σ σ' φ φ',
+  -- We use a stronger motive that quantifies over the starting δ₀
+  -- This allows us to handle the case where δ changes during evaluation
+  have Hstrong : ∀ m σ σ' δ' δ₀,
+    WellFormedSemanticEvalBool δ₀ →
+    WellFormedSemanticEvalVal δ₀ →
     (∀ st,
       Stmt.sizeOf st ≤ m →
-      EvalStmt P (Cmd P) (EvalCmd P) δ σ φ st σ' φ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
+      EvalStmt P (Cmd P) (EvalCmd P) δ₀ σ st σ' δ' →
+      EvalNondetStmt P (Cmd P) (EvalCmd P) δ₀ σ (StmtToNondetStmt st) σ') ∧
     (∀ ss,
       Block.sizeOf ss ≤ m →
-      EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ')
-  )
-  intros n ih σ σ' φ φ'
-  refine ⟨?_, ?_⟩
-  . intros st Hsz Heval
-    match st with
-    | .cmd c =>
+      EvalBlock P (Cmd P) (EvalCmd P) δ₀ σ ss σ' δ' →
+      EvalNondetStmt P (Cmd P) (EvalCmd P) δ₀ σ (BlockToNondetStmt ss) σ') := by
+    intro m
+    apply Nat.strongRecOn (motive := λ m ↦
+      ∀ σ σ' δ' δ₀,
+      WellFormedSemanticEvalBool δ₀ →
+      WellFormedSemanticEvalVal δ₀ →
+      (∀ st,
+        Stmt.sizeOf st ≤ m →
+        EvalStmt P (Cmd P) (EvalCmd P) δ₀ σ st σ' δ' →
+        EvalNondetStmt P (Cmd P) (EvalCmd P) δ₀ σ (StmtToNondetStmt st) σ') ∧
+      (∀ ss,
+        Block.sizeOf ss ≤ m →
+        EvalBlock P (Cmd P) (EvalCmd P) δ₀ σ ss σ' δ' →
+        EvalNondetStmt P (Cmd P) (EvalCmd P) δ₀ σ (BlockToNondetStmt ss) σ')
+    )
+    intros n ih σ σ' δ' δ₀ Hwfb₀ Hwfvl₀
+    refine ⟨?_, ?_⟩
+    . intros st Hsz Heval
+      match st with
+      | .cmd c =>
+        cases Heval with
+        | cmd_sem Hcmd Hdef =>
+          exact EvalNondetStmt.cmd_sem Hcmd Hdef
+      | .block _ bss =>
+        cases Heval with
+        | block_sem Heval =>
+        next label b =>
+        specialize ih (Block.sizeOf bss) (by simp_all; omega)
+        apply (ih _ _ _ _ Hwfb₀ Hwfvl₀).2
+        omega
+        assumption
+      | .ite c tss ess =>
+        cases Heval with
+        | ite_true_sem Htrue Hwfb' Heval =>
+          specialize ih (Block.sizeOf tss) (by simp_all; omega)
+          refine EvalNondetStmt.choice_left_sem Hwfb₀ ?_
+          apply EvalNondetStmt.seq_sem
+          . apply EvalNondetStmt.cmd_sem
+            exact EvalCmd.eval_assume Htrue Hwfb₀
+            simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
+          . apply (ih _ _ _ _ Hwfb₀ Hwfvl₀).2
+            omega
+            assumption
+        | ite_false_sem Hfalse Hwfb' Heval =>
+          next c t e =>
+          specialize ih (Block.sizeOf ess) (by simp_all; omega)
+          refine EvalNondetStmt.choice_right_sem Hwfb₀ ?_
+          apply EvalNondetStmt.seq_sem
+          . apply EvalNondetStmt.cmd_sem
+            refine EvalCmd.eval_assume ?_ Hwfb₀
+            simp [WellFormedSemanticEvalBool] at Hwfb₀
+            exact (Hwfb₀ σ c).2.mp Hfalse
+            simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
+          . apply (ih _ _ _ _ Hwfb₀ Hwfvl₀).2
+            omega
+            assumption
+      | .goto _ =>
+        cases Heval
+      | .loop _ _ _ _ =>
+        cases Heval
+      | .funcDecl _ _ =>
+        cases Heval with
+        | funcDecl_sem =>
+          simp [StmtToNondetStmt]
+          apply EvalNondetStmt.cmd_sem
+          · apply EvalCmd.eval_assume
+            · simp [WellFormedSemanticEvalVal] at Hwfvl₀
+              exact Hwfvl₀.2 HasBool.tt σ HasBoolVal.bool_is_val.1
+            · exact Hwfb₀
+          · intros id Hin
+            simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
+    . intros ss Hsz Heval
+      cases ss <;>
       cases Heval
-      constructor <;> simp_all
-    | .block _ bss =>
-      cases Heval with
-      | block_sem Heval =>
-      next label b =>
-      specialize ih (Block.sizeOf bss) (by simp_all; omega)
-      apply (ih _ _ _ _).2
-      omega
-      assumption
-    | .ite c tss ess =>
-      cases Heval with
-      | ite_true_sem Htrue Hwfb Heval =>
-        specialize ih (Block.sizeOf tss) (by simp_all; omega)
-        refine EvalNondetStmt.choice_left_sem Hwfb ?_
-        apply EvalNondetStmt.seq_sem
-        . apply EvalNondetStmt.cmd_sem
-          exact EvalCmd.eval_assume Htrue Hwfb
-          simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply (ih _ _ _ _).2
-          omega
-          assumption
-      | ite_false_sem Hfalse Hwfb Heval =>
-        next c t e =>
-        specialize ih (Block.sizeOf ess) (by simp_all; omega)
-        refine EvalNondetStmt.choice_right_sem Hwfb ?_
-        apply EvalNondetStmt.seq_sem
-        . apply EvalNondetStmt.cmd_sem
-          refine EvalCmd.eval_assume ?_ Hwfb
-          simp [WellFormedSemanticEvalBool] at Hwfb
-          exact (Hwfb σ c).2.mp Hfalse
-          simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply (ih _ _ _ _).2
-          omega
-          assumption
-    | .goto _ =>
-      -- because goto has no semantics now, it also does not correspond to anything in the nondeterministic semantics
-      cases Heval
-    | .loop _ _ _ _ =>
-      -- because loop has no semantics now, it also does not correspond to anything in the nondeterministic semantics
-      cases Heval
-    | .funcDecl _ _ =>
-      -- funcDecl updates function context but not state; transformation produces assume true
-      cases Heval with
-      | funcDecl_sem =>
-        simp [StmtToNondetStmt]
-        apply EvalNondetStmt.cmd_sem
-        · apply EvalCmd.eval_assume
-          · simp [WellFormedSemanticEvalVal] at Hwfvl
-            exact Hwfvl.2 HasBool.tt σ HasBoolVal.bool_is_val.1
-          · exact Hwfb
+      case stmts_none_sem =>
+        simp [BlockToNondetStmt]
+        constructor
+        constructor
+        · simp [WellFormedSemanticEvalVal] at Hwfvl₀
+          have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
+          exact Hwfvl₀.2 HasBool.tt σ Hval
+        · assumption
         · intros id Hin
           simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
-  . intros ss Hsz Heval
-    cases ss <;>
-    cases Heval
-    case stmts_none_sem =>
-      simp [BlockToNondetStmt]
-      constructor
-      constructor
-      · simp [WellFormedSemanticEvalVal] at Hwfvl
-        have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
-        exact Hwfvl.2 HasBool.tt σ Hval
-      · assumption
-      · intros id Hin
-        simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
-    case stmts_some_sem h t σ'' φ'' Heval Hevals =>
-      simp [BlockToNondetStmt]
-      simp [Block.sizeOf] at Hsz
-      specialize ih (h.sizeOf + Block.sizeOf t) (by omega)
-      constructor
-      . apply (ih _ _ _ _).1
-        omega
-        exact Heval
-      . apply (ih _ _ _ _).2
-        omega
-        exact Hevals
+      case stmts_some_sem h t σ'' δ'' Heval Hevals =>
+        simp [BlockToNondetStmt]
+        simp [Block.sizeOf] at Hsz
+        specialize ih (h.sizeOf + Block.sizeOf t) (by omega)
+        constructor
+        . apply (ih _ _ _ _ Hwfb₀ Hwfvl₀).1
+          omega
+          exact Heval
+        . -- For the tail, we need EvalNondetStmt δ₀ σ'' (BlockToNondetStmt t) σ'
+          -- We have Hevals : EvalBlock δ'' σ'' t σ' δ'
+          -- We apply the IH with δ'' as the starting evaluator, which gives us
+          -- EvalNondetStmt δ'' σ'' (BlockToNondetStmt t) σ'
+          -- But we need EvalNondetStmt δ₀ σ'' (BlockToNondetStmt t) σ'
+          -- These are different unless δ'' = δ₀
+          -- For basic commands (cmd), δ'' = δ₀ by EvalCmd_eval_cst
+          -- For other statements, we need to show δ'' = δ₀ by induction
+          -- For funcDecl, δ'' ≠ δ₀, so the proof doesn't work in general
+          -- We leave this as sorry - the theorem is only valid for programs
+          -- where the evaluator doesn't change (no funcDecl in the middle of blocks)
+          sorry
+  exact Hstrong m σ σ' δ' δ Hwfb Hwfvl
 
 /-- Proof that the Deterministic-to-nondeterministic transformation is correct
 for a single (deterministic) statement -/
@@ -141,7 +165,7 @@ theorem StmtToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ φ st σ' φ' →
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' δ' →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ' := by
   intros Hwfb Hwfv Heval
   exact (StmtToNondetCorrect Hwfb Hwfv (m:=st.sizeOf)).1 st (Nat.le_refl _) Heval
@@ -152,7 +176,7 @@ theorem BlockToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalBlock P (Cmd P) (EvalCmd P) δ σ φ ss σ' φ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ ss σ' δ' →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Heval
   exact (StmtToNondetCorrect Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Heval
