@@ -87,10 +87,9 @@ structure CachedAnalyses where
 def CachedAnalyses.emp : CachedAnalyses := {}
 
 /-- Define the state of transformation in Strata Core.
-  It is a pair of
-  (fresh variable state (CoreGenState), a set of cached analysis).
-  It is the duty of the transformation to keep the analysis correct after
-  transformation, or one should simply drop the cached result.
+  It is the duty of the transformation to keep the analysis cache keep the
+  correct information after code transformation, or one can simply drop the
+  cached result.
 -/
 structure CoreTransformState where
   genState: CoreGenState
