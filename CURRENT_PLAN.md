@@ -87,10 +87,10 @@ Implement a B3-like concrete syntax tree (CST) for Strata Core with bidirectiona
   - Nested scopes
 
 ### Phase 5: Integration with Strata Core
-- [ ] Create conversion from CoreAST to Core.Statement
-- [ ] Create conversion from Core.Statement to CoreAST
-- [ ] Handle unsupported features gracefully (return errors)
-- [ ] Map between DDM metadata and Core metadata
+- [x] Create conversion from CoreAST to Core.Statement
+- [x] Create conversion from Core.Statement to CoreAST
+- [x] Handle unsupported features gracefully (return errors)
+- [x] Map between DDM metadata and Core metadata
 
 ### Phase 6: Testing
 - [x] Create test file with simple statements
