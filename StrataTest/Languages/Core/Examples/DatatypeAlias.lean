@@ -54,6 +54,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" datatypeAliasPgm Inhabited.default Options.quiet
+#eval verify "cvc5" datatypeAliasPgm (options := .quiet)
 
 end Strata.DatatypeAliasTest

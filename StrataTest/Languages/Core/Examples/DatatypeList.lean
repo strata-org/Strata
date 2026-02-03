@@ -87,7 +87,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listTesterPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listTesterPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: List with Havoc (requires SMT reasoning)
@@ -133,7 +133,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: List Exhaustiveness (exactly one tester is true)
@@ -176,7 +176,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listExhaustivePgm Inhabited.default Options.quiet
+#eval verify "cvc5" listExhaustivePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: List Mutual Exclusion (testers are mutually exclusive)
@@ -222,7 +222,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listMutualExclusionPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listMutualExclusionPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: List Constructor Equality
@@ -277,7 +277,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listEqualityPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listEqualityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: List Constructor Inequality
@@ -321,7 +321,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listInequalityPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listInequalityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: List Destructor Functions (head and tail)
@@ -394,7 +394,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listDestructorPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listDestructorPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8: Nested List Operations (head of tail)
@@ -440,7 +440,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listNestedPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listNestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: List Destructor with Havoc (requires SMT reasoning)
@@ -490,7 +490,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listDestructorHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listDestructorHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: List with Different Values (inequality of different heads)
@@ -534,6 +534,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listDifferentValuesPgm Inhabited.default Options.quiet
+#eval verify "cvc5" listDifferentValuesPgm (options := .quiet)
 
 end Strata.DatatypeListTest

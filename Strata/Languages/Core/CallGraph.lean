@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Program
+import Strata.Transform.CallElim
 
 ---------------------------------------------------------------------
 namespace Core
@@ -195,6 +196,41 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
         functionsSet.binSearch (CoreIdent.toPretty op) (· < ·) |>.isSome)
       if hasRelevantOp then none else some a.name
     | _ => none)
+
+/--
+Filter program to keep only target procedures, applying the specified transform
+to them and pruning away all other procedures.
+-/
+def Program.filterProcedures (prog : Program) (targetProcs : List String)
+    (transform : Program → Transform.CoreTransformM Program) :
+    Except Core.Transform.Err Program := do
+  let cg := prog.toProcedureCG
+  let allNeededProcs := (targetProcs ++ cg.getAllCalleesClosure targetProcs).dedup
+  let neededProcsSet := allNeededProcs.toArray.qsort (· < ·)
+  let targetProcsSet := targetProcs.toArray.qsort (· < ·)
+
+  -- Create intermediate program with target procedures + dependencies.
+  let intermediateDecls := prog.decls.filter (fun decl =>
+    match decl with
+    | .proc p _ =>
+      let procName := CoreIdent.toPretty p.header.name
+      neededProcsSet.binSearch procName (· < ·) |>.isSome
+    | _ => true) -- Keep all non-procedure declarations
+
+  let intermediateProg := { prog with decls := intermediateDecls }
+
+  -- Apply the specified transform.
+  let elimProg ← Transform.run intermediateProg transform
+
+  -- Remove non-target procedures from the result.
+  let finalDecls := elimProg.decls.filter (fun decl =>
+    match decl with
+    | .proc p _ =>
+      let procName := CoreIdent.toPretty p.header.name
+      targetProcsSet.binSearch procName (· < ·) |>.isSome
+    | _ => true) -- Keep all non-procedure declarations
+
+  return { elimProg with decls := finalDecls }
 
 ---------------------------------------------------------------------
 
