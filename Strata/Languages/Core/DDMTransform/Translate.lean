@@ -873,6 +873,13 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       | _ => return expr
     else
       TransM.error s!"translateExpr out-of-range bound variable: {i}"
+  | .bvar _ i, argsa => do
+    if i < bindings.boundVars.size then
+      let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
+      let args ← translateExprs p bindings argsa.toArray
+      return .mkApp () expr args.toList
+    else
+      TransM.error s!"translateExpr out-of-range bound variable: {i}"
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
