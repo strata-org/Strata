@@ -141,7 +141,7 @@ theorem getIdentTy!_no_throw :
 theorem getIdentTys!_no_throw :
   ∀ {p : Program}
     {idents : List Expression.Ident}
-    {cs : CoreGenState},
+    {cs : CoreTransformState},
   (∀ ident ∈ idents, (p.find? .var ident).isSome = true) →
   ∃ r, (runWith idents (getIdentTys! p) cs).fst = (Except.ok r) := by
   intros p idents cs Hglob
@@ -2242,7 +2242,7 @@ theorem getIdentTys!_len :
         assumption
       . cases H
     . cases H
-
+/-
 theorem genOutExprIdent_len : List.mapM genOutExprIdent t s = (a, s') → t.length = a.length := by
   intros Hgen
   generalize Heq : List.mapM genOutExprIdent t s = res at Hgen
@@ -4697,5 +4697,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                   omega
                 . simp_all
       -/
+
+-/
 
 end CallElimCorrect

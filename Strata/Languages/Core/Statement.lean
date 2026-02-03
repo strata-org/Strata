@@ -372,8 +372,12 @@ def Statement.renameLhs (s : Core.Statement)
       if l.name == fr  then to else l)) pname args metadata
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
-  | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
-  | .loop _ _ _ _ _ | .goto _ _ | .cover _ _ _ => s
+  | .ite x thenb elseb m =>
+    .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
+  | .havoc l md => .havoc (if l.name == fr then to else l) md
+  | .loop m g i b md =>
+    .loop m g i (Block.renameLhs b fr to) md
+  | .assert _ _ _ | .assume _ _ _ | .goto _ _ | .cover _ _ _ => s
   termination_by s.sizeOf
   decreasing_by all_goals(simp_wf; try omega)
 end

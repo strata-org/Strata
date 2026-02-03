@@ -19,33 +19,6 @@ namespace ProcedureInlining
 
 open Transform
 
-mutual
-def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
-  List.map (fun s => Statement.renameLhs s fr to) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
-
-def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
-    : Statement :=
-  match s with
-  | .init lhs ty rhs metadata =>
-    .init (if lhs.name == fr then to else lhs) ty rhs metadata
-  | .set lhs rhs metadata =>
-    .set (if lhs.name == fr then to else lhs) rhs metadata
-  | .call lhs pname args metadata =>
-    .call (lhs.map (fun l =>
-      if l.name == fr  then to else l)) pname args metadata
-  | .block lbl b metadata =>
-    .block lbl (Block.renameLhs b fr to) metadata
-  | .ite x thenb elseb m =>
-    .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
-  | .loop m g i b md =>
-    .loop m g i (Block.renameLhs b fr to) md
-  | .havoc l md => .havoc (if l.name == fr then to else l) md
-  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
-  termination_by s.sizeOf
-end
-
 -- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
 mutual
 def Block.labels (b : Block): List String :=
@@ -53,8 +26,6 @@ def Block.labels (b : Block): List String :=
   termination_by b.sizeOf
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
--- Assume and Assert's labels have special meanings, so they must not be
--- mangled during procedure inlining.
 def Statement.labels (s : Core.Statement) : List String :=
   match s with
   | .block lbl b _ => lbl :: (Block.labels b)
