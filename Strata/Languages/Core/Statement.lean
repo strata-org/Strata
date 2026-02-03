@@ -248,10 +248,13 @@ def Statement.getVarsTrans
   | .loop _ _ _ bss  _ =>
     Statements.getVarsTrans π bss
   | .funcDecl decl _ =>
-    -- Get variables from function body (including parameters for simplicity)
+    -- Get free variables from function body, excluding formal parameters
     match decl.body with
     | none => []
-    | some body => HasVarsPure.getVars body
+    | some body =>
+      let bodyVars := HasVarsPure.getVars body
+      let formals := decl.inputs.map (·.1)
+      bodyVars.filter (fun v => formals.all (fun f => v.name != f.name))
   termination_by (Stmt.sizeOf s)
 
 def Statements.getVarsTrans
