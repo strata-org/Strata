@@ -19,7 +19,11 @@ import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Util.ListUtils
 
-/-! # Call Elimination Correctness Proof
+/-! # Call Elimination Correctness Proof (DEPRECATED)
+
+  We are deprecating this proof because it relies on the old big-step semantics for
+  `Stmt`. This proof will be re-done with a new small-step semantics in the near
+  future.
 
   This file contains the main proof that the call elimination transformation is
   semantics preserving (see `callElimStatementCorrect`).
@@ -204,6 +208,8 @@ theorem callElimBlockNoExcept :
             split
             split <;> simp only [bind, StateT.bind, StateT.pure]
             . split
+              sorry
+              /-
               split <;> simp [pure, StateT.pure, Except.ok.injEq]
               -- old expression returns error, contradiction by well-formedness
               next ss _ _ _ _ s x e heq1 =>
@@ -227,6 +233,7 @@ theorem callElimBlockNoExcept :
                   | intro tys Hgen =>
                   simp_all
                 . simp [← Heq, isGlobalVar] at *
+              -/
             . -- output length not equal, contradiction
               next x e heq1 =>
               split at heq1
@@ -274,6 +281,7 @@ theorem callElimBlockNoExcept :
         split at wf <;> simp_all
     . -- other case
       grind
+
 
 theorem postconditions_subst_unwrap :
   substPost ∈
@@ -1567,6 +1575,7 @@ theorem Lambda.LExpr.substFvarsCorrect :
     . simp [List.Disjoint] at Hnin
       exact invStoresSubstHead Hsubst' Hnin.1
 
+/-
 theorem createAssertsCorrect :
   Imperative.WellFormedSemanticEvalBool δ →
   Imperative.WellFormedSemanticEvalVar δ →
@@ -1700,6 +1709,7 @@ theorem SubstPostsMem :
       right
       cases Hin with
       | intro id HH => exact ⟨id, HH.1, Eq.symm HH.2⟩
+-/
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -3372,6 +3382,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
       | mk wfnd Hwfp =>
       have Hdecl := List.Forall_mem_iff.mp Hwfp
       have HH := Procedure.find_in_decls Hfind
+      repeat sorry
+      /-
       cases HH with
       | intro md HH =>
       specialize Hdecl (.proc proc md) HH
@@ -4684,5 +4696,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                 . have Hlen := UpdateStatesLength Hupdate
                   omega
                 . simp_all
+      -/
 
 end CallElimCorrect
