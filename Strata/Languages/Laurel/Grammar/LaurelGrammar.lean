@@ -5,7 +5,7 @@
 -/
 
 -- Minimal Laurel dialect for AssertFalse example
-import Strata
+import Strata.DDM.Integration.Lean
 
 namespace Strata
 namespace Laurel
