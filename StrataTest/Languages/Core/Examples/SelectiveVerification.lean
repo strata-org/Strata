@@ -30,12 +30,11 @@ procedure MainProc() returns (output : int)
 spec {
   modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old(x) * 2);
-  //ensures [output_property]: (output == old(x) * 4);
+  ensures [output_property]: (output == old(x) * 4);
 }
 {
   call output := Helper(x);
-  //call output := Helper(output);
+  call output := Helper(output);
 };
 
 procedure IndependentProc() returns (y : int)
@@ -55,6 +54,31 @@ spec {
 };
 #end
 
+----------- Verify only MainProc; imports contracts of Helper
+
+/--
+info:
+Obligation: callElimAssert_n_positive_6
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, 0)
+
+Obligation: callElimAssert_n_positive_2
+Property: assert
+Result: ❌ fail
+Model:
+($__output2, 0) ($__x0, 0)
+
+Obligation: output_property
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" selectiveVerificationPgm
+        (options := Options.quiet)
+        (proceduresToVerify := (some ["MainProc"]))
+
 --------- Verify all procedures (default behavior)
 
 /--
@@ -68,6 +92,12 @@ Property: assert
 Result: ❌ fail
 Model:
 ($__x2, 0)
+
+Obligation: (Origin_Helper_Requires)n_positive
+Property: assert
+Result: ❌ fail
+Model:
+($__output4, 0) ($__x2, 0)
 
 Obligation: output_property
 Property: assert
@@ -97,27 +127,7 @@ Result: ✅ pass
         (options := Options.quiet)
         (proceduresToVerify := ["IndependentProc"])
 
------------ Verify only MainProc; imports contracts of Helper
-
-/--
-info:
-Obligation: assert_0
-Property: assert
-Result: ❌ fail
-Model:
-($__x0, 0)
-
-Obligation: output_property
-Property: assert
-Result: ✅ pass
--/
-#guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm
-        (options := Options.quiet)
-        (proceduresToVerify := (some ["MainProc"]))
-
 ---------- Verify multiple specific procedures
-
 
 /--
 info:
