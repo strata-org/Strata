@@ -12,52 +12,52 @@ namespace Strata.Python.Specs
 def expectedPySpec :=
 #strata
 program PythonSpecs;
-extern BaseClass from basetypes.BaseClass;
+extern "BaseClass" from "basetypes.BaseClass";
 function "dict_function" {
   args: [
-    x : ident(typing.Dict, ident(builtins.int), ident(typing.Any)) [hasDefault: false]
+    x : ident("typing.Dict", ident("builtins.int"), ident("typing.Any")) [hasDefault: false]
   ]
   kwonly: [
   ]
-  return: ident(typing.Any)
+  return: ident("typing.Any")
   overload: false
 }
 function "list_function" {
   args: [
-    x : ident(typing.List, ident(builtins.int)) [hasDefault: false]
+    x : ident("typing.List", ident("builtins.int")) [hasDefault: false]
   ]
   kwonly: [
   ]
-  return: ident(typing.Any)
+  return: ident("typing.Any")
   overload: false
 }
 function "sequence_function" {
   args: [
-    x : ident(typing.Sequence, ident(builtins.int)) [hasDefault: false]
+    x : ident("typing.Sequence", ident("builtins.int")) [hasDefault: false]
   ]
   kwonly: [
   ]
-  return: ident(typing.Any)
+  return: ident("typing.Any")
   overload: false
 }
 function "base_function"{
   args: [
-    x : ident(basetypes.BaseClass) [hasDefault: false]
+    x : ident("basetypes.BaseClass") [hasDefault: false]
   ]
   kwonly: [
   ]
-  return: ident(typing.Any)
+  return: ident("typing.Any")
   overload: false
 }
 class "MainClass" {
   function "main_method"{
     args: [
       self : class(MainClass) [hasDefault: false]
-      x : ident(basetypes.BaseClass) [hasDefault: false]
+      x : ident("basetypes.BaseClass") [hasDefault: false]
     ]
     kwonly: [
     ]
-    return: ident(typing.Any)
+    return: ident("typing.Any")
     overload: false
   }
 }
@@ -67,7 +67,7 @@ function "main_function"{
   ]
   kwonly: [
   ]
-  return: ident(typing.Any)
+  return: ident("typing.Any")
   overload: false
 }
 #end
@@ -75,11 +75,11 @@ function "main_function"{
 -- We use an environment variable to allow the build process
 -- to require the Python test is run.
 def pythonTestRequired : IO Bool :=
-  return (← IO.getEnv "PYTHON_TEST").isSome
+  return (← IO.getEnv "PYTHON_TEST").isSome || true
 
 def testCase : IO Unit := do
   let pythonCmd ←
-    match ← findPython3 (minVersion := 11) (maxVersion := 14) |>.toBaseIO with
+    match ← findPython3 (minVersion := 11) (maxVersion := 12) |>.toBaseIO with
     | .ok cmd =>
       pure cmd
     | .error msg =>
@@ -90,7 +90,7 @@ def testCase : IO Unit := do
   if not (← pythonCheckModule pythonCmd "strata.gen") then
     -- We may skip tests if stratal.gen is not available.
     if ← pythonTestRequired then
-      throw <| .userError "Python Strata libraries not installed in {pythonCmd}."
+      throw <| .userError s!"Python Strata libraries not installed in {pythonCmd}."
     return ()
   let dialectFile : System.FilePath := "Tools/Python/dialects/Python.dialect.st.ion"
   let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/main.py"
@@ -105,11 +105,13 @@ def testCase : IO Unit := do
     match r with
     | .ok sigs =>
       let pgm := toDDMProgram sigs
-      assert! pgm == expectedPySpec
-      pure ()
+      let pgmCommands := pgm.commands.map (·.mapAnn (fun _ => ()))
+      let expCommands := expectedPySpec.commands.map (·.mapAnn (fun _ => ()))
+      assert! pgmCommands == expCommands
     | .error e =>
       throw <| IO.userError e
 
+#guard_msgs in
 #eval testCase
 
 end Strata.Python.Specs

@@ -21,8 +21,8 @@ category FieldDecl;
 
 op mkFieldDecl(name : Ident, fieldType : SpecType) : FieldDecl => name " : " fieldType;
 
-op typeIdentNoArgs (x : Ident) : SpecType => "ident" "(" x ")";
-op typeIdent (x : Ident, y : CommaSepBy SpecType) : SpecType => "ident" "(" x ", " y ")";
+op typeIdentNoArgs (x : Str) : SpecType => "ident" "(" x ")";
+op typeIdent (x : Str, y : CommaSepBy SpecType) : SpecType => "ident" "(" x ", " y ")";
 op typeClassNoArgs (x : Ident) : SpecType => "class" "(" x ")";
 op typeClass (x : Ident, y : CommaSepBy SpecType) : SpecType => "class" "(" x ", " y ")";
 op typeIntLiteral (x : Int) : SpecType => x;
@@ -54,7 +54,7 @@ op mkFunDecl (name : Str,
     "overload" ": " isOverload "\n")
   "}\n";
 
-op externTypeDecl (name : Ident, source : Ident) : Command =>
+op externTypeDecl (name : Str, source : Str) : Command =>
   "extern " name " from " source ";\n";
 op classDef (name : Str, methods : Seq FunDecl) : Command =>
   "class " name " {\n"

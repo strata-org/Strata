@@ -158,6 +158,28 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
 
+/-- Monadic map over all annotations in a type expression. -/
+@[specialize]
+def mapAnnM {α β} {m} [Monad m] (t : TypeExprF α) (f : α → m β)
+    : m (TypeExprF β) := do
+  match t with
+  | .ident ann name args =>
+    return .ident (← f ann) name
+      (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+  | .bvar ann index => return .bvar (← f ann) index
+  | .tvar ann name => return .tvar (← f ann) name
+  | .fvar ann fv args =>
+    return .fvar (← f ann) fv
+      (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+  | .arrow ann arg res =>
+    return .arrow (← f ann) (← arg.mapAnnM f) (← res.mapAnnM f)
+termination_by t
+
+/-- Map over all annotations in a type expression. -/
+@[specialize]
+def mapAnn {α β} (t : TypeExprF α) (f : α → β) : TypeExprF β :=
+  t.mapAnnM (m := Id) f
+
 end TypeExprF
 
 /-- Separator format for sequence formatting -/
@@ -273,6 +295,94 @@ public def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α 
   | _ => (e, prev)
 
 end ExprF
+
+/-- Monadic map over all annotations in a syntax category. -/
+@[specialize]
+def SyntaxCatF.mapAnnM {α β} {m} [Monad m] (c : SyntaxCatF α)
+    (f : α → m β) : m (SyntaxCatF β) := do
+  return {
+    ann := ← f c.ann
+    name := c.name
+    args := ← c.args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f
+  }
+termination_by sizeOf c
+decreasing_by
+  cases c
+  case mk ann name args =>
+    decreasing_tactic
+
+/-- Map over all annotations in a syntax category. -/
+@[specialize]
+def SyntaxCatF.mapAnn {α β} (c : SyntaxCatF α) (f : α → β) : SyntaxCatF β :=
+  c.mapAnnM (m := Id) f
+
+mutual
+
+/-- Monadic map over all annotations in an expression. -/
+@[specialize]
+def ExprF.mapAnnM {α β} {m} [Monad m] (e : ExprF α) (f : α → m β)
+    : m (ExprF β) := do
+  match e with
+  | .bvar ann idx => return .bvar (← f ann) idx
+  | .fvar ann idx => return .fvar (← f ann) idx
+  | .fn ann ident => return .fn (← f ann) ident
+  | .app ann e a =>
+    return .app (← f ann) (← e.mapAnnM f) (← a.mapAnnM f)
+termination_by sizeOf e
+
+/-- Monadic map over all annotations in an argument. -/
+@[specialize]
+def ArgF.mapAnnM {α β} {m} [Monad m] (a : ArgF α) (f : α → m β)
+    : m (ArgF β) := do
+  match a with
+  | .op o => return .op (← o.mapAnnM f)
+  | .cat c => return .cat (← c.mapAnnM f)
+  | .expr e => return .expr (← e.mapAnnM f)
+  | .type t => return .type (← t.mapAnnM f)
+  | .ident ann i => return .ident (← f ann) i
+  | .num ann v => return .num (← f ann) v
+  | .decimal ann v => return .decimal (← f ann) v
+  | .strlit ann i => return .strlit (← f ann) i
+  | .bytes ann b => return .bytes (← f ann) b
+  | .option ann none => return .option (← f ann) none
+  | .option ann (some a) =>
+    return .option (← f ann) (some (← a.mapAnnM f))
+  | .seq ann sep l =>
+    return .seq (← f ann) sep
+      (← l.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+termination_by sizeOf a
+
+/-- Map a monadic function over all annotations in an operation. -/
+@[specialize]
+def OperationF.mapAnnM {α β} {m} [Monad m] (op : OperationF α)
+    (f : α → m β) : m (OperationF β) := do
+  return {
+    ann := ← f op.ann
+    name := op.name
+    args := ← op.args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f
+  }
+termination_by sizeOf op
+decreasing_by
+  cases op
+  case mk ann name args =>
+    decreasing_tactic
+
+end
+
+/-- Map a pure function over all annotations in an expression. -/
+@[specialize]
+def ExprF.mapAnn {α β} (e : ExprF α) (f : α → β) : ExprF β :=
+  e.mapAnnM (m := Id) f
+
+/-- Map a pure function over all annotations in an argument. -/
+@[specialize]
+def ArgF.mapAnn {α β} (a : ArgF α) (f : α → β) : ArgF β :=
+  a.mapAnnM (m := Id) f
+
+/-- Map a pure function over all annotations in an operation. -/
+@[specialize]
+def OperationF.mapAnn {α β} (op : OperationF α) (f : α → β) : OperationF β :=
+  op.mapAnnM (m := Id) f
 
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange
