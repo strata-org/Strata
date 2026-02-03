@@ -88,7 +88,7 @@ private def generateUniqueLabel (pathConditions : PathConditions Expression)
     (baseLabel : String) : String :=
   let labels := pathConditions.flatten.map (fun (label, _) => label)
   if labels.contains baseLabel then
-    let newLabel := findUnique labels baseLabel 0
+    let newLabel := findUnique labels baseLabel 1
     dbg_trace f!"⚠️ [addPathCondition] Label clash detected for \
                 {baseLabel}, using unique label {newLabel}."
     newLabel
