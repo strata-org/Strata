@@ -104,19 +104,262 @@ def ASTToCSTM.generateFreshName (base : String := "x") : ASTToCSTM String := do
 
 -- Expression conversion CST → AST
 partial def convertExprCSTToAST : CoreCSTDDM.Expression → CSTToASTM CoreASTDDM.Expression
-  | _ => CSTToASTM.error (.unsupportedConstruct "expression conversion not implemented")
+  | .nat_lit n => return .nat_lit n
+  | .bool_true => return .bool_true
+  | .bool_false => return .bool_false
+  | .string_lit s => return .string_lit s
+  | .real_lit d => return .real_lit d
+  | .var_ref name => do
+    let idx ← CSTToASTM.lookupVar name.toString
+    return .var_ref idx
+  | .not_expr e => do
+    let e' ← convertExprCSTToAST e
+    return .not_expr e'
+  | .and_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .and_expr a' b'
+  | .or_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .or_expr a' b'
+  | .implies_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .implies_expr a' b'
+  | .iff_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .iff_expr a' b'
+  | .eq_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .eq_expr a' b'
+  | .ne_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .ne_expr a' b'
+  | .lt_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .lt_expr a' b'
+  | .le_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .le_expr a' b'
+  | .gt_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .gt_expr a' b'
+  | .ge_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .ge_expr a' b'
+  | .neg_expr e => do
+    let e' ← convertExprCSTToAST e
+    return .neg_expr e'
+  | .add_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .add_expr a' b'
+  | .sub_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .sub_expr a' b'
+  | .mul_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .mul_expr a' b'
+  | .div_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .div_expr a' b'
+  | .mod_expr a b => do
+    let a' ← convertExprCSTToAST a
+    let b' ← convertExprCSTToAST b
+    return .mod_expr a' b'
+  | .if_then_else c t f => do
+    let c' ← convertExprCSTToAST c
+    let t' ← convertExprCSTToAST t
+    let f' ← convertExprCSTToAST f
+    return .if_then_else c' t' f'
+  | .call_expr f args => do
+    -- Convert arguments (placeholder for now)
+    CSTToASTM.error (.unsupportedConstruct "function calls not fully implemented")
+  | _ => CSTToASTM.error (.unsupportedConstruct "unsupported expression")
 
 -- Expression conversion AST → CST  
 partial def convertExprASTToCST : CoreASTDDM.Expression → ASTToCSTM CoreCSTDDM.Expression
-  | _ => ASTToCSTM.error (.unsupportedConstruct "expression conversion not implemented")
+  | .nat_lit n => return .nat_lit n
+  | .bool_true => return .bool_true
+  | .bool_false => return .bool_false
+  | .string_lit s => return .string_lit s
+  | .real_lit d => return .real_lit d
+  | .var_ref idx => do
+    let name ← ASTToCSTM.lookupName idx.toNat
+    return .var_ref ⟨name⟩
+  | .not_expr e => do
+    let e' ← convertExprASTToCST e
+    return .not_expr e'
+  | .and_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .and_expr a' b'
+  | .or_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .or_expr a' b'
+  | .implies_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .implies_expr a' b'
+  | .iff_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .iff_expr a' b'
+  | .eq_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .eq_expr a' b'
+  | .ne_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .ne_expr a' b'
+  | .lt_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .lt_expr a' b'
+  | .le_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .le_expr a' b'
+  | .gt_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .gt_expr a' b'
+  | .ge_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .ge_expr a' b'
+  | .neg_expr e => do
+    let e' ← convertExprASTToCST e
+    return .neg_expr e'
+  | .add_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .add_expr a' b'
+  | .sub_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .sub_expr a' b'
+  | .mul_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .mul_expr a' b'
+  | .div_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .div_expr a' b'
+  | .mod_expr a b => do
+    let a' ← convertExprASTToCST a
+    let b' ← convertExprASTToCST b
+    return .mod_expr a' b'
+  | .if_then_else c t f => do
+    let c' ← convertExprASTToCST c
+    let t' ← convertExprASTToCST t
+    let f' ← convertExprASTToCST f
+    return .if_then_else c' t' f'
+  | .call_expr f args => do
+    -- Convert arguments (placeholder for now)
+    ASTToCSTM.error (.unsupportedConstruct "function calls not fully implemented")
+  | _ => ASTToCSTM.error (.unsupportedConstruct "unsupported expression")
 
 -- Statement conversion CST → AST
 partial def convertStmtCSTToAST : CoreCSTDDM.Statement → CSTToASTM CoreASTDDM.Statement
-  | _ => CSTToASTM.error (.unsupportedConstruct "statement conversion not implemented")
+  | .var_decl v tp => do
+    CSTToASTM.pushBinding v.toString
+    return .var_decl tp
+  | .var_decl_init v tp init => do
+    let init' ← convertExprCSTToAST init
+    CSTToASTM.pushBinding v.toString
+    return .var_decl_init tp init'
+  | .val_decl v tp val => do
+    let val' ← convertExprCSTToAST val
+    CSTToASTM.pushBinding v.toString
+    return .val_decl tp val'
+  | .assign_stmt v e => do
+    let idx ← CSTToASTM.lookupVar v.toString
+    let e' ← convertExprCSTToAST e
+    return .assign_stmt idx e'
+  | .havoc_stmt v => do
+    let idx ← CSTToASTM.lookupVar v.toString
+    return .havoc_stmt idx
+  | .assert_stmt e => do
+    let e' ← convertExprCSTToAST e
+    return .assert_stmt e'
+  | .assume_stmt e => do
+    let e' ← convertExprCSTToAST e
+    return .assume_stmt e'
+  | .check_stmt e => do
+    let e' ← convertExprCSTToAST e
+    return .check_stmt e'
+  | .reach_stmt e => do
+    let e' ← convertExprCSTToAST e
+    return .reach_stmt e'
+  | .cover_stmt e => do
+    let e' ← convertExprCSTToAST e
+    return .cover_stmt e'
+  | .exit_stmt => return .exit_stmt
+  | .return_stmt (some e) => do
+    let e' ← convertExprCSTToAST e
+    return .return_stmt (some e')
+  | .return_stmt none => return .return_stmt none
+  | _ => CSTToASTM.error (.unsupportedConstruct "unsupported statement")
 
 -- Statement conversion AST → CST
 partial def convertStmtASTToCST : CoreASTDDM.Statement → ASTToCSTM CoreCSTDDM.Statement  
-  | _ => ASTToCSTM.error (.unsupportedConstruct "statement conversion not implemented")
+  | .var_decl tp => do
+    let name ← ASTToCSTM.generateFreshName "x"
+    ASTToCSTM.pushName name
+    return .var_decl ⟨name⟩ tp
+  | .var_decl_init tp init => do
+    let init' ← convertExprASTToCST init
+    let name ← ASTToCSTM.generateFreshName "x"
+    ASTToCSTM.pushName name
+    return .var_decl_init ⟨name⟩ tp init'
+  | .val_decl tp val => do
+    let val' ← convertExprASTToCST val
+    let name ← ASTToCSTM.generateFreshName "x"
+    ASTToCSTM.pushName name
+    return .val_decl ⟨name⟩ tp val'
+  | .assign_stmt idx e => do
+    let name ← ASTToCSTM.lookupName idx.toNat
+    let e' ← convertExprASTToCST e
+    return .assign_stmt ⟨name⟩ e'
+  | .havoc_stmt idx => do
+    let name ← ASTToCSTM.lookupName idx.toNat
+    return .havoc_stmt ⟨name⟩
+  | .assert_stmt e => do
+    let e' ← convertExprASTToCST e
+    return .assert_stmt e'
+  | .assume_stmt e => do
+    let e' ← convertExprASTToCST e
+    return .assume_stmt e'
+  | .check_stmt e => do
+    let e' ← convertExprASTToCST e
+    return .check_stmt e'
+  | .reach_stmt e => do
+    let e' ← convertExprASTToCST e
+    return .reach_stmt e'
+  | .cover_stmt e => do
+    let e' ← convertExprASTToCST e
+    return .cover_stmt e'
+  | .exit_stmt => return .exit_stmt
+  | .return_stmt (some e) => do
+    let e' ← convertExprASTToCST e
+    return .return_stmt (some e')
+  | .return_stmt none => return .return_stmt none
+  | _ => ASTToCSTM.error (.unsupportedConstruct "unsupported statement")
 
 -- Function declaration conversion CST → AST
 def convertFuncDeclCSTToAST : CoreCSTDDM.FunctionDecl → CSTToASTM CoreASTDDM.FunctionDecl

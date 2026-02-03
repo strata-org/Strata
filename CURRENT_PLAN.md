@@ -72,14 +72,14 @@ Implement a B3-like concrete syntax tree (CST) for Strata Core with bidirectiona
 - [x] Implement CST → AST conversion framework:
   - Name resolution (identifiers to de Bruijn indices)
   - Context management for variable scoping
-  - Expression conversion (placeholder)
-  - Statement conversion (placeholder)
+  - Expression conversion (basic operators implemented)
+  - Statement conversion (basic statements implemented)
   - Declaration conversion (placeholder)
 - [x] Implement AST → CST conversion framework:
   - De Bruijn indices to names
   - Context management for name generation
-  - Expression conversion (placeholder)
-  - Statement conversion (placeholder)
+  - Expression conversion (basic operators implemented)
+  - Statement conversion (basic statements implemented)
   - Declaration conversion (placeholder)
 - [ ] Handle special cases:
   - Shadowed variables
@@ -93,7 +93,7 @@ Implement a B3-like concrete syntax tree (CST) for Strata Core with bidirectiona
 - [ ] Map between DDM metadata and Core metadata
 
 ### Phase 6: Testing
-- [ ] Create test file with simple statements
+- [x] Create test file with simple statements
 - [ ] Test expression parsing and formatting
 - [ ] Test statement parsing and formatting
 - [ ] Test function declarations
