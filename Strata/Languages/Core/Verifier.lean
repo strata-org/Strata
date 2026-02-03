@@ -12,6 +12,7 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 import Strata.DDM.AST
+import Strata.TransForm.CallElim
 
 ---------------------------------------------------------------------
 

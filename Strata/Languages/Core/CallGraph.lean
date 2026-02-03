@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Core.Program
-import Strata.Transform.CallElim
+import Strata.Transform.CoreTransform
 
 ---------------------------------------------------------------------
 namespace Core
