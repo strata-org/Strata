@@ -588,7 +588,9 @@ type MutNestB a := | MkB (MutNestA a) | BBase
 def mutNestAConstr: LConstr Unit := {name := "MkA", args :=
   [⟨"x", .tcons "List" [.tcons "MutNestB" [.ftvar "a"]]⟩], testerName :=
   "isMkA"}
-def mutNestATy : LDatatype Unit := {name := "MutNestA", typeArgs := ["a"],  constrs := [mutNestAConstr], constrs_ne := rfl}
+def mutNestATy : LDatatype Unit :=
+  {name := "MutNestA", typeArgs := ["a"],  constrs :=
+  [mutNestAConstr], constrs_ne := rfl}
 
 def mutNestBConstr: LConstr Unit := {name := "MkB", args :=
   [⟨"x", .tcons "MutNestA" [.ftvar "a"]⟩], testerName := "isMkB"}
