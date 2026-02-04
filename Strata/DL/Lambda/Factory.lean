@@ -102,6 +102,7 @@ structure LFunc (T : LExprParams) where
   -- resulting expression of concreteEval if evaluation was successful.
   concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
   axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
+  preconditions : List (LExpr T.mono) := []
 
 /--
 Well-formedness properties of LFunc. These are split from LFunc because
@@ -123,6 +124,10 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) where
     ∀ fn md args res, f.concreteEval = .some fn
       → fn md args = .some res
       → args.length = f.inputs.length
+  -- Free variables of preconditions must be arguments.
+  precond_freevars:
+    ∀ p, p ∈ f.preconditions →
+      (LExpr.freeVars p).map (·.1.name) ⊆ f.inputs.map (·.1.name)
 
 instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
     Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
@@ -154,6 +159,11 @@ instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
   | .none => by
     apply isTrue; grind
 
+instance LFuncWF.precond_freevars_decidable {T : LExprParams} (f : LFunc T):
+  Decidable (∀ p, p ∈ f.preconditions →
+      (LExpr.freeVars p).map (·.1.name) ⊆ f.inputs.map (·.1.name)) := by
+  apply List.decidableBAll
+
 -- LFuncWF.concreteEval_argmatch is not decidable.
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
@@ -166,10 +176,12 @@ instance : ToFormat (LFunc T) where
                     then f!""
                     else f!"∀{f.typeArgs}."
     let type := f!"{typeArgs} ({Signature.format f.inputs}) → {f.output}"
+    let preconds := f.preconditions.map (f!"  requires {·}")
+    let precondsStr := if preconds.isEmpty then f!"" else Format.line ++ Format.joinSep preconds Format.line
     let sep := if f.body.isNone then f!";" else f!" :="
     let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
     f!"{attr}\
-       func {f.name} : {type}{sep}\
+       func {f.name} : {type}{precondsStr}{sep}\
        {body}"
 
 def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
@@ -206,7 +218,8 @@ def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
 def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
   { f with
     body := f.body.map LExpr.eraseTypes,
-    axioms := f.axioms.map LExpr.eraseTypes
+    axioms := f.axioms.map LExpr.eraseTypes,
+    preconditions := f.preconditions.map LExpr.eraseTypes
   }
 
 /--

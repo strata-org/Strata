@@ -51,7 +51,9 @@ theorem Factory_wf :
             try unfold bvShiftOp
             try unfold bvBinaryPred
             intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind))
+        . decide -- LFuncWF.precond_freevars
+      )
     contradiction
 
 end Core
