@@ -114,10 +114,8 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) where
     List.Nodup (f.inputs.map (·.1.name))
   -- Free variables of body must be arguments.
   body_freevars:
-    ∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)
+    ∀ b, f.body = .some b →
+      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)
   -- concreteEval does not succeed if the length of args is incorrect.
   concreteEval_argmatch:
     ∀ fn md args res, f.concreteEval = .some fn
@@ -129,30 +127,9 @@ instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
   apply List.nodupDecidable
 
 instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)) :=
-  match Hbody: f.body with
-  | .some b =>
-    if Hall:(LExpr.freeVars b).all
-        (fun fv => List.any f.inputs (fun arg => fv.1.name == arg.1.name))
-    then by
-      apply isTrue
-      intros b' freevars Hb' Hfreevars fv' Hmem
-      cases Hb'
-      rw [← Hfreevars] at Hall
-      rw [List.all_eq_true] at Hall
-      have Hall' := Hall fv' Hmem
-      rw [List.any_eq_true] at Hall'
-      rcases Hall' with ⟨arg', H⟩
-      exists arg'
-      solve | (simp at H ; congr)
-    else by
-      apply isFalse
-      grind
-  | .none => by
-    apply isTrue; grind
+    Decidable (∀ b, f.body = .some b →
+      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)) :=
+  by exact f.body.decidableForallMem
 
 -- LFuncWF.concreteEval_argmatch is not decidable.
 
