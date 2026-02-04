@@ -63,11 +63,11 @@ procedure h() returns () spec {
   var b : bool;
   var tmp_arg_0 : bool := k;
   var tmp_b_1 : bool := b;
-  assert [assert_0]: i == !tmp_arg_0;
+  assert [callElimAssert_f_requires_0_2]: (i == (!tmp_arg_0));
   havoc b;
   havoc j;
-  assume [assume_0]: b == tmp_arg_0;
-  assume [assume_1]: b == j;
+  assume [callElimAssume_f_ensures_1_3]: (b == tmp_arg_0);
+  assume [callElimAssume_f_ensures_2_4]: (b == j);
 };
 #end
 
@@ -116,11 +116,11 @@ procedure h() returns () spec {
   var tmp_b_2 : bool := b;
   var old_k_3 : bool := k;
   var old_j_4 : bool := j;
-  assert [assert_0]: i == !tmp_arg_0;
+  assert [callElimAssert_f_requires_0_5]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [assume_0]: b == (old_k_3 && old_j_4);
-  assume [assume_1]: b == old_j_4;
+  assume [callElimAssume_f_ensures_1_6]: b == (old_k_3 && old_j_4);
+  assume [callElimAssume_f_ensures_2_7]: b == old_j_4;
 };
 #end
 
@@ -169,11 +169,11 @@ procedure h() returns () spec {
   var tmp_b_2 : bool := b;
   var old_k_3 : bool := k;
   var old_j_4 : bool := j;
-  assert [assert_0]: i == !tmp_arg_0;
+  assert [callElimAssert_f_requires_0_5]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [assume_0]: b == (old_k_3 && old_j_4);
-  assume [assume_1]: b == old_j_4;
+  assume [callElimAssume_f_ensures_1_6]: b == (old_k_3 && old_j_4);
+  assume [callElimAssume_f_ensures_2_7]: b == old_j_4;
 };
 #end
 
