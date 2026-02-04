@@ -125,4 +125,4 @@ Model:
 ($__x0, 7)
 -/
 #guard_msgs in
-#eval verify "cvc5" failingThrice Inhabited.default Options.quiet
+#eval verify "cvc5" failingThrice (options := .quiet)
