@@ -20,7 +20,7 @@ inductive Range (n : Nat) where
 
 namespace Range
 
-instance {m n} : ForIn m (Range n) (Fin n) where
+instance {m n} [Monad m] : ForIn m (Range n) (Fin n) where
   forIn _ b f := private loop f b 0
     where loop {m} [Monad m] {β} (f : Fin n → β → m (ForInStep β)) (b : β) (i : Nat) : m β :=
             if p : i < n then do

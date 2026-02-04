@@ -130,9 +130,9 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     (vars : List P.TypedIdent) (output : IO.Process.Output)
     (E : Strata.SMT.EncoderState) : Except Format (Result P.TypedIdent) := do
   let stdout := output.stdout
-  let pos := (stdout.find (fun c => c == '\n' || c == '\r')).byteIdx
-  let verdict := stdout.take pos
-  let rest := stdout.drop pos
+  let pos := stdout.find fun c => c == '\n' || c == '\r'
+  let verdict := stdout.extract stdout.startPos pos
+  let rest := stdout.extract pos stdout.endPos
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest

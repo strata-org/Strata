@@ -349,7 +349,9 @@ def generateDialect (d : Dialect) (package : String) : Except String GeneratedFi
     | _ => none
 
   -- All interface names for Node permits clause
-  let allInterfaceNames := (sealedInterfaces ++ stubInterfaces).map (·.1.dropRight 5)
+  let allInterfaceNames := 
+        sealedInterfaces ++ stubInterfaces 
+        |>.map (·.1.dropEnd 5 |>.toString)
 
   return {
     sourceRange := generateSourceRange package

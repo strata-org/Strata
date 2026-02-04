@@ -35,9 +35,20 @@ def fullName (i : QualifiedIdent) : String := s!"{i.dialect}.{i.name}"
 instance : ToString QualifiedIdent where
   toString := fullName
 
+def ofString (fullname : String) : Option QualifiedIdent := do
+  let pos := fullname.find (· = '.')
+  if p : pos ≠ fullname.endPos then
+    return {
+      dialect := fullname.extract fullname.startPos pos
+      name := fullname.extract (pos.next p) fullname.endPos
+    }
+  else
+    none
+
 section
 open _root_.Lean
-public protected def quote (i : QualifiedIdent) : Term := Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
+public protected def quote (i : QualifiedIdent) : Term :=
+  Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
 
 instance : Quote QualifiedIdent where
   quote := QualifiedIdent.quote
@@ -1317,7 +1328,7 @@ structure Collection (α : Type) where
 
 namespace Collection
 
-instance {m α} : ForIn m (Collection α) α where
+instance {m α} [Monad m] : ForIn m (Collection α) α where
   forIn c i f := private do
     let step d _h r :=
           match c.proj d with
