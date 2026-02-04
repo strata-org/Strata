@@ -43,7 +43,7 @@ def formatParseFailureStderr (stderr : String) : Option String := do
 This runs `python -m strata.gen py_to_strata` to convert a
 Python file into a Strata file, and then reads it in.
 
-This function if the environment isn't configured correctly
+This function fails if the environment isn't configured correctly
 or the Python file cannot be parsed.
 -/
 def pythonToStrata (dialectFile pythonFile : System.FilePath)

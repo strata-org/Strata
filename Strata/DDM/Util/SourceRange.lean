@@ -11,7 +11,7 @@ namespace Strata
 /--
 Source location information in the DDM is defined
 by a range of bytes in a UTF-8 string with the input
-Line/column information can be construced from a
+Line/column information can be constructed from a
 `Lean.FileMap`
 
 As an example, in the string `"123abc\ndef"`, the string

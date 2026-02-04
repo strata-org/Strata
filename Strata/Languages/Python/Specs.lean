@@ -134,7 +134,7 @@ structure TypeDecl where
   value : SpecValue
 
 /--
- map from python identifiers to the numbe
+Map from Python identifiers to their type specifications.
 -/
 structure TypeSignature where
   rank : Std.HashMap String (Option (Std.HashMap String SpecValue))
@@ -982,7 +982,7 @@ def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.F
   | some fm =>
     let spos := fm.toPosition loc.start
     let epos := fm.toPosition loc.stop
-    -- Render the error location information in a format VSCode understands
+    -- Render the error location information in a format VSCode understands.
     if spos.line == spos.line then
       s!"{path}:{spos.line}:{spos.column+1}-{epos.column+1}"
     else

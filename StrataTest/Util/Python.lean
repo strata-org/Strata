@@ -9,7 +9,7 @@ import all Strata.DDM.Util.Fin
 
 /-
 This module provides `findPython3`, a utility that locates
-a Python 3 version with a specific version using multiple methods
+a Python 3 installation with a specific version using multiple methods
 including an environment variable, `mise` and the system `'PATH'`.
 
 It also provides a few functions for checking Python versions and
@@ -162,7 +162,7 @@ def getPython3Version (command : String) : IO (Option Nat) := do
 /--
 This attempts to find Python with at least the given minimum version.
 
-It check if the PYTHON environment variable is set, if so it verifies
+It checks if the PYTHON environment variable is set, if so it verifies
 it satisfies the minimum version.
 
 Next it iterates through versions maxVersion to minVersion and performs
@@ -194,7 +194,7 @@ def findPython3 (minVersion : Nat) (maxVersion : Nat) : IO System.FilePath := do
 
     let defaultCmd := s!"python3.{ver}"
     if let some _foundMinor ← getPython3Version defaultCmd then
-      -- We don't both checking minor version since we already used version in path.
+      -- We don't bother checking minor version since we already used version in path.
       return defaultCmd
 
   throw <| IO.userError s!"Python 3.{minVersion} or later not found."

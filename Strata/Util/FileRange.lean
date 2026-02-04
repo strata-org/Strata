@@ -79,12 +79,12 @@ instance : Inhabited DiagnosticModel where
   default := { fileRange := FileRange.unknown, message := "" }
 
 /-- Create a DiagnosticModel from just a message (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
+This should not be called, it only exists temporarily to enable incrementally migrating code without error locations -/
 def DiagnosticModel.fromMessage (msg : String) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := msg }
 
 /-- Create a DiagnosticModel from a Format (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
+This should not be called, it only exists temporarily to enable incrementally migrating code without error locations -/
 def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := toString fmt }
 
@@ -105,7 +105,7 @@ def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.Fi
   dm.fileRange.format fileMap includeEnd?
 
 /-- Update the file range of a DiagnosticModel if it's currently unknown.
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
+This should not be called, it only exists temporarily to enable incrementally migrating code without error locations -/
 def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) : DiagnosticModel :=
   if dm.fileRange.range.isNone then
     { dm with fileRange := fr }

@@ -46,7 +46,7 @@ op_renamings = {
 }
 
 # The ast package includes a few classes that are deprecated
-# and no longer generated in AST parse trees.  We ignore this
+# and no longer generated in AST parse trees.  We ignore these classes
 # in the DDM dialect.
 ignored_ast_ops : set[type] = set([
     ast.AugLoad, ast.AugStore, ast.ExtSlice, ast.Index, ast.Param, ast.Suite
