@@ -93,6 +93,16 @@ def CachedAnalyses.emp : CachedAnalyses := {}
 -/
 structure CoreTransformState where
   genState: CoreGenState
+  -- The program that is being transformed.
+  -- The definition of "current" may vary depending on the transformation.
+  -- During transformation, it is allowed for currentProgram be slightly stale
+  -- (has procedures and functions and statements that are not transformed
+  -- yet). For example, procedure inlining will always keep currentProgram that
+  -- is before inlining.
+  -- However, when transformation is finished, currentProgram must contain the
+  -- program that is fully updated (or it has to be .none). runProgram enforces
+  -- that currentProgram of this CoreTransformState is updated to be the updated
+  -- program.
   currentProgram: Option Program
   currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
