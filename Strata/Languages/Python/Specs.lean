@@ -982,7 +982,7 @@ def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.F
   | some fm =>
     let spos := fm.toPosition loc.start
     let epos := fm.toPosition loc.stop
-    -- Render the error location information in a format VSCode understands.
+    -- Render error location information in a format VSCode understands.
     if spos.line == spos.line then
       s!"{path}:{spos.line}:{spos.column+1}-{epos.column+1}"
     else

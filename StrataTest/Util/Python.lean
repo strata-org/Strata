@@ -194,7 +194,8 @@ def findPython3 (minVersion : Nat) (maxVersion : Nat) : IO System.FilePath := do
 
     let defaultCmd := s!"python3.{ver}"
     if let some _foundMinor ← getPython3Version defaultCmd then
-      -- We don't bother checking minor version since we already used version in path.
+      -- We don't bother checking minor version since we already
+      -- used version in path.
       return defaultCmd
 
   throw <| IO.userError s!"Python 3.{minVersion} or later not found."
