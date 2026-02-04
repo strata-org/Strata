@@ -81,7 +81,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" roseTreeTesterPgm Inhabited.default Options.quiet
+#eval verify "cvc5" roseTreeTesterPgm Inhabited.default
+  (options := Options.quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Rose Tree Destructor Functions
@@ -158,7 +159,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" roseTreeDestructorPgm Inhabited.default Options.quiet
+#eval verify "cvc5" roseTreeDestructorPgm Inhabited.default
+  (options := Options.quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Rose Tree Equality
@@ -222,7 +224,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" roseTreeEqualityPgm Inhabited.default Options.quiet
+#eval verify "cvc5" roseTreeEqualityPgm Inhabited.default
+  (options := Options.quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: Polymorphic Rose Tree with Havoc (SMT verification)
@@ -282,7 +285,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" polyRoseTreeHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" polyRoseTreeHavocPgm Inhabited.default
+  (options := Options.quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: Imperative Stmt/StmtList with Havoc (SMT verification)
@@ -355,6 +359,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" stmtListHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" stmtListHavocPgm Inhabited.default
+  (options := Options.quiet)
 
 end Strata.MutualDatatypeTest
