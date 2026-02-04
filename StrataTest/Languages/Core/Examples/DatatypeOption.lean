@@ -85,7 +85,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionTesterPgm Inhabited.default Options.quiet
+#eval verify "cvc5" optionTesterPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Option with Havoc (requires SMT reasoning)
@@ -131,7 +131,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" optionHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Option Exhaustiveness (exactly one tester is true)
@@ -174,7 +174,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionExhaustivePgm Inhabited.default Options.quiet
+#eval verify "cvc5" optionExhaustivePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: Option Mutual Exclusion (testers are mutually exclusive)
@@ -220,7 +220,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionMutualExclusionPgm Inhabited.default Options.quiet
+#eval verify "cvc5" optionMutualExclusionPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: Option Constructor Equality
@@ -275,7 +275,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionEqualityPgm Inhabited.default Options.quiet
+#eval verify "cvc5" optionEqualityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: Option Constructor Inequality
@@ -319,7 +319,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionInequalityPgm Inhabited.default Options.quiet
+#eval verify "cvc5" optionInequalityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: Option Destructor Function (field accessor)
@@ -374,6 +374,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionDestructorPgm Inhabited.default Options.quiet
+#eval verify "cvc5" optionDestructorPgm (options := .quiet)
 
 end Strata.DatatypeOptionTest
