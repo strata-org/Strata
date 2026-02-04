@@ -55,6 +55,9 @@ abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
 abbrev LTySignature := Signature IDMeta LTy
 
+def inline_attr : String := "inline"
+def inline_if_constr_attr : String := "inline_if_constr"
+def eval_if_constr_attr : String := "eval_if_constr"
 
 /--
 A Lambda factory function, where the body can be optional. Universally
