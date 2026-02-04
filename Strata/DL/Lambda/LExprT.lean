@@ -256,7 +256,7 @@ partial def inferOp (C: LContext T) (Env : TEnv T.IDMeta) (o : T.Identifier) (ot
           if body.freeVars.idents.all (fun k => k ∈ func.inputs.keys) then
             -- Temporarily add formals in the context.
             let Env := Env.pushEmptyContext
-            let Env := Env.addToContext func.inputPolyTypes
+            let Env := Env.addToNewestContext func.inputPolyTypes
             -- Type check the body and ensure that it unifies with the return type.
             -- let (bodyty, Env) ← infer Env body
             let (body_typed, Env) ← resolveAux C Env body

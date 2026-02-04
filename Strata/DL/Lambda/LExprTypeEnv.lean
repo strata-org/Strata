@@ -310,7 +310,7 @@ instance [ToFormat IDMeta] : ToFormat (TEnv IDMeta) where
        subst: {s.stateSubstInfo.subst}"
 
 instance : ToFormat (LContext T) where
-  format s := f!" known types:{Format.line}{s.knownTypes}\
+  format s := f!" known types:{Format.line}{s.knownTypes}\n\
                  identifiers:{Format.line}{s.idents}"
 
 
@@ -409,11 +409,11 @@ def TEnv.insertInContext {T: LExprParams} [DecidableEq T.IDMeta] (Env : TEnv T.I
   { Env with genEnv := TGenEnv.insertInContext Env.genEnv x ty}
 
 /--
-Insert each element in `map` in `T.context`.
+Insert each element in `map` in the newest `T.context`.
 -/
-def TEnv.addToContext (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) : TEnv T.IDMeta :=
+def TEnv.addToNewestContext (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) : TEnv T.IDMeta :=
   let ctx := Env.context
-  let types := List.foldl (fun m (x, v) => m.insert x v) ctx.types map
+  let types := ctx.types.addInNewest map
   let ctx' := { ctx with types := types }
   Env.updateContext ctx'
 
