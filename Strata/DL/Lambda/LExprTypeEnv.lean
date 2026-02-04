@@ -397,21 +397,10 @@ def TEnv.popContext (Env : (TEnv IDMeta)) : (TEnv IDMeta) :=
   let ctx' := { ctx with types := ctx.types.pop }
   Env.updateContext ctx'
 
-def TGenEnv.insertInContext [DecidableEq (Identifier IDMeta)] (Env : TGenEnv IDMeta) (x : Identifier IDMeta) (ty : LTy) : TGenEnv IDMeta :=
-  let ctx := Env.context
-  let ctx' := { ctx with types := ctx.types.insert x ty }
-  { Env with context := ctx' }
-
-/--
-Insert `(x, ty)` in `T.context`.
--/
-def TEnv.insertInContext {T: LExprParams} [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (x : T.Identifier) (ty : LTy) : TEnv T.IDMeta :=
-  { Env with genEnv := TGenEnv.insertInContext Env.genEnv x ty}
-
 /--
 Insert each element in `map` in the newest `T.context`.
 -/
-def TEnv.addToNewestContext (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) : TEnv T.IDMeta :=
+def TEnv.addInNewestContext (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) : TEnv T.IDMeta :=
   let ctx := Env.context
   let types := ctx.types.addInNewest map
   let ctx' := { ctx with types := types }

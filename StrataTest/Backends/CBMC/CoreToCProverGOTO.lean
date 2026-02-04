@@ -46,7 +46,7 @@ private def lookupType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident) :
 
 private def updateType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident)
     (ty : Core.Expression.Ty) : Core.Expression.TyEnv :=
-  @Lambda.TEnv.insertInContext ⟨Core.ExpressionMetadata, Core.Visibility⟩ _ T i ty
+  @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Core.Visibility⟩ T [(i, ty)]
 
 instance : Imperative.ToGoto Core.Expression where
   lookupType := lookupType
@@ -67,7 +67,7 @@ private def lookupTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident) :
 
 private def updateTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident)
     (ty : Core.ExprStr.Ty) : Core.ExprStr.TyEnv :=
-  T.insertInContext i ty
+  T.addInNewestContext [(i, ty)]
 
 instance : Imperative.ToGoto Core.ExprStr where
   lookupType := lookupTypeStr
