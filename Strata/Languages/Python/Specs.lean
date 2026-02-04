@@ -881,7 +881,7 @@ partial def resolveModule (loc : SourceRange) (modName : String) :
 
   return signatureValueMap (toString mod) sigs
 
-partial def tryCachedResolveModule (loc : SourceRange) (modName : String)
+partial def resolveModuleCached (loc : SourceRange) (modName : String)
     : PySpecM (Option (Std.HashMap String SpecValue)) := do
   match (←get).typeSigs.rank[modName]? with
   | some types =>
@@ -946,7 +946,7 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
         continue
       let some ⟨_, mod⟩ := pyModule
         | specError loc s!"Local imports not supported"; continue
-      if let some types ← tryCachedResolveModule loc mod then
+      if let some types ← resolveModuleCached loc mod then
         translateImportFrom mod types names
     | .ClassDef loc ⟨_classNameLoc, className⟩ bases keywords stmts decorators typeParams =>
       assert! _classNameLoc.isNone
