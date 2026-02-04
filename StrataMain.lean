@@ -213,7 +213,7 @@ def pyAnalyzeCommand : Command where
             (doInline := λ name _ => name ≠ "main"))
           newPgm .emp with
     | ⟨.error e, _⟩ => panic! e
-    | ⟨.ok newPgm, _⟩ =>
+    | ⟨.ok (_changed, newPgm), _⟩ =>
       if verbose then
         IO.println "Inlined: "
         IO.print newPgm

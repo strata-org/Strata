@@ -167,6 +167,7 @@ theorem getIdentTys!_no_throw :
     split <;> simp_all
     simp [pure, StateT.pure]
 
+/-
 -- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception
 theorem callElimBlockNoExcept :
   ∀ (st : Core.Statement)
@@ -4701,5 +4702,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                 . simp_all
       -/
 
+-/
 -/
 end CallElimCorrect

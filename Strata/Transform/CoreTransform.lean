@@ -240,50 +240,36 @@ def createOldVarsSubst
 /- Generic runner functions. -/
 
 /--
-Only visit top-level statements and run f.
-NOTE: please use runProgram if possible since CoreTransformState might result
-in an inconsistent state. This function is for partial implementation.
--/
-def runStmts (f : Command → CoreTransformM (List Statement))
-    (ss : List Statement) : CoreTransformM (List Statement) := do
-  match ss with
-  | [] => return []
-  | s :: ss =>
-    let s' := match s with
-      | .cmd c => f c
-      | s => return [s]
-    let ss' := (runStmts f ss)
-    return (← s') ++ (← ss')
-
-/--
 Recursively visit all blocks and run f
 NOTE: please use runProgram if possible since CoreTransformState might result
 in an inconsistent state. This function is for partial implementation.
 -/
-def runStmtsRec (f : Command → CoreTransformM (List Statement))
+def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)))
     (ss : List Statement)
-    : CoreTransformM (List Statement) := do
+    : CoreTransformM (Bool × List Statement) := do
   match ss with
-  | [] => return []
+  | [] => return (false, [])
   | s :: ss' =>
-    let ss'' ← (runStmtsRec f ss')
-    let sres ← (match s with
+    let (changed0, ss'') ← (runStmtsRec f ss')
+    let (changed, sres) ← (match s with
       | .cmd c => do
         let res ← f c
-        return res
+        match res with
+        | .none => return (false, [s])
+        | .some s' => return (true, s')
       | .block lbl b md => do
-        let b' ← runStmtsRec f b
-        return [.block lbl b' md]
+        let (changed, b') ← runStmtsRec f b
+        return (changed, [.block lbl b' md])
       | .ite c thenb elseb md => do
-        let thenb' ← runStmtsRec f thenb
-        let elseb' ← runStmtsRec f elseb
-        return [.ite c thenb' elseb' md]
+        let (changed, thenb') ← runStmtsRec f thenb
+        let (changed', elseb') ← runStmtsRec f elseb
+        return (changed || changed', [.ite c thenb' elseb' md])
       | .loop guard measure invariant body md => do
-        let body' ← runStmtsRec f body
-        return [.loop guard measure invariant body' md]
+        let (changed, body') ← runStmtsRec f body
+        return (changed, [.loop guard measure invariant body' md])
       | .goto _lbl _md =>
-        return [s])
-    return (sres ++ ss'')
+        return (false, [s]))
+    return ⟨changed0 || changed, (sres ++ ss'')⟩
 termination_by sizeOf ss
 decreasing_by
   all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
@@ -294,12 +280,12 @@ NOTE: please use runProgram if possible since CoreTransformState might result
 in an inconsistent state. This function is for partial implementation.
 -/
 def runProcedures
-    (f : Command → CoreTransformM (List Statement))
+    (f : Command → CoreTransformM (Option (List Statement)))
     (dcls : List Decl)
     (allowProcList : Option (List String) := .none)
-    : CoreTransformM (List Decl) := do
+    : CoreTransformM (Bool × List Decl) := do
   match dcls with
-  | [] => return []
+  | [] => return (false, [])
   | d :: ds =>
     match d with
     | .proc proc md =>
@@ -309,32 +295,41 @@ def runProcedures
         modify (fun σ => { σ with
           currentProcedureName := .some proc.header.name.1
         })
-        return Decl.proc {
-            proc with body := ← (runStmtsRec f proc.body)
-          } md :: (← (runProcedures (allowProcList := allowProcList) f ds))
+        let (changed, new_body) ← runStmtsRec f proc.body
+        let (changed', new_procs) ← runProcedures (allowProcList := allowProcList) f ds
+        return (changed || changed',
+          Decl.proc {
+            proc with body := new_body
+          } md :: new_procs)
       else
-        return d :: (← (runProcedures (allowProcList := allowProcList) f ds))
-    | _ => return d :: (← (runProcedures (allowProcList := allowProcList) f ds))
+        let (changed', new_procs) ← runProcedures (allowProcList := allowProcList) f ds
+        return (changed', d :: new_procs)
+    | _ =>
+      let (changed', new_procs) ← runProcedures (allowProcList := allowProcList) f ds
+      return (changed', d :: new_procs)
+
 
 /--
 Run f on each command of the program.
+Returns (has the program updated?, the updated program).
 If allowProcList is .none, apply f to all statements in every procedure.
 If allowProcList is .some l, apply f to statements that are in procedures
 listed in l only.
 -/
 def runProgram
-    (f : Command → CoreTransformM (List Statement))
+    (f : Command → CoreTransformM (Option (List Statement)))
     (p : Program)
     (allowProcList : Option (List String) := .none)
-  : CoreTransformM Program := do
+  : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
-  let newDecls ← runProcedures (allowProcList := allowProcList) f p.decls
+  let (changed, newDecls) ← runProcedures
+    (allowProcList := allowProcList) f p.decls
   let newProg := { decls := newDecls }
   modify (fun σ => { σ with
     currentProgram := .some newProg,
     currentProcedureName := .none
   })
-  return newProg
+  return (changed, newProg)
 
 
 @[simp]

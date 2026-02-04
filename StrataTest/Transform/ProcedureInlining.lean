@@ -227,8 +227,8 @@ def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram inlineCallCmd p .emp) with
-  | ⟨.ok res, _⟩ => res
+  match (runProgram (allowProcList := .none) inlineCallCmd p .emp) with
+  | ⟨.ok (_,res), _⟩ => res
   | ⟨.error e, _⟩ => panic! e
 
 def checkInlining (prog : Core.Program) (progAns : Core.Program)

@@ -18,7 +18,7 @@ The main call elimination transformation algorithm on a single command.
 The returned result is a sequence of statements
 -/
 def callElimCmd (cmd: Command)
-  : CoreTransformM (List Statement) := do
+  : CoreTransformM (Option (List Statement)) := do
     match cmd with
       | .call lhs procName args _ =>
 
@@ -83,21 +83,25 @@ def callElimCmd (cmd: Command)
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
 
+        -- Update cached CallGraph
+        modify (fun (σ:CoreTransformState) =>
+          match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
+          | .some cg, .some callerName =>
+            { σ with
+              cachedAnalyses := { σ.cachedAnalyses with
+                callGraph := .some (cg.decrementEdge callerName procName)}}
+          | .some _, .none =>
+            /- Invalidate CallGraph -/
+            { σ with
+              cachedAnalyses := { σ.cachedAnalyses with callGraph := .none }}
+          | _, _ => σ)
+
         return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
-      | _ => return [ .cmd cmd ]
-
--- Visits top-level statements and do call elimination
-def callElimStmts (ss: List Statement) (prog : Program) := do
-  modify (fun (σ:CoreTransformState) => { σ with currentProgram := .some prog })
-  runStmts callElimCmd ss
-
-def callElimL (dcls : List Decl) (prog : Program) := do
-  modify (fun (σ:CoreTransformState) => { σ with currentProgram := .some prog })
-  runProcedures (allowProcList := .none) callElimCmd dcls
+      | _ => return .none
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/
-def callElim' (p : Program) : CoreTransformM Program :=
+def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
   runProgram (allowProcList := .none) callElimCmd p
 
 end CallElim

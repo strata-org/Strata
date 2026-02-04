@@ -117,7 +117,7 @@ private def renameAllLocalNames (c:Procedure)
   return ({ c with body := new_body, header := new_header }, var_map)
 
 
-/-- Update the call graph after inlining f(caller) -> g(callee) invocation. -/
+/-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
 def updateCallGraph (cg:CallGraph) (f: String) (g: String):
     Except Err CallGraph := do
   -- For each edge 'g -> x', add f -> x'
@@ -132,17 +132,10 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
       edges_from_f.alter fn_x (fun v =>
         .some (match v with | .none => cnt | .some v' => cnt + v')))
     edges_from_f
-  -- .. and decrement the 'f -> g' edge by 1 since this call
-  -- has been eliminated.
-  let edges_from_f ← match edges_from_f.get? g with
-    | .none => throw s!"Invalid CallGraph: can't find {f} -> {g} from callees"
-    | .some v' =>
-      .ok (if v' == 1 then edges_from_f.erase g
-           else edges_from_f.insert g (v' - 1))
   let callees_new := cg.callees.insert f edges_from_f
 
   -- Now the callers. For every 'g -> x' edge, add f -> x'.
-  let callers ← edges_from_g.foldM
+  let callers_new ← edges_from_g.foldM
     (fun (m:Std.HashMap String (Std.HashMap String Nat)) fn_x cnt => do
       match m.get? fn_x with
       | .none => throw s!"Invalid CallGraph: can't find {fn_x} from callers domain"
@@ -150,17 +143,11 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
         .ok (m.insert fn_x (edges_to_x.alter f (fun v =>
           .some (match v with | .none => cnt | .some v' => cnt + v')))))
     cg.callers
-  -- .. and decrement the 'f -> g' edge by 1.
-  let edges_to_g ← match callers.get? g with
-    | .none => throw s!"Invalid CallGraph: can't find {g} from callers domain"
-    | .some v => .ok v
-  let edges_to_g ← match edges_to_g.get? f with
-    | .none => throw s!"Invalid CallGraph: can't find {f} -> {g} from callers"
-    | .some v => .ok (
-        if v == 1 then edges_to_g.erase f else edges_to_g.insert f (v - 1))
-  let callers_new := callers.insert g edges_to_g
-  return { callees := callees_new, callers := callers_new }
 
+  let cg_new : CallGraph := { callees := callees_new, callers := callers_new }
+
+  -- .. and decrement the 'f -> g' edge by 1.
+  return cg_new.decrementEdge f g
 
 /-
 Procedure Inlining.
@@ -175,13 +162,13 @@ the reachability query.
 def inlineCallCmd
     (doInline:String -> CachedAnalyses -> Bool := λ _ _ => true)
     (cmd: Command)
-  : CoreTransformM (List Statement) :=
+  : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args _ =>
 
         let st ← get
-        if ¬ doInline procName st.cachedAnalyses then return [.cmd cmd] else
+        if ¬ doInline procName st.cachedAnalyses then return .none else
 
         let some p := (← get).currentProgram
           | throw s!"currentProgram not set"
@@ -250,9 +237,9 @@ def inlineCallCmd
             }
           }:CoreTransformState)
 
-        return [.block (procName ++ "$inlined") stmts]
+        return .some [.block (procName ++ "$inlined") stmts]
 
-      | _ => return [.cmd cmd]
+      | _ => return .none
 
 end ProcedureInlining
 end Core

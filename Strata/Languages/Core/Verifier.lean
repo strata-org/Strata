@@ -422,7 +422,9 @@ def verify (smtsolver : String) (program : Program)
        -- callees.
       let passes := fun prog => do
         let prog ← FilterProcedures.run prog procs
-        CallElim.callElim' prog
+        let (_changed,prog) ← CallElim.callElim' prog
+        let prog ← FilterProcedures.run prog procs
+        return prog
       let res := Transform.run program passes
       match res with
       | .ok prog => .ok prog

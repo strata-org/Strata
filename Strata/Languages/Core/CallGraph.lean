@@ -34,6 +34,27 @@ def CallGraph.getCallersWithCount (cg : CallGraph) (name : String)
   : Std.HashMap String Nat :=
   if h : cg.callers.contains name then (cg.callers[name]'h) else {}
 
+/-- Decrement the number on edge (caller -> callee) by 1. If the result is 0,
+  erase the empty entry -/
+def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
+  : CallGraph :=
+  let decrement_count (m : Std.HashMap String Nat) (k : String) :=
+    m.alter k (fun
+      | .none => panic! s!"{k} not available at {repr m}"
+      | .some v => if v == 1 then .none else .some (v - 1))
+  {
+    callees := cg.callees.alter caller (fun
+        | .none => panic! s!"{caller} not available at cg.callees {repr cg.callees}"
+        | .some m =>
+          let m' := decrement_count m callee
+          if m'.isEmpty then .none else .some m'),
+    callers := cg.callers.alter callee (fun
+        | .none => panic! s!"{callee} not available at cg.callers {repr cg.callers}"
+        | .some m =>
+          let m' := decrement_count m caller
+          if m'.isEmpty then .none else .some m'),
+  }
+
 /-- Compute transitive closure of callees; the result does not contain `name`. -/
 partial def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
   let rec go (visited : List String) (toVisit : List String) : List String :=
