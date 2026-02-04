@@ -93,12 +93,12 @@ def callElimStmts (ss: List Statement) (prog : Program) := do
 
 def callElimL (dcls : List Decl) (prog : Program) := do
   modify (fun (σ:CoreTransformState) => { σ with currentProgram := .some prog })
-  runProcedures callElimCmd dcls
+  runProcedures (allowProcList := .none) callElimCmd dcls
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/
 def callElim' (p : Program) : CoreTransformM Program :=
-  runProgram callElimCmd p
+  runProgram (allowProcList := .none) callElimCmd p
 
 end CallElim
 end Core

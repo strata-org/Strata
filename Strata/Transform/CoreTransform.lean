@@ -94,13 +94,13 @@ def CachedAnalyses.emp : CachedAnalyses := {}
 structure CoreTransformState where
   genState: CoreGenState
   currentProgram: Option Program
-  currentProcedure: Option Procedure -- TOOD: currentFunction, etc?
+  currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
   { genState := .emp, currentProgram := .none,
-    currentProcedure := .none, cachedAnalyses := .emp }
+    currentProcedureName := .none, cachedAnalyses := .emp }
 
 abbrev Err := String
 
@@ -113,7 +113,7 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
     (res.1, {
       genState := res.2,
       currentProgram := coreTransformState.currentProgram,
-      currentProcedure := coreTransformState.currentProcedure,
+      currentProcedureName := coreTransformState.currentProcedureName,
       cachedAnalyses := coreTransformState.cachedAnalyses })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
@@ -227,9 +227,13 @@ def createOldVarsSubst
     | ((v', _), v) => (v, createFvar v')
 
 
-/- Generic runner functions -/
+/- Generic runner functions. -/
 
--- Only visit top-level statements and run f
+/--
+Only visit top-level statements and run f.
+NOTE: please use runProgram if possible since CoreTransformState might result
+in an inconsistent state. This function is for partial implementation.
+-/
 def runStmts (f : Command → CoreTransformM (List Statement))
     (ss : List Statement) : CoreTransformM (List Statement) := do
   match ss with
@@ -241,7 +245,11 @@ def runStmts (f : Command → CoreTransformM (List Statement))
     let ss' := (runStmts f ss)
     return (← s') ++ (← ss')
 
--- Recursively visit all blocks and run f
+/--
+Recursively visit all blocks and run f
+NOTE: please use runProgram if possible since CoreTransformState might result
+in an inconsistent state. This function is for partial implementation.
+-/
 def runStmtsRec (f : Command → CoreTransformM (List Statement))
     (ss : List Statement)
     : CoreTransformM (List Statement) := do
@@ -270,24 +278,53 @@ termination_by sizeOf ss
 decreasing_by
   all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
 
-def runProcedures (f : Command → CoreTransformM (List Statement))
-    (dcls : List Decl) : CoreTransformM (List Decl) := do
+/--
+Visit all procedures and run f
+NOTE: please use runProgram if possible since CoreTransformState might result
+in an inconsistent state. This function is for partial implementation.
+-/
+def runProcedures
+    (f : Command → CoreTransformM (List Statement))
+    (dcls : List Decl)
+    (allowProcList : Option (List String) := .none)
+    : CoreTransformM (List Decl) := do
   match dcls with
   | [] => return []
   | d :: ds =>
     match d with
     | .proc proc md =>
-      modify (fun σ => { σ with currentProcedure := .some proc })
-      return Decl.proc {
-          proc with body := ← (runStmtsRec f proc.body)
-        } md :: (← (runProcedures f ds))
-    | _ => return d :: (← (runProcedures f ds))
+      if (match allowProcList with
+         | .none => true
+         | .some p => proc.header.name.1 ∈ p) then
+        modify (fun σ => { σ with
+          currentProcedureName := .some proc.header.name.1
+        })
+        return Decl.proc {
+            proc with body := ← (runStmtsRec f proc.body)
+          } md :: (← (runProcedures (allowProcList := allowProcList) f ds))
+      else
+        return d :: (← (runProcedures (allowProcList := allowProcList) f ds))
+    | _ => return d :: (← (runProcedures (allowProcList := allowProcList) f ds))
 
-def runProgram (f : Command → CoreTransformM (List Statement))
-    (p : Program) : CoreTransformM Program := do
+/--
+Run f on each command of the program.
+If allowProcList is .none, apply f to all statements in every procedure.
+If allowProcList is .some l, apply f to statements that are in procedures
+listed in l only.
+-/
+def runProgram
+    (f : Command → CoreTransformM (List Statement))
+    (p : Program)
+    (allowProcList : Option (List String) := .none)
+  : CoreTransformM Program := do
   modify (fun σ => { σ with currentProgram := .some p })
-  let newDecls ← runProcedures f p.decls
-  return { decls := newDecls }
+  let newDecls ← runProcedures (allowProcList := allowProcList) f p.decls
+  let newProg := { decls := newDecls }
+  modify (fun σ => { σ with
+    currentProgram := .some newProg,
+    currentProcedureName := .none
+  })
+  return newProg
 
 
 @[simp]

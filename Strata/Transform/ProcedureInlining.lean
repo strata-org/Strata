@@ -185,9 +185,8 @@ def inlineCallCmd
 
         let some p := (← get).currentProgram
           | throw s!"currentProgram not set"
-        let some currProc := (← get).currentProcedure
+        let some currProcName := (← get).currentProcedureName
           | throw s!"currentProcedure not set"
-        let currProcName := currProc.header.name.name
         let some proc := Program.Procedure.find? p procName
           | throw s!"Procedure {procName} not found in program"
 
