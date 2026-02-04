@@ -132,6 +132,107 @@ info:
 #guard_msgs in
 #eval verify "cvc5" dependentPrecondPgm
 
+-- Function body calls another function with preconditions (Phase 3 test)
+-- Expression: safeDiv(safeDiv(x, y), z)
+-- This should generate WF obligations for both calls to safeDiv
+def funcCallsFuncPgm :=
+#strata
+program Core;
+
+function safeDiv(x : int, y : int) : int
+  requires y != 0;
+{ x div y }
+
+function doubleSafeDiv(x : int, y : int, z : int) : int
+  requires y != 0;
+  requires z != 0;
+{ safeDiv(safeDiv(x, y), z) }
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: doubleSafeDiv_calls_safeDiv_0
+Property: assert
+Assumptions:
+(precond_doubleSafeDiv, (~Bool.Not (y == #0)))
+(precond_doubleSafeDiv, (~Bool.Not (z == #0)))
+Proof Obligation:
+(~Bool.Not (z == #0))
+
+Label: doubleSafeDiv_calls_safeDiv_1
+Property: assert
+Assumptions:
+(precond_doubleSafeDiv, (~Bool.Not (y == #0)))
+(precond_doubleSafeDiv, (~Bool.Not (z == #0)))
+Proof Obligation:
+(~Bool.Not (y == #0))
+
+---
+info:
+Obligation: doubleSafeDiv_calls_safeDiv_0
+Property: assert
+Result: ✅ pass
+
+Obligation: doubleSafeDiv_calls_safeDiv_1
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" funcCallsFuncPgm
+
+-- Function body calls another function but precondition does NOT hold (should fail)
+-- Expression: safeDiv(x, 0) - calling with literal 0
+def funcCallsFuncFailPgm :=
+#strata
+program Core;
+
+function safeDiv(x : int, y : int) : int
+  requires y != 0;
+{ x div y }
+
+function badDiv(x : int) : int
+{ safeDiv(x, 0) }
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: badDiv_calls_safeDiv_0
+Property: assert
+Assumptions:
+
+Proof Obligation:
+(~Bool.Not (#0 == #0))
+
+
+
+Result: Obligation: badDiv_calls_safeDiv_0
+Property: assert
+Result: ❌ fail
+
+
+Evaluated program:
+func safeDiv :  ((x : int) (y : int)) → int
+  requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0)) :=
+  ((((~Int.Div : (arrow int (arrow int int))) (x : int)) (y : int)))
+func badDiv :  ((x : int)) → int :=
+  ((((~safeDiv : (arrow int (arrow int int))) (x : int)) #0))
+---
+info:
+Obligation: badDiv_calls_safeDiv_0
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval verify "cvc5" funcCallsFuncFailPgm
+
 -- Call to function with precondition - unconditionally true
 def callUnconditionalPgm :=
 #strata
