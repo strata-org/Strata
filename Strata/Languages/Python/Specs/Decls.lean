@@ -10,6 +10,10 @@ public import Strata.DDM.Util.SourceRange
 public section
 namespace Strata.Python.Specs
 
+/--
+A fully-qualified Python identifier consisting of a module path and a name.
+For example, `typing.List` has module "typing" and name "List".
+-/
 structure PythonIdent where
   pythonModule : String
   name : String
@@ -52,6 +56,11 @@ def typingUnion := mk "typing" "Union"
 
 end PythonIdent
 
+/--
+Represents Python generic types from the `typing` module that require special
+handling during type translation (e.g., parameterized types with specific
+arity requirements).
+-/
 inductive MetadataType where
   | typingDict
   | typingGenerator
@@ -115,6 +124,11 @@ namespace SpecType
 instance : Repr SpecType where
   reprPrec tp prec := private reprPrec tp.atoms.toList prec
 
+/--
+Merges two sorted arrays of atom types into a single sorted array without
+duplicates. Implements the core logic for union type operations using a
+two-pointer algorithm.
+-/
 private partial def unionAux (x y : Array SpecAtomType) (i : Fin x.size) (j : Fin y.size) (r : Array SpecAtomType) : Array SpecAtomType :=
   let xe := x[i]
   let ye := y[j]
@@ -194,6 +208,11 @@ def count (ad : ArgDecls) := ad.args.size + ad.kwonly.size
 
 end ArgDecls
 
+/--
+A specification predicate with `free` free variables (arguments + return value
+for postconditions). Currently a placeholder; will be extended to support
+actual constraint expressions.
+-/
 inductive SpecPred (free : Nat) where
 | placeholder
 deriving Inhabited

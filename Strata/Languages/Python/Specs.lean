@@ -32,6 +32,10 @@ def logEvent (event : EventType) (message : String) : BaseIO Unit := do
     let _ ← IO.eprintln s!"[{event}]: {message}" |>.toBaseIO
   pure ()
 
+/--
+A specification predicate. Currently only supports constant boolean values;
+placeholder for future extension with more complex predicates.
+-/
 inductive Pred where
 | const (b : Bool)
 
@@ -43,6 +47,11 @@ def not (p : Pred) : Pred :=
 
 end Pred
 
+/--
+Represents an iterable type in Python specifications.
+Currently only supports lists; other iterables (sets, generators, etc.) to be
+added.
+-/
 inductive Iterable where
 | list
 
@@ -51,6 +60,11 @@ structure SpecError where
   loc : Strata.SourceRange
   message : String
 
+/--
+A Python module name split into its dot-separated components.
+For example, `typing.List` has components `["typing", "List"]`.
+The size constraint ensures at least one component exists.
+-/
 structure ModuleName where
   components : Array String
   componentsSizePos : components.size > 0
@@ -816,6 +830,11 @@ def checkOverloadBody (stmt : stmt SourceRange) : PySpecM Unit := do
 
 mutual
 
+/--
+Resolves a Python module by name, returning a map of exported identifiers to
+their spec values. Loads either from cached PySpec files or by parsing the
+Python source if not in cache.
+-/
 partial def resolveModule (loc : SourceRange) (modName : String) :
     PySpecM (Std.HashMap String SpecValue) := do
   let mod ←

@@ -82,7 +82,10 @@ end Ion.Ion
 
 namespace Strata
 
-
+/--
+Represents an Ion value that is either a symbol/string or a non-empty
+s-expression. The size proof ensures termination in recursive deserialization.
+-/
 private inductive StringOrSexp (v : Ion SymbolId) where
 | string (s : String)
 | sexp (a : Array (Ion SymbolId)) (p : a.size > 0 ∧ sizeOf a < sizeOf v)
@@ -92,6 +95,11 @@ private inductive Required where
 | opt
 deriving DecidableEq
 
+/--
+Maps struct field names to their position indices, tracking which fields are
+required. Used during Ion deserialization to validate that all required fields
+are present.
+-/
 private structure StructArgMap (size : Nat) where
   map : Std.HashMap String (Fin size) := {}
   required : Array (String × Fin size)
@@ -259,6 +267,11 @@ private def sizeOfArrayLowerBound [h : SizeOf α] (a : Array α) : sizeOf a ≥ 
     have p := sizeOfListLowerBound l
     decreasing_tactic
 
+/--
+Maps an array of Ion struct fields to a fixed-size vector according to the
+StructArgMap, validating that all required fields are present and no fields are
+duplicated.
+-/
 private def mapFields {size} (args : Array (SymbolId × Ion SymbolId)) (m : StructArgMap size) :
   FromIonM (Vector (Ion SymbolId) size) := do
   -- We use an assigned vector below to check

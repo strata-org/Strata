@@ -289,6 +289,10 @@ end OperationF
 
 namespace ExprF
 
+/--
+Flattens a curried application expression into its head and list of arguments.
+For example, `((f a) b) c` becomes `(f, [a, b, c])`.
+-/
 public def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α × List (ArgF α) :=
   match e with
   | .app _ f e => f.flatten (e :: prev)
@@ -606,6 +610,10 @@ end Metadata
 
 abbrev Var := String
 
+/--
+Converts a deBruijn index to a level (counting from the start rather than
+the end). Used internally for metadata argument processing.
+-/
 private def catbvarLevel (varCount : Nat) : MetadataArg → Nat
 | .catbvar idx =>
   if idx < varCount then
@@ -1062,6 +1070,7 @@ def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 
 end BindingSpec
 
+/-- Monad for parsing new binding specifications, accumulating error messages. -/
 private abbrev NewBindingM := StateM (Array String)
 
 private def newBindingErr (msg : String) : NewBindingM Unit :=
@@ -1707,7 +1716,9 @@ end DialectMap
 mutual
 
 /--
-Invoke a function `f` over each of the declaration specifications for an arg.
+Recursively folds over all binding specifications declared within an argument.
+Used to collect type bindings, value bindings, and other declarations that
+appear nested within operation arguments.
 -/
 partial def foldOverArgBindingSpecs {α β}
     (m : DialectMap)

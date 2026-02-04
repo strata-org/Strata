@@ -71,9 +71,11 @@ abbrev Signature := Command
 
 end DDM
 
+/-- Converts a Python identifier to an annotated string for DDM serialization. -/
 def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
   ⟨.none, toString d⟩
 
+/-- Converts a Lean `Int` to the DDM representation which separates natural and negative cases. -/
 def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
   match i with
   | .ofNat n => .natInt ann ⟨ann, n⟩
