@@ -45,4 +45,4 @@ procedure caller() {
 "
 
 #guard_msgs(drop info, error) in
-#eval! testInputWithOffset "T5_ProcedureCallsStrataCore" program 20 processLaurelFile
+#eval! testInputWithOffset "ContractsCalls" program 20 processLaurelFile

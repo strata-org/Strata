@@ -20,6 +20,6 @@ ensures r <= x + 10
 "
 
 #guard_msgs(drop info) in
-#eval testInputWithOffset "T5_Quantifiers" program 5 processLaurelFile
+#eval testInputWithOffset "Contracts" program 5 processLaurelFile
 
 end Strata.Laurel

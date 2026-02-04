@@ -27,7 +27,7 @@ procedure conditionalAssignmentInExpression(x: int) {
 "
 
 #guard_msgs(drop info, error) in
-#eval! testInputWithOffset "T2_ImpureExpressionsNotSupported" program 14 processLaurelFile
+#eval! testInputWithOffset "VariablesNotSupported" program 14 processLaurelFile
 
 
 end Laurel

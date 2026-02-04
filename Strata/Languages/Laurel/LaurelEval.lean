@@ -209,9 +209,8 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
               else
                 setLocal param.name arg
             )
-          for precondition in callable.preconditions do
-            let precondResult ← eval precondition
-            assertBool precondResult
+          let precondition ← eval callable.precondition
+          assertBool precondition
           -- TODO, handle decreases
 
           let result: TypedValue ← match callable.body with
@@ -247,9 +246,9 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
     let tv ← eval valExpr
     withResult (EvalResult.Return tv.val)
   | StmtExpr.Return none => fun env => (EvalResult.Success { val := Value.VVoid, ty := env.returnType }, env)
-  | StmtExpr.While _ [] _ _  => withResult <| EvalResult.TypeError "While invariant was not derived"
+  | StmtExpr.While _ none _ _  => withResult <| EvalResult.TypeError "While invariant was not derived"
   | StmtExpr.While _ _ none _  => withResult <| EvalResult.TypeError "While decreases was not derived"
-  | StmtExpr.While condExpr (invariantExpr :: _) (some decreasedExpr) bodyExpr => do
+  | StmtExpr.While condExpr (some invariantExpr) (some decreasedExpr) bodyExpr => do
     let rec loop : Eval TypedValue := do
       let cond ← eval condExpr
       if (cond.ty.isBool) then

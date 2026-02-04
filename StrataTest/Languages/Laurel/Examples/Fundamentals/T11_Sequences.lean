@@ -22,6 +22,6 @@ ensures r == Seq.Contains(Seq.Take(Seq.From(arr), n), target)
 "
 
 #guard_msgs(drop info, error) in
-#eval testInputWithOffset "T12_Sequences" program 5 processLaurelFile
+#eval testInputWithOffset "Sequences" program 5 processLaurelFile
 
 end Strata.Laurel

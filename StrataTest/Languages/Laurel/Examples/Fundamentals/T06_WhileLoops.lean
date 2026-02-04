@@ -37,4 +37,4 @@ procedure countUp() {
 "
 
 #guard_msgs(drop info, error) in
-#eval testInputWithOffset "WhileBasic" program 14 processLaurelFile
+#eval testInputWithOffset "WhileLoops" program 14 processLaurelFile

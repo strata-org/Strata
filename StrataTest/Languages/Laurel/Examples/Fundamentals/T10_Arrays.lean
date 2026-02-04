@@ -20,6 +20,6 @@ ensures r == arr[0] + arr[1]
 "
 
 #guard_msgs(drop info, error) in
-#eval testInputWithOffset "T11_Arrays" program 5 processLaurelFile
+#eval testInputWithOffset "Arrays" program 5 processLaurelFile
 
 end Strata.Laurel
