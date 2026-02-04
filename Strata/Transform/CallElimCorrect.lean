@@ -166,7 +166,7 @@ theorem getIdentTys!_no_throw :
     simp [bind, StateT.bind, pure, ExceptT.pure, ExceptT.mk, ExceptT.bindCont]
     split <;> simp_all
     simp [pure, StateT.pure]
-/-
+
 -- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception
 theorem callElimBlockNoExcept :
   ∀ (st : Core.Statement)
@@ -192,6 +192,8 @@ theorem callElimBlockNoExcept :
       next heq =>
       cases heq
       next st =>
+      sorry
+      /-
       simp only [] -- reduce match
       split <;>
         simp only [StateT.run, bind, ExceptT.bind, ExceptT.mk, StateT.bind, genArgExprIdentsTrip, ne_eq, liftM,
@@ -279,9 +281,9 @@ theorem callElimBlockNoExcept :
         simp [Program.Procedure.find?] at wf
         unfold CoreIdent.unres at *
         split at wf <;> simp_all
+      -/
     . -- other case
       grind
-
 
 theorem postconditions_subst_unwrap :
   substPost ∈
@@ -2241,7 +2243,8 @@ theorem getIdentTys!_len :
         apply ih
         assumption
       . cases H
-    . cases H
+    . sorry
+      -- cases H
 /-
 theorem genOutExprIdent_len : List.mapM genOutExprIdent t s = (a, s') → t.length = a.length := by
   intros Hgen
@@ -4698,6 +4701,5 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                 . simp_all
       -/
 
--/
 -/
 end CallElimCorrect
