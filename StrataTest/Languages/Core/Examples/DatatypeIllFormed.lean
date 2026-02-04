@@ -51,7 +51,7 @@ datatype Nest (a : Type) { Base(), MkNest(xs: List (Nest a)) };
 #end
 
 /--
-info: error: (1288-1351) Error in constructor MkNest: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata.
+info: error: (1288-1351) Error in constructor MkNest: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedDatatypePgm) |>.fst)

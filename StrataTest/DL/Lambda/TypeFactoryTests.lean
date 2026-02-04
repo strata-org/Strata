@@ -560,7 +560,7 @@ def nestConstr1Base: LConstr Unit :=
 def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"],constrs :=
   [nestConstr1Base, nestConstr1], constrs_ne := rfl}
 
-/-- info: Error in constructor C: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata.
+/-- info: Error in constructor C: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[[listTy], [nestTy1]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
@@ -575,7 +575,7 @@ def nestConstr2: LConstr Unit := {name := "C", args :=
 def nestTy2 : LDatatype Unit := {name := "Nest2", typeArgs := ["a"], constrs :=
   [nestConstr1Base, nestConstr2], constrs_ne := rfl}
 
-/-- info: Error in constructor C: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata.
+/-- info: Error in constructor C: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[[nestTy2]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
@@ -600,7 +600,7 @@ def mutNestBTy : LDatatype Unit :=
   {name := "MutNestB", typeArgs := ["a"], constrs :=
   [mutNestBBase, mutNestBConstr], constrs_ne := rfl}
 
-/-- info: Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata.
+/-- info: Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[[listTy], [mutNestATy, mutNestBTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
