@@ -73,6 +73,14 @@ def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   termination_by e.sizeOf
 
 /--
+Check if `e` is a constructor application.
+-/
+def isConstrApp (F : @Factory T.base) (e : LExpr T) : Bool :=
+  match Factory.callOfLFunc F e true with
+  | some (_, _, f) => f.isConstr
+  | none => false
+
+/--
 Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
@@ -146,8 +154,9 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
       match σ.config.factory.callOfLFunc e with
       | some (op_expr, args, lfunc) =>
         let args := args.map (fun a => eval n' σ a)
-        if h: lfunc.body.isSome && ("inline" ∈ lfunc.attr ||
-          ("inline_if_val" ∈ lfunc.attr && args.all (isCanonicalValue σ.config.factory))) then
+        let firstArgIsConstr := (args.head?.map (isConstrApp σ.config.factory)).getD false
+        if h: lfunc.body.isSome && (inline_attr ∈ lfunc.attr ||
+          (inline_if_constr_attr ∈ lfunc.attr && firstArgIsConstr)) then
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           let input_map := lfunc.inputs.keys.zip args
@@ -155,10 +164,13 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           eval n' σ new_e
         else
           let new_e := @mkApp TBase.mono e.metadata op_expr args
-          if args.all (isCanonicalValue σ.config.factory) then
+          if args.all (isCanonicalValue σ.config.factory) ||
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
+            (eval_if_constr_attr ∈ lfunc.attr && firstArgIsConstr) then
+            -- Other functions (e.g. Eliminators) only require the first arg
+            -- to be a constructor
             match lfunc.concreteEval with
             | none => new_e
             | some ceval =>

@@ -912,8 +912,8 @@ def verifyToVcResults (smtsolver : String) (program : Program)
 
       let runner tempDir :=
         EIO.toIO (fun f => IO.Error.userError (toString f))
-            (Core.verify smtsolver boogieProgram tempDir options)
-      let ioResult <- match tempDir with
+            (Core.verify smtsolver boogieProgram tempDir .none options)
+      let ioResult ← match tempDir with
       | .none =>
         IO.FS.withTempDir runner
       | .some p =>
