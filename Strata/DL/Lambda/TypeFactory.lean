@@ -468,7 +468,8 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T
       typeArgs := d.typeArgs,
       inputs := [(arg, dataDefault d)],
       output := ty,
-      concreteEval := some (fun _ => destructorConcreteEval d c i)})
+      concreteEval := some (fun _ => destructorConcreteEval d c i),
+      attr := #[eval_if_constr_attr]})
 
 
 ---------------------------------------------------------------------

@@ -9,7 +9,7 @@ import Strata.Languages.Core.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def smalltest :=
+def testerEx :=
 #strata
 program Core;
 
@@ -22,7 +22,48 @@ procedure test () returns ()
 {
   var b: bool;
   havoc b;
-  assert [constr_destr_cancel]: Any..isfrom_bool(from_bool(b));
+  assert [constr_tester_cancel]: Any..isfrom_bool(from_bool(b));
+};
+
+#end
+
+/-- info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: constr_tester_cancel
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+#true
+
+---
+info:
+Obligation: constr_tester_cancel
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" testerEx
+
+
+def destrEx :=
+#strata
+program Core;
+
+
+datatype Any () {
+  from_bool (as_bool : bool)
+};
+
+procedure test () returns ()
+{
+  var b: bool;
+  havoc b;
+  assume (b == true);
+  assert [constr_destr_cancel]: Any..as_bool(from_bool(b));
 };
 
 #end
@@ -34,10 +75,10 @@ VCs:
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
-
+(assume_0, ($__b0 == #true))
 
 Proof Obligation:
-#true
+$__b0
 
 ---
 info:
@@ -46,6 +87,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" smalltest
+#eval verify "cvc5" destrEx
 
 end Strata
