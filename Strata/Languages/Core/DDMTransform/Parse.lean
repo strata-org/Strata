@@ -282,12 +282,13 @@ op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
                   @[scope(typeArgs)] b : Bindings,
                   @[scope(typeArgs)] r : Type,
+                  @[scope(b)] preconds : Seq SpecElt,
                   @[scope(b)] c : r,
                   // Prefer adding the inline attribute here so
                   // that the order of the arguments in the fndecl and fndef
                   // agree.
                   inline? : Option Inline) : Command =>
-  inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
+  inline? "function " name typeArgs b " : " r "\n" indent(2, preconds) " {\n" indent(2, c) "\n}\n";
 
 @[scope(b)]
 op command_var (b : Bind) : Command =>

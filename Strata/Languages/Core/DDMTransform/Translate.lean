@@ -1238,11 +1238,25 @@ def translateOptionInline (arg : Arg) : TransM (Array String) := do
     return #[inline_attr]
   | none => return #[]
 
+def translateFnPreconds (p : Program) (name : CoreIdent) (bindings : TransBindings) (arg : Arg) :
+  TransM (List Core.Expression.Expr) := do
+  let .seq _ .none args := arg
+    | TransM.error s!"translateFnPreconds expected seq {repr arg}"
+  let preconds ← args.foldlM (init := ([], 0)) fun (acc, count) specElt => do
+    let .op op := specElt
+      | TransM.error s!"translateFnPreconds expected op {repr specElt}"
+    match op.name with
+    | q`Core.requires_spec =>
+      let reqs ← translateRequires p name count bindings specElt
+      return (acc ++ reqs.map (·.2.expr), count + 1)
+    | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
+  return preconds.1
+
 def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  6
+    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  7
     | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
   let fname ← translateIdent CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
@@ -1254,21 +1268,21 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let orig_bbindings := bindings.boundVars
   let bbindings := bindings.boundVars ++ in_bindings
   let bindings := { bindings with boundVars := bbindings }
-  let body ← match status with
+  let (preconds, body, inline?) ← match status with
              | .Definition =>
-                let e ← translateExpr p bindings op.args[4]!
-                pure (some e)
-             | .Declaration => pure none
-  let inline? ← match status with
-                 | .Definition => translateOptionInline op.args[5]!
-                 | .Declaration => pure #[]
+                let preconds ← translateFnPreconds p fname bindings op.args[4]!
+                let e ← translateExpr p bindings op.args[5]!
+                let inline? ← translateOptionInline op.args[6]!
+                pure (preconds, some e, inline?)
+             | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
                       inputs := sig,
                       output := ret,
                       body := body,
-                      attr := inline? } md
+                      attr := inline?,
+                      preconditions := preconds } md
   return (decl,
           { bindings with
             boundVars := orig_bbindings,
