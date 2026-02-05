@@ -205,6 +205,7 @@ end Core.SMT
 namespace Core
 open Imperative Lambda Strata.SMT
 open Std (ToFormat Format format)
+open Strata
 
 /--
 Analysis outcome of a verification condition.
@@ -283,7 +284,7 @@ instance : ToString VCResults where
 Preprocess a proof obligation before handing it off to a backend engine.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) : EIO Format (ProofObligation Expression × Option VCResult) := do
+    (options : Options) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
   match obligation.property with
   | .cover =>
     if obligation.obligation.isFalse then
@@ -331,14 +332,14 @@ given proof obligation.
 def getObligationResult (terms : List Term) (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
     (smtsolver : String) (options : Options) (counter : IO.Ref Nat)
-    (tempDir : System.FilePath) : EIO Format VCResult := do
+    (tempDir : System.FilePath) : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\nEvaluated program:\n{p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
   let ans ←
       IO.toEIO
-        (fun e => f!"{e}")
+        (fun e => DiagnosticModel.fromFormat f!"{e}")
         (SMT.dischargeObligation options
           (ProofObligation.getVars obligation) smtsolver
             filename.toString
@@ -348,7 +349,7 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
                  {if options.verbose >= .normal then prog else ""}"
-    .error e
+    .error <| DiagnosticModel.fromFormat e
   | .ok (smt_result, estate) =>
     let result :=  { obligation,
                      result := smtResultToOutcome smt_result (obligation.property == .cover)
@@ -359,11 +360,11 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
 
 def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options)
     (counter : IO.Ref Nat) (tempDir : System.FilePath) :
-    EIO Format VCResults := do
+    EIO DiagnosticModel VCResults := do
   let (p, E) := pE
   match E.error with
   | some err =>
-    .error s!"🚨 Error during evaluation!\n\
+    .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
               {format err}\n\n\
               Evaluated program: {p}\n\n"
   | _ =>
@@ -407,14 +408,24 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
 
 def verify (smtsolver : String) (program : Program)
     (tempDir : System.FilePath)
+    (proceduresToVerify : Option (List String) := none)
     (options : Options := default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
-    : EIO Format VCResults := do
-  match Core.typeCheckAndPartialEval options program moreFns with
+    : EIO DiagnosticModel VCResults := do
+  let finalProgram ← match proceduresToVerify with
+    | none => .ok program  -- Verify all procedures (default).
+    | some procs =>
+       -- Verify specific procedures. By default, we apply the call elimination
+       -- transform to the targeted procedures to inline the contracts of any
+       -- callees.
+      match program.filterProcedures procs (transform := CallElim.callElim') with
+      | .ok prog => .ok prog
+      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+  match Core.typeCheckAndPartialEval options finalProgram moreFns with
   | .error err =>
-    .error f!"❌ Type checking error.\n{format err}"
+    .error { err with message := s!"❌ Type checking error.\n{err.message}" }
   | .ok pEs =>
-    let counter ← IO.toEIO (fun e => f!"{e}") (IO.mkRef 0)
+    let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
     let VCss ← if options.checkOnly then
                  pure []
                else
@@ -427,16 +438,17 @@ end Core
 namespace Strata
 
 open Lean.Parser
+open Strata (DiagnosticModel FileRange)
 
 def typeCheck (ictx : InputContext) (env : Program) (options : Options := default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-  Except Std.Format Core.Program := do
+  Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     Core.typeCheck options program moreFns
   else
-    .error s!"DDM Transform Error: {repr errors}"
+    .error <| DiagnosticModel.fromFormat s!"DDM Transform Error: {repr errors}"
 
 def Core.getProgram
   (p : Strata.Program)
@@ -446,16 +458,16 @@ def Core.getProgram
 def verify
     (smtsolver : String) (env : Program)
     (ictx : InputContext := Inhabited.default)
+    (proceduresToVerify : Option (List String) := none)
     (options : Options := default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (tempDir : Option String := .none)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
-    -- dbg_trace f!"AST: {program}"
     let runner tempDir :=
-      EIO.toIO (fun f => IO.Error.userError (toString f))
-                  (Core.verify smtsolver program tempDir options moreFns)
+      EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
+                  (Core.verify smtsolver program tempDir proceduresToVerify options moreFns)
     match tempDir with
     | .none =>
       IO.FS.withTempDir runner
@@ -464,11 +476,6 @@ def verify
       runner ⟨p⟩
   else
     panic! s!"DDM Transform Error: {repr errors}"
-
-structure DiagnosticModel where
-  fileRange : Strata.FileRange
-  message : String
-  deriving Repr, BEq
 
 def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
   match vcr.result with
@@ -483,10 +490,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
         | .implementationError msg => s!"verification error: {msg}"
         | _ => panic "impossible"
 
-      some {
-        fileRange := fileRange
-        message := message
-      }
+      some (DiagnosticModel.withRange fileRange message)
     | _ => none
 
 structure Diagnostic where

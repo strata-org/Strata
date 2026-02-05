@@ -202,7 +202,7 @@ def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String)
     if tEncs.isEmpty then
       defineTerm inBinder tyEnc s!"(as {name} {tyEnc})"
     else
-      defineTerm inBinder tyEnc s!"({name} {args})"
+      defineTerm inBinder tyEnc s!"((as {name} {tyEnc}) {args})"
   | .datatype_op _ _ =>
     defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
   | _ =>

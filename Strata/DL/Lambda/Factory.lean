@@ -6,6 +6,7 @@
 
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
+import Strata.DDM.AST
 import Strata.DDM.Util.Array
 import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
@@ -25,7 +26,7 @@ Also see `Strata.DL.Lambda.IntBoolFactory` for a concrete example of a factory.
 
 
 namespace Lambda
-
+open Strata
 open Std (ToFormat Format format)
 
 variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
@@ -54,6 +55,9 @@ abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
 abbrev LTySignature := Signature IDMeta LTy
 
+def inline_attr : String := "inline"
+def inline_if_constr_attr : String := "inline_if_constr"
+def eval_if_constr_attr : String := "eval_if_constr"
 
 /--
 A Lambda factory function, where the body can be optional. Universally
@@ -110,10 +114,8 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) where
     List.Nodup (f.inputs.map (·.1.name))
   -- Free variables of body must be arguments.
   body_freevars:
-    ∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)
+    ∀ b, f.body = .some b →
+      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)
   -- concreteEval does not succeed if the length of args is incorrect.
   concreteEval_argmatch:
     ∀ fn md args res, f.concreteEval = .some fn
@@ -125,30 +127,9 @@ instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
   apply List.nodupDecidable
 
 instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)) :=
-  match Hbody: f.body with
-  | .some b =>
-    if Hall:(LExpr.freeVars b).all
-        (fun fv => List.any f.inputs (fun arg => fv.1.name == arg.1.name))
-    then by
-      apply isTrue
-      intros b' freevars Hb' Hfreevars fv' Hmem
-      cases Hb'
-      rw [← Hfreevars] at Hall
-      rw [List.all_eq_true] at Hall
-      have Hall' := Hall fv' Hmem
-      rw [List.any_eq_true] at Hall'
-      rcases Hall' with ⟨arg', H⟩
-      exists arg'
-      solve | (simp at H ; congr)
-    else by
-      apply isFalse
-      grind
-  | .none => by
-    apply isTrue; grind
+    Decidable (∀ b, f.body = .some b →
+      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)) :=
+  by exact f.body.decidableForallMem
 
 -- LFuncWF.concreteEval_argmatch is not decidable.
 
@@ -247,11 +228,11 @@ def Factory.getFactoryLFunc (F : @Factory T) (name : String) : Option (LFunc T) 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Format (@Factory T) :=
+def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except DiagnosticModel (@Factory T) :=
   match F.getFactoryLFunc func.name.name with
   | none => .ok (F.push func)
   | some func' =>
-    .error f!"A function of name {func.name} already exists! \
+    .error <| DiagnosticModel.fromFormat f!"A function of name {func.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Function: {func'}\n\
               New Function:{func}"
@@ -286,7 +267,7 @@ by
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def Factory.addFactory (F newF : @Factory T) : Except Format (@Factory T) :=
+def Factory.addFactory (F newF : @Factory T) : Except DiagnosticModel (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
 

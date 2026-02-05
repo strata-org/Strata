@@ -127,7 +127,7 @@ def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
 
 def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
-  Except Std.Format Core.Program := do
+  Except DiagnosticModel Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
@@ -137,7 +137,7 @@ def C_Simp.verify (smtsolver : String) (p : Strata.Program)
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Core.verify smtsolver (to_core program) tempDir options)
+    (Core.verify smtsolver (to_core program) tempDir .none options)
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner

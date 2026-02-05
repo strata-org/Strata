@@ -227,7 +227,7 @@ info: (declare-datatype TestOption (par (α) (
 info: (declare-datatype TestOption (par (α) (
   (None)
   (Some (TestOption..val α)))))
-(define-fun t0 () (TestOption Int) (Some 42))
+(define-fun t0 () (TestOption Int) ((as Some (TestOption Int)) 42))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -240,7 +240,7 @@ info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 (define-fun t0 () (TestList Int) (as Nil (TestList Int)))
-(define-fun t1 () (TestList Int) (Cons 1 t0))
+(define-fun t1 () (TestList Int) ((as Cons (TestList Int)) 1 t0))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes

@@ -12,7 +12,7 @@ import Strata.DL.Lambda.TypeFactory
 import Strata.DL.Lambda.Reflect
 
 namespace Lambda
-
+open Strata
 open Std (ToFormat Format format)
 
 /-! # Lambda Dialect
@@ -41,12 +41,12 @@ def typeCheckAndPartialEval
   (t: TypeFactory (IDMeta:=T.IDMeta) := TypeFactory.default)
   (f : Factory (T:=T) := Factory.default)
   (e : LExpr T.mono) :
-  Except Std.Format (LExpr T.mono) := do
+  Except DiagnosticModel (LExpr T.mono) := do
   let E := TEnv.default
   let C := LContext.default.addFactoryFunctions f
   let _ ← TypeFactory.checkInhab t
   let C ← C.addTypeFactory t
-  let (et, _T) ← LExpr.annotate C E e
+  let (et, _T) ← LExpr.annotate C E e |>.mapError DiagnosticModel.fromFormat
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
   let σ ← (LState.init).addFactory C.functions
   return (LExpr.eval σ.config.fuel σ et)

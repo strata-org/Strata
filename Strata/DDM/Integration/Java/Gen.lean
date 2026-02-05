@@ -363,7 +363,7 @@ public def generateDialect (d : Dialect) (package : String) : Except String Gene
 
 /-! ## File Output -/
 
-def packageToPath (package : String) : System.FilePath :=
+public def packageToPath (package : String) : System.FilePath :=
   let parts := package.splitOn "."
   ⟨String.intercalate "/" parts⟩
 

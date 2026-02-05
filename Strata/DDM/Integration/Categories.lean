@@ -11,8 +11,6 @@ public import Std.Data.HashSet.Basic
 public section
 namespace Strata.DDM.Integration
 
-open Strata
-
 /-- Init categories that map to primitive types (no interface/inductive needed) -/
 def primitiveCategories : Std.HashSet QualifiedIdent := Std.HashSet.ofList [
   q`Init.Ident,
