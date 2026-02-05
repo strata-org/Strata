@@ -887,14 +887,35 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       | .bvar m _ => return .bvar m i
       | _ => return expr
     else
-      TransM.error s!"translateExpr out-of-range bound variable: {i}"
+      -- Check if this bound variable index corresponds to a function in freeVars
+      let funcIndex := i - bindings.boundVars.size
+      if funcIndex < bindings.freeVars.size then
+        let decl := bindings.freeVars[funcIndex]!
+        match decl with
+        | .func func _md =>
+          let ty? := some func.output
+          return (.op () func.name ty?)
+        | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
+      else
+        TransM.error s!"translateExpr out-of-range bound variable: {i}"
   | .bvar _ i, argsa => do
     if i < bindings.boundVars.size then
       let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () expr args.toList
     else
-      TransM.error s!"translateExpr out-of-range bound variable: {i}"
+      -- Check if this bound variable index corresponds to a function in freeVars
+      let funcIndex := i - bindings.boundVars.size
+      if funcIndex < bindings.freeVars.size then
+        let decl := bindings.freeVars[funcIndex]!
+        match decl with
+        | .func func _md =>
+          let args ← translateExprs p bindings argsa.toArray
+          let funcOp := .op () func.name none  -- Don't specify type, let it be inferred
+          return .mkApp () funcOp args.toList
+        | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
+      else
+        TransM.error s!"translateExpr out-of-range bound variable: {i}"
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
@@ -917,7 +938,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     match decl with
     | .func func _md =>
       let args ← translateExprs p bindings argsa.toArray
-      return .mkApp () func.opExpr args.toList
+      let ty? := some func.output
+      let funcOp := .op () func.name ty?
+      return .mkApp () funcOp args.toList
     | _ =>
      TransM.error s!"translateExpr unimplemented fvar decl: {format decl} \nargs:{repr argsa}"
   | op, args =>
@@ -1059,17 +1082,21 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let inputsConverted : ListMap Expression.Ident Expression.Ty := 
       inputs.map (fun (id, mty) => (id, .forAll [] mty))
     
-    -- Translate body directly without DDM scope handling
+    -- Create bindings with ONLY function parameters as bound variables for body translation
+    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+    let bodyBindings := { bindings with boundVars := in_bindings }
+    
+    -- Translate body with function parameters in scope
     let body ← match bodya with
       | .option _ (.some bodyExpr) => do
-        let expr ← translateExpr p bindings bodyExpr
+        let expr ← translateExpr p bodyBindings bodyExpr
         pure (some expr)
       | .option _ .none => pure none
       | _ => do
-        let expr ← translateExpr p bindings bodya
+        let expr ← translateExpr p bodyBindings bodya
         pure (some expr)
     
-    let decl : Lambda.PureFunc Expression := {
+    let decl : PureFunc Expression := {
       name := name,
       inputs := inputsConverted,
       output := output,
