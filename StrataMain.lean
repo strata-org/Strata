@@ -12,6 +12,7 @@ import Strata.Util.IO
 
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Python.Python
+import Strata.Languages.Python.PythonToLaurel
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
@@ -229,6 +230,55 @@ def pyAnalyzeCommand : Command where
         s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
       IO.println s
 
+def pyAnalyzeLaurelCommand : Command where
+  name := "pyAnalyzeLaurel"
+  args := [ "file", "verbose" ]
+  help := "Analyze a Strata Python Ion file through Laurel. Write results to stdout."
+  callback := fun _ v => do
+    let verbose := v[1] == "1"
+    let pgm ← readPythonStrata v[0]
+    let cmds := Strata.toPyCommands pgm.commands
+    if verbose then
+      IO.println "==== Python AST ===="
+      IO.print pgm
+    assert! cmds.size == 1
+
+    let laurelPgm := Strata.Python.pythonToLaurel cmds[0]!
+    match laurelPgm with
+      | .error e =>
+        exitFailure s!"Python to Laurel translation failed: {e}"
+      | .ok laurelProgram =>
+        if verbose then
+          IO.println "\n==== Laurel Program ===="
+          IO.println s!"Procedures: {laurelProgram.staticProcedures.length}"
+          for proc in laurelProgram.staticProcedures do
+            IO.println s!"  - {proc.name}"
+
+        -- Translate Laurel to Core
+        match Strata.Laurel.translate laurelProgram with
+        | .error diagnostics =>
+          exitFailure s!"Laurel to Core translation failed: {diagnostics}"
+        | .ok coreProgram =>
+          if verbose then
+            IO.println "\n==== Core Program ===="
+            IO.print coreProgram
+
+          -- Verify using Core verifier
+          let solverName : String := "z3"
+          let verboseMode := VerboseMode.ofBool verbose
+          let vcResults ← IO.FS.withTempDir (fun tempDir =>
+              EIO.toIO
+                (fun f => IO.Error.userError (toString f))
+                (Core.verify solverName coreProgram tempDir .none
+                  { Options.default with stopOnFirstError := false, verbose := verboseMode }))
+
+          -- Print results
+          IO.println "\n==== Verification Results ===="
+          let mut s := ""
+          for vcResult in vcResults do
+            s := s ++ s!"{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+          IO.println s
+
 def javaGenCommand : Command where
   name := "javaGen"
   args := [ "dialect-file", "package", "output-dir" ]
@@ -389,6 +439,7 @@ def commandList : List Command := [
       printCommand,
       diffCommand,
       pyAnalyzeCommand,
+      pyAnalyzeLaurelCommand,
       pyTranslateCommand,
       laurelAnalyzeCommand,
       laurelAnalyzeBinaryCommand,
