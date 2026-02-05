@@ -15,7 +15,6 @@ import Strata.DL.Lambda.IntBoolFactory
 
 namespace Core
 open Lambda
-open Strata.DL.Util (FuncWF)
 
 set_option maxRecDepth 32768 in
 set_option maxHeartbeats 4000000 in
@@ -37,10 +36,10 @@ theorem Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply FuncWF.mk
-        · decide -- FuncWF.arg_nodup
-        · decide -- FuncWF.body_freevars
-        · -- FuncWF.concreteEval_argmatch
+      · apply LFuncWF.mk
+        · decide -- LFuncWF.arg_nodup
+        · decide -- LFuncWF.body_freevars
+        · -- LFuncWF.concreteEval_argmatch
           simp (config := { ground := true })
           try (
             try unfold unOpCeval
