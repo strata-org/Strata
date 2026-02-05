@@ -22,6 +22,14 @@ ensures r == arr[0] + arr[1]
 {
     return arr[0] + arr[1];
 }
+
+// Test passing arrays to other procedures
+constrained int32 = x: int where x >= -2147483648 && x <= 2147483647 witness 0
+procedure helper(arr: Array<int32>): int32 requires Array.Length(arr) > 0 { return 0; }
+procedure callWithArray(arr: Array<int32>): int32 requires Array.Length(arr) > 0 {
+    var x: int32 := helper(arr);
+    return x;
+}
 "
 
 #guard_msgs(drop info, error) in

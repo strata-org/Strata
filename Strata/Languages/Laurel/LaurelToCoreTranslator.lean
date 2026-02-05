@@ -478,9 +478,10 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
                 pure (env', arrayElemAssumes ++ [Core.Statement.init ident boogieType boogieExpr] ++ constraintCheck)
               else do
                 let boogieArgs ← args.mapM (translateExpr ctMap tcMap env)
+                let expandedArgs := expandArrayArgs env args boogieArgs
                 let defaultVal ← defaultExprForType ctMap ty
                 let initStmt := Core.Statement.init ident boogieType defaultVal
-                let callStmt := Core.Statement.call [ident] callee boogieArgs
+                let callStmt := Core.Statement.call [ident] callee expandedArgs
                 pure (env', arrayElemAssumes ++ [initStmt, callStmt] ++ constraintCheck)
           | _ => do
               let boogieExpr ← translateExpr ctMap tcMap env init
@@ -503,7 +504,8 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
                 pure (env, arrayElemAssumes ++ [Core.Statement.set ident boogieExpr] ++ constraintCheck)
               else do
                 let boogieArgs ← args.mapM (translateExpr ctMap tcMap env)
-                pure (env, arrayElemAssumes ++ [Core.Statement.call [ident] callee boogieArgs] ++ constraintCheck)
+                let expandedArgs := expandArrayArgs env args boogieArgs
+                pure (env, arrayElemAssumes ++ [Core.Statement.call [ident] callee expandedArgs] ++ constraintCheck)
           | _ => do
               let boogieExpr ← translateExpr ctMap tcMap env value
               pure (env, arrayElemAssumes ++ [Core.Statement.set ident boogieExpr] ++ constraintCheck)
@@ -533,7 +535,8 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
       if isHeapFunction (normalizeCallee name) then pure (env, arrayElemAssumes)
       else do
         let boogieArgs ← args.mapM (translateExpr ctMap tcMap env)
-        pure (env, arrayElemAssumes ++ [Core.Statement.call [] name boogieArgs])
+        let expandedArgs := expandArrayArgs env args boogieArgs
+        pure (env, arrayElemAssumes ++ [Core.Statement.call [] name expandedArgs])
   | .Return valueOpt => do
       match valueOpt with
       | some value => do
