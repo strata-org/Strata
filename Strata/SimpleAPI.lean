@@ -4,8 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Lean
-
 import Strata.DDM.Elab
 import Strata.DDM.Ion
 import Strata.DDM.Util.ByteArray
