@@ -141,9 +141,9 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.
     (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
   let stdout := output.stdout
-  let pos := (stdout.find (fun c => c == '\n')).byteIdx
-  let verdict := (stdout.take pos).trim
-  let rest := stdout.drop pos
+  let pos := stdout.find (· == '\n')
+  let verdict := stdout.extract stdout.startPos pos |>.trimAscii
+  let rest := stdout.extract pos stdout.endPos
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest

@@ -99,7 +99,7 @@ open TestGen
   let P : _ → Prop := fun m => MapsFind₂ [[], [((3 : Nat), "old")]] m
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
-/-- error: Generation failure:Gen.runUtil: Out of attempts
+/-- error: Generation failure:Gen.runUntil: Out of attempts
 -/
 #guard_msgs(error) in
 #eval

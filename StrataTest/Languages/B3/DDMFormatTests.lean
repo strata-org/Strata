@@ -194,8 +194,8 @@ partial def cleanupUnitRepr (s : String) : String :=
     | [] => acc.reverse
     | line :: rest =>
         -- Remove trailing spaces
-        let line := line.dropRightWhile (· == ' ')
-        let indent := line.takeWhile (· == ' ') |>.length
+        let line := line.dropEndWhile ' ' |>.toString
+        let indent := line.takeWhile (· == ' ') |>.toString.length
         let content := line.dropWhile (· == ' ')
         if content.isEmpty then
           processLines rest indentStack ("" :: acc)
