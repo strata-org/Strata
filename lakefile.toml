@@ -3,13 +3,10 @@ version = "0.1.0"
 defaultTargets = ["Strata", "strata", "StrataMain", "StrataVerify", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTest"
 
-[leanOptions]
-experimental.module = true
-
 [[require]]
 name = "plausible"
 git = "https://github.com/leanprover-community/plausible.git"
-rev = "b949552f6ca8e223f424b3e3b33f74185bbf1179"
+rev = "bump_to_v4.27.0"
 
 [[lean_lib]]
 name = "Strata"
