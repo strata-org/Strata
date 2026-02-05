@@ -40,7 +40,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   | some body =>
     -- Temporarily add formals in the context.
     let Env := Env.pushEmptyContext
-    let Env := Env.addToContext func.inputPolyTypes
+    let Env := Env.addInNewestContext func.inputPolyTypes
     -- Type check and annotate the body, and ensure that it unifies with the
     -- return type.
     let (bodya, Env) ← LExpr.resolve C Env body

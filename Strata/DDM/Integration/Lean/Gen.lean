@@ -3,16 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Lean.Elab.Command
+module
 
-import Strata.DDM.BuiltinDialects.Init
-import Strata.DDM.BuiltinDialects.StrataDDL
-import Strata.DDM.Integration.Categories
-import Strata.DDM.Integration.Lean.BoolConv
-import Strata.DDM.Integration.Lean.Env
-import Strata.DDM.Integration.Lean.GenTrace
-import Strata.DDM.Integration.Lean.OfAstM
-import Strata.DDM.Util.Graph.Tarjan
+public meta import Lean.Elab.Command
+public meta import Strata.DDM.AST
+public meta import Strata.DDM.BuiltinDialects.Init
+meta import        Strata.DDM.BuiltinDialects.StrataDDL
+public meta import Strata.DDM.Integration.Categories
+import             Strata.DDM.Integration.Lean.BoolConv
+public meta import Strata.DDM.Integration.Lean.Env
+import             Strata.DDM.Integration.Lean.GenTrace
+meta import        Strata.DDM.Integration.Lean.OfAstM
+public meta import Strata.DDM.Util.Graph.Tarjan
 
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote withTraceNode mkIdentFrom)
 open Lean.Elab (throwUnsupportedSyntax)
@@ -24,6 +26,7 @@ open Lean.Parser.Term (bracketedBinderF doSeqItem matchAltExpr)
 open Lean.Parser.Termination (terminationBy suffix)
 open Lean.Syntax (mkApp mkCApp mkStrLit)
 
+meta section
 namespace Strata
 
 namespace Lean
@@ -46,10 +49,10 @@ end Lean
 
 open Lean (currScopedIdent)
 
-private def arrayLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
+def arrayLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
   ``( (#[ $as:term,* ] : Array _) )
 
-private def vecLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
+def vecLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
   ``( (#v[ $as:term,* ] : Vector _ $(quote as.size)) )
 
 abbrev LeanCategoryName := Lean.Name
@@ -65,13 +68,13 @@ abbrev GenM := ReaderT GenContext CommandElabM
 def runCmd {α} (act : CommandElabM α) : GenM α := fun _ => act
 
 /-- Create a fresh name. -/
-private def genFreshLeanName (s : String) : GenM Name := do
+def genFreshLeanName (s : String) : GenM Name := do
   let fresh ← modifyGet fun s => (s.nextMacroScope, { s with nextMacroScope := s.nextMacroScope + 1 })
   let n : Name := .anonymous |>.str s
   return Lean.addMacroScope (← getEnv).mainModule n fresh
 
 /-- Create a fresh name. -/
-private def genFreshIdentPair (s : String) : GenM (Ident × Ident) := do
+def genFreshIdentPair (s : String) : GenM (Ident × Ident) := do
   let name ← genFreshLeanName s
   let src := (←read).src
   return (mkIdentFrom src name true, mkIdentFrom src name)
@@ -81,7 +84,7 @@ def mkCanIdent (src : Lean.Syntax) (val : Name) : Ident :=
   mkIdentFrom src val true
 
 /-- Create a identifier from a name. -/
-private def genIdentFrom (name : Name) (canonical : Bool := false) : GenM Ident := do
+def genIdentFrom (name : Name) (canonical : Bool := false) : GenM Ident := do
   return mkIdentFrom (←read).src name canonical
 
 def reservedCats : Std.HashSet String := { "Type" }
@@ -130,7 +133,7 @@ abbrev CategoryName := QualifiedIdent
 
 def forbiddenCategories : Std.HashSet CategoryName := DDM.Integration.forbiddenCategories
 
-private def forbiddenWellDefined : Bool :=
+def forbiddenWellDefined : Bool :=
   forbiddenCategories.all fun nm =>
     match nm.dialect with
     | "Init" => nm.name ∈ initDialect
@@ -249,7 +252,6 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.ByteArray, ``ByteArray),
   (q`Init.Bool, ``Bool)
 ]
-
 #guard declaredCategories.keys.all (DDM.Integration.primitiveCategories.contains ·)
 
 def ignoredCategories : Std.HashSet CategoryName :=
@@ -366,7 +368,7 @@ def WorkSet.pop [BEq α] [Hashable α] (s : WorkSet α) : Option (WorkSet α × 
 /--
 Add all atomic categories in bindings to set.
 -/
-private def addArgCategories (s : CategorySet) (args : ArgDecls) : CategorySet :=
+def addArgCategories (s : CategorySet) (args : ArgDecls) : CategorySet :=
   args.foldl (init := s) fun s b =>
     b.kind.categoryOf.foldOverAtomicCategories (init := s) (·.insert ·)
 
@@ -1024,7 +1026,11 @@ def mkOfAstDef (cat : QualifiedIdent) (ofAst : Ident) (v : Name) (rhs : Term) : 
 
 def matchTypeParamOrType {Ann α} [Repr Ann] (a : ArgF Ann) (onTypeParam : Ann → α) (onType : TypeExprF Ann → OfAstM α) : OfAstM α :=
   match a with
-  | .cat (.atom ann q`Init.Type) => pure (onTypeParam ann)
+  | .cat cat =>
+    if cat.name == q`Init.Type && cat.args.isEmpty then
+      pure (onTypeParam cat.ann)
+    else
+      .throwExpected "Type parameter or type expression" a
   | .type tp => onType tp
   | _ => .throwExpected "Type parameter or type expression" a
 
@@ -1200,9 +1206,9 @@ and back.
 syntax (name := strataGenCmd) "#strata_gen" ident : command -- declare the syntax
 
 @[command_elab strataGenCmd]
-def genAstImpl : CommandElab := fun stx =>
+public def genAstImpl : CommandElab := fun stx =>
   match stx with
-  | `(#strata_gen $dialectStx) => do
+  | `(command| #strata_gen $dialectStx) => do
     let .str .anonymous dialectName := dialectStx.getId
       | throwErrorAt dialectStx s!"Expected dialect name"
     let loader := dialectExt.getState (← getEnv) |>.loaded
@@ -1227,3 +1233,4 @@ def genAstImpl : CommandElab := fun stx =>
     throwUnsupportedSyntax
 
 end Strata
+end

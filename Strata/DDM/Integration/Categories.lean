@@ -3,12 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+public import Strata.DDM.AST
 
-import Strata.DDM.AST
-
+public section
 namespace Strata.DDM.Integration
-
-open Strata
 
 /-- Init categories that map to primitive types (no interface/inductive needed) -/
 def primitiveCategories : Std.HashSet QualifiedIdent := Std.HashSet.ofList [
