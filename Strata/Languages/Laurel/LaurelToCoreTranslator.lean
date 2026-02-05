@@ -423,7 +423,7 @@ partial def collectConstrainedArrayAccesses (env : TypeEnv) (tcMap : TranslatedC
   go expr
 
 /-- Generate assume statements for constrained array element accesses -/
-def genArrayElemAssumes (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr : StmtExprMd) 
+def genArrayElemAssumes (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr : StmtExprMd)
     (translateExprFn : StmtExprMd → Except String Core.Expression.Expr) : Except String (List Core.Statement) := do
   let accesses := collectConstrainedArrayAccesses env tcMap expr
   accesses.mapM fun (arr, idx, tc) => do
