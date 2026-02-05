@@ -224,7 +224,7 @@ def pyTranslateCommand : Command where
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
 def ionPathToPythonPath (ionPath : String) : Option String :=
   if ionPath.endsWith ".python.st.ion" then
-    let basePath := ionPath.dropRight ".python.st.ion".length
+    let basePath := ionPath.dropEnd ".python.st.ion".length |>.toString
     some (basePath ++ ".py")
   else
     none

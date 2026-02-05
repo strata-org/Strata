@@ -66,7 +66,7 @@ def miseWhere (runtime : String) (miseCmd : String := "mise") : IO (Option Syste
     let msg := s!"{msg}Standard error:\n"
     let msg := stderr.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
     throw <| .userError msg
-  pure <| some stdout.trim
+  pure <| some stdout.trimAscii.toString
 
 /--
 This checks to see if a module is found.
@@ -149,12 +149,11 @@ def getPython3Version (command : String) : IO (Option Nat) := do
       let msg := s!"{msg}Standard output:\n"
       let msg := stdout.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
       throw <| .userError msg
-    let msg := stdout.trim
+    let msg := stdout.trimAscii.toString
     let pref := "Python 3."
     let some minorReleaseStr := msg.dropPrefix? pref
       | throw <| .userError s!"Unexpected Python 3 version {msg}"
-
-    let minorStr := minorReleaseStr.takeWhile fun c => c.isDigit
+    let minorStr := minorReleaseStr.takeWhile Char.isDigit
     let some minor := minorStr.toNat?
       | throw <| .userError s!"Unexpected Python 3 version {msg}"
     return some minor

@@ -22,12 +22,12 @@ structure PythonIdent where
 namespace PythonIdent
 
 protected def ofString (s : String) : Option PythonIdent :=
-  match s.revFind fun c => c = '.' with
+  match s.revFind? '.' with
   | none => none
   | some idx =>
     some {
-      pythonModule := String.Pos.Raw.extract s s.rawStartPos idx
-      name := String.Pos.Raw.extract s (idx.next s) s.rawEndPos
+      pythonModule := s.extract s.startPos idx
+      name := s.extract idx.next! s.endPos
     }
 
 instance : ToString PythonIdent where

@@ -71,9 +71,9 @@ structure ModuleName where
 
 namespace ModuleName
 
-def ofStringAux {mod : String} (a : Array String) (start cur : String.ValidPos mod) : Except String ModuleName :=
+def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) : Except String ModuleName :=
   if h : cur.IsAtEnd then
-    let r := start.extract (e := cur)
+    let r := mod.extract start cur
     pure {
       components := a.push r
       componentsSizePos := by simp
@@ -81,16 +81,16 @@ def ofStringAux {mod : String} (a : Array String) (start cur : String.ValidPos m
   else
     let c := cur.get h
     if _ : c = '.' then
-      let r := start.extract (e := cur)
+      let r := mod.extract start cur
       let next := cur.next h
-      ofStringAux (a.push r) next next
+      ofStringAux mod (a.push r) next next
     else
       let next := cur.next h
-      ofStringAux a start next
+      ofStringAux mod a start next
   termination_by cur
 
 def ofString (mod : String) : Except String ModuleName :=
-  ofStringAux #[] mod.startValidPos mod.startValidPos
+  ofStringAux mod #[] mod.startPos mod.startPos
 
 instance : ToString ModuleName where
   toString m :=
