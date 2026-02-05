@@ -11,13 +11,13 @@ public inductive VerboseMode where
   | debug
   deriving Inhabited, Repr, DecidableEq
 
-def VerboseMode.toNat (v : VerboseMode) : Nat :=
+public def VerboseMode.toNat (v : VerboseMode) : Nat :=
   match v with
   | .quiet => 0
   | .normal => 1
   | .debug => 2
 
-def VerboseMode.ofBool (b : Bool) : VerboseMode :=
+public def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
   | false => .quiet
   | true => .normal
