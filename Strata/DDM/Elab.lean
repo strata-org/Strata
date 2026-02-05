@@ -74,7 +74,7 @@ private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Op
   -- Prevent infinite loop if parser makes no progress
   let newPos := (←get).pos
   if newPos <= iniPos then
-    logError { start := iniPos, stop := iniPos } "Syntax error: unable to parse"
+    logError { start := iniPos, stop := iniPos } "Syntax error: unrecognized syntax or unexpected token"
     return commands
   let cmd := tree.info.asOp!.op
   let dialects := (← read).loader.dialects
