@@ -117,6 +117,6 @@ def formatStatement (prog : Program) (stmt : B3AST.Statement SourceRange) (ctx: 
   let (cstStmt, _) := B3.stmtToCST ctx stmt
   let fmtCtx := FormatContext.ofDialects prog.dialects prog.globalContext {}
   let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-  (mformat (ArgF.op cstStmt.toAst) fmtCtx fmtState).format.pretty.trim
+  (mformat (ArgF.op cstStmt.toAst) fmtCtx fmtState).format.pretty.trimAscii.toString
 
 end Strata.B3.Verifier

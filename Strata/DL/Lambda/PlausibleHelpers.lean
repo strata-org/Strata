@@ -128,7 +128,7 @@ def sized (f : Nat → Gen α) : Gen α :=
 /-- Helper function for `backtrack` which picks one out of `total` generators with some initial amount of `fuel` -/
 def backtrackFuel (fuel : Nat) (total : Nat) (gs : List (Nat × Gen α)) : Gen α :=
   match fuel with
-  | .zero => throw Gen.outOfFuel
+  | .zero => throw (.genError "backtrackFuel: out of fuel")
   | .succ fuel' => do
     let n ← Gen.choose Nat 0 (total - 1) (by omega)
     let (k, g, gs') := pickDrop gs n

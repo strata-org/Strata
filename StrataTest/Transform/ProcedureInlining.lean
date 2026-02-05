@@ -125,7 +125,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
   let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
 
-  match hs: (s1,s2) with
+  match _hs: (s1,s2) with
   | (.block lbl1 b1 _, .block lbl2 b2 _) =>
     -- Since 'goto lbl' can appear before 'lbl' is defined, update the label
     -- map here
@@ -203,7 +203,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | (_,_) => mk_err "Statements do not match"
   termination_by s1.sizeOf
-  decreasing_by all_goals(cases hs; simp_all; try omega)
+  decreasing_by all_goals(cases _hs; simp_all; try omega)
 
 end
 

@@ -20,7 +20,7 @@ def stripComments (s : String) : String :=
   let rec stripMultiLine (str : String) (startIdx : Nat) (acc : String) : String :=
     if startIdx >= str.length then acc
     else
-      let remaining := str.drop startIdx
+      let remaining := str.drop startIdx |>.toString
       match remaining.splitOn "/*" with
       | [] => acc
       | [rest] => acc ++ rest

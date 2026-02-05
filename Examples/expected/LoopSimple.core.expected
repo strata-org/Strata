@@ -1,6 +1,6 @@
 Successfully parsed.
 LoopSimple.core.st(13, 2) [entry_invariant_0]: ✅ pass
 LoopSimple.core.st(13, 2) [arbitrary_iter_maintain_invariant_0]: ✅ pass
-LoopSimple.core.st(19, 2) [sum_assert]: ✅ pass
-LoopSimple.core.st(20, 2) [neg_cond]: ✅ pass
+LoopSimple.core.st(20, 2) [sum_assert]: ✅ pass
+LoopSimple.core.st(21, 2) [neg_cond]: ✅ pass
 All 4 goals passed.

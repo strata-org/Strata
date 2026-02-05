@@ -37,7 +37,7 @@ private def needsPipeDelimiters (s : String) : Bool :=
   if h : s.isEmpty then
     true
   else
-    let firstChar := s.startValidPos.get (by simp_all)
+    let firstChar := s.startPos.get (by simp_all)
     !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
 
 /--
@@ -58,7 +58,7 @@ Follows SMT-LIB 2.6 specification for quoted symbols.
 private def formatIdent (s : String) : Format :=
   -- Strip Lean's «» notation if present
   let s := if s.startsWith "«" && s.endsWith "»" then
-             s.drop 1 |>.dropRight 1
+             s.drop 1 |>.dropEnd 1 |>.toString
            else
              s
   if needsPipeDelimiters s then

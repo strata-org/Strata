@@ -1,14 +1,14 @@
 Successfully parsed.
 Bubble.core.st(31, 4) [entry_invariant_0]: ✅ pass
 Bubble.core.st(31, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
-Bubble.core.st(43, 4) [entry_invariant_0]: ✅ pass
+Bubble.core.st(44, 4) [entry_invariant_0]: ✅ pass
 Bubble.core.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
 Bubble.core.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
 Bubble.core.st(22, 2) [BubbleSort_ensures_3]: ✅ pass
 Bubble.core.st(23, 2) [BubbleSort_ensures_4]: ✅ pass
-Bubble.core.st(57, 8) [entry_invariant_1]: ✅ pass
-Bubble.core.st(57, 8) [arbitrary_iter_maintain_invariant_1]: ✅ pass
-Bubble.core.st(43, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
+Bubble.core.st(62, 8) [entry_invariant_1]: ✅ pass
+Bubble.core.st(62, 8) [arbitrary_iter_maintain_invariant_1]: ✅ pass
+Bubble.core.st(44, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
 Bubble.core.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
 Bubble.core.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
 Bubble.core.st(22, 2) [BubbleSort_ensures_3]: ✅ pass

@@ -329,14 +329,9 @@ private protected def toIon (d : QualifiedIdent) : Ion.InternM (Ion SymbolId) :=
   .symbol <$> internSymbol d.fullName
 
 private def fromIonStringSymbol (fullname : String) : FromIonM QualifiedIdent := do
-  let pos := fullname.find (·='.')
-  if pos < fullname.rawEndPos then
-    let dialect := String.Pos.Raw.extract fullname 0 pos
-    -- . is one byte
-    let name := String.Pos.Raw.extract fullname (pos + '.') fullname.rawEndPos
-    return { dialect,  name }
-  else
-    throw s!"Invalid symbol {fullname}"
+  match QualifiedIdent.ofString fullname with
+  | none => throw s!"Invalid symbol {fullname}"
+  | some r => pure r
 
 private def fromIonSymbol (sym : SymbolId) : FromIonM QualifiedIdent := do
   fromIonStringSymbol (← .lookupSymbol sym)
