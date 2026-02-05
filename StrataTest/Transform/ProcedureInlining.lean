@@ -13,6 +13,7 @@ import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.ProgramWF
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
+import Strata.Util.Tactics
 
 open Core
 open Core.Transform
@@ -118,14 +119,14 @@ def alphaEquivBlock (b1 b2: Core.Block) (map:IdMap)
         return newmap)
       map
   termination_by b1.sizeOf
-  decreasing_by cases st1; apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by cases st1; term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     : Except Format IdMap := do
   let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
 
-  match hs: (s1,s2) with
+  match _hs: (s1,s2) with
   | (.block lbl1 b1 _, .block lbl2 b2 _) =>
     -- Since 'goto lbl' can appear before 'lbl' is defined, update the label
     -- map here
@@ -203,7 +204,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | (_,_) => mk_err "Statements do not match"
   termination_by s1.sizeOf
-  decreasing_by all_goals(cases hs; simp_all; try omega)
+  decreasing_by all_goals(cases _hs; term_by_mem)
 
 end
 

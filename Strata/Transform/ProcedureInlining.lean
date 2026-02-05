@@ -5,12 +5,14 @@
 -/
 
 import Strata.DL.Util.LabelGen
+import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Core
 import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.Statement
 import Strata.Transform.CoreTransform
+import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
 
@@ -24,7 +26,7 @@ def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
   termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
@@ -63,7 +65,7 @@ mutual
 def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
   termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
@@ -91,7 +93,7 @@ mutual
 def Block.labels (b : Block): List String :=
   List.flatMap (fun s => Statement.labels s) b
   termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 -- Assume and Assert's labels have special meanings, so they must not be
 -- mangled during procedure inlining.
@@ -114,7 +116,7 @@ def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
   b.map (fun s => Statement.replaceLabels s map)
   termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def Statement.replaceLabels
     (s : Core.Statement) (map:Map String String) : Core.Statement :=

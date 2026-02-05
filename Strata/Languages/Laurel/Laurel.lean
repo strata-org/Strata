@@ -7,6 +7,7 @@
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Core.Expressions
 import Strata.Languages.Core.Procedure
+import Strata.Util.Tactics
 
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
@@ -206,9 +207,9 @@ def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | _, _ => false
   termination_by (SizeOf.sizeOf a)
   decreasing_by
-    all_goals(simp_wf; try omega)
-    . cases a1; simp; rename_i hin; have := List.sizeOf_lt_of_mem hin; omega
-    . cases t1; simp; rename_i hin; have := List.sizeOf_lt_of_mem hin; omega
+    all_goals(try term_by_mem)
+    . cases a1; term_by_mem
+    . cases t1; term_by_mem
 
 instance : BEq HighType where
   beq := highEq

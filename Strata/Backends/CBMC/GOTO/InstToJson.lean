@@ -6,6 +6,7 @@
 
 import Strata.Backends.CBMC.GOTO.Program
 import Strata.Backends.CBMC.Common
+import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Lean
@@ -119,9 +120,7 @@ def exprToJson (expr : Expr) : Json :=
     | _ => panic s!"[exprToJson] Unsupported expr: {format expr}"
   exprObj
   termination_by (SizeOf.sizeOf expr)
-  decreasing_by all_goals (
-    cases expr; simp_all; rename_i x_in;
-    have := List.sizeOf_lt_of_mem x_in; omega)
+  decreasing_by all_goals (cases expr; term_by_mem)
 
 /-- Convert `Code` to Json -/
 def codeToJson (code : Code) : Json :=

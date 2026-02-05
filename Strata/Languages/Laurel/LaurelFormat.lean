@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Util.Tactics
 
 namespace Strata
 namespace Laurel
@@ -107,10 +108,7 @@ def formatStmtExpr (s:StmtExpr) : Format :=
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
-  decreasing_by
-    all_goals (simp_wf; try omega)
-    any_goals (rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
-    subst_vars; cases h; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
+  decreasing_by all_goals (subst_vars; term_by_mem)
 
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type

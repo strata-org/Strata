@@ -16,6 +16,7 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
 open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
@@ -114,9 +115,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExpr) 
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
-  decreasing_by
-  all_goals (simp_wf; try omega)
-  rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
+  decreasing_by all_goals (subst_vars; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).get!

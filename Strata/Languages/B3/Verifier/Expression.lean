@@ -8,6 +8,7 @@ import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.DL.SMT.SMT
 import Strata.DL.SMT.Factory
 import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.Util.Tactics
 
 /-!
 # B3 AST to SMT Term Conversion
@@ -157,13 +158,7 @@ def collectPatternBoundVars (expr : B3AST.Expression M) (exprM : M) : Except (Co
       return results.flatten
   | _ => .error (ConversionError.invalidPattern "patterns must consist only of function applications, variables, and literals" exprM)
   termination_by SizeOf.sizeOf expr
-  decreasing_by
-    simp_wf
-    cases args
-    simp_all
-    rename_i h
-    have := Array.sizeOf_lt_of_mem h
-    omega
+  decreasing_by (cases args; simp_all; term_by_mem)
 
 /-- Validate pattern expressions for a quantifier -/
 def validatePatternExprs (patterns : Array (B3AST.Expression M)) (patternM : M) : Except (ConversionError M) Unit :=
@@ -319,14 +314,9 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
 
   termination_by SizeOf.sizeOf e
   decreasing_by
-    all_goals (simp_wf <;> try omega)
-    . cases args; simp_all
-      rename_i h; have := Array.sizeOf_lt_of_mem h; omega
-    . cases exprs; cases patterns; simp_all; subst_vars
-      rename_i h1 h2
-      have := Array.sizeOf_lt_of_mem h1
-      have Hpsz := Array.sizeOf_lt_of_mem h2
-      simp at Hpsz; omega
+    all_goals (try term_by_mem)
+    . cases args; term_by_mem
+    . cases exprs; cases patterns; term_by_mem
 
 def formatExpression (prog : Program) (expr : B3AST.Expression SourceRange) (ctx: B3.ToCSTContext): String :=
   let (cstExpr, _) := B3.expressionToCST ctx expr

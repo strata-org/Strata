@@ -7,6 +7,7 @@
 
 
 import Strata.DL.Imperative.CmdSemantics
+import Strata.Util.Tactics
 
 ---------------------------------------------------------------------
 
@@ -129,7 +130,7 @@ theorem EvalStmtDefMonotone
   | .goto _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   termination_by (Stmt.sizeOf s)
-  decreasing_by all_goals simp [*] at * <;> omega
+  decreasing_by all_goals term_by_mem
 
 theorem EvalBlockDefMonotone
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
@@ -150,5 +151,5 @@ theorem EvalBlockDefMonotone
     apply EvalStmtDefMonotone <;> assumption
     assumption
   termination_by (Block.sizeOf ss)
-  decreasing_by all_goals simp [*] at * <;> omega
+  decreasing_by all_goals term_by_mem
 end

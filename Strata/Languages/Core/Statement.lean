@@ -13,6 +13,7 @@ import Strata.Languages.Core.Factory
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
+import Strata.Util.Tactics
 
 namespace Core
 open Imperative
@@ -127,15 +128,17 @@ def Statement.eraseTypes (s : Statement) : Statement :=
     .loop guard measure invariant body' md
   | .goto l md => .goto l md
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf <;> simp [sizeOf] <;> omega
+  decreasing_by all_goals simp[sizeOf] <;> term_by_mem
+
+  --  term_by_mem
+  -- all_goals simp_wf <;>  omega
 
 def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
   | [] => []
   | s :: srest => Statement.eraseTypes s :: Statements.eraseTypes srest
   termination_by (sizeOf ss)
-  decreasing_by all_goals simp [sizeOf] <;> omega
+  decreasing_by all_goals simp[sizeOf] <;> term_by_mem
 end
 
 ---------------------------------------------------------------------
@@ -315,7 +318,7 @@ def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
   termination_by b.sizeOf
-  decreasing_by apply sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
@@ -348,7 +351,7 @@ def Statement.substFvar (s : Core.Statement)
           metadata
   | .goto _ _ => s
   termination_by s.sizeOf
-  decreasing_by all_goals(simp_wf; try omega)
+  decreasing_by all_goals term_by_mem
 end
 
 ---------------------------------------------------------------------
@@ -358,7 +361,7 @@ def Block.renameLhs (b : Block)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
   termination_by b.sizeOf
-  decreasing_by apply sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.renameLhs (s : Core.Statement)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
@@ -376,7 +379,7 @@ def Statement.renameLhs (s : Core.Statement)
   | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
   | .loop _ _ _ _ _ | .goto _ _ | .cover _ _ _ => s
   termination_by s.sizeOf
-  decreasing_by all_goals(simp_wf; try omega)
+  decreasing_by all_goals term_by_mem
 end
 
 ---------------------------------------------------------------------
