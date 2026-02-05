@@ -166,6 +166,7 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
+omit [Inhabited T.Metadata] [ToFormat T.IDMeta] in
 theorem LFunc.type_inputs_nodup [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
     f.type = .ok ty → f.inputs.keys.Nodup := by
   intro h
