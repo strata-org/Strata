@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Imperative.NondetStmt
+import Strata.DL.Imperative.Stmt
 
 ---------------------------------------------------------------------
 
@@ -17,13 +18,13 @@ mutual
 statements that depends on environment lookup and evaluation functions for
 expressions.  **NOTE:** This will probably be replaced with a small-step
 semantics.
-Note: Nondeterministic statements don't track evaluator changes (δ' is ignored)
-since they represent a simplified model without function declarations. -/
+Note: Nondeterministic statements don't track evaluator changes since
+commands preserve the evaluator (only funcDecl statements modify it). -/
 inductive EvalNondetStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → NondetStmt P Cmd → SemanticStore P → Prop where
   | cmd_sem :
-    EvalCmd δ σ c σ' δ' →
+    EvalCmd δ σ c σ' →
     -- We only require definedness on the statement level so that the requirement is fine-grained
     isDefinedOver (HasVarsImp.modifiedVars) σ c →
     ----

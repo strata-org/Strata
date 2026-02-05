@@ -154,6 +154,34 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### NoFuncDecl
+
+Predicate stating that a statement or block contains no function declarations.
+This is useful when converting to non-deterministic statements which don't have function declarations.
+-/
+
+mutual
+/-- Returns true if the statement contains no function declarations. -/
+def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.noFuncDecl bss
+  | .ite _ tss ess _ => Block.noFuncDecl tss && Block.noFuncDecl ess
+  | .loop _ _ _ bss _ => Block.noFuncDecl bss
+  | .goto _ _ => true
+  | .funcDecl _ _ => false
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no function declarations. -/
+def Block.noFuncDecl (ss : Block P C) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noFuncDecl s && Block.noFuncDecl srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### HasVars -/
 
 mutual

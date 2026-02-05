@@ -40,12 +40,12 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   | some body =>
     -- Temporarily add formals in the context.
     let Env := Env.pushEmptyContext
-    let Env := Env.addToContext (LFunc.inputPolyTypes func)
+    let Env := Env.addInNewestContext func.inputPolyTypes
     -- Type check and annotate the body, and ensure that it unifies with the
     -- return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
-    let (retty, Env) ← (LFunc.outputPolyType func).instantiateWithCheck C Env
+    let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
     let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo |>.mapError format
     let Env := Env.updateSubst S
     let Env := Env.popContext
@@ -53,17 +53,20 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     let new_func := { func with body := some bodya.unresolved }
     .ok (new_func, Env)
 
-/-- If `Function.typeCheck` succeeds, then the input parameter names of the original function are unique. -/
-theorem typeCheck_inputs_nodup (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (func : Function) (func' : Function) (Env' : Core.Expression.TyEnv) :
-    typeCheck C Env func = .ok (func', Env') → func.inputs.keys.Nodup := by
-  intro H
-  simp only [typeCheck, bind, Except.bind] at H
-  split at H <;> try simp_all
-  rename_i ty Hty
-  exact LFunc.type_inputs_nodup func ty Hty
-
 end Function
+
+/--
+If `Function.typeCheck` succeeds, the inputs of the resulting function have no duplicate names.
+-/
+theorem Function.typeCheck_inputs_nodup (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (func : Function) (func' : Function) (Env' : Core.Expression.TyEnv) :
+    Function.typeCheck C Env func = .ok (func', Env') → func.inputs.keys.Nodup := by
+  intro h
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  split at h <;> try contradiction
+  rename_i ty hty
+  -- func.type succeeded, so we can use LFunc.type_inputs_nodup
+  exact Lambda.LFunc.type_inputs_nodup func ty hty
 
 ---------------------------------------------------------------------
 end Core

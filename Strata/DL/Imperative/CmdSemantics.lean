@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.Stmt
+import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Util.Map
 import Strata.DL.Util.ListUtils
@@ -27,54 +27,13 @@ abbrev SemanticStore := P.Ident → Option P.Expr
 abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
 abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
 
-/-- Function context: maps function identifiers to their definitions -/
-abbrev FuncContext := P.Ident → Option (PureFunc P)
-
-/-! ### Closure Capture for Function Declarations -/
-
-/--
-Build a list of substitutions from the store for the given identifiers.
-Returns pairs of (identifier, value) for each identifier that has a value in the store.
--/
-def buildSubstitutions [HasFvar P] (σ : SemanticStore P) (ids : List P.Ident) : List (P.Ident × P.Expr) :=
-  ids.filterMap (fun id =>
-    match σ id with
-    | some v => some (id, v)
-    | none => none)
-
-/--
-Apply closure capture to a function declaration by substituting current variable
-values into the function body and axioms. Variables that are function parameters
-are not substituted (they are bound, not free in the closure sense).
--/
-def closureCapture [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [HasFvar P]
-    (σ : SemanticStore P) (decl : PureFunc P) : PureFunc P :=
-  let paramNames := decl.inputs.map (·.1)
-  -- Get free variables from body (if it exists), excluding parameters
-  let bodyFreeVars := match decl.body with
-    | some body => (HasVarsPure.getVars body).filter (· ∉ paramNames)
-    | none => []
-  -- Get free variables from axioms, excluding parameters
-  let axiomFreeVars := decl.axioms.flatMap (fun ax =>
-    (HasVarsPure.getVars ax).filter (· ∉ paramNames))
-  -- Combine and deduplicate
-  let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
-  -- Build substitutions from the store
-  let substs := buildSubstitutions P σ allFreeVars
-  -- Apply substitutions to body and axioms
-  { decl with
-    body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
-    axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }
-
-
 /--
 Evaluation relation of an Imperative command `Cmd`.
-The relation now includes an output evaluator `δ'` to support commands
-that modify the expression evaluator (like `funcDecl`).
+Commands do not modify the evaluator - only `funcDecl` statements do.
 -/
 -- (FIXME) Change to a type class?
 abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
-  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → SemanticEval P → Prop
+  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Prop
 
 /-- ### Well-Formedness of `SemanticStore`s -/
 
@@ -309,17 +268,17 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 /--
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`δ`) functions.
-Basic commands don't modify the evaluator, so they output the same `δ`.
+Commands do not modify the evaluator - only `funcDecl` statements do.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → SemanticEval P → Prop where
+  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
     δ σ e = .some v →
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ e _) σ' δ
+    EvalCmd δ σ (.init x _ e _) σ'
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
@@ -327,14 +286,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.set x e _) σ' δ
+    EvalCmd δ σ (.set x e _) σ'
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
   | eval_havoc :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.havoc x _) σ' δ
+    EvalCmd δ σ (.havoc x _) σ'
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
   does not have a concept of an erroneous execution. -/
@@ -342,20 +301,20 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assert _ e _) σ δ
+    EvalCmd δ σ (.assert _ e _) σ
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
   | eval_assume :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assume _ e _) σ δ
+    EvalCmd δ σ (.assume _ e _) σ
 
   /-- A cover, when encountered, is essentially a skip. -/
   | eval_cover :
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.cover _ e _) σ δ
+    EvalCmd δ σ (.cover _ e _) σ
 
 end section
 

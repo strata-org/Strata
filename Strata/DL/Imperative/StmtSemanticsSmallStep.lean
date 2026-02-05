@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Imperative.CmdSemantics
+import Strata.DL.Imperative.Stmt
 import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
@@ -48,13 +49,14 @@ inductive StepStmt
   [HasBool P] [HasNot P] :
   Config P CmdT → Config P CmdT → Prop where
 
-  /-- A command steps to terminal configuration if it evaluates successfully -/
+  /-- A command steps to terminal configuration if it evaluates successfully.
+      Commands preserve the evaluator (δ' = δ). -/
   | step_cmd :
-    EvalCmd δ σ c σ' δ' →
+    EvalCmd δ σ c σ' →
     ----
     StepStmt P EvalCmd
       (.stmt (.cmd c) σ δ)
-      (.terminal σ' δ')
+      (.terminal σ' δ)
 
   /-- A labeled block steps to its statement list. -/
   | step_block :

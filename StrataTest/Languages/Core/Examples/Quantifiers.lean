@@ -111,7 +111,7 @@ Model:
 ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantPgm Inhabited.default Options.default
+#eval verify "cvc5" quantPgm (options := .default)
 
 /--
 info: [Strata.Core] Type checking succeeded.

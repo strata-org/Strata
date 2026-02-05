@@ -10,7 +10,6 @@ import Strata.DDM.AST
 import Strata.DDM.Util.Array
 import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
-import Strata.DL.Util.Func
 
 /-!
 ## Lambda's Factory
@@ -56,50 +55,99 @@ abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
 abbrev LTySignature := Signature IDMeta LTy
 
--- Re-export Func from Util for backward compatibility
-open Strata.DL.Util (Func FuncWF TyIdentifier)
+def inline_attr : String := "inline"
+def inline_if_constr_attr : String := "inline_if_constr"
+def eval_if_constr_attr : String := "eval_if_constr"
 
 /--
-A Lambda factory function - instantiation of `Func` for Lambda expressions.
-
-Universally quantified type identifiers, if any, appear before this signature and can
+A Lambda factory function, where the body can be optional. Universally
+quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
+
+A optional evaluation function can be provided in the `concreteEval` field for
+each factory function to allow the partial evaluator to do constant propagation
+when all the arguments of a function are concrete. Such a function should take
+two inputs: a function call expression and also -- somewhat redundantly, but
+perhaps more conveniently -- the list of arguments in this expression.  Here's
+an example of a `concreteEval` function for `Int.Add`:
+
+```
+(fun e args => match args with
+               | [e1, e2] =>
+                 let e1i := LExpr.denoteInt e1
+                 let e2i := LExpr.denoteInt e2
+                 match e1i, e2i with
+                 | some x, some y => (.const (toString (x + y)) mty[int])
+                 | _, _ => e
+               | _ => e)
+```
+
+Note that if there is an arity mismatch or if the arguments are not
+concrete/constants, this fails and it returns .none.
+
+(TODO) Use `.bvar`s in the body to correspond to the formals instead of using
+`.fvar`s.
 -/
-abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+structure LFunc (T : LExprParams) where
+  name     : T.Identifier
+  typeArgs : List TyIdentifier := []
+  isConstr : Bool := false --whether function is datatype constructor
+  inputs   : @LMonoTySignature T.IDMeta
+  output   : LMonoTy
+  body     : Option (LExpr T.mono) := .none
+  -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
+  -- a function, etc.).
+  attr     : Array String := #[]
+  -- The T.Metadata argument is the metadata that will be attached to the
+  -- resulting expression of concreteEval if evaluation was successful.
+  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
+  axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
 
 /--
-Helper constructor for LFunc to maintain backward compatibility.
+Well-formedness properties of LFunc. These are split from LFunc because
+otherwise it becomes impossible to create a 'temporary' LFunc object whose
+wellformedness might not hold yet.
 -/
-def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
-    (isConstr : Bool := false) (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
-    (body : Option (LExpr T.mono) := .none) (attr : Array String := #[])
-    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
-    (axioms : List (LExpr T.mono) := []) : LFunc T :=
-  Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms
+structure LFuncWF {T : LExprParams} (f : LFunc T) where
+  -- No args have same name.
+  arg_nodup:
+    List.Nodup (f.inputs.map (·.1.name))
+  -- Free variables of body must be arguments.
+  body_freevars:
+    ∀ b, f.body = .some b →
+      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)
+  -- concreteEval does not succeed if the length of args is incorrect.
+  concreteEval_argmatch:
+    ∀ fn md args res, f.concreteEval = .some fn
+      → fn md args = .some res
+      → args.length = f.inputs.length
 
-/--
-Type class for extracting free variable names from expressions.
--/
-class GetVarNames (ExprT : Type) (NameT : Type) where
-  getVarNames : ExprT → List NameT
+instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
+    Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
+  apply List.nodupDecidable
 
-/-- Instance for LExpr: extract variable names from free variables. -/
-instance {T : LExprParams} {GenericTy : Type} : GetVarNames (LExpr ⟨T, GenericTy⟩) String where
-  getVarNames e := (LExpr.freeVars e).map (·.1.name)
+instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
+    Decidable (∀ b, f.body = .some b →
+      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)) :=
+  by exact f.body.decidableForallMem
 
-/-- Abbreviation for FuncWF specialized to LFunc. -/
-abbrev LFuncWF {T : LExprParams} (f : LFunc T) :=
-  FuncWF (·.name) GetVarNames.getVarNames f
-
--- FuncWF.concreteEval_argmatch is not decidable.
+-- LFuncWF.concreteEval_argmatch is not decidable.
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
--- Provide explicit instance for LFunc to ensure proper resolution
--- Requires ToFormat for T.IDMeta (for identifiers in expressions) and T.Metadata (for Inhabited LExpr)
-instance [ToFormat T.IDMeta] [Inhabited T.Metadata] : ToFormat (LFunc T) where
-  format := Func.format
+instance : ToFormat (LFunc T) where
+  format f :=
+    let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
+    let typeArgs := if f.typeArgs.isEmpty
+                    then f!""
+                    else f!"∀{f.typeArgs}."
+    let type := f!"{typeArgs} ({Signature.format f.inputs}) → {f.output}"
+    let sep := if f.body.isNone then f!";" else f!" :="
+    let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
+    f!"{attr}\
+       func {f.name} : {type}{sep}\
+       {body}"
 
 def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then
@@ -118,14 +166,18 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-/-- If `LFunc.type` succeeds, then the input parameter names are unique. -/
-theorem LFunc.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
-    LFunc.type f = .ok ty → f.inputs.keys.Nodup := by
-  intro H
-  simp only [LFunc.type, bind, Except.bind] at H
-  split at H
-  · simp_all
-  · split at H <;> simp_all
+theorem LFunc.type_inputs_nodup [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
+    f.type = .ok ty → f.inputs.keys.Nodup := by
+  intro h
+  simp only [LFunc.type, bind, Except.bind] at h
+  split at h <;> try contradiction
+  rename_i h_nodup
+  simp only [Bool.not_eq_true] at h_nodup
+  have : decide f.inputs.keys.Nodup = true := by
+    cases hd : decide f.inputs.keys.Nodup
+    · simp [hd] at h_nodup
+    · rfl
+  exact of_decide_eq_true this
 
 def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
   let input_tys := f.inputs.values
