@@ -701,7 +701,7 @@ def pythonFuncToCore (name : String) (args: List (String × String)) (body: Arra
     | .some _v => [("ret", (.tcons "DictStrAny" [])), ("maybe_except", (.tcons "ExceptOrNone" []))]
     | .none => [("maybe_except", (.tcons "ExceptOrNone" []))]
   else
-    let class_ty_name := name.dropRight ("___init__".length)
+    let class_ty_name := name.dropEnd ("___init__".length) |>.toString
     [("ret", (.tcons s!"{class_ty_name}" [])), ("maybe_except", (.tcons "ExceptOrNone" []))]
   {
     header := {name,

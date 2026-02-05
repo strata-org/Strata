@@ -150,5 +150,5 @@ theorem EvalBlockDefMonotone
     apply EvalStmtDefMonotone <;> assumption
     assumption
   termination_by (Block.sizeOf ss)
-  decreasing_by all_goals simp [*] at * <;> omega
+  decreasing_by all_goals simp [*] at * <;> decreasing_tactic
 end
