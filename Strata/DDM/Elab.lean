@@ -71,7 +71,7 @@ private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Op
     return commands
   let (some tree, true) ← runChecked <| elabCommand leanEnv
     | return commands
-  -- Safety: bail out if no progress was made to prevent infinite loops
+  -- Prevent infinite loop if parser makes no progress
   let newPos := (←get).pos
   if newPos <= iniPos then
     logError { start := iniPos, stop := iniPos } "Syntax error: unable to parse"
