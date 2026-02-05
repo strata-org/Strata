@@ -935,11 +935,11 @@ partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) 
 private def invariantsToOption (invs : List Core.Expression.Expr) : Option Core.Expression.Expr :=
   match invs with
   | [] => none
-  | _  =>
-    -- Build (i1 ∧ (i2 ∧ (... ∧ true)))
-    some <| invs.foldr
-      (fun i acc => .app () (.app () Core.boolAndOp i) acc)
-      (.true ())
+  | i :: is =>
+    -- ((i ∧ i2) ∧ i3) ∧ ...
+    some <| is.foldl
+      (fun acc j => .app () (.app () Core.boolAndOp acc) j)
+      i
 
 def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBindings) :
   TransM ((List Core.Statement) × TransBindings) := do
