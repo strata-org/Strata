@@ -223,7 +223,7 @@ def pyAnalyzeCommand : Command where
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
             (Core.verify solverName newPgm tempDir .none
-              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
+              { Options.default with outputSarif:=true,  stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
                                       (moreFns := Strata.Python.ReFactory)))
       let mut s := ""
       for vcResult in vcResults do
@@ -270,7 +270,7 @@ def pyAnalyzeLaurelCommand : Command where
               EIO.toIO
                 (fun f => IO.Error.userError (toString f))
                 (Core.verify solverName coreProgram tempDir .none
-                  { Options.default with stopOnFirstError := false, verbose := verboseMode }))
+                  { Options.default with outputSarif := true, stopOnFirstError := false, verbose := verboseMode }))
 
           -- Print results
           IO.println "\n==== Verification Results ===="

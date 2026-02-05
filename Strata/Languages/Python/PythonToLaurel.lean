@@ -364,10 +364,21 @@ def pythonToLaurel (pyModule : Python.Command SourceRange) : Except TranslationE
       | _ =>
         otherStmts := otherStmts ++ [stmt]
 
-    -- For now, we don't support module-level statements other than function definitions
+    -- If there are top-level statements, wrap them in a "main" function
     if !otherStmts.isEmpty then
-      throw (.unsupportedConstruct "Module-level statements (other than function definitions) not yet supported"
-        s!"Found {otherStmts.length} non-function statements")
+      let (_, mainBodyStmts) ← translateStmtList ctx otherStmts
+      let mainBodyBlock := mkStmtExprMd (StmtExpr.Block mainBodyStmts none)
+
+      let mainProc : Procedure := {
+        name := "$main"
+        inputs := []
+        outputs := []
+        preconditions := []
+        decreases := none
+        body := Body.Transparent mainBodyBlock
+      }
+
+      procedures := procedures ++ [mainProc]
 
     -- Create Laurel program - use fully qualified name to avoid ambiguity
     let program : Laurel.Program := {
