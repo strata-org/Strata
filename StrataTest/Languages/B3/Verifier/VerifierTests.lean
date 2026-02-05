@@ -115,7 +115,7 @@ def formatExpressionOnly (prog : Program) (expr : B3AST.Expression SourceRange) 
   let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty expr
   let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
   let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-  (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+  (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trimAscii.toString
 
 /-- Flatten conjunctions into a list of conjuncts for display -/
 def flattenConjunction : B3AST.Expression SourceRange → List (B3AST.Expression SourceRange)

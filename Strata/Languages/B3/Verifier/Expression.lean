@@ -332,7 +332,7 @@ def formatExpression (prog : Program) (expr : B3AST.Expression SourceRange) (ctx
   let (cstExpr, _) := B3.expressionToCST ctx expr
   let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
   let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-  let formatted := (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+  let formatted := mformat (ArgF.op cstExpr.toAst) ctx fmtState |>.format.pretty.trimAscii.toString
   formatted
 
 end Strata.B3.Verifier
