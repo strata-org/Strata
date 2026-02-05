@@ -152,7 +152,7 @@ private def readlnD (dflt : String) : SolverM String := do
 
 def checkSat (vars : List String) : SolverM Decision := do
   emitln "(check-sat)"
-  let result := (← readlnD "unknown").trim
+  let result := (← readlnD "unknown").trimAscii.toString
   match result with
   | "sat"     =>
     if !vars.isEmpty then

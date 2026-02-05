@@ -308,6 +308,7 @@ def literalToCST [Inhabited (B3CST.Expression M)] : B3AST.Literal M → B3CST.Ex
 
 mutual
 
+
 def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3AST.Expression M) : B3CST.Expression M × List (ASTToCSTError M) :=
   match he: e with
   | .literal _m lit =>
@@ -352,7 +353,7 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
         match v with
         | .quantVarDecl _ name _ => acc.push name.val
       ) ctx
-      let convertPattern (p : Strata.B3AST.Pattern M) (Hp: p ∈ patterns.val.toList) : B3CST.Pattern M × List (ASTToCSTError M) :=
+      let convertPattern (p : Strata.B3AST.Pattern M) (_Hp: p ∈ patterns.val.toList) : B3CST.Pattern M × List (ASTToCSTError M) :=
         match p with
         | .pattern pm exprs =>
             let (exprsConverted, errors) := exprs.val.toList.attach.foldl (fun (acc, errs) e =>
@@ -360,8 +361,8 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
               (acc ++ [e'], errs ++ err)
             ) ([], [])
             (B3CST.Pattern.pattern pm (mkAnn pm exprsConverted.toArray), errors)
-      let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) p =>
-        let (p', e) := convertPattern p.1 p.2
+      let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) ⟨p, Hp⟩ =>
+        let (p', e) := convertPattern p Hp
         (acc ++ [p'], errs ++ e)
       ) ([], [])
       let patternsDDM : Ann (Array (B3CST.Pattern M)) M := mkAnn m patternsConverted.toArray
@@ -386,7 +387,7 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
     subst_vars; cases exprs; cases patterns; simp_all
     simp at he
     have := Array.sizeOf_lt_of_mem he
-    have := Array.sizeOf_lt_of_mem Hp
+    have := Array.sizeOf_lt_of_mem _Hp
     simp_all; omega
 
 def callArgToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) : Strata.B3AST.CallArg M → B3CST.CallArg M × List (ASTToCSTError M)
@@ -742,7 +743,7 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
         match v with
         | .var_decl _ name ty => acc.push name.val
       ) ctx
-      let convertPattern (p : B3CST.Pattern M) (Hp: p ∈ patterns.val) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
+      let convertPattern (p : B3CST.Pattern M) (_Hp: p ∈ patterns.val) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
         match hp: p with
         | .pattern pann exprs =>
             let (exprsConverted, errors) := exprs.val.toList.attach.foldl (fun (acc, errs) e =>
