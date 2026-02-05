@@ -29,7 +29,7 @@ def lookup (Env : TEnv Visibility) (x : CoreIdent) : Option LTy :=
   Env.context.types.find? x
 
 def update (Env : TEnv Visibility) (x : CoreIdent) (ty : LTy) : TEnv Visibility :=
-  Env.insertInContext (T := CoreLParams) x ty
+  Env.addInNewestContext (T := CoreLParams) [(x, ty)]
 
 def freeVars (e : (LExpr CoreLParams.mono)) : List CoreIdent :=
   (LExpr.freeVars e).map (fun (i, _) => i)

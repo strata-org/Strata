@@ -73,7 +73,7 @@ private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression
   let (inp_mty_sig, Env) ← Lambda.LMonoTySignature.instantiate C Env proc.header.typeArgs
                             proc.header.inputs |>.mapError (fun e => DiagnosticModel.withRange sourceLoc e)
   let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
-  let Env := Env.addToContext inp_lty_sig
+  let Env := Env.addInNewestContext inp_lty_sig
   return (inp_mty_sig, Env)
 
 -- Error message prefix for errors in processing procedure pre/post conditions.
@@ -129,7 +129,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                         envAfterPreconds proc.header.typeArgs
                                         proc.header.outputs |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
-  let envWithOutputs := envWithOutputs.addToContext out_lty_sig
+  let envWithOutputs := envWithOutputs.addInNewestContext out_lty_sig
 
   -- Type check postconditions.
   let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOutputs
