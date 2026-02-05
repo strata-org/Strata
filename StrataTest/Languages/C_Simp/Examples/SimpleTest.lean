@@ -31,19 +31,19 @@ int procedure simpleTest (x: int, y: int)
 
 /--
 info: program C_Simp;
-(int)proceduresimpleTest(x:int, y:int)//@pre(y)>(0);
+int procedure simpleTest(x:int, y:int)//@prey>(0);
 //@posttrue;
   ({
   varz:int;
-  (z)=(x)+(y);
-  //@assert [test_assert](z)>(x);
-  if((z)>(10)){
-  (z)=(z)-(1);
+  z=x+y;
+  //@assert [test_assert]z>x;
+  if(z>(10)){
+  z=z-(1);
   }
   (else({
-  (z)=(z)+(1);
+  z=z+(1);
   }
-  ))//@assume [test_assume](z)>(0);
+  ))//@assume [test_assume]z>(0);
   return0;
   }
   )
