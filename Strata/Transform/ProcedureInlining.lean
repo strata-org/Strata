@@ -147,7 +147,8 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   let cg_new : CallGraph := { callees := callees_new, callers := callers_new }
 
   -- .. and decrement the 'f -> g' edge by 1.
-  return cg_new.decrementEdge f g
+  let cg_final ← cg_new.decrementEdge f g
+  return cg_final
 
 /-
 Procedure Inlining.

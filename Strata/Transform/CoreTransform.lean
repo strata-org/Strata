@@ -244,7 +244,7 @@ Recursively visit all blocks and run f
 NOTE: please use runProgram if possible since CoreTransformState might result
 in an inconsistent state. This function is for partial implementation.
 -/
-def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)))
+private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)))
     (ss : List Statement)
     : CoreTransformM (Bool × List Statement) := do
   match ss with
@@ -279,51 +279,51 @@ Visit all procedures and run f
 NOTE: please use runProgram if possible since CoreTransformState might result
 in an inconsistent state. This function is for partial implementation.
 -/
-def runProcedures
+private def runProcedures
     (f : Command → CoreTransformM (Option (List Statement)))
     (dcls : List Decl)
-    (allowProcList : Option (List String) := .none)
+    (targetProcList : Option (List String) := .none)
     : CoreTransformM (Bool × List Decl) := do
   match dcls with
   | [] => return (false, [])
   | d :: ds =>
     match d with
     | .proc proc md =>
-      if (match allowProcList with
+      if (match targetProcList with
          | .none => true
          | .some p => proc.header.name.1 ∈ p) then
         modify (fun σ => { σ with
           currentProcedureName := .some proc.header.name.1
         })
         let (changed, new_body) ← runStmtsRec f proc.body
-        let (changed', new_procs) ← runProcedures (allowProcList := allowProcList) f ds
+        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
         return (changed || changed',
           Decl.proc {
             proc with body := new_body
           } md :: new_procs)
       else
-        let (changed', new_procs) ← runProcedures (allowProcList := allowProcList) f ds
+        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
         return (changed', d :: new_procs)
     | _ =>
-      let (changed', new_procs) ← runProcedures (allowProcList := allowProcList) f ds
+      let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
       return (changed', d :: new_procs)
 
 
 /--
 Run f on each command of the program.
 Returns (has the program updated?, the updated program).
-If allowProcList is .none, apply f to all statements in every procedure.
-If allowProcList is .some l, apply f to statements that are in procedures
+If targetProcList is .none, apply f to all statements in every procedure.
+If targetProcList is .some l, apply f to statements that are in procedures
 listed in l only.
 -/
 def runProgram
     (f : Command → CoreTransformM (Option (List Statement)))
     (p : Program)
-    (allowProcList : Option (List String) := .none)
+    (targetProcList : Option (List String) := .none)
   : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
   let (changed, newDecls) ← runProcedures
-    (allowProcList := allowProcList) f p.decls
+    (targetProcList := targetProcList) f p.decls
   let newProg := { decls := newDecls }
   modify (fun σ => { σ with
     currentProgram := .some newProg,

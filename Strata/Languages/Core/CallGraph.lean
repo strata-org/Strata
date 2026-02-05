@@ -37,22 +37,26 @@ def CallGraph.getCallersWithCount (cg : CallGraph) (name : String)
 /-- Decrement the number on edge (caller -> callee) by 1. If the result is 0,
   erase the empty entry -/
 def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
-  : CallGraph :=
-  let decrement_count (m : Std.HashMap String Nat) (k : String) :=
-    m.alter k (fun
-      | .none => panic! s!"{k} not available at {repr m}"
-      | .some v => if v == 1 then .none else .some (v - 1))
-  {
-    callees := cg.callees.alter caller (fun
-        | .none => panic! s!"{caller} not available at cg.callees {repr cg.callees}"
-        | .some m =>
-          let m' := decrement_count m callee
-          if m'.isEmpty then .none else .some m'),
-    callers := cg.callers.alter callee (fun
-        | .none => panic! s!"{callee} not available at cg.callers {repr cg.callers}"
-        | .some m =>
-          let m' := decrement_count m caller
-          if m'.isEmpty then .none else .some m'),
+  : Except String CallGraph :=
+  let decrement_count (m : Std.HashMap String Nat) (key : String)
+    : Except String (Std.HashMap String Nat) := do
+    let some v := m[key]? | throw s!"{key} not available at {repr m}"
+    if v == 1 then
+      return m.erase key
+    else
+      return m.insert key (v - 1)
+  let modify {β} [Repr β] (m : Std.HashMap String β) (key : String)
+      (fn : β → Except String β) : Except String (Std.HashMap String β) := do
+    let some v := m[key]? | throw s!"{key} not available at {repr m}"
+    let v' ← fn v
+    return m.insert key v'
+
+  do
+  let new_callees ← modify cg.callees caller (decrement_count · callee)
+  let new_callers ← modify cg.callers callee (decrement_count · caller)
+  return {
+    callees := new_callees
+    callers := new_callers
   }
 
 /-- Compute transitive closure of callees; the result does not contain `name`. -/
