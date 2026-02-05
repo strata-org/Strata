@@ -409,7 +409,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
 def verify (smtsolver : String) (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : Options := default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO DiagnosticModel VCResults := do
   let finalProgram ← match proceduresToVerify with
@@ -440,7 +440,7 @@ namespace Strata
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
 
-def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
+def typeCheck (ictx : InputContext) (env : Program) (options : Options := default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
   Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
@@ -459,7 +459,7 @@ def verify
     (smtsolver : String) (env : Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : Options := default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (tempDir : Option String := .none)
     : IO Core.VCResults := do

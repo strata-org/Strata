@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+module
+
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Solver.lean)
@@ -15,7 +17,7 @@ s-expressions encoded as strings. The interface is based on
 
 namespace Strata.SMT
 
-inductive Decision where
+public inductive Decision where
   | sat
   | unsat
   | unknown
@@ -31,15 +33,17 @@ deriving DecidableEq, Repr
  each command. We don't have an error stream here, since we configure solvers to
  run in quiet mode and not print anything to the error stream.
 -/
-structure Solver where
+public structure Solver where
   smtLibInput : IO.FS.Stream
   smtLibOutput : Option IO.FS.Stream
 
-abbrev SolverM (α) := ReaderT Solver IO α
+public abbrev SolverM (α) := ReaderT Solver IO α
 
 def SolverM.run (solver : Solver) (x : SolverM α) : IO α := ReaderT.run x solver
 
 namespace Solver
+
+public section
 
 /--
   Returns a Solver for the given path and arguments. This function expects
@@ -84,11 +88,15 @@ def fileWriter (h : IO.FS.Handle) : IO Solver :=
 def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO Solver :=
   return ⟨IO.FS.Stream.ofBuffer b, .none⟩
 
+end
+
 private def emitln (str : String) : SolverM Unit := do
   -- dbg_trace "{str}" -- uncomment to see input sent to the solver
   let solver ← read
   solver.smtLibInput.putStr s!"{str}\n"
   solver.smtLibInput.flush
+
+public section
 
 def setLogic (logic : String) : SolverM Unit :=
   emitln s!"(set-logic {logic})"
@@ -145,10 +153,14 @@ def declareDatatypes (dts : List (String × List String × List String)) : Solve
   let bodyStr := String.intercalate "\n  " bodies
   emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
 
+end
+
 private def readlnD (dflt : String) : SolverM String := do
   match (← read).smtLibOutput with
   | .some stdout => stdout.getLine
   | .none        => pure dflt
+
+public section
 
 def checkSat (vars : List String) : SolverM Decision := do
   emitln "(check-sat)"
@@ -170,6 +182,8 @@ def reset : SolverM Unit :=
 
 def exit : SolverM Unit :=
   emitln "(exit)"
+
+end
 
 end Solver
 

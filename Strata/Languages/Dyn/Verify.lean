@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+module
+
 -- TODO: Verification integration for Dyn language
 
 import Strata.Languages.Dyn.Dyn

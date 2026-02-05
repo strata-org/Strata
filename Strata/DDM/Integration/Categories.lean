@@ -4,7 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+
 public import Strata.DDM.AST
+public import Std.Data.HashSet.Basic
 
 public section
 namespace Strata.DDM.Integration
@@ -34,3 +36,4 @@ def abstractCategories : Std.HashSet QualifiedIdent := Std.HashSet.ofList [
 ]
 
 end Strata.DDM.Integration
+end

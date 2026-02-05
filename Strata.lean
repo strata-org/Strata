@@ -22,6 +22,7 @@ import Strata.Util.Sarif
 /- Strata Core -/
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Core.Core
 import Strata.Languages.Core.SarifOutput
 
 /- Code Transforms -/

@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-! # List Utilities
 -/
@@ -20,7 +21,7 @@ theorem List.subset_append_cons_right {α : Type} [DecidableEq α] {a b c : List
 /--
 Remove duplicates in a list.
 -/
-def dedup {α : Type} [DecidableEq α] : List α → List α
+public def dedup {α : Type} [DecidableEq α] : List α → List α
   | [] => []
   | a :: as =>
     let as := as.dedup
@@ -114,7 +115,7 @@ theorem length_dedup_cons_of_mem {α : Type} [DecidableEq α] (a : α) (l : List
   have : a ∈ l.dedup := mem_of_mem_dedup l a h
   simp [this]
 
-theorem length_dedup_cons_of_not_mem {α : Type} [DecidableEq α] (a : α) (l : List α)
+public theorem length_dedup_cons_of_not_mem {α : Type} [DecidableEq α] (a : α) (l : List α)
   (h : a ∉ l) : (a :: l).dedup.length = 1 + l.dedup.length := by
   induction l
   · simp_all [dedup]
@@ -245,7 +246,7 @@ theorem length_dedup_of_removeAll {α : Type} [DecidableEq α] (a : α) (l : Lis
         simp_all
         omega
 
-theorem length_dedup_append_le_left {α : Type} [DecidableEq α] (l₁ l₂ : List α) :
+public theorem length_dedup_append_le_left {α : Type} [DecidableEq α] (l₁ l₂ : List α) :
   l₁.dedup.length ≤ (l₁ ++ l₂).dedup.length := by
   induction l₁ generalizing l₂
   case nil => simp [dedup]
@@ -305,7 +306,7 @@ theorem length_dedup_append_all_in_right {α : Type} [DecidableEq α] (l₁ l₂
     simp_all
     done
 
-theorem length_dedup_append_subset_right {α : Type} [DecidableEq α] (l₁ l₂ : List α)
+public theorem length_dedup_append_subset_right {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁ ⊆ l₂) :
   (l₁ ++ l₂).dedup.length = l₂.dedup.length := by
   simp_all [List.instHasSubset, List.Subset]
@@ -336,7 +337,7 @@ theorem length_dedup_all_in_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α
   have h_2 := @length_dedup_append_all_in_left _ _ l₁ l₂ h2
   simp_all
 
-theorem length_dedup_subset_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α)
+public theorem length_dedup_subset_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h1 : l₁ ⊆ l₂) (h2 : l₂ ⊆ l₁) :
   l₁.dedup.length = l₂.dedup.length := by
   have := @length_dedup_all_in_eq _ _ l₁ l₂
@@ -391,7 +392,7 @@ theorem length_dedup_of_subset_not_mem_lt {α : Type} [DecidableEq α] (l₁ l�
   have := @length_dedup_of_all_in_not_mem_lt _ _ l₁ l₂ a
   simp_all [List.instHasSubset, List.Subset]
 
-theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List α)
+public theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁ ⊆ l₂) : l₁.dedup.length ≤ l₂.dedup.length := by
   induction l₁ with
   | nil => simp_all [dedup]
@@ -411,7 +412,7 @@ theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List
       simp_all [dedup]
       omega
 
-theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
+public theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
   induction s1 generalizing s2 with
   | nil => simp
   | cons x t IH =>

@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-def beq_eq_DecidableEq
+public def beq_eq_DecidableEq
   {T : Type}
   (beq : T → T → Bool)
   (beq_eq : (x1 x2 : T) → beq x1 x2 = true ↔ x1 = x2) :
