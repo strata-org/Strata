@@ -295,9 +295,9 @@ op funcDecl_statement (name : Ident,
                        typeArgs : Option TypeArgs,
                        @[scope(typeArgs)] b : Bindings,
                        @[scope(typeArgs)] r : Type,
-                       body : r,
+                       @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
-  inline? "function " name typeArgs b " : " r " {\n" indent(2, body) "\n}";
+  inline? "function " name typeArgs b " : " r " { " body " }";
 
 @[scope(b)]
 op command_var (b : Bind) : Command =>

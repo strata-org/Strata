@@ -1059,25 +1059,16 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let inputsConverted : ListMap Expression.Ident Expression.Ty := 
       inputs.map (fun (id, mty) => (id, .forAll [] mty))
     
-    -- Add function parameters to bound variables for the function body
-    let paramExprs : Array (LExpr CoreLParams.mono) := 
-      inputs.map (fun (id, mty) => .fvar () id (.some mty)) |>.toArray
-    -- Use fresh bindings context with only the function parameters
-    let functionBindings := { bindings with boundVars := paramExprs }
-    
-    -- Add function parameters to bound variables for the function body
-    let paramExprs : Array (LExpr CoreLParams.mono) := 
-      inputs.map (fun (id, mty) => .fvar () id (.some mty)) |>.toArray
-    let functionBindings := { bindings with boundVars := paramExprs }
-    
+    -- Translate body directly without DDM scope handling
     let body ← match bodya with
       | .option _ (.some bodyExpr) => do
-        let expr ← translateExpr p functionBindings bodyExpr
+        let expr ← translateExpr p bindings bodyExpr
         pure (some expr)
       | .option _ .none => pure none
       | _ => do
-        let bodyExpr ← translateExpr p functionBindings bodya
-        pure (some bodyExpr)
+        let expr ← translateExpr p bindings bodya
+        pure (some expr)
+    
     let decl : Lambda.PureFunc Expression := {
       name := name,
       inputs := inputsConverted,

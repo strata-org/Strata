@@ -15,7 +15,10 @@ def funcDeclStmtPgm : Program :=
 program Core;
 
 procedure testFuncDecl() returns () {
-  function getConstant() : int { 42 }
+  function double(x : int) : int { x + x }
+  var y : int := 5;
+  var result : int := double(y);
+  assert result == 10;
 };
 
 #end
