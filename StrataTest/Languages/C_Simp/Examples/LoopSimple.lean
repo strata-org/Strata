@@ -35,19 +35,19 @@ int procedure loopSimple (n: int)
 
 /--
 info: program C_Simp;
-(int)procedureloopSimple(n:int)//@pre(n)>=(0);
+int procedure loopSimple(n:int)//@pren>=(0);
 //@posttrue;
   ({
   varsum:int;
   vari:int;
-  (sum)=0;
-  (i)=0;
-  while((i)<(n))
-  //@decreases((n)-(i))//@invariant(((i)<=(n))&&((((i)*((i)-(1)))/(2))==(sum)))({
-  (sum)=(sum)+(i);
-  (i)=(i)+(1);
+  sum=0;
+  i=0;
+  while(i<n)
+  //@decreases(n-i)//@invariant((i<=n)&&(((i*(i-(1)))/(2))==sum))({
+  sum=sum+i;
+  i=i+(1);
   }
-  )//@assert [sum_assert](((n)*((n)-(1)))/(2))==(sum);
+  )//@assert [sum_assert]((n*(n-(1)))/(2))==sum;
   returnsum;
   }
   )

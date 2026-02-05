@@ -157,6 +157,8 @@ jobs:
         auto-config: false
         build: true
         build-args: "strata:exe"
+    - name: Run PySpec test that may be skipped without Python
+      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python

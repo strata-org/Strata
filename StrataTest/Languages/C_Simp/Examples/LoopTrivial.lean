@@ -34,16 +34,16 @@ int procedure loopTrivial (n: int)
 
 /--
 info: program C_Simp;
-(int)procedureloopTrivial(n:int)//@pre(n)>=(0);
+int procedure loopTrivial(n:int)//@pren>=(0);
 //@posttrue;
   ({
   vari:int;
-  (i)=0;
-  while((i)<(n))
-  //@decreases((n)-(i))//@invariant((i)<=(n))({
-  (i)=(i)+(1);
+  i=0;
+  while(i<n)
+  //@decreases(n-i)//@invariant(i<=n)({
+  i=i+(1);
   }
-  )//@assert [i_eq_n](i)==(n);
+  )//@assert [i_eq_n]i==n;
   returni;
   }
   )
