@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Lambda.Factory
 import Strata.DL.Lambda.LExprWF
 
@@ -55,27 +56,54 @@ For each call to a function with preconditions:
 1. Get the function's preconditions from the Factory
 2. Substitute actual arguments for formal parameters
 3. Create a WFObligation with the call-site metadata
+4. Wrap in enclosing quantifiers and implications
 -/
-def collectWFObligations (F : Factory T) (e : LExpr T.mono) : List (WFObligation T) :=
-  -- First, check if this expression is a function call with preconditions
-  let callObligations := match Factory.callOfLFunc F e with
-    | some (_op, args, func) =>
-      if func.preconditions.isEmpty then []
-      else
-        let md := e.metadata
-        func.preconditions.map fun precond =>
-          { funcName := func.name.name
-            obligation := substitutePrecondition precond func.inputs args
-            callSiteMetadata := md : WFObligation T }
-    | none => []
-  -- Then recursively collect from subexpressions
-  let subObligations := match e with
-    | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => []
-    | .abs _ _ body => collectWFObligations F body
-    | .quant _ _ _ trigger body => collectWFObligations F trigger ++ collectWFObligations F body
-    | .app _ fn arg => collectWFObligations F fn ++ collectWFObligations F arg
-    | .ite _ c t f => collectWFObligations F c ++ collectWFObligations F t ++ collectWFObligations F f
-    | .eq _ e1 e2 => collectWFObligations F e1 ++ collectWFObligations F e2
-  callObligations ++ subObligations
+def collectWFObligations [Coe String (T.Identifier)]  [Inhabited T.Metadata] (F : Factory T) (e : LExpr T.mono) : List (WFObligation T) :=
+  go F e []
+where
+  /-- Wrap an obligation with accumulated implications -/
+  wrapImplications (implications : List (T.Metadata × LExpr T.mono))
+      (ob : LExpr T.mono) : LExpr T.mono :=
+    implications.foldr (fun (md, lhs) acc =>
+      .app md (.app md (@boolImpliesFunc T).opExpr lhs) acc) ob
+
+  go (F : Factory T) (e : LExpr T.mono)
+      (implications : List (T.Metadata × LExpr T.mono)) : List (WFObligation T) :=
+    let callObligations := match Factory.callOfLFunc F e with
+      | some (_op, args, func) =>
+        if func.preconditions.isEmpty then []
+        else
+          let md := e.metadata
+          func.preconditions.map fun precond =>
+            let substedPrecond := substitutePrecondition precond func.inputs args
+            { funcName := func.name.name
+              obligation := wrapImplications implications substedPrecond
+              callSiteMetadata := md : WFObligation T }
+      | none => []
+    let subObligations := match e with
+      | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => []
+      | .abs md ty body =>
+        (go F body implications).map fun ob =>
+          { ob with obligation := .quant md .all ty (.bvar md 0) ob.obligation }
+      | .quant md _ ty trigger body =>
+        let triggerObs := go F trigger implications
+        let bodyObs := (go F body implications).map fun ob =>
+          { ob with obligation := .quant md .all ty trigger ob.obligation }
+        triggerObs ++ bodyObs
+      | .app md (.app _ (.op _ opName _) lhs) rhs =>
+        if opName == (@boolImpliesFunc T).name then
+          let lhsObs := go F lhs implications
+          let rhsObs := go F rhs ((md, lhs) :: implications)
+          lhsObs ++ rhsObs
+        else
+          go F lhs implications ++ go F rhs implications
+      | .app _ fn arg => go F fn implications ++ go F arg implications
+      | .ite md c t f =>
+        let cObs := go F c implications
+        let tObs := go F t ((md, c) :: implications)
+        let fObs := go F f ((md, .app md (@boolNotFunc T).opExpr c) :: implications)
+        cObs ++ tObs ++ fObs
+      | .eq _ e1 e2 => go F e1 implications ++ go F e2 implications
+    callObligations ++ subObligations
 
 end Lambda

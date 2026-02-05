@@ -11,6 +11,7 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.CmdEval
+import Strata.DL.Lambda.Preconditions
 
 ---------------------------------------------------------------------
 
@@ -164,12 +165,48 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
     (c', E)
 
+/-- Generate WF obligations for function calls in an expression -/
+private def collectExprWFObligations (E : Env) (e : Expression.Expr) (label : String)
+    : Imperative.ProofObligations Expression :=
+  let wfObs := Lambda.collectWFObligations E.factory e
+  wfObs.toArray.mapIdx fun idx ob =>
+    { label := s!"{label}_calls_{ob.funcName}_{idx}"
+      property := .assert
+      assumptions := E.pathConditions
+      obligation := ob.obligation
+      metadata := #[] }
+
+/-- Collect WF obligations from a command's expressions -/
+private def collectCmdWFObligations (E : Env) (c : Imperative.Cmd Expression)
+    : Imperative.ProofObligations Expression :=
+  match c with
+  | .init _ _ e _ => collectExprWFObligations E e "init"
+  | .set x e _ => collectExprWFObligations E e s!"set_{x.name}"
+  | .assert l e _ => collectExprWFObligations E e s!"assert_{l}"
+  | .assume l e _ => collectExprWFObligations E e s!"assume_{l}"
+  | _ => #[]
+
+/-- Collect WF obligations from procedure call arguments -/
+private def collectCallWFObligations (E : Env) (pname : String) (args : List Expression.Expr)
+    : Imperative.ProofObligations Expression :=
+  args.foldl (fun (acc, idx) arg =>
+    (acc ++ collectExprWFObligations E arg s!"call_{pname}_arg{idx}", idx + 1))
+    (#[], 0) |>.fst
+
 def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command × Env :=
   match c with
   | .cmd c =>
-    let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
-    (.cmd c, E)
+    let (c', E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
+    -- Collect WF obligations from the evaluated expression (after preprocessing)
+    let wfObs := collectCmdWFObligations E c'
+    let E := { E with deferred := E.deferred ++ wfObs }
+    (.cmd c', E)
   | .call lhs pname args md =>
+    -- Preprocess args before collecting WF obligations
+    let substMap := oldVarSubst E.substMap E
+    let args' := args.map (OldExpressions.substsOldExpr substMap)
+    let wfObs := collectCallWFObligations E pname args'
+    let E := { E with deferred := E.deferred ++ wfObs }
     Command.evalCall E old_var_subst lhs pname args md
 
 ---------------------------------------------------------------------

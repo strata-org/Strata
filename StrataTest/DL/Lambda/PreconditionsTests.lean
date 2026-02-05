@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Lambda.Preconditions
 
 /-! # Preconditions Tests -/
@@ -14,7 +14,7 @@ open Std (ToFormat Format format)
 
 private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-private instance : Coe String TestParams.Identifier where
+instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
 -- A function with a precondition: safeDiv(x, y) requires y != 0
@@ -71,5 +71,36 @@ private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
 #eval collectWFObligations factoryWithAdd
   (.app () (.app () (.op () "safeDiv" .none) (.fvar () "z" .none))
     (.app () (.app () (.op () "add" .none) (.fvar () "x" .none)) (.fvar () "y" .none)))
+
+-- Test: Function call inside a lambda abstraction
+-- Expression: \x : int. safeDiv(x, x)
+-- The obligation should be: forall x :: x != 0
+/-- info: [WFObligation(safeDiv, (∀ ((~!= %0) #0)), ())] -/
+#guard_msgs in
+#eval collectWFObligations testFactory
+  (.abs () LMonoTy.int
+    (.app () (.app () (.op () "safeDiv" .none) (.bvar () 0)) (.bvar () 0)))
+
+-- Test: Function call inside a quantifier with implication guard
+-- Expression: forall x :: x > 0 ==> safeDiv(y, x) > 0
+-- The obligation should be: forall x :: x > 0 ==> x != 0
+-- A hack
+private def factoryWithImplies : Factory TestParams :=
+  match (@IntBoolFactory TestParams _).addFactoryFunc safeDivFunc with
+  | .ok f => f
+  | _ => (@IntBoolFactory TestParams _)
+
+
+-- forall x :: (x > 0) ==> (safeDiv(y, x) > 0)
+-- The WF obligation should be: forall x :: (x > 0) ==> (x != 0)
+/-- info: [WFObligation(safeDiv, (∀ (((~Bool.Implies : (arrow bool (arrow bool bool))) ((~Int.Gt %0) #0)) ((~!= %0) #0))), ())] -/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  (.quant () .all LMonoTy.int (.true ())
+    (.app () (.app () (.op () "Bool.Implies" .none)
+      (.app () (.app () (.op () "Int.Gt" .none) (.bvar () 0)) (.intConst () 0)))
+      (.app () (.app () (.op () "Int.Gt" .none)
+        (.app () (.app () (.op () "safeDiv" .none) (.fvar () "y" .none)) (.bvar () 0)))
+        (.intConst () 0))))
 
 end Lambda

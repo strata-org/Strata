@@ -254,9 +254,18 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: init_calls_safeDiv_0
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (#2 == #0))
 
 ---
-info:
+info: Obligation: init_calls_safeDiv_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" callUnconditionalPgm
@@ -286,9 +295,19 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: set_z_calls_safeDiv_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Gt a) #0)>, ((~Int.Gt $__a0) #0))
+
+
+Proof Obligation:
+(~Bool.Not ($__a0 == #0))
 
 ---
-info:
+info: Obligation: set_z_calls_safeDiv_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" callWithIfPgm
@@ -315,11 +334,58 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: init_calls_safeDiv_0
+Property: assert
+Assumptions:
+(assume_0, (~Bool.Not ($__a0 == #0)))
+
+Proof Obligation:
+(~Bool.Not ($__a0 == #0))
 
 ---
-info:
+info: Obligation: init_calls_safeDiv_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" callWithAssumePgm
+
+-- Function call inside a quantifier with implication
+-- Expression: forall x : int :: x > 0 ==> safeDiv(y, x) > 0
+-- The precondition y != 0 should be found inside the quantifier body
+def funcInQuantifierPgm :=
+#strata
+program Core;
+
+function safeDiv(x : int, y : int) : int
+  requires y != 0;
+{ x div y }
+
+function allPositiveDiv(y : int) : bool
+  requires y >= 0;
+{ forall x : int :: x > 0 ==> safeDiv(y, x) > 0 }
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: allPositiveDiv_calls_safeDiv_0
+Property: assert
+Assumptions:
+(precond_allPositiveDiv, ((~Int.Ge y) #0))
+Proof Obligation:
+(∀ ((~Bool.Implies ((~Int.Gt %0) #0)) (~Bool.Not (%0 == #0))))
+
+---
+info:
+Obligation: allPositiveDiv_calls_safeDiv_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" funcInQuantifierPgm
 
 end Strata
