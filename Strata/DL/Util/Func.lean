@@ -108,8 +108,7 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
   -- Free variables of body must be arguments.
   body_freevars:
     ∀ b, f.body = .some b →
-      (∀ fv, fv ∈ getVarNames b →
-        ∃ arg, List.Mem arg f.inputs ∧ fv = getName arg.1)
+      getVarNames b ⊆ f.inputs.map (getName ·.1)
   -- concreteEval does not succeed if the length of args is incorrect.
   concreteEval_argmatch:
     ∀ fn md args res, f.concreteEval = .some fn
@@ -126,28 +125,8 @@ instance FuncWF.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String) (getVarNames : ExprT → List String)
     (f : Func IdentT ExprT TyT MetadataT):
     Decidable (∀ b, f.body = .some b →
-      (∀ fv, fv ∈ getVarNames b →
-        ∃ arg, List.Mem arg f.inputs ∧ fv = getName arg.1)) :=
-  match Hbody: f.body with
-  | .some b =>
-    if Hall:(getVarNames b).all
-        (fun fv => List.any f.inputs (fun arg => fv == getName arg.1))
-    then by
-      apply isTrue
-      intros b' Hb' fv' Hmem
-      cases Hb'
-      rw [List.all_eq_true] at Hall
-      have Hall' := Hall fv' Hmem
-      rw [List.any_eq_true] at Hall'
-      rcases Hall' with ⟨arg', H⟩
-      exists arg'
-      simp at H
-      exact H
-    else by
-      apply isFalse
-      grind
-  | .none => by
-    apply isTrue; grind
+      getVarNames b ⊆ f.inputs.map (getName ·.1)) :=
+  by exact f.body.decidableForallMem
 
 -- FuncWF.concreteEval_argmatch is not decidable.
 

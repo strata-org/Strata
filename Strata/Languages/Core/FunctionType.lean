@@ -68,5 +68,45 @@ theorem Function.typeCheck_inputs_nodup (C: Core.Expression.TyContext) (Env : Co
   -- func.type succeeded, so we can use LFunc.type_inputs_nodup
   exact Lambda.LFunc.type_inputs_nodup func ty hty
 
+namespace PureFunc
+
+open Lambda Imperative
+open Std (ToFormat Format format)
+
+/--
+Type check a `PureFunc Expression` (used in statement-level function declarations).
+Converts to `Function`, type checks, and converts back.
+-/
+def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl : PureFunc Expression) :
+    Except Format (PureFunc Expression × Core.Expression.TyEnv) := do
+  -- Convert PureFunc to Function for type checking
+  let func : Function := {
+    name := decl.name,
+    typeArgs := decl.typeArgs,
+    isConstr := decl.isConstr,
+    inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+    output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+    body := decl.body,
+    attr := decl.attr,
+    concreteEval := none,  -- Can't convert concreteEval safely
+    axioms := decl.axioms
+  }
+  let (func', Env) ← Function.typeCheck C Env func
+  -- Convert back by wrapping monotypes in trivial polytypes
+  let decl' : PureFunc Expression := {
+    name := func'.name,
+    typeArgs := func'.typeArgs,
+    isConstr := func'.isConstr,
+    inputs := func'.inputs.map (fun (id, mty) => (id, .forAll [] mty)),
+    output := .forAll [] func'.output,
+    body := func'.body,
+    attr := func'.attr,
+    concreteEval := decl.concreteEval,  -- Preserve original
+    axioms := func'.axioms
+  }
+  .ok (decl', Env)
+
+end PureFunc
+
 ---------------------------------------------------------------------
 end Core
