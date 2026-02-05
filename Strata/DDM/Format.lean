@@ -400,12 +400,8 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
     .atom <$> entries.foldlM (init := .nil) fun p a =>
       return (p ++ " " ++ (← a.mformatM).format)
   | .newline =>
-    if z : entries.size = 0 then
-      pure (.atom .nil)
-    else do
-      let f i q s := return s ++ "\n" ++ (← entries[i].mformatM).format
-      let a := (← entries[0].mformatM).format
-      .atom <$> entries.size.foldlM f (start := 1) a
+    .atom <$> entries.foldlM (init := .nil) fun p a =>
+      return (if p.isEmpty then p else p ++ "\n") ++ (← a.mformatM).format
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then
