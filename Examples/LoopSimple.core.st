@@ -11,7 +11,8 @@ spec {
   sum := 0;
   i := 0;
   while(i < n)
-    invariant (i <= n && ((i * (i-1)) div 2 == sum));
+    invariant i <= n
+    invariant ((i * (i-1)) div 2 == sum)
   {
     sum := sum + i;
     i := i + 1;
