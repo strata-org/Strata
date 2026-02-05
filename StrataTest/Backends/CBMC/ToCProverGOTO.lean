@@ -44,7 +44,7 @@ private def lookupType (T : LExprTP.TyEnv) (i : LExprTP.Ident) : Except Format C
     else .error f!"Poly-type unexpected in the context for {i}: {ty}"
 
 private def updateType (T : LExprTP.TyEnv) (i : LExprTP.Ident) (ty : LExprTP.Ty) : LExprTP.TyEnv :=
-  T.insertInContext i (.forAll [] ty)
+  T.addInNewestContext [(i, (.forAll [] ty))]
 
 instance : Imperative.ToGoto LExprTP where
   lookupType := lookupType
