@@ -103,7 +103,7 @@ def callElimCmd (cmd: Command)
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/
 def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
-  runProgram (allowProcList := .none) callElimCmd p
+  runProgram (targetProcList := .none) callElimCmd p
 
 end CallElim
 end Core

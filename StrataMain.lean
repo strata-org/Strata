@@ -236,7 +236,7 @@ def pyAnalyzeCommand : Command where
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    match Core.Transform.runProgram (allowProcList := .none)
+    match Core.Transform.runProgram (targetProcList := .none)
           (Core.ProcedureInlining.inlineCallCmd
             (doInline := λ name _ => name ≠ "main"))
           newPgm .emp with
