@@ -41,7 +41,6 @@ def typeCheck (options : Options) (program : Program)
                 functions := factory,
                 knownTypes := Core.KnownTypes }
   let (program, _T) ← Program.typeCheck C T program
-  -- dbg_trace f!"[Strata.Core] Type variables:\n{T.state.substInfo.subst.length}"
   -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
   if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
   return program

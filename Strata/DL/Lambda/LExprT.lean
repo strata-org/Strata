@@ -175,7 +175,7 @@ def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy) :
       let (xtyid, Env) := TEnv.genTyVar Env
       let xty := (LMonoTy.ftvar xtyid)
       .ok (xty, Env)
-  let Env := Env.insertInContext xv (.forAll [] xty)
+  let Env := Env.addInNewestContext [(xv, (.forAll [] xty))]
   return (xv, xty, Env)
 
 /-- Infer the type of `.fvar x fty`. -/
@@ -256,7 +256,7 @@ partial def inferOp (C: LContext T) (Env : TEnv T.IDMeta) (o : T.Identifier) (ot
           if body.freeVars.idents.all (fun k => k ∈ func.inputs.keys) then
             -- Temporarily add formals in the context.
             let Env := Env.pushEmptyContext
-            let Env := Env.addToContext func.inputPolyTypes
+            let Env := Env.addInNewestContext func.inputPolyTypes
             -- Type check the body and ensure that it unifies with the return type.
             -- let (bodyty, Env) ← infer Env body
             let (body_typed, Env) ← resolveAux C Env body
