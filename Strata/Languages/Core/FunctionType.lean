@@ -75,10 +75,11 @@ open Std (ToFormat Format format)
 
 /--
 Type check a `PureFunc Expression` (used in statement-level function declarations).
-Converts to `Function`, type checks, and converts back.
+Converts to `Function`, type checks, and returns both the type-checked `PureFunc`
+and the `Function` (for adding to the context).
 -/
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl : PureFunc Expression) :
-    Except Format (PureFunc Expression × Core.Expression.TyEnv) := do
+    Except Format (PureFunc Expression × Function × Core.Expression.TyEnv) := do
   -- Convert PureFunc to Function for type checking
   let func : Function := {
     name := decl.name,
@@ -104,7 +105,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl
     concreteEval := decl.concreteEval,  -- Preserve original
     axioms := func'.axioms
   }
-  .ok (decl', Env)
+  .ok (decl', func', Env)
 
 end PureFunc
 

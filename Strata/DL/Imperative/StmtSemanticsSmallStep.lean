@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Imperative.Stmt
+import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
@@ -43,6 +44,7 @@ inductive StepStmt
   {CmdT : Type}
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P)
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P CmdT))]
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
@@ -54,13 +56,13 @@ inductive StepStmt
   | step_cmd :
     EvalCmd δ σ c σ' →
     ----
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmt (.cmd c) σ δ)
       (.terminal σ' δ)
 
   /-- A labeled block steps to its statement list. -/
   | step_block :
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmt (.block _ ss _) σ δ)
       (.stmts ss σ δ)
 
@@ -70,7 +72,7 @@ inductive StepStmt
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmt (.ite c tss ess _) σ δ)
       (.stmts tss σ δ)
 
@@ -80,7 +82,7 @@ inductive StepStmt
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmt (.ite c tss ess _) σ δ)
       (.stmts ess σ δ)
 
@@ -89,7 +91,7 @@ inductive StepStmt
     δ σ g = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmt (.loop g m inv body md) σ δ)
       (.stmts (body ++ [.loop g m inv body md]) σ δ)
 
@@ -98,31 +100,30 @@ inductive StepStmt
     δ σ g = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     ----
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmt (.loop g m inv body _) σ δ)
       (.terminal σ δ)
 
   /- Goto: not implemented, because we plan to remove it. -/
 
   /-- A function declaration extends the evaluator with the new function. -/
-  | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr]
-    (extendEval : SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P) :
-    StepStmt P EvalCmd
+  | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr] :
+    StepStmt P EvalCmd extendEval
       (.stmt (.funcDecl decl md) σ δ)
       (.terminal σ (extendEval δ σ decl))
 
   /-- An empty list of statements steps to `.terminal` with no state changes. -/
   | step_stmts_nil :
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmts [] σ δ)
       (.terminal σ δ)
 
   /-- To evaluate a sequence of statements, evaluate the first statement and
   then evaluate the remaining statements in the resulting state. -/
   | step_stmt_cons :
-    StepStmt P EvalCmd (.stmt s σ δ) (.terminal σ' δ') →
+    StepStmt P EvalCmd extendEval (.stmt s σ δ) (.terminal σ' δ') →
     ----
-    StepStmt P EvalCmd
+    StepStmt P EvalCmd extendEval
       (.stmts (s :: ss) σ δ)
       (.stmts ss σ' δ')
 
@@ -133,11 +134,12 @@ def StepStmtStar
   {CmdT : Type}
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P)
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P CmdT))]
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P] :
-  Config P CmdT → Config P CmdT → Prop := ReflTrans (StepStmt P EvalCmd)
+  Config P CmdT → Config P CmdT → Prop := ReflTrans (StepStmt P EvalCmd extendEval)
 
 /-- A statement evaluates successfully if it can step to a terminal
 configuration.
@@ -150,12 +152,13 @@ def EvalStmtSmall
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P]
   (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P)
   (δ : SemanticEval P)
   (σ : SemanticStore P)
   (s : Stmt P CmdT)
   (σ' : SemanticStore P)
   (δ' : SemanticEval P) : Prop :=
-  StepStmtStar P EvalCmd (.stmt s σ δ) (.terminal σ' δ')
+  StepStmtStar P EvalCmd extendEval (.stmt s σ δ) (.terminal σ' δ')
 
 /-- A list of statements evaluates successfully if it can step to a terminal
 configuration.
@@ -167,12 +170,13 @@ def EvalStmtsSmall
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P]
   (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P)
   (δ : SemanticEval P)
   (σ : SemanticStore P)
   (ss : List (Stmt P CmdT))
   (σ' : SemanticStore P)
   (δ' : SemanticEval P) : Prop :=
-  StepStmtStar P EvalCmd (.stmts ss σ δ) (.terminal σ' δ')
+  StepStmtStar P EvalCmd extendEval (.stmts ss σ δ) (.terminal σ' δ')
 
 ---------------------------------------------------------------------
 
@@ -189,8 +193,9 @@ theorem evalStmtsSmallNil
   [HasBool P] [HasNot P]
   (δ : SemanticEval P)
   (σ : SemanticStore P)
-  (EvalCmd : EvalCmdParam P CmdT) :
-  EvalStmtsSmall P EvalCmd δ σ [] σ δ := by
+  (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P) :
+  EvalStmtsSmall P EvalCmd extendEval δ σ [] σ δ := by
     unfold EvalStmtsSmall
     apply ReflTrans.step
     · exact StepStmt.step_stmts_nil
@@ -207,8 +212,9 @@ def IsTerminal
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P]
   (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P)
   (c : Config P CmdT) : Prop :=
-  ∀ c', ¬ StepStmt P EvalCmd c c'
+  ∀ c', ¬ StepStmt P EvalCmd extendEval c c'
 
 /--
 Terminal configurations are indeed terminal.
@@ -222,8 +228,9 @@ theorem terminalIsTerminal
   [HasBool P] [HasNot P]
   (σ : SemanticStore P)
   (δ : SemanticEval P)
-  (EvalCmd : EvalCmdParam P CmdT) :
-  IsTerminal P EvalCmd (.terminal σ δ) := by
+  (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P) :
+  IsTerminal P EvalCmd extendEval (.terminal σ δ) := by
   unfold IsTerminal
   intro c' h
   cases h

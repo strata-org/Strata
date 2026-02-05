@@ -134,29 +134,35 @@ theorem Statement.typeCheckAux_go_WF :
       any_goals constructor
     | funcDecl decl md =>
       simp [Except.bind] at tcok
-      -- Split through the tryCatch and Function.typeCheck structure
+      -- Split through the tryCatch and PureFunc.typeCheck structure
       simp only [tryCatch] at tcok
       repeat (split at tcok <;> try contradiction)
       -- After splits, we need to extract the Function.typeCheck success
       simp only [Except.mapError, tryCatchThe] at *
-      -- Now split on the Function.typeCheck result
+      -- Now split on the PureFunc.typeCheck result
       split at * <;> try contradiction
       rename_i v_go heq_go v_func heq_func_match heq_tryCatch
-      -- heq_func_match is: (match Function.typeCheck ... with | .error => ... | .ok v => .ok v) = .ok v_func
+      -- v_func has type (PureFunc Expression × Function × TEnv Visibility)
+      -- heq_func_match is: (match PureFunc.typeCheck ... with | .error => ... | .ok v => .ok v) = .ok v_func
       -- The match on .ok case is identity, so we can extract the equality
       have heq_func_tc : Function.typeCheck C T
         { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
           inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
           output := Lambda.LTy.toMonoTypeUnsafe decl.output,
           body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
-        = .ok v_func := by
+        = .ok (v_func.2.1, v_func.2.2) := by
+          simp only [PureFunc.typeCheck, bind, Except.bind] at heq_func_match
           cases h : Function.typeCheck C T
             { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
               inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
               output := Lambda.LTy.toMonoTypeUnsafe decl.output,
               body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms } with
           | error e => simp [h] at heq_func_match
-          | ok v => simp [h] at heq_func_match; simp [heq_func_match]
+          | ok v =>
+            simp [h] at heq_func_match
+            -- heq_func_match shows v_func = (decl', v.fst, v.snd)
+            -- So v_func.2.1 = v.fst and v_func.2.2 = v.snd
+            simp [← heq_func_match]
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
       apply ih tcok <;> try assumption
@@ -169,7 +175,7 @@ theorem Statement.typeCheckAux_go_WF :
           inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
           output := Lambda.LTy.toMonoTypeUnsafe decl.output,
           body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
-        v_func.1 v_func.2 heq_func_tc
+        v_func.2.1 v_func.2.2 heq_func_tc
       -- h_nodup : (decl.inputs.map ...).keys.Nodup, we need: decl.inputs.keys.Nodup
       rw [listMap_keys_map_snd] at h_nodup
       exact h_nodup

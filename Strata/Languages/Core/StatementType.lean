@@ -168,20 +168,9 @@ where
 
         | .funcDecl decl md => do try
           -- Type check the function declaration using the shared helper
-          let (decl', Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
+          -- which returns both the type-checked PureFunc and the Function
+          let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
           -- Add the function to the context so subsequent statements can use it
-          -- Convert PureFunc to Function for adding to context
-          let func : Function := {
-            name := decl'.name,
-            typeArgs := decl'.typeArgs,
-            isConstr := decl'.isConstr,
-            inputs := decl'.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-            output := Lambda.LTy.toMonoTypeUnsafe decl'.output,
-            body := decl'.body,
-            attr := decl'.attr,
-            concreteEval := none,
-            axioms := decl'.axioms
-          }
           let C := C.addFactoryFunction func
           .ok (.funcDecl decl' md, Env, C)
           catch e =>
