@@ -21,6 +21,12 @@ procedure NestedImpureStatements() {
 //  ^^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y;
 }
+
+procedure multipleAssignments() {
+  var x: int;
+  var y: int := ((x := 1;) + x) + (x := 2;);
+  assert y == 4;
+}
 "
 
 #guard_msgs (error, drop all) in

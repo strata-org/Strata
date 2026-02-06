@@ -116,19 +116,35 @@ def PyAliasToCoreExpr (a : Python.alias SourceRange) : Core.Expression.Expr :=
   assert! as_n.val.isNone
   .strConst () n.val
 
-def handleAdd (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  let lty : Lambda.LMonoTy := mty[string]
-  let rty : Lambda.LMonoTy := mty[string]
-  match lty, rty with
-  | (.tcons "string" []), (.tcons "string" []) => .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
-  | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
+def handleAdd (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .intConst () l, .intConst () r => .intConst () (l + r)
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "int" []), some (_, .tcons "int" []) =>
+      .app () (.app () (.op () "Int.Add" mty[int → (int → int)]) lhs) rhs
+    | some (_, .tcons "string" []), some (_, .tcons "string" []) =>
+      .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
+    | _, _ => panic! s!"Unsupported types for +. Exprs: {lhs} and {rhs}"
+  | _, _ => .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
 
-def handleSub (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  let lty : Lambda.LMonoTy := (.tcons "Datetime" [])
-  let rty : Lambda.LMonoTy := (.tcons "int" [])
-  match lty, rty with
-  | (.tcons "Datetime" []), (.tcons "int" []) => .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
-  | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
+def handleSub (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .intConst () l, .intConst () r => .intConst () (l - r)
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "int" []), some (_, .tcons "int" []) =>
+      .app () (.app () (.op () "Int.Sub" mty[int → (int → int)]) lhs) rhs
+    | some (_, .tcons "Datetime" []), some (_, .tcons "int" []) =>
+      .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
+    | some (_, .tcons "Datetime" []), some (_, .tcons "Timedelta" []) =>
+      .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
+    | _, _ => panic! s!"Unsupported types for -. Exprs: {lhs} and {rhs}"
+  | _, _ => panic! s!"Unsupported args for -. Got: {lhs} and {rhs}"
 
 def handleMult (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
   match lhs, rhs with
@@ -154,13 +170,35 @@ def handleNot (arg: Core.Expression.Expr) : Core.Expression.Expr :=
   | (.tcons "ListStr" []) => .eq () arg (.op () "ListStr_nil" none)
   | _ => panic! s!"Unimplemented not op for {arg}"
 
-def handleLtE (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  let eq := (.eq () lhs rhs)
-  let lt := (.app () (.app () (.op () "Datetime_lt" none) lhs) rhs)
-  (.app () (.app () (.op () "Bool.Or" none) eq) lt)
+def handleLt (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "Datetime" []), some (_, .tcons "Datetime" []) =>
+      .app () (.app () (.op () "Datetime_lt" none) lhs) rhs
+    | _, _ => .app () (.app () (.op () "Int.Lt" mty[int → (int → bool)]) lhs) rhs
+  | _, _ => .app () (.app () (.op () "Int.Lt" mty[int → (int → bool)]) lhs) rhs
+
+def handleLtE (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "Datetime" []), some (_, .tcons "Datetime" []) =>
+      let eq := (.eq () lhs rhs)
+      let lt := (.app () (.app () (.op () "Datetime_lt" none) lhs) rhs)
+      (.app () (.app () (.op () "Bool.Or" none) eq) lt)
+    | _, _ => .app () (.app () (.op () "Int.Le" mty[int → (int → bool)]) lhs) rhs
+  | _, _ => .app () (.app () (.op () "Int.Le" mty[int → (int → bool)]) lhs) rhs
 
 def handleGt (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  (.app () (.app () (.op () "Float_gt" none) lhs) rhs)
+  .app () (.app () (.op () "Int.Gt" mty[int → (int → bool)]) lhs) rhs
+
+def handleGtE (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  .app () (.app () (.op () "Int.Ge" mty[int → (int → bool)]) lhs) rhs
 
 structure SubstitutionRecord where
   pyExpr : Python.expr SourceRange
@@ -428,11 +466,13 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       let rhs := (PyExprToCore translation_ctx rhs)
       match op with
       | .Add _ =>
-        {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd lhs.expr rhs.expr}
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd translation_ctx lhs.expr rhs.expr}
       | .Sub _ =>
-        {stmts := lhs.stmts ++ rhs.stmts, expr := handleSub lhs.expr rhs.expr}
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleSub translation_ctx lhs.expr rhs.expr}
       | .Mult _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleMult translation_ctx lhs.expr rhs.expr}
+      | .FloorDiv _ =>
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleFloorDiv translation_ctx lhs.expr rhs.expr}
       | _ => panic! s!"Unhandled BinOp: {repr e}"
     | .Compare _ lhs op rhs =>
       let lhs := PyExprToCore translation_ctx lhs
@@ -444,10 +484,14 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
           {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq () lhs.expr rhs.expr)}
         | Strata.Python.cmpop.In _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := .app () (.app () (.op () "str_in_dict_str_any" none) lhs.expr) rhs.expr}
+        | Strata.Python.cmpop.Lt _ =>
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLt translation_ctx lhs.expr rhs.expr}
         | Strata.Python.cmpop.LtE _ =>
-          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE lhs.expr rhs.expr}
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE translation_ctx lhs.expr rhs.expr}
         | Strata.Python.cmpop.Gt _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleGt lhs.expr rhs.expr}
+        | Strata.Python.cmpop.GtE _ =>
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleGtE lhs.expr rhs.expr}
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
     | .Dict _ keys values =>
