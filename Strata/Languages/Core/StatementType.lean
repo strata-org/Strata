@@ -170,7 +170,6 @@ where
           -- Type check the function declaration using the shared helper
           -- which returns both the type-checked PureFunc and the Function
           let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
-          -- Add the function to the context so subsequent statements can use it
           let C := C.addFactoryFunction func
           .ok (.funcDecl decl' md, Env, C)
           catch e =>
@@ -207,6 +206,12 @@ private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option E
 
 /--
 Apply type substitution `S` to a statement.
+
+Note: This substitutes type variables in types, not term variables. For
+`funcDecl`, the input identifiers (term-level names like `x`, `y`) are
+unchanged; only the types of those inputs are substituted. There is no
+name collision concern between type variables in `S` and term-level
+input identifiers.
 -/
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with

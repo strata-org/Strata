@@ -72,7 +72,16 @@ structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (me
 structure WFgotoProp  (p : Program) (label : String) : Prop where
 
 /-- Well-formedness for local function declarations.
-    Checks that function parameter names are unique. -/
+    Checks that function parameter names are unique.
+
+    This is kept separate from `FuncWF` (from `Strata.DL.Util.Func`) because:
+    1. `FuncWF` requires function parameters (`getName`, `getVarNames`) that add complexity
+    2. `FuncWF.concreteEval_argmatch` is not decidable, making it harder to use in proofs
+    3. For statement-level WF, only `arg_nodup` is needed; the additional `FuncWF`
+       properties (`body_freevars`, `concreteEval_argmatch`) are for factory functions
+
+    Note: `WFfuncDeclProp` checks uniqueness of full `CoreIdent` (including visibility),
+    while `FuncWF.arg_nodup` checks uniqueness of just the string names. -/
 structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) : Prop where
   arg_nodup : decl.inputs.keys.Nodup
 
