@@ -30,7 +30,7 @@ initialize stdoutEventsRef : IO.Ref (Std.HashSet EventType) ← IO.mkRef {}
 Log message for event type if enabled in `stdoutEventsRef`.
 Output format: `[event]: message`
 -/
-def logEvent (event : EventType) (message : String) : BaseIO Unit := do
+private def logEvent (event : EventType) (message : String) : BaseIO Unit := do
   let events ← stdoutEventsRef.get
   if event ∈ events then
     let _ ← IO.eprintln s!"[{event}]: {message}" |>.toBaseIO
@@ -45,7 +45,7 @@ inductive Pred where
 
 namespace Pred
 
-def not (p : Pred) : Pred :=
+private def not (p : Pred) : Pred :=
   match p with
   | .const b => .const (¬ b)
 
@@ -75,7 +75,7 @@ structure ModuleName where
 
 namespace ModuleName
 
-def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) : Except String ModuleName :=
+private def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) : Except String ModuleName :=
   if h : cur.IsAtEnd then
     let r := mod.extract start cur
     pure {
@@ -610,7 +610,7 @@ instance {argc} : PySpecMClass (SpecAssertionM argc) where
     let new_cnt := (←get).errors.size
     return (cnt = new_cnt, r)
 
-def transPred {argc} (_e : expr SourceRange) : SpecAssertionM argc Pred := do
+private def transPred {argc} (_e : expr SourceRange) : SpecAssertionM argc Pred := do
   -- FIXME
   pure (.const true)
 
