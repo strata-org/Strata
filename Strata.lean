@@ -30,3 +30,6 @@ import Strata.Transform.DetToNondetCorrect
 
 /- Backends -/
 import Strata.Backends.CBMC.CProver
+
+/- Simple API -/
+import Strata.SimpleAPI

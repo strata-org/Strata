@@ -46,7 +46,7 @@ def testSMTGeneration (prog : Program) : IO Unit := do
     let cleanErr := err.splitOn "at {" |>.head!
     let suffix := err.splitOn "}: " |>.tail.headD ""
     let finalErr := if suffix.isEmpty then cleanErr else cleanErr ++ suffix
-    IO.println s!"error: {finalErr.trim}"
+    IO.println s!"error: {finalErr.trimAscii}"
 
   -- Get and print SMT commands
   let contents ← buffer.get

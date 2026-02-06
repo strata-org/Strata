@@ -7,12 +7,12 @@
 
 
 import LangDefDoc
-open Verso.Genre.Manual (Config manualMain)
+open Verso.Genre.Manual (RenderConfig manualMain)
 
-def config : Config where
+def config : RenderConfig where
   emitTeX := false
-  emitHtmlSingle := true
-  emitHtmlMulti := false
+  emitHtmlSingle := .immediately
+  emitHtmlMulti := .no
   htmlDepth := 2
 
 def main := manualMain (%doc LangDefDoc) (config := config)

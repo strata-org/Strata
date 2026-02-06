@@ -30,27 +30,26 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
   for i in [0:lines.length] do
     let line := lines[i]!
     -- Check if this is a comment line with diagnostic expectation
-    if line.trimLeft.startsWith "//" then
-      let trimmed := line.trimLeft.drop 2  -- Remove "//"
+    if line.trimAsciiStart.startsWith "//" then
+      let trimmed := line.trimAsciiStart.drop 2 |>.toString -- Remove "//"
       -- Find the caret sequence
-      let caretStart := trimmed.find (· == '^')
-      let mut currentCaret := caretStart
-      while not (Pos.Raw.atEnd trimmed currentCaret) && (Pos.Raw.get trimmed currentCaret) == '^' do
-        currentCaret := Pos.Raw.next trimmed currentCaret
+      let caretStart := trimmed.find (· = '^')
+      -- Find end of carets
+      let currentCaret := caretStart.find (· ≠ '^')
 
       -- Get the message part after carets
-      let afterCarets := trimmed.drop currentCaret.byteIdx |>.trim
+      let afterCarets := trimmed.extract currentCaret trimmed.endPos |>.trimAscii |>.toString
       if afterCarets.length > 0 then
         -- Parse level and message
         match afterCarets.splitOn ":" with
         | level :: messageParts =>
-          let level := level.trim
-          let message := (": ".intercalate messageParts).trim
+          let level := level.trimAscii.toString
+          let message := (": ".intercalate messageParts).trimAscii.toString
 
           -- Calculate column positions (carets are relative to line start including comment spacing)
-          let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).length + "//".length
-          let caretColStart := commentPrefix + caretStart.byteIdx
-          let caretColEnd := commentPrefix + currentCaret.byteIdx
+          let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).toString.length + "//".length
+          let caretColStart := commentPrefix + caretStart.offset.byteIdx
+          let caretColEnd := commentPrefix + currentCaret.offset.byteIdx
 
           -- The diagnostic is on the previous line
           if i > 0 then
