@@ -83,23 +83,23 @@ abbrev Signature := Command
 end DDM
 
 /-- Converts a Python identifier to an annotated string for DDM serialization. -/
-def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
+private def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
   ⟨.none, toString d⟩
 
 /-- Converts a Lean `Int` to the DDM representation which separates natural and negative cases. -/
-def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
+private def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
   match i with
   | .ofNat n => .natInt ann ⟨ann, n⟩
   | .negSucc n => .negSuccInt ann ⟨ann, n⟩
 
-def DDM.Int.ofDDM : DDM.Int α → _root_.Int
+private def DDM.Int.ofDDM : DDM.Int α → _root_.Int
 | .natInt _ ⟨_, n⟩ => .ofNat n
 | .negSuccInt _ ⟨_, n⟩ => .negSucc n
 
 
 mutual
 
-def SpecAtomType.toDDM (d : SpecAtomType) : DDM.SpecType SourceRange :=
+private def SpecAtomType.toDDM (d : SpecAtomType) : DDM.SpecType SourceRange :=
   match d with
   | .ident nm args =>
     if args.isEmpty then
@@ -122,7 +122,7 @@ def SpecAtomType.toDDM (d : SpecAtomType) : DDM.SpecType SourceRange :=
     .typeTypedDict .none ⟨.none, a⟩ ⟨.none, isTotal⟩
 termination_by sizeOf d
 
-def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
+private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
   assert! d.atoms.size > 0
   if p : d.atoms.size = 1 then
     d.atoms[0].toDDM
@@ -138,10 +138,10 @@ decreasing_by
 end
 
 
-def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
+private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
   .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.hasDefault⟩
 
-def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
+private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
   .mkFunDecl
     d.loc
     (name := .mk d.nameLoc d.name)
@@ -150,7 +150,7 @@ def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
     (returnType := d.returnType.toDDM)
     (isOverload := ⟨.none, d.isOverload⟩)
 
-def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
+private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   match sig with
   | .externTypeDecl name source =>
     .externTypeDecl .none ⟨.none, name⟩ source.toDDM
@@ -161,7 +161,7 @@ def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   | .typeDef d =>
     .typeDef d.loc (.mk d.nameLoc d.name) d.definition.toDDM
 
-def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
+private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
   | .typeClassNoArgs _ ⟨_, cl⟩ =>
     .ofAtom <| .pyClass cl #[]
@@ -201,7 +201,7 @@ decreasing_by
   · decreasing_tactic
   · decreasing_tactic
 
-def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
+private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
   let .mkArgDecl _ ⟨_, name⟩ type ⟨_, hasDefault⟩ := d
   {
     name := name
@@ -209,7 +209,7 @@ def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
     hasDefault := hasDefault
   }
 
-def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
+private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
   let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
                  returnType ⟨_, isOverload⟩ := d
   {
@@ -226,7 +226,7 @@ def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
     postconditions := #[] -- FIXME
   }
 
-def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
+private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
   match cmd with
   | .externTypeDecl _ ⟨_, name⟩ ⟨_, ddmDefinition⟩ =>
     if let some definition := PythonIdent.ofString ddmDefinition then

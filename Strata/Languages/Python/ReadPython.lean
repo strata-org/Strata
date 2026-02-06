@@ -11,7 +11,7 @@ public import Strata.Languages.Python.PythonDialect
 public section
 namespace Strata.Python
 
-def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
+private def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
   if ! Ion.isIonFile bytes then
     throw <| s!"{strataPath} is not an Ion file."
   match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
@@ -29,7 +29,7 @@ def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except Str
   | .error msg =>
     throw s!"Error reading {strataPath}: {msg}"
 
-def formatParseFailureStderr (stderr : String) : Option String := do
+private def formatParseFailureStderr (stderr : String) : Option String := do
   match stderr.find? "Parse failure:\n" with
   | some idx =>
     match idx.find? "\n" with
