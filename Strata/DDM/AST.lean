@@ -6,10 +6,10 @@
 module
 
 public import Std.Data.HashMap.Basic
+public import Strata.DDM.AST.Datatype
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
-public import Lean.Data.Position
-public import Strata.DDM.AST.Datatype
+public import Strata.DDM.Util.SourceRange
 
 import Std.Data.HashMap
 import all Strata.DDM.Util.Array
@@ -158,6 +158,28 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
 
+/-- Monadic map over all annotations in a type expression. -/
+@[specialize]
+def mapAnnM {α β} {m} [Monad m] (t : TypeExprF α) (f : α → m β)
+    : m (TypeExprF β) := do
+  match t with
+  | .ident ann name args =>
+    return .ident (← f ann) name
+      (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+  | .bvar ann index => return .bvar (← f ann) index
+  | .tvar ann name => return .tvar (← f ann) name
+  | .fvar ann fv args =>
+    return .fvar (← f ann) fv
+      (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+  | .arrow ann arg res =>
+    return .arrow (← f ann) (← arg.mapAnnM f) (← res.mapAnnM f)
+termination_by t
+
+/-- Map over all annotations in a type expression. -/
+@[specialize]
+def mapAnn {α β} (t : TypeExprF α) (f : α → β) : TypeExprF β :=
+  t.mapAnnM (m := Id) f
+
 end TypeExprF
 
 /-- Separator format for sequence formatting -/
@@ -267,6 +289,10 @@ end OperationF
 
 namespace ExprF
 
+/--
+Flattens a curried application expression into its head and list of arguments.
+For example, `((f a) b) c` becomes `(f, [a, b, c])`.
+-/
 public def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α × List (ArgF α) :=
   match e with
   | .app _ f e => f.flatten (e :: prev)
@@ -274,121 +300,93 @@ public def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α 
 
 end ExprF
 
-/--
-Source location information in the DDM is defined
-by a range of bytes in a UTF-8 string with the input
-Line/column information can be construced from a
-`Lean.FileMap`
+/-- Monadic map over all annotations in a syntax category. -/
+@[specialize]
+def SyntaxCatF.mapAnnM {α β} {m} [Monad m] (c : SyntaxCatF α)
+    (f : α → m β) : m (SyntaxCatF β) := do
+  return {
+    ann := ← f c.ann
+    name := c.name
+    args := ← c.args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f
+  }
+termination_by sizeOf c
+decreasing_by
+  cases c
+  case mk ann name args =>
+    decreasing_tactic
 
-As an example, in the string `"123abc\ndef"`, the string
-`"abc"` has the position `{start := 3, stop := 6 }` while
-`"def"` has the position `{start := 7, stop := 10 }`.
--/
-structure SourceRange where
-  /-- The starting offset of the source range. -/
-  start : String.Pos.Raw
-  /-- One past the end of the range. -/
-  stop : String.Pos.Raw
-deriving DecidableEq, Inhabited, Repr
+/-- Map over all annotations in a syntax category. -/
+@[specialize]
+def SyntaxCatF.mapAnn {α β} (c : SyntaxCatF α) (f : α → β) : SyntaxCatF β :=
+  c.mapAnnM (m := Id) f
 
-namespace SourceRange
+mutual
 
-def none : SourceRange := { start := 0, stop := 0 }
+/-- Monadic map over all annotations in an expression. -/
+@[specialize]
+def ExprF.mapAnnM {α β} {m} [Monad m] (e : ExprF α) (f : α → m β)
+    : m (ExprF β) := do
+  match e with
+  | .bvar ann idx => return .bvar (← f ann) idx
+  | .fvar ann idx => return .fvar (← f ann) idx
+  | .fn ann ident => return .fn (← f ann) ident
+  | .app ann e a =>
+    return .app (← f ann) (← e.mapAnnM f) (← a.mapAnnM f)
+termination_by sizeOf e
 
-def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
+/-- Monadic map over all annotations in an argument. -/
+@[specialize]
+def ArgF.mapAnnM {α β} {m} [Monad m] (a : ArgF α) (f : α → m β)
+    : m (ArgF β) := do
+  match a with
+  | .op o => return .op (← o.mapAnnM f)
+  | .cat c => return .cat (← c.mapAnnM f)
+  | .expr e => return .expr (← e.mapAnnM f)
+  | .type t => return .type (← t.mapAnnM f)
+  | .ident ann i => return .ident (← f ann) i
+  | .num ann v => return .num (← f ann) v
+  | .decimal ann v => return .decimal (← f ann) v
+  | .strlit ann i => return .strlit (← f ann) i
+  | .bytes ann b => return .bytes (← f ann) b
+  | .option ann none => return .option (← f ann) none
+  | .option ann (some a) =>
+    return .option (← f ann) (some (← a.mapAnnM f))
+  | .seq ann sep l =>
+    return .seq (← f ann) sep
+      (← l.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+termination_by sizeOf a
 
-instance : ToFormat SourceRange where
- format fr := f!"{fr.start}-{fr.stop}"
+/-- Map a monadic function over all annotations in an operation. -/
+@[specialize]
+def OperationF.mapAnnM {α β} {m} [Monad m] (op : OperationF α)
+    (f : α → m β) : m (OperationF β) := do
+  return {
+    ann := ← f op.ann
+    name := op.name
+    args := ← op.args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f
+  }
+termination_by sizeOf op
+decreasing_by
+  cases op
+  case mk ann name args =>
+    decreasing_tactic
 
-end SourceRange
+end
 
-inductive Uri where
-  | file (path: String)
-  deriving DecidableEq, Repr, Inhabited
+/-- Map a pure function over all annotations in an expression. -/
+@[specialize]
+def ExprF.mapAnn {α β} (e : ExprF α) (f : α → β) : ExprF β :=
+  e.mapAnnM (m := Id) f
 
-instance : ToFormat Uri where
- format fr := match fr with | .file path => path
+/-- Map a pure function over all annotations in an argument. -/
+@[specialize]
+def ArgF.mapAnn {α β} (a : ArgF α) (f : α → β) : ArgF β :=
+  a.mapAnnM (m := Id) f
 
-structure FileRange where
-  file: Uri
-  range: Strata.SourceRange
-  deriving DecidableEq, Repr, Inhabited
-
-instance : ToFormat FileRange where
- format fr := f!"{fr.file}:{fr.range}"
-
-/-- A default file range for errors without source location.
-This should only be used for generated nodes that are guaranteed to be correct. -/
-def FileRange.unknown : FileRange :=
-  { file := .file "<unknown>", range := SourceRange.none }
-
-/-- A diagnostic model that holds a file range and a message.
-    This can be converted to a formatted string using a FileMap. -/
-structure DiagnosticModel where
-  fileRange : FileRange
-  message : String
-  deriving Repr, BEq, Inhabited
-
-instance : Inhabited DiagnosticModel where
-  default := { fileRange := FileRange.unknown, message := "" }
-
-/-- Create a DiagnosticModel from just a message (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := msg }
-
-/-- Create a DiagnosticModel from a Format (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := toString fmt }
-
-/-- Create a DiagnosticModel with source location. -/
-def DiagnosticModel.withRange (fr : FileRange) (msg : Format) : DiagnosticModel :=
-  { fileRange := fr, message := toString msg }
-
-/-- Format a file range using a FileMap to convert byte offsets to line/column positions. -/
-def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  let baseName := match fr.file with
-                  | .file path => (path.splitToList (· == '/')).getLast!
-  match fileMap with
-  | some fm =>
-    let startPos := fm.toPosition fr.range.start
-    let endPos := fm.toPosition fr.range.stop
-    if includeEnd? then
-      if startPos.line == endPos.line then
-        f!"{baseName}({startPos.line},({startPos.column}-{endPos.column}))"
-      else
-        f!"{baseName}(({startPos.line},{startPos.column})-({endPos.line},{endPos.column}))"
-    else
-      f!"{baseName}({startPos.line}, {startPos.column})"
-  | none =>
-    if fr.range.isNone then
-      f!""
-    else
-      f!"{baseName}({fr.range.start}-{fr.range.stop})"
-
-/-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
-def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  let rangeStr := dm.fileRange.format fileMap includeEnd?
-  if dm.fileRange.range.isNone then
-    f!"{dm.message}"
-  else
-    f!"{rangeStr} {dm.message}"
-
-/-- Format just the file range portion of a DiagnosticModel. -/
-def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  dm.fileRange.format fileMap includeEnd?
-
-/-- Update the file range of a DiagnosticModel if it's currently unknown.
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) : DiagnosticModel :=
-  if dm.fileRange.range.isNone then
-    { dm with fileRange := fr }
-  else
-    dm
-
-instance : ToString DiagnosticModel where
-  toString dm := dm.format none |> toString
+/-- Map a pure function over all annotations in an operation. -/
+@[specialize]
+def OperationF.mapAnn {α β} (op : OperationF α) (f : α → β) : OperationF β :=
+  op.mapAnnM (m := Id) f
 
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange
@@ -612,6 +610,10 @@ end Metadata
 
 abbrev Var := String
 
+/--
+Converts a deBruijn index to a level (counting from the start rather than
+the end). Used internally for metadata argument processing.
+-/
 private def catbvarLevel (varCount : Nat) : MetadataArg → Nat
 | .catbvar idx =>
   if idx < varCount then
@@ -1068,6 +1070,7 @@ def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 
 end BindingSpec
 
+/-- Monad for parsing new binding specifications, accumulating error messages. -/
 private abbrev NewBindingM := StateM (Array String)
 
 private def newBindingErr (msg : String) : NewBindingM Unit :=
@@ -1713,7 +1716,9 @@ end DialectMap
 mutual
 
 /--
-Invoke a function `f` over each of the declaration specifications for an arg.
+Recursively folds over all binding specifications declared within an argument.
+Used to collect type bindings, value bindings, and other declarations that
+appear nested within operation arguments.
 -/
 partial def foldOverArgBindingSpecs {α β}
     (m : DialectMap)
@@ -1750,7 +1755,7 @@ private partial def OperationF.foldBindingSpecs {α β}
         | some lvl => foldOverArgAtLevel m f init argDecls argsV lvl
       decl.newBindings.foldl (init := init) fun a b => f a op.ann b argsV
     else
-      @panic _ ⟨init⟩ "Expected arguments to match bindings"
+      @panic _ ⟨init⟩ s!"{op.name} expects {argDecls.size} arguments when {args.size} provided."
   | _ => @panic _ ⟨init⟩ s!"Unknown operation {op.name}"
 
 /--

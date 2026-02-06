@@ -13,6 +13,8 @@ from strata.base import Dialect, Program
 import strata.pythonast as pythonast
 import sys
 
+sys.setrecursionlimit(2500)
+
 def write_dialect(dialect : Dialect, dir : Path):
     if dir.exists():
         if not dir.is_dir():
@@ -36,6 +38,9 @@ def python_dialect(path : str|None) -> Dialect:
     with open(path, 'rb') as f:
         return Dialect.from_ion(f)
 
+# Error code for py_to_strata on parse failure.
+exit_parse_failure = 100
+
 def py_to_strata_imp(args):
     PythonAST = python_dialect(args.dialect)
     parser = pythonast.Parser(PythonAST)
@@ -44,8 +49,8 @@ def py_to_strata_imp(args):
     try:
         (_, p) = parser.parse_module(path.read_bytes(), path)
     except SyntaxError as e:
-        print(f"Error parsing {path}:\n  {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"Parse failure:\n  {e}", file=sys.stderr)
+        sys.exit(exit_parse_failure)
     with open(args.output, 'wb') as w:
         ion.dump(p.to_ion(), w, binary=True)
 
