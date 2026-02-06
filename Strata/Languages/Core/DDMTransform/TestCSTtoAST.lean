@@ -28,7 +28,11 @@ program Core;
 // type Byte := bv8;
 // type Word := bv32;
 // type IntMap := Map int int;
-type IntAlphaMap (a : Type) := Map int a;
+
+type Foo (a : Type, b : Type);
+type FooAlias (a : Type) := Foo bool bool;
+
+//type IntAlphaMap (a : Type) := Map int a;
 #end
 
 

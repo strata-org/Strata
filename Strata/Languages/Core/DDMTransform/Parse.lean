@@ -234,11 +234,11 @@ op spec_mk (elts : Seq SpecElt) : Spec => "spec" "{\n" indent(2, elts) "}";
 
 category Binding;
 @[declare(name, tp)]
-op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name ":" tp;
+op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp;
 
 category Bindings;
 @[scope(bindings)]
-op mkBindings (bindings : CommaSepBy Binding) : Bindings => "(" bindings ")";
+op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 
 op command_procedure (name : Ident,
                       typeArgs : Option TypeArgs,
@@ -264,7 +264,7 @@ op command_typesynonym (name : Ident,
                         args : Option Bindings,
                         targs : Option TypeArgs,
                         @[scope(args)] rhs : Type) : Command =>
-  "type " name args ":=" targs rhs ";\n";
+  "type " name args " := " targs rhs ";\n";
 
 @[declare(name, r)]
 op command_constdecl (name : Ident,
@@ -277,7 +277,7 @@ op command_fndecl (name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope(typeArgs)] r : Type) : Command =>
-  "function " name typeArgs b ":" r ";\n";
+  "function " name typeArgs b " : " r ";\n";
 
 category Inline;
 op inline () : Inline => "inline";
