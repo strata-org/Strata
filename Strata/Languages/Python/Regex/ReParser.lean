@@ -158,12 +158,6 @@ def parseBounds (s : String) (pos : String.Pos.Raw) : Except ParseError (Nat × 
 
 -------------------------------------------------------------------------------
 
--- N.B. This disables a feature introduced in Lean PR #10823 that
--- causes a timeout in the mutual block below.
---
--- Once we upgrade past 4.26.0, we should be able to remove this option.
-set_option backwards.match.sparseCases false
-
 mutual
 /--
 Parse atom: single element (char, class, anchor, group) with optional
@@ -303,8 +297,6 @@ partial def parseGroup (s : String) (pos : String.Pos.Raw) (endChar : Option Cha
   | head :: tail => pure (tail.foldl RegexAST.union head, i)
 
 end
-
-set_option backwards.match.sparseCases true
 
 /-- Parse entire regex string (implicit top-level group). -/
 def parseTop (s : String) : Except ParseError RegexAST :=

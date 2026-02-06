@@ -37,7 +37,7 @@ Prepend the current namespace to the Lean name and convert to an identifier.
 def mkScopedIdent (scope : Name) (subName : Lean.Name) : Ident :=
   let fullName := scope ++ subName
   let nameStr := toString subName
-  .mk (.ident .none nameStr.toSubstring subName [.decl fullName []])
+  .mk (.ident .none nameStr.toRawSubstring subName [.decl fullName []])
 
 /--
 Prepend the current namespace to the Lean name and convert to an identifier.
@@ -241,7 +241,7 @@ def CatOpM.addError (msg : String) : CatOpM Unit :=
 
 def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
-  .mk (.ident .none name.toString.toSubstring rootName [.decl name []])
+  .mk (.ident .none name.toString.toRawSubstring rootName [.decl name []])
 
 /-- Maps primitive Init categories to their Lean types. -/
 def declaredCategories : Std.HashMap CategoryName Name := .ofList [
@@ -469,7 +469,7 @@ def CatOpMap.onlyUsedCategories (m : CatOpMap) (d : Dialect) (exprHasEta : Bool)
 /- Returns an identifier from a string. -/
 def localIdent (name : String) : Ident :=
   let dName := .anonymous |>.str name
-  .mk (.ident .none name.toSubstring dName [])
+  .mk (.ident .none name.toRawSubstring dName [])
 
 def orderedSyncatGroups (categories : Array (QualifiedIdent × Array DefaultCtor)) : Array (Array (QualifiedIdent × Array DefaultCtor)) :=
   let n := categories.size
@@ -507,7 +507,7 @@ def mkCategoryIdent (scope : Name) (name : Name) : Ident :=
   let mkDeclName (comp : List Name) : Ident :=
     let subName := comp.foldl (init := .anonymous) fun r nm => r ++ nm
     let sName := toString subName
-    .mk (.ident .none sName.toSubstring subName [.decl name []])
+    .mk (.ident .none sName.toRawSubstring subName [.decl name []])
 
   let rec aux : Name → List Name → Ident
     | .anonymous, _ => mkRootIdent name
@@ -529,7 +529,7 @@ Prepend the current namespace to the Lean name and convert to an identifier.
 def scopedIdent (scope subName : Lean.Name) : Ident :=
   let name := scope ++ subName
   let nameStr := toString subName
-  .mk (.ident .none nameStr.toSubstring subName [.decl name []])
+  .mk (.ident .none nameStr.toRawSubstring subName [.decl name []])
 
 /--
 Prepend the current namespace to the Lean name and convert to an identifier.

@@ -23,9 +23,9 @@ spec {
   i := 0;
   s := 0;
   while (i < n)
-    invariant 0 <= i &&
-              i <= n &&
-              s == (i * (i + 1)) div 2;
+    invariant 0 <= i
+    invariant i <= n
+    invariant s == (i * (i + 1)) div 2
   {
     i := (i + 1);
     s := (s + i);
@@ -99,11 +99,14 @@ spec {
   var y: int;
   x := 0;
   while (x < n)
-    invariant x >= 0 && x <= n && n < top;
+    invariant x >= 0
+    invariant x <= n
+    invariant n < top
   {
     y := 0;
     while (y < x)
-      invariant y >= 0 && y <= x;
+      invariant y >= 0
+      invariant y <= x
     {
       y := y + 1;
     }

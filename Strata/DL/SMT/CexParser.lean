@@ -91,7 +91,7 @@ def parseCEx1 : Parser CEx := do
     return { pairs := [] }))
 
 def parseCEx (cex : String) : Except Format CEx :=
-  match parseCEx1 ⟨cex, cex.startValidPos⟩ with
+  match parseCEx1 ⟨cex, cex.startPos⟩ with
   | Std.Internal.Parsec.ParseResult.success _ result => Except.ok result
   | Std.Internal.Parsec.ParseResult.error ⟨_, pos⟩ msg => Except.error s!"Parse error at {pos.offset}: {msg}"
 
