@@ -337,7 +337,38 @@ op command_datatype (name : Ident,
 
 namespace CoreDDM
 
---#strata_gen Boogie
+#strata_gen Core
+
+-- #print Command
+-- #print Command.toAst
+-- #print Bindings
+-- #check Command.ofAst
+-- #print OfAstM
+
+/-
+deriving instance DecidableEq for TypeVar
+deriving instance DecidableEq for TypeArgs
+-- deriving instance DecidableEq for Bind
+-- deriving instance DecidableEq for DeclList
+-- deriving instance DecidableEq for MonoBind
+-- deriving instance DecidableEq for MonoDeclList
+-- deriving instance DecidableEq for TriggerGroup
+-- deriving instance DecidableEq for Triggers
+-- deriving instance DecidableEq for Lhs
+-- deriving instance DecidableEq for Statement
+-- deriving instance DecidableEq for Block
+-- deriving instance DecidableEq for Else
+deriving instance DecidableEq for Label
+-- deriving instance DecidableEq for Invariant
+-- deriving instance DecidableEq for SpecElt
+deriving instance DecidableEq for Free
+-- deriving instance DecidableEq for Spec
+-- deriving instance DecidableEq for Binding
+-- deriving instance DecidableEq for Bindings
+deriving instance DecidableEq for Inline
+-- deriving instance DecidableEq for Constructor
+-- deriving instance DecidableEq for ConstructorList
+-/
 
 end CoreDDM
 
