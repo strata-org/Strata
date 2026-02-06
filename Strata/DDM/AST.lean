@@ -171,8 +171,8 @@ def mapAnnM {α β} {m} [Monad m] (t : TypeExprF α) (f : α → m β)
       (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
   | .bvar ann index => return .bvar (← f ann) index
   | .tvar ann name => return .tvar (← f ann) name
-  | .fvar ann fv args =>
-    return .fvar (← f ann) fv
+  | .fvar ann fv name args =>
+    return .fvar (← f ann) fv name
       (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
   | .arrow ann arg res =>
     return .arrow (← f ann) (← arg.mapAnnM f) (← res.mapAnnM f)
