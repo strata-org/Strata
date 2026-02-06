@@ -45,11 +45,9 @@ def constant.ann {α} : constant α → α
 | ConEllipsis ann .. => ann
 | ConBytes ann .. => ann
 
-@[expose]
 def keyword.ann {α} : keyword α → α
 | .mk_keyword ann _ _ => ann
 
-@[expose]
 def keyword.arg {α} : keyword α → Ann (Option (Ann String α)) α
 | .mk_keyword _ arg _ => arg
 
@@ -65,7 +63,6 @@ def value {α} (i : int α) : Int :=
   | IntNeg _ n => - (n.val : Int)
 
 end int
-
 
 namespace expr
 

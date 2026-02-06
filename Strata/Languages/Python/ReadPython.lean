@@ -112,6 +112,7 @@ def pythonToStrata (dialectFile pythonFile : System.FilePath)
     | .ok () => pure ()
     | .error msg => throw s!"Internal: Error deleting temp file {strataFile}: {msg}"
 
+/-- Reads a pre-compiled Strata file (Ion format) containing Python AST statements. -/
 def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
   let bytes ←
     match ← IO.FS.readBinFile strataPath |>.toBaseIO with

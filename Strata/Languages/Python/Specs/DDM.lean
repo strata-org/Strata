@@ -96,7 +96,6 @@ private def DDM.Int.ofDDM : DDM.Int α → _root_.Int
 | .natInt _ ⟨_, n⟩ => .ofNat n
 | .negSuccInt _ ⟨_, n⟩ => .negSucc n
 
-
 mutual
 
 private def SpecAtomType.toDDM (d : SpecAtomType) : DDM.SpecType SourceRange :=
@@ -136,7 +135,6 @@ decreasing_by
   }
 
 end
-
 
 private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
   .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.hasDefault⟩
@@ -250,6 +248,7 @@ private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signatur
     }
     .typeDef d
 
+/-- Reads Python spec signatures from a DDM Ion file. -/
 def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
   let contents ←
         match ← IO.FS.readBinFile path |>.toBaseIO with
@@ -266,16 +265,17 @@ def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
     | .error msg => throw msg
   | .error msg => throw msg
 
+/-- Converts Python spec signatures to a DDM program for serialization. -/
 def toDDMProgram (sigs : Array Signature) : Strata.Program := {
     dialects := DDM.PythonSpecs_map
     dialect := DDM.PythonSpecs.name
     commands := sigs.map fun s => s.toDDM.toAst
   }
 
+/-- Writes Python spec signatures to a DDM Ion file. -/
 def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
   let pgm := toDDMProgram sigs
   IO.FS.writeBinFile path <| pgm.toIon
-
 
 end Strata.Python.Specs
 end

@@ -5,17 +5,20 @@
 -/
 module
 
-import Strata.DDM.Format
-import all Strata.DDM.Util.Fin
-public import Strata.Languages.Python.ReadPython
-public import Strata.Languages.Python.Specs.DDM
-import Strata.Util.DecideProp
+public import Lean.Data.Position
+public import Std.Data.HashSet.Basic
+import        Strata.DDM.Format
+import all    Strata.DDM.Util.Fin
+public import Strata.DDM.Util.SourceRange
+import        Strata.Languages.Python.ReadPython
+import        Strata.Languages.Python.Specs.DDM
+public import Strata.Languages.Python.Specs.Decls
+import        Strata.Util.DecideProp
 
-public section
 namespace Strata.Python.Specs
 
 /-- String identifier for event types. -/
-abbrev EventType := String
+public abbrev EventType := String
 
 /-- Event type for module imports. -/
 def importEvent : EventType := "import"
@@ -30,7 +33,7 @@ initialize stdoutEventsRef : IO.Ref (Std.HashSet EventType) ← IO.mkRef {}
 Log message for event type if enabled in `stdoutEventsRef`.
 Output format: `[event]: message`
 -/
-private def logEvent (event : EventType) (message : String) : BaseIO Unit := do
+def logEvent (event : EventType) (message : String) : BaseIO Unit := do
   let events ← stdoutEventsRef.get
   if event ∈ events then
     let _ ← IO.eprintln s!"[{event}]: {message}" |>.toBaseIO
@@ -45,7 +48,7 @@ inductive Pred where
 
 namespace Pred
 
-private def not (p : Pred) : Pred :=
+def not (p : Pred) : Pred :=
   match p with
   | .const b => .const (¬ b)
 
@@ -59,7 +62,7 @@ added.
 inductive Iterable where
 | list
 
-structure SpecError where
+public structure SpecError where
   file : System.FilePath
   loc : Strata.SourceRange
   message : String
@@ -69,13 +72,13 @@ A Python module name split into its dot-separated components.
 For example, `typing.List` has components `["typing", "List"]`.
 The size constraint ensures at least one component exists.
 -/
-structure ModuleName where
+public structure ModuleName where
   components : Array String
   componentsSizePos : components.size > 0
 
 namespace ModuleName
 
-private def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) : Except String ModuleName :=
+def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) : Except String ModuleName :=
   if h : cur.IsAtEnd then
     let r := mod.extract start cur
     pure {
@@ -93,7 +96,8 @@ private def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) 
       ofStringAux mod a start next
   termination_by cur
 
-def ofString (mod : String) : Except String ModuleName :=
+/-- Parses a dot-separated module name string (e.g., "typing.List"). -/
+public def ofString (mod : String) : Except String ModuleName :=
   ofStringAux mod #[] mod.startPos mod.startPos
 
 instance : ToString ModuleName where
@@ -130,7 +134,8 @@ def findInPath (mod : ModuleName) (searchPath : System.FilePath) : EIO String Sy
 def strataDir (mod : ModuleName) (root : System.FilePath) : System.FilePath :=
   mod.foldlDirs (init := root) fun d c => d / c
 
-def strataFileName (mod : ModuleName) : String := s!"{mod.fileRoot}.pyspec.st.ion"
+/-- Generates the output filename for a module's spec file. -/
+public def strataFileName (mod : ModuleName) : String := s!"{mod.fileRoot}.pyspec.st.ion"
 
 end ModuleName
 
@@ -159,7 +164,7 @@ structure TypeSignature where
 
 namespace TypeSignature
 
-protected def ofList (l : List TypeDecl) : TypeSignature where
+def ofList (l : List TypeDecl) : TypeSignature where
   rank := l.foldl (init := {}) fun m d =>
     m.alter d.ident.pythonModule fun r =>
       match r with
@@ -167,7 +172,7 @@ protected def ofList (l : List TypeDecl) : TypeSignature where
       | .some none => .some none
       | .some (some m) => m |>.insert d.ident.name d.value
 
-protected def insert (sig : TypeSignature) (name : String) (m : Option (Std.HashMap String SpecValue)) :=
+def insert (sig : TypeSignature) (name : String) (m : Option (Std.HashMap String SpecValue)) :=
   { sig with rank := sig.rank.insert name m }
 
 end TypeSignature
@@ -247,7 +252,8 @@ class PySpecMClass (m : Type → Type) where
   specError (loc : SourceRange) (message : String) : m Unit
   runChecked {α} (act : m α) : m (Bool × α)
 
-open PySpecMClass (specError runChecked)
+abbrev specError := @PySpecMClass.specError
+abbrev runChecked := @PySpecMClass.runChecked
 
 abbrev PySpecM := ReaderT PySpecContext (StateT PySpecState BaseIO)
 
@@ -264,13 +270,13 @@ instance : PySpecMClass PySpecM where
     let new_cnt := (←get).errors.size
     return (cnt = new_cnt, r)
 
-private def getNameValue? (id : String) : PySpecM (Option SpecValue) :=
+def getNameValue? (id : String) : PySpecM (Option SpecValue) :=
   return (←get).nameMap[id]?
 
-private def setNameValue (id : String) (v : SpecValue) : PySpecM Unit :=
+def setNameValue (id : String) (v : SpecValue) : PySpecM Unit :=
   modify $ fun s => { s with nameMap := s.nameMap.insert id v }
 
-private def recordTypeDef (loc : SourceRange) (cl : String) : PySpecM Unit := do
+def recordTypeDef (loc : SourceRange) (cl : String) : PySpecM Unit := do
   match (←get).typeReferences[cl]? with
   | some .resolved =>
     specError loc s!"Class {cl} already defined."
@@ -279,15 +285,15 @@ private def recordTypeDef (loc : SourceRange) (cl : String) : PySpecM Unit := do
       typeReferences := s.typeReferences.insert cl .resolved
     }
 
-private def recordTypeRef (loc : SourceRange) (cl : String) : PySpecM Unit := do
+def recordTypeRef (loc : SourceRange) (cl : String) : PySpecM Unit := do
   modify fun s => { s with
     typeReferences := s.typeReferences.insertIfNew cl (.unresolved loc)
   }
 
-private def pushSignature (sig : Signature) : PySpecM Unit :=
+def pushSignature (sig : Signature) : PySpecM Unit :=
   modify fun s => { s with elements := s.elements.push sig }
 
-private def pushSignatures (sigs : Array Signature) : PySpecM Unit :=
+def pushSignatures (sigs : Array Signature) : PySpecM Unit :=
   modify fun s => { s with elements := s.elements ++ sigs }
 
 /--
@@ -296,7 +302,7 @@ Type for converting AST expressions to PySpec types
 structure TypeTranslator where
   callback : SourceRange -> SpecValue -> PySpecM SpecType
 
-private def checkEq {α : Type} (loc : SourceRange) (name : String) (as : Array α) (n : Nat) :
+def checkEq {α : Type} (loc : SourceRange) (name : String) (as : Array α) (n : Nat) :
     PySpecM (Option (PULift.{1, 0} (as.size = n))) :=
   match inferInstanceAs (Decidable (as.size = n)) with
   | .isTrue p =>
@@ -305,7 +311,7 @@ private def checkEq {α : Type} (loc : SourceRange) (name : String) (as : Array 
     specError loc s!"{name} expects {n} arguments."
     pure none
 
-private def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
+def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
   match v with
   | .typeValue itp =>
     pure itp
@@ -323,7 +329,7 @@ private def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType :
     specError loc s!"Expected type instead of {repr v}."
     return default
 
-private def fixedTranslator (t : PythonIdent) (arity : Nat) : TypeTranslator where
+def fixedTranslator (t : PythonIdent) (arity : Nat) : TypeTranslator where
   callback := fun loc arg => do
     if arity = 1 then
       let tp ← valueAsType loc arg
@@ -336,7 +342,7 @@ private def fixedTranslator (t : PythonIdent) (arity : Nat) : TypeTranslator whe
       let args ← args.mapM (valueAsType loc)
       return .ident t args
 
-private def unionTranslator : TypeTranslator where
+def unionTranslator : TypeTranslator where
   callback := fun loc arg => do
     let .tuple args := arg
       | specError loc s!"Union expects tuple"; return default
@@ -346,7 +352,7 @@ private def unionTranslator : TypeTranslator where
     args.foldlM (start := 1) (init := tp) fun tp v => do
       return tp ||| (← valueAsType loc v)
 
-private def literalTranslator : TypeTranslator where
+def literalTranslator : TypeTranslator where
   callback := fun loc arg => do
     let args :=
       match arg with
@@ -365,7 +371,7 @@ private def literalTranslator : TypeTranslator where
             pure default
     return .ofArray (← args.mapM trans)
 
-private def metadataProcessor : MetadataType → TypeTranslator
+def metadataProcessor : MetadataType → TypeTranslator
 | .typingDict => fixedTranslator .typingDict 2
 | .typingGenerator => fixedTranslator .typingGenerator 3
 | .typingList => fixedTranslator .typingList 1
@@ -374,7 +380,7 @@ private def metadataProcessor : MetadataType → TypeTranslator
 | .typingSequence => fixedTranslator .typingSequence 1
 | .typingUnion => unionTranslator
 
-private def translateCall (loc : SourceRange) (func : SpecValue)
+def translateCall (loc : SourceRange) (func : SpecValue)
     (args : Array SpecValue) (kwargs : Array (Option String × SpecValue))
     : PySpecM SpecValue := do
   match func with
@@ -399,8 +405,7 @@ private def translateCall (loc : SourceRange) (func : SpecValue)
     specError loc s!"Unknown call {repr func}."
     return default
 
-
-private def translateConstant (value : constant SourceRange) : PySpecM SpecValue := do
+def translateConstant (value : constant SourceRange) : PySpecM SpecValue := do
   match value with
   | .ConFalse .. =>
     return .boolConst false
@@ -418,7 +423,7 @@ private def translateConstant (value : constant SourceRange) : PySpecM SpecValue
     specError value.ann s!"Could not interpret constant {value}"
     return default
 
-private def translateSubscript (paramLoc : SourceRange) (paramType : String) (sargs  : SpecValue) : PySpecM SpecValue := do
+def translateSubscript (paramLoc : SourceRange) (paramType : String) (sargs  : SpecValue) : PySpecM SpecValue := do
   match ← getNameValue? paramType with
   | none =>
     specError paramLoc s!"Unknown parameterized type {paramType}."
@@ -443,7 +448,7 @@ private def translateSubscript (paramLoc : SourceRange) (paramType : String) (sa
     specError paramLoc s!"Expected {paramType} to be a type."
     return default
 
-private def translateDictKey (loc : SourceRange) (mk : opt_expr SourceRange) : PySpecM String := do
+def translateDictKey (loc : SourceRange) (mk : opt_expr SourceRange) : PySpecM String := do
   let .some_expr _ k := mk
     | specError loc s!"Dict key missing"; return default
   match k with
@@ -455,7 +460,7 @@ private def translateDictKey (loc : SourceRange) (mk : opt_expr SourceRange) : P
 
 mutual
 
-private def pyKeywordValue (k : keyword SourceRange) : PySpecM (Option String × SpecValue) := do
+def pyKeywordValue (k : keyword SourceRange) : PySpecM (Option String × SpecValue) := do
   let arg : Option String :=
         match k.arg.val with
         | none => none
@@ -467,7 +472,7 @@ decreasing_by
   simp [keyword.value]
   decreasing_tactic
 
-private def pySpecValue (expr : expr SourceRange) : PySpecM SpecValue := do
+def pySpecValue (expr : expr SourceRange) : PySpecM SpecValue := do
   match h : expr with
   | .BinOp loc x op y => do
     match op with
@@ -524,7 +529,7 @@ decreasing_by
   · decreasing_tactic
   · decreasing_tactic
 
-private def pySpecType (e : expr SourceRange) : PySpecM SpecType := do
+def pySpecType (e : expr SourceRange) : PySpecM SpecType := do
   let (success, v) ← runChecked <| pySpecValue e
   if success then
     valueAsType e.ann v
@@ -535,7 +540,7 @@ termination_by 2 * sizeOf e + 1
 end
 
 -- Check expression is compatible with value
-private def pyDefaultValue (val : expr SourceRange) (_tp : SpecType) : PySpecM Unit := do
+def pyDefaultValue (val : expr SourceRange) (_tp : SpecType) : PySpecM Unit := do
   match val with
   | .Constant _ c _ =>
     match c with
@@ -546,7 +551,7 @@ private def pyDefaultValue (val : expr SourceRange) (_tp : SpecType) : PySpecM U
   | _ =>
     specError val.ann s!"Unexpected value {toString val}"
 
-private def pySpecArg (usedNames : Std.HashSet String)
+def pySpecArg (usedNames : Std.HashSet String)
               (selfType : Option String)
               (arg : Strata.Python.arg Strata.SourceRange)
               (de : Option (expr SourceRange)) : PySpecM Arg := do
@@ -610,20 +615,20 @@ instance {argc} : PySpecMClass (SpecAssertionM argc) where
     let new_cnt := (←get).errors.size
     return (cnt = new_cnt, r)
 
-private def transPred {argc} (_e : expr SourceRange) : SpecAssertionM argc Pred := do
+def transPred {argc} (_e : expr SourceRange) : SpecAssertionM argc Pred := do
   -- FIXME
   pure (.const true)
 
-private def transIter {argc} (_e : expr SourceRange) : SpecAssertionM argc Iterable := do
+def transIter {argc} (_e : expr SourceRange) : SpecAssertionM argc Iterable := do
   -- FIXME
   return .list
 
-private def assumePred {argc} (_p : Pred) (act : SpecAssertionM argc Unit) : SpecAssertionM argc Unit := do
+def assumePred {argc} (_p : Pred) (act : SpecAssertionM argc Unit) : SpecAssertionM argc Unit := do
   act
 
 mutual
 
-private def blockStmt {argc : Nat} (s : stmt SourceRange) : SpecAssertionM argc Unit := do
+def blockStmt {argc : Nat} (s : stmt SourceRange) : SpecAssertionM argc Unit := do
   match s with
   | .Assign _ _targets _value _typeAnn =>
     pure () -- FIXME
@@ -657,7 +662,7 @@ decreasing_by
   · cases f;
     decreasing_tactic
 
-private def blockStmts {argc : Nat} (as : Array (stmt SourceRange)) : SpecAssertionM argc Unit := do
+def blockStmts {argc : Nat} (as : Array (stmt SourceRange)) : SpecAssertionM argc Unit := do
   as.attach.forM fun ⟨b, _⟩ => blockStmt b
 termination_by sizeOf as
 decreasing_by
@@ -665,7 +670,7 @@ decreasing_by
 
 end
 
-private def collectAssertions (decls : ArgDecls) (_returnType : SpecType) (action : SpecAssertionM decls.count Unit) : PySpecM (SpecAssertionState decls.count) := do
+def collectAssertions (decls : ArgDecls) (_returnType : SpecType) (action : SpecAssertionM decls.count Unit) : PySpecM (SpecAssertionState decls.count) := do
   let errors := (←get).errors
   modify fun s => { s with errors := #[] }
   let filePath := (←read).pythonFile
@@ -673,7 +678,7 @@ private def collectAssertions (decls : ArgDecls) (_returnType : SpecType) (actio
   modify fun s => { s with errors := as.errors }
   pure as
 
-private def pySpecFunctionArgs (fnLoc : SourceRange)
+def pySpecFunctionArgs (fnLoc : SourceRange)
                        (className : Option String)
                        (funName : String)
                        (arguments : arguments SourceRange)
@@ -754,8 +759,7 @@ private def pySpecFunctionArgs (fnLoc : SourceRange)
     postconditions := as.postconditions
   }
 
-
-private def pySpecClassBody (loc : SourceRange) (className : String) (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
+def pySpecClassBody (loc : SourceRange) (className : String) (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
   let mut usedNames : Std.HashSet String := {}
   let mut methods : Array FunctionDecl := #[]
   for stmt in body do
@@ -786,8 +790,7 @@ def checkLevel (loc : SourceRange) (level : Option (int SourceRange)) : PySpecM 
   | none =>
     specError loc s!"Missing import level."
 
-
-private def translateImportFrom (mod : String) (types : Std.HashMap String SpecValue) (names : Array (alias SourceRange)) : PySpecM Unit := do
+def translateImportFrom (mod : String) (types : Std.HashMap String SpecValue) (names : Array (alias SourceRange)) : PySpecM Unit := do
   -- Check if module is a builtin (in prelude) - if so, don't generate extern declarations
   let isBuiltinModule := preludeSig.rank.contains mod
   for a in names do
@@ -814,7 +817,7 @@ def getModifiedTime (f : System.FilePath) : IO IO.FS.SystemTime := do
 /--
 Create a value map for module from signatures.
 -/
-private def signatureValueMap (mod : String) (sigs : Array Signature) :
+def signatureValueMap (mod : String) (sigs : Array Signature) :
   Std.HashMap String SpecValue :=
   let addType (m : Std.HashMap String SpecValue) (sig : Signature) :=
         match sig with
@@ -827,7 +830,7 @@ private def signatureValueMap (mod : String) (sigs : Array Signature) :
         | .functionDecl .. | .typeDef .. | .externTypeDecl .. => m
   sigs.foldl (init := {}) addType
 
-private def checkOverloadBody (stmt : stmt SourceRange) : PySpecM Unit := do
+def checkOverloadBody (stmt : stmt SourceRange) : PySpecM Unit := do
   match stmt with
   | .Expr _ (.Constant _ (.ConEllipsis _) _) => pure ()
   | _ => specError stmt.ann s!"Expected ellipsis"
@@ -839,7 +842,7 @@ Resolves a Python module by name, returning a map of exported identifiers to
 their spec values. Loads either from cached PySpec files or by parsing the
 Python source if not in cache.
 -/
-private partial def resolveModule (loc : SourceRange) (modName : String) :
+partial def resolveModule (loc : SourceRange) (modName : String) :
     PySpecM (Std.HashMap String SpecValue) := do
   let mod ←
         match ModuleName.ofString modName with
@@ -904,7 +907,7 @@ private partial def resolveModule (loc : SourceRange) (modName : String) :
 
   return signatureValueMap (toString mod) sigs
 
-private partial def resolveModuleCached (loc : SourceRange) (modName : String)
+partial def resolveModuleCached (loc : SourceRange) (modName : String)
     : PySpecM (Option (Std.HashMap String SpecValue)) := do
   match (←get).typeSigs.rank[modName]? with
   | some types =>
@@ -915,7 +918,7 @@ private partial def resolveModuleCached (loc : SourceRange) (modName : String)
     modify fun s => { s with typeSigs := s.typeSigs.insert modName r }
     return r
 
-private partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM Unit := do
+partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM Unit := do
   for stmt in body do
     match stmt with
     | .Assign loc ⟨_, targets⟩ value _typeAnn =>
@@ -985,7 +988,7 @@ private partial def translate (body : Array (Strata.Python.stmt Strata.SourceRan
         pushSignature (.classDef d)
     | _ => specError stmt.ann s!"Unknown statement {stmt}"
 
-private partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRange))
+partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRange))
   : PySpecM (Array Signature) := do
   translate body
   let s ← get
@@ -996,9 +999,10 @@ private partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.
 
 end
 
-private abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
+/-- Maps file paths to their FileMap for error location reporting. -/
+public abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
 
-private def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.FilePath) (loc : SourceRange) : String :=
+def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.FilePath) (loc : SourceRange) : String :=
   match fmm[path]? with
   | none =>
     panic! "Invalid path {file}"
@@ -1011,7 +1015,8 @@ private def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : 
     else
       s!"{path}:{spos.line}:{spos.column+1}"
 
-private def translateModule
+/-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
+def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
     (fileMap : Lean.FileMap)
     (body : Array (Strata.Python.stmt Strata.SourceRange))
@@ -1039,8 +1044,8 @@ private def translateModule
   let (res, s) ← translateModuleAux body |>.run ctx |>.run {}
   pure (←fileMapsRef.get, res, s.errors)
 
--- Public API: Used by StrataMain
-def translateFile
+/-- Translates a Python source file to PySpec signatures. Main entry point for translation. -/
+public def translateFile
     (dialectFile strataDir pythonFile : System.FilePath)
     (pythonCmd : String := "python")
     (searchPath : Option System.FilePath := none) :
@@ -1082,4 +1087,3 @@ def translateFile
   pure sigs
 
 end Strata.Python.Specs
-end
