@@ -19,73 +19,6 @@ namespace ProcedureInlining
 
 open Transform
 
-mutual
-def Block.substFvar (b : Block) (fr:Expression.Ident)
-      (to:Expression.Expr) : Block :=
-  List.map (fun s => Statement.substFvar s fr to) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
-
-def Statement.substFvar (s : Core.Statement)
-      (fr:Expression.Ident)
-      (to:Expression.Expr) : Statement :=
-  match s with
-  | .init lhs ty rhs metadata =>
-    .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
-  | .set lhs rhs metadata =>
-    .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
-  | .havoc _ _ => s
-  | .assert lbl b metadata =>
-    .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .assume lbl b metadata =>
-    .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .cover lbl b metadata =>
-    .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .call lhs pname args metadata =>
-    .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
-
-  | .block lbl b metadata =>
-    .block lbl (Block.substFvar b fr to) metadata
-  | .ite cond thenb elseb metadata =>
-    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
-          (Block.substFvar elseb fr to) metadata
-  | .loop guard measure invariant body metadata =>
-    .loop (Lambda.LExpr.substFvar guard fr to)
-          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
-          (Block.substFvar body fr to)
-          metadata
-  | .goto _ _ => s
-  termination_by s.sizeOf
-end
-
-mutual
-def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
-  List.map (fun s => Statement.renameLhs s fr to) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
-
-def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
-    : Statement :=
-  match s with
-  | .init lhs ty rhs metadata =>
-    .init (if lhs.name == fr then to else lhs) ty rhs metadata
-  | .set lhs rhs metadata =>
-    .set (if lhs.name == fr then to else lhs) rhs metadata
-  | .call lhs pname args metadata =>
-    .call (lhs.map (fun l =>
-      if l.name == fr  then to else l)) pname args metadata
-  | .block lbl b metadata =>
-    .block lbl (Block.renameLhs b fr to) metadata
-  | .ite x thenb elseb m =>
-    .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
-  | .loop m g i b md =>
-    .loop m g i (Block.renameLhs b fr to) md
-  | .havoc l md => .havoc (if l.name == fr then to else l) md
-  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
-  termination_by s.sizeOf
-end
-
 -- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
 mutual
 def Block.labels (b : Block): List String :=
@@ -106,6 +39,7 @@ def Statement.labels (s : Core.Statement) : List String :=
   | .goto _ _ => []
   -- No other labeled commands.
   | .cmd _ => []
+  | .funcDecl _ _ => []
   termination_by s.sizeOf
 end
 
@@ -133,6 +67,7 @@ def Statement.replaceLabels
   | .assert lbl e m => .assert (app lbl) e m
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
+  | .funcDecl _ _ => s
   termination_by s.sizeOf
 end
 

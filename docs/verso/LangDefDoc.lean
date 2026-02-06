@@ -173,8 +173,10 @@ An expression {name LExpr}`LExpr` parameterized by {name LTy}`LTy` is
 well-typed according to the {name LExpr.HasType}`HasType` relation.
 This relation depends on two types of context.
 
-The first of these, {name LContext}`LContext`, contains information that does
-not change throughout the type checking process. This includes information about
+The first of these, {name LContext}`LContext`, contains information that is
+typically constant during expression type checking, but may be extended during
+statement type checking (e.g., when local function declarations add new
+functions to the factory). This includes information about
 built-in functions, using the {name Factory}`Factory` type, and built-in types,
 using the {name TypeFactory}`TypeFactory` type. Built-in functions optionally
 include concrete evaluation functions, which can be used in the operational
