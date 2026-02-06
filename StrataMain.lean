@@ -5,19 +5,12 @@
 -/
 
 -- Executable with utilities for working with Strata files.
-import Strata.DDM.Elab
-import Strata.DDM.Ion
-import Strata.DDM.Util.ByteArray
-import Strata.Util.IO
-
 import Strata.DDM.Integration.Java.Gen
-import Strata.Languages.Python.Python
-import Strata.Transform.CoreTransform
-import Strata.Transform.ProcedureInlining
-
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Python.Python
+import Strata.Languages.Python.Specs
+import Strata.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
@@ -175,13 +168,46 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (path : String) : IO Strata.Program := do
-  let bytes ← Strata.Util.readBinInputSource path
+def readPythonStrata (strataPath : String) : IO Strata.Program := do
+  let bytes ← Strata.Util.readBinInputSource strataPath
   if ! Ion.isIonFile bytes then
     exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fileFromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
-  | .ok p => pure p
+  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  | .ok pgm => pure pgm
   | .error msg => exitFailure msg
+
+def pySpecsCommand : Command where
+  name := "pySpecs"
+  args := [ "python_path", "strata_path" ]
+  help := "Experimental command to translate a Python specification source file."
+  callback := fun _ v => do
+    let dialectFile := "Tools/Python/dialects/Python.dialect.st.ion"
+    let pythonFile : System.FilePath := v[0]
+    let strataDir : System.FilePath := v[1]
+    if (←pythonFile.metadata).type != .file then
+      exitFailure s!"Expected Python to be a regular file."
+    match ←strataDir.metadata |>.toBaseIO with
+    | .ok md =>
+      if md.type != .dir then
+        exitFailure s!"Expected Strata to be a directory."
+    | .error _ =>
+      IO.FS.createDir strataDir
+    let r ← Strata.Python.Specs.translateFile
+        (dialectFile := dialectFile)
+        (strataDir := strataDir)
+        (pythonFile := pythonFile) |>.toBaseIO
+
+    let sigs ←
+      match r with
+      | .ok t => pure t
+      | .error msg => exitFailure msg
+
+    let some mod := pythonFile.fileStem
+      | exitFailure s!"No stem {pythonFile}"
+    let .ok mod := Strata.Python.Specs.ModuleName.ofString mod
+      | exitFailure s!"Invalid module {mod}"
+    let strataFile := strataDir / mod.strataFileName
+    Strata.Python.Specs.writeDDM strataFile sigs
 
 def pyTranslateCommand : Command where
   name := "pyTranslate"
@@ -198,7 +224,7 @@ def pyTranslateCommand : Command where
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
 def ionPathToPythonPath (ionPath : String) : Option String :=
   if ionPath.endsWith ".python.st.ion" then
-    let basePath := ionPath.dropRight ".python.st.ion".length
+    let basePath := ionPath.dropEnd ".python.st.ion".length |>.toString
     some (basePath ++ ".py")
   else
     none
@@ -349,6 +375,7 @@ def commandList : List Command := [
       diffCommand,
       pyAnalyzeCommand,
       pyTranslateCommand,
+      pySpecsCommand,
       laurelAnalyzeCommand,
     ]
 

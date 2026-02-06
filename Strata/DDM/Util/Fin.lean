@@ -15,6 +15,10 @@ namespace Fin
 instance {n} : Min (Fin n) where
   min x y := ⟨min x.val y.val, by omega⟩
 
+/--
+A range of natural numbers from 0 to n-1, used with `ForIn` to iterate over all
+values of `Fin n`. Enables syntax like `for i in Fin.range 10 do ...`
+-/
 inductive Range (n : Nat) where
 | mk : Range n
 
@@ -35,3 +39,10 @@ end Range
 def range (n : Nat) : Range n := .mk
 
 end Fin
+
+public section
+namespace Strata.Fin
+export _root_.Fin(Range range)
+end Strata.Fin
+
+end
