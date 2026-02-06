@@ -22,7 +22,7 @@ bool procedure trivial ()
 
 /--
 info: program C_Simp;
-(bool)proceduretrivial()//@pretrue;
+bool procedure trivial()//@pretrue;
 //@posttrue;
   ({
   returntrue;

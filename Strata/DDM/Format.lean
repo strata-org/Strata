@@ -73,7 +73,7 @@ deriving Inhabited
 
 namespace PrecFormat
 
-private def atom (format : Format) : PrecFormat := { format, prec := maxPrec }
+private def atom (format : Format) : PrecFormat := { format, prec := maxPrec + 1 }
 
 private def ofFormat {α} [Std.ToFormat α] (x : α) (prec : Nat := maxPrec) : PrecFormat := { format := Std.format x, prec }
 
@@ -133,10 +133,10 @@ structure FormatState where
 namespace FormatState
 
 /-- A format context that uses no syntactic sugar. -/
-private def empty : FormatState where
+def empty : FormatState where
   openDialects := {}
 
-private instance : Inhabited FormatState where
+instance : Inhabited FormatState where
   default := .empty
 
 def pushBinding (s : FormatState) (ident : String) : FormatState :=
