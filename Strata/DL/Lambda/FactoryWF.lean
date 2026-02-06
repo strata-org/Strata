@@ -68,10 +68,8 @@ instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
 -- LFuncWF.concreteEval_argmatch is not decidable.
 
 instance LFuncWF.body_or_concreteEval_decidable (f : LFunc T):
-    Decidable (¬ (f.concreteEval.isSome ∧ f.body.isSome)) :=
-  if H:f.concreteEval.isSome && f.body.isSome then by
-    apply isFalse; grind
-  else by apply isTrue; grind
+    Decidable (¬ (f.concreteEval.isSome ∧ f.body.isSome)) := by
+    exact instDecidableNot
 
 instance LFuncWF.typeArgs_decidable (f : LFunc T):
     Decidable (List.Nodup f.typeArgs) := by
@@ -79,18 +77,13 @@ instance LFuncWF.typeArgs_decidable (f : LFunc T):
 
 instance LFuncWF.inputs_typevars_in_typeArgs_decidable {f : LFunc T}:
     Decidable (∀ ty, ty ∈ f.inputs.values →
-      ty.freeVars ⊆ f.typeArgs) :=
-  if Hall:f.inputs.values.all (fun ty => ty.freeVars ⊆ f.typeArgs)
-  then by
-    apply isTrue; grind
-  else by
-    apply isFalse; grind
+      ty.freeVars ⊆ f.typeArgs) := by
+  exact List.decidableBAll (fun x => x.freeVars ⊆ f.typeArgs)
+    (ListMap.values f.inputs)
 
 instance LFuncWF.output_typevars_in_typeArgs_decidable {f : LFunc T}:
-    Decidable (f.output.freeVars ⊆ f.typeArgs) :=
-  if Hall: f.output.freeVars ⊆ f.typeArgs then by apply isTrue; grind
-  else by apply isFalse; grind
-
+    Decidable (f.output.freeVars ⊆ f.typeArgs) := by
+  apply List.instDecidableRelSubsetOfDecidableEq
 
 /--
 Well-formedness properties of Factory.
