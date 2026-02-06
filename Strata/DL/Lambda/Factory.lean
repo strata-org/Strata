@@ -125,14 +125,9 @@ theorem LFunc.type_inputs_nodup [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) 
     f.type = .ok ty → f.inputs.keys.Nodup := by
   intro h
   simp only [LFunc.type, bind, Except.bind] at h
+  -- At this point grind is possible if this proof needs maintenance
   split at h <;> try contradiction
-  rename_i h_nodup
-  simp only [Bool.not_eq_true] at h_nodup
-  have : decide f.inputs.keys.Nodup = true := by
-    cases hd : decide f.inputs.keys.Nodup
-    · simp [hd] at h_nodup
-    · rfl
-  exact of_decide_eq_true this
+  simp_all
 
 def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
   let input_tys := f.inputs.values
