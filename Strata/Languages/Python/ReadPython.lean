@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Python.PythonDialect
+module
 
+import Strata.DDM.Ion
+public import Strata.Languages.Python.PythonDialect
+
+public section
 namespace Strata.Python
 
 def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
@@ -120,3 +124,4 @@ def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.st
   | .error msg => throw msg
 
 end Strata.Python
+end

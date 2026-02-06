@@ -3,8 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Integration.Lean
+module
 
+public import Strata.DDM.Integration.Lean
+
+import Strata.DDM.AST
+import Strata.DDM.Util.ByteArray
+import Strata.DDM.Format
+import Strata.DDM.BuiltinDialects.Init
+public import Strata.DDM.Integration.Lean.OfAstM
+
+public section
 namespace Strata.Python
 #load_dialect "../../../Tools/Python/dialects/Python.dialect.st.ion"
 
@@ -36,12 +45,15 @@ def constant.ann {α} : constant α → α
 | ConEllipsis ann .. => ann
 | ConBytes ann .. => ann
 
+@[expose]
 def keyword.ann {α} : keyword α → α
 | .mk_keyword ann _ _ => ann
 
+@[expose]
 def keyword.arg {α} : keyword α → Ann (Option (Ann String α)) α
 | .mk_keyword _ arg _ => arg
 
+@[expose]
 def keyword.value {α} : keyword α → expr α
 | .mk_keyword _ _ value => value
 
@@ -134,3 +146,4 @@ instance {α} [Inhabited α] : ToString (Strata.Python.stmt α) where
   toString s := toString (mformat s.toAst (.ofDialects Python_map) .empty |>.format)
 
 end Strata.Python
+end

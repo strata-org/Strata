@@ -3,9 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Integration.Lean
-import Strata.Languages.Python.Specs.Decls
+module
 
+public import Strata.DDM.Integration.Lean
+public import Strata.Languages.Python.Specs.Decls
+
+import Strata.DDM.AST
+import Strata.DDM.Util.ByteArray
+import Strata.DDM.Format
+import Strata.DDM.BuiltinDialects.Init
+public import Strata.DDM.Integration.Lean.OfAstM
+public import Strata.DDM.Integration.Lean.BoolConv
+import Strata.DDM.Ion
+
+public section
 namespace Strata.Python.Specs
 namespace DDM
 
@@ -267,3 +278,4 @@ def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
 
 
 end Strata.Python.Specs
+end

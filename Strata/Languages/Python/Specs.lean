@@ -3,11 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Python.Specs.DDM
-import Strata.Languages.Python.ReadPython
-import Strata.DDM.Util.Fin
+module
+
+import Strata.DDM.Format
+import all Strata.DDM.Util.Fin
+public import Strata.Languages.Python.ReadPython
+public import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
 
+public section
 namespace Strata.Python.Specs
 
 /-- String identifier for event types. -/
@@ -706,7 +710,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     specError fnLoc "Method expecting self argument"
   let mut usedNames : Std.HashSet String := {}
   let mut specArgs : Array Arg := .emptyWithCapacity argc
-  for ⟨i, ib⟩ in Strata.Fin.range argc do
+  for ⟨i, ib⟩ in Fin.range argc do
     let a := posArgs[i]
     -- Arguments with defaults occur at end
     let d : Option _ :=
@@ -1077,3 +1081,4 @@ def translateFile
   pure sigs
 
 end Strata.Python.Specs
+end
