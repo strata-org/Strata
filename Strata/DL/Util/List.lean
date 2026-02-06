@@ -433,4 +433,233 @@ theorem occurrences_len_eq_dedup {α} [DecidableEq α]:
   unfold occurrences
   grind
 
+theorem mem_cons_dedup {α} [DecidableEq α]:
+  ∀ (l : List α) a, a ∈ l → (a::l).dedup = l.dedup := by
+  intro l
+  induction l
+  case nil => grind
+  case cons hd tl tl_IH =>
+    intro a H
+    conv => lhs; unfold dedup
+    have Hmem : a = hd ∨ a ∈ tl := by grind
+    cases Hmem
+    case inl Heq =>
+      subst a
+      grind [List.mem_of_dedup]
+    case inr Htl =>
+      grind [List.mem_of_dedup]
+
+theorem notmem_cons_dedup {α} [DecidableEq α]:
+  ∀ (l : List α) a, ¬ (a ∈ l) → (a::l).dedup = a :: (l.dedup) := by
+  intro l
+  induction l
+  case nil => intros; solve | simp [dedup]
+  case cons hd tl tl_IH =>
+    intro a H
+    conv => lhs; unfold dedup
+    simp only []
+    rw [List.mem_of_dedup] at H
+    grind
+
+theorem count_map {α} [DecidableEq α]:
+  ∀ (l' l: List α) h,
+    l.map (fun k => (k, count k (h::l'))) =
+    map (fun ⟨k,v⟩ => (k, if k == h then v+1 else v))
+      (l.map (fun k => (k, count k l'))) := by
+  intro l'
+  induction l'
+  case nil => simp; grind
+  case cons hd tl tl_IH =>
+    intro l h
+    rw[List.map_map]
+    unfold Function.comp
+    simp only []
+    have IH := tl_IH l hd
+    clear tl_IH
+    have HH: ∀ k, count k (h::hd::tl) = count k (hd::tl) + (if k == h then 1 else 0) :=
+      by grind
+    congr
+    ext k
+    · rw [HH]
+    · simp only []
+      rw [HH]
+      grind
+
+theorem map_notmem_if {α β} [DecidableEq α]:
+  ∀ (f g : α → β) (l : List α) h,
+  ¬ (h ∈ l) →
+    map (fun x => (x, if (x == h) = true then f x else g x)) l =
+    map (fun x => (x, g x)) l := by
+  intro f g l
+  induction l
+  case nil => grind
+  case cons hd tl tl_IH =>
+    intro h Hnotmem
+    have Hh: ¬ (h = hd) ∧ ¬ (h ∈ tl) := by grind
+    rcases Hh with ⟨Hleft, Hright⟩
+    grind
+
+theorem occurrences_cons {α} [DecidableEq α]:
+  ∀ (l : List α) (h : α),
+    (h::l).occurrences =
+      (if h ∈ l then
+        l.occurrences.map (fun ⟨k,v⟩ => if k == h then ⟨k,(v+1)⟩ else ⟨k,v⟩)
+      else ((h,1)::l.occurrences)) := by
+  intro l
+  induction l
+  case nil =>
+    solve | simp[occurrences,dedup]
+  case cons hd tl tl_IH =>
+    have Hhd_in_tl: (hd ∈ tl) ∨ ¬ (hd ∈ tl) := by grind
+    cases Hhd_in_tl
+    case inl Hhd_in_tl =>
+      have IH_hd := tl_IH hd
+      clear tl_IH
+      intro h
+      have Hh_in_tl: (h ∈ tl) ∨ ¬ (h ∈ tl) := by grind
+      cases Hh_in_tl
+      case inl Hh_in_tl =>
+        have H: h ∈ hd :: tl := by grind
+        simp [H]
+        simp [Hhd_in_tl] at IH_hd
+        rw [IH_hd]
+        unfold occurrences
+        have Hdedup : (h :: hd :: tl).dedup = tl.dedup := by
+          rw [mem_cons_dedup] <;> try assumption
+          rw [mem_cons_dedup] <;> try assumption
+        rw [Hdedup]
+        rw [count_map]
+        rw [count_map]
+        repeat rw[List.map_map]
+        unfold Function.comp
+        simp only []
+        congr
+        ext k <;> grind
+      case inr Hh_nin_tl =>
+        have Hh_eq_hd : h = hd ∨ ¬ (h = hd) := by grind
+        cases Hh_eq_hd
+        case inl Hh_eq_hd =>
+          subst h
+          simp
+          unfold occurrences
+          have Hhdhd: (hd :: hd :: tl).dedup = (hd :: tl).dedup := by grind
+          rw [Hhdhd]
+          rw [count_map]
+          grind
+        case inr Hh_neq_hd =>
+          have Hh_nin_hd_tl : ¬ (h ∈ hd :: tl) := by grind
+          simp [Hh_nin_hd_tl]
+          unfold occurrences
+          conv => lhs; unfold dedup
+          simp only []
+          have Hh_nin_hd_tl : ¬ (h ∈ (hd :: tl).dedup) := by
+            rw [← List.mem_of_dedup]
+            grind
+          simp only [Hh_nin_hd_tl, if_false]
+          conv => lhs; unfold map
+          conv => lhs; rhs; rw [count_map]
+          rw [map_map]
+          unfold Function.comp
+          simp only []
+          congr 1
+          · rw [count_cons_self, count_cons_of_ne, count_eq_zero_of_not_mem]
+            · assumption
+            · grind
+          · rw [map_notmem_if]
+            grind
+    case inr Hhd_nin_tl =>
+      intro h
+      have Hh_eq_hd : h = hd ∨ ¬ (h = hd) := by grind
+      cases Hh_eq_hd
+      case inl Heq =>
+        subst h
+        -- Split the 'hd ∈ hd :: tl' if condition
+        split <;> try grind
+        unfold occurrences
+        have Htmp : (hd :: hd :: tl).dedup = (hd :: tl).dedup := by
+          apply List.mem_cons_dedup; grind
+        rw [Htmp]
+        conv => lhs; rw [count_map]
+        grind
+      case inr Hne =>
+        have Hcases: h ∈ tl ∨ ¬ (h ∈ tl) := by grind
+        cases Hcases
+        case inl Hh_in_tl =>
+          have Htmp: h ∈ hd::tl := by grind
+          simp only [Htmp, if_true]
+          unfold occurrences
+          have Htmp : (h :: hd :: tl).dedup = (hd :: tl).dedup := by
+            rw [mem_cons_dedup]
+            grind
+          rw [Htmp]
+          conv => lhs; rw [count_map]
+          grind
+        case inr Hh_nin_tl =>
+          have Htmp : ¬ (h ∈ hd :: tl) := by grind
+          simp only [Htmp, if_false]
+          unfold occurrences
+          rw [notmem_cons_dedup] <;> try assumption
+          simp only [map]
+          congr 1
+          · rw [count_cons_self, count_cons_of_ne, count_eq_zero_of_not_mem]
+            · assumption
+            · grind
+          · have Htmp: (∀ x (k:Bool) (a:Nat) b,
+              x + (if k then a else b) = if k then (x + a) else (x + b)) := by grind
+            conv =>
+              -- This is bad; why should I do this to rewrite to the body of abs?
+              lhs; lhs; ext x; rw [List.count_cons, Htmp]
+            simp []
+            intro a
+            rw [← List.mem_of_dedup]
+            grind
+
+theorem occurrences_find {α} [DecidableEq α]:
+  ∀ (l : List α) (x : α),
+      x ∈ l → l.occurrences.find? (fun ⟨k,_⟩ => k == x) = .some (x, l.count x)
+:= by
+  intro l
+  induction l
+  case nil => grind
+  case cons hd tl tl_IH =>
+    intro x
+    have Hx_is_hd : (x = hd) ∨ ¬ (x = hd) := by grind
+    cases Hx_is_hd
+    case inl Heq =>
+      subst x
+      intro _H
+      rw [occurrences_cons]
+      have Hhd_mem_tl : hd ∈ tl ∨ ¬ (hd ∈ tl) := by grind
+      cases Hhd_mem_tl
+      case inl Hmem =>
+        have IH := tl_IH hd Hmem
+        clear tl_IH
+        simp only [Hmem, if_true]
+        rw [List.find?_map]
+        unfold Function.comp
+        simp only []
+        grind
+      case inr Hnotmem =>
+        simp only [Hnotmem, if_false]
+        simp
+        apply List.count_eq_zero_of_not_mem
+        grind
+    case inr Hneq =>
+      intro Htmp
+      have Hx_mem_tl: x ∈ tl := by grind
+      have IH := tl_IH x Hx_mem_tl
+      clear tl_IH
+      rw [occurrences_cons]
+      have Hhd_mem_tl: hd ∈ tl ∨ ¬ (hd ∈ tl) := by grind
+      cases Hhd_mem_tl
+      case inl Hhd_mem_tl =>
+        simp only [Hhd_mem_tl, if_true]
+        rw [List.find?_map]
+        unfold Function.comp
+        simp only []
+        grind
+      case inr Hhd_notmem_tl =>
+        simp only [Hhd_notmem_tl, if_false]
+        grind
+
 end List
