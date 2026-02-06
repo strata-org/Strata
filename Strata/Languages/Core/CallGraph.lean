@@ -103,6 +103,7 @@ partial def extractCallsFromStatement (stmt : Statement) : List String :=
     extractCallsFromStatements elseBody
   | .loop _ _ _ body _ => extractCallsFromStatements body
   | .goto _ _ => []
+  | .funcDecl _ _ => []
 
 /-- Extract procedure calls from a list of statements -/
 partial def extractCallsFromStatements (stmts : List Statement) : List String :=
