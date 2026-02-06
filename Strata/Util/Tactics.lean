@@ -3,8 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Lean
+import Lean.Elab.Tactic
 
 /-!
 # Tactics
