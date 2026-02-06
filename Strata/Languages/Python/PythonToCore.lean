@@ -77,6 +77,11 @@ def defaultExtrinsicsModelChoice (s: String) : ExtrinsicModelingChoice :=
 instance : Inhabited ExtrinsicsModelingConfig where
   default := {behaviors := defaultExtrinsicsModelChoice}
 
+def extractProcedureNames (pgm : Core.Program) : List String :=
+  pgm.decls.filterMap fun decl =>
+    match decl with
+    | .proc p _ => some p.header.name.name
+    | _ => none
 
 structure TranslationContext where
   signatures : Python.Signatures
@@ -86,6 +91,7 @@ structure TranslationContext where
   func_infos : List PythonFunctionDecl := []
   class_infos : List PythonClassDecl := []
   extrinsicsModelConfig : ExtrinsicsModelingConfig := default
+  preludeProcedureNames : List String := []
 deriving Inhabited
 
 /-- Create metadata from a SourceRange for attaching to Core statements. -/
@@ -393,9 +399,11 @@ def remapFname (translation_ctx: TranslationContext) (fname: String) : String :=
     | "float" => "str_to_float"
     | _ => fname
 
-
 def noFuncModel (translation_ctx: TranslationContext) (fname: String) : Bool :=
-  !(translation_ctx.signatures.getFuncSigOrder fname).isOk
+  let funcInPrelude := translation_ctx.preludeProcedureNames.contains fname
+  let funcInSigList := (translation_ctx.signatures.getFuncSigOrder fname).isOk
+  let funcInUserCode := translation_ctx.func_infos.any (λ e => e.name == fname) || translation_ctx.class_infos.any (λ e => e.name++"___init__" == fname)
+  !(funcInPrelude || funcInSigList || funcInUserCode)
 
 def handleUnmodeledFunCall (lhs: List Core.Expression.Ident)
                                (fname: String)
@@ -854,7 +862,7 @@ def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationC
       .proc (pythonFuncToCore (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (filePath : String := ""): Core.Program :=
+def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude : Core.Program) (filePath : String := ""): Core.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
@@ -885,7 +893,8 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (filePat
     (y ++ ys, acc'')
 
   -- TODO: in Python, declarations can be circular
-  let base_ctx : TranslationContext := { signatures, filePath }
+  let preludeProcNames := extractProcedureNames prelude
+  let base_ctx : TranslationContext := { signatures, filePath, preludeProcedureNames := preludeProcNames }
 
   let class_defs_and_infos := helper PyClassDefToCore (fun acc info => {acc with class_infos := info :: acc.class_infos}) base_ctx class_defs.toList
   let class_defs := class_defs_and_infos.fst
