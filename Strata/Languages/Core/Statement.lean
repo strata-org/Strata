@@ -130,15 +130,12 @@ def Statement.eraseTypes (s : Statement) : Statement :=
   termination_by (Stmt.sizeOf s)
   decreasing_by all_goals simp[sizeOf] <;> term_by_mem
 
-  --  term_by_mem
-  -- all_goals simp_wf <;>  omega
-
 def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
   | [] => []
   | s :: srest => Statement.eraseTypes s :: Statements.eraseTypes srest
   termination_by (sizeOf ss)
-  decreasing_by all_goals simp[sizeOf] <;> term_by_mem
+  decreasing_by all_goals simp [sizeOf] <;> term_by_mem
 end
 
 ---------------------------------------------------------------------
