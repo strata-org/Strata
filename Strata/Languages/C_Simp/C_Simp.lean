@@ -28,6 +28,7 @@ abbrev Expression : Imperative.PureExpr := {
   Ident := Lambda.Identifier Unit,
   Expr := Lambda.LExpr CSimpLParams.mono,
   Ty := Lambda.LTy,
+  ExprMetadata := CSimpLParams.Metadata,
   TyEnv := Lambda.TEnv Unit,
   TyContext := Lambda.LContext ⟨Unit, Unit⟩,
   EvalEnv := Lambda.LState ⟨Unit, String⟩,
