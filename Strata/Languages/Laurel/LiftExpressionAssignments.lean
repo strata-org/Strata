@@ -227,7 +227,13 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
   termination_by sizeOf expr
-  decreasing_by all_goals sorry
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      have := StmtExprMd.sizeOf_val_lt expr
+      rw [_h] at this; simp at this
+      try have := List.sizeOf_lt_of_mem ‹_›
+      grind
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
@@ -290,7 +296,13 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
   | _ =>
       return [stmt]
   termination_by sizeOf stmt
-  decreasing_by all_goals sorry
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      have := StmtExprMd.sizeOf_val_lt stmt
+      rw [_h] at this; simp at this
+      try have := List.sizeOf_lt_of_mem ‹_›
+      grind
 
 
 end

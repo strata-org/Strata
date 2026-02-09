@@ -25,6 +25,12 @@ namespace Strata.Laurel
 open Strata
 open Lambda (LMonoTy LTy LExpr)
 
+private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
+  cases e
+  rename_i val md
+  show sizeOf val < 1 + sizeOf val + sizeOf md
+  omega
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -111,8 +117,12 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   decreasing_by
-  all_goals (simp_wf; try omega)
-  rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
+    all_goals simp_wf
+    all_goals
+      have := StmtExprMd.sizeOf_val_lt expr
+      rw [h] at this; simp at this
+      try have := List.sizeOf_lt_of_mem ‹_›
+      grind
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).get!
@@ -125,7 +135,7 @@ Takes the constants list, type environment and output parameter names
 def translateStmt (constants : List Constant) (env : TypeEnv)
   (outputParams : List Parameter) (stmt : StmtExprMd) : TypeEnv × List Core.Statement :=
   let md := stmt.md
-  match stmt.val with
+  match h : stmt.val with
   | @StmtExpr.Assert cond =>
       let boogieExpr := translateExpr constants env cond
       (env, [Core.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md])
@@ -133,7 +143,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
       let boogieExpr := translateExpr constants env cond
       (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md])
   | .Block stmts _ =>
-      let (env', stmtsList) := stmts.foldl (fun (e, acc) s =>
+      let (env', stmtsList) := stmts.attach.foldl (fun (e, acc) ⟨s, _hs⟩ =>
         let (e', ss) := translateStmt constants e outputParams s
         (e', acc ++ ss)) (env, [])
       (env', stmtsList)
@@ -218,6 +228,14 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
   | _ => (env, [])
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      have := StmtExprMd.sizeOf_val_lt stmt
+      rw [h] at this; simp at this
+      try have := List.sizeOf_lt_of_mem ‹_›
+      grind
 
 /--
 Translate Laurel Parameter to Core Signature entry
@@ -395,7 +413,7 @@ Pure expressions don't contain statements like assignments, loops, or local vari
 A Block with a single pure expression is also considered pure.
 -/
 def isPureExpr(expr: StmtExprMd): Bool :=
-  match expr.val with
+  match h : expr.val with
   | .LiteralBool _ => true
   | .LiteralInt _ => true
   | .Identifier _ => true
@@ -407,6 +425,13 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .Block [single] _ => isPureExpr single
   | _ => false
   termination_by sizeOf expr
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      have := StmtExprMd.sizeOf_val_lt expr
+      rw [h] at this; simp at this
+      try have := List.sizeOf_lt_of_mem ‹_›
+      grind
 
 /--
 Check if a procedure can be translated as a Core function.
