@@ -133,25 +133,76 @@ def ofOperationM {α β} [Repr α] [SizeOf α]
   | .op a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "operation" a
 
-def ofIdentM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
+def ofIdentM {α} [Repr α] : ArgF α → OfAstM String
+| .ident _ val => pure val
+| a => .throwExpected "identifier" a
+
+def ofAnnIdentM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
 | .ident ann val => pure { ann := ann, val := val }
 | a => .throwExpected "identifier" a
 
-def ofNumM {α} [Repr α] : ArgF α → OfAstM (Ann Nat α)
+def ofNumM {α} [Repr α] : ArgF α → OfAstM Nat
+| .num _ val => pure val
+| a => .throwExpected "numeric literal" a
+
+def ofAnnNumM {α} [Repr α] : ArgF α → OfAstM (Ann Nat α)
 | .num ann val => pure { ann := ann, val := val }
 | a => .throwExpected "numeric literal" a
 
-def ofDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
+def ofDecimalM {α} [Repr α] : ArgF α → OfAstM Decimal
+| .decimal _ val => pure val
+| a => .throwExpected "scientific literal" a
+
+def ofAnnDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
 | .decimal ann val => pure { ann := ann, val := val }
 | a => .throwExpected "scientific literal" a
 
-def ofStrlitM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
+def ofStrlitM {α} [Repr α] : ArgF α → OfAstM String
+| .strlit _ val => pure val
+| a => .throwExpected "string literal" a
+
+def ofAnnStrlitM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
 | .strlit ann val => pure { ann := ann, val := val }
 | a => .throwExpected "string literal" a
 
-def ofBytesM {α} [Repr α] : ArgF α → OfAstM (Ann ByteArray α)
+def ofBytesM {α} [Repr α] : ArgF α → OfAstM ByteArray
+| .bytes _ val => pure val
+| a => .throwExpected "byte array" a
+
+def ofAnnBytesM {α} [Repr α] : ArgF α → OfAstM (Ann ByteArray α)
 | .bytes ann val => pure { ann := ann, val := val }
 | a => .throwExpected "byte array" a
+
+/-- Convert Ann Bool to OperationF -/
+def toAstBool {α} [Inhabited α] (v : Ann Bool α) : OperationF α :=
+  if v.val then
+    ⟨v.ann, q`Init.boolTrue, #[]⟩
+  else
+    ⟨v.ann, q`Init.boolFalse, #[]⟩
+
+/-- Convert OperationF to Ann Bool -/
+def ofAstBool {α} [Inhabited α] [Repr α] (op : OperationF α) : OfAstM (Ann Bool α) :=
+  match op.name with
+  | q`Init.boolTrue =>
+    if op.args.size = 0 then
+      pure ⟨op.ann, true⟩
+    else
+      .error s!"boolTrue expects 0 arguments, got {op.args.size}"
+  | q`Init.boolFalse =>
+    if op.args.size = 0 then
+      pure ⟨op.ann, false⟩
+    else
+      .error s!"boolFalse expects 0 arguments, got {op.args.size}"
+  | _ =>
+    .error s!"Unknown Bool operator: {op.name}"
+
+def ofBoolM {α} [Inhabited α] [Repr α] : ArgF α → OfAstM Bool
+| .op op => Ann.val <$> ofAstBool op
+| a => .throwExpected "boolean" a
+
+def ofAnnBoolM {α} [Inhabited α] [Repr α] : ArgF α → OfAstM (Ann Bool α)
+| .op op => ofAstBool op
+| a => .throwExpected "boolean" a
 
 def ofOptionM {α β} [Repr α] [SizeOf α]
       (arg : ArgF α)
