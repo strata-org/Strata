@@ -138,7 +138,7 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   return output
 
 def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.Output)
-    (ctx : SMT.Context) (E : EncoderState) :
+    (ctx : SMT.Context) (E : EncoderState) (smtsolver : String) :
   Except Format Result := do
   let stdout := output.stdout
   let pos := stdout.find (· == '\n')
@@ -156,7 +156,12 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
+  | _     =>
+    let stderr := output.stderr
+    let hasExecError := (stderr.splitOn "could not execute external process").length > 1
+    let hasFileError := (stderr.splitOn "No such file or directory").length > 1
+    let suggestion := if (hasExecError || hasFileError) && smtsolver == defaultSolver then s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
+    .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
@@ -195,7 +200,7 @@ def dischargeObligation
   if options.verbose > .normal then IO.println s!"Wrote problem to {filename}."
   let flags := getSolverFlags options smtsolver
   let output ← runSolver smtsolver (#[filename] ++ flags)
-  match SMT.solverResult vars output ctx estate with
+  match SMT.solverResult vars output ctx estate smtsolver with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
