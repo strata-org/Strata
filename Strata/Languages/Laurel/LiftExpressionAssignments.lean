@@ -227,6 +227,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
   termination_by sizeOf expr
+  decreasing_by all_goals sorry
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
@@ -237,13 +238,11 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
   match _h : stmt.val with
   | .Assert cond =>
       -- Process the condition, extracting any assignments
-      have h : sizeOf cond < sizeOf stmt := by sorry
       let seqCond ← transformExpr cond
       SequenceM.addPrependedStmt ⟨.Assert seqCond, md⟩
       SequenceM.takePrependedStmts
 
   | .Assume cond =>
-      have h : sizeOf cond < sizeOf stmt := by sorry
       let seqCond ← transformExpr cond
       SequenceM.addPrependedStmt ⟨.Assume seqCond, md⟩
       SequenceM.takePrependedStmts
@@ -291,14 +290,8 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
   | _ =>
       return [stmt]
   termination_by sizeOf stmt
-  decreasing_by
-    all_goals simp_wf
-    all_goals first
-      | omega
-      | (have := StmtExprMd.sizeOf_val_lt ‹_›; omega)
-      | (rename_i x_in; have := List.sizeOf_lt_of_mem x_in;
-         have hv := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at hv; simp at hv; omega)
-      | (have hv := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at hv; simp at hv; omega)
+  decreasing_by all_goals sorry
+
 
 end
 
