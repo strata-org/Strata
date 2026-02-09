@@ -160,7 +160,7 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.
     let stderr := output.stderr
     let hasExecError := (stderr.splitOn "could not execute external process").length > 1
     let hasFileError := (stderr.splitOn "No such file or directory").length > 1
-    let suggestion := if (hasExecError || hasFileError) && smtsolver == defaultSolver then s!" Ensure {defaultSolver} is on your PATH." else ""
+    let suggestion := if (hasExecError || hasFileError) && smtsolver == defaultSolver then s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
     .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 
 def getSolverPrelude : String → SolverM Unit
