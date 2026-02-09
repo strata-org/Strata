@@ -929,9 +929,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     match decl with
     | .func func _md =>
       let args ← translateExprs p bindings argsa.toArray
-      let ty? := some func.output
-      let funcOp := .op () func.name ty?
-      return .mkApp () funcOp args.toList
+      return .mkApp () func.opExpr args.toList
     | _ =>
      TransM.error s!"translateExpr unimplemented fvar decl: {format decl} \nargs:{repr argsa}"
   | op, args =>
