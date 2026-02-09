@@ -11,50 +11,30 @@ import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Semantics
 import Strata.DDM.Util.Array
+import Strata.DL.Util.Func
 import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
 
 /-!
 ## Well-formedness of LFunc and Factory
+
+WF of Func is separately defined in Strata/DL/Util/Func.lean
 -/
 
 namespace Lambda
 
 open Std (ToFormat Format format)
+open Strata.DL.Util (Func FuncWF TyIdentifier)
 
 variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
-/--
-Well-formedness properties of LFunc. These are split from LFunc because
-otherwise it becomes impossible to create a 'temporary' LFunc object whose
-wellformedness might not hold yet.
--/
-structure LFuncWF (f : LFunc T) where
-  -- No args have same name.
-  arg_nodup:
-    List.Nodup (f.inputs.map (·.1.name))
-  -- Free variables of body must be arguments.
-  body_freevars:
-    ∀ b, f.body = .some b →
-      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)
-  -- concreteEval does not succeed if the length of args is incorrect.
-  concreteEval_argmatch:
-    ∀ fn md args res, f.concreteEval = .some fn
-      → fn md args = .some res
-      → args.length = f.inputs.length
-  -- body and concreteEval cannot exist at once
-  body_or_concreteEval:
-    ¬ (f.concreteEval.isSome ∧ f.body.isSome)
-  -- No typeArgs have same name
-  typeArgs_nodup:
-    List.Nodup f.typeArgs
-  -- All type vars in input and output are in typeArg
-  inputs_typevars_in_typeArgs:
-    ∀ ty, ty ∈ f.inputs.values →
-      ty.freeVars ⊆ f.typeArgs
-  output_typevars_in_typeArgs:
-    f.output.freeVars ⊆ f.typeArgs
-
+/-- Well-formedness properties for LFunc - abbreviation of FuncWF with Lambda-specific extractors. -/
+abbrev LFuncWF {T : LExprParams} (f : LFunc T) :=
+  FuncWF
+    (fun id => id.name) -- getName
+    (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
+    (fun e => e.freeVars) -- getTyFreeVars
+    f
 
 instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
     Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
@@ -67,23 +47,24 @@ instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
 
 -- LFuncWF.concreteEval_argmatch is not decidable.
 
-instance LFuncWF.body_or_concreteEval_decidable (f : LFunc T):
+instance LFuncWF.body_or_concreteEval_decidable {T : LExprParams} (f : LFunc T):
     Decidable (¬ (f.concreteEval.isSome ∧ f.body.isSome)) := by
-    exact instDecidableNot
+  exact instDecidableNot
 
-instance LFuncWF.typeArgs_decidable (f : LFunc T):
+instance LFuncWF.typeArgs_decidable {T : LExprParams} (f : LFunc T):
     Decidable (List.Nodup f.typeArgs) := by
   apply List.nodupDecidable
 
-instance LFuncWF.inputs_typevars_in_typeArgs_decidable {f : LFunc T}:
+instance LFuncWF.inputs_typevars_in_typeArgs_decidable {T : LExprParams} (f : LFunc T):
     Decidable (∀ ty, ty ∈ f.inputs.values →
       ty.freeVars ⊆ f.typeArgs) := by
   exact List.decidableBAll (fun x => x.freeVars ⊆ f.typeArgs)
     (ListMap.values f.inputs)
 
-instance LFuncWF.output_typevars_in_typeArgs_decidable {f : LFunc T}:
+instance LFuncWF.output_typevars_in_typeArgs_decidable {T : LExprParams} (f : LFunc T):
     Decidable (f.output.freeVars ⊆ f.typeArgs) := by
   apply List.instDecidableRelSubsetOfDecidableEq
+
 
 /--
 Well-formedness properties of Factory.

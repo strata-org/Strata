@@ -8,9 +8,9 @@ import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
 import Strata.DDM.AST
 import Strata.DDM.Util.Array
+import Strata.DL.Util.Func
 import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
-import Strata.DL.Util.Func
 
 /-!
 ## Lambda's Factory
@@ -61,7 +61,7 @@ def inline_if_constr_attr : String := "inline_if_constr"
 def eval_if_constr_attr : String := "eval_if_constr"
 
 -- Re-export Func from Util for backward compatibility
-open Strata.DL.Util (Func FuncWF TyIdentifier)
+open Strata.DL.Util (Func TyIdentifier)
 
 /--
 A Lambda factory function - instantiation of `Func` for Lambda expressions.
@@ -81,20 +81,6 @@ def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifi
     (axioms : List (LExpr T.mono) := []) : LFunc T :=
   Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms
 
-/-- Well-formedness properties for LFunc - abbreviation of FuncWF with Lambda-specific extractors. -/
-abbrev LFuncWF {T : LExprParams} (f : LFunc T) :=
-  FuncWF (fun id => id.name) (fun e => (LExpr.freeVars e).map (·.1.name)) f
-
-instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
-  apply List.nodupDecidable
-
-instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (∀ b, f.body = .some b →
-      (LExpr.freeVars b).map (·.1.name) ⊆ f.inputs.map (·.1.name)) :=
-  by exact f.body.decidableForallMem
-
--- LFuncWF.concreteEval_argmatch is not decidable.
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
