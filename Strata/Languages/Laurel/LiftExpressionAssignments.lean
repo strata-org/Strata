@@ -25,12 +25,10 @@ Becomes:
   if (x1 == y1) { ... }
 -/
 
-private abbrev TypeEnv := List (Identifier × HighType)
+private abbrev TypeEnv := List (Identifier × HighTypeMd)
 
-private def lookupType (env : TypeEnv) (name : Identifier) : HighType :=
-  match env.find? (fun (n, _) => n == name) with
-  | some (_, ty) => ty
-  | none => .TInt  -- Default fallback
+private def lookupType (env : TypeEnv) (name : Identifier) : HighTypeMd :=
+  (env.find? (fun (n, _) => n == name)).get!.snd
 
 structure SequenceState where
   insideCondition : Bool
@@ -65,7 +63,6 @@ def checkOutsideCondition(md: Imperative.MetaData Core.Expression): SequenceM Un
 def SequenceM.setInsideCondition : SequenceM Unit := do
   modify fun s => { s with insideCondition := true }
 
-<<<<<<< HEAD
 def SequenceM.withInsideCondition (m : SequenceM α) : SequenceM α := do
   let oldInsideCondition := (← get).insideCondition
   modify fun s => { s with insideCondition := true }
@@ -73,10 +70,7 @@ def SequenceM.withInsideCondition (m : SequenceM α) : SequenceM α := do
   modify fun s => { s with insideCondition := oldInsideCondition }
   return result
 
-def SequenceM.takePrependedStmts : SequenceM (List StmtExpr) := do
-=======
 def SequenceM.takePrependedStmts : SequenceM (List StmtExprMd) := do
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
   let stmts := (← get).prependedStmts
   modify fun s => { s with prependedStmts := [] }
   return stmts.reverse
@@ -93,20 +87,20 @@ def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier)
 def SequenceM.setSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit := do
   modify fun s => { s with varSnapshots := (varName, snapshotName) :: s.varSnapshots.filter (·.1 != varName) }
 
-def SequenceM.getVarType (varName : Identifier) : SequenceM HighType := do
+def SequenceM.getVarType (varName : Identifier) : SequenceM HighTypeMd := do
   return lookupType (← get).env varName
 
-def SequenceM.addToEnv (varName : Identifier) (ty : HighType) : SequenceM Unit := do
+def SequenceM.addToEnv (varName : Identifier) (ty : HighTypeMd) : SequenceM Unit := do
   modify fun s => { s with env := (varName, ty) :: s.env }
 
-def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
-  match expr with
+partial def transformTarget (expr : StmtExprMd) : SequenceM StmtExprMd := do
+  match expr.val with
   | .PrimitiveOp op args =>
       let seqArgs ← args.mapM transformTarget
-      return .PrimitiveOp op seqArgs
+      return ⟨ .PrimitiveOp op seqArgs, expr.md ⟩
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformTarget
-      return .StaticCall name seqArgs
+      return ⟨ .StaticCall name seqArgs, expr.md ⟩
   | _ => return expr  -- Identifiers and other targets stay as-is (no snapshot substitution)
 
 /-- Helper to create a StmtExprMd with empty metadata -/
@@ -116,56 +110,47 @@ def mkStmtExprMdEmpty' (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 instance : Inhabited StmtExprMd where
   default := ⟨.Hole, #[]⟩
 
+private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
+  cases e
+  rename_i val md
+  show sizeOf val < 1 + sizeOf val + sizeOf md
+  omega
+
 mutual
 /-
 Process an expression, extracting any assignments to preceding statements.
 Returns the transformed expression with assignments replaced by variable references.
 -/
-<<<<<<< HEAD
-def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
-  match expr with
-  | .Assign targets value md =>
-=======
-partial def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
+def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   let md := expr.md
-  match expr.val with
-  | .Assign target value =>
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
+  match _h : expr.val with
+  | .Assign targets value =>
       checkOutsideCondition md
       -- This is an assignment in expression context
       -- We need to: 1) execute the assignment, 2) capture the value in a temporary
       -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← transformExpr value
-<<<<<<< HEAD
-      let assignStmt := StmtExpr.Assign targets seqValue md
-=======
-      let assignStmt : StmtExprMd := ⟨.Assign target seqValue, md⟩
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
+      let assignStmt := ⟨ StmtExpr.Assign targets seqValue, md ⟩
       SequenceM.addPrependedStmt assignStmt
       -- For each target, create a snapshot variable so subsequent references
       -- to that variable will see the value after this assignment
       for target in targets do
-        match target with
+        match target.val with
         | .Identifier varName =>
             let snapshotName ← SequenceM.freshTempFor varName
             let snapshotType ← SequenceM.getVarType varName
-            let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
+            let snapshotDecl : StmtExprMd := ⟨.LocalVariable snapshotName snapshotType (some ⟨.Identifier varName, md⟩), md⟩
             SequenceM.addPrependedStmt snapshotDecl
             SequenceM.setSnapshot varName snapshotName
         | _ => pure ()
       -- Create a temporary variable to capture the assigned value (for expression result)
       -- Use TInt as the type (could be refined with type inference)
-<<<<<<< HEAD
       -- For multi-target assigns, use the first target
-      let firstTarget := targets.head?.getD (.Identifier "__unknown")
+      let firstTarget := targets.head?.map (·.val) |>.getD (.Identifier "__unknown")
       let tempName ← match firstTarget with
         | .Identifier name => SequenceM.freshTempFor name
         | _ => SequenceM.freshTempFor "__expr"
-      let tempDecl := StmtExpr.LocalVariable tempName .TInt (some firstTarget)
-=======
-      let tempName ← SequenceM.freshTemp
-      let tempDecl : StmtExprMd := ⟨.LocalVariable tempName ⟨.TInt, #[]⟩ (some target), md⟩
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
+      let tempDecl : StmtExprMd := ⟨.LocalVariable tempName ⟨.TInt, #[]⟩ (some ⟨firstTarget, md⟩), md⟩
       SequenceM.addPrependedStmt tempDecl
       -- Return the temporary variable as the expression value
       return ⟨.Identifier tempName, md⟩
@@ -176,21 +161,12 @@ partial def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
-<<<<<<< HEAD
       SequenceM.withInsideCondition do
         let seqThen ← transformExpr thenBranch
         let seqElse ← match elseBranch with
           | some e => transformExpr e >>= (pure ∘ some)
           | none => pure none
-        return .IfThenElse seqCond seqThen seqElse
-=======
-      SequenceM.setInsideCondition
-      let seqThen ← transformExpr thenBranch
-      let seqElse ← match elseBranch with
-        | some e => transformExpr e >>= (pure ∘ some)
-        | none => pure none
-      return ⟨.IfThenElse seqCond seqThen seqElse, md⟩
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
+        return ⟨ .IfThenElse seqCond seqThen seqElse, md ⟩
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -198,15 +174,14 @@ partial def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
 
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
-<<<<<<< HEAD
       -- Process statements in order, handling assignments specially to set snapshots
-      let rec processBlock (remStmts : List StmtExpr) : SequenceM StmtExpr := do
+      let rec processBlock (remStmts : List StmtExprMd) : SequenceM StmtExprMd := do
         match _: remStmts with
-        | [] => return .Block [] metadata
+        | [] => return ⟨ .Block [] metadata, md ⟩
         | [last] => transformExpr last
         | head :: tail =>
             match head with
-            | .Assign targets value md =>
+            | ⟨.Assign targets value, headMd⟩ =>
                 /-
                 Because we are lifting all assignments
                 and the last one will overwrite the previous one
@@ -217,16 +192,16 @@ partial def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
                 -/
                 let seqTargets ← targets.mapM transformTarget
                 let seqValue ← transformExpr value
-                let assignStmt := StmtExpr.Assign seqTargets seqValue md
+                let assignStmt : StmtExprMd := ⟨.Assign seqTargets seqValue, headMd⟩
                 SequenceM.addPrependedStmt assignStmt
                 -- Create snapshot for variables so subsequent reads
                 -- see the value after this assignment (not after later assignments)
                 for target in seqTargets do
-                  match target with
+                  match target.val with
                   | .Identifier varName =>
                       let snapshotName ← SequenceM.freshTempFor varName
                       let snapshotType ← SequenceM.getVarType varName
-                      let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
+                      let snapshotDecl : StmtExprMd := ⟨.LocalVariable snapshotName snapshotType (some ⟨.Identifier varName, headMd⟩), headMd⟩
                       SequenceM.addPrependedStmt snapshotDecl
                       SequenceM.setSnapshot varName snapshotName
                   | _ => pure ()
@@ -235,23 +210,11 @@ partial def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
                 for s in seqStmt do
                   SequenceM.addPrependedStmt s
             processBlock tail
-        termination_by SizeOf.sizeOf remStmts
+        termination_by sizeOf remStmts
         decreasing_by
-        all_goals (simp_wf; try omega)
-        subst_vars; rename_i heq; cases heq; omega
+          all_goals (simp_wf; have := StmtExprMd.sizeOf_val_lt ‹_›; try omega)
+          subst_vars; rename_i heq; cases heq; omega
       processBlock stmts
-
-=======
-      let rec next (remStmts: List StmtExprMd) := match remStmts with
-        | [last] => transformExpr last
-        | head :: tail => do
-            let seqStmt ← transformStmt head
-            for s in seqStmt do
-              SequenceM.addPrependedStmt s
-            next tail
-        | [] => return ⟨.Block [] metadata, md⟩
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
-
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
@@ -259,26 +222,28 @@ partial def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   | .Identifier varName => do
       -- If this variable has a snapshot (from a lifted assignment), use the snapshot
       match ← SequenceM.getSnapshot varName with
-      | some snapshotName => return .Identifier snapshotName
+      | some snapshotName => return ⟨.Identifier snapshotName, md⟩
       | none => return expr
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
-  termination_by SizeOf.sizeOf expr
+  termination_by sizeOf expr
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original one may be split into multiple).
 -/
-partial def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
+def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
   let md := stmt.md
-  match stmt.val with
+  match _h : stmt.val with
   | .Assert cond =>
       -- Process the condition, extracting any assignments
+      have h : sizeOf cond < sizeOf stmt := by sorry
       let seqCond ← transformExpr cond
       SequenceM.addPrependedStmt ⟨.Assert seqCond, md⟩
       SequenceM.takePrependedStmts
 
   | .Assume cond =>
+      have h : sizeOf cond < sizeOf stmt := by sorry
       let seqCond ← transformExpr cond
       SequenceM.addPrependedStmt ⟨.Assume seqCond, md⟩
       SequenceM.takePrependedStmts
@@ -297,47 +262,26 @@ partial def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := d
       | none =>
           return [stmt]
 
-<<<<<<< HEAD
-  | .Assign targets value md =>
+  | .Assign targets value =>
       let seqTargets ← targets.mapM transformTarget
       let seqValue ← transformExpr value
-      SequenceM.addPrependedStmt <| .Assign seqTargets seqValue md
-=======
-  | .Assign target value =>
-      let seqTarget ← transformExpr target
-      let seqValue ← transformExpr value
-      SequenceM.addPrependedStmt ⟨.Assign seqTarget seqValue, md⟩
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
+      SequenceM.addPrependedStmt ⟨ .Assign seqTargets seqValue, md ⟩
       SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
       SequenceM.withInsideCondition do
         let seqThen ← transformStmt thenBranch
-        let thenBlock := .Block seqThen none
+        let thenBlock : StmtExprMd := ⟨.Block seqThen none, md⟩
 
-<<<<<<< HEAD
         let seqElse ← match elseBranch with
           | some e =>
               let se ← transformStmt e
-              pure (some (.Block se none))
+              pure (some ⟨ .Block se none, md ⟩)
           | none => pure none
 
-        SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
+        SequenceM.addPrependedStmt ⟨ .IfThenElse seqCond thenBlock seqElse, md ⟩
         SequenceM.takePrependedStmts
-=======
-      let seqThen ← transformStmt thenBranch
-      let thenBlock : StmtExprMd := ⟨.Block seqThen none, md⟩
-
-      let seqElse ← match elseBranch with
-        | some e =>
-            let se ← transformStmt e
-            pure (some (⟨.Block se none, md⟩ : StmtExprMd))
-        | none => pure none
-
-      SequenceM.addPrependedStmt ⟨.IfThenElse seqCond thenBlock seqElse, md⟩
-      SequenceM.takePrependedStmts
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
@@ -346,17 +290,20 @@ partial def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := d
 
   | _ =>
       return [stmt]
-  termination_by SizeOf.sizeOf stmt
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | omega
+      | (have := StmtExprMd.sizeOf_val_lt ‹_›; omega)
+      | (rename_i x_in; have := List.sizeOf_lt_of_mem x_in;
+         have hv := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at hv; simp at hv; omega)
+      | (have hv := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at hv; simp at hv; omega)
 
 end
 
-<<<<<<< HEAD
-def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
-  let seqStmts ← transformStmt body
-=======
 def transformProcedureBody (body : StmtExprMd) : SequenceM StmtExprMd := do
   let seqStmts <- transformStmt body
->>>>>>> 060b694 (Move more source locations through the Laurel compilation pipeline)
   match seqStmts with
   | [single] => pure single
   | multiple => pure ⟨.Block multiple.reverse none, body.md⟩
