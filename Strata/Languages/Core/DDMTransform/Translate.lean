@@ -1300,6 +1300,26 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
 
 ---------------------------------------------------------------------
 
+/-- Translate a top-level block command as a nameless parameterless procedure -/
+def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_block 1
+  let (body, bindings) ← translateBlock p bindings op.args[0]!
+  let md ← getOpMetaData op
+  return (.proc { header := { name := "",
+                              typeArgs := [],
+                              inputs := [],
+                              outputs := [] },
+                  spec := { modifies := [],
+                            preconditions := [],
+                            postconditions := [] },
+                  body := body
+                }
+                md,
+          bindings)
+
+---------------------------------------------------------------------
+
 def translateConstant (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 3
@@ -1606,6 +1626,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
+          | q`Core.command_block =>
+            translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
         pure ([decl], bindings)
     let (decls, bindings) ← go (count + 1) max bindings ops

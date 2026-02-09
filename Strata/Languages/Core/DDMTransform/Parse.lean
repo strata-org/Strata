@@ -314,6 +314,10 @@ op command_axiom (label : Option Label, e : bool) : Command =>
 op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
   "distinct " label "[" exprs "]" ";\n";
 
+// Top-level block command for parsing statements directly
+op command_block (b : Block) : Command =>
+  b ";\n";
+
 // =====================================================================
 // Datatype Syntax Categories
 // =====================================================================

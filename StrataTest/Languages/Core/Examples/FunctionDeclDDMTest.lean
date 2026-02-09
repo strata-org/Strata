@@ -33,3 +33,24 @@ procedure testFuncDecl(c: int) returns () {
 -- #eval verify "z3" funcDeclStmtPgm
 
 ---------------------------------------------------------------------
+
+-- Test parsing a top-level block directly (without wrapping in a procedure)
+-- This demonstrates the ability to parse statements directly.
+def funcDeclBlockPgm : Program :=
+#strata
+program Core;
+
+{
+  var c : int := 2;
+  function double(x : int) : int { x + x + c }
+  var y : int := 5;
+  var result : int := double(y);
+  assert result == 12;
+};
+
+#end
+
+-- Verify the block program parses and type checks correctly
+#eval IO.println funcDeclBlockPgm
+
+---------------------------------------------------------------------
