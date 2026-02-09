@@ -167,34 +167,10 @@ where
             .error (errorWithSourceLoc e md)
 
         | .funcDecl decl md => do try
-          -- Type check the function declaration
-          -- Manually convert PureFunc Expression to Function for type checking
-          let func : Function := {
-            name := decl.name,
-            typeArgs := decl.typeArgs,
-            isConstr := decl.isConstr,
-            inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-            output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-            body := decl.body,
-            attr := decl.attr,
-            concreteEval := none,  -- Can't convert concreteEval safely
-            axioms := decl.axioms
-          }
-          let (func', Env) ← Function.typeCheck C Env func |>.mapError DiagnosticModel.fromFormat
-          -- Add the function to the context so subsequent statements can use it
-          let C := C.addFactoryFunction func'
-          -- Convert back by wrapping monotypes in trivial polytypes
-          let decl' : PureFunc Expression := {
-            name := func'.name,
-            typeArgs := func'.typeArgs,
-            isConstr := func'.isConstr,
-            inputs := func'.inputs.map (fun (id, mty) => (id, .forAll [] mty)),
-            output := .forAll [] func'.output,
-            body := func'.body,
-            attr := func'.attr,
-            concreteEval := decl.concreteEval,  -- Preserve original
-            axioms := func'.axioms
-          }
+          -- Type check the function declaration using the shared helper
+          -- which returns both the type-checked PureFunc and the Function
+          let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
+          let C := C.addFactoryFunction func
           .ok (.funcDecl decl' md, Env, C)
           catch e =>
             .error (errorWithSourceLoc e md)
@@ -230,6 +206,12 @@ private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option E
 
 /--
 Apply type substitution `S` to a statement.
+
+Note: This substitutes type variables in types, not term variables. For
+`funcDecl`, the input identifiers (term-level names like `x`, `y`) are
+unchanged; only the types of those inputs are substituted. There is no
+name collision concern between type variables in `S` and term-level
+input identifiers.
 -/
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with

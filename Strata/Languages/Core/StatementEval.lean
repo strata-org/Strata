@@ -277,15 +277,19 @@ def createPassingAssertObligations
       (Imperative.ProofObligation.mk label .assert [] (LExpr.true ()) md))
 
 /--
-Substitute free variables in an expression with their current values from the environment.
+Substitute free variables in an expression with their current values from the environment,
+excluding the given parameter names (which are bound by the function, not free).
 This implements value capture semantics for local function declarations (`funcDecl`).
 
 Unlike global functions (which are evaluated at the top level with no local state),
 local functions capture the values of free variables at the point of declaration.
+Parameters are excluded because they are bound by the function definition and should
+not be substituted with values from the enclosing scope.
 -/
-def captureFreevars (env : Env) (e : Expression.Expr) : Expression.Expr :=
+def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
   let freeVars := Lambda.LExpr.freeVars e
-  freeVars.foldl (fun body fv =>
+  let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
+  freeVarsToCapture.foldl (fun body fv =>
     match env.exprEnv.state.find? fv.fst with
     | some (_, val) => Lambda.LExpr.substFvar body fv.fst val
     | none => body
@@ -417,16 +421,17 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
 
           | .funcDecl decl _ =>
             -- Add function to factory with value capture semantics
+            let paramNames := decl.inputs.map (·.1)
             let func : Lambda.LFunc CoreLParams := {
               name := decl.name,
               typeArgs := decl.typeArgs,
               isConstr := decl.isConstr,
               inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
               output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-              body := decl.body.map (captureFreevars Ewn.env),
+              body := decl.body.map (captureFreevars Ewn.env paramNames),
               attr := decl.attr,
               concreteEval := decl.concreteEval,
-              axioms := decl.axioms
+              axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
             }
             match Ewn.env.addFactoryFunc func with
             | .ok env' => [{ Ewn with env := env' }]
