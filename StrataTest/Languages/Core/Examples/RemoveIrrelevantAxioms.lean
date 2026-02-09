@@ -105,51 +105,35 @@ Result: 🟡 unknown
 
 Obligation: assert_4
 Property: assert
-Result: ❌ fail
-Model:
-($__x0, 3)
+Result: ✅ pass
 
 Obligation: assert_5
 Property: assert
-Result: ❌ fail
-Model:
-($__x0, 3)
+Result: ✅ pass
 
 Obligation: assert_6
 Property: assert
-Result: ❌ fail
-Model:
-($__x1, 3)
+Result: ✅ pass
 
 Obligation: assert_7
 Property: assert
-Result: ❌ fail
-Model:
-($__x1, 3)
+Result: ✅ pass
 
 Obligation: assert_8
 Property: assert
-Result: ❌ fail
-Model:
-($__x2, 3)
+Result: ✅ pass
 
 Obligation: assert_9
 Property: assert
-Result: ❌ fail
-Model:
-($__x2, 3)
+Result: ✅ pass
 
 Obligation: assert_10
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, 3)
+Result: ✅ pass
 
 Obligation: assert_11
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, 3)
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" irrelevantAxiomsTestPgm
