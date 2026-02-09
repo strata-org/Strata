@@ -58,19 +58,19 @@ deriving Inhabited
 
 namespace Signatures
 
-def getFuncSigOrder (db : Signatures) (fname: FuncName) : List String :=
+def getFuncSigOrder (db : Signatures) (fname: FuncName) : Except String (List String) :=
   match  db.functions[fname]? with
-  | some decl => decl.args |>.map (·.name) |>.toList
-  | none => panic! s!"Missing function signature : {fname}"
+  | some decl => .ok (decl.args |>.map (·.name) |>.toList)
+  | none => .error s!"Missing function signature : {fname}"
 
 -- We should extract the function signatures from the prelude:
-def getFuncSigType (db : Signatures) (fname: FuncName) (arg: String) : String :=
+def getFuncSigType (db : Signatures) (fname: FuncName) (arg: String) : Except String String :=
   match  db.functions[fname]? with
-  | none => panic! s!"Missing function signature : {fname}"
+  | none => .error s!"Missing function signature : {fname}"
   | some decl =>
     match decl.argIndexMap[arg]? with
-    | none => panic! s!"Unrecognized arg : {arg}"
-    | some idx => decl.args[idx].type
+    | none => .error s!"Unrecognized arg : {arg}"
+    | some idx => .ok decl.args[idx].type
 
 end Signatures
 

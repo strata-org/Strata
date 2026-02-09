@@ -28,6 +28,8 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
       | opts, "--procedures" :: procList :: rest, _ =>
          let procs := procList.splitToList (· == ',')
          go opts rest (some procs)
+      | opts, "--solver" :: solverName :: rest, procs =>
+         go {opts with solver := solverName} rest procs
       | opts, "--solver-timeout" :: secondsStr :: rest, procs =>
          let n? := String.toNat? secondsStr
          match n? with
@@ -49,7 +51,8 @@ def usageMessage : Std.Format :=
   --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
   --procedures <proc1,proc2>  Verify only the specified procedures (comma-separated).{Std.Format.line}  \
   --sarif                     Output results in SARIF format to <file>.sarif{Std.Format.line}  \
-  --output-format=sarif       Output results in SARIF format to <file>.sarif"
+  --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
+  --solver <name>             SMT solver executable to use (default: {defaultSolver})"
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -83,13 +86,13 @@ def main (args : List String) : IO UInt32 := do
       else -- !typeCheckOnly
         let vcResults ← try
           if file.endsWith ".csimp.st" then
-            C_Simp.verify "z3" pgm opts
+            C_Simp.verify opts.solver pgm opts
           else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
             -- B3 verification (different model, handle inline)
             let ast ← match B3.Verifier.programToB3AST pgm with
               | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
               | Except.ok ast => pure ast
-            let solver ← B3.Verifier.createInteractiveSolver "z3"
+            let solver ← B3.Verifier.createInteractiveSolver opts.solver
             let reports ← B3.Verifier.programToSMT ast solver
             -- B3 uses a different result format, print directly and return empty array
             for report in reports do
@@ -106,7 +109,7 @@ def main (args : List String) : IO UInt32 := do
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
           else
-            verify "z3" pgm inputCtx proceduresToVerify opts
+            verify opts.solver pgm inputCtx proceduresToVerify opts
         catch e =>
           println! f!"{e}"
           return (1 : UInt32)
