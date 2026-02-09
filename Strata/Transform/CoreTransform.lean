@@ -87,7 +87,7 @@ structure CachedAnalyses where
 def CachedAnalyses.emp : CachedAnalyses := {}
 
 /-- Define the state of transformation in Strata Core.
-  It is the duty of the transformation to keep the analysis cache keep the
+  It is the duty of the transformation to update the analysis cache to keep the
   correct information after code transformation, or one can simply drop the
   cached result.
 -/
@@ -277,7 +277,8 @@ decreasing_by
   all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
 
 /--
-Visit all procedures and run f
+Visit all procedures and run f. The returned Bool corresponds to whether the
+program has been updated.
 NOTE: please use runProgram if possible since CoreTransformState might result
 in an inconsistent state. This function is for partial implementation.
 -/
