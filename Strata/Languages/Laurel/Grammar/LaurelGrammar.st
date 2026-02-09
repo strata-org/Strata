@@ -10,7 +10,7 @@ op compositeType (name: Ident): LaurelType => name;
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
-op string (s: Init.Str): StmtExpr => s;
+op string (s: Str): StmtExpr => s;
 
 // Variable declarations
 category OptionalType;
