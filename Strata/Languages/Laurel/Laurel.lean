@@ -98,7 +98,7 @@ inductive HighType : Type where
   | TInt
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
   | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
-  | TTypedField (valueType : HighType) /- Field constant with known value type. Not accessible via grammar. -/
+  | TTypedField (valueType : HighTypeMd) /- Field constant with known value type. Not accessible via grammar. -/
   | UserDefined (name: Identifier)
   | Applied (base : HighTypeMd) (typeArguments : List HighTypeMd)
   /- Pure represents a composite type that does not support reference equality -/
@@ -147,7 +147,7 @@ inductive StmtExpr : Type where
   /- For single target assignments, use a single-element list.
      Multiple targets are only allowed when the value is a StaticCall to a procedure
      with multiple outputs, and the number of targets must match the number of outputs. -/
-  | Assign (targets : List StmtExprMd) (value : StmtExprMd) (md : Imperative.MetaData Core.Expression)
+  | Assign (targets : List StmtExprMd) (value : StmtExprMd)
   /- Used by itself for fields reads and in combination with Assign for field writes -/
   | FieldSelect (target : StmtExprMd) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/

@@ -45,8 +45,11 @@ partial def formatHighTypeVal : HighType → Format
   | .Pure base => "pure(" ++ formatHighType base ++ ")"
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
+end
 
+mutual
 def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
+  termination_by (sizeOf s.val, 1)
 
 def formatStmtExprVal (s : StmtExpr) : Format :=
   match s with
@@ -73,9 +76,9 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .Identifier name => Format.text name
-  | .Assign [single] value _ =>
+  | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value
-  | .Assign targets value _ =>
+  | .Assign targets value =>
       "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
       formatStmtExpr target ++ "#" ++ Format.text field
@@ -114,6 +117,8 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
+  termination_by (sizeOf s, 0)
+end
 
 partial def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
@@ -164,8 +169,6 @@ partial def formatTypeDefinition : TypeDefinition → Format
 
 partial def formatProgram (prog : Program) : Format :=
   Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
-
-end
 
 instance : Std.ToFormat Operation where
   format := formatOperation

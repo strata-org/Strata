@@ -83,6 +83,9 @@ def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := 
 /-- Create a StmtExprMd with the given metadata -/
 def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
 
+/-- Helper to create a StmtExprMd with empty metadata -/
+def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
   let md ← getArgMetaData arg
   match arg with
@@ -128,7 +131,7 @@ instance : Inhabited Procedure where
     name := ""
     inputs := []
     outputs := []
-    precondition := .LiteralBool true
+    precondition := mkStmtExprMdEmpty <| .LiteralBool true
     determinism := .nondeterministic
     decreases := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
@@ -187,7 +190,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.assign, #[arg0, arg1] =>
       let target ← translateStmtExpr arg0
       let value ← translateStmtExpr arg1
-      return mkStmtExprMd (.Assign target value) md
+      return mkStmtExprMd (.Assign [target] value) md
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
@@ -225,7 +228,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
 partial def translateSeqCommand (arg : Arg) : TransM (List StmtExprMd) := do
   let .seq _ .none args := arg
     | TransM.error s!"translateSeqCommand expects seq"
-  let mut stmts : List StmtExpr := []
+  let mut stmts : List StmtExprMd := []
   for arg in args do
     let stmt ← translateStmtExpr arg
     stmts := stmts ++ [stmt]
@@ -267,7 +270,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | .option _ (some (.op requiresOp)) => match requiresOp.name, requiresOp.args with
         | q`Laurel.optionalRequires, #[exprArg] => translateStmtExpr exprArg
         | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
-      | .option _ none => pure (.LiteralBool true)
+      | .option _ none => pure (mkStmtExprMdEmpty <| .LiteralBool true)
       | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"
     -- Parse postcondition (ensures clause)
     let postcondition ← match ensuresArg with
