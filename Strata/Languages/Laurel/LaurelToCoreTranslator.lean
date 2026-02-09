@@ -181,7 +181,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
           (env', [Core.Statement.init ident boogieType defaultExpr])
   | .Assign targets value =>
       match targets with
-      | [⟨ .Identifier name, idMd ⟩] =>
+      | [⟨ .Identifier name, _ ⟩] =>
           let ident := Core.CoreIdent.locl name
           let boogieExpr := translateExpr constants env value
           (env, [Core.Statement.set ident boogieExpr])
@@ -195,7 +195,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
                 match t.val with
                 | .Identifier name => some (Core.CoreIdent.locl name)
                 | _ => none
-              (env, [Core.Statement.call lhsIdents callee boogieArgs])
+              (env, [Core.Statement.call lhsIdents callee boogieArgs value.md])
           | _ =>
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>

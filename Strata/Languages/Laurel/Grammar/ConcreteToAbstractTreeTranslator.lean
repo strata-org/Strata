@@ -77,13 +77,8 @@ instance : Inhabited HighType where
 instance : Inhabited Parameter where
   default := { name := "", type := ⟨.TVoid, #[]⟩ }
 
-/-- Create a HighTypeMd with the given metadata -/
 def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := ⟨t, md⟩
-
-/-- Create a StmtExprMd with the given metadata -/
 def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
-
-/-- Helper to create a StmtExprMd with empty metadata -/
 def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
@@ -93,9 +88,6 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     match op.name, op.args with
     | q`Laurel.intType, _ => return mkHighTypeMd .TInt md
     | q`Laurel.boolType, _ => return mkHighTypeMd .TBool md
-    | q`Laurel.arrayType, #[elemArg] =>
-      let elemType ← translateHighType elemArg
-      return mkHighTypeMd (.Applied (mkHighTypeMd (.UserDefined "Array") md) [elemType]) md
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md

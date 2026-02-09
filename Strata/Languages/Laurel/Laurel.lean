@@ -63,13 +63,12 @@ instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
 
 
 mutual
-/-- A wrapper that adds metadata to any type -/
+
 structure HighTypeMd where
   val : HighType
   md : Imperative.MetaData Core.Expression
   deriving Repr
 
-/-- A wrapper that adds metadata to any type -/
 structure StmtExprMd where
   val : StmtExpr
   md : Imperative.MetaData Core.Expression
