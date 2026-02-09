@@ -225,6 +225,7 @@ def runStmtsRec (f : Command → Program → CoreTransformM (List Statement))
       | .loop guard measure invariant body md => do
         let body' ← runStmtsRec f body inputProg
         return [.loop guard measure invariant body' md]
+      | .funcDecl _ _ => return [s]  -- Function declarations pass through unchanged
       | .goto _lbl _md =>
         return [s])
     return (sres ++ ss'')

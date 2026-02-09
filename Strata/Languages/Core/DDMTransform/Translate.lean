@@ -918,6 +918,29 @@ def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : Tr
     translateExpr p bindings args[0]!
   | _ => pure none
 
+partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (List Expression.Expr) := do
+  let .op op := arg
+    | TransM.error s!"translateInvariants expects an op {repr arg}"
+  match op.name with
+  | q`Core.nilInvariants =>
+    pure []
+  | q`Core.consInvariants =>
+    let args ← checkOpArg arg q`Core.consInvariants 2
+    let i ← translateExpr p bindings args[0]!
+    let is ← translateInvariants p bindings args[1]!
+    pure (i::is)
+  | _ => TransM.error s!"translateInvariants unimplemented for {repr op}"
+
+private def invariantsToOption (invs : List Core.Expression.Expr) : Option Core.Expression.Expr :=
+  match invs with
+  | [] => none
+  | i :: is =>
+    -- ((i ∧ i2) ∧ i3) ∧ ...
+    some <| is.foldl
+      (fun acc j => .app () (.app () Core.boolAndOp acc) j)
+      i
+
 def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBindings) :
   TransM ((List Core.Statement) × TransBindings) := do
   match tpids with
@@ -1005,10 +1028,11 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.ite c tss fss md], bindings)
   | q`Core.while_statement, #[ca, ia, ba] =>
     let c ← translateExpr p bindings ca
-    let i ← translateInvariant p bindings ia
+    let invs ← translateInvariants p bindings ia
+    let inv? := invariantsToOption invs
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.loop c .none i bodyss md], bindings)
+    return ([.loop c .none inv? bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent CoreIdent) lsa
     let f   ← translateIdent String fa

@@ -37,7 +37,7 @@ private def needsPipeDelimiters (s : String) : Bool :=
   if h : s.isEmpty then
     true
   else
-    let firstChar := s.startValidPos.get (by simp_all)
+    let firstChar := s.startPos.get (by simp_all)
     !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
 
 /--
@@ -58,7 +58,7 @@ Follows SMT-LIB 2.6 specification for quoted symbols.
 private def formatIdent (s : String) : Format :=
   -- Strip Lean's «» notation if present
   let s := if s.startsWith "«" && s.endsWith "»" then
-             s.drop 1 |>.dropRight 1
+             s.drop 1 |>.dropEnd 1 |>.toString
            else
              s
   if needsPipeDelimiters s then
@@ -73,7 +73,7 @@ deriving Inhabited
 
 namespace PrecFormat
 
-private def atom (format : Format) : PrecFormat := { format, prec := maxPrec }
+private def atom (format : Format) : PrecFormat := { format, prec := maxPrec + 1 }
 
 private def ofFormat {α} [Std.ToFormat α] (x : α) (prec : Nat := maxPrec) : PrecFormat := { format := Std.format x, prec }
 
@@ -133,10 +133,10 @@ structure FormatState where
 namespace FormatState
 
 /-- A format context that uses no syntactic sugar. -/
-private def empty : FormatState where
+def empty : FormatState where
   openDialects := {}
 
-private instance : Inhabited FormatState where
+instance : Inhabited FormatState where
   default := .empty
 
 def pushBinding (s : FormatState) (ident : String) : FormatState :=

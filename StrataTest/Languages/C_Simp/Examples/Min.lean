@@ -26,10 +26,10 @@ int procedure min (a: int, b: int)
 
 /--
 info: program C_Simp;
-(int)proceduremin(a:int, b:int)//@pretrue;
+int procedure min(a:int, b:int)//@pretrue;
 //@posttrue;
   ({
-  if((a)<(b)){
+  if(a<b){
   returna;
   }
   (else({
