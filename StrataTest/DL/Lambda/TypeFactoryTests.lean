@@ -189,8 +189,9 @@ info: #2
 
 -- Test testers (isNil and isCons)
 
-/-- info: Annotated expression:
-((~isNil : (arrow (List $__ty11) bool)) (~Nil : (List $__ty11)))
+/--
+info: Annotated expression:
+((~isNil : (arrow (List $__ty1) bool)) (~Nil : (List $__ty1)))
 
 ---
 info: #true
@@ -211,8 +212,9 @@ info: #false
   typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams)
   ((LExpr.op () ("isNil" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) nil])
 
-/-- info: Annotated expression:
-((~isCons : (arrow (List $__ty11) bool)) (~Nil : (List $__ty11)))
+/--
+info: Annotated expression:
+((~isCons : (arrow (List $__ty1) bool)) (~Nil : (List $__ty1)))
 
 ---
 info: #false
@@ -674,8 +676,9 @@ info: #true
   typeCheckAndPartialEval #[roseForestBlock] (Factory.default : @Factory TestParams)
     ((LExpr.op () ("isNode" : TestParams.Identifier) .none).mkApp () [node' (intConst () 1) fnil'])
 
-/-- info: Annotated expression:
-((~isFNil : (arrow (Forest $__ty17) bool)) (~FNil : (Forest $__ty17)))
+/--
+info: Annotated expression:
+((~isFNil : (arrow (Forest $__ty1) bool)) (~FNil : (Forest $__ty1)))
 
 ---
 info: #true

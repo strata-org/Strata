@@ -83,16 +83,22 @@ def translateHighType (arg : Arg) : TransM HighType := do
     match op.name, op.args with
     | q`Laurel.intType, _ => return .TInt
     | q`Laurel.boolType, _ => return .TBool
+    | q`Laurel.stringType, _ => return .TString
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return .UserDefined name
-    | _, _ => TransM.error s!"translateHighType expects intType, boolType or compositeType, got {repr op.name}"
+    | _, _ => TransM.error s!"translateHighType expects intType, boolType, stringType or compositeType, got {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
 def translateNat (arg : Arg) : TransM Nat := do
   let .num _ n := arg
     | TransM.error s!"translateNat expects num literal"
   return n
+
+def translateString (arg : Arg) : TransM String := do
+  let .strlit _ s := arg
+    | TransM.error s!"translateString expects string literal"
+  return s
 
 def translateParameter (arg : Arg) : TransM Parameter := do
   let .op op := arg
@@ -157,6 +163,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
       return .LiteralInt n
+    | q`Laurel.string, #[arg0] =>
+      let s ← translateString arg0
+      return .LiteralString s
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
       let name ← translateIdent arg0
       let varType ← match typeArg with
