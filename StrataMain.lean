@@ -221,7 +221,7 @@ def pyAnalyzeCommand : Command where
       let vcResults ← IO.FS.withTempDir (fun tempDir =>
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
-            (Core.verify solverName newPgm tempDir
+            (Core.verify solverName newPgm tempDir .none
               { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
                                       (moreFns := Strata.Python.ReFactory)))
       let mut s := ""

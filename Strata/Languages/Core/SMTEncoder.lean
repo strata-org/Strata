@@ -63,8 +63,8 @@ def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
 def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
   { ctx with tySubst := ctx.tySubst ++ newSubst }
 
-def SMT.Context.removeSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
-  { ctx with tySubst := newSubst.foldl (fun acc_m p => acc_m.erase p.fst) ctx.tySubst }
+def SMT.Context.restoreSubst (ctx : SMT.Context) (savedSubst: Map String TermType) : SMT.Context :=
+  { ctx with tySubst := savedSubst }
 
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
   ctx.seenDatatypes.contains name
@@ -544,12 +544,14 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           .ok (acc_map.insert tyVar smtTy)
         ) Map.empty
         -- Add all axioms for this function to the context, with types binding for the type variables in the expr
+        -- Save the original tySubst to restore after processing axioms
+        let savedSubst := ctx.tySubst
         let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
           let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
             let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
             .ok (new_ctx.addAxiom axiom_term)
         ) ctx
-        let ctx := ctx.removeSubst smt_ty_inst
+        let ctx := ctx.restoreSubst savedSubst
         .ok (.app (Op.uf uf), smt_outty, ctx)
       else
         .ok (.app (Op.uf uf), smt_outty, ctx)

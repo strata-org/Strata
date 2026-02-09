@@ -52,6 +52,11 @@ elif [ "$VER" == "3.12" ]; then
   expected_failures="$expected_failures;/test_lib2to3/data/bom.py"
   expected_failures="$expected_failures;/test_lib2to3/data/py2_test_grammar.py"
   expected_failures="$expected_failures;/test_lib2to3/data/crlf.py"
+elif [ "$VER" == "3.11" ]; then
+  expected_failures="/tokenizedata/bad_coding.py"
+  expected_failures="$expected_failures;/tokenizedata/bad_coding2.py"
+  expected_failures="$expected_failures;/tokenizedata/badsyntax_3131.py"
+  expected_failures="$expected_failures;/tokenizedata/badsyntax_pep3120.py"
 else
   expected_failures=""
 fi

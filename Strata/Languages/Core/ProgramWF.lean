@@ -309,7 +309,9 @@ theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ
 If a program typechecks successfully, then every identifier in the list of
 program decls is not in the original `LContext`
 -/
-theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc = .ok (d', T') → (∀ x, x ∈ Program.getNames.go decls → ¬ C.idents.contains x) := by
+theorem Program.typeCheckFunctionDisjoint :
+    Program.typeCheck.go p C T decls acc = .ok (d', T') →
+    (∀ x, x ∈ Program.getNames.go decls → ¬ C.idents.contains x) := by
   induction decls generalizing acc p d' T' T C with
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
@@ -382,7 +384,7 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
         simp only[LContext.addFactoryFunction] at a_notin
         grind
     | type t =>
-      cases t with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty <;> split_contra_case Hty <;> rename_i Hty)
+      cases t with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty; split_contra Hty <;> rename_i Hty)
       | con c =>
         specialize (IH tcok)
         match hx with
@@ -392,7 +394,7 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
           grind
         | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
           have Hcontains := Identifiers.addListWithErrorContains Hid x
-          have := addKnownTypeWithErrorIdents Hty
+          have := addKnownTypeWithErrorIdents (by assumption)
           grind
       | syn s =>
         specialize (IH tcok)
@@ -413,7 +415,8 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
           grind
         | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
           have Hcontains := Identifiers.addListWithErrorContains Hid x
-          have := addMutualBlockIdents Hty;
+          split at Hty <;> simp_all
+          have := addMutualBlockIdents (by assumption);
           grind
 
 /--
@@ -477,14 +480,14 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
     | type td =>
       specialize (IH tcok)
       apply List.nodup_append.mpr
-      cases td with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty <;> split_contra_case Hty <;> rename_i Hty)
+      cases td with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty <;> split_contra Hty <;> rename_i Hty)
       | con c =>
         constructor; simp[Decl.names, TypeDecl.names]; constructor; apply IH
         intros a a_in; simp[Decl.names, TypeDecl.names] at a_in; subst_vars
         intros x x_in;
         have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
         have x_contains := (Identifiers.addListWithErrorContains Hid x)
-        have := addKnownTypeWithErrorIdents Hty
+        have := addKnownTypeWithErrorIdents (by assumption)
         simp_all[Decl.names, TypeDecl.names];
         grind
       | syn s =>
@@ -504,7 +507,8 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
         have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
         have x_contains := (Identifiers.addListWithErrorContains Hid x)
         simp_all[Decl.names, TypeDecl.names];
-        have := addMutualBlockIdents Hty;
+        split at Hty <;> simp_all
+        have := addMutualBlockIdents (by assumption);
         grind
 
 /--

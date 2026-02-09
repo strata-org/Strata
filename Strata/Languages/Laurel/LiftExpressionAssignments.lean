@@ -95,7 +95,7 @@ def SequenceM.freshTempFor (varName : Identifier) : SequenceM Identifier := do
   let counters := (← get).varCounters
   let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
   modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
-  return s!"{varName}_{counter}"
+  return s!"${varName}_{counter}"
 
 def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
   return (← get).varSnapshots.find? (·.1 == varName) |>.map (·.2)
@@ -109,7 +109,7 @@ def SequenceM.getVarType (varName : Identifier) : SequenceM HighType := do
 def SequenceM.addToEnv (varName : Identifier) (ty : HighType) : SequenceM Unit := do
   modify fun s => { s with env := (varName, ty) :: s.env }
 
-partial def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
+def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .PrimitiveOp op args =>
       let seqArgs ← args.mapM transformTarget
@@ -124,7 +124,7 @@ mutual
 Process an expression, extracting any assignments to preceding statements.
 Returns the transformed expression with assignments replaced by variable references.
 -/
-partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
+def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign targets value md =>
       -- This is an assignment in expression context
@@ -182,20 +182,21 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
       -- Process statements in order, handling assignments specially to set snapshots
-      match stmts with
-      | [] => return .Block [] metadata
-      | [last] => transformExpr last
-      | _ =>
-          -- Process all but the last statement
-          let allButLast := stmts.dropLast
-          let last := stmts.getLast!
-          for stmt in allButLast do
-            match stmt with
+      let rec processBlock (remStmts : List StmtExpr) : SequenceM StmtExpr := do
+        match _: remStmts with
+        | [] => return .Block [] metadata
+        | [last] => transformExpr last
+        | head :: tail =>
+            match head with
             | .Assign targets value md =>
-                -- For assignments in block context, we need to set snapshots
-                -- so that subsequent expressions see the correct values
-                -- IMPORTANT: Use transformTarget for targets (no snapshot substitution)
-                -- and transformExpr for values (with snapshot substitution)
+                /-
+                Because we are lifting all assignments
+                and the last one will overwrite the previous one
+                We need to store the current value after each assignment
+                Which we do using a snapshot variable
+                We will use transformTarget (no snapshot substitution) for targets
+                and transformExpr (with snapshot substitution) for values
+                -/
                 let seqTargets ← targets.mapM transformTarget
                 let seqValue ← transformExpr value
                 let assignStmt := StmtExpr.Assign seqTargets seqValue md
@@ -212,11 +213,17 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
                       SequenceM.setSnapshot varName snapshotName
                   | _ => pure ()
             | _ =>
-                let seqStmt ← transformStmt stmt
+                let seqStmt ← transformStmt head
                 for s in seqStmt do
                   SequenceM.addPrependedStmt s
-          -- Process the last statement as an expression
-          transformExpr last
+            processBlock tail
+        termination_by SizeOf.sizeOf remStmts
+        decreasing_by
+        all_goals (simp_wf; try omega)
+        subst_vars; rename_i heq; cases heq; omega
+      processBlock stmts
+
+
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
@@ -228,12 +235,13 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       | none => return expr
   | .LocalVariable _ _ _ => return expr
   | _ => return expr  -- Other cases
+  termination_by SizeOf.sizeOf expr
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original one may be split into multiple).
 -/
-partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
+def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   match stmt with
   | @StmtExpr.Assert cond md =>
       -- Process the condition, extracting any assignments
@@ -291,6 +299,7 @@ partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
   | _ =>
       return [stmt]
+  termination_by SizeOf.sizeOf stmt
 
 end
 

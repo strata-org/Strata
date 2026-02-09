@@ -63,7 +63,8 @@ spec {
 };
 #end
 
-/-- info: ok: type:
+/--
+info: ok: type:
 Option
 Type Arguments:
 [a]
@@ -72,7 +73,7 @@ Constructors:
 
 (procedure TestOptionInt :  () → ())
 modifies: []
-preconditions: 
+preconditions: ⏎
 postconditions: (TestOptionInt_ensures_0, #true)
 body: init (x : (Option int)) := (init_x_0 : (Option int))
 init (y : (Option int)) := (init_y_1 : (Option int))
@@ -80,7 +81,8 @@ init (v : int) := (init_v_2 : int)
 x := (~None : (Option int))
 y := ((~Some : (arrow int (Option int))) #42)
 v := ((~Option..value : (arrow (Option int) int)) (y : (Option int)))
-assert [valIs42] ((v : int) == #42)-/
+assert [valIs42] ((v : int) == #42)
+-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
 
@@ -108,7 +110,8 @@ spec {
 };
 #end
 
-/-- info: ok: type:
+/--
+info: ok: type:
 List
 Type Arguments:
 [a]
@@ -117,13 +120,14 @@ Constructors:
 
 (procedure TestListInt :  () → ())
 modifies: []
-preconditions: 
+preconditions: ⏎
 postconditions: (TestListInt_ensures_0, #true)
 body: init (xs : (List int)) := (init_xs_0 : (List int))
 init (h : int) := (init_h_1 : int)
 xs := (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (((~Cons : (arrow int (arrow (List int) (List int)))) #2) (~Nil : (List int))))
 h := ((~List..head : (arrow (List int) int)) (xs : (List int)))
-assert [headIs1] ((h : int) == #1)-/
+assert [headIs1] ((h : int) == #1)
+-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
 
@@ -154,7 +158,8 @@ spec {
 };
 #end
 
-/-- info: ok: type:
+/--
+info: ok: type:
 Either
 Type Arguments:
 [a, b]
@@ -163,7 +168,7 @@ Constructors:
 
 (procedure TestEither :  () → ())
 modifies: []
-preconditions: 
+preconditions: ⏎
 postconditions: (TestEither_ensures_0, #true)
 body: init (x : (Either int bool)) := (init_x_0 : (Either int bool))
 init (y : (Either int bool)) := (init_y_1 : (Either int bool))
@@ -171,7 +176,8 @@ x := ((~Left : (arrow int (Either int bool))) #42)
 y := ((~Right : (arrow bool (Either int bool))) #true)
 assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Either int bool)))
 assert [yIsRight] ((~Either..isRight : (arrow (Either int bool) bool)) (y : (Either int bool)))
-assert [lValue] (((~Either..l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)-/
+assert [lValue] (((~Either..l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)
+-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
 
@@ -198,7 +204,8 @@ spec {
 };
 #end
 
-/-- info: ok: type:
+/--
+info: ok: type:
 Option
 Type Arguments:
 [a]
@@ -214,11 +221,12 @@ Constructors:
 
 (procedure TestNestedPoly :  () → ())
 modifies: []
-preconditions: 
+preconditions: ⏎
 postconditions: (TestNestedPoly_ensures_0, #true)
 body: init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
 x := ((~Some : (arrow (List int) (Option (List int)))) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (~Nil : (List int))))
-assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))-/
+assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))
+-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
 
@@ -266,7 +274,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" polyListHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" polyListHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: Multiple Instantiations with SMT Verification
@@ -314,7 +322,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" multiInstSMTPgm Inhabited.default Options.quiet
+#eval verify "cvc5" multiInstSMTPgm (options := .quiet)
 
 
 ---------------------------------------------------------------------
@@ -368,6 +376,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" eitherHavocPgm Inhabited.default Options.quiet
+#eval verify "cvc5" eitherHavocPgm (options := .quiet)
 
 end Strata.PolymorphicDatatypeTest
