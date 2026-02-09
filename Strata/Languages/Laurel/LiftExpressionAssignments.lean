@@ -14,33 +14,38 @@ namespace Laurel
 /-
 Transform assignments that appear in expression contexts into preceding statements.
 
+Each lifted assignment is preceded by a before-snapshot that captures the variable's
+value prior to the assignment. This preserves the old value for use by other parts
+of the program (e.g., postconditions via `old()`).
+
 Example 1 — Assignments in expression position:
-  if ((x := x + 1) == (y := x)) { ... }
+  var y: int := x + (x := 1;) + x + (x := 2;);
 
 Becomes:
-  var x1 := x + 1;
-  x := x1;
-  var y1 := x;
-  y := y1;
-  if (x1 == y1) { ... }
+  var $x_0 := x;              -- first snapshot of x
+  x := 1;                     -- lifted assignment
+  var $x_1 := x;              -- second snapshot
+  x := 2;                     -- lifted assignment
+  var $x_2 := x;              -- third snapshot
+  var y: int := $x_0 + $x_1 + $x_1 + $x_2;
 
 Example 2 — Conditional (if-then-else) inside an expression position:
-  z := (if (c) then (x := 1) else (x := 2)) + x
-
-The conditional itself stays in the expression, but the assignments inside
-each branch must be lifted out. Because each branch executes conditionally,
-the lifted assignments are wrapped in the corresponding branch condition.
+  var z: bool := (if (b) { b := false; } else (b := true;)) || b;
 
 Becomes:
-  if (c) { x := 1; }          -- assignment from then-branch, guarded by c
-  var $x_0 := x;               -- snapshot x after the conditional assignment
-  if (!c) { x := 2; }         -- assignment from else-branch, guarded by !c
-  var $x_1 := x;               -- snapshot x after the conditional assignment
-  z := (if (c) then $x_0 else $x_1) + $x_1
+  var $b_0 := b;               -- first snapshot of b
+  if ($b_0) { b := false; }    -- assignment from then-branch, guarded by condition
+  var $b_1 := b;               -- second snapshot of b
+  if (!$b_0) { b := true; }    -- assignment from else-branch, guarded by negated condition
+  var $b_2 := b;               -- second snapshot of b
+  z := (if ($b_0) then $b_1 else $b_2) || b
 
-The key insight is that assignments inside conditional expression branches
-are only executed when that branch is taken, so they must be wrapped in
-the branch's condition when lifted to statement position.
+Example 3 — Statement-level assignment:
+  x := expr;
+
+Becomes:
+  var $x_0 := x;               -- before-snapshot of x
+  x := expr;                   -- original assignment
 -/
 
 private abbrev TypeEnv := List (Identifier × HighType)
@@ -59,10 +64,13 @@ structure SequenceState where
   diagnostics : List DiagnosticModel
   -- Maps variable names to their counter for generating unique temp names
   varCounters : List (Identifier × Nat) := []
-  -- Maps variable names to their current snapshot variable name
-  -- When an assignment is lifted, we create a snapshot and record it here
-  -- Subsequent references to the variable should use the snapshot
-  varSnapshots : List (Identifier × Identifier) := []
+  -- Forward snapshots: maps variable names to their current (post-assignment) snapshot.
+  -- Used by Identifier lookups so that references AFTER an assignment use the after-snapshot.
+  forwardSnapshots : List (Identifier × Identifier) := []
+  -- Retroactive snapshots: maps variable names to their before-assignment snapshot.
+  -- Used by applySnapshots to fix earlier sibling expressions that were processed
+  -- before the assignment was encountered.
+  retroactiveSnapshots : List (Identifier × Identifier) := []
   -- Type environment mapping variable names to their types
   env : TypeEnv := []
 
@@ -115,17 +123,67 @@ def SequenceM.freshTempFor (varName : Identifier) : SequenceM Identifier := do
   modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
   return s!"${varName}_{counter}"
 
-def SequenceM.getSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
-  return (← get).varSnapshots.find? (·.1 == varName) |>.map (·.2)
+/-- Get the forward (post-assignment) snapshot for a variable -/
+def SequenceM.getForwardSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
+  return (← get).forwardSnapshots.find? (·.1 == varName) |>.map (·.2)
 
-def SequenceM.setSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit := do
-  modify fun s => { s with varSnapshots := (varName, snapshotName) :: s.varSnapshots.filter (·.1 != varName) }
+/-- Get the retroactive (pre-assignment) snapshot for a variable -/
+def SequenceM.getRetroactiveSnapshot (varName : Identifier) : SequenceM (Option Identifier) := do
+  return (← get).retroactiveSnapshots.find? (·.1 == varName) |>.map (·.2)
+
+/-- Set the forward snapshot for a variable (used after an assignment) -/
+def SequenceM.setForwardSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit := do
+  modify fun s => { s with forwardSnapshots := (varName, snapshotName) :: s.forwardSnapshots.filter (·.1 != varName) }
+
+/-- Set the retroactive snapshot for a variable (used to fix earlier siblings) -/
+def SequenceM.setRetroactiveSnapshot (varName : Identifier) (snapshotName : Identifier) : SequenceM Unit := do
+  modify fun s => { s with retroactiveSnapshots := (varName, snapshotName) :: s.retroactiveSnapshots.filter (·.1 != varName) }
+
+/-- Clear both forward and retroactive snapshots for a variable -/
+def SequenceM.clearSnapshots (varName : Identifier) : SequenceM Unit := do
+  modify fun s => { s with
+    forwardSnapshots := s.forwardSnapshots.filter (·.1 != varName)
+    retroactiveSnapshots := s.retroactiveSnapshots.filter (·.1 != varName) }
 
 def SequenceM.getVarType (varName : Identifier) : SequenceM HighType := do
   return lookupType (← get).env varName
 
 def SequenceM.addToEnv (varName : Identifier) (ty : HighType) : SequenceM Unit := do
   modify fun s => { s with env := (varName, ty) :: s.env }
+
+/-- Save the current snapshot state (both forward and retroactive) -/
+def SequenceM.saveSnapshots : SequenceM (List (Identifier × Identifier) × List (Identifier × Identifier)) := do
+  let s ← get
+  return (s.forwardSnapshots, s.retroactiveSnapshots)
+
+/-- Restore a previously saved snapshot state -/
+def SequenceM.restoreSnapshots (saved : List (Identifier × Identifier) × List (Identifier × Identifier)) : SequenceM Unit := do
+  modify fun s => { s with forwardSnapshots := saved.1, retroactiveSnapshots := saved.2 }
+
+/-- Apply retroactive snapshot substitutions to an already-processed expression.
+    This handles the case where a later assignment created a before-snapshot
+    that should retroactively apply to earlier sibling expressions.
+    Uses retroactiveSnapshots (before-snapshots), NOT forwardSnapshots. -/
+partial def applyRetroactiveSnapshots (expr : StmtExpr) : SequenceM StmtExpr := do
+  match expr with
+  | .Identifier varName =>
+      match ← SequenceM.getRetroactiveSnapshot varName with
+      | some snapshotName => return .Identifier snapshotName
+      | none => return expr
+  | .PrimitiveOp op args =>
+      let newArgs ← args.mapM applyRetroactiveSnapshots
+      return .PrimitiveOp op newArgs
+  | .IfThenElse cond thenBr elseBr =>
+      let newCond ← applyRetroactiveSnapshots cond
+      let newThen ← applyRetroactiveSnapshots thenBr
+      let newElse ← match elseBr with
+        | some e => pure (some (← applyRetroactiveSnapshots e))
+        | none => pure none
+      return .IfThenElse newCond newThen newElse
+  | .StaticCall name args =>
+      let newArgs ← args.mapM applyRetroactiveSnapshots
+      return .StaticCall name newArgs
+  | _ => return expr
 
 def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
@@ -137,6 +195,30 @@ def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
       return .StaticCall name seqArgs
   | _ => return expr  -- Identifiers and other targets stay as-is (no snapshot substitution)
 
+/-- Create a before-snapshot and after-snapshot for a variable assignment.
+    Prepends both snapshot declarations and the assignment.
+    Sets retroactive snapshot to before-snapshot and forward snapshot to after-snapshot.
+    Returns the after-snapshot variable name. -/
+def SequenceM.snapshotAssignment (varName : Identifier) : SequenceM Identifier := do
+  -- Before-snapshot: captures value before the assignment
+  let beforeName ← SequenceM.freshTempFor varName
+  let varType ← SequenceM.getVarType varName
+  let beforeDecl := StmtExpr.LocalVariable beforeName varType (some (.Identifier varName))
+  SequenceM.addPrependedStmt beforeDecl
+  -- Set retroactive snapshot so applyRetroactiveSnapshots can fix earlier siblings
+  SequenceM.setRetroactiveSnapshot varName beforeName
+  return beforeName
+
+/-- Create an after-snapshot for a variable, set forward snapshot, return snapshot name -/
+def SequenceM.afterSnapshot (varName : Identifier) : SequenceM Identifier := do
+  let afterName ← SequenceM.freshTempFor varName
+  let varType ← SequenceM.getVarType varName
+  let afterDecl := StmtExpr.LocalVariable afterName varType (some (.Identifier varName))
+  SequenceM.addPrependedStmt afterDecl
+  -- Set forward snapshot so subsequent Identifier references use the after-snapshot
+  SequenceM.setForwardSnapshot varName afterName
+  return afterName
+
 mutual
 /-
 Process an expression, extracting any assignments to preceding statements.
@@ -146,60 +228,72 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign targets value md =>
       -- This is an assignment in expression context
-      -- We need to: 1) execute the assignment, 2) capture the value in a temporary
-      -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← transformExpr value
       let condStack ← SequenceM.getConditionStack
+      -- For each target: create before-snapshot, then execute the assignment
+      for target in targets do
+        match target with
+        | .Identifier varName =>
+            -- Before-snapshot: captures value before the assignment
+            let _beforeName ← SequenceM.snapshotAssignment varName
+        | _ => pure ()
       -- Wrap the assignment in conditionals if we're inside conditional branches
       let assignStmt := StmtExpr.Assign targets seqValue md
       let wrappedAssign := wrapInConditions assignStmt condStack
       SequenceM.addPrependedStmt wrappedAssign
-      -- For each target, create a snapshot variable so subsequent references
-      -- to that variable will see the value after this assignment
-      -- The snapshot is created AFTER the (possibly wrapped) assignment,
-      -- so it captures the correct value whether the condition was true or not
-      for target in targets do
-        match target with
-        | .Identifier varName =>
-            let snapshotName ← SequenceM.freshTempFor varName
-            let snapshotType ← SequenceM.getVarType varName
-            -- Declare snapshot AFTER the conditional - it gets current value of y
-            let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
-            SequenceM.addPrependedStmt snapshotDecl
-            SequenceM.setSnapshot varName snapshotName
-        | _ => pure ()
-      -- Create a temporary variable to capture the assigned value (for expression result)
-      -- For multi-target assigns, use the first target
+      -- After-snapshot: captures value after the assignment
+      -- This becomes the expression value of the assignment
       let firstTarget := targets.head?.getD (.Identifier "__unknown")
-      let tempName ← match firstTarget with
-        | .Identifier name => SequenceM.freshTempFor name
-        | _ => SequenceM.freshTempFor "__expr"
-      let tempDecl := StmtExpr.LocalVariable tempName .TInt (some firstTarget)
-      SequenceM.addPrependedStmt tempDecl
-      -- Return the temporary variable as the expression value
-      return .Identifier tempName
+      match firstTarget with
+      | .Identifier varName =>
+          let afterName ← SequenceM.afterSnapshot varName
+          return .Identifier afterName
+      | _ => return firstTarget
 
   | .PrimitiveOp op args =>
       let seqArgs ← args.mapM transformExpr
-      return .PrimitiveOp op seqArgs
+      -- Apply retroactive snapshots to handle cases where a later arg's assignment
+      -- created a before-snapshot that earlier args should use
+      let finalArgs ← seqArgs.mapM applyRetroactiveSnapshots
+      return .PrimitiveOp op finalArgs
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
+      -- Snapshot the condition if it's a variable that might be modified by branches
+      let stableCond ← match seqCond with
+        | .Identifier varName =>
+            -- Use the before-snapshot of the condition variable
+            let condSnapshotName ← SequenceM.freshTempFor varName
+            let condType ← SequenceM.getVarType varName
+            let condDecl := StmtExpr.LocalVariable condSnapshotName condType (some seqCond)
+            SequenceM.addPrependedStmt condDecl
+            pure (.Identifier condSnapshotName)
+        | _ => pure seqCond
+      -- Save snapshot state so both branches start from the same state
+      let savedSnapshots ← SequenceM.saveSnapshots
       -- Process then-branch with condition pushed onto stack
-      let seqThen ← SequenceM.withCondition seqCond (transformExpr thenBranch)
+      let seqThen ← SequenceM.withCondition stableCond (transformExpr thenBranch)
+      -- Restore snapshot state before processing else-branch
+      -- so the else-branch doesn't see snapshots created by the then-branch
+      SequenceM.restoreSnapshots savedSnapshots
       -- Process else-branch with negated condition pushed onto stack
       let seqElse ← match elseBranch with
-        | some e => SequenceM.withCondition (negateCondition seqCond) (transformExpr e >>= (pure ∘ some))
+        | some e => SequenceM.withCondition (negateCondition stableCond) (transformExpr e >>= (pure ∘ some))
         | none => pure none
-      return .IfThenElse seqCond seqThen seqElse
+      -- After both branches, we don't know which branch ran, so clear all snapshots.
+      -- The IfThenElse expression itself already captures the branch results via
+      -- the after-snapshot variables in seqThen/seqElse.
+      -- Subsequent references should use the actual variable.
+      modify fun s => { s with retroactiveSnapshots := [], forwardSnapshots := [] }
+      return .IfThenElse stableCond seqThen seqElse
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
-      return .StaticCall name seqArgs
+      let finalArgs ← seqArgs.mapM applyRetroactiveSnapshots
+      return .StaticCall name finalArgs
 
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
-      -- Process statements in order, handling assignments specially to set snapshots
       let rec processBlock (remStmts : List StmtExpr) : SequenceM StmtExpr := do
         match _: remStmts with
         | [] => return .Block [] metadata
@@ -207,28 +301,21 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
         | head :: tail =>
             match head with
             | .Assign targets value md =>
-                /-
-                Because we are lifting all assignments
-                and the last one will overwrite the previous one
-                We need to store the current value after each assignment
-                Which we do using a snapshot variable
-                We will use transformTarget (no snapshot substitution) for targets
-                and transformExpr (with snapshot substitution) for values
-                -/
                 let seqTargets ← targets.mapM transformTarget
                 let seqValue ← transformExpr value
-                let assignStmt := StmtExpr.Assign seqTargets seqValue md
-                SequenceM.addPrependedStmt assignStmt
-                -- Create snapshot for variables so subsequent reads
-                -- see the value after this assignment (not after later assignments)
+                -- Snapshot BEFORE the assignment to preserve the old value
                 for target in seqTargets do
                   match target with
                   | .Identifier varName =>
-                      let snapshotName ← SequenceM.freshTempFor varName
-                      let snapshotType ← SequenceM.getVarType varName
-                      let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
-                      SequenceM.addPrependedStmt snapshotDecl
-                      SequenceM.setSnapshot varName snapshotName
+                      let _beforeName ← SequenceM.snapshotAssignment varName
+                  | _ => pure ()
+                let assignStmt := StmtExpr.Assign seqTargets seqValue md
+                SequenceM.addPrependedStmt assignStmt
+                -- Clear snapshots after statement-level assignment
+                -- (no retroactive fixing needed for statement-level assignments)
+                for target in seqTargets do
+                  match target with
+                  | .Identifier varName => SequenceM.clearSnapshots varName
                   | _ => pure ()
             | _ =>
                 let seqStmt ← transformStmt head
@@ -241,14 +328,13 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
         subst_vars; rename_i heq; cases heq; omega
       processBlock stmts
 
-
-
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
   | .LiteralInt _ => return expr
   | .Identifier varName => do
-      -- If this variable has a snapshot (from a lifted assignment), use the snapshot
-      match ← SequenceM.getSnapshot varName with
+      -- If this variable has a forward snapshot (from a preceding assignment),
+      -- use the after-snapshot. Otherwise return the variable as-is.
+      match ← SequenceM.getForwardSnapshot varName with
       | some snapshotName => return .Identifier snapshotName
       | none => return expr
   | .LocalVariable _ _ _ => return expr
@@ -262,7 +348,6 @@ Returns a list of statements (the original one may be split into multiple).
 def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   match stmt with
   | @StmtExpr.Assert cond md =>
-      -- Process the condition, extracting any assignments
       let seqCond ← transformExpr cond
       SequenceM.addPrependedStmt <| StmtExpr.Assert seqCond md
       SequenceM.takePrependedStmts
@@ -281,6 +366,9 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       match initializer with
       | some initExpr => do
           let seqInit ← transformExpr initExpr
+          -- Clear snapshots after processing the initializer so they don't leak
+          -- into subsequent statements
+          modify fun s => { s with forwardSnapshots := [], retroactiveSnapshots := [] }
           SequenceM.addPrependedStmt <| .LocalVariable name ty (some seqInit)
           SequenceM.takePrependedStmts
       | none =>
@@ -289,24 +377,30 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   | .Assign targets value md =>
       let seqTargets ← targets.mapM transformTarget
       let seqValue ← transformExpr value
+      -- Snapshot BEFORE the assignment to preserve the old value
+      for target in seqTargets do
+        match target with
+        | .Identifier varName =>
+            let snapshotName ← SequenceM.freshTempFor varName
+            let snapshotType ← SequenceM.getVarType varName
+            let snapshotDecl := StmtExpr.LocalVariable snapshotName snapshotType (some (.Identifier varName))
+            SequenceM.addPrependedStmt snapshotDecl
+        | _ => pure ()
       SequenceM.addPrependedStmt <| .Assign seqTargets seqValue md
+      -- Clear snapshots after statement-level assignment
+      modify fun s => { s with forwardSnapshots := [], retroactiveSnapshots := [] }
       SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
-      -- Process then-branch with condition pushed onto stack
-      let seqThen ← SequenceM.withCondition seqCond do
+      let seqThen ← do
         let stmts ← transformStmt thenBranch
         pure (.Block stmts none)
-
-      -- Process else-branch with negated condition pushed onto stack
       let seqElse ← match elseBranch with
-        | some e =>
-            SequenceM.withCondition (negateCondition seqCond) do
-              let se ← transformStmt e
-              pure (some (.Block se none))
+        | some e => do
+            let se ← transformStmt e
+            pure (some (.Block se none))
         | none => pure none
-
       SequenceM.addPrependedStmt <| .IfThenElse seqCond seqThen seqElse
       SequenceM.takePrependedStmts
 
@@ -325,14 +419,14 @@ def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
   let seqStmts ← transformStmt body
   match seqStmts with
   | [single] => pure single
-  | multiple => pure <| .Block multiple.reverse none
+  | multiple => pure <| .Block multiple none
 
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   -- Initialize environment with procedure parameters
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type))
   -- Reset state for each procedure to avoid cross-procedure contamination
-  modify fun s => { s with conditionStack := [], varSnapshots := [], varCounters := [], env := initEnv }
+  modify fun s => { s with conditionStack := [], forwardSnapshots := [], retroactiveSnapshots := [], varCounters := [], env := initEnv }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody bodyExpr

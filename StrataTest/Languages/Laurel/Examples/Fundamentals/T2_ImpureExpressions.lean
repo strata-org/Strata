@@ -23,9 +23,9 @@ procedure nestedImpureStatements() {
 }
 
 procedure multipleAssignments() {
-  var x: int;
-  var y: int := ((x := 1;) + x) + (x := 2;);
-  assert y == 4;
+  var x: int := 1;
+  var y: int := x + ((x := 2;) + x) + (x := 3;);
+  assert y == 8;
 }
 
 procedure conditionalAssignmentInExpression(x: int) {
@@ -38,6 +38,13 @@ procedure conditionalAssignmentInExpression(x: int) {
     assert z == 0;
     assert y == 0;
   }
+}
+
+procedure anotherConditionAssignmentInExpression(c: bool) {
+  var b: bool := c;
+  var z: bool := (if (b) { b := false; } else (b := true;)) || b;
+    assert z;
+//  ^^^^^^^^^ error: assertion could not be proved
 }
 "
 
