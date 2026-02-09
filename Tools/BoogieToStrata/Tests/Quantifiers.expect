@@ -1,7 +1,7 @@
 Successfully parsed.
 Quantifiers.core.st(39, 4) [assert_0]: ✅ pass
 Quantifiers.core.st(51, 4) [assert_1]: 🟡 unknown
-Quantifiers.core.st(64, 4) [assert_2]: ✅ pass
+Quantifiers.core.st(64, 4) [assert_2]: 🟡 unknown
 Quantifiers.core.st(76, 4) [assert_3]: 🟡 unknown
 Quantifiers.core.st(89, 4) [assert_4]: ✅ pass
 Quantifiers.core.st(99, 4) [assert_5]: 🟡 unknown
