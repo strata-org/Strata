@@ -37,7 +37,7 @@ instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
   fun a b => decidable_of_iff (a.toNat ≤ b.toNat) Iff.rfl
 
 /-- Default SMT solver to use -/
-def defaultSolver : String := "cvc5"
+def defaultSolver : String := "z3"
 
 structure Options where
   verbose : VerboseMode
