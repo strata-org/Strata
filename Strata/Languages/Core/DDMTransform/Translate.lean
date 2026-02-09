@@ -1079,13 +1079,22 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let inputs ← translateMonoDeclList bindings bindingsa
     let outputMono ← translateLMonoTy bindings returna
     let output : Expression.Ty := .forAll [] outputMono
-    let inputsConverted : ListMap Expression.Ident Expression.Ty := 
+    let inputsConverted : ListMap Expression.Ident Expression.Ty :=
       inputs.map (fun (id, mty) => (id, .forAll [] mty))
-    
-    -- Create bindings with ONLY function parameters as bound variables for body translation
+
+    -- The DDM parser's declareFn annotation adds the function name to scope,
+    -- then @[scope(b)] adds the parameters. So in the body, the scope order is:
+    -- Index 0: parameters (from @[scope(b)])
+    -- Index 1: function name (from declareFn)
+    -- Index 2+: outer scope variables
+    --
+    -- We need to include both the function and parameters in boundVars.
+    -- The function is represented as an op expression that can be called.
+    let funcBinding : LExpr CoreLParams.mono := .op () name (some outputMono)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-    let bodyBindings := { bindings with boundVars := in_bindings }
-    
+    -- Order: existing boundVars, then function, then parameters
+    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
+
     -- Translate body with function parameters in scope
     let body ← match bodya with
       | .option _ (.some bodyExpr) => do
@@ -1095,7 +1104,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
       | _ => do
         let expr ← translateExpr p bodyBindings bodya
         pure (some expr)
-    
+
     let decl : PureFunc Expression := {
       name := name,
       inputs := inputsConverted,
