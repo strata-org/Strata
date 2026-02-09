@@ -14,7 +14,7 @@ namespace Laurel
 /-
 Transform assignments that appear in expression contexts into preceding statements.
 
-For example:
+Example 1 — Assignments in expression position:
   if ((x := x + 1) == (y := x)) { ... }
 
 Becomes:
@@ -23,6 +23,24 @@ Becomes:
   var y1 := x;
   y := y1;
   if (x1 == y1) { ... }
+
+Example 2 — Conditional (if-then-else) inside an expression position:
+  z := (if (c) then (x := 1) else (x := 2)) + x
+
+The conditional itself stays in the expression, but the assignments inside
+each branch must be lifted out. Because each branch executes conditionally,
+the lifted assignments are wrapped in the corresponding branch condition.
+
+Becomes:
+  if (c) { x := 1; }          -- assignment from then-branch, guarded by c
+  var $x_0 := x;               -- snapshot x after the conditional assignment
+  if (!c) { x := 2; }         -- assignment from else-branch, guarded by !c
+  var $x_1 := x;               -- snapshot x after the conditional assignment
+  z := (if (c) then $x_0 else $x_1) + $x_1
+
+The key insight is that assignments inside conditional expression branches
+are only executed when that branch is taken, so they must be wrapped in
+the branch's condition when lifted to statement position.
 -/
 
 private abbrev TypeEnv := List (Identifier × HighType)
