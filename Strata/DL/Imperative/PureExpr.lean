@@ -4,9 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
+import Strata.DL.Util.Func
 
 namespace Imperative
+
+open Strata.DL.Util (Func)
 
 /--
 Expected interface for pure expressions that can be used to specialize the
@@ -21,6 +23,8 @@ structure PureExpr : Type 1 where
   Expr    : Type
   /-- Types -/
   Ty      : Type
+  /-- Expression metadata type (for use in function declarations, etc.) -/
+  ExprMetadata : Type
   /-- Typing environment, expected to contain a map of variables to their types,
   type substitution, etc.
   -/
@@ -62,5 +66,21 @@ class HasVal (P : PureExpr) where
 
 class HasBoolVal (P : PureExpr) [HasBool P] [HasVal P] where
   bool_is_val : (@HasVal.value P) HasBool.tt ∧ (@HasVal.value P) HasBool.ff
+
+/-- Substitution of free variables in expressions.
+    Used for closure capture in function declarations. -/
+class HasSubstFvar (P : PureExpr) where
+  /-- Substitute a single free variable with an expression -/
+  substFvar : P.Expr → P.Ident → P.Expr → P.Expr
+
+/-- Substitute multiple free variables with expressions -/
+def HasSubstFvar.substFvars [HasSubstFvar P] (e : P.Expr) (substs : List (P.Ident × P.Expr)) : P.Expr :=
+  substs.foldl (fun e (id, val) => HasSubstFvar.substFvar e id val) e
+
+/--
+A function declaration for use with `PureExpr` - instantiation of `Func` for
+any expression system that implements the `PureExpr` interface.
+-/
+abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
 
 end Imperative

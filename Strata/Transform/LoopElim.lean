@@ -56,6 +56,7 @@ def Stmt.removeLoopsM
     pure (.block label bss md)
   | .cmd _ => pure s
   | .goto _ _ => pure s
+  | .funcDecl _ _ => pure s  -- Function declarations pass through unchanged
 
 def Block.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasPassiveCmds P C]
