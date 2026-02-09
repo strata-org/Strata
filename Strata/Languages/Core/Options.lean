@@ -36,6 +36,9 @@ instance : LE VerboseMode where
 instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
   fun a b => decidable_of_iff (a.toNat ≤ b.toNat) Iff.rfl
 
+/-- Default SMT solver to use -/
+def defaultSolver : String := "z3"
+
 structure Options where
   verbose : VerboseMode
   parseOnly : Bool
@@ -47,6 +50,8 @@ structure Options where
   solverTimeout : Nat
   /-- Output results in SARIF format -/
   outputSarif : Bool
+  /-- SMT solver executable to use -/
+  solver : String
 
 def Options.default : Options := {
   verbose := .normal,
@@ -56,7 +61,8 @@ def Options.default : Options := {
   stopOnFirstError := false,
   removeIrrelevantAxioms := false,
   solverTimeout := 10,
-  outputSarif := false
+  outputSarif := false,
+  solver := defaultSolver
 }
 
 instance : Inhabited Options where
