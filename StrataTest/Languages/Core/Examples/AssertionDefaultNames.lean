@@ -60,6 +60,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" assertionNames
+#eval verify "cvc5" assertionNames
 
 ---------------------------------------------------------------------

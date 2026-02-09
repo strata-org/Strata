@@ -69,7 +69,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let filename := tempDir / s!"exprEvalTest.smt2"
       let ans ← Core.SMT.dischargeObligation
         { Options.default with verbose := .quiet }
-        (LExpr.freeVars e) "z3" filename.toString
+        (LExpr.freeVars e) "cvc5" filename.toString
         [smt_term] ctx
       match ans with
       | .ok (.sat _,_) => return true

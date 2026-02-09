@@ -59,7 +59,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" coverPgm1 (options := Options.quiet)
+#eval verify "cvc5" coverPgm1 (options := Options.quiet)
 
 ---------------------------------------------------------------------
 
@@ -97,6 +97,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" coverPgm2 (options := Options.quiet)
+#eval verify "cvc5" coverPgm2 (options := Options.quiet)
 
 ---------------------------------------------------------------------

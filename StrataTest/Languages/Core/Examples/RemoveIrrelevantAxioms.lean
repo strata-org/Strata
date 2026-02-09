@@ -152,7 +152,7 @@ Model:
 ($__x3, 3)
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm
+#eval verify "cvc5" irrelevantAxiomsTestPgm
         (options := {Options.quiet with removeIrrelevantAxioms := true})
 
 ---------------------------------------------------------------------
@@ -208,7 +208,7 @@ Property: assert
 Result: 🟡 unknown
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm
+#eval verify "cvc5" irrelevantAxiomsTestPgm
         (options := {Options.quiet with removeIrrelevantAxioms := false})
 
 ---------------------------------------------------------------------
