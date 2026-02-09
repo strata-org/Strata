@@ -880,39 +880,30 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | _ => TransM.error s!"translateExpr unimplemented {repr op} {repr args}"
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
-  | .bvar _ i, [] => do
-    if i < bindings.boundVars.size then
-      let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
-      match expr with
-      | .bvar m _ => return .bvar m i
-      | _ => return expr
-    else
-      -- Check if this bound variable index corresponds to a function in freeVars
-      let funcIndex := i - bindings.boundVars.size
-      if funcIndex < bindings.freeVars.size then
-        let decl := bindings.freeVars[funcIndex]!
-        match decl with
-        | .func func _md =>
-          let ty? := some func.output
-          return (.op () func.name ty?)
-        | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
-      else
-        TransM.error s!"translateExpr out-of-range bound variable: {i}"
   | .bvar _ i, argsa => do
     if i < bindings.boundVars.size then
       let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
-      let args ← translateExprs p bindings argsa.toArray
-      return .mkApp () expr args.toList
+      match argsa with
+      | [] =>
+        match expr with
+        | .bvar m _ => return .bvar m i
+        | _ => return expr
+      | _ =>
+        let args ← translateExprs p bindings argsa.toArray
+        return .mkApp () expr args.toList
     else
-      -- Check if this bound variable index corresponds to a function in freeVars
+      -- Bound variable index exceeds boundVars - check if it's a local function
       let funcIndex := i - bindings.boundVars.size
       if funcIndex < bindings.freeVars.size then
         let decl := bindings.freeVars[funcIndex]!
         match decl with
         | .func func _md =>
-          let args ← translateExprs p bindings argsa.toArray
-          let funcOp := .op () func.name none  -- Don't specify type, let it be inferred
-          return .mkApp () funcOp args.toList
+          let funcOp := .op () func.name (some func.output)
+          match argsa with
+          | [] => return funcOp
+          | _ =>
+            let args ← translateExprs p bindings argsa.toArray
+            return .mkApp () funcOp args.toList
         | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
       else
         TransM.error s!"translateExpr out-of-range bound variable: {i}"
