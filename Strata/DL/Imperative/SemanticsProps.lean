@@ -9,13 +9,6 @@ import Strata.DL.Imperative.StmtSemantics
 
 namespace Imperative
 
-/-- All basic commands preserve the evaluator (commands don't output δ') -/
-theorem EvalCmd_eval_cst
-  [HasFvar P] [HasBool P] [HasNot P]:
-  EvalCmd P δ σ c σ' → True := by
-  intros Heval
-  trivial
-
 theorem eval_assert_store_cst
   [HasFvar P] [HasBool P] [HasNot P]:
   EvalCmd P δ σ (.assert l e md) σ' → σ = σ' := by
