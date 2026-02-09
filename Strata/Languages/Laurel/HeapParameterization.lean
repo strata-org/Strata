@@ -40,7 +40,11 @@ structure AnalysisResult where
   writesHeapDirectly : Bool := false
   callees : List Identifier := []
 
-def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
+mutual
+def collectExpr (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExprVal expr.val
+  termination_by sizeOf expr
+
+def collectExprVal (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
   | .FieldSelect target _ =>
       modify fun s => { s with readsHeapDirectly := true }; collectExpr target
@@ -51,10 +55,10 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .LocalVariable _ _ i => if let some x := i then collectExpr x
   | .While c i d b => collectExpr c; collectExpr b; if let some x := i then collectExpr x; if let some x := d then collectExpr x
   | .Return v => if let some x := v then collectExpr x
-  | .Assign assignTargets v _ =>
+  | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)
       for ⟨assignTarget, ht⟩ in assignTargets.attach do
-        match teq: assignTarget with
+        match teq: assignTarget.val with
         | .FieldSelect selectTarget _ =>
             modify fun s => { s with writesHeapDirectly := true }
             have h: sizeOf selectTarget < sizeOf assignTargets := by (have := List.sizeOf_lt_of_mem ht; simp_all; try omega)
@@ -76,9 +80,11 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ProveBy v p => collectExpr v; collectExpr p
   | .ContractOf _ f => collectExpr f
   | _ => pure ()
+  termination_by sizeOf expr
   decreasing_by
     all_goals (simp_wf; try omega)
     all_goals (try subst_vars; try (rename_i x_in; have := List.sizeOf_lt_of_mem x_in); omega)
+end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
@@ -130,16 +136,16 @@ structure TransformState where
   fieldConstants : List Constant := []
   heapReaders : List Identifier
   heapWriters : List Identifier
-  fieldTypes : List (Identifier × HighType) := []  -- Maps field names to their value types
+  fieldTypes : List (Identifier × HighTypeMd) := []  -- Maps field names to their value types
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
 
 abbrev TransformM := StateM TransformState
 
-def addFieldConstant (name : Identifier) (valueType : HighType) : TransformM Unit :=
+def addFieldConstant (name : Identifier) (valueType : HighTypeMd) : TransformM Unit :=
   modify fun s => if s.fieldConstants.any (·.name == name) then s
-    else { s with fieldConstants := { name := name, type := .TTypedField valueType } :: s.fieldConstants }
+    else { s with fieldConstants := { name := name, type := ⟨.TTypedField valueType, #[] ⟩ } :: s.fieldConstants }
 
-def lookupFieldType (name : Identifier) : TransformM (Option HighType) := do
+def lookupFieldType (name : Identifier) : TransformM (Option HighTypeMd) := do
   return (← get).fieldTypes.find? (·.1 == name) |>.map (·.2)
 
 def readsHeap (name : Identifier) : TransformM Bool := do
@@ -164,16 +170,14 @@ Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
-def heapTransformExpr (heapVar : Identifier) (expr : StmtExpr) (valueUsed : Bool := true) : TransformM StmtExpr :=
+def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
   recurse expr valueUsed
 where
-  recurse (expr : StmtExpr) (valueUsed : Bool := true) : TransformM StmtExpr := do
-    match _: expr with
+  recurse (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
+    match _: expr.val with
     | .FieldSelect selectTarget fieldName =>
         let fieldType ← lookupFieldType fieldName
-        match fieldType with
-        | some ty => addFieldConstant fieldName ty
-        | none => addFieldConstant fieldName .TInt
+        addFieldConstant fieldName fieldType.get!
         return .StaticCall "heapRead" [.Identifier heapVar, ← recurse selectTarget, .Identifier fieldName]
     | .StaticCall callee args =>
         let args' ← args.mapM recurse
@@ -245,6 +249,7 @@ where
             let targets' ← rest.mapM recurse
             return .Assign (tgt' :: targets') (← recurse v) md
     | .PureFieldUpdate t f v => return .PureFieldUpdate (← recurse t) f (← recurse v)
+    | .PrimitiveOp args =>
       let args' ← args.mapM recurse
       return .PrimitiveOp op args'
     | .ReferenceEquals l r => return .ReferenceEquals (← recurse l) (← recurse r)

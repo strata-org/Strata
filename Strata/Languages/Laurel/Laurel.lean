@@ -205,6 +205,9 @@ end
 instance : Inhabited StmtExpr where
   default := .Hole
 
+instance : Inhabited HighTypeMd where
+  default := { val := HighType.TVoid, md := default }
+
 partial def highEq (a: HighTypeMd) (b: HighTypeMd) : Bool := match a.val, b.val with
   | HighType.TVoid, HighType.TVoid => true
   | HighType.TBool, HighType.TBool => true

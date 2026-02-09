@@ -48,10 +48,9 @@ partial def formatHighTypeVal : HighType → Format
 end
 
 mutual
-def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
-  termination_by (sizeOf s.val, 1)
+partial def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
 
-def formatStmtExprVal (s : StmtExpr) : Format :=
+partial def formatStmtExprVal (s : StmtExpr) : Format :=
   match s with
   | .IfThenElse cond thenBr elseBr =>
       "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
@@ -117,7 +116,6 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
-  termination_by (sizeOf s, 0)
 end
 
 partial def formatParameter (p : Parameter) : Format :=
