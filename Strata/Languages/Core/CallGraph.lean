@@ -15,6 +15,7 @@ structure CallGraph where
   callees : Std.HashMap String (Std.HashMap String Nat)
   -- A map from callee to a list of (caller, # of calls)
   callers : Std.HashMap String (Std.HashMap String Nat)
+deriving Repr
 
 def CallGraph.empty : CallGraph :=
   { callees := Std.HashMap.emptyWithCapacity,
