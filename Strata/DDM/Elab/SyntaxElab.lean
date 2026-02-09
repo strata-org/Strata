@@ -96,7 +96,7 @@ private def addElaborators (argDecls : ArgDecls) (p : ArgElaborators) (a : Synta
     else
       panic! "Invalid index"
   | .str s =>
-    if s.trim.isEmpty then
+    if s.trimAscii.isEmpty then
       p
     else
       p.inc

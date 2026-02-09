@@ -929,7 +929,7 @@ private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDec
     | .error c =>
       panic! s!"Category '{eformat c}' is not supported."
   | .str l =>
-    let l := l.trim
+    let l := l.trimAscii.toString
     if l.isEmpty then
       r
     else

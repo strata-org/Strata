@@ -28,7 +28,7 @@ open Core.SMT (SMTModel Result)
 /-! ## Test Helpers -/
 
 /-- Create a simple metadata with file and location information -/
-def makeMetadata (file : String) (line col : Nat) : MetaData Expression :=
+def makeMetadata (file : String) (_line _col : Nat) : MetaData Expression :=
   let uri := Strata.Uri.file file
   -- Create a 1D range (byte offsets). For testing, we use simple offsets.
   let range : Strata.SourceRange := { start := ⟨0⟩, stop := ⟨10⟩ }
