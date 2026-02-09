@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core.Options
+
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Solver.lean)
@@ -47,14 +49,18 @@ namespace Solver
   arguments to that solver.
 -/
 def spawn (path : String) (args : Array String) : IO Solver := do
-  let proc ← IO.Process.spawn {
-    stdin  := .piped
-    stdout := .piped
-    stderr := .piped
-    cmd    := path
-    args   := args
-  }
-  return ⟨IO.FS.Stream.ofHandle proc.stdin, IO.FS.Stream.ofHandle proc.stdout⟩
+  try
+    let proc ← IO.Process.spawn {
+      stdin  := .piped
+      stdout := .piped
+      stderr := .piped
+      cmd    := path
+      args   := args
+    }
+    return ⟨IO.FS.Stream.ofHandle proc.stdin, IO.FS.Stream.ofHandle proc.stdout⟩
+  catch e =>
+    let suggestion := if path == defaultSolver || path.endsWith defaultSolver then s!" Ensure {defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
+    throw (IO.userError s!"could not execute external process '{path}'.{suggestion} Original error: {e}")
 
 /--
   Returns an instance of the solver that is backed by the executable

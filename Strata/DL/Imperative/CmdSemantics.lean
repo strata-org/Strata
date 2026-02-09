@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.Stmt
+import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Util.Map
 import Strata.DL.Util.ListUtils
@@ -27,9 +27,9 @@ abbrev SemanticStore := P.Ident → Option P.Expr
 abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
 abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
 
-
 /--
 Evaluation relation of an Imperative command `Cmd`.
+Commands do not modify the evaluator - only `funcDecl` statements do.
 -/
 -- (FIXME) Change to a type class?
 abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
@@ -268,6 +268,7 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 /--
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`δ`) functions.
+Commands do not modify the evaluator - only `funcDecl` statements do.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Prop where

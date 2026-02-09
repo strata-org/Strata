@@ -10,6 +10,7 @@ import Strata.Languages.Core.Statement
 import Strata.Languages.Core.CmdType
 import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
+import Strata.Languages.Core.FunctionType
 import Strata.DL.Imperative.CmdType
 
 namespace Core
@@ -76,27 +77,27 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program)
         .error <| e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
 
 def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except DiagnosticModel (List Statement × TEnv Visibility) :=
-  go Env ss []
+  Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
+  go C Env ss []
 where
-  go (Env : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
-    Except DiagnosticModel (List Statement × TEnv Visibility) :=
+  go (C : LContext CoreLParams) (Env : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
+    Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
     let errorWithSourceLoc := fun (e : DiagnosticModel) md =>
       e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
     match ss with
-    | [] => .ok (acc.reverse, Env)
+    | [] => .ok (acc.reverse, Env, C)
     | s :: srest => do
-      let (s', Env) ←
+      let (s', Env, C) ←
         match s with
         | .cmd cmd => do
           let (c', Env) ← typeCheckCmd C Env P cmd
-          .ok (Stmt.cmd c', Env)
+          .ok (Stmt.cmd c', Env, C)
 
         | .block label bss md => do
           let Env := Env.pushEmptyContext
-          let (ss', Env) ← go Env bss []
+          let (ss', Env, C) ← go C Env bss []
           let s' := Stmt.block label ss' md
-          .ok (s', Env.popContext)
+          .ok (s', Env.popContext, C)
 
         | .ite cond tss ess md => do try
           let _ ← Env.freeVarCheck cond f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
@@ -104,10 +105,10 @@ where
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
-            let (tb, Env) ← go Env [(Stmt.block "$_then" tss  #[])] []
-            let (eb, Env) ← go Env [(Stmt.block "$_else" ess  #[])] []
+            let (tb, Env, C) ← go C Env [(Stmt.block "$_then" tss  #[])] []
+            let (eb, Env, C) ← go C Env [(Stmt.block "$_else" ess  #[])] []
             let s' := Stmt.ite conda.unresolved tb eb md
-            .ok (s', Env)
+            .ok (s', Env, C)
           | _ => .error <| md.toDiagnosticF f!"[{s}]: If's condition {cond} is not of type `bool`!"
           catch e =>
             -- Add source location to error messages.
@@ -136,9 +137,9 @@ where
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
-            let (tb, Env) ← go Env [(Stmt.block "$_loop_body" bss #[])] []
+            let (tb, Env, C) ← go C Env [(Stmt.block "$_loop_body" bss #[])] []
             let s' := Stmt.loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
-            .ok (s', Env)
+            .ok (s', Env, C)
           | _ =>
             match condty with
             | .tcons "bool" [] =>
@@ -157,7 +158,7 @@ where
           match op with
           | .some p =>
             if Block.hasLabelInside label p.body then
-              .ok (s, Env)
+              .ok (s, Env, C)
             else
               .error <| md.toDiagnosticF f!"Label {label} does not exist in the body of {p.header.name}"
           | .none => .error <| md.toDiagnosticF f!"{s} occurs outside a procedure."
@@ -165,7 +166,16 @@ where
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
-      go Env srest (s' :: acc)
+        | .funcDecl decl md => do try
+          -- Type check the function declaration using the shared helper
+          -- which returns both the type-checked PureFunc and the Function
+          let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
+          let C := C.addFactoryFunction func
+          .ok (.funcDecl decl' md, Env, C)
+          catch e =>
+            .error (errorWithSourceLoc e md)
+
+      go C Env srest (s' :: acc)
     termination_by Block.sizeOf ss
     decreasing_by
     all_goals simp_wf <;> omega
@@ -196,6 +206,12 @@ private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option E
 
 /--
 Apply type substitution `S` to a statement.
+
+Note: This substitutes type variables in types, not term variables. For
+`funcDecl`, the input identifiers (term-level names like `x`, `y`) are
+unchanged; only the types of those inputs are substituted. There is no
+name collision concern between type variables in `S` and term-level
+input identifiers.
 -/
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with
@@ -207,6 +223,13 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .loop guard m i bss md =>
     .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) (go S bss []) md
   | .goto _ _ => s
+  | .funcDecl decl md =>
+    let decl' := { decl with
+      inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.subst S ty)),
+      output := Lambda.LTy.subst S decl.output,
+      body := decl.body.map (·.applySubst S),
+      axioms := decl.axioms.map (·.applySubst S) }
+    .funcDecl decl' md
   where
     go S ss acc : List Statement :=
     match ss with
@@ -222,7 +245,7 @@ inside a procedure).
 -/
 def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except DiagnosticModel (List Statement × Expression.TyEnv) := do
-  let (ss', Env) ← typeCheckAux C Env P op ss
+  let (ss', Env, _C) ← typeCheckAux C Env P op ss
   let context := TContext.subst Env.context Env.stateSubstInfo.subst
   let Env := Env.updateContext context
   let ss' := Statement.subst.go Env.stateSubstInfo.subst ss' []

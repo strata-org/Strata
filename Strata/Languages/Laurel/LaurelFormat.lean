@@ -34,6 +34,7 @@ def formatHighType : HighType → Format
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .UserDefined name => Format.text name
@@ -45,7 +46,7 @@ def formatHighType : HighType → Format
       Format.joinSep (types.map formatHighType) " & "
 
 def formatStmtExpr (s:StmtExpr) : Format :=
-  match h: s with
+  match s with
   | .IfThenElse cond thenBr elseBr =>
       "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
       match elseBr with
@@ -68,20 +69,24 @@ def formatStmtExpr (s:StmtExpr) : Format :=
       | some v => " " ++ formatStmtExpr v
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
+  | .LiteralString s => "\"" ++ Format.text s ++ "\""
   | .Identifier name => Format.text name
-  | .Assign target value _ =>
-      formatStmtExpr target ++ " := " ++ formatStmtExpr value
+  | .Assign [single] value _ =>
+      formatStmtExpr single ++ " := " ++ formatStmtExpr value
+  | .Assign targets value _ =>
+      "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
       formatStmtExpr target ++ "#" ++ Format.text field
   | .PureFieldUpdate target field value =>
       formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
   | .StaticCall name args =>
       Format.text name ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+  | .PrimitiveOp op [a] =>
+      formatOperation op ++ formatStmtExpr a
+  | .PrimitiveOp op [a, b] =>
+      formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
   | .PrimitiveOp op args =>
-      match args with
-      | [a] => formatOperation op ++ formatStmtExpr a
-      | [a, b] => formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
-      | _ => formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+      formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
   | .This => "this"
   | .ReferenceEquals lhs rhs =>
       formatStmtExpr lhs ++ " === " ++ formatStmtExpr rhs
@@ -107,10 +112,6 @@ def formatStmtExpr (s:StmtExpr) : Format :=
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
-  decreasing_by
-    all_goals (simp_wf; try omega)
-    any_goals (rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
-    subst_vars; cases h; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
 
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type

@@ -85,6 +85,7 @@ inductive HighType : Type where
   | TBool
   | TInt
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
+  | TString /- String type for text data -/
   | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
   | TTypedField (valueType : HighType) /- Field constant with known value type. Not accessible via grammar. -/
   | UserDefined (name: Identifier)
@@ -131,9 +132,12 @@ inductive StmtExpr : Type where
 /- Expression like -/
   | LiteralInt (value: Int)
   | LiteralBool (value: Bool)
+  | LiteralString (value: String)
   | Identifier (name : Identifier)
-  /- Assign is only allowed in an impure context -/
-  | Assign (target : StmtExpr) (value : StmtExpr) (md : Imperative.MetaData Core.Expression)
+  /- For single target assignments, use a single-element list.
+     Multiple targets are only allowed when the value is a StaticCall to a procedure
+     with multiple outputs, and the number of targets must match the number of outputs. -/
+  | Assign (targets : List StmtExpr) (value : StmtExpr) (md : Imperative.MetaData Core.Expression)
   /- Used by itself for fields reads and in combination with Assign for field writes -/
   | FieldSelect (target : StmtExpr) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/
@@ -196,6 +200,7 @@ def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
   | HighType.TFloat64, HighType.TFloat64 => true
+  | HighType.TString, HighType.TString => true
   | HighType.THeap, HighType.THeap => true
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2

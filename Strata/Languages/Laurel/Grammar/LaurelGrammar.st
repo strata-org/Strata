@@ -4,11 +4,13 @@ dialect Laurel;
 category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
+op stringType : LaurelType => "string";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
+op string (s: Str): StmtExpr => s;
 
 // Variable declarations
 category OptionalType;
@@ -33,17 +35,17 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value ";";
 
 // Binary operators
-op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs "+" rhs;
-op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "==" rhs;
-op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "!=" rhs;
-op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">" rhs;
-op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<" rhs;
-op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<=" rhs;
-op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">=" rhs;
+op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
+op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " == " rhs;
+op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " != " rhs;
+op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " > " rhs;
+op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " < " rhs;
+op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " <= " rhs;
+op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " >= " rhs;
 
 // Logical operators
-op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30)] lhs "&&" rhs;
-op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(25)] lhs "||" rhs;
+op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
+op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(25), leftassoc] lhs " || " rhs;
 
 // If-else
 category OptionalElse;

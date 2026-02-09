@@ -40,10 +40,15 @@ def typeCheck (options : Options) (program : Program)
   let C := { Lambda.LContext.default with
                 functions := factory,
                 knownTypes := Core.KnownTypes }
-  let (program, _T) ← Program.typeCheck C T program
-  -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
-  if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
-  return program
+  match Factory.typeCheck C T with
+  | .error k =>
+    -- TODO: DiagnosticModel for functions defined in Factory?
+    throw (DiagnosticModel.fromFormat k)
+  | .ok T =>
+    let (program, _T) ← Program.typeCheck C T program
+    -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
+    if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
+    return program
 
 def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
