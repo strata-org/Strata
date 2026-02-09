@@ -15,6 +15,12 @@ import             Strata.DDM.Integration.Lean.GenTrace
 public meta import Strata.DDM.Integration.Lean.OfAstM
 public meta import Strata.DDM.Util.Graph.Tarjan
 
+/-!
+Implements the `#strata_gen` command, which reads a dialect definition and
+generates Lean inductive types, `toAst`, and `ofAst` functions for each
+category used by the dialect.
+-/
+
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote
   withTraceNode mkIdentFrom)
 open Lean.Elab (throwUnsupportedSyntax)
@@ -258,6 +264,7 @@ abbrev CatOpM := StateM CatOpState
 def CatOpM.addError (msg : String) : CatOpM Unit :=
   modify fun s => { s with errors := s.errors.push msg }
 
+/-- Creates an identifier prefixed with `_root_` for unambiguous resolution. -/
 def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
   .mk (.ident .none name.toString.toRawSubstring rootName [.decl name []])
@@ -327,7 +334,7 @@ def addDecl (d : DialectName) (decl : Decl) : CatOpM Unit :=
 def addDialect (d : Dialect) : CatOpM Unit :=
   d.declarations.forM (addDecl d.name)
 
-/- `CatopMap` with onl initial dialect-/
+/-- `CatOpMap` with only the Init dialect. -/
 protected def init : CatOpMap :=
   let act := do
         addDialect initDialect
@@ -461,13 +468,13 @@ def makeBuiltinCtors (cat : QualifiedIdent) : Array DefaultCtor :=
   | q`Init.Type =>
     #[
       .mk "bvar" none #[
-        { name := "index", cat := .atom .none q`Init.Num, addAnn := false }
+        { name := "idx", cat := .atom .none q`Init.Num, addAnn := false }
       ],
       .mk "tvar" none #[
         { name := "name", cat := .atom .none q`Init.Str, addAnn := false }
       ],
       .mk "fvar" none #[
-        { name := "fvar", cat := .atom .none q`Init.Num, addAnn := false },
+        { name := "idx", cat := .atom .none q`Init.Num, addAnn := false },
         { name := "args",
           cat := { ann := .none, name := q`Init.Seq,
                    args := #[.atom .none q`Init.Type] },
@@ -495,16 +502,16 @@ dialect-qualified names (`dialect_name`) or numbered names (`name_0`) to
 avoid collisions.
 -/
 def catOpToDefaultCtor (s : Std.HashSet String) (op : CatOp) : DefaultCtor :=
-  let name := op.name
+  let qid := op.name
   let leanName :=
-    if name.name ∈ s then
-      let leanName := s!"{name.dialect}_{name.name}"
+    if qid.name ∈ s then
+      let leanName := s!"{qid.dialect}_{qid.name}"
       if leanName ∈ s then
-        genFreshName s name.name 0
+        genFreshName s qid.name 0
       else
         leanName
     else
-      name.name
+      qid.name
   {
     leanNameStr := leanName,
     strataName := some op.name,
@@ -524,16 +531,17 @@ def CatOpMap.onlyUsedCategories (m : CatOpMap) (d : Dialect)
       let builtinCtors := makeBuiltinCtors cat
       -- Track Lean constructor names from builtins to avoid conflicts
       let usedLeanCtorNames : Std.HashSet String :=
-        builtinCtors.foldl (init := {}) fun m c =>
-          m.insert c.leanNameStr
-      let (allCtors, _) := ops.foldl (init := (builtinCtors, usedLeanCtorNames)) fun (a, s) op =>
+        builtinCtors.foldl (init := {}) fun s c =>
+          s.insert c.leanNameStr
+      let (allCtors, _) :=
+        ops.foldl (init := (builtinCtors, usedLeanCtorNames)) fun (a, s) op =>
             let dOp := catOpToDefaultCtor s op
             (a.push dOp, s.insert dOp.leanNameStr)
       a.push (cat, allCtors)
     else
       a
 
-/- Returns an identifier from a string. -/
+/-- Returns an identifier from a string. -/
 def localIdent (name : String) : Ident :=
   let dName := .anonymous |>.str name
   .mk (.ident .none name.toRawSubstring dName [])
@@ -632,17 +640,22 @@ def getCategoryIdent (cat : QualifiedIdent) : GenM Ident := do
     return mkRootIdent nm
   currScopedIdent (← getCategoryScopedName cat)
 
+/-- Returns a Lean term for a category type applied to the annotation type. -/
 def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
   let catIdent ← mkScopedIdent (← getCategoryScopedName cat)
   return Lean.Syntax.mkApp catIdent #[annType]
 
-/-- Return identifier for operator with given name to suport category. -/
+/-- Returns a scoped identifier for a constructor in a category. -/
 def getCategoryOpIdent (cat : QualifiedIdent) (name : Name) : GenM Ident := do
   currScopedIdent <| (← getCategoryScopedName cat) ++ name
 
-partial def ppCatWithAddAnn (annType : Ident) (c : SyntaxCat)
+/--
+Generates a Lean type term for a `SyntaxCat`, recursing into parameterized
+categories. When `addAnn` is true, wraps primitive types in `Ann`.
+-/
+partial def genCatTypeTerm (annType : Ident) (c : SyntaxCat)
     (addAnn : Bool) : GenM Term := do
-  let args ← c.args.mapM (ppCatWithAddAnn annType · true)
+  let args ← c.args.mapM (genCatTypeTerm annType · true)
   match c.name, eq : args.size with
   | q`Init.CommaSepBy, 1 =>
     let inner := mkCApp ``Array #[args[0]]
@@ -671,8 +684,9 @@ partial def ppCatWithAddAnn (annType : Ident) (c : SyntaxCat)
       getCategoryTerm cat annType
   | f, _ => throwError "Unsupported {f.fullName}"
 
-partial def ppCat (annType : Ident) (c : SyntaxCat) : GenM Term := do
-  ppCatWithAddAnn annType c true
+/-- Generates a Lean type term for a `SyntaxCat`, always wrapping in `Ann`. -/
+partial def genCatTypeTermAnn (annType : Ident) (c : SyntaxCat) : GenM Term := do
+  genCatTypeTerm annType c true
 
 /--
 Elaborates an array of commands, wrapping them in a mutual block if there
@@ -722,7 +736,7 @@ def genCtorSyntax (annType : Ident) (op : DefaultCtor)
     : GenM (TSyntax ``ctor) := do
   let ctorId : Ident := localIdent op.leanNameStr
   let binders ← op.argDecls.mapM fun arg => do
-        explicitBinder arg.name (← ppCatWithAddAnn annType arg.cat arg.addAnn)
+        explicitBinder arg.name (← genCatTypeTerm annType arg.cat arg.addAnn)
   `(ctor| | $ctorId:ident (ann : $annType) $binders:bracketedBinder* )
 
 /--
@@ -764,10 +778,6 @@ def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
     | _ => ``Strata.OperationF
   Lean.Syntax.mkApp (mkRootIdent ident) #[annType]
 
-structure ToOp where
-  name : String
-  argDecls : Array (String × SyntaxCat)
-
 /-- Returns the identifier for a category's toAst function. -/
 def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
   currScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
@@ -776,14 +786,17 @@ def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
 def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
   currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
 
+/-- Wraps a value with an `Ann`-extracted annotation into an AST argument. -/
 def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
   mkCApp argCtor #[mkCApp ``Ann.ann #[annTerm], v]
 
+/-- Destructures an `Ann` value into an AST argument with annotation and value. -/
 def annToAst (argCtor : Name) (annTerm : Term) : Term :=
   mkCApp argCtor #[mkCApp ``Ann.ann #[annTerm], mkCApp ``Ann.val #[annTerm]]
 
 mutual
 
+/-- Generates `toAst` code for a sequence argument (maps over elements). -/
 partial def toAstApplyArgSeq (v : Ident) (cat : SyntaxCat)
     (sepFormat : Name) : GenM Term := do
   assert! cat.args.size = 1
@@ -798,6 +811,7 @@ partial def toAstApplyArgSeq (v : Ident) (cat : SyntaxCat)
   let sepExpr := mkCApp sepFormat #[]
   return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
 
+/-- Generates `toAst` conversion code for a single constructor argument. -/
 partial def toAstApplyArg (vn : Name) (cat : SyntaxCat)
     (addAnn : Bool := true) : GenM Term := do
   let v := mkIdentFrom (←read).src vn
@@ -1005,7 +1019,8 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
       match op.strataName with
       | some n => pure n
       | none => throwError s!"Internal: Operation requires strata name"
-    let argTerms : Array Term ← args.mapM fun (nm, tp, addAnn) => toAstApplyArg nm tp addAnn
+    let argTerms : Array Term ←
+      args.mapM fun (nm, tp, addAnn) => toAstApplyArg nm tp addAnn
     let rhs := mkCApp ``OperationF.mk #[annI, quote mName, ← arrayLit argTerms]
     `(matchAltExpr| | $pat => $rhs)
 
@@ -1013,7 +1028,8 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
 Generates the `toAst` function that converts from the generated category type
 to the standard AST representation (ExprF, TypeExprF, OperationF, or ArgF).
 -/
-def generateToAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM Command := do
+def generateToAstFunction (cat : QualifiedIdent)
+    (ops : Array DefaultCtor) : GenM Command := do
   let annType := localIdent "α"
   let catTerm ← getCategoryTerm cat annType
   let astType : Term := categoryToAstTypeIdent cat annType
@@ -1029,11 +1045,13 @@ def generateToAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor) : Gen
 
 mutual
 
-partial def getOfIdentArg (varName : String) (cat : SyntaxCat) (e : Term)
+/-- Generates `ofAst` parsing code for an argument, always annotated. -/
+partial def genOfAstArgTermAnn (varName : String) (cat : SyntaxCat) (e : Term)
     : GenM Term := do
-  getOfIdentArgWithAddAnn varName cat true e
+  genOfAstArgTerm varName cat true e
 
-partial def getOfIdentArgWithAddAnn (varName : String) (cat : SyntaxCat)
+/-- Generates `ofAst` parsing code for an argument with configurable annotation. -/
+partial def genOfAstArgTerm (varName : String) (cat : SyntaxCat)
     (addAnn : Bool) (e : Term) : GenM Term := do
   match cat.name with
   | q`Init.Num =>
@@ -1078,17 +1096,17 @@ partial def getOfIdentArgWithAddAnn (varName : String) (cat : SyntaxCat)
     let ofAst ← ofAstIdentM cid
     pure <| mkApp ofAst #[e]
   | q`Init.CommaSepBy => do
-    getOfIdentArgSeq varName cat e ``SepFormat.comma
+    genOfAstSeqArgTerm varName cat e ``SepFormat.comma
   | q`Init.SpaceSepBy => do
-    getOfIdentArgSeq varName cat e ``SepFormat.space
+    genOfAstSeqArgTerm varName cat e ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
-    getOfIdentArgSeq varName cat e ``SepFormat.spacePrefix
+    genOfAstSeqArgTerm varName cat e ``SepFormat.spacePrefix
   | q`Init.Seq => do
-    getOfIdentArgSeq varName cat e ``SepFormat.none
+    genOfAstSeqArgTerm varName cat e ``SepFormat.none
   | q`Init.Option => do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg varName c vi
+    let body ← genOfAstArgTermAnn varName c vi
     ``(OfAstM.ofOptionM $e fun $vc _ => $body)
   | cid => do
     assert! cat.args.isEmpty
@@ -1097,11 +1115,11 @@ partial def getOfIdentArgWithAddAnn (varName : String) (cat : SyntaxCat)
     ``(OfAstM.ofOperationM $e fun $vc _ => $ofAst $vi)
 
 where
-  getOfIdentArgSeq (varName : String) (cat : SyntaxCat) (e : Term)
+  genOfAstSeqArgTerm (varName : String) (cat : SyntaxCat) (e : Term)
       (sepFormat : Name) : GenM Term := do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg varName c vi
+    let body ← genOfAstArgTermAnn varName c vi
     let sepFormatTerm := mkCApp sepFormat #[]
     ``(OfAstM.ofSeqM $sepFormatTerm $e fun $vc _ => $body)
 
@@ -1118,7 +1136,7 @@ def ofAstArgs (argDecls : Array GenArgDecl) (argsVar : Ident)
     let arg := argDecls[i]
     let (vc, vi) ← genFreshIdentPair <| arg.name ++ "_bind"
     let av ← ``($argsVar[$(quote i)])
-    let rhs ← getOfIdentArgWithAddAnn arg.name arg.cat arg.addAnn av
+    let rhs ← genOfAstArgTerm arg.name arg.cat arg.addAnn av
     let stmt ← `(doSeqItem| let $vc ← $rhs:term)
     return (vi, stmt)
   return args.unzip
@@ -1248,22 +1266,6 @@ def mkOfAstDef (cat : QualifiedIdent) (ofAst : Ident) (v : Name)
       : OfAstM $catTerm := $rhs)
 
 /--
-Distinguishes between a type parameter (category reference) and a type
-expression in Init.TypeP, applying the appropriate handler.
--/
-def matchTypeParamOrType {Ann α} [Repr Ann] (a : ArgF Ann)
-    (onTypeParam : Ann → α) (onType : TypeExprF Ann → OfAstM α)
-    : OfAstM α :=
-  match a with
-  | .cat cat =>
-    if cat.name == q`Init.Type && cat.args.isEmpty then
-      pure (onTypeParam cat.ann)
-    else
-      .throwExpected "Type parameter or type expression" a
-  | .type tp => onType tp
-  | _ => .throwExpected "Type parameter or type expression" a
-
-/--
 Generates the `ofAst` function that converts from the standard AST
 representation back to the generated category type. Returns auxiliary
 commands (like name index maps) and the main ofAst definition.
@@ -1281,8 +1283,8 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
     -- Filter to only dialect-defined expressions (with strataName)
     let dialectOps := ops.filter (·.strataName.isSome)
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat dialectOps
-    let bvarCtorIdent ← getCategoryOpIdent cat `bvar
-    let fvarCtorIdent ← getCategoryOpIdent cat `fvar
+    let bvarCtor ← getCategoryOpIdent cat `bvar
+    let fvarCtor ← getCategoryOpIdent cat `fvar
     let argsIdent := mkIdentFrom src argsVar
     let cases : Array MatchAlt ←
       dialectOps.mapM (ofAstExprMatch nameIndexMap cat annI argsIdent)
@@ -1291,8 +1293,8 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
       `(let vnf := ($(mkIdentFrom src v)).hnf
         let $(mkCanIdent src argsVar) := vnf.args.val
         match (vnf.fn) with
-        | Strata.ExprF.bvar ann idx => pure ($bvarCtorIdent ann idx)
-        | Strata.ExprF.fvar ann i => pure ($fvarCtorIdent ann i)
+        | Strata.ExprF.bvar ann idx => pure ($bvarCtor ann idx)
+        | Strata.ExprF.fvar ann i => pure ($fvarCtor ann i)
         | Strata.ExprF.fn $annC fnId =>
           (match ($ofAstNameMap[fnId]?) with
           $cases:matchAlt*
@@ -1333,13 +1335,13 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
     pure (#[cmd], ← mkOfAstDef cat ofAst v rhs)
   | q`Init.TypeP =>
     let v ← genFreshLeanName "v"
-    let catCtorIdent ← getCategoryOpIdent cat `type
-    let exprCtorIdent ← getCategoryOpIdent cat `expr
+    let catCtor ← getCategoryOpIdent cat `type
+    let exprCtor ← getCategoryOpIdent cat `expr
     let typeOfAst ← ofAstIdentM q`Init.Type
     let vIdent := mkIdentFrom src v
     let rhs ← ``(
-      matchTypeParamOrType $vIdent $catCtorIdent
-        (fun tp => $exprCtorIdent <$> $typeOfAst tp)
+      OfAstM.matchTypeParamOrType $vIdent $catCtor
+        (fun tp => $exprCtor <$> $typeOfAst tp)
     )
     pure (#[], ← mkOfAstDef cat ofAst v rhs)
   | _ =>
@@ -1426,7 +1428,7 @@ The algorithm:
 This ensures that all possible inhabited instances are generated for mutually-recursive
 or interdependent category groups.
 -/
-partial def addInhabited (group : Array (QualifiedIdent × Array DefaultCtor))
+partial def generateInhabitedInstances (group : Array (QualifiedIdent × Array DefaultCtor))
     (s : InhabitedSet) : GenM InhabitedSet := do
   let initSize := s.size
   let sm ← group.foldlM (init := s) fun s (cat, ctors) => do
@@ -1434,7 +1436,7 @@ partial def addInhabited (group : Array (QualifiedIdent × Array DefaultCtor))
     pure s
   let finalSize := sm.size
   if finalSize > initSize then
-    addInhabited group sm
+    generateInhabitedInstances group sm
   else
     pure sm
 
@@ -1472,7 +1474,7 @@ def generateCategoryCode
           runCmd <| elabCommands inductives
         let inhabitedCats2 ←
           profileitM Lean.Exception s!"Generating inhabited {cats}" (← getOptions) do
-            addInhabited allCtors inhabitedCats
+            generateInhabitedInstances allCtors inhabitedCats
         let inhabitedCats := inhabitedCats2
         profileitM Lean.Exception s!"Generating toAstDefs {cats}" (← getOptions) do
           let toAstDefs ← allCtors.mapM fun (cat, ctors) => do

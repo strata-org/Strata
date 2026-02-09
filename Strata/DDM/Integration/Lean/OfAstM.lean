@@ -8,6 +8,12 @@ public import Strata.DDM.AST
 public import Strata.DDM.HNF
 import all Strata.DDM.Util.Array
 
+/-!
+Runtime support for converting AST representations back to generated types.
+Defines the `OfAstM` error monad and argument-parsing combinators used by
+the `ofAst` functions that `#strata_gen` emits.
+-/
+
 public section
 namespace Strata
 
@@ -15,7 +21,8 @@ class HasEta (α : Type u) (β : outParam (Type v)) where
   bvar : Nat → α
   lambda : String → β → α → α
 
-def etaExpand {E T} [HasEta E T] (argTypes : Array (String × T)) (provided : Nat) (e : E) : E :=
+def etaExpand {E T} [HasEta E T]
+    (argTypes : Array (String × T)) (provided : Nat) (e : E) : E :=
   if argTypesP  : provided < argTypes.size then
     let b := argTypes[argTypes.size - 1]
     let e := HasEta.lambda b.fst b.snd e
@@ -111,8 +118,10 @@ protected def checkEtaExprArgCount
   else
     .throwUnexpectedArgCount tp expected.size args.size
 
-def ofExpressionM {α β} [Repr α] [SizeOf α] (val : ArgF α) (act : ∀(e : ExprF α), sizeOf e < sizeOf val → OfAstM β)
-  : OfAstM β :=
+def ofExpressionM {α β} [Repr α] [SizeOf α]
+    (val : ArgF α)
+    (act : ∀(e : ExprF α), sizeOf e < sizeOf val → OfAstM β)
+    : OfAstM β :=
   match val with
   | .expr a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "expression" a
@@ -254,9 +263,12 @@ Get the expression at index `lvl` in the arguments.
 
 Note that in conversion, we will
 -/
-def exprEtaArg{Ann α T} [Repr Ann] [HasEta α T] {e : Expr} {n : Nat} (as : SizeBounded (Array (ArgF Ann)) e 1) (_ : as.val.size ≤ n) (lvl : Nat)
-        (act : (s : ExprF Ann) → sizeOf s < sizeOf e → OfAstM α) :
-        OfAstM α :=
+def exprEtaArg {Ann α T} [Repr Ann] [HasEta α T]
+    {e : Expr} {n : Nat}
+    (as : SizeBounded (Array (ArgF Ann)) e 1)
+    (_ : as.val.size ≤ n) (lvl : Nat)
+    (act : (s : ExprF Ann) → sizeOf s < sizeOf e → OfAstM α)
+    : OfAstM α :=
   if lvlP : lvl < as.val.size then
     let i := as.val.size - 1 - lvl
     have iP : i < as.val.size := by omega
@@ -270,6 +282,22 @@ def exprEtaArg{Ann α T} [Repr Ann] [HasEta α T] {e : Expr} {n : Nat} (as : Siz
   else
     let i := n - 1 - lvl
     return HasEta.bvar i
+
+/--
+Distinguishes between a type parameter (category reference) and a type
+expression in Init.TypeP, applying the appropriate handler.
+-/
+def matchTypeParamOrType {Ann α} [Repr Ann] (a : ArgF Ann)
+    (onTypeParam : Ann → α) (onType : TypeExprF Ann → OfAstM α)
+    : OfAstM α :=
+  match a with
+  | .cat cat =>
+    if cat.name == q`Init.Type && cat.args.isEmpty then
+      pure (onTypeParam cat.ann)
+    else
+      .throwExpected "Type parameter or type expression" a
+  | .type tp => onType tp
+  | _ => .throwExpected "Type parameter or type expression" a
 
 end Strata.OfAstM
 end

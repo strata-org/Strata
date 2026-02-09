@@ -6,6 +6,11 @@
 
 import Strata.DDM.Integration.Lean
 
+/-!
+Tests for `#strata_gen`: exercises empty dialects, a dialect with types,
+expressions, and mutual recursion, and verifies round-trip correctness.
+-/
+
 namespace Strata
 
 class IsAST (β : Type → Type) (M : outParam (Type → Type)) where
@@ -216,7 +221,8 @@ def testRoundTrip {β M} [h : Strata.IsAST β M] [BEq (β Unit)] (e : β Unit) :
 #guard testRoundTrip <| TestDialectType.set () (.bool ())
 
 #guard testRoundTrip <| Expr.trueExpr ()
-#guard testRoundTrip <| Expr.lambda () (.bool ()) (Bindings.mkBindings () ⟨(), #[]⟩) (.trueExpr ())
+#guard testRoundTrip <|
+  Expr.lambda () (.bool ()) (Bindings.mkBindings () ⟨(), #[]⟩) (.trueExpr ())
 #guard testRoundTrip <| Expr.fvar () 1
 
 open Strata (OfAstM)
