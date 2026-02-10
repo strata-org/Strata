@@ -48,7 +48,7 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr 
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
       | some (_, ty) => ty
-      | none => panic s!"Could not find variable name in environment"
+      | none => panic s!"Could not find variable {name} in environment"
   -- Field access
   | .FieldSelect target fieldName =>
       match (computeExprType env types target) with

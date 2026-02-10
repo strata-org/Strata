@@ -175,12 +175,16 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Assign targets value =>
       let seqValue ← transformExpr value
-      liftAssignExpr targets seqValue md
       -- The expression result is the current substitution for the first target
+      -- (we already know what it maps to AFTER this assignment from right-to-left traversal)
       let firstTarget := targets.head?.getD (panic "Assign must have non-empty targets")
-      match firstTarget.val with
+      let resultExpr ← match firstTarget.val with
         | .Identifier varName => pure (⟨.Identifier (← getSubst varName), md⟩)
         | _ => pure firstTarget
+
+      liftAssignExpr targets seqValue md
+
+      return resultExpr
 
   | .PrimitiveOp op args =>
       -- Process arguments right to left
@@ -248,9 +252,7 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | _ => return expr
 
 /--
-Transform an expression whose result value is discarded (e.g. non-last elements in a block).
-Assignments are lifted to prepends. For non-assignment expressions, the transformed result
-is also added to prepends (it may still have side effects like function calls).
+Transform an expression whose result value is discarded (e.g. non-last elements in a block). All side-effects in Laurel are represented as assignments, so we only need to lift assignments, anything else can be forgotten.
 -/
 partial def transformExprDiscarded (expr : StmtExprMd) : LiftM Unit := do
   let md := expr.md

@@ -46,6 +46,15 @@ procedure anotherConditionAssignmentInExpression(c: bool) {
     assert z;
 //  ^^^^^^^^^ error: assertion could not be proved
 }
+
+procedure blockWithTwoAssignmentsInExpression() {
+  var x: int := 0;
+  var y: int := 0;
+  var z: int := { x := 1; y := 2; };
+  assert x == 1;
+  assert y == 2;
+  assert z == 2;
+}
 "
 
 #guard_msgs (error, drop all) in
