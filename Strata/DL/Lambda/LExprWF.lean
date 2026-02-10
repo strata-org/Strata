@@ -290,18 +290,19 @@ theorem varOpen_of_varClose {T} {GenericTy} [BEq T.Metadata] [LawfulBEq T.Metada
 /-! ### Substitution on `LExpr`s -/
 
 /--
-Increment all bound variable indices in `e` by `n`. Used to avoid capture when
-substituting under binders.
+Increment bound variable indices in `e` by `n`. Only bvars at or above `cutoff`
+are shifted; bvars below `cutoff` (bound within `e`) are left alone. The cutoff
+increases when going under binders.
 -/
-def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ :=
+def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) (cutoff : Nat := 0) : LExpr ⟨T, GenericTy⟩ :=
   match e with
   | .const _ _ => e | .op _ _ _ => e | .fvar _ _ _ => e
-  | .bvar m i => .bvar m (i + n)
-  | .abs m ty e' => .abs m ty (liftBVars n e')
-  | .quant m qk ty tr' e' => .quant m qk ty (liftBVars n tr') (liftBVars n e')
-  | .app m fn e' => .app m (liftBVars n fn) (liftBVars n e')
-  | .ite m c t e' => .ite m (liftBVars n c) (liftBVars n t) (liftBVars n e')
-  | .eq m e1 e2 => .eq m (liftBVars n e1) (liftBVars n e2)
+  | .bvar m i => if i >= cutoff then .bvar m (i + n) else e
+  | .abs m ty e' => .abs m ty (liftBVars n e' (cutoff + 1))
+  | .quant m qk ty tr' e' => .quant m qk ty (liftBVars n tr' (cutoff + 1)) (liftBVars n e' (cutoff + 1))
+  | .app m fn e' => .app m (liftBVars n fn cutoff) (liftBVars n e' cutoff)
+  | .ite m c t e' => .ite m (liftBVars n c cutoff) (liftBVars n t cutoff) (liftBVars n e' cutoff)
+  | .eq m e1 e2 => .eq m (liftBVars n e1 cutoff) (liftBVars n e2 cutoff)
 
 /--
 Substitute `(.fvar x _)` in `e` with `to`. Does NOT lift de Bruijn indices in `to`
