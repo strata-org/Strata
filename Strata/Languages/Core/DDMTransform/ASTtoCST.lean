@@ -128,8 +128,11 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
 def lTyToCoreType [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
   match ty with
   | .forAll typeVars monoTy => do
+    let savedCtx ← get
     modify (ToCSTContext.addBoundTypeVars · typeVars.toArray)
-    lmonoTyToCoreType monoTy
+    let result ← lmonoTyToCoreType monoTy
+    set savedCtx
+    pure result
 
 /-- Convert a type constructor declaration to CST -/
 def typeConToCST [Inhabited M] (tcons : TypeConstructor)
@@ -149,6 +152,7 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST [Inhabited M] (syn : TypeSynonym)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  let savedCtx ← get
   let name : Ann String M := ⟨default, syn.name⟩
   let args : Ann (Option (Bindings M)) M :=
     if syn.typeArgs.isEmpty then
@@ -162,6 +166,7 @@ def typeSynToCST [Inhabited M] (syn : TypeSynonym)
   let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
   modify (·.addBoundTypeVars syn.typeArgs.toArray)
   let rhs ← lmonoTyToCoreType syn.type
+  set savedCtx
   pure (.command_typesynonym default name args targs rhs)
 
 def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :=
@@ -346,6 +351,7 @@ end
 
 /-- Convert a procedure to CST -/
 def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
+  let savedCtx ← get
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   modify (ToCSTContext.addBoundTypeVars · proc.header.typeArgs.toArray)
   let typeArgs : Ann (Option (TypeArgs M)) M :=
@@ -371,6 +377,8 @@ def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   let outputResults ← proc.header.outputs.toList.mapM (fun (id, ty) => processOutput id ty)
   let outputBinds := outputResults.map (·.1)
   let outputNames := outputResults.map (·.2) |>.toArray
+  modify (ToCSTContext.addBoundVars · inputNames)
+  modify (ToCSTContext.addBoundVars · outputNames)
   let outputs : Ann (Option (MonoDeclList M)) M :=
     if outputBinds.isEmpty then
       ⟨default, none⟩
@@ -404,16 +412,16 @@ def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-  modify (ToCSTContext.addBoundVars · inputNames)
-  modify (ToCSTContext.addBoundVars · outputNames)
   let bodyCST ← blockToCST proc.body
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
+  set savedCtx
   pure (.command_procedure default name typeArgs inputs outputs spec body)
 
 /-- Convert a function declaration to CST -/
 def funcToCST [Inhabited M]
     (func : Lambda.LFunc CoreLParams)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  let savedCtx ← get
   let name : Ann String M := ⟨default, func.name.name⟩
   -- Add type arguments to context and create TypeArgs.
   modify (·.addBoundTypeVars func.typeArgs.toArray)
@@ -434,7 +442,7 @@ def funcToCST [Inhabited M]
   let paramNames := results.map (·.2) |>.toArray
   let b : Bindings M := .mkBindings default ⟨default, bindings.toArray⟩
   let r ← lmonoTyToCoreType func.output
-  match func.body with
+  let result ← match func.body with
   | none => pure (.command_fndecl default name typeArgs b r)
   | some body => do
     -- Add formals to the context.
@@ -442,6 +450,8 @@ def funcToCST [Inhabited M]
     let bodyExpr ← lexprToExpr body true
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r bodyExpr inline?)
+  set savedCtx
+  pure result
 
 /-- Convert a `Core.Decl` to a Core `Command` -/
 def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (Command M) :=
