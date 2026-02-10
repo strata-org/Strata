@@ -536,7 +536,7 @@ private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.
   | .abs _ _ e1 => Format.paren (f!"λ {formatLExpr T e1}")
   | .quant _ .all _ _ e1 => Format.paren (f!"∀ {formatLExpr T e1}")
   | .quant _ .exist _ _ e1 => Format.paren (f!"∃ {formatLExpr T e1}")
-  | .app _ e1 e2 => Format.paren (Format.group <| formatLExpr T e1 ++ Format.line ++ formatLExpr T e2)
+  | .app _ e1 e2 => Format.paren (formatLExpr T e1 ++ " " ++ formatLExpr T e2)
   | .ite _ c t e => Format.paren
                       ("if " ++ formatLExpr T c ++
                        " then " ++ formatLExpr T t ++ " else "
