@@ -22,7 +22,7 @@ op optionalAssignment(value: StmtExpr): OptionalAssignment => ":=" value:0;
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
   => @[prec(0)] "var " name varType assignment ";";
 
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")" ";" ;
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
 // Field access
 op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;

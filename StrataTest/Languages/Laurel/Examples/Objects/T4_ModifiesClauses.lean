@@ -42,7 +42,7 @@ procedure modifyContainerTransparant(c: Container)
 procedure caller(c: Container, d: Container) {
   assume c != d;
   var x: int := d#value;
-  modifyContainerOpaque(c);
+  modifyContainerOpaque(c)
   assert x == d#value; // pass
 }
 
@@ -59,7 +59,7 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: an opaque procedure that mutates the heap must have a modifies clause
    ensures true
 {
-    modifyContainerTransparant(c);
+    modifyContainerTransparant(c)
 }
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
@@ -77,7 +77,7 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //         ^ error: assertion does not hold
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
 {
-    modifyContainerTransparant(c);
+    modifyContainerTransparant(c)
 }
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
@@ -89,7 +89,7 @@ procedure multipleModifiesClausesCaller(c: Container, d: Container, e: Container
   assume d != e;
   assume c != e;
   var x: int := e#value;
-  multipleModifiesClauses(c, d, e);
+  multipleModifiesClauses(c, d, e)
   assert x == e#value; // pass
 }
 "
