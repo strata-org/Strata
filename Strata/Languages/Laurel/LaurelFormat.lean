@@ -11,7 +11,6 @@ namespace Laurel
 
 open Std (Format)
 
-mutual
 def formatOperation : Operation → Format
   | .Eq => "=="
   | .Neq => "!="
@@ -29,11 +28,23 @@ def formatOperation : Operation → Format
   | .Gt => ">"
   | .Geq => ">="
 
-def formatHighType : HighType → Format
+private theorem HighTypeMd.sizeOf_val_lt (e : HighTypeMd) : sizeOf e.val < sizeOf e := by
+  cases e
+  rename_i val md
+  show sizeOf val < 1 + sizeOf val + sizeOf md
+  omega
+
+mutual
+def formatHighType (t : HighTypeMd) : Format := formatHighTypeVal t.val
+  termination_by sizeOf t
+  decreasing_by simp_wf; have := HighTypeMd.sizeOf_val_lt t; grind
+
+def formatHighTypeVal : HighType → Format
   | .TVoid => "void"
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .UserDefined name => Format.text name
@@ -43,8 +54,26 @@ def formatHighType : HighType → Format
   | .Pure base => "pure(" ++ formatHighType base ++ ")"
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
+  termination_by t => sizeOf t
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (have := List.sizeOf_lt_of_mem ‹_›; omega)
+      | omega
+end
 
-def formatStmtExpr (s:StmtExpr) : Format :=
+private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
+  cases e
+  rename_i val md
+  show sizeOf val < 1 + sizeOf val + sizeOf md
+  omega
+
+mutual
+def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
+  termination_by sizeOf s
+  decreasing_by simp_wf; have := StmtExprMd.sizeOf_val_lt s; grind
+
+def formatStmtExprVal (s : StmtExpr) : Format :=
   match s with
   | .IfThenElse cond thenBr elseBr =>
       "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
@@ -68,10 +97,11 @@ def formatStmtExpr (s:StmtExpr) : Format :=
       | some v => " " ++ formatStmtExpr v
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
+  | .LiteralString s => "\"" ++ Format.text s ++ "\""
   | .Identifier name => Format.text name
-  | .Assign [single] value _ =>
+  | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value
-  | .Assign targets value _ =>
+  | .Assign targets value =>
       "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
       formatStmtExpr target ++ "#" ++ Format.text field
@@ -102,14 +132,21 @@ def formatStmtExpr (s:StmtExpr) : Format :=
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
-  | .Assert cond _ => "assert " ++ formatStmtExpr cond
-  | .Assume cond _ => "assume " ++ formatStmtExpr cond
+  | .Assert cond => "assert " ++ formatStmtExpr cond
+  | .Assume cond => "assume " ++ formatStmtExpr cond
   | .ProveBy value proof =>
       "proveBy(" ++ formatStmtExpr value ++ ", " ++ formatStmtExpr proof ++ ")"
   | .ContractOf _ fn => "contractOf(" ++ formatStmtExpr fn ++ ")"
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
+  termination_by sizeOf s
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (have := List.sizeOf_lt_of_mem ‹_›; omega)
+      | omega
+end
 
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
@@ -161,16 +198,20 @@ def formatTypeDefinition : TypeDefinition → Format
 def formatProgram (prog : Program) : Format :=
   Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
 
-end
-
 instance : Std.ToFormat Operation where
   format := formatOperation
 
-instance : Std.ToFormat HighType where
+instance : Std.ToFormat HighTypeMd where
   format := formatHighType
 
-instance : Std.ToFormat StmtExpr where
+instance : Std.ToFormat HighType where
+  format := formatHighTypeVal
+
+instance : Std.ToFormat StmtExprMd where
   format := formatStmtExpr
+
+instance : Std.ToFormat StmtExpr where
+  format := formatStmtExprVal
 
 instance : Std.ToFormat Parameter where
   format := formatParameter

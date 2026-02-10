@@ -15,6 +15,8 @@ no inference is performed.
 
 namespace Strata.Laurel
 
+namespace LaurelTypes
+
 abbrev TypeEnv := List (Identifier × HighTypeMd)
 
 /--
@@ -34,13 +36,14 @@ Compute the HighType of a StmtExpr given a type environment and type definitions
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
 -/
-partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr: StmtExprMd) : HighTypeMd :=
-  let md := expr.md
-  match expr.val with
+partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
+  match expr with
+  | StmtExprMd.mk val md =>
+  match val with
   -- Literals
-  | .LiteralInt _ => ⟨ .TInt, md ⟩
-  | .LiteralBool _ => ⟨ .TBool, md ⟩
-  | .LiteralString _ => ⟨ .TString, md ⟩
+  | .LiteralInt _ => HighTypeMd.mk .TInt md
+  | .LiteralBool _ => HighTypeMd.mk .TBool md
+  | .LiteralString _ => HighTypeMd.mk .TString md
   -- Variables
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
@@ -48,8 +51,8 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr:
       | none => panic s!"Could not find variable name in environment"
   -- Field access
   | .FieldSelect target fieldName =>
-      match (computeExprType env types target).val with
-      | .UserDefined typeName =>
+      match (computeExprType env types target) with
+      | HighTypeMd.mk (.UserDefined typeName) _ =>
           match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
           | none => panic s!"Could not find field in type"
@@ -62,32 +65,32 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr:
   -- Operators
   | .PrimitiveOp op _ =>
       match op with
-      | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
-      | .Neg | .Add | .Sub | .Mul | .Div | .Mod => ⟨ .TInt, md ⟩
+      | .Eq | .Neq | .And | .Or | .Not | .Lt | .Leq | .Gt | .Geq => HighTypeMd.mk .TBool md
+      | .Neg | .Add | .Sub | .Mul | .Div | .Mod => HighTypeMd.mk .TInt md
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
   | .Block stmts _ => match stmts.getLast? with
     | some last => computeExprType env types last
-    | none => ⟨ .TVoid, md ⟩
+    | none => HighTypeMd.mk .TVoid md
   -- Statements (void-typed)
-  | .LocalVariable _ _ _ => ⟨ .TVoid, md ⟩
-  | .While _ _ _ _ => ⟨ .TVoid, md ⟩
-  | .Exit _ => ⟨ .TVoid, md ⟩
-  | .Return _ => ⟨ .TVoid, md ⟩
-  | .Assign _ _ => ⟨ .TVoid, md ⟩
-  | .Assert _ => ⟨ .TVoid, md ⟩
-  | .Assume _ => ⟨ .TVoid, md ⟩
+  | .LocalVariable _ _ _ => HighTypeMd.mk .TVoid md
+  | .While _ _ _ _ => HighTypeMd.mk .TVoid md
+  | .Exit _ => HighTypeMd.mk .TVoid md
+  | .Return _ => HighTypeMd.mk .TVoid md
+  | .Assign _ _ => HighTypeMd.mk .TVoid md
+  | .Assert _ => HighTypeMd.mk .TVoid md
+  | .Assume _ => HighTypeMd.mk .TVoid md
   -- Instance related
-  | .This => panic "Not supported" -- would need `this` type from context
-  | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
+  | .This => panic "Not supported"
+  | .ReferenceEquals _ _ => HighTypeMd.mk .TBool md
   | .AsType _ ty => ty
-  | .IsType _ _ => ⟨ .TBool, md ⟩
+  | .IsType _ _ => HighTypeMd.mk .TBool md
   -- Verification specific
-  | .Forall _ _ _ => ⟨ .TBool, md ⟩
-  | .Exists _ _ _ => ⟨ .TBool, md ⟩
-  | .Assigned _ => ⟨ .TBool, md ⟩
+  | .Forall _ _ _ => HighTypeMd.mk .TBool md
+  | .Exists _ _ _ => HighTypeMd.mk .TBool md
+  | .Assigned _ => HighTypeMd.mk .TBool md
   | .Old v => computeExprType env types v
-  | .Fresh _ => ⟨ .TBool, md ⟩
+  | .Fresh _ => HighTypeMd.mk .TBool md
   -- Proof related
   | .ProveBy v _ => computeExprType env types v
   | .ContractOf _ _ => panic "Not supported"
@@ -96,4 +99,5 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr:
   | .All => panic "Not supported"
   | .Hole => panic "Not supported"
 
+end LaurelTypes
 end Strata.Laurel
