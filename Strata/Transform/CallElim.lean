@@ -17,10 +17,12 @@ open Core.Transform
 The main call elimination transformation algorithm on a single command.
 The returned result is a sequence of statements
 -/
-def callElimCmd (cmd: Command) (p : Program)
-  : CoreTransformM (List Statement) := do
+def callElimCmd (cmd: Command)
+  : CoreTransformM (Option (List Statement)) := do
     match cmd with
       | .call lhs procName args _ =>
+
+        let some p := (← get).currentProgram | throw "program not available"
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
@@ -81,20 +83,27 @@ def callElimCmd (cmd: Command) (p : Program)
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
 
+        -- Update cached CallGraph
+        let σ ← get
+        match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
+        | .some cg, .some callerName =>
+          let cg' ← cg.decrementEdge callerName procName
+          set { σ with
+              cachedAnalyses := { σ.cachedAnalyses with
+                callGraph := .some cg'}}
+        | .some _, .none =>
+          /- Invalidate CallGraph -/
+          set { σ with
+              cachedAnalyses := { σ.cachedAnalyses with callGraph := .none }}
+        | _, _ => set σ
+
         return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
-      | _ => return [ .cmd cmd ]
-
--- Visits top-level statements and do call elimination
-def callElimStmts (ss: List Statement) (prog : Program) :=
-  runStmts callElimCmd ss prog
-
-def callElimL (dcls : List Decl) (prog : Program) :=
-  runProcedures callElimCmd dcls prog
+      | _ => return .none
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/
-def callElim' (p : Program) : CoreTransformM Program :=
-  runProgram callElimCmd p
+def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
+  runProgram (targetProcList := .none) callElimCmd p
 
 end CallElim
 end Core

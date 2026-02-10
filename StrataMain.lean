@@ -262,11 +262,12 @@ def pyAnalyzeCommand : Command where
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    match Core.Transform.runProgram
-          (Core.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
+    match Core.Transform.runProgram (targetProcList := .none)
+          (Core.ProcedureInlining.inlineCallCmd
+            (doInline := λ name _ => name ≠ "main"))
           newPgm .emp with
     | ⟨.error e, _⟩ => panic! e
-    | ⟨.ok newPgm, _⟩ =>
+    | ⟨.ok (_changed, newPgm), _⟩ =>
       if verbose then
         IO.println "Inlined: "
         IO.print newPgm
