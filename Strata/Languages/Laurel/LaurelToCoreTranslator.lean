@@ -65,7 +65,10 @@ partial def resolveBaseType (ctMap : ConstrainedTypeMap) (ty : HighType) : HighT
 /-
 Translate Laurel HighType to Core Type
 -/
-partial def translateType (ty : HighType) : LMonoTy :=
+private theorem HighTypeMd.sizeOf_val_lt (e : HighTypeMd) : sizeOf e.val < sizeOf e := by
+  cases e; rename_i val md; show sizeOf val < 1 + sizeOf val + sizeOf md; omega
+
+def translateType (ty : HighType) : LMonoTy :=
   match ty with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
@@ -79,6 +82,8 @@ partial def translateType (ty : HighType) : LMonoTy :=
     | _ => panic s!"unsupported applied type {repr ty}"
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
+termination_by sizeOf ty
+decreasing_by all_goals simp_wf; have := HighTypeMd.sizeOf_val_lt ‹_›; omega
 
 /-- Translate type, resolving constrained types to their base type recursively -/
 partial def translateTypeWithCT (ctMap : ConstrainedTypeMap) (ty : HighType) : LMonoTy :=
