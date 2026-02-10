@@ -277,11 +277,11 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
   | .init name ty expr _md => do
     let nameAnn : Ann String M := ⟨default, name.name⟩
     let tyCST ← lTyToCoreType ty
-    let exprCST ← lexprToExpr expr false
+    let exprCST ← lexprToExpr expr true
     pure (.initStatement default tyCST nameAnn exprCST)
   | .set name expr _md => do
     let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
-    let exprCST ← lexprToExpr expr false
+    let exprCST ← lexprToExpr expr true
     let tyCST := CoreType.bool default  -- placeholder, ideally infer from expr
     pure (.assign default tyCST lhs exprCST)
   | .havoc name _md => do
@@ -289,20 +289,20 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
     pure (.havoc_statement default nameAnn)
   | .assert label expr _md => do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr expr false
+    let exprCST ← lexprToExpr expr true
     pure (.assert default labelAnn exprCST)
   | .assume label expr _md => do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr expr false
+    let exprCST ← lexprToExpr expr true
     pure (.assume default labelAnn exprCST)
   | .cover label expr _md => do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr expr false
+    let exprCST ← lexprToExpr expr true
     pure (.cover default labelAnn exprCST)
   | .call lhs pname args _md => do
     let lhsAnn : Ann (Array (Ann String M)) M := ⟨default, (lhs.map fun id => ⟨default, id.name⟩).toArray⟩
     let pnameAnn : Ann String M := ⟨default, pname⟩
-    let argsCST ← args.mapM (lexprToExpr · false)
+    let argsCST ← args.mapM (lexprToExpr · true)
     let argsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, argsCST.toArray⟩
     pure (.call_statement default lhsAnn pnameAnn argsAnn)
   | .block label stmts _md => do
@@ -310,12 +310,12 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
     let blockCST ← blockToCST stmts
     pure (.block_statement default labelAnn blockCST)
   | .ite cond thenb elseb _md => do
-    let condCST ← lexprToExpr cond false
+    let condCST ← lexprToExpr cond true
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
     pure (.if_statement default condCST thenCST elseCST)
   | .loop guard _measure invariant body _md => do
-    let guardCST ← lexprToExpr guard false
+    let guardCST ← lexprToExpr guard true
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
     pure (.while_statement default guardCST invs bodyCST)
@@ -340,9 +340,75 @@ partial def invariantsToCST [Inhabited M]
   match inv with
   | none => pure (.nilInvariants default)
   | some expr => do
-    let exprCST ← lexprToExpr expr false
+    let exprCST ← lexprToExpr expr true
     pure (.consInvariants default exprCST (.nilInvariants default))
 end
+
+/-- Convert a procedure to CST -/
+def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
+  let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
+  modify (ToCSTContext.addBoundTypeVars · proc.header.typeArgs.toArray)
+  let typeArgs : Ann (Option (TypeArgs M)) M :=
+    if proc.header.typeArgs.isEmpty then
+      ⟨default, none⟩
+    else
+      let tvars := proc.header.typeArgs.map fun tv =>
+        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let processInput (id : CoreIdent) (ty : Lambda.LMonoTy) : ToCSTM M (Binding M × String) := do
+    let paramName : Ann String M := ⟨default, id.toPretty⟩
+    let paramType ← lmonoTyToCoreType ty
+    let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
+    pure (binding, id.toPretty)
+  let inputResults ← proc.header.inputs.toList.mapM (fun (id, ty) => processInput id ty)
+  let inputBindings := inputResults.map (·.1)
+  let inputNames := inputResults.map (·.2) |>.toArray
+  let inputs : Bindings M := .mkBindings default ⟨default, inputBindings.toArray⟩
+  let processOutput (id : CoreIdent) (ty : Lambda.LMonoTy) : ToCSTM M (MonoBind M × String) := do
+    let nameAnn : Ann String M := ⟨default, id.toPretty⟩
+    let tyCST ← lmonoTyToCoreType ty
+    pure (MonoBind.mono_bind_mk default nameAnn tyCST, id.toPretty)
+  let outputResults ← proc.header.outputs.toList.mapM (fun (id, ty) => processOutput id ty)
+  let outputBinds := outputResults.map (·.1)
+  let outputNames := outputResults.map (·.2) |>.toArray
+  let outputs : Ann (Option (MonoDeclList M)) M :=
+    if outputBinds.isEmpty then
+      ⟨default, none⟩
+    else
+      let declList := outputBinds.tail.foldl
+        (fun acc bind => MonoDeclList.monoDeclPush default acc bind)
+        (MonoDeclList.monoDeclAtom default outputBinds.head!)
+      ⟨default, some declList⟩
+  -- Build spec elements
+  let mut specElts : List (SpecElt M) := []
+  -- Add modifies
+  for id in proc.spec.modifies do
+    let modSpec := SpecElt.modifies_spec default ⟨default, id.name⟩
+    specElts := specElts ++ [modSpec]
+  -- Add requires
+  let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
+  for (label, check) in proc.spec.preconditions.toList do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
+    let exprCST ← lexprToExpr check.expr true
+    let reqSpec := SpecElt.requires_spec default labelAnn freeAnn exprCST
+    specElts := specElts ++ [reqSpec]
+  -- Add ensures
+  for (label, check) in proc.spec.postconditions.toList do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
+    let exprCST ← lexprToExpr check.expr true
+    let ensSpec := SpecElt.ensures_spec default labelAnn freeAnn exprCST
+    specElts := specElts ++ [ensSpec]
+  let specAnn : Ann (Array (SpecElt M)) M := ⟨default, specElts.toArray⟩
+  let spec : Ann (Option (Spec M)) M :=
+    if specElts.isEmpty then
+      ⟨default, none⟩
+    else
+      ⟨default, some (Spec.spec_mk default specAnn)⟩
+  modify (ToCSTContext.addBoundVars · inputNames)
+  modify (ToCSTContext.addBoundVars · outputNames)
+  let bodyCST ← blockToCST proc.body
+  let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
+  pure (.command_procedure default name typeArgs inputs outputs spec body)
 
 /-- Convert a function declaration to CST -/
 def funcToCST [Inhabited M]
@@ -389,6 +455,9 @@ def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (Command M) :=
   | .func func md => do
     modify (·.addFreeVar func.name.name)
     funcToCST func md
+  | .proc proc _md => do
+    modify (·.addFreeVar proc.header.name.toPretty)
+    procToCST proc
   | _ => ToCSTM.throwError (.unsupportedConstruct "unimplemented decl" default)
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/

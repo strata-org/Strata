@@ -33,6 +33,21 @@ type Foo (a : Type, b : Type) := Map b a;
 const fooConst : int;
 function id(x : int, y : int) : int { y }
 function foo<T1, T2>(x : T1) : Map T1 T2;
+
+// procedure Test1(x : bool) returns (y : bool)
+// {
+//   y := x;
+// };
+
+// procedure Test2(x : bool) returns (y : bool)
+// spec {
+//   ensures (y == x);
+//   ensures (x == y);
+// }
+// {
+//   y := x;
+// };
+
 #end
 
 --- #print CoreDDM.Expr

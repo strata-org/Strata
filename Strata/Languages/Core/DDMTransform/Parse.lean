@@ -60,14 +60,14 @@ op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl "," b;
 category MonoBind;
 @[declare(v, tp)]
 op mono_bind_mk (v : Ident, tp : Type) : MonoBind =>
-  v ":" tp;
+  v " : " tp;
 
 category MonoDeclList;
 @[scope(b)]
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl "," b;
+  dl ", " b;
 
 fn not (b : bool) : bool => "!" b;
 
@@ -247,7 +247,7 @@ op command_procedure (name : Ident,
                       @[scope(ret)] s: Option Spec,
                       @[scope(ret)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b "returns" "(" ret ")\n"
+  @[prec(10)] "procedure " name typeArgs b " returns " "(" ret ")\n"
               indent(2, s) body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
