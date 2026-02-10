@@ -17,6 +17,7 @@ def formatOperation : Operation → Format
   | .And => "&&"
   | .Or => "||"
   | .Not => "!"
+  | .Implies => "==>"
   | .Neg => "-"
   | .Add => "+"
   | .Sub => "-"
@@ -47,6 +48,7 @@ def formatHighTypeVal : HighType → Format
   | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
+  | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
@@ -158,13 +160,12 @@ def formatDeterminism : Determinism → Format
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque post impl modif =>
-      (match modif with
-       | none => ""
-       | some m => " modifies " ++ formatStmtExpr m) ++
-      " ensures " ++ formatStmtExpr post ++
+  | .Opaque postconds impl modif =>
+      (if modif.isEmpty then Format.nil
+       else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
+      Format.joinSep (postconds.map (fun p => " ensures " ++ formatStmtExpr p)) "" ++
       match impl with
-      | none => ""
+      | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
   | .Abstract post => "abstract ensures " ++ formatStmtExpr post
 
