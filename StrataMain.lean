@@ -420,7 +420,7 @@ def main (args : List String) : IO Unit := do
               match arg with
               | "--include" =>
                 let path :: cmdArgs := cmdArgs
-                  | exitFailure s!"Expected path after --path."
+                  | exitFailure s!"Expected path after --include."
                 match ← sp.add path |>.toBaseIO with
                 | .error msg => exitFailure msg
                 | .ok sp => process sp args cmdArgs activeFlags
