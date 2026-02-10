@@ -520,9 +520,13 @@ instance : ToString LConst where
 instance (T : LExprParamsT) [Repr T.base.IDMeta] [Repr T.TypeType] [Repr T.base.Metadata] : ToString (LExpr T) where
    toString a := toString (repr a)
 
+private def collectAppSpine {T : LExprParamsT} : LExpr T → List (LExpr T)
+  | .app _ fn arg => collectAppSpine fn ++ [arg]
+  | other => [other]
+
 private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] (e : LExpr T) :
     Format :=
-  match e with
+  match _: e with
   | .const _ c => f!"#{c}"
   | .op _ c ty =>
     match ty with
@@ -536,12 +540,15 @@ private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.
   | .abs _ _ e1 => Format.paren (f!"λ {formatLExpr T e1}")
   | .quant _ .all _ _ e1 => Format.paren (f!"∀ {formatLExpr T e1}")
   | .quant _ .exist _ _ e1 => Format.paren (f!"∃ {formatLExpr T e1}")
-  | .app _ e1 e2 => Format.paren (formatLExpr T e1 ++ " " ++ formatLExpr T e2)
-  | .ite _ c t e => Format.paren
+  | .app m fn arg =>
+    let fmts := (collectAppSpine e).map (fun ec => formatLExpr T ec)
+    Format.paren (Format.group (Format.joinSep fmts Format.line))
+  | .ite _ c t el => Format.paren
                       ("if " ++ formatLExpr T c ++
                        " then " ++ formatLExpr T t ++ " else "
-                       ++ formatLExpr T e)
+                       ++ formatLExpr T el)
   | .eq _ e1 e2 => Format.paren (formatLExpr T e1 ++ " == " ++ formatLExpr T e2)
+  termination_by sizeOf e
 
 instance (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] : ToFormat (LExpr T) where
   format := formatLExpr T
