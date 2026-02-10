@@ -18,15 +18,12 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
 
 namespace Strata.Laurel
 
 open Strata
 open Lambda (LMonoTy LTy LExpr)
-
-def boolImpliesOp : Core.Expression.Expr :=
-  .op () (Core.CoreIdent.unres "Bool.Implies") (some (LMonoTy.arrow LMonoTy.bool (LMonoTy.arrow LMonoTy.bool LMonoTy.bool)))
 
 def intDivTOp : Core.Expression.Expr :=
   .op () (Core.CoreIdent.unres "Int.DivT") (some (LMonoTy.arrow LMonoTy.int (LMonoTy.arrow LMonoTy.int LMonoTy.int)))
@@ -341,10 +338,9 @@ partial def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
         pure (expandedArgs.foldl (fun acc a => .app () acc a) calleeOp)
   | .StaticCall name args => do
       let normName := normalizeCallee name
-      let fnTy := none
       -- Use glob for all functions including heap functions
       let fnIdent := Core.CoreIdent.glob normName
-      let fnOp := LExpr.op () fnIdent fnTy
+      let fnOp := LExpr.op () fnIdent none
       let translatedArgs ← args.mapM (translateExpr ctMap tcMap env)
       let expandedArgs := expandArrayArgs env args translatedArgs
       pure (expandedArgs.foldl (fun acc a => .app () acc a) fnOp)
@@ -393,12 +389,18 @@ def genConstraintAssert (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstrai
   | some expr => [Core.Statement.assert s!"{name}_constraint" expr ty.md]
   | none => []
 
-def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Except String Core.Expression.Expr :=
-  match resolveBaseType ctMap ty.val with
-  | .TInt => pure (.const () (.intConst 0))
-  | .TBool => pure (.const () (.boolConst false))
-  | .TString => pure (.const () (.strConst ""))
-  | other => throw s!"No default value for type {repr other}"
+def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Core.Expression.Expr :=
+  let resolved := resolveBaseType ctMap ty.val
+  match resolved with
+  | .TInt => .const () (.intConst 0)
+  | .TBool => .const () (.boolConst false)
+  | .TString => .const () (.strConst "")
+  | _ =>
+    -- For types without a natural default (arrays, composites, etc.),
+    -- use a fresh free variable. This is only used when the value is
+    -- immediately overwritten by a procedure call.
+    let coreTy := translateType resolved
+    .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
 
 /-- Check if a StaticCall should be translated as an expression (not a procedure call) -/
 def isExpressionCall (callee : Identifier) : Bool :=
@@ -450,7 +452,7 @@ def genArrayElemAssumes (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr 
 Translate Laurel StmtExpr to Core Statements
 Takes the type environment, output parameter names, and postconditions to assert at returns
 -/
-partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (env : TypeEnv) (outputParams : List Parameter) (postconds : List (String × Core.Expression.Expr)) (heapWriters : List Identifier) (stmt : StmtExprMd) : Except String (TypeEnv × List Core.Statement) := do
+partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (env : TypeEnv) (outputParams : List Parameter) (postconds : List (String × Core.Expression.Expr)) (stmt : StmtExprMd) : Except String (TypeEnv × List Core.Statement) := do
   -- Generate assumes for constrained array element accesses before the statement
   let arrayElemAssumes ← genArrayElemAssumes tcMap env stmt (translateExpr ctMap tcMap env)
   let mkReturnStmts (valueOpt : Option Core.Expression.Expr) : Except String (TypeEnv × List Core.Statement) := do
@@ -464,22 +466,22 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
     | some _, none => throw "Return statement with value but procedure has no output parameters"
   match stmt.val with
   | .Assert cond => do
-      let boogieExpr ← translateExpr ctMap tcMap env cond
-      pure (env, arrayElemAssumes ++ [Core.Statement.assert ("assert" ++ getNameFromMd stmt.md) boogieExpr stmt.md])
+      let coreExpr ← translateExpr ctMap tcMap env cond
+      pure (env, arrayElemAssumes ++ [Core.Statement.assert ("assert" ++ getNameFromMd stmt.md) coreExpr stmt.md])
   | .Assume cond => do
-      let boogieExpr ← translateExpr ctMap tcMap env cond
-      pure (env, arrayElemAssumes ++ [Core.Statement.assume ("assume" ++ getNameFromMd stmt.md) boogieExpr stmt.md])
+      let coreExpr ← translateExpr ctMap tcMap env cond
+      pure (env, arrayElemAssumes ++ [Core.Statement.assume ("assume" ++ getNameFromMd stmt.md) coreExpr stmt.md])
   | .Block stmts _ => do
       let mut env' := env
       let mut stmtsList := []
       for s in stmts do
-        let (e', ss) ← translateStmt ctMap tcMap env' outputParams postconds heapWriters s
+        let (e', ss) ← translateStmt ctMap tcMap env' outputParams postconds s
         env' := e'
         stmtsList := stmtsList ++ ss
       pure (env', stmtsList)
   | .LocalVariable name ty initializer => do
       let env' := (name, ty) :: env
-      let boogieType := LTy.forAll [] (translateTypeMdWithCT ctMap ty)
+      let coreType := LTy.forAll [] (translateTypeMdWithCT ctMap ty)
       let ident := Core.CoreIdent.locl name
       let constraintCheck := genConstraintAssert ctMap tcMap name ty
       match initializer with
@@ -487,21 +489,21 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
           match init.val with
           | .StaticCall callee args =>
               if isExpressionCall callee then do
-                let boogieExpr ← translateExpr ctMap tcMap env init
-                pure (env', arrayElemAssumes ++ [Core.Statement.init ident boogieType boogieExpr] ++ constraintCheck)
+                let coreExpr ← translateExpr ctMap tcMap env init
+                pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType coreExpr] ++ constraintCheck)
               else do
-                let boogieArgs ← args.mapM (translateExpr ctMap tcMap env)
-                let expandedArgs := expandArrayArgs env args boogieArgs
-                let defaultVal ← defaultExprForType ctMap ty
-                let initStmt := Core.Statement.init ident boogieType defaultVal
+                let coreArgs ← args.mapM (translateExpr ctMap tcMap env)
+                let expandedArgs := expandArrayArgs env args coreArgs
+                let defaultVal := defaultExprForType ctMap ty
+                let initStmt := Core.Statement.init ident coreType defaultVal
                 let callStmt := Core.Statement.call [ident] callee expandedArgs
                 pure (env', arrayElemAssumes ++ [initStmt, callStmt] ++ constraintCheck)
           | _ => do
-              let boogieExpr ← translateExpr ctMap tcMap env init
-              pure (env', arrayElemAssumes ++ [Core.Statement.init ident boogieType boogieExpr] ++ constraintCheck)
+              let coreExpr ← translateExpr ctMap tcMap env init
+              pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType coreExpr] ++ constraintCheck)
       | none => do
-          let defaultVal ← defaultExprForType ctMap ty
-          pure (env', arrayElemAssumes ++ [Core.Statement.init ident boogieType defaultVal] ++ constraintCheck)
+          let defaultVal := defaultExprForType ctMap ty
+          pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType defaultVal] ++ constraintCheck)
   | .Assign targets value =>
       match targets with
       | [target] =>
@@ -515,15 +517,15 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
             match value.val with
             | .StaticCall callee args =>
                 if isExpressionCall callee then do
-                  let boogieExpr ← translateExpr ctMap tcMap env value
-                  pure (env, arrayElemAssumes ++ [Core.Statement.set ident boogieExpr] ++ constraintCheck)
+                  let coreExpr ← translateExpr ctMap tcMap env value
+                  pure (env, arrayElemAssumes ++ [Core.Statement.set ident coreExpr] ++ constraintCheck)
                 else do
-                  let boogieArgs ← args.mapM (translateExpr ctMap tcMap env)
-                  let expandedArgs := expandArrayArgs env args boogieArgs
+                  let coreArgs ← args.mapM (translateExpr ctMap tcMap env)
+                  let expandedArgs := expandArrayArgs env args coreArgs
                   pure (env, arrayElemAssumes ++ [Core.Statement.call [ident] callee expandedArgs] ++ constraintCheck)
             | _ => do
-                let boogieExpr ← translateExpr ctMap tcMap env value
-                pure (env, arrayElemAssumes ++ [Core.Statement.set ident boogieExpr] ++ constraintCheck)
+                let coreExpr ← translateExpr ctMap tcMap env value
+                pure (env, arrayElemAssumes ++ [Core.Statement.set ident coreExpr] ++ constraintCheck)
         | _ => throw s!"translateStmt: unsupported assignment target {Std.Format.pretty (Std.ToFormat.format target.val)}"
       | _ =>
         -- Multi-target assignment: (var1, var2, ...) := call(args)
@@ -533,15 +535,15 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
               match t.val with
               | .Identifier name => some (Core.CoreIdent.locl name)
               | _ => none
-            let boogieArgs ← args.mapM (translateExpr ctMap tcMap env)
-            let expandedArgs := expandArrayArgs env args boogieArgs
+            let coreArgs ← args.mapM (translateExpr ctMap tcMap env)
+            let expandedArgs := expandArrayArgs env args coreArgs
             pure (env, arrayElemAssumes ++ [Core.Statement.call lhsIdents callee expandedArgs])
         | _ => throw "Assignments with multiple targets but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch => do
       let bcond ← translateExpr ctMap tcMap env cond
-      let (_, bthen) ← translateStmt ctMap tcMap env outputParams postconds heapWriters thenBranch
+      let (_, bthen) ← translateStmt ctMap tcMap env outputParams postconds thenBranch
       let belse ← match elseBranch with
-                  | some e => do let (_, s) ← translateStmt ctMap tcMap env outputParams postconds heapWriters e; pure s
+                  | some e => do let (_, s) ← translateStmt ctMap tcMap env outputParams postconds e; pure s
                   | none => pure []
       pure (env, arrayElemAssumes ++ [Imperative.Stmt.ite bcond bthen belse stmt.md])
   | .While cond invariants _decOpt body => do
@@ -556,35 +558,27 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
               let invExpr ← translateExpr ctMap tcMap env inv
               pure (LExpr.mkApp () boolAndOp [acc, invExpr])) firstExpr
             pure (some combined)
-      let (_, bodyStmts) ← translateStmt ctMap tcMap env outputParams postconds heapWriters body
+      let (_, bodyStmts) ← translateStmt ctMap tcMap env outputParams postconds body
       pure (env, arrayElemAssumes ++ [Imperative.Stmt.loop condExpr none invExpr bodyStmts stmt.md])
   | .StaticCall name args => do
       if isHeapFunction (normalizeCallee name) then pure (env, arrayElemAssumes)
       else do
-        let boogieArgs ← args.mapM (translateExpr ctMap tcMap env)
-        let expandedArgs := expandArrayArgs env args boogieArgs
+        let coreArgs ← args.mapM (translateExpr ctMap tcMap env)
+        let expandedArgs := expandArrayArgs env args coreArgs
         pure (env, arrayElemAssumes ++ [Core.Statement.call [] name expandedArgs])
   | .Return valueOpt => do
       match valueOpt with
       | some value => do
-          let boogieExpr ← translateExpr ctMap tcMap env value
-          mkReturnStmts (some boogieExpr)
+          let coreExpr ← translateExpr ctMap tcMap env value
+          mkReturnStmts (some coreExpr)
       | none => mkReturnStmts none
   | _ =>
       -- Expression-like statements: treat as implicit return if output param exists
       match outputParams.head? with
       | some _ => do
-          let boogieExpr ← translateExpr ctMap tcMap env stmt
-          mkReturnStmts (some boogieExpr)
+          let coreExpr ← translateExpr ctMap tcMap env stmt
+          mkReturnStmts (some coreExpr)
       | none => pure (env, [])  -- No output param - ignore expression result
-
-/--
-Translate Laurel Parameter to Core Signature entry
--/
-def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
-  let ident := Core.CoreIdent.locl param.name
-  let ty := translateType param.type.val
-  (ident, ty)
 
 /-- Translate parameter with constrained type resolution -/
 def translateParameterToCoreWithCT (ctMap : ConstrainedTypeMap) (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
@@ -603,15 +597,11 @@ def expandArrayParam (ctMap : ConstrainedTypeMap) (param : Parameter) : List (Co
     | _ => [translateParameterToCoreWithCT ctMap param]
   | _ => [translateParameterToCoreWithCT ctMap param]
 
-def HighType.isHeap : HighType → Bool
-  | .THeap => true
-  | _ => false
-
 /--
 Translate Laurel Procedure to Core Procedure
 -/
 def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
-  (constants : List Constant) (heapWriters : List Identifier) (proc : Procedure) : Except String Core.Decl := do
+  (constants : List Constant) (_heapWriters : List Identifier) (proc : Procedure) : Except String Core.Decl := do
   let inputs := proc.inputs.flatMap (expandArrayParam ctMap)
   let header : Core.Procedure.Header := {
     name := proc.name
@@ -689,10 +679,10 @@ def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstrain
   let body : List Core.Statement ←
     match proc.body with
     | .Transparent bodyExpr => do
-        let (_, stmts) ← translateStmt ctMap tcMap initEnv proc.outputs postcondExprs heapWriters bodyExpr
+        let (_, stmts) ← translateStmt ctMap tcMap initEnv proc.outputs postcondExprs bodyExpr
         pure stmts
     | .Opaque _posts (some impl) _ => do
-        let (_, stmts) ← translateStmt ctMap tcMap initEnv proc.outputs postcondExprs heapWriters impl
+        let (_, stmts) ← translateStmt ctMap tcMap initEnv proc.outputs postcondExprs impl
         pure stmts
     | _ => pure []
   pure <| Core.Decl.proc ({
@@ -783,7 +773,7 @@ def readUpdateDiffAxiom : Core.Decl :=
   let objsDiff := LExpr.app () boolNotOp (LExpr.eq () o1 o2)
   let fieldsDiff := LExpr.app () boolNotOp (LExpr.eq () f1 f2)
   let precond := LExpr.mkApp () boolOrOp [objsDiff, fieldsDiff]
-  let implBody := LExpr.mkApp () Core.boolImpliesOp [precond, LExpr.eq () lhs rhs]
+  let implBody := LExpr.mkApp () boolImpliesOp [precond, LExpr.eq () lhs rhs]
   let body := LExpr.all () (some LMonoTy.int) <|
               LExpr.all () (some fieldTy) <|
               LExpr.all () (some fieldTy) <|
@@ -849,7 +839,6 @@ partial def isPureExpr : StmtExprMd → Bool
   | ⟨.LiteralString _, _⟩ => true
   | ⟨.Identifier _, _⟩ => true
   | ⟨.PrimitiveOp _ args, _⟩ => args.all isPureExpr
-  | ⟨.IfThenElse c t none, _⟩ => isPureExpr c && isPureExpr t
   | ⟨.IfThenElse c t (some e), _⟩ => isPureExpr c && isPureExpr t && isPureExpr e
   | ⟨.StaticCall _ args, _⟩ => args.all isPureExpr
   | ⟨.ReferenceEquals e1 e2, _⟩ => isPureExpr e1 && isPureExpr e2
@@ -865,13 +854,17 @@ A procedure can be a function if:
 - It has a transparent body that is a pure expression
 - It has no precondition (or just `true`)
 - It has exactly one output parameter (the return type)
+- The output parameter does not have a constrained type (constraints need postcondition checks)
 -/
-def canBeBoogieFunction (proc : Procedure) : Bool :=
+def canBeCoreFunction (ctMap : ConstrainedTypeMap) (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
     proc.preconditions.isEmpty &&
-    proc.outputs.length == 1
+    proc.outputs.length == 1 &&
+    proc.outputs.all (fun p => match p.type.val with
+      | .UserDefined name => !ctMap.contains name
+      | _ => true)
   | _ => false
 
 /--
@@ -914,7 +907,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) Core.Program 
   let ctMap := buildConstrainedTypeMap sequencedProgram.types
   let tcMap ← buildTranslatedConstraintMap ctMap |>.mapError fun e => #[{ fileRange := default, message := e }]
   -- Separate procedures that can be functions from those that must be procedures
-  let (funcProcs, procProcs) := sequencedProgram.staticProcedures.partition canBeBoogieFunction
+  let (funcProcs, procProcs) := sequencedProgram.staticProcedures.partition (canBeCoreFunction ctMap)
   let procDecls ← procProcs.mapM (translateProcedure ctMap tcMap sequencedProgram.constants heapWriters) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let laurelFuncDecls ← funcProcs.mapM (translateProcedureToFunction ctMap tcMap) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let constDecls := sequencedProgram.constants.map translateConstant
@@ -930,17 +923,15 @@ def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default)
     (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let boogieProgramExcept := translate program
+  let coreProgramExcept := translate program
     -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
-  -- Debug: Print the generated Core program
-  match boogieProgramExcept with
+  match coreProgramExcept with
     | .error e => return .error e
-    | .ok boogieProgram =>
-
+    | .ok coreProgram =>
       let runner tempDir :=
         EIO.toIO (fun f => IO.Error.userError (toString f))
-            (Core.verify smtsolver boogieProgram tempDir .none options)
+            (Core.verify smtsolver coreProgram tempDir .none options)
       let ioResult ← match tempDir with
       | .none =>
         IO.FS.withTempDir runner
