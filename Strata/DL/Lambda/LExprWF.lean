@@ -126,6 +126,40 @@ Note that `x` is expected to be a fresh variable w.r.t. `e`.
 def varOpen (k : Nat) (x : IdentT GenericTy T.IDMeta) (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ :=
   substK k (fun m => .fvar m x.fst x.snd) e
 
+theorem varOpen_sizeOf {T}:
+  ∀ (x:IdentT GenericTy T.IDMeta) e k,
+    (varOpen (T := T) k x e).sizeOf = e.sizeOf := by
+  intros x e
+  induction e
+  case const _ _ | op _ _ _ | fvar _ _ _ =>
+    unfold varOpen substK; solve | simp
+  case bvar _ n =>
+    intro k
+    unfold varOpen substK
+    split <;> solve | simp
+  case abs _ ty e IH =>
+    unfold varOpen substK
+    intro k
+    simp only [sizeOf]
+    unfold varOpen at IH
+    grind
+  case quant _ ty e trigger x_IH trigger_IH =>
+    unfold varOpen substK
+    intro k
+    simp only [sizeOf]
+    unfold varOpen at x_IH trigger_IH
+    grind
+  case app _ _ lhs_IH rhs_IH  | eq _ _ lhs_IH rhs_IH =>
+    unfold varOpen substK
+    unfold varOpen at lhs_IH rhs_IH
+    simp only [sizeOf]
+    grind
+  case ite _ _ c_IH then_IH else_IH =>
+    unfold varOpen substK
+    unfold varOpen at c_IH then_IH else_IH
+    simp only [sizeOf]
+    grind
+
 /--
 This function turns some free variables into bound variables to build an
 abstraction, given its body. `varClose k x e` keeps track of the number `k`

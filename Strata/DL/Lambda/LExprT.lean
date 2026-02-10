@@ -214,8 +214,7 @@ def inferConst (C: LContext T) (Env : TEnv T.IDMeta) (c : LConst) :
                 {c}\n\
                 Known Types: {C.knownTypes}")
 
-mutual
-partial def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
+def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) :=
   open LTy.Syntax in do
   match e with
@@ -223,144 +222,127 @@ partial def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) 
     let (ty, Env) ← inferConst C Env c
     .ok (.const ⟨m, ty⟩ c, Env)
   | .op m o oty =>
-    let (ty, Env) ← inferOp C Env o oty
+    /- Infer the type of an operation `.op o oty`, where an operation is defined in
+      the factory. -/
+    let (ty, Env) ← do
+      match C.functions.find? (fun fn => fn.name == o) with
+      | none =>
+        .error f!"{toString $ C.functions.getFunctionNames} Cannot infer the type of this operation: \
+                  {o}"
+      | some func => do
+          -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
+          -- where there are duplicates in the formals, etc.).
+          let type ← func.type
+          let (ty, Env) ← LTy.instantiateWithCheck type C Env
+          match oty with
+          | none => .ok (ty, Env)
+          | some oty =>
+            let (oty, Env) ← LMonoTy.instantiateWithCheck oty C Env
+            let S ← Constraints.unify [(ty, oty)] Env.stateSubstInfo |>.mapError format
+            .ok (ty, TEnv.updateSubst Env S)
     .ok (.op ⟨m, ty⟩ o (.some ty), Env)
+
   | .bvar _ _ => .error f!"Cannot infer the type of this bvar: {e}"
   | .fvar m x fty =>
     let (ty, Env) ← inferFVar C Env x fty
     .ok (.fvar ⟨m, ty⟩ x ty, Env)
-  | .app m e1 e2   => resolveAux.app C Env m e1 e2
-  | .abs m ty e    => resolveAux.abs C Env m ty e
-  | .quant m qk ty tr e => resolveAux.quant C Env m qk ty tr e
-  | .eq m e1 e2    => resolveAux.eq C Env m e1 e2
-  | .ite m c th el => resolveAux.ite C Env m c th el
 
-/-- Infer the type of an operation `.op o oty`, where an operation is defined in
-  the factory. -/
-partial def inferOp (C: LContext T) (Env : TEnv T.IDMeta) (o : T.Identifier) (oty : Option LMonoTy) :
-  Except Format (LMonoTy × (TEnv T.IDMeta)) :=
-  open LTy.Syntax in
-  match C.functions.find? (fun fn => fn.name == o) with
-  | none =>
-    .error f!"{toString $ C.functions.getFunctionNames} Cannot infer the type of this operation: \
-              {o}"
-  | some func => do
-      -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
-      -- where there are duplicates in the formals, etc.).
-      let type ← func.type
-      let (ty, Env) ← LTy.instantiateWithCheck type C Env
-      let Env ←
-        match func.body with
-        | none => .ok Env
-        | some body =>
-          if body.freeVars.idents.all (fun k => k ∈ func.inputs.keys) then
-            -- Temporarily add formals in the context.
-            let Env := Env.pushEmptyContext
-            let Env := Env.addInNewestContext func.inputPolyTypes
-            -- Type check the body and ensure that it unifies with the return type.
-            -- let (bodyty, Env) ← infer Env body
-            let (body_typed, Env) ← resolveAux C Env body
-            let bodyty := body_typed.toLMonoTy
-            let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
-            let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo |>.mapError format
-            let Env := Env.updateSubst S
-            let Env := Env.popContext
-            .ok Env
-          else
-            .error f!"Function body contains free variables!\n\
-                      {func}"
-      match oty with
-      | none => .ok (ty, Env)
-      | some oty =>
-        let (oty, Env) ← LMonoTy.instantiateWithCheck oty C Env
-        let S ← Constraints.unify [(ty, oty)] Env.stateSubstInfo |>.mapError format
-        .ok (ty, TEnv.updateSubst Env S)
+  | .app m e1 e2   =>
+    let (e1t, Env) ← resolveAux C Env e1
+    let ty1 := e1t.toLMonoTy
+    let (e2t, Env) ← resolveAux C Env e2
+    let ty2 := e2t.toLMonoTy
+    -- `freshty` is the type variable whose identifier is `fresh_name`. It denotes
+    -- the type of `(.app e1 e2)`.
+    let (fresh_name, Env) := TEnv.genTyVar Env
+    let freshty := (.ftvar fresh_name)
+    -- `ty1` must be of the form `ty2 → freshty`.
+    let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
+    let S ← Constraints.unify constraints Env.stateSubstInfo |>.mapError format
+    let mty := LMonoTy.subst S.subst freshty
+    -- `freshty` can now be safely removed from the substitution list.
+    have hWF : SubstWF (Maps.remove S.subst fresh_name) := by
+      apply @SubstWF_of_remove S.subst fresh_name S.isWF
+    let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
+    .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
-partial def resolveAux.ite (C: LContext T) (Env : TEnv T.IDMeta) (m : T.Metadata) (c th el : LExpr ⟨T, LMonoTy⟩) := do
-  let (ct, Env) ← resolveAux C Env c
-  let (tt, Env) ← resolveAux C Env th
-  let (et, Env) ← resolveAux C Env el
-  let cty := ct.toLMonoTy
-  let tty := tt.toLMonoTy
-  let ety := et.toLMonoTy
-  let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] Env.stateSubstInfo |>.mapError format
-  .ok (.ite ⟨m, tty⟩ ct tt et, Env.updateSubst S)
+  | .abs m bty e    =>
+    -- Generate a fresh expression variable to stand in for the bound variable
+    -- For the bound variable, use type annotation if present. Otherwise,
+    -- generate a fresh type variable.
+    let (xv, xty, Env) ← typeBoundVar C Env bty
+    -- Construct `e'` from `e`, where the bound variable has been replaced by
+    -- `xv`.
+    let e' := LExpr.varOpen 0 (xv, some xty) e
+    have He'_size: (varOpen 0 (xv, some xty) e).sizeOf < 2 + e.sizeOf := by
+      rw [varOpen_sizeOf]
+      omega
+    let (et, Env) ← resolveAux C Env e'
+    let etclosed := .varCloseT 0 xv et
+    let ety := etclosed.toLMonoTy
+    let mty := LMonoTy.subst Env.stateSubstInfo.subst (.tcons "arrow" [xty, ety])
+    -- Safe to erase fresh variable from context after closing the expressions.
+    -- Note that we don't erase `xty` (if it was a fresh type variable) from the substitution
+    -- list because it may occur in `etclosed`, which hasn't undergone a
+    -- substitution. We could, of course, substitute `xty` in `etclosed`, but
+    -- that'd require crawling over that expression, which could be expensive.
+    let Env := Env.eraseFromContext xv
+    .ok ((.abs ⟨m, mty⟩ bty etclosed), Env)
 
-partial def resolveAux.eq (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
-  -- `.eq A B` is well-typed if there is some instantiation of
-  -- type parameters in `A` and `B` that makes them have the same type.
-  let (e1t, Env) ← resolveAux C Env e1
-  let (e2t, Env) ← resolveAux C Env e2
-  let ty1 := e1t.toLMonoTy
-  let ty2 := e2t.toLMonoTy
-  let S ← Constraints.unify [(ty1, ty2)] Env.stateSubstInfo |>.mapError format
-  .ok (.eq ⟨m, LMonoTy.bool⟩ e1t e2t, TEnv.updateSubst Env S)
+  | .quant m qk bty triggers e =>
+    let (xv, xty, Env) ← typeBoundVar C Env bty
+    let e' := LExpr.varOpen 0 (xv, some xty) e
+    have He'_size: (varOpen 0 (xv, some xty) e).sizeOf < 2 + e.sizeOf := by
+      rw [varOpen_sizeOf]
+      omega
 
-partial def resolveAux.abs (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (bty : Option LMonoTy) (e : LExpr T.mono): Except Format (LExprT T.mono × TEnv T.IDMeta) := do
-  -- Generate a fresh expression variable to stand in for the bound variable
-  -- For the bound variable, use type annotation if present. Otherwise,
-  -- generate a fresh type variable.
-  let (xv, xty, Env) ← typeBoundVar C Env bty
-  -- Construct `e'` from `e`, where the bound variable has been replaced by
-  -- `xv`.
-  let e' := LExpr.varOpen 0 (xv, some xty) e
-  let (et, Env) ← resolveAux C Env e'
-  let etclosed := .varCloseT 0 xv et
-  let ety := etclosed.toLMonoTy
-  let mty := LMonoTy.subst Env.stateSubstInfo.subst (.tcons "arrow" [xty, ety])
-  -- Safe to erase fresh variable from context after closing the expressions.
-  -- Note that we don't erase `xty` (if it was a fresh type variable) from the substitution
-  -- list because it may occur in `etclosed`, which hasn't undergone a
-  -- substitution. We could, of course, substitute `xty` in `etclosed`, but
-  -- that'd require crawling over that expression, which could be expensive.
-  let Env := Env.eraseFromContext xv
-  .ok ((.abs ⟨m, mty⟩ bty etclosed), Env)
+    let triggers' := LExpr.varOpen 0 (xv, some xty) triggers
+    have He'_size_w_trigger:
+      (varOpen 0 (xv, some xty) triggers).sizeOf < 3 + e.sizeOf + triggers.sizeOf := by
+      rw [varOpen_sizeOf]
+      omega
 
-partial def resolveAux.quant (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (qk : QuantifierKind) (bty : Option LMonoTy)
-    (triggers e : LExpr T.mono): Except Format (LExprT T.mono × TEnv T.IDMeta) := do
-  let (xv, xty, Env) ← typeBoundVar C Env bty
-  let e' := LExpr.varOpen 0 (xv, some xty) e
-  let triggers' := LExpr.varOpen 0 (xv, some xty) triggers
-  let (et, Env) ← resolveAux C Env e'
-  let (triggersT, Env) ← resolveAux C Env triggers'
-  let ety := et.toLMonoTy
-  let xty := LMonoTy.subst Env.stateSubstInfo.subst xty
-  let etclosed := Lambda.LExpr.varCloseT 0 xv et
-  let triggersClosed := Lambda.LExpr.varCloseT 0 xv triggersT
-  -- Safe to erase fresh variable from context after closing the expressions.
-  -- Again, as in `abs`, we do not erase `xty` (if it was a fresh variable) from the
-  -- substitution list.
-  let Env := Env.eraseFromContext xv
-  if ety != LMonoTy.bool then do
-    .error f!"Quantifier body has non-Boolean type: {ety}"
-  else
-    .ok (.quant ⟨m, xty⟩ qk xty triggersClosed etclosed, Env)
+    let (et, Env) ← resolveAux C Env e'
+    let (triggersT, Env) ← resolveAux C Env triggers'
+    let ety := et.toLMonoTy
+    let xty := LMonoTy.subst Env.stateSubstInfo.subst xty
+    let etclosed := Lambda.LExpr.varCloseT 0 xv et
+    let triggersClosed := Lambda.LExpr.varCloseT 0 xv triggersT
+    -- Safe to erase fresh variable from context after closing the expressions.
+    -- Again, as in `abs`, we do not erase `xty` (if it was a fresh variable) from the
+    -- substitution list.
+    let Env := Env.eraseFromContext xv
+    if ety != LMonoTy.bool then do
+      .error f!"Quantifier body has non-Boolean type: {ety}"
+    else
+      .ok (.quant ⟨m, xty⟩ qk xty triggersClosed etclosed, Env)
 
-partial def resolveAux.app (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
-  let (e1t, Env) ← resolveAux C Env e1
-  let ty1 := e1t.toLMonoTy
-  let (e2t, Env) ← resolveAux C Env e2
-  let ty2 := e2t.toLMonoTy
-  -- `freshty` is the type variable whose identifier is `fresh_name`. It denotes
-  -- the type of `(.app e1 e2)`.
-  let (fresh_name, Env) := TEnv.genTyVar Env
-  let freshty := (.ftvar fresh_name)
-  -- `ty1` must be of the form `ty2 → freshty`.
-  let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
-  let S ← Constraints.unify constraints Env.stateSubstInfo |>.mapError format
-  let mty := LMonoTy.subst S.subst freshty
-  -- `freshty` can now be safely removed from the substitution list.
-  have hWF : SubstWF (Maps.remove S.subst fresh_name) := by
-    apply @SubstWF_of_remove S.subst fresh_name S.isWF
-  let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
-  .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
+  | .eq m e1 e2    =>
+    -- `.eq A B` is well-typed if there is some instantiation of
+    -- type parameters in `A` and `B` that makes them have the same type.
+    let (e1t, Env) ← resolveAux C Env e1
+    let (e2t, Env) ← resolveAux C Env e2
+    let ty1 := e1t.toLMonoTy
+    let ty2 := e2t.toLMonoTy
+    let S ← Constraints.unify [(ty1, ty2)] Env.stateSubstInfo |>.mapError format
+    .ok (.eq ⟨m, LMonoTy.bool⟩ e1t e2t, TEnv.updateSubst Env S)
 
-protected partial def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
+  | .ite m c th el =>
+    let (ct, Env) ← resolveAux C Env c
+    let (tt, Env) ← resolveAux C Env th
+    let (et, Env) ← resolveAux C Env el
+    let cty := ct.toLMonoTy
+    let tty := tt.toLMonoTy
+    let ety := et.toLMonoTy
+    let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] Env.stateSubstInfo |>.mapError format
+    .ok (.ite ⟨m, tty⟩ ct tt et, Env.updateSubst S)
+
+  termination_by e.sizeOf
+
+protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
   let (et, Env) ← resolveAux C Env e
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)
-
-end
 
 
 protected def resolves (C: LContext T) (Env : TEnv T.IDMeta) (es : List (LExpr T.mono)) :
