@@ -23,7 +23,7 @@ for test_file in tests/test_arithmetic.py tests/test_precondition_verification.p
     # Generate Ion file
     (cd "${REPO_ROOT}/Tools/Python" && python -m strata.gen py_to_strata \
         --dialect "dialects/Python.dialect.st.ion" \
-        "${REPO_ROOT}/${test_file/#/StrataTest/Languages/Python/}" \
+        "${REPO_ROOT}/StrataTest/Languages/Python/${test_file}" \
         "${REPO_ROOT}/${ion_rel}")
 
     # Run pyAnalyze with --sarif
