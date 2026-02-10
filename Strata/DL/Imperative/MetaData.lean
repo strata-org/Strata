@@ -6,8 +6,7 @@
 
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Util.DecidableEq
-import Strata.DDM.AST
-import Lean.Data.Position
+import Strata.Util.FileRange
 
 namespace Imperative
 open Strata (DiagnosticModel FileRange)

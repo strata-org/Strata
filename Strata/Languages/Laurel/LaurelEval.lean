@@ -29,6 +29,7 @@ inductive Value : Type where
   | VInt : Int → Value
   -- | VReal : Rat → Value -- Skipped for now, as Lean's Rat requires importing MathLib
   | VFloat64 : Float → Value
+  | VString : String → Value
   | VBoxed : TypedValue → Value
   | VObject : (type: Identifier) → (field: AssocList Identifier Value) → Value
   | VNull : Value
@@ -54,6 +55,10 @@ def Value.asInt! : Value → Int
 def Value.asFloat64! : Value → Float
   | VFloat64 f => f
   | _ => panic! "expected VFloat64"
+
+def Value.asString! : Value → String
+  | VString s => s
+  | _ => panic! "expected VString"
 
 def Value.asBoxed! : Value → TypedValue
   | VBoxed tv => tv
@@ -170,6 +175,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
 -- Expressions
   | StmtExpr.LiteralBool b => pure <| TypedValue.mk (Value.VBool b) HighType.TBool
   | StmtExpr.LiteralInt i => pure <| TypedValue.mk (Value.VInt i) HighType.TInt
+  | StmtExpr.LiteralString s => pure <| TypedValue.mk (Value.VString s) HighType.TString
   | StmtExpr.Identifier name => getLocal name
 
   | StmtExpr.IfThenElse condExpr thenBranch elseBranch => do

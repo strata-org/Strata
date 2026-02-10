@@ -422,4 +422,15 @@ theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s
     have hsub1: t ⊆ (l1 ++ l2) := by grind
     grind
 
+
+/-- Deduplicates l and counts the number of occurrences for each element. -/
+def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=
+  l.dedup.map (λ x => (x, l.count x))
+
+theorem occurrences_len_eq_dedup {α} [DecidableEq α]:
+  ∀ (l : List α), l.dedup.length = l.occurrences.length := by
+  intros l
+  unfold occurrences
+  grind
+
 end List

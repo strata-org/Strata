@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LExprWF
 import Strata.DL.Imperative.StmtSemantics
 import Strata.Languages.Core.OldExpressions
 
@@ -28,6 +29,9 @@ instance : HasFvar Core.Expression where
   getFvar
   | .fvar _ v _ => some v
   | _ => none
+
+instance : HasSubstFvar Core.Expression where
+  substFvar := Lambda.LExpr.substFvar
 
 @[match_pattern]
 def Core.true : Core.Expression.Expr := .boolConst () Bool.true
@@ -181,12 +185,62 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       -- Might not be needed if we assume all expressions are normalized
       (∀ e σ, δ σ e = δ σ (normalizeOldExpr e))
 
-inductive EvalCommand : (String → Option Procedure)  → CoreEval →
+/-! ### Closure Capture for Function Declarations -/
+
+/--
+Build a list of substitutions from the store for the given identifiers.
+Returns pairs of (identifier, value) for each identifier that has a value in the store.
+-/
+def buildSubstitutions (σ : CoreStore) (ids : List Expression.Ident) : List (Expression.Ident × Expression.Expr) :=
+  ids.filterMap (fun id =>
+    match σ id with
+    | some v => some (id, v)
+    | none => none)
+
+/--
+Apply closure capture to a function declaration by substituting current variable
+values into the function body and axioms. Variables that are function parameters
+are not substituted (they are bound, not free in the closure sense).
+-/
+def closureCapture
+    (σ : CoreStore) (decl : PureFunc Expression) : PureFunc Expression :=
+  let paramNames := decl.inputs.map (·.1)
+  -- Get free variables from body (if it exists), excluding parameters
+  let bodyFreeVars := match decl.body with
+    | some body => (HasVarsPure.getVars body).filter (· ∉ paramNames)
+    | none => []
+  -- Get free variables from axioms, excluding parameters
+  let axiomFreeVars := decl.axioms.flatMap (fun ax =>
+    (HasVarsPure.getVars ax).filter (· ∉ paramNames))
+  -- Combine and deduplicate
+  let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
+  -- Build substitutions from the store
+  let substs := buildSubstitutions σ allFreeVars
+  -- Apply substitutions to body and axioms
+  { decl with
+    body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
+    axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }
+
+/--
+Extend the evaluator with a new function definition by capturing the closure.
+The closure capture substitutes current variable values from the store into
+the function body and axioms. The returned evaluator handles applications of
+the newly declared function by substituting arguments into the captured body.
+
+Takes a parameter `φ` that specifies how to extend the evaluator with a captured
+closure (without the store, since closure capture is handled here).
+-/
+def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperative.ExtendEval Expression :=
+  fun δ σ decl =>
+    let capturedDecl := closureCapture σ decl
+    φ δ capturedDecl
+
+inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
   CoreStore → Command → CoreStore → Prop where
-  | cmd_sem {π δ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ σ c σ' →
+  | cmd_sem {δ σ c σ'} :
+    Imperative.EvalCmd Expression δ σ c σ' →
     ----
-    EvalCommand π δ σ (CmdExt.cmd c) σ'
+    EvalCommand π φ δ σ (CmdExt.cmd c) σ'
 
   /-
   NOTE: If π is NOT the first implicit variable below, Lean complains as
@@ -199,7 +253,7 @@ inductive EvalCommand : (String → Option Procedure)  → CoreEval →
   Here's a Zulip thread that can shed some light on this error message:
   https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
   -/
-  | call_sem {π δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ'} :
+  | call_sem {δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ' δ'} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ args vals →
     ReadValues σ lhs oVals →
@@ -222,7 +276,7 @@ inductive EvalCommand : (String → Option Procedure)  → CoreEval →
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    @Imperative.EvalBlock Expression Command (EvalCommand π) _ _ _ _ _ _ δ σAO p.body σR →
+    @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _ δ σAO p.body σR δ' →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
@@ -231,20 +285,20 @@ inductive EvalCommand : (String → Option Procedure)  → CoreEval →
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommand π δ σ (CmdExt.call lhs n args) σ'
+    EvalCommand π φ δ σ (CmdExt.call lhs n args) σ'
 
-abbrev EvalStatement (π : String → Option Procedure) : CoreEval →
-    CoreStore → Statement → CoreStore → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommand π)
+abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+    CoreStore → Statement → CoreStore → CoreEval → Prop :=
+  Imperative.EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
-abbrev EvalStatements (π : String → Option Procedure) : CoreEval →
-    CoreStore → List Statement → CoreStore → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommand π)
+abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
+  Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   CoreStore → Command → CoreStore → Prop where
   | cmd_sem {π δ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ σ c σ' →
+    Imperative.EvalCmd Expression δ σ c σ' →
     ----
     EvalCommandContract π δ σ (CmdExt.cmd c) σ'
 
@@ -282,10 +336,10 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ----
     EvalCommandContract π δ σ (.call lhs n args) σ'
 
-abbrev EvalStatementContract (π : String → Option Procedure) : CoreEval →
-    CoreStore → Statement → CoreStore → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommandContract π)
+abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+    CoreStore → Statement → CoreStore → CoreEval → Prop :=
+  Imperative.EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ)
 
-abbrev EvalStatementsContract (π : String → Option Procedure) : CoreEval →
-    CoreStore → List Statement → CoreStore → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommandContract π)
+abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
+  Imperative.EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ)

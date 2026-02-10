@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.AST
+public import Strata.DDM.AST
 import Strata.DDM.Integration.Categories
 
 namespace Strata.Java
@@ -170,7 +171,7 @@ structure JavaInterface where
   permits : Array String
 
 /-- All generated Java source files for a dialect. -/
-structure GeneratedFiles where
+public structure GeneratedFiles where
   sourceRange : String
   node : String
   interfaces : Array (String × String)  -- (filename, content)
@@ -343,7 +344,7 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
   let allMethods := d.declarations.filterMap fun | .op op => some (methods op) | _ => none
   s!"package {package};\n\npublic class {dialectName} \{\n{"\n\n".intercalate allMethods.toList}\n}\n"
 
-def generateDialect (d : Dialect) (package : String) : Except String GeneratedFiles := do
+public def generateDialect (d : Dialect) (package : String) : Except String GeneratedFiles := do
   let names := assignAllNames d
   let opsByCategory := groupOpsByCategory d names
 
@@ -373,7 +374,9 @@ def generateDialect (d : Dialect) (package : String) : Except String GeneratedFi
     | _ => none
 
   -- All interface names for Node permits clause
-  let allInterfaceNames := (sealedInterfaces ++ stubInterfaces).map (·.1.dropRight 5)
+  let allInterfaceNames :=
+        sealedInterfaces ++ stubInterfaces
+        |>.map (·.1.dropEnd 5 |>.toString)
 
   -- Generate separator map for list fields
   let separatorEntries := d.declarations.toList.filterMap fun decl =>
@@ -403,11 +406,11 @@ def generateDialect (d : Dialect) (package : String) : Except String GeneratedFi
 
 /-! ## File Output -/
 
-def packageToPath (package : String) : System.FilePath :=
+public def packageToPath (package : String) : System.FilePath :=
   let parts := package.splitOn "."
   ⟨String.intercalate "/" parts⟩
 
-def writeJavaFiles (baseDir : System.FilePath) (package : String) (files : GeneratedFiles) : IO Unit := do
+public def writeJavaFiles (baseDir : System.FilePath) (package : String) (files : GeneratedFiles) : IO Unit := do
   let dir := baseDir / packageToPath package
   IO.FS.createDirAll dir
 

@@ -90,19 +90,25 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     match op.name, op.args with
     | q`Laurel.intType, _ => return mkHighTypeMd .TInt md
     | q`Laurel.boolType, _ => return mkHighTypeMd .TBool md
+    | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
     | q`Laurel.arrayType, #[elemArg] =>
       let elemType ← translateHighType elemArg
       return mkHighTypeMd (.Applied (mkHighTypeMd (.UserDefined "Array") md) [elemType]) md
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md
-    | _, _ => TransM.error s!"translateHighType expects intType, boolType, arrayType or compositeType, got {repr op.name}"
+    | _, _ => TransM.error s!"translateHighType expects intType, boolType, stringType, arrayType or compositeType, got {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
 def translateNat (arg : Arg) : TransM Nat := do
   let .num _ n := arg
     | TransM.error s!"translateNat expects num literal"
   return n
+
+def translateString (arg : Arg) : TransM String := do
+  let .strlit _ s := arg
+    | TransM.error s!"translateString expects string literal"
+  return s
 
 def translateParameter (arg : Arg) : TransM Parameter := do
   let .op op := arg
@@ -178,6 +184,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
       return mkStmtExprMd (.LiteralInt n) md
+    | q`Laurel.string, #[arg0] =>
+      let s ← translateString arg0
+      return mkStmtExprMd (.LiteralString s) md
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
       let name ← translateIdent arg0
       let varType ← match typeArg with

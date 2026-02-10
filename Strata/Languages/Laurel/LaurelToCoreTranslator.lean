@@ -72,6 +72,7 @@ partial def translateType (ty : HighType) : LMonoTy :=
   match ty with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
+  | .TString => LMonoTy.string
   | .TVoid => LMonoTy.bool
   | .THeap => .tcons "Heap" []
   | .TTypedField valueType => .tcons "Field" [translateType valueType.val]
@@ -155,6 +156,7 @@ partial def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (ex
   match expr.val with
   | .LiteralBool b => pure (.const () (.boolConst b))
   | .LiteralInt i => pure (.const () (.intConst i))
+  | .LiteralString s => pure (.const () (.strConst s))
   | .Identifier name => do
       let ty ← lookupType ctMap env name
       pure (.fvar () (Core.CoreIdent.locl name) (some ty))
@@ -199,7 +201,7 @@ def translateSimpleBound (expr : StmtExprMd) : Except String Core.Expression.Exp
 /-- Normalize callee name by removing «» quotes if present -/
 def normalizeCallee (callee : Identifier) : Identifier :=
   if callee.startsWith "«" && callee.endsWith "»" then
-    callee.drop 1 |>.dropRight 1
+    (callee.drop 1 |>.dropEnd 1).toString
   else
     callee
 
@@ -261,6 +263,7 @@ partial def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
   match expr.val with
   | .LiteralBool b => pure (.const () (.boolConst b))
   | .LiteralInt i => pure (.const () (.intConst i))
+  | .LiteralString s => pure (.const () (.strConst s))
   | .Identifier name => do
         -- Check if it's in the environment
         match env.find? (fun (n, _) => n == name) with
@@ -394,6 +397,7 @@ def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Except S
   match resolveBaseType ctMap ty.val with
   | .TInt => pure (.const () (.intConst 0))
   | .TBool => pure (.const () (.boolConst false))
+  | .TString => pure (.const () (.strConst ""))
   | other => throw s!"No default value for type {repr other}"
 
 /-- Check if a StaticCall should be translated as an expression (not a procedure call) -/
@@ -842,6 +846,7 @@ A Block with a single pure expression is also considered pure.
 partial def isPureExpr : StmtExprMd → Bool
   | ⟨.LiteralBool _, _⟩ => true
   | ⟨.LiteralInt _, _⟩ => true
+  | ⟨.LiteralString _, _⟩ => true
   | ⟨.Identifier _, _⟩ => true
   | ⟨.PrimitiveOp _ args, _⟩ => args.all isPureExpr
   | ⟨.IfThenElse c t none, _⟩ => isPureExpr c && isPureExpr t

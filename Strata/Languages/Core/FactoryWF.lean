@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.Factory
 import Strata.DL.Lambda.Factory
+import Strata.DL.Util.Func
 import Strata.DL.Lambda.IntBoolFactory
 
 /-! # Factory Wellformedness Proof
@@ -36,10 +37,11 @@ theorem Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWF.mk
+      · rw [LFuncWF]
+        apply Strata.DL.Util.FuncWF.mk
         · decide -- LFuncWF.arg_nodup
         · decide -- LFuncWF.body_freevars
-        · -- LFuncWf.concreteEval_argmatch
+        · -- LFuncWF.concreteEval_argmatch
           simp (config := { ground := true })
           try (
             try unfold unOpCeval
@@ -51,7 +53,12 @@ theorem Factory_wf :
             try unfold bvShiftOp
             try unfold bvBinaryPred
             intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind))
+        · decide -- LFuncWF.body_or_concreteEval
+        · decide -- LFuncWF.typeArgs_nodup
+        · decide -- LFuncWF.inputs_typevars_in_typeArgs
+        · decide -- LFuncWF.output_typevars_in_typeArgs
+    )
     contradiction
 
 end Core

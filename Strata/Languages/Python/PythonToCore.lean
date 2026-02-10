@@ -62,6 +62,27 @@ structure PythonClassDecl where
   name : String
 deriving Repr, BEq, Inhabited
 
+inductive ExtrinsicModelingChoice where
+  | havocAll : ExtrinsicModelingChoice
+  | havocArgsAndRet : ExtrinsicModelingChoice
+  | havocRet : ExtrinsicModelingChoice
+deriving Repr, BEq, Inhabited
+
+structure ExtrinsicsModelingConfig where
+  behaviors : String → ExtrinsicModelingChoice
+
+def defaultExtrinsicsModelChoice (s: String) : ExtrinsicModelingChoice :=
+  .havocArgsAndRet
+
+instance : Inhabited ExtrinsicsModelingConfig where
+  default := {behaviors := defaultExtrinsicsModelChoice}
+
+def extractProcedureNames (pgm : Core.Program) : List String :=
+  pgm.decls.filterMap fun decl =>
+    match decl with
+    | .proc p _ => some p.header.name.name
+    | _ => none
+
 structure TranslationContext where
   signatures : Python.Signatures
   filePath : String := ""
@@ -69,6 +90,8 @@ structure TranslationContext where
   variableTypes : List (String × Lambda.LMonoTy) := []
   func_infos : List PythonFunctionDecl := []
   class_infos : List PythonClassDecl := []
+  extrinsicsModelConfig : ExtrinsicsModelingConfig := default
+  preludeProcedureNames : List String := []
 deriving Inhabited
 
 /-- Create metadata from a SourceRange for attaching to Core statements. -/
@@ -116,19 +139,35 @@ def PyAliasToCoreExpr (a : Python.alias SourceRange) : Core.Expression.Expr :=
   assert! as_n.val.isNone
   .strConst () n.val
 
-def handleAdd (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  let lty : Lambda.LMonoTy := mty[string]
-  let rty : Lambda.LMonoTy := mty[string]
-  match lty, rty with
-  | (.tcons "string" []), (.tcons "string" []) => .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
-  | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
+def handleAdd (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .intConst () l, .intConst () r => .intConst () (l + r)
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "int" []), some (_, .tcons "int" []) =>
+      .app () (.app () (.op () "Int.Add" mty[int → (int → int)]) lhs) rhs
+    | some (_, .tcons "string" []), some (_, .tcons "string" []) =>
+      .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
+    | _, _ => panic! s!"Unsupported types for +. Exprs: {lhs} and {rhs}"
+  | _, _ => .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
 
-def handleSub (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  let lty : Lambda.LMonoTy := (.tcons "Datetime" [])
-  let rty : Lambda.LMonoTy := (.tcons "int" [])
-  match lty, rty with
-  | (.tcons "Datetime" []), (.tcons "int" []) => .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
-  | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
+def handleSub (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .intConst () l, .intConst () r => .intConst () (l - r)
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "int" []), some (_, .tcons "int" []) =>
+      .app () (.app () (.op () "Int.Sub" mty[int → (int → int)]) lhs) rhs
+    | some (_, .tcons "Datetime" []), some (_, .tcons "int" []) =>
+      .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
+    | some (_, .tcons "Datetime" []), some (_, .tcons "Timedelta" []) =>
+      .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
+    | _, _ => panic! s!"Unsupported types for -. Exprs: {lhs} and {rhs}"
+  | _, _ => panic! s!"Unsupported args for -. Got: {lhs} and {rhs}"
 
 def handleMult (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
   match lhs, rhs with
@@ -154,13 +193,35 @@ def handleNot (arg: Core.Expression.Expr) : Core.Expression.Expr :=
   | (.tcons "ListStr" []) => .eq () arg (.op () "ListStr_nil" none)
   | _ => panic! s!"Unimplemented not op for {arg}"
 
-def handleLtE (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  let eq := (.eq () lhs rhs)
-  let lt := (.app () (.app () (.op () "Datetime_lt" none) lhs) rhs)
-  (.app () (.app () (.op () "Bool.Or" none) eq) lt)
+def handleLt (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "Datetime" []), some (_, .tcons "Datetime" []) =>
+      .app () (.app () (.op () "Datetime_lt" none) lhs) rhs
+    | _, _ => .app () (.app () (.op () "Int.Lt" mty[int → (int → bool)]) lhs) rhs
+  | _, _ => .app () (.app () (.op () "Int.Lt" mty[int → (int → bool)]) lhs) rhs
+
+def handleLtE (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  match lhs, rhs with
+  | .fvar () l _, .fvar () r _ =>
+    let l_ty := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l_ty, r_ty with
+    | some (_, .tcons "Datetime" []), some (_, .tcons "Datetime" []) =>
+      let eq := (.eq () lhs rhs)
+      let lt := (.app () (.app () (.op () "Datetime_lt" none) lhs) rhs)
+      (.app () (.app () (.op () "Bool.Or" none) eq) lt)
+    | _, _ => .app () (.app () (.op () "Int.Le" mty[int → (int → bool)]) lhs) rhs
+  | _, _ => .app () (.app () (.op () "Int.Le" mty[int → (int → bool)]) lhs) rhs
 
 def handleGt (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  (.app () (.app () (.op () "Float_gt" none) lhs) rhs)
+  .app () (.app () (.op () "Int.Gt" mty[int → (int → bool)]) lhs) rhs
+
+def handleGtE (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
+  .app () (.app () (.op () "Int.Ge" mty[int → (int → bool)]) lhs) rhs
 
 structure SubstitutionRecord where
   pyExpr : Python.expr SourceRange
@@ -248,15 +309,18 @@ def callCanThrow (func_infos : List PythonFunctionDecl) (stmt: Python.stmt Sourc
 
 def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Core.Expression.Expr) : Core.Expression.Expr :=
   let type_str := translation_ctx.signatures.getFuncSigType fname n
-  if type_str.endsWith "OrNone" then
-    -- Optional param. Need to wrap e.g., string into StrOrNone
-    match type_str with
-    | "IntOrNone" => .app () (.op () "IntOrNone_mk_int" none) e
-    | "StrOrNone" => .app () (.op () "StrOrNone_mk_str" none) e
-    | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_str" none) e
-    | _ => panic! "Unsupported type_str: "++ type_str
-  else
-    e
+  match type_str with
+  | .error e => panic! s!"noneOrExpr called without type_str: {e}"
+  | .ok type_str =>
+    if type_str.endsWith "OrNone" then
+      -- Optional param. Need to wrap e.g., string into StrOrNone
+      match type_str with
+      | "IntOrNone" => .app () (.op () "IntOrNone_mk_int" none) e
+      | "StrOrNone" => .app () (.op () "StrOrNone_mk_str" none) e
+      | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_str" none) e
+      | _ => panic! "Unsupported type_str: "++ type_str
+    else
+      e
 
 def handleCallThrow (jmp_target : String) : Core.Statement :=
   let cond := .app () (.op () "ExceptOrNone..isExceptOrNone_mk_code" none) (.fvar () "maybe_except" none)
@@ -335,6 +399,34 @@ def remapFname (translation_ctx: TranslationContext) (fname: String) : String :=
     | "float" => "str_to_float"
     | _ => fname
 
+def noFuncModel (translation_ctx: TranslationContext) (fname: String) : Bool :=
+  let funcInPrelude := translation_ctx.preludeProcedureNames.contains fname
+  let funcInSigList := (translation_ctx.signatures.getFuncSigOrder fname).isOk
+  let funcInUserCode := translation_ctx.func_infos.any (λ e => e.name == fname) || translation_ctx.class_infos.any (λ e => e.name++"___init__" == fname)
+  !(funcInPrelude || funcInSigList || funcInUserCode)
+
+def handleUnmodeledFunCall (lhs: List Core.Expression.Ident)
+                               (fname: String)
+                               (args: Ann (Array (Python.expr SourceRange)) SourceRange)
+                               (kwords: Ann (Array (Python.keyword SourceRange)) SourceRange)
+                               (_jmp_targets: List String)
+                               (translation_ctx: TranslationContext)
+                               (_s : Python.stmt SourceRange) : List Core.Statement :=
+  match translation_ctx.extrinsicsModelConfig.behaviors fname with
+  | .havocAll => panic! "Unimplemented"
+  | .havocArgsAndRet =>
+    let nameArgs := args.val.filterMap (λ e => match e with
+    | .Name _ n _ => .some n
+    | _ => .none)
+    let nameKWs := kwords.val.filterMap (λ e => match e with
+    | .mk_keyword _ _ expr => match expr with
+      | .Name _ n _ => .some n
+      | _ => .none)
+    let havocArgs := nameArgs.toList.map (λ n => .havoc n.val) ++ nameKWs.toList.map (λ n => .havoc n.val)
+    lhs.map (λ e => .havoc e) ++ havocArgs
+  | .havocRet =>
+    lhs.map (λ e => .havoc e)
+
 mutual
 
 partial def PyExprToCoreWithSubst (translation_ctx : TranslationContext)  (substitution_records : Option (List SubstitutionRecord)) (e : Python.expr SourceRange) : PyExprTranslated :=
@@ -360,13 +452,19 @@ partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
       (args.toList.map (λ a => (PyExprToCoreWithSubst default substitution_records a).expr), [])
   else
     let required_order := translation_ctx.signatures.getFuncSigOrder fname
+    match required_order with
+    | .error e => panic! s!"argsAndKWordsToCanonicalList called fname not found in getFuncSigOrder: {e}"
+    | .ok required_order =>
     assert! args.size <= required_order.length
     let remaining := required_order.drop args.size
     let kws_and_exprs := kwords.toList.map (PyKWordsToCore substitution_records)
     let ordered_remaining_args := remaining.map (λ n => match kws_and_exprs.find? (λ p => p.fst == n) with
       | .some p =>
         noneOrExpr translation_ctx fname n p.snd.expr
-      | .none => Strata.Python.TypeStrToCoreExpr (translation_ctx.signatures.getFuncSigType fname n))
+      | .none =>
+        match translation_ctx.signatures.getFuncSigType fname n with
+        | .error e => panic! s!"argsAndKWordsToCanonicalList called fname not found in getFuncSigType: {e}"
+        | .ok arg_ty => Strata.Python.TypeStrToCoreExpr arg_ty)
     let args := args.map (PyExprToCoreWithSubst default substitution_records)
     let args := (List.range required_order.length).filterMap (λ n =>
         if n < args.size then
@@ -428,11 +526,13 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       let rhs := (PyExprToCore translation_ctx rhs)
       match op with
       | .Add _ =>
-        {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd lhs.expr rhs.expr}
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd translation_ctx lhs.expr rhs.expr}
       | .Sub _ =>
-        {stmts := lhs.stmts ++ rhs.stmts, expr := handleSub lhs.expr rhs.expr}
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleSub translation_ctx lhs.expr rhs.expr}
       | .Mult _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleMult translation_ctx lhs.expr rhs.expr}
+      | .FloorDiv _ =>
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleFloorDiv translation_ctx lhs.expr rhs.expr}
       | _ => panic! s!"Unhandled BinOp: {repr e}"
     | .Compare _ lhs op rhs =>
       let lhs := PyExprToCore translation_ctx lhs
@@ -444,10 +544,14 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
           {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq () lhs.expr rhs.expr)}
         | Strata.Python.cmpop.In _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := .app () (.app () (.op () "str_in_dict_str_any" none) lhs.expr) rhs.expr}
+        | Strata.Python.cmpop.Lt _ =>
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLt translation_ctx lhs.expr rhs.expr}
         | Strata.Python.cmpop.LtE _ =>
-          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE lhs.expr rhs.expr}
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE translation_ctx lhs.expr rhs.expr}
         | Strata.Python.cmpop.Gt _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleGt lhs.expr rhs.expr}
+        | Strata.Python.cmpop.GtE _ =>
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleGtE lhs.expr rhs.expr}
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
     | .Dict _ keys values =>
@@ -483,6 +587,9 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
         | _ => panic! s!"Expr: {repr expr}"
       | .Dict _ _ _ => handleList elmts.val (.tcons "ListDictStrAny" [])
       | _ => panic! s!"Unexpected element: {repr elmts.val[0]!}"
+    | .Attribute _ v attr ctx =>
+      let pre := PyExprToString v
+      {stmts := [], expr := strToCoreExpr (pre ++ "_" ++ attr.val)}
     | _ => panic! s!"Unhandled Expr: {repr e}"
 
 partial def initTmpParam (p: Python.expr SourceRange × String) : List Core.Statement :=
@@ -507,7 +614,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
     let set_ex_ty_matches := match ex_ty.val with
     | .some ex_ty =>
       let inherits_from : Core.CoreIdent := "inheritsFrom"
-      let get_ex_tag : Core.CoreIdent := "ExceptOrNone_code_val"
+      let get_ex_tag : Core.CoreIdent := "ExceptOrNone..code_val"
       let exception_ty : Core.Expression.Expr := .app () (.op () get_ex_tag none) (.fvar () "maybe_except" none)
       let rhs_curried : Core.Expression.Expr := .app () (.op () inherits_from none) exception_ty
       let res := PyExprToCore translation_ctx ex_ty
@@ -524,11 +631,15 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
                                (fname: String)
                                (args: Ann (Array (Python.expr SourceRange)) SourceRange)
                                (kwords: Ann (Array (Python.keyword SourceRange)) SourceRange)
-                               (_jmp_targets: List String)
+                               (jmp_targets: List String)
                                (translation_ctx: TranslationContext)
-                               (_s : Python.stmt SourceRange) : List Core.Statement :=
+                               (s : Python.stmt SourceRange) : List Core.Statement :=
 
   let fname := remapFname translation_ctx fname
+
+  if noFuncModel translation_ctx fname then
+    handleUnmodeledFunCall lhs fname args kwords jmp_targets translation_ctx s
+  else
 
   -- Strata Core doesn't allow nested function calls, so we need to introduce temporary variables for each nested call
   let nested_args_calls := args.val.filterMap (λ a => if isCall a then some a else none)
@@ -541,6 +652,7 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
 
   let substitution_records : List SubstitutionRecord := args_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, coreExpr := .fvar () p.snd none}) ++
                                                         kwords_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, coreExpr := .fvar () p.snd none})
+
   let res := argsAndKWordsToCanonicalList translation_ctx fname args.val kwords.val substitution_records
   args_calls_to_tmps.toList.flatMap initTmpParam ++
     kwords_calls_to_tmps.toList.flatMap initTmpParam ++
@@ -701,7 +813,7 @@ def pythonFuncToCore (name : String) (args: List (String × String)) (body: Arra
     | .some _v => [("ret", (.tcons "DictStrAny" [])), ("maybe_except", (.tcons "ExceptOrNone" []))]
     | .none => [("maybe_except", (.tcons "ExceptOrNone" []))]
   else
-    let class_ty_name := name.dropRight ("___init__".length)
+    let class_ty_name := name.dropEnd ("___init__".length) |>.toString
     [("ret", (.tcons s!"{class_ty_name}" [])), ("maybe_except", (.tcons "ExceptOrNone" []))]
   {
     header := {name,
@@ -750,7 +862,7 @@ def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationC
       .proc (pythonFuncToCore (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (filePath : String := ""): Core.Program :=
+def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude : Core.Program) (filePath : String := ""): Core.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
@@ -781,7 +893,8 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (filePat
     (y ++ ys, acc'')
 
   -- TODO: in Python, declarations can be circular
-  let base_ctx : TranslationContext := { signatures, filePath }
+  let preludeProcNames := extractProcedureNames prelude
+  let base_ctx : TranslationContext := { signatures, filePath, preludeProcedureNames := preludeProcNames }
 
   let class_defs_and_infos := helper PyClassDefToCore (fun acc info => {acc with class_infos := info :: acc.class_infos}) base_ctx class_defs.toList
   let class_defs := class_defs_and_infos.fst

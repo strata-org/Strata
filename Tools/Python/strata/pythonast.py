@@ -45,6 +45,13 @@ op_renamings = {
     'type': 'mk_type'
 }
 
+# The ast package includes a few classes that are deprecated
+# and no longer generated in AST parse trees.  We ignore these classes
+# in the DDM dialect.
+ignored_ast_ops : set[type] = set([
+    ast.AugLoad, ast.AugStore, ast.ExtSlice, ast.Index, ast.Param, ast.Suite
+])
+
 def gen_dialect() -> strata.Dialect:
     """
     Create the Python dialect.
@@ -143,6 +150,8 @@ def gen_dialect() -> strata.Dialect:
     for (cat, cat_ref) in Python_catmap.items():
         if cat.__subclasses__():
             for op in cat.__subclasses__():
+                if op in ignored_ast_ops:
+                    continue
                 translate_op(op.__name__, op, cat_ref)
         else:
             translate_op(f"mk_{cat.__name__}", cat, cat_ref)
@@ -166,11 +175,6 @@ def source_range(mapping : FileMapping, t : object) -> SourceRange|None:
         off = mapping.byte_offset(lineno, col_offset)
         end_off = mapping.byte_offset(end_lineno, end_col_offset)
         return SourceRange(off, end_off)
-
-# Note these are all deprecated.
-ignored_cats : set[type] = set([
-    ast.AugLoad, ast.AugStore, ast.ExtSlice, ast.Index, ast.Param, ast.Suite
-])
 
 def create_opmap(PythonAST : strata.Dialect) -> dict[type, Op]:
     def populate_op(name : str, op : type) -> Op:
@@ -207,7 +211,7 @@ def create_opmap(PythonAST : strata.Dialect) -> dict[type, Op]:
     for cat in ast.AST.__subclasses__():
         if cat.__subclasses__():
             for op in cat.__subclasses__():
-                if op in ignored_cats:
+                if op in ignored_ast_ops:
                     continue
 
                 Python_opmap[op] = populate_op(op.__name__, op)
@@ -260,7 +264,7 @@ def check_ast(d : strata.Dialect):
     for cat in ast.AST.__subclasses__():
         if cat.__subclasses__():
             for op in cat.__subclasses__():
-                if op in ignored_cats:
+                if op in ignored_ast_ops:
                     continue
                 check_op(d, op.__name__, op)
         else:
@@ -348,8 +352,7 @@ class Parser:
             if a.name is None:
                 v = a.missing
             else:
-                v = getattr(t, a.name)
-                v = self.ast_to_arg(mapping, v, a.cat)
+                v = self.ast_to_arg(mapping, getattr(t, a.name), a.cat)
             args.append(v)
         return decl(*args, ann=src)
 

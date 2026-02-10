@@ -39,6 +39,7 @@ partial def formatHighTypeVal : HighType → Format
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField _ => "Field"
   | .UserDefined name => Format.text name
@@ -77,6 +78,7 @@ partial def formatStmtExprVal (s:StmtExpr) : Format :=
       | some v => " " ++ formatStmtExpr v
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
+  | .LiteralString s => "\"" ++ Format.text s ++ "\""
   | .Identifier name => Format.text name
   | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value
@@ -88,11 +90,12 @@ partial def formatStmtExprVal (s:StmtExpr) : Format :=
       formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
   | .StaticCall name args =>
       Format.text name ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+  | .PrimitiveOp op [a] =>
+      formatOperation op ++ formatStmtExpr a
+  | .PrimitiveOp op [a, b] =>
+      formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
   | .PrimitiveOp op args =>
-      match args with
-      | [a] => formatOperation op ++ formatStmtExpr a
-      | [a, b] => formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
-      | _ => formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+      formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
   | .This => "this"
   | .ReferenceEquals lhs rhs =>
       formatStmtExpr lhs ++ " === " ++ formatStmtExpr rhs

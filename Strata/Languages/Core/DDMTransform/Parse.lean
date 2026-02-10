@@ -203,8 +203,13 @@ op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
 category Invariant;
 op invariant (e : Expr) : Invariant => "invariant" e ";";
 
-op while_statement (c : bool, i : Option Invariant, body : Block) : Statement =>
-  "while" "(" c ")" i body;
+category Invariants;
+op nilInvariants : Invariants => ;
+op consInvariants(e : Expr, is : Invariants) : Invariants =>
+  "invariant" e is;
+
+op while_statement (c : bool, is : Invariants, body : Block) : Statement =>
+  "while" "(" c ")" is body;
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call" vs ":=" f "(" expr ")" ";\n";

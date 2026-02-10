@@ -19,10 +19,11 @@ import Strata.DL.Imperative.Imperative
 /- Utilities -/
 import Strata.Util.Sarif
 
-/- Strata Core -/
+/- Strata Languages -/
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
@@ -30,3 +31,6 @@ import Strata.Transform.DetToNondetCorrect
 
 /- Backends -/
 import Strata.Backends.CBMC.CProver
+
+/- Simple API -/
+import Strata.SimpleAPI

@@ -4,12 +4,14 @@ dialect Laurel;
 category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
+op stringType : LaurelType => "string";
 op arrayType (elemType: LaurelType): LaurelType => "Array" "<" elemType ">";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
+op string (s: Str): StmtExpr => s;
 
 // Variable declarations
 category OptionalType;

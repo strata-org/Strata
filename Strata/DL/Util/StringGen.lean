@@ -117,10 +117,10 @@ theorem Nat_toString_not_contain_underscore {x: Nat} : '_' ∉ (toString x).toLi
 
 theorem Nat_digitChar_index: x.digitChar =
     #['0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f','*'][min x 16]'(by simp; omega) := by
-  simp
   unfold Nat.digitChar
-  repeat (cases x; simp; rename_i x)
-  any_goals simp
+  match h : x with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => simp
+  | j + 16 => simp
 
 theorem nodup_implies_injective (H: List.Nodup a) (Hl1: x < a.length) (Hl2: y < a.length) (eq : a[x]'Hl1 = a[y]'Hl2) : x = y := by
   unfold List.Nodup at H

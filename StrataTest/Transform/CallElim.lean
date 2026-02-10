@@ -196,7 +196,7 @@ def tests : List (Core.Program × Core.Program) := [
 def callElim (p : Core.Program)
   : Core.Program :=
   match (run p callElim') with
-  | .ok res => res
+  | .ok (_changed, res) => res
   | .error e => panic! e
 
 /--
