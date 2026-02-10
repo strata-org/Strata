@@ -373,7 +373,15 @@ spec {
 
 /--
 info:
+Obligation: set_h_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIs42
+Property: assert
+Result: ✅ pass
+
+Obligation: set_t_calls_List..tail_0
 Property: assert
 Result: ✅ pass
 
@@ -381,7 +389,15 @@ Obligation: tailIsNil
 Property: assert
 Result: ✅ pass
 
+Obligation: set_h_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIs10
+Property: assert
+Result: ✅ pass
+
+Obligation: set_t_calls_List..tail_0
 Property: assert
 Result: ✅ pass
 
@@ -431,6 +447,14 @@ spec {
 
 /--
 info:
+Obligation: set_second_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
+Obligation: set_second_calls_List..tail_1
+Property: assert
+Result: ✅ pass
+
 Obligation: secondIs2
 Property: assert
 Result: ✅ pass
@@ -481,6 +505,10 @@ spec {
 
 /--
 info:
+Obligation: set_h_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIs100
 Property: assert
 Result: ✅ pass

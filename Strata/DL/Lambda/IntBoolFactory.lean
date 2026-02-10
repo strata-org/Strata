@@ -96,47 +96,6 @@ def cevalIntMod (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mo
     | _, _ => .none
   | _ => .none
 
-/- Integer Arithmetic Operations -/
-
-def intAddFunc : LFunc T :=
-  binaryOp "Int.Add" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.add))
-
-def intSubFunc : LFunc T :=
-  binaryOp "Int.Sub" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.sub))
-
-def intMulFunc : LFunc T :=
-  binaryOp "Int.Mul" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.mul))
-
-def intDivFunc : LFunc T :=
-  binaryOp "Int.Div" .int
-  (some cevalIntDiv)
-
-def intModFunc : LFunc T :=
-  binaryOp "Int.Mod" .int
-  (some cevalIntMod)
-
-def intNegFunc : LFunc T :=
-  unaryOp "Int.Neg" .int
-  (some (unOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.neg))
-
-def intLtFunc : LFunc T :=
-  binaryPredicate "Int.Lt" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x < y)))
-
-def intLeFunc : LFunc T :=
-  binaryPredicate "Int.Le" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x <= y)))
-
-def intGtFunc : LFunc T :=
-  binaryPredicate "Int.Gt" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x > y)))
-
-def intGeFunc : LFunc T :=
-  binaryPredicate "Int.Ge" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x >= y)))
 
 /- Boolean Operations -/
 def boolAndFunc : LFunc T :=
@@ -159,7 +118,58 @@ def boolNotFunc : LFunc T :=
   unaryOp "Bool.Not" .bool
   (some (unOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.not))
 
-def IntBoolFactory : @Factory T :=
+/- Integer Arithmetic Operations -/
+
+def intAddFunc : LFunc T :=
+  binaryOp "Int.Add" .int
+  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.add))
+
+def intSubFunc : LFunc T :=
+  binaryOp "Int.Sub" .int
+  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.sub))
+
+def intMulFunc : LFunc T :=
+  binaryOp "Int.Mul" .int
+  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.mul))
+
+def intDivFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
+  -- Precondition: y != 0
+  let yVar : LExpr T.mono := .fvar default "y" (some .int)
+  let zero : LExpr T.mono := .intConst default 0
+  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
+  { binaryOp "Int.Div" .int (some cevalIntDiv) with
+    preconditions := [yNeZero] }
+
+def intModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
+  -- Precondition: y != 0
+  let yVar : LExpr T.mono := .fvar default "y" (some .int)
+  let zero : LExpr T.mono := .intConst default 0
+  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
+  { binaryOp "Int.Mod" .int (some cevalIntMod) with
+    preconditions := [yNeZero] }
+
+def intNegFunc : LFunc T :=
+  unaryOp "Int.Neg" .int
+  (some (unOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.neg))
+
+def intLtFunc : LFunc T :=
+  binaryPredicate "Int.Lt" .int
+  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x < y)))
+
+def intLeFunc : LFunc T :=
+  binaryPredicate "Int.Le" .int
+  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x <= y)))
+
+def intGtFunc : LFunc T :=
+  binaryPredicate "Int.Gt" .int
+  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x > y)))
+
+def intGeFunc : LFunc T :=
+  binaryPredicate "Int.Ge" .int
+  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x >= y)))
+
+
+def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T :=
   open LTy.Syntax in #[
     intAddFunc,
     intSubFunc,

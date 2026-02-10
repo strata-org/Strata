@@ -108,8 +108,10 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   func Int.Add :  ((x : int) (y : int)) → int;
   func Int.Sub :  ((x : int) (y : int)) → int;
   func Int.Mul :  ((x : int) (y : int)) → int;
-  func Int.Div :  ((x : int) (y : int)) → int;
-  func Int.Mod :  ((x : int) (y : int)) → int;
+  func Int.Div :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
+  func Int.Mod :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.Neg :  ((x : int)) → int;
   func Int.Lt :  ((x : int) (y : int)) → bool;
   func Int.Le :  ((x : int) (y : int)) → bool;

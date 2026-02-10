@@ -361,7 +361,15 @@ spec {
 
 /--
 info:
+Obligation: set_v_calls_Option..val_0
+Property: assert
+Result: ✅ pass
+
 Obligation: valIs42
+Property: assert
+Result: ✅ pass
+
+Obligation: set_v_calls_Option..val_0
 Property: assert
 Result: ✅ pass
 

@@ -400,8 +400,8 @@ def Factory : @Factory CoreLParams := #[
   @intAddFunc CoreLParams _,
   @intSubFunc CoreLParams _,
   @intMulFunc CoreLParams _,
-  @intDivFunc CoreLParams _,
-  @intModFunc CoreLParams _,
+  @intDivFunc CoreLParams _ _,
+  @intModFunc CoreLParams _ _,
   @intNegFunc CoreLParams _,
 
   @intLtFunc CoreLParams _,

@@ -265,6 +265,10 @@ spec {
 
 /--
 info:
+Obligation: set_h_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIs100
 Property: assert
 Result: ✅ pass
@@ -367,6 +371,10 @@ Obligation: notRight
 Property: assert
 Result: ✅ pass
 
+Obligation: assert_leftVal_calls_Either..l_0
+Property: assert
+Result: ✅ pass
+
 Obligation: leftVal
 Property: assert
 Result: ✅ pass
@@ -377,5 +385,69 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" eitherHavocPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 9: Polymorphic Precondition with Havoc (no simplifying assumption)
+-- This test exposes the type variable resolution issue: after havoc,
+-- the WF obligation has type variable `a` that must be resolved to `int`.
+---------------------------------------------------------------------
+
+def optionHavocPgm : Program :=
+#strata
+program Core;
+
+datatype Option (a : Type) { None(), Some(value: a) };
+
+procedure TestOptionHavoc() returns ()
+spec {
+  ensures true;
+}
+{
+  var x : Option int;
+  x := Some(42);
+  havoc x;
+  assume Option..isSome(x);
+  var v : int;
+  v := Option..value(x);
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram optionHavocPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: set_v_calls_Option..value_0
+Property: assert
+Result: ✅ pass
+
+Obligation: TestOptionHavoc_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" optionHavocPgm (options := .debug) (tempDir := "/tmp/option_test")
+
+---------------------------------------------------------------------
+-- Test: List havoc then head (mirrors DatatypeVerificationTests test9)
+---------------------------------------------------------------------
+
+def listHavocHeadPgm : Program :=
+#strata
+program Core;
+datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
+procedure Test() returns () spec { ensures true; }
+{
+  var xs : List int;
+  xs := Cons(1, Nil());
+  havoc xs;
+  var h : int;
+  // assume (xs == Cons(1, Nil()));
+  h := List..head(xs);
+};
+#end
+
+#eval verify "cvc5" listHavocHeadPgm (options := .debug) (tempDir := "/tmp/list_test")
 
 end Strata.PolymorphicDatatypeTest

@@ -38,6 +38,15 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: assert_entry_invariant_0_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(sum_requires_0, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
+
 Label: entry_invariant_0
 Property: assert
 Assumptions:
@@ -46,6 +55,26 @@ Assumptions:
 
 Proof Obligation:
 ((~Bool.And ((~Bool.And #true) ((~Int.Le #0) $__n0))) #true)
+
+Label: assume_assume_invariant_0_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard_0, ((~Int.Lt $__i2) $__n0))
+(sum_requires_0, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
+
+Label: assert_arbitrary_iter_maintain_invariant_0_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard_0, ((~Int.Lt $__i2) $__n0)) (assume_invariant_0, ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i2)) ((~Int.Le $__i2) $__n0))) ($__s3 == ((~Int.Div ((~Int.Mul $__i2) ((~Int.Add $__i2) #1))) #2))))
+(sum_requires_0, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
 
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
@@ -56,6 +85,25 @@ Assumptions:
 
 Proof Obligation:
 ((~Bool.And ((~Bool.And ((~Int.Le #0) ((~Int.Add $__i2) #1))) ((~Int.Le ((~Int.Add $__i2) #1)) $__n0))) (((~Int.Add $__s3) ((~Int.Add $__i2) #1)) == ((~Int.Div ((~Int.Mul ((~Int.Add $__i2) #1)) ((~Int.Add ((~Int.Add $__i2) #1)) #1))) #2)))
+
+Label: assume_invariant_0_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard_0, ((~Int.Lt $__i2) $__n0)) (assume_invariant_0, ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i2)) ((~Int.Le $__i2) $__n0))) ($__s3 == ((~Int.Div ((~Int.Mul $__i2) ((~Int.Add $__i2) #1))) #2)))) (not_guard_0, (~Bool.Not ((~Int.Lt $__i4) $__n0)))
+(sum_requires_0, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
+
+Label: assert_sum_ensures_1_calls_Int.Div_0
+Property: assert
+Assumptions:
+(sum_requires_0, ((~Int.Ge $__n0) #0))
+(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true)) (assume_guard_0, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt $__i2) $__n0) else #true)) (assume_invariant_0, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i2)) ((~Int.Le $__i2) $__n0))) ($__s3 == ((~Int.Div ((~Int.Mul $__i2) ((~Int.Add $__i2) #1))) #2))) else #true)) (not_guard_0, (if ((~Int.Lt #0) $__n0) then (~Bool.Not ((~Int.Lt $__i4) $__n0)) else #true)) (invariant_0, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i4)) ((~Int.Le $__i4) $__n0))) ($__s5 == ((~Int.Div ((~Int.Mul $__i4) ((~Int.Add $__i4) #1))) #2))) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true))
+
+Proof Obligation:
+#true
 
 Label: sum_ensures_1
 Property: assert
@@ -68,11 +116,31 @@ Proof Obligation:
 
 ---
 info:
+Obligation: assert_entry_invariant_0_calls_Int.Div_0
+Property: assert
+Result: ✅ pass
+
 Obligation: entry_invariant_0
 Property: assert
 Result: ✅ pass
 
+Obligation: assume_assume_invariant_0_calls_Int.Div_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_arbitrary_iter_maintain_invariant_0_calls_Int.Div_0
+Property: assert
+Result: ✅ pass
+
 Obligation: arbitrary_iter_maintain_invariant_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assume_invariant_0_calls_Int.Div_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_sum_ensures_1_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 

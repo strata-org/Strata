@@ -113,6 +113,39 @@ private def getCurrentGlobals (E : Env) : VarSubst :=
   E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
 
 /--
+Set up typing environment for typechecking preconditions.
+Relies on the fact that all type aliases hae already been
+expanded.
+-/
+private def createPrecondLContext (E: Env) : Lambda.LContext CoreLParams :=
+  let knownTypes := E.datatypes.foldl (fun ks block =>
+      block.foldl (fun ks d => ks.insert d.toKnownType.name d.toKnownType.metadata) ks) Core.KnownTypes
+  { Lambda.LContext.default with
+    functions := E.factory,
+    datatypes := E.datatypes,
+    knownTypes := knownTypes }
+
+/--
+Typecheck a precondition applied to arguments. Relies on
+the fact that 1. the term was already typchecked in a polymorphic
+context and 2. all free variables already have annotated types
+-/
+private def typecheckPrecond (C: Lambda.LContext CoreLParams)
+(e: Expression.Expr) : Expression.Expr :=
+  let fvarTypes := e.getVarsWithTypes.filterMap fun (v, ty) =>
+    ty.map fun t => (v, Lambda.LTy.forAll (Lambda.LMonoTy.freeVars t) t)
+  let tenv : TEnv CoreLParams.IDMeta := Lambda.TEnv.addToContext Lambda.TEnv.default fvarTypes
+  -- Typecheck the obligation to resolve type variables (e.g., `a` → `int`)
+  match Lambda.LExpr.annotate C tenv e
+    with
+    | .ok (annotated, _) => annotated
+    | .error err =>
+      dbg_trace f!"WF obligation annotate failed: {err}\nObligation: {e}"
+      e
+      -- dbg_trace f!"WF obligation annotate failed: {err}\nObligation: {ob.obligation}"
+      -- ob.obligation
+
+/--
 Evaluate a procedure call `lhs := pname(args)`.
 -/
 def Command.evalCall (E : Env) (old_var_subst : SubstMap)
@@ -134,6 +167,9 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let precond_subst := formal_arg_subst ++ current_globals
     -- Generate precondition proof obligations.
     let preconditions := callConditions proc .Requires proc.spec.preconditions precond_subst
+    -- Need to typecheck preconditions to resolve type variables
+    let C := createPrecondLContext E
+    let preconditions := preconditions.map (fun (n, e) => (n, {e with expr := typecheckPrecond C e.expr}))
     -- It's safe to evaluate the preconditions in the current environment
     -- (pre-call context).
     let preconditions := preconditions.map
@@ -169,21 +205,54 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
 private def collectExprWFObligations (E : Env) (e : Expression.Expr) (label : String)
     : Imperative.ProofObligations Expression :=
   let wfObs := Lambda.collectWFObligations E.factory e
+  -- Build LContext for type checking (include datatypes for polymorphic type resolution)
+  -- Add datatype names to knownTypes so type checking can resolve polymorphic types
+  let C := createPrecondLContext E
   wfObs.toArray.mapIdx fun idx ob =>
+    let obligation := typecheckPrecond C ob.obligation
+    -- Build TEnv with free variable types from the obligation
+    -- NOTE: this relies on the fact that everything has been typechecked already, so the free vars have annotated types
+    -- let fvarTypes := ob.obligation.getVarsWithTypes.filterMap fun (v, ty) =>
+    --   ty.map fun t => (v, Lambda.LTy.forAll (Lambda.LMonoTy.freeVars t) t)
+    -- let tenv : TEnv CoreLParams.IDMeta := Lambda.TEnv.addToContext Lambda.TEnv.default fvarTypes
+    -- -- Typecheck the obligation to resolve type variables (e.g., `a` → `int`)
+    -- let obligation := match Lambda.LExpr.annotate C tenv ob.obligation with
+    --   | .ok (annotated, _) => annotated
+    --   | .error err =>
+    --     dbg_trace f!"WF obligation annotate failed: {err}\nObligation: {ob.obligation}"
+    --     ob.obligation  -- Fall back to original if typecheck fails
+    -- Evaluate the obligation to simplify it (e.g., List..isCons(Cons(...)) → true)
+    let obligation := E.exprEval obligation
     { label := s!"{label}_calls_{ob.funcName}_{idx}"
       property := .assert
       assumptions := E.pathConditions
-      obligation := ob.obligation
+      obligation := obligation
       metadata := #[] }
+
+/-- Preprocess an expression for WF obligation collection.
+    Only substitute renamed variables (e.g., a → $__a0 from havoc),
+    not assigned expressions (e.g., h → List..head(xs)).
+    This ensures we don't re-check function calls that were already checked. -/
+private def preprocessExprForWF (E : Env) (e : Expression.Expr) : Expression.Expr :=
+  -- First substitute old expressions
+  let substMap := oldVarSubst E.substMap E
+  let e := OldExpressions.substsOldExpr substMap e
+  -- Only substitute variables that map to other variables (renamings from havoc)
+  -- not variables that map to complex expressions (assignments)
+  let renamings := E.exprEnv.state.toSingleMap.filterMap fun (x, (_, v)) =>
+    match v with
+    | .fvar _ _ _ => some (x, v)  -- Keep renamings (fvar → fvar)
+    | _ => none                    -- Skip assignments (fvar → complex expr)
+  Lambda.LExpr.substFvars e renamings
 
 /-- Collect WF obligations from a command's expressions -/
 private def collectCmdWFObligations (E : Env) (c : Imperative.Cmd Expression)
     : Imperative.ProofObligations Expression :=
   match c with
-  | .init _ _ e _ => collectExprWFObligations E e "init"
-  | .set x e _ => collectExprWFObligations E e s!"set_{x.name}"
-  | .assert l e _ => collectExprWFObligations E e s!"assert_{l}"
-  | .assume l e _ => collectExprWFObligations E e s!"assume_{l}"
+  | .init _ _ e _ => collectExprWFObligations E (preprocessExprForWF E e) "init"
+  | .set x e _ => collectExprWFObligations E (preprocessExprForWF E e) s!"set_{x.name}"
+  | .assert l e _ => collectExprWFObligations E (preprocessExprForWF E e) s!"assert_{l}"
+  | .assume l e _ => collectExprWFObligations E (preprocessExprForWF E e) s!"assume_{l}"
   | _ => #[]
 
 /-- Collect WF obligations from procedure call arguments -/
@@ -196,10 +265,11 @@ private def collectCallWFObligations (E : Env) (pname : String) (args : List Exp
 def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command × Env :=
   match c with
   | .cmd c =>
-    let (c', E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
-    -- Collect WF obligations from the evaluated expression (after preprocessing)
-    let wfObs := collectCmdWFObligations E c'
+    -- Collect WF obligations from the original command BEFORE evaluation
+    -- (evaluation may simplify expressions like List..head(Cons(1,Nil)) to 1)
+    let wfObs := collectCmdWFObligations E c
     let E := { E with deferred := E.deferred ++ wfObs }
+    let (c', E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c', E)
   | .call lhs pname args md =>
     -- Preprocess args before collecting WF obligations
