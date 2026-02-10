@@ -130,3 +130,4 @@ op topLevelProcedure(procedure: Procedure): TopLevel => procedure "\n";
 op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct "\n";
 
 op program (items: Seq TopLevel): Command => items;
+
