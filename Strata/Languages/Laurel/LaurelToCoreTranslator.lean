@@ -22,6 +22,7 @@ open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp
 
 namespace Strata.Laurel
 
+open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
 
@@ -43,7 +44,7 @@ partial def translateType (ty : HighTypeMd) : LMonoTy :=
   | .THeap => .tcons "Heap" []
   | .TTypedField valueType => .tcons "Field" [translateType valueType]
   | .UserDefined _ => .tcons "Composite" []
-  | _ => panic s!"unsupported type {repr ty}"
+  | _ => panic s!"unsupported type {ToFormat.format ty}"
 
 abbrev TypeEnv := List (Identifier × HighTypeMd)
 

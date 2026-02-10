@@ -63,7 +63,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
   | .LocalVariable _ _ i => if let some x := i then collectExprMd x
-  | .While c i d b => collectExprMd c; collectExprMd b; if let some x := i then collectExprMd x; if let some x := d then collectExpr x
+  | .While c i d b => collectExprMd c; collectExprMd b; if let some x := i then collectExprMd x; if let some x := d then collectExprMd x
   | .Return v => if let some x := v then collectExprMd x
   | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)

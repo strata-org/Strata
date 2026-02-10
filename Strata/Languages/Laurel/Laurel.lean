@@ -58,38 +58,28 @@ inductive Operation: Type where
   | Lt | Leq | Gt | Geq
   deriving Repr
 
--- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
-
+structure WithMetadata (t: Type): Type where
+  val: t
+  md: Imperative.MetaData Core.Expression
 
 mutual
-
-structure HighTypeMd where
-  val : HighType
-  md : Imperative.MetaData Core.Expression
-  deriving Repr
-
-structure StmtExprMd where
-  val : StmtExpr
-  md : Imperative.MetaData Core.Expression
-  deriving Repr
 
 structure Procedure: Type where
   name : Identifier
   inputs : List Parameter
   outputs : List Parameter
-  precondition : StmtExprMd
+  precondition : (WithMetadata StmtExpr)
   determinism : Determinism
-  decreases : Option StmtExprMd -- optionally prove termination
+  decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
   body : Body
 
 inductive Determinism where
-  | deterministic (reads: Option StmtExprMd)
+  | deterministic (reads: Option (WithMetadata StmtExpr))
   | nondeterministic
 
 structure Parameter where
   name : Identifier
-  type : HighTypeMd
+  type : (WithMetadata HighType)
 
 inductive HighType : Type where
   | TVoid
@@ -98,24 +88,26 @@ inductive HighType : Type where
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
   | TString /- String type for text data -/
   | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
-  | TTypedField (valueType : HighTypeMd) /- Field constant with known value type. Not accessible via grammar. -/
+  | TTypedField (valueType : (WithMetadata HighType)) /- Field constant with known value type. Not accessible via grammar. -/
   | UserDefined (name: Identifier)
-  | Applied (base : HighTypeMd) (typeArguments : List HighTypeMd)
+  | Applied (base : (WithMetadata HighType)) (typeArguments : List (WithMetadata HighType))
   /- Pure represents a composite type that does not support reference equality -/
-  | Pure(base: HighTypeMd)
+  | Pure(base: (WithMetadata HighType))
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
-  | Intersection (types : List HighTypeMd)
-  deriving Repr
+  | Intersection (types : List (WithMetadata HighType))
 
 /- No support for something like function-by-method yet -/
 inductive Body where
-  | Transparent (body : StmtExprMd)
+  | Transparent (body : (WithMetadata StmtExpr))
 /- Without an implementation, the postcondition is assumed -/
-  | Opaque (postcondition : StmtExprMd) (implementation : Option StmtExprMd) (modifies : Option StmtExprMd)
+  | Opaque
+      (postcondition : (WithMetadata StmtExpr))
+      (implementation : Option (WithMetadata StmtExpr))
+      (modifies : Option (WithMetadata StmtExpr))
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
-  | Abstract (postcondition : StmtExprMd)
+  | Abstract (postcondition : (WithMetadata StmtExpr))
 
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
@@ -130,16 +122,18 @@ for example in `Option (StmtExpr isPure)`
 -/
 inductive StmtExpr : Type where
 /- Statement like -/
-  | IfThenElse (cond : StmtExprMd) (thenBranch : StmtExprMd) (elseBranch : Option StmtExprMd)
-  | Block (statements : List StmtExprMd) (label : Option Identifier)
+  | IfThenElse (cond : (WithMetadata StmtExpr)) (thenBranch : (WithMetadata StmtExpr)) (elseBranch : Option (WithMetadata StmtExpr))
+  | Block (statements : List (WithMetadata StmtExpr)) (label : Option Identifier)
   /- The initializer must be set if this StmtExpr is pure -/
-  | LocalVariable (name : Identifier) (type : HighTypeMd) (initializer : Option StmtExprMd)
+  | LocalVariable (name : Identifier) (type : (WithMetadata HighType)) (initializer : Option (WithMetadata StmtExpr))
   /- While is only allowed in an impure context
     The invariant and decreases are always pure
   -/
-  | While (cond : StmtExprMd) (invariant : Option StmtExprMd) (decreases: Option StmtExpr) (body : StmtExprMd)
+  | While (cond : (WithMetadata StmtExpr)) (invariant : Option (WithMetadata StmtExpr))
+    (decreases: Option (WithMetadata StmtExpr))
+    (body : (WithMetadata StmtExpr))
   | Exit (target: Identifier)
-  | Return (value : Option StmtExprMd)
+  | Return (value : Option (WithMetadata StmtExpr))
 /- Expression like -/
   | LiteralInt (value: Int)
   | LiteralBool (value: Bool)
@@ -148,31 +142,31 @@ inductive StmtExpr : Type where
   /- For single target assignments, use a single-element list.
      Multiple targets are only allowed when the value is a StaticCall to a procedure
      with multiple outputs, and the number of targets must match the number of outputs. -/
-  | Assign (targets : List StmtExprMd) (value : StmtExprMd)
+  | Assign (targets : List (WithMetadata StmtExpr)) (value : (WithMetadata StmtExpr))
   /- Used by itself for fields reads and in combination with Assign for field writes -/
-  | FieldSelect (target : StmtExprMd) (fieldName : Identifier)
+  | FieldSelect (target : (WithMetadata StmtExpr)) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/
-  | PureFieldUpdate (target : StmtExprMd) (fieldName : Identifier) (newValue : StmtExprMd)
-  | StaticCall (callee : Identifier) (arguments : List StmtExprMd)
-  | PrimitiveOp (operator: Operation) (arguments : List StmtExprMd)
+  | PureFieldUpdate (target : (WithMetadata StmtExpr)) (fieldName : Identifier) (newValue : (WithMetadata StmtExpr))
+  | StaticCall (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
+  | PrimitiveOp (operator: Operation) (arguments : List (WithMetadata StmtExpr))
 /- Instance related -/
   | This
-  | ReferenceEquals (lhs: StmtExprMd) (rhs: StmtExprMd)
-  | AsType (target: StmtExprMd) (targetType: HighTypeMd)
-  | IsType (target : StmtExprMd) (type: HighTypeMd)
-  | InstanceCall (target : StmtExprMd) (callee : Identifier) (arguments : List StmtExprMd)
+  | ReferenceEquals (lhs: (WithMetadata StmtExpr)) (rhs: (WithMetadata StmtExpr))
+  | AsType (target: (WithMetadata StmtExpr)) (targetType: (WithMetadata HighType))
+  | IsType (target : (WithMetadata StmtExpr)) (type: (WithMetadata HighType))
+  | InstanceCall (target : (WithMetadata StmtExpr)) (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
 
 /- Verification specific -/
-  | Forall (name: Identifier) (type: HighTypeMd) (body: StmtExprMd)
-  | Exists (name: Identifier) (type: HighTypeMd) (body: StmtExprMd)
-  | Assigned (name : StmtExprMd)
-  | Old (value : StmtExprMd)
+  | Forall (name: Identifier) (type: (WithMetadata HighType)) (body: (WithMetadata StmtExpr))
+  | Exists (name: Identifier) (type: (WithMetadata HighType)) (body: (WithMetadata StmtExpr))
+  | Assigned (name : (WithMetadata StmtExpr))
+  | Old (value : (WithMetadata StmtExpr))
   /- Fresh may only target impure composite types -/
-  | Fresh(value : StmtExprMd)
+  | Fresh(value : (WithMetadata StmtExpr))
 
 /- Related to proofs -/
-  | Assert (condition: StmtExprMd)
-  | Assume (condition: StmtExprMd)
+  | Assert (condition: (WithMetadata StmtExpr))
+  | Assume (condition: (WithMetadata StmtExpr))
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.
@@ -185,10 +179,10 @@ ProveBy(
   )
 )
 -/
-  | ProveBy (value: StmtExprMd) (proof: StmtExprMd)
+  | ProveBy (value: (WithMetadata StmtExpr)) (proof: (WithMetadata StmtExpr))
 
 -- ContractOf allows extracting the contract of a function
-  | ContractOf (type: ContractType) (function: StmtExprMd)
+  | ContractOf (type: ContractType) (function: (WithMetadata StmtExpr))
 /-
 Abstract can be used as the root expr in a contract for reads/modifies/precondition/postcondition. For example: `reads(abstract)`
 It can only be used for instance procedures and it makes the containing type abstract, meaning it can not be instantiated.
@@ -202,6 +196,9 @@ An extending type can become concrete by redefining all procedures that had abst
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
+
+abbrev HighTypeMd := WithMetadata HighType
+abbrev StmtExprMd := WithMetadata StmtExpr
 
 instance : Inhabited StmtExpr where
   default := .Hole
@@ -227,6 +224,7 @@ partial def highEq (a: HighTypeMd) (b: HighTypeMd) : Bool := match a.val, b.val 
 
 instance : BEq HighTypeMd where
   beq := highEq
+
 
 def HighType.isBool : HighType → Bool
   | TBool => true
