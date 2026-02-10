@@ -150,8 +150,8 @@ Convert an `Imperative.Stmt` to one or more `CProverGOTO.Instruction`s.
 This function handles all statement types including control flow constructs like
 blocks, conditionals, and loops.
 -/
-def Stmt.toGotoInstructions {P} [G: ToGoto P]
-    (T : P.TyEnv) (functionName : String) (s : Stmt P (Cmd P)) (trans : GotoTransform P.TyEnv) :
+def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
+    (_T : P.TyEnv) (functionName : String) (s : Stmt P (Cmd P)) (trans : GotoTransform P.TyEnv) :
     Except Format (GotoTransform P.TyEnv) := do
   match s with
   | .cmd c =>
@@ -315,13 +315,17 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
     return { trans with
               instructions := trans.instructions.push goto_inst,
               nextLoc := trans.nextLoc + 1 }
+
+  | .funcDecl _decl _md =>
+    -- Function declarations are not yet supported in GOTO translation
+    .error "funcDecl: Unimplemented statement."
 termination_by Stmt.sizeOf s
 decreasing_by all_goals simp [*] at * <;> omega
 
 /--
 Convert a block (list of statements) to GOTO instructions.
 -/
-def Block.toGotoInstructions {P} [G: ToGoto P]
+def Block.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     (T : P.TyEnv) (functionName : String) (stmts : Block P (Cmd P)) (trans : GotoTransform P.TyEnv) :
     Except Format (GotoTransform P.TyEnv) := do
   match stmts with
@@ -337,7 +341,7 @@ end
 Transform a block of statements to a GotoTransform structure.
 This is the main entry point for statement transformation.
 -/
-def Stmts.toGotoTransform {P} [G: ToGoto P] (T : P.TyEnv)
+def Stmts.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident] (T : P.TyEnv)
     (functionName : String) (stmts : List (Stmt P (Cmd P))) (loc : Nat := 0) :
     Except Format (GotoTransform P.TyEnv) := do
   Block.toGotoInstructions T functionName stmts { instructions := #[], nextLoc := loc, T := T }
