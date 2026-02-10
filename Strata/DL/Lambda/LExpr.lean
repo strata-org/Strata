@@ -551,19 +551,15 @@ private theorem collectAppSpine_lt {T : LExprParamsT} (e : LExpr T) (ec : LExpr 
     (hec : ec ∈ collectAppSpine e) (hApp : ∃ m fn arg, e = .app m fn arg) :
     ec.sizeOf < e.sizeOf := by
   obtain ⟨m, fn, arg, rfl⟩ := hApp
-  simp [collectAppSpine] at hec
   induction fn generalizing arg m ec with
   | app m' fn' arg' ih =>
     simp [collectAppSpine] at hec
     cases hec with
     | inl h =>
-      have := ih ec m' arg' h
-      simp [LExpr.sizeOf] at this ⊢
-      omega
+      have := ih ec m' arg' (by simp [collectAppSpine]; exact Or.inl h)
+      simp [LExpr.sizeOf] at this ⊢; omega
     | inr h =>
-      subst h
-      simp [LExpr.sizeOf]
-      omega
+      rcases h with rfl | rfl <;> simp [LExpr.sizeOf] <;> omega
   | _ =>
     simp [collectAppSpine] at hec
     rcases hec with rfl | rfl <;> simp [LExpr.sizeOf] <;> omega
