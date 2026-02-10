@@ -66,7 +66,7 @@ partial def resolveBaseType (ctMap : ConstrainedTypeMap) (ty : HighType) : HighT
 Translate Laurel HighType to Core Type
 -/
 private theorem HighTypeMd.sizeOf_val_lt (e : HighTypeMd) : sizeOf e.val < sizeOf e := by
-  cases e; rename_i val md; show sizeOf val < 1 + sizeOf val + sizeOf md; omega
+  cases e <;> simp_wf <;> omega
 
 /-- Tactic for proving termination of functions that recurse on `StmtExprMd` sub-terms.
     Handles three cases:
