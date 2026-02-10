@@ -13,10 +13,10 @@ namespace Strata
 namespace Laurel
 
 def program := r"
-procedure countdown() {
+procedure countDown() {
     var i: int := 3;
     while(i > 0)
-    invariant i >= 0
+        invariant i >= 0
     {
         i := i - 1;
     }
@@ -27,8 +27,8 @@ procedure countUp() {
     var n: int := 5;
     var i: int := 0;
     while(i < n)
-    invariant i >= 0
-    invariant i <= n
+        invariant i >= 0
+        invariant i <= n
     {
         i := i + 1;
     }
