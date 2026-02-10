@@ -26,8 +26,6 @@ def Block.labels (b : Block): List String :=
   termination_by b.sizeOf
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
--- Assume and Assert's labels have special meanings, so they must not be
--- mangled during procedure inlining.
 def Statement.labels (s : Core.Statement) : List String :=
   match s with
   | .block lbl b _ => lbl :: (Block.labels b)
@@ -121,6 +119,39 @@ private def renameAllLocalNames (c:Procedure)
   return ({ c with body := new_body, header := new_header }, var_map)
 
 
+/-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
+def updateCallGraph (cg:CallGraph) (f: String) (g: String):
+    Except Err CallGraph := do
+  -- For each edge 'g -> x', add f -> x'
+  let edges_from_g ← match cg.callees.get? g with
+    | .some r => .ok r
+    | .none => throw s!"Invalid CallGraph: can't find {g} from callees domain"
+  let edges_from_f ← match cg.callees.get? f with
+    | .some r => .ok r
+    | .none => throw s!"Invalid CallGraph: can't find {f} from callees domain"
+  let edges_from_f := edges_from_g.fold
+    (fun (edges_from_f:Std.HashMap String Nat) fn_x cnt =>
+      edges_from_f.alter fn_x (fun v =>
+        .some (match v with | .none => cnt | .some v' => cnt + v')))
+    edges_from_f
+  let callees_new := cg.callees.insert f edges_from_f
+
+  -- Now the callers. For every 'g -> x' edge, add f -> x'.
+  let callers_new ← edges_from_g.foldM
+    (fun (m:Std.HashMap String (Std.HashMap String Nat)) fn_x cnt => do
+      match m.get? fn_x with
+      | .none => throw s!"Invalid CallGraph: can't find {fn_x} from callers domain"
+      | .some edges_to_x =>
+        .ok (m.insert fn_x (edges_to_x.alter f (fun v =>
+          .some (match v with | .none => cnt | .some v' => cnt + v')))))
+    cg.callers
+
+  let cg_new : CallGraph := { callees := callees_new, callers := callers_new }
+
+  -- .. and decrement the 'f -> g' edge by 1.
+  let cg_final ← cg_new.decrementEdge f g
+  return cg_final
+
 /-
 Procedure Inlining.
 
@@ -131,15 +162,21 @@ This function does not update the specification because inlineCallStmt will not
 use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
-def inlineCallCmd (excluded_calls:List String := [])
-                  (cmd: Command) (p : Program)
-  : CoreTransformM (List Statement) :=
+def inlineCallCmd
+    (doInline:String -> CachedAnalyses -> Bool := λ _ _ => true)
+    (cmd: Command)
+  : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args _ =>
 
-        if procName ∈ excluded_calls then return [.cmd cmd] else
+        let st ← get
+        if ¬ doInline procName st.cachedAnalyses then return .none else
 
+        let some p := (← get).currentProgram
+          | throw s!"currentProgram not set"
+        let some currProcName := (← get).currentProcedureName
+          | throw s!"currentProcedure not set"
         let some proc := Program.Procedure.find? p procName
           | throw s!"Procedure {procName} not found in program"
 
@@ -191,17 +228,21 @@ def inlineCallCmd (excluded_calls:List String := [])
           := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
              outputSetStmts
 
-        return [.block (procName ++ "$inlined") stmts]
+        -- Update CallGraph if available
+        let σ ← get
+        match σ.cachedAnalyses.callGraph with
+        | .none => modify id -- do nothing
+        | .some callGraph =>
+          let callGraph' ← updateCallGraph callGraph currProcName procName
+          set ({ σ with
+            cachedAnalyses := {
+              callGraph := .some callGraph'
+            }
+          }:CoreTransformState)
 
-      | _ => return [.cmd cmd]
+        return .some [.block (procName ++ "$inlined") stmts]
 
-def inlineCallStmtsRec (ss: List Statement) (prog : Program)
-  : CoreTransformM (List Statement) :=
-  runStmtsRec inlineCallCmd ss prog
-
-def inlineCallL (dcls : List Decl) (prog : Program)
-  : CoreTransformM (List Decl) :=
-  runProcedures inlineCallCmd dcls prog
+      | _ => return .none
 
 end ProcedureInlining
 end Core

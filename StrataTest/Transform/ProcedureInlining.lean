@@ -227,8 +227,8 @@ def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram inlineCallCmd p .emp) with
-  | ⟨.ok res, _⟩ => res
+  match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
+  | ⟨.ok (_,res), _⟩ => res
   | ⟨.error e, _⟩ => panic! e
 
 def checkInlining (prog : Core.Program) (progAns : Core.Program)
@@ -395,6 +395,48 @@ procedure g() returns () {
 /-- info: ok: true -/
 #guard_msgs in
 #eval checkInlining (translate Test3) (translate Test3Ans)
+
+
+def TestRecursiveCall :=
+#strata
+program Core;
+procedure a1() returns () {
+};
+procedure a2() returns () {
+};
+
+procedure f() returns () {
+  call a1();
+  call a2();
+  call f();
+};
+#end
+
+def setCallGraph (p : Core.Program) : CoreTransformM Unit :=
+  modify (fun σ => { σ with cachedAnalyses :=
+    { callGraph := Program.toProcedureCG p } })
+
+def test := do
+  let p := translate TestRecursiveCall
+  let _ ← setCallGraph p
+  let (changed, _p) ← runProgram (targetProcList := .some ["f"])
+    (inlineCallCmd (doInline := fun name _ => name = "f")) p
+  let cg := (← get).cachedAnalyses.callGraph
+  return (changed, cg)
+
+/--
+info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1), ("a1", 2), ("a2", 2)]),
+              ("a1", Std.HashMap.ofList []),
+              ("a2", Std.HashMap.ofList [])],
+  callers := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1)]),
+              ("a1", Std.HashMap.ofList [("f", 2)]),
+              ("a2", Std.HashMap.ofList [("f", 2)])] }
+-/
+#guard_msgs in
+#eval ((match test .emp with
+  | ⟨.ok (changed, cg), _⟩ => f!"{repr changed}, {repr cg}"
+  | ⟨.error m, _⟩ => panic! s!"{m}"))
+
 
 
 end ProcedureInliningExamples
