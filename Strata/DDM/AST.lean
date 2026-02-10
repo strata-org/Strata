@@ -106,10 +106,8 @@ inductive TypeExprF (α : Type) where
       Used for polymorphic function type parameters -/
 | tvar (ann : α) (name : String)
   /-- A reference to a global variable along with any arguments to ensure it is
-      well-typed. The name field stores the original type name for lookup in
-      mutual blocks. -/
-| fvar (ann : α) (fvar : FreeVarIndex) (name : Option String)
-  (args : Array (TypeExprF α))
+      well-typed. -/
+| fvar (ann : α) (fvar : FreeVarIndex) (args : Array (TypeExprF α))
   /-- A function type. -/
 | arrow (ann : α) (arg : TypeExprF α) (res : TypeExprF α)
 deriving BEq, Inhabited, Repr
@@ -120,7 +118,7 @@ def ann {α} : TypeExprF α → α
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
 | .tvar ann _ => ann
-| .fvar ann _ _ _ => ann
+| .fvar ann _ _ => ann
 | .arrow ann _ _ => ann
 
 def mkFunType {α} (n : α) (bindings : Array (String × TypeExprF α)) (res : TypeExprF α) : TypeExprF α :=
@@ -129,7 +127,7 @@ def mkFunType {α} (n : α) (bindings : Array (String × TypeExprF α)) (res : T
 protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :=
   match tp with
   | .ident n i args => .ident n i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
-  | .fvar n f name args => .fvar n f name (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
+  | .fvar n f args => .fvar n f (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .bvar n idx => .bvar n (idx + count)
   | .tvar n name => .tvar n name  -- tvar doesn't use indices
   | .arrow n a r => .arrow n (a.incIndices count) (r.incIndices count)
@@ -137,7 +135,7 @@ protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :
 /-- Return true if type expression has a bound variable. -/
 protected def hasUnboundVar {α} (bindingCount : Nat := 0) : TypeExprF α → Bool
 | .ident _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
-| .fvar _ _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
+| .fvar _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .bvar _ idx => idx ≥ bindingCount
 | .tvar _ _ => true
 | .arrow _ a r => a.hasUnboundVar bindingCount || r.hasUnboundVar bindingCount
@@ -156,7 +154,7 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .ident n i a =>
     .ident n i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .bvar n idx => bindings n idx
-  | .fvar n idx name a => .fvar n idx name <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
+  | .fvar n idx a => .fvar n idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .tvar n name => pure (.tvar n name)
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
@@ -171,8 +169,8 @@ def mapAnnM {α β} {m} [Monad m] (t : TypeExprF α) (f : α → m β)
       (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
   | .bvar ann index => return .bvar (← f ann) index
   | .tvar ann name => return .tvar (← f ann) name
-  | .fvar ann fv name args =>
-    return .fvar (← f ann) fv name
+  | .fvar ann fv args =>
+    return .fvar (← f ann) fv
       (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
   | .arrow ann arg res =>
     return .arrow (← f ann) (← arg.mapAnnM f) (← res.mapAnnM f)
@@ -640,7 +638,7 @@ inductive PreType where
       Used for polymorphic function type parameters -/
 | tvar (ann : SourceRange) (name : String)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
-| fvar (ann : SourceRange) (fvar : FreeVarIndex) (name : Option String) (args : Array PreType)
+| fvar (ann : SourceRange) (fvar : FreeVarIndex) (args : Array PreType)
   /-- A function type. -/
 | arrow (ann : SourceRange) (arg : PreType) (res : PreType)
   /-- A function created from a reference to bindings and a result type. -/
@@ -654,14 +652,14 @@ def ann : PreType → SourceRange
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
 | .tvar ann _ => ann
-| .fvar ann _ _ _ => ann
+| .fvar ann _ _ => ann
 | .arrow ann _ _ => ann
 | .funMacro ann _ _ => ann
 
 def ofType : TypeExprF SourceRange → PreType
 | .ident loc name args => .ident loc name (args.map fun a => .ofType a)
 | .bvar loc idx => .bvar loc idx
-| .fvar loc idx name args => .fvar loc idx name (args.map fun a => .ofType a)
+| .fvar loc idx args => .fvar loc idx (args.map fun a => .ofType a)
 | .tvar loc name => .tvar loc name
 | .arrow loc a r => .arrow loc (.ofType a) (.ofType r)
 termination_by tp => tp
@@ -885,9 +883,9 @@ structure ConstructorInfo where
 Build a TypeExpr reference to the datatype with type parameters, using
 `.fvar` for the datatype's GlobalContext index and `.tvar` for type parameters.
 -/
-def mkDatatypeTypeRef (ann : SourceRange) (datatypeIndex : FreeVarIndex) (typeParams : Array String) (datatypeName : Option String := none) : TypeExpr :=
+def mkDatatypeTypeRef (ann : SourceRange) (datatypeIndex : FreeVarIndex) (typeParams : Array String) : TypeExpr :=
   let typeArgs := typeParams.map fun name => TypeExprF.tvar ann name
-  TypeExprF.fvar ann datatypeIndex datatypeName typeArgs
+  TypeExprF.fvar ann datatypeIndex typeArgs
 
 /--
 Build an arrow type from field types to the datatype type. E.g. for cons,
@@ -2147,7 +2145,7 @@ private def addDatatypeBindings
     | .ok gctx' => gctx'
     | .error msg => panic! s!"addDatatypeBindings: {msg}"
   let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
-  let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams (some datatypeName)
+  let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
   -- Step 2: Add constructor signatures
   let gctx := constructorInfo.foldl (init := gctx) fun gctx constr =>

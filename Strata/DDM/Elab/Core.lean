@@ -53,7 +53,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   match f with
   | .ident loc i a => .ident loc i <$> a.mapM fun e => expandMacros m e args
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
-  | .fvar loc i name a => .fvar loc i name <$> a.mapM fun e => expandMacros m e args
+  | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
   | .tvar loc name => pure (.tvar loc name)
   | .funMacro loc i r => do
@@ -81,7 +81,7 @@ the head is in a normal form.
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
   | .arrow .. | .ident .. | .tvar .. => e
-  | .fvar _ idx _ args =>
+  | .fvar _ idx args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
@@ -203,7 +203,7 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
             | logErrorMF c.info.loc mf!"Expected type"
           tpArgs := tpArgs.push cinfo.typeExpr
           children := children.push c
-        let tp := .fvar loc fidx (some name) tpArgs
+        let tp := .fvar loc fidx tpArgs
         let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := tp, isInferred := false }
         return .node (.ofTypeInfo info) children
       else if let some a := args[params.size]? then
@@ -334,7 +334,7 @@ N.B. This expects that macros have already been expanded in e.
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
   | .arrow .. | .ident .. | .bvar .. | .tvar .. => e
-  | .fvar _ idx _ args =>
+  | .fvar _ idx args =>
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
     | .type params (some d) =>
@@ -368,7 +368,7 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
       return false
   | .bvar _ ii, .bvar _ ri =>
     return ii = ri
-  | .fvar _ ii _ ia, .fvar _ ri _ ra =>
+  | .fvar _ ii ia, .fvar _ ri ra =>
     if p : ii = ri ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
         if !(← checkExpressionType tctx ia[i] ra[i]) then
@@ -446,9 +446,9 @@ partial def unifyTypes
     | _ =>
       logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
       return args
-  | .fvar _ eid _ ea =>
+  | .fvar _ eid ea =>
     match tctx.hnf inferredType with
-    | .fvar _ iid _ ia =>
+    | .fvar _ iid ia =>
       if eid != iid then
         logErrorMF exprLoc mf!"Encountered {inferredType} expression when {expectedType} expected."
         return args
@@ -749,7 +749,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
           | .type params _ =>
             let params := params.toArray
             if params.size = tpArgs.size then
-              return .expr (.fvar nameLoc fidx (some name) tpArgs)
+              return .expr (.fvar nameLoc fidx tpArgs)
             else if let some a := tpArgs[params.size]? then
               logErrorMF a.ann mf!"Unexpected argument to {name}."
               return default

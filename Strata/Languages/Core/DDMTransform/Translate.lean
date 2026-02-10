@@ -25,12 +25,13 @@ open Std (ToFormat Format format)
 structure TransState where
   inputCtx : InputContext
   errors : Array String
+  globalContext : GlobalContext := {}
 
 def TransM := StateM TransState
   deriving Monad
 
-def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
+def TransM.run (ictx : InputContext) (m : TransM α) (gctx : GlobalContext := {}) : (α × Array String) :=
+  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[], globalContext := gctx }
   (v, s.errors)
 
 instance : ToString (Core.Program × Array String) where
@@ -235,7 +236,7 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   | .ident _ i argst =>
       let argst' ← translateLMonoTys bindings (argst.map ArgF.type)
       pure <| (.tcons i.name argst'.toList.reverse)
-  | .fvar _ i typeName argst =>
+  | .fvar _ i argst =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     let ty_core ← match decl with
@@ -251,12 +252,13 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                     pure ty
                   | .type (.data block) _md =>
                     -- Datatype Declaration (possibly mutual)
-                    -- Use the type name stored in the fvar to find the right datatype in the block
-                    let ldatatype := match typeName, block with
+                    -- Look up the type name from the GlobalContext using the fvar index
+                    let gctx := (← StateT.get).globalContext
+                    let ldatatype : LDatatype Visibility := match gctx.nameOf? i, block with
                       | some name, _ =>
                         match block.find? (fun (d : LDatatype Visibility) => d.name == name) with
                         | some d => d
-                        | none => panic! "Error: datatype {name} not found in block {block}"
+                        | none => panic! s!"Error: datatype {name} not found in block"
                       | none, d :: _ => d
                       | none, [] => panic! "Empty datatype block"
                     let args := ldatatype.typeArgs.map LMonoTy.ftvar
@@ -455,7 +457,7 @@ def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
 
 partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
-  | (.fvar _ idx _ #[]) =>
+  | (.fvar _ idx #[]) =>
     match p.globalContext.kindOf! idx with
     | .expr te => te
     | .type [] (.some te) => te
@@ -1656,6 +1658,7 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
     return (newDecls ++ decls, bindings)
 
 def translateProgram (p : Program) : TransM Core.Program := do
+  fun s => ((), { s with globalContext := p.globalContext })
   let decls ← translateCoreDecls p {}
   return { decls := decls }
 
