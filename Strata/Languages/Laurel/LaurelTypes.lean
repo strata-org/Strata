@@ -40,6 +40,7 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr:
   -- Literals
   | .LiteralInt _ => ⟨ .TInt, md ⟩
   | .LiteralBool _ => ⟨ .TBool, md ⟩
+  | .LiteralString _ => ⟨ .TString, md ⟩
   -- Variables
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
