@@ -12,6 +12,8 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 import Strata.DDM.AST
+import Strata.Transform.CallElim
+import Strata.Transform.FilterProcedures
 
 ---------------------------------------------------------------------
 
@@ -422,8 +424,15 @@ def verify (smtsolver : String) (program : Program)
     | some procs =>
        -- Verify specific procedures. By default, we apply the call elimination
        -- transform to the targeted procedures to inline the contracts of any
-       -- callees.
-      match program.filterProcedures procs (transform := CallElim.callElim') with
+       -- callees. Call elimination is applied once, since once is enough to
+       -- replace all calls with contracts.
+      let passes := fun prog => do
+        let prog ← FilterProcedures.run prog procs
+        let (_changed,prog) ← CallElim.callElim' prog
+        let prog ← FilterProcedures.run prog procs
+        return prog
+      let res := Transform.run program passes
+      match res with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   match Core.typeCheckAndPartialEval options finalProgram moreFns with

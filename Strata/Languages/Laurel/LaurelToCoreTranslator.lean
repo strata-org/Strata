@@ -38,6 +38,7 @@ partial def translateType (ty : HighTypeMd) : LMonoTy :=
   match ty.val with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
+  | .TString => LMonoTy.string
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => .tcons "Heap" []
   | .TTypedField valueType => .tcons "Field" [translateType valueType]
@@ -61,6 +62,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
   match h: expr.val with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
+  | .LiteralString s => .const () (.strConst s)
   | .Identifier name =>
       -- Check if this is a constant (field constant) or local variable
       if isConstant constants name then
@@ -166,6 +168,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
             let defaultExpr := match ty.val with
                               | .TInt => .const () (.intConst 0)
                               | .TBool => .const () (.boolConst false)
+                              | .TString => .const () (.strConst "")
                               | _ => .const () (.intConst 0)
             let initStmt := Core.Statement.init ident boogieType defaultExpr
             let callStmt := Core.Statement.call [ident] callee boogieArgs
@@ -177,6 +180,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
           let defaultExpr := match ty.val with
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
+                            | .TString => .const () (.strConst "")
                             | _ => .const () (.intConst 0)
           (env', [Core.Statement.init ident boogieType defaultExpr])
   | .Assign targets value =>
@@ -416,6 +420,7 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   match h : expr.val with
   | .LiteralBool _ => true
   | .LiteralInt _ => true
+  | .LiteralString _ => true
   | .Identifier _ => true
   | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
   | .IfThenElse c t none => isPureExpr c && isPureExpr t

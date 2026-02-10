@@ -44,6 +44,7 @@ def formatHighTypeVal : HighType → Format
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .UserDefined name => Format.text name
@@ -96,6 +97,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       | some v => " " ++ formatStmtExpr v
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
+  | .LiteralString s => "\"" ++ Format.text s ++ "\""
   | .Identifier name => Format.text name
   | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value

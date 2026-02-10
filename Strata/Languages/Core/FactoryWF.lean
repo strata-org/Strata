@@ -53,7 +53,12 @@ theorem Factory_wf :
             try unfold bvShiftOp
             try unfold bvBinaryPred
             intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind))
+        · decide -- LFuncWF.body_or_concreteEval
+        · decide -- LFuncWF.typeArgs_nodup
+        · decide -- LFuncWF.inputs_typevars_in_typeArgs
+        · decide -- LFuncWF.output_typevars_in_typeArgs
+    )
     contradiction
 
 end Core
