@@ -88,7 +88,7 @@ private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
 private def factoryWithImplies : Factory TestParams :=
   match (@IntBoolFactory TestParams _).addFactoryFunc safeDivFunc with
   | .ok f => f
-  | _ => (@IntBoolFactory TestParams _)
+  | _ => (@IntBoolFactory TestParams _ _)
 
 
 -- forall x :: (x > 0) ==> (safeDiv(y, x) > 0)

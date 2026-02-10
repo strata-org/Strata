@@ -111,6 +111,15 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: assert_entry_invariant_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(pre, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
+
 Label: entry_invariant
 Property: assert
 Assumptions:
@@ -128,6 +137,16 @@ Assumptions:
 
 Proof Obligation:
 ((~Int.Ge ((~Int.Sub $__n0) #0)) #0)
+
+Label: assume_assume_invariant_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard, ((~Int.Lt $__i3) $__n0))
+(pre, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
 
 Label: measure_decreases
 Property: assert
@@ -149,6 +168,16 @@ Assumptions:
 Proof Obligation:
 (if ((~Int.Le ((~Int.Sub $__n0) ((~Int.Add $__i3) #1))) #0) then (~Bool.Not ((~Int.Lt ((~Int.Add $__i3) #1)) $__n0)) else #true)
 
+Label: assert_arbitrary_iter_maintain_invariant_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0))
+(pre, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
+
 Label: arbitrary_iter_maintain_invariant
 Property: assert
 Assumptions:
@@ -158,6 +187,25 @@ Assumptions:
 
 Proof Obligation:
 ((~Bool.And ((~Int.Le ((~Int.Add $__i3) #1)) $__n0)) (((~Int.Div ((~Int.Mul ((~Int.Add $__i3) #1)) ((~Int.Sub ((~Int.Add $__i3) #1)) #1))) #2) == ((~Int.Add $__sum2) $__i3)))
+
+Label: assume_invariant_calls_Int.Div_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0)) (not_guard, (~Bool.Not ((~Int.Lt $__i5) $__n0)))
+(pre, ((~Int.Ge $__n0) #0))
+
+Proof Obligation:
+#true
+
+Label: assert_sum_assert_calls_Int.Div_0
+Property: assert
+Assumptions:
+(pre, ((~Int.Ge $__n0) #0))
+(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true)) (assume_guard, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt $__i3) $__n0) else #true)) (assume_invariant, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2)) else #true)) (assume_measure_pos, (if ((~Int.Lt #0) $__n0) then ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0) else #true)) (not_guard, (if ((~Int.Lt #0) $__n0) then (~Bool.Not ((~Int.Lt $__i5) $__n0)) else #true)) (invariant, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Int.Le $__i5) $__n0)) (((~Int.Div ((~Int.Mul $__i5) ((~Int.Sub $__i5) #1))) #2) == $__sum4)) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true))
+
+Proof Obligation:
+#true
 
 Label: sum_assert
 Property: assert
@@ -179,11 +227,19 @@ Proof Obligation:
 
 ---
 info:
+Obligation: assert_entry_invariant_calls_Int.Div_0
+Property: assert
+Result: ✅ pass
+
 Obligation: entry_invariant
 Property: assert
 Result: ✅ pass
 
 Obligation: assert_measure_pos
+Property: assert
+Result: ✅ pass
+
+Obligation: assume_assume_invariant_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 
@@ -195,7 +251,19 @@ Obligation: measure_imp_not_guard
 Property: assert
 Result: ✅ pass
 
+Obligation: assert_arbitrary_iter_maintain_invariant_calls_Int.Div_0
+Property: assert
+Result: ✅ pass
+
 Obligation: arbitrary_iter_maintain_invariant
+Property: assert
+Result: ✅ pass
+
+Obligation: assume_invariant_calls_Int.Div_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_sum_assert_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 

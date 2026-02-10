@@ -26,15 +26,16 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: safeDiv_calls_Int.Div_0
+Label: safeDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_safeDiv, (~Bool.Not (y == #0)))
+(precond_safeDiv_0, (~Bool.Not ($__y1 == #0)))
+
 Proof Obligation:
-(~Bool.Not (y == #0))
+(~Bool.Not ($__y1 == #0))
 
 ---
-info: Obligation: safeDiv_calls_Int.Div_0
+info: Obligation: safeDiv_body_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 -/
@@ -135,15 +136,16 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: get_calls_Option..value_0
+Label: get_body_calls_Option..value_0
 Property: assert
 Assumptions:
-(precond_get, (~Option..isSome x))
+(precond_get_0, (~Option..isSome $__x0))
+
 Proof Obligation:
-(~Option..isSome x)
+(~Option..isSome $__x0)
 
 ---
-info: Obligation: get_calls_Option..value_0
+info: Obligation: get_body_calls_Option..value_0
 Property: assert
 Result: ✅ pass
 -/
@@ -167,27 +169,29 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: foo_calls_Int.Div_0
+Label: foo_precond_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_foo, ((~Int.Gt y) #0))
-Proof Obligation:
-(~Bool.Not (y == #0))
+(precond_foo_0, ((~Int.Gt $__y1) #0))
 
-Label: foo_calls_Int.Div_1
+Proof Obligation:
+(~Bool.Not ($__y1 == #0))
+
+Label: foo_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_foo, ((~Int.Gt y) #0))
-(precond_foo, ((~Int.Gt ((~Int.Div x) y)) #0))
+(precond_foo_0, ((~Int.Gt $__y1) #0))
+(precond_foo_1, ((~Int.Gt ((~Int.Div $__x0) $__y1)) #0))
+
 Proof Obligation:
-(~Bool.Not (y == #0))
+(~Bool.Not ($__y1 == #0))
 
 ---
-info: Obligation: foo_calls_Int.Div_0
+info: Obligation: foo_precond_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 
-Obligation: foo_calls_Int.Div_1
+Obligation: foo_body_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 -/
@@ -213,29 +217,31 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: doubleDiv_calls_Int.Div_0
+Label: doubleDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_doubleDiv, (~Bool.Not (y == #0)))
-(precond_doubleDiv, (~Bool.Not (z == #0)))
-Proof Obligation:
-(~Bool.Not (z == #0))
+(precond_doubleDiv_0, (~Bool.Not ($__y1 == #0)))
+(precond_doubleDiv_1, (~Bool.Not ($__z2 == #0)))
 
-Label: doubleDiv_calls_Int.Div_1
+Proof Obligation:
+(~Bool.Not ($__z2 == #0))
+
+Label: doubleDiv_body_calls_Int.Div_1
 Property: assert
 Assumptions:
-(precond_doubleDiv, (~Bool.Not (y == #0)))
-(precond_doubleDiv, (~Bool.Not (z == #0)))
+(precond_doubleDiv_0, (~Bool.Not ($__y1 == #0)))
+(precond_doubleDiv_1, (~Bool.Not ($__z2 == #0)))
+
 Proof Obligation:
-(~Bool.Not (y == #0))
+(~Bool.Not ($__y1 == #0))
 
 ---
 info:
-Obligation: doubleDiv_calls_Int.Div_0
+Obligation: doubleDiv_body_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 
-Obligation: doubleDiv_calls_Int.Div_1
+Obligation: doubleDiv_body_calls_Int.Div_1
 Property: assert
 Result: ✅ pass
 -/
@@ -258,26 +264,33 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: badDiv_calls_Int.Div_0
+Label: badDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
 
+
 Proof Obligation:
-(~Bool.Not (#0 == #0))
+#false
 
 
 
-Result: Obligation: badDiv_calls_Int.Div_0
+Result: Obligation: badDiv_body_calls_Int.Div_0
 Property: assert
 Result: ❌ fail
 
 
 Evaluated program:
+(procedure badDiv$$wf :  ((x : int)) → ())
+modifies: []
+preconditions: 
+postconditions: 
+body: assert [badDiv_body_calls_Int.Div_0] #false
+
 func badDiv :  ((x : int)) → int :=
   ((((~Int.Div : (arrow int (arrow int int))) (x : int)) #0))
 ---
 info:
-Obligation: badDiv_calls_Int.Div_0
+Obligation: badDiv_body_calls_Int.Div_0
 Property: assert
 Result: ❌ fail
 -/
@@ -377,23 +390,24 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: safeDiv_calls_Int.Div_0
+Label: safeDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_safeDiv, (~Bool.Not (y == #0)))
+(precond_safeDiv_0, (~Bool.Not ($__y1 == #0)))
+
 Proof Obligation:
-(~Bool.Not (y == #0))
+(~Bool.Not ($__y1 == #0))
 
 Label: init_calls_safeDiv_0
 Property: assert
 Assumptions:
-(assume_0, (~Bool.Not ($__a0 == #0)))
+(assume_0, (~Bool.Not ($__a2 == #0)))
 
 Proof Obligation:
-(~Bool.Not ($__a0 == #0))
+(~Bool.Not ($__a2 == #0))
 
 ---
-info: Obligation: safeDiv_calls_Int.Div_0
+info: Obligation: safeDiv_body_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 
@@ -426,26 +440,28 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: safeDiv_calls_Int.Div_0
+Label: safeDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_safeDiv, (~Bool.Not (y == #0)))
-Proof Obligation:
-(~Bool.Not (y == #0))
+(precond_safeDiv_0, (~Bool.Not ($__y1 == #0)))
 
-Label: allPositiveDiv_calls_safeDiv_0
+Proof Obligation:
+(~Bool.Not ($__y1 == #0))
+
+Label: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
 Assumptions:
-(precond_allPositiveDiv, ((~Int.Ge y) #0))
+(precond_allPositiveDiv_0, ((~Int.Ge $__y2) #0))
+
 Proof Obligation:
 (∀ ((~Bool.Implies ((~Int.Gt %0) #0)) (~Bool.Not (%0 == #0))))
 
 ---
-info: Obligation: safeDiv_calls_Int.Div_0
+info: Obligation: safeDiv_body_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 
-Obligation: allPositiveDiv_calls_safeDiv_0
+Obligation: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
 Result: ✅ pass
 -/

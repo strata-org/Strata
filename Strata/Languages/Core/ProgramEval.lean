@@ -8,7 +8,6 @@
 
 import Strata.Languages.Core.Program
 import Strata.Languages.Core.ProcedureEval
-import Strata.DL.Lambda.Preconditions
 
 ---------------------------------------------------------------------
 
@@ -18,54 +17,6 @@ open Std (ToFormat Format format)
 
 namespace Program
 open Lambda.LTy Lambda.LExpr Statement Procedure Program
-
-/--
-Generate WF obligations for a function's preconditions and body.
-
-For each precondition (in order):
-- Collect WF obligations from the precondition expression
-- Earlier preconditions are assumed when checking later ones
-
-For the function body (if present):
-- Collect WF obligations from the body expression
-- All preconditions are assumed
--/
-def generateFuncWFObligations (E : Env) (func : Lambda.LFunc CoreLParams)
-    : Imperative.ProofObligations Expression :=
-  let factory := E.factory
-  let funcName := func.name.name
-  -- Counter for unique labels
-  let mkLabel (calledFunc : String) (idx : Nat) : String :=
-    s!"{funcName}_calls_{calledFunc}_{idx}"
-  -- Helper to convert WFObligation to ProofObligation with unique label
-  let toProofObligation (ob : Lambda.WFObligation CoreLParams) (idx : Nat)
-      (assumptions : Imperative.PathConditions Expression)
-      : Imperative.ProofObligation Expression :=
-    { label := mkLabel ob.funcName idx
-      property := .assert
-      assumptions := assumptions
-      obligation := ob.obligation
-      metadata := #[] }
-  -- Process preconditions: each precondition is checked with earlier ones as assumptions
-  let (precondObligations, finalAssumptions, counter) := func.preconditions.foldl
-    (fun (acc, assumptions, idx) precond =>
-      let wfObs := Lambda.collectWFObligations factory precond
-      let (newObs, newIdx) := wfObs.foldl
-        (fun (obs, i) ob => (obs.push (toProofObligation ob i assumptions), i + 1))
-        (#[], idx)
-      let newAssumptions := assumptions.addInNewest [(s!"precond_{funcName}", precond)]
-      (acc ++ newObs, newAssumptions, newIdx))
-    (#[], E.pathConditions, 0)
-  -- Process body: all preconditions are assumed
-  let bodyObligations := match func.body with
-    | none => #[]
-    | some body =>
-      let wfObs := Lambda.collectWFObligations factory body
-      let (obs, _) := wfObs.foldl
-        (fun (obs, i) ob => (obs.push (toProofObligation ob i finalAssumptions), i + 1))
-        (#[], counter)
-      obs
-  precondObligations ++ bodyObligations
 
 /--
 A new environment, with declarations obtained after the partial evaluation
@@ -97,7 +48,7 @@ def eval (E : Env) : List (Program × Env) :=
                       let xdecls := ss.map initStmtToGlobalVarDecl
                       let declsE := { declsE with xdecls := declsE.xdecls ++ xdecls,
                                                   env := E }
-                      go rest declsE)
+                    go rest declsE)
 
     | .type _ _ =>
       go rest { declsE with xdecls := declsE.xdecls ++ [decl] }
@@ -130,16 +81,12 @@ def eval (E : Env) : List (Program × Env) :=
                       go rest declsE)
 
     | .func func _ =>
-      -- Generate WF obligations for function preconditions and body
-      let wfObligations := generateFuncWFObligations declsE.env func
-      let env_with_wf := { declsE.env with deferred := declsE.env.deferred ++ wfObligations }
-      match env_with_wf.addFactoryFunc func with
-      | .error e => [(declsE.xdecls, { env_with_wf with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      match declsE.env.addFactoryFunc func with
+      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
-
-      go rest declsE
+        go rest declsE
 
 
 --------------------------------------------------------------------

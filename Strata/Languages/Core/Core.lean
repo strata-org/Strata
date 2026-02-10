@@ -8,6 +8,7 @@
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.ProgramType
+import Strata.Transform.PrecondElim
 
 ---------------------------------------------------------------------
 
@@ -60,6 +61,18 @@ def typeCheckAndPartialEval (options : Options) (program : Program)
   let E := { Env.init with exprEnv := σ,
                            program := program }
   let E ← E.addDatatypes datatypes
+  -- Build a Factory that includes all function declarations from the program
+  -- (needed for PrecondElim to find calls to user-defined partial functions)
+  let programFactory := program.decls.foldl (fun F decl =>
+    match decl with
+    | .func func _ => F.push func
+    | _ => F) E.factory
+  -- Run PrecondElim: insert assertions for partial function calls
+  -- and strip preconditions from function declarations.
+  -- The Factory is not updated here; Program.eval will add the
+  -- (now precondition-free) functions as it processes declarations.
+  let (program, _) := PrecondElim.precondElim program programFactory
+  let E := { E with program := program }
   let pEs := Program.eval E
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"

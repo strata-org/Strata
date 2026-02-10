@@ -311,16 +311,6 @@ def LExpr.getVars (e : LExpr T) : List (Identifier T.base.IDMeta) := match e wit
   | .ite _ c t e => LExpr.getVars c ++ LExpr.getVars t ++ LExpr.getVars e
   | .eq _ e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
 
-/-- Get free variables with their types (if annotated) -/
-def getVarsWithTypes (e : LExpr T) : List (Identifier T.base.IDMeta × Option T.TypeType) := match e with
-  | .const _ _ => [] | .bvar _ _ => [] | .op _ _ _ => []
-  | .fvar _ y ty => [(y, ty)]
-  | .abs _ _ e' => e'.getVarsWithTypes
-  | .quant _ _ _ tr' e' => tr'.getVarsWithTypes ++ e'.getVarsWithTypes
-  | .app _ e1 e2 => e1.getVarsWithTypes ++ e2.getVarsWithTypes
-  | .ite _ c t e => c.getVarsWithTypes ++ t.getVarsWithTypes ++ e.getVarsWithTypes
-  | .eq _ e1 e2 => e1.getVarsWithTypes ++ e2.getVarsWithTypes
-
 def getOps (e : LExpr T) := match e with
   | .op _ name _ => [name]
   | .const _ _ => [] | .bvar _ _ => [] | .fvar _ _ _ => []
