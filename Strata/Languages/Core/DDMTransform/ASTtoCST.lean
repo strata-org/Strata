@@ -124,6 +124,13 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     | none => ToCSTM.throwError (.unsupportedConstruct s!"unknown type constructor {name}" default)
   | _ => ToCSTM.throwError (.unsupportedConstruct s!"unknown type {ty}" default)
 
+/-- Convert `LTy` to `CoreType` -/
+def lTyToCoreType [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
+  match ty with
+  | .forAll typeVars monoTy => do
+    modify (ToCSTContext.addBoundTypeVars · typeVars.toArray)
+    lmonoTyToCoreType monoTy
+
 /-- Convert a type constructor declaration to CST -/
 def typeConToCST [Inhabited M] (tcons : TypeConstructor)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
@@ -261,6 +268,80 @@ partial def lappToExpr [Inhabited M]
     | _ => ToCSTM.throwError (.unsupportedConstruct "complex app" default)
   | _ => ToCSTM.throwError (.unsupportedConstruct "general app" default)
 
+end
+
+mutual
+/-- Convert Core.Statement to CoreDDM.Statement -/
+partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Statement M) :=
+  match s with
+  | .init name ty expr _md => do
+    let nameAnn : Ann String M := ⟨default, name.name⟩
+    let tyCST ← lTyToCoreType ty
+    let exprCST ← lexprToExpr expr false
+    pure (.initStatement default tyCST nameAnn exprCST)
+  | .set name expr _md => do
+    let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
+    let exprCST ← lexprToExpr expr false
+    let tyCST := CoreType.bool default  -- placeholder, ideally infer from expr
+    pure (.assign default tyCST lhs exprCST)
+  | .havoc name _md => do
+    let nameAnn : Ann String M := ⟨default, name.name⟩
+    pure (.havoc_statement default nameAnn)
+  | .assert label expr _md => do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
+    let exprCST ← lexprToExpr expr false
+    pure (.assert default labelAnn exprCST)
+  | .assume label expr _md => do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
+    let exprCST ← lexprToExpr expr false
+    pure (.assume default labelAnn exprCST)
+  | .cover label expr _md => do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
+    let exprCST ← lexprToExpr expr false
+    pure (.cover default labelAnn exprCST)
+  | .call lhs pname args _md => do
+    let lhsAnn : Ann (Array (Ann String M)) M := ⟨default, (lhs.map fun id => ⟨default, id.name⟩).toArray⟩
+    let pnameAnn : Ann String M := ⟨default, pname⟩
+    let argsCST ← args.mapM (lexprToExpr · false)
+    let argsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, argsCST.toArray⟩
+    pure (.call_statement default lhsAnn pnameAnn argsAnn)
+  | .block label stmts _md => do
+    let labelAnn : Ann String M := ⟨default, label⟩
+    let blockCST ← blockToCST stmts
+    pure (.block_statement default labelAnn blockCST)
+  | .ite cond thenb elseb _md => do
+    let condCST ← lexprToExpr cond false
+    let thenCST ← blockToCST thenb
+    let elseCST ← elseToCST elseb
+    pure (.if_statement default condCST thenCST elseCST)
+  | .loop guard _measure invariant body _md => do
+    let guardCST ← lexprToExpr guard false
+    let invs ← invariantsToCST invariant
+    let bodyCST ← blockToCST body
+    pure (.while_statement default guardCST invs bodyCST)
+  | .goto label _md => do
+    let labelAnn : Ann String M := ⟨default, label⟩
+    pure (.goto_statement default labelAnn)
+  | .funcDecl _ _ => ToCSTM.throwError (.unsupportedConstruct "funcDecl in statement" default)
+
+partial def blockToCST [Inhabited M] (stmts : List Core.Statement) : ToCSTM M (CoreDDM.Block M) := do
+  let stmtsCST ← stmts.mapM stmtToCST
+  pure (.block default ⟨default, stmtsCST.toArray⟩)
+
+partial def elseToCST [Inhabited M] (stmts : List Core.Statement) : ToCSTM M (Else M) := do
+  if stmts.isEmpty then
+    pure (.else0 default)
+  else
+    let blockCST ← blockToCST stmts
+    pure (.else1 default blockCST)
+
+partial def invariantsToCST [Inhabited M]
+    (inv : Option (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
+  match inv with
+  | none => pure (.nilInvariants default)
+  | some expr => do
+    let exprCST ← lexprToExpr expr false
+    pure (.consInvariants default exprCST (.nilInvariants default))
 end
 
 /-- Convert a function declaration to CST -/
