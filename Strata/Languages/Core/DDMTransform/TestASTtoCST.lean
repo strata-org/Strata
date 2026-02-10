@@ -29,12 +29,11 @@ type T1 (x : Type);
 type Byte := bv8;
 type IntMap := Map int int;
 const fooConst : int;
-function id(x : int) : int { x }
+function id(x : int, y : int) : int { y }
 #end
 
--- #print CoreDDM.Expr
+#print CoreDDM.Expr
 
--- FIXME: Need to print `x` in the body of `id`, not `T0`.
 #eval do
   -- Use old translator to get AST
   let (ast, errs) := TransM.run Inhabited.default (translateProgram testProgram)

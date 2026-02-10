@@ -49,11 +49,11 @@ end ASTToCSTError
 section ToCST
 
 structure ToCSTContext where
-  -- Track bound type variables
+  /-- Track bound type variables -/
   boundTypeVars : Array String := #[]
-  -- Track bound variables (function parameters) - in declaration order
+  /-- Track bound variables -/
   boundVars : Array String := #[]
-  -- Track free variables (global declarations)
+  /-- Track free variables -/
   freeVars : Array String := #[]
   deriving Repr
 
@@ -65,9 +65,13 @@ def addFreeVar (ctx : ToCSTContext) (name : String) :
     ToCSTContext :=
   { ctx with freeVars := ctx.freeVars.push name }
 
+def addBoundVar (ctx : ToCSTContext) (name : String) :
+    ToCSTContext :=
+  { ctx with boundVars := ctx.boundVars.push name }
+
 end ToCSTContext
 
--- Convert LMonoTy to CoreType
+/-- Convert `LMonoTy` to `CoreType` -/
 def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     CoreType M × List (ASTToCSTError M) :=
   match ty with
@@ -108,22 +112,29 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) :
   | .bitvecConst w _ => (.btrue default,
     [.unsupportedConstruct s!"bitvec width {w}" default])
 
--- Convert Lambda.LExpr to Core Expr
+/-- Convert `Lambda.LExpr` to Core `Expr` -/
 partial def lexprToExpr [Inhabited M] (ctx : ToCSTContext)
-    (e : Lambda.LExpr CoreLParams.mono) :
+    (e : Lambda.LExpr CoreLParams.mono)
+    -- LambdaFVarsBound is true when `e` corresponds to the body of a function
+    -- where `.fvars` correspond to the formals.
+    (LambdaFVarsBound : Bool := false) :
     CoreDDM.Expr M × List (ASTToCSTError M) :=
   match e with
   | .const _ c => lconstToExpr c
   | .bvar _ idx =>
-    (.fvar default idx, [])
+    if idx < ctx.boundVars.size then
+      let bvarIdx := ctx.boundVars.size - (idx + 1)
+      (.bvar default bvarIdx, [])
+    else
+      (.bvar default 0, [.unsupportedConstruct s!"bvar {idx}" default])
   | .fvar _ id _ =>
-    -- Look up in boundVars first, then freeVars
-    match ctx.boundVars.toList.findIdx? (· == id.name) with
-    | some idx => (.fvar default idx, [])
-    | none =>
-      -- Adjust index by boundVars.size to account for local scope
+    if LambdaFVarsBound then
+      match ctx.boundVars.toList.findIdx? (· == id.name) with
+      | some idx => (.bvar default (ctx.boundVars.size - (idx + 1)), [])
+      | none => (.bvar default 0, [.unsupportedConstruct s!"fvar {id.name}" default])
+    else
       match ctx.freeVars.toList.findIdx? (· == id.name) with
-      | some idx => (.fvar default (ctx.boundVars.size + idx), [])
+      | some idx => (.fvar default idx, [])
       | none => (.fvar default 0, [.unsupportedConstruct s!"fvar {id.name}" default])
   | .op _ _name _ =>
     (.fvar default 0, [.unsupportedConstruct "op" default])
@@ -134,7 +145,7 @@ partial def lexprToExpr [Inhabited M] (ctx : ToCSTContext)
   | _ =>
     (.fvar default 0, [.unsupportedConstruct "unknown expr" default])
 
--- Convert a type constructor declaration to CST
+/-- Convert a type constructor declaration to CST -/
 def typeConToCST [Inhabited M] (tcons : TypeConstructor)
     (_md : Imperative.MetaData Expression) :
     Command M × List (ASTToCSTError M) :=
@@ -150,7 +161,7 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
       ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
   (.command_typedecl default name args, [])
 
--- Convert a type synonym declaration to CST
+/-- Convert a type synonym declaration to CST -/
 def typeSynToCST [Inhabited M] (syn : TypeSynonym)
     (_md : Imperative.MetaData Expression) :
     Command M × List (ASTToCSTError M) :=
@@ -168,7 +179,7 @@ def typeSynToCST [Inhabited M] (syn : TypeSynonym)
   let (rhs, errs) := lmonoTyToCoreType syn.type
   (.command_typesynonym default name args targs rhs, errs)
 
--- Convert a function declaration to CST
+/-- Convert a function declaration to CST -/
 def funcToCST [Inhabited M] (ctx : ToCSTContext)
     (func : Lambda.LFunc CoreLParams)
     (_md : Imperative.MetaData Expression) :
@@ -191,22 +202,24 @@ def funcToCST [Inhabited M] (ctx : ToCSTContext)
   | none =>
     (.command_fndecl default name typeArgs b r, allErrs)
   | some body =>
-    let bodyCtx := { ctx with boundVars := paramNames }
-    let (bodyExpr, bodyErrs) := lexprToExpr bodyCtx body
+    let bodyCtx := { ctx with boundVars := ctx.boundVars ++ paramNames }
+    let (bodyExpr, bodyErrs) := lexprToExpr bodyCtx body (LambdaFVarsBound := true)
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     (.command_fndef default name typeArgs b r bodyExpr inline?,
      allErrs ++ bodyErrs)
 
--- Convert a Core.Decl to a Command, returning updated context
+/-- Convert a `Core.Decl` to a Core `Command`, returning updated context -/
 def declToCST [Inhabited M] (ctx : ToCSTContext) (decl : Core.Decl) :
     Command M × List (ASTToCSTError M) × ToCSTContext :=
   match decl with
   | .type (.con tcons) md =>
+    let ctx := ctx.addFreeVar tcons.name
     let (cmd, errs) := typeConToCST tcons md
-    (cmd, errs, ctx.addFreeVar tcons.name)
+    (cmd, errs, ctx)
   | .type (.syn syn) md =>
+    let ctx := ctx.addFreeVar syn.name
     let (cmd, errs) := typeSynToCST syn md
-    (cmd, errs, ctx.addFreeVar syn.name)
+    (cmd, errs, ctx)
   | .func func md =>
     let ctx := ctx.addFreeVar func.name.name
     let (cmd, errs) := funcToCST ctx func md
