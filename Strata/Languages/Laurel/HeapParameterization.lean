@@ -43,10 +43,7 @@ structure AnalysisResult where
 mutual
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
   termination_by sizeOf expr
-  decreasing_by
-    simp_wf
-    have := StmtExprMd.sizeOf_val_lt expr
-    omega
+  decreasing_by simp_wf; have := StmtExprMd.sizeOf_val_lt expr; omega
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
@@ -89,7 +86,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
     all_goals first
       | omega
       | (have := StmtExprMd.sizeOf_val_lt ‹_›; omega)
-      | (subst_vars; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
+      | (subst_vars; have := List.sizeOf_lt_of_mem ‹_›; omega)
 end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
@@ -199,19 +196,16 @@ Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
-partial def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
-  recurse expr valueUsed
-where
-  recurse (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
-    let md := expr.md
-    match expr.val with
+def heapTransformExpr (heapVar : Identifier) (topExpr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
+    let md := topExpr.md
+    match _h : topExpr.val with
     | .FieldSelect selectTarget fieldName =>
         let fieldType ← lookupFieldType fieldName
         addFieldConstant fieldName (fieldType.getD ⟨.TInt, #[]⟩)
-        let selectTarget' ← recurse selectTarget
+        let selectTarget' ← heapTransformExpr heapVar selectTarget
         return ⟨ .StaticCall "heapRead" [mkMd md (.Identifier heapVar), selectTarget', mkMd md (.Identifier fieldName)], md ⟩
     | .StaticCall callee args =>
-        let args' ← args.mapM recurse
+        let args' ← args.mapM (heapTransformExpr heapVar)
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -230,76 +224,78 @@ where
         else
           return ⟨ .StaticCall callee args', md ⟩
     | .InstanceCall callTarget callee args =>
-        let t ← recurse callTarget
-        let args' ← args.mapM recurse
+        let t ← heapTransformExpr heapVar callTarget
+        let args' ← args.mapM (heapTransformExpr heapVar)
         return ⟨ .InstanceCall t callee args', md ⟩
     | .IfThenElse c t e =>
-        let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
-        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', md ⟩
+        let e' ← match e with | some x => some <$> heapTransformExpr heapVar x valueUsed | none => pure none
+        return ⟨ .IfThenElse (← heapTransformExpr heapVar c) (← heapTransformExpr heapVar t valueUsed) e', md ⟩
     | .Block stmts label =>
         let n := stmts.length
-        let rec processStmts (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
-          match remaining with
-          | [] => pure []
-          | s :: rest =>
-              let isLast := idx == n - 1
-              let s' ← recurse s (isLast && valueUsed)
-              let rest' ← processStmts (idx + 1) rest
-              pure (s' :: rest')
-        let stmts' ← processStmts 0 stmts
+        let stmts' ← stmts.attach.zipIdx.mapM fun (⟨s, _⟩, idx) =>
+          heapTransformExpr heapVar s (idx == n - 1 && valueUsed)
         return ⟨ .Block stmts' label, md ⟩
     | .LocalVariable n ty i =>
-        let i' ← match i with | some x => some <$> recurse x | none => pure none
+        let i' ← match i with | some x => some <$> heapTransformExpr heapVar x | none => pure none
         return ⟨ .LocalVariable n ty i', md ⟩
     | .While c invs d b =>
-        let invs' ← invs.mapM recurse
-        let d' ← match d with | some x => some <$> recurse x | none => pure none
-        return ⟨ .While (← recurse c) invs' d' (← recurse b false), md ⟩
+        let invs' ← invs.mapM (heapTransformExpr heapVar)
+        let d' ← match d with | some x => some <$> heapTransformExpr heapVar x | none => pure none
+        return ⟨ .While (← heapTransformExpr heapVar c) invs' d' (← heapTransformExpr heapVar b false), md ⟩
     | .Return v =>
-        let v' ← match v with | some x => some <$> recurse x | none => pure none
+        let v' ← match v with | some x => some <$> heapTransformExpr heapVar x | none => pure none
         return ⟨ .Return v', md ⟩
     | .Assign targets v =>
         match targets with
         | [fieldSelectMd] =>
-          match fieldSelectMd.val with
+          match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
             let fieldType ← lookupFieldType fieldName
             match fieldType with
             | some ty => addFieldConstant fieldName ty
             | none => addFieldConstant fieldName ⟨.TInt, #[]⟩
-            let target' ← recurse target
-            let v' ← recurse v
+            let target' ← heapTransformExpr heapVar target
+            let v' ← heapTransformExpr heapVar v
             let heapAssign := ⟨ .Assign [mkMd md (.Identifier heapVar)] (mkMd md (.StaticCall "heapStore" [mkMd md (.Identifier heapVar), target', mkMd md (.Identifier fieldName), v'])), md ⟩
             if valueUsed then
               return ⟨ .Block [heapAssign, v'] none, md ⟩
             else
               return heapAssign
           | _ =>
-            let tgt' ← recurse fieldSelectMd
-            return ⟨ .Assign [tgt'] (← recurse v), md ⟩
+            let tgt' ← heapTransformExpr heapVar fieldSelectMd
+            return ⟨ .Assign [tgt'] (← heapTransformExpr heapVar v), md ⟩
         | [] =>
-            return ⟨ .Assign [] (← recurse v), md ⟩
+            return ⟨ .Assign [] (← heapTransformExpr heapVar v), md ⟩
         | tgt :: rest =>
-            let tgt' ← recurse tgt
-            let targets' ← rest.mapM recurse
-            return ⟨ .Assign (tgt' :: targets') (← recurse v), md ⟩
-    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), md ⟩
+            let tgt' ← heapTransformExpr heapVar tgt
+            let targets' ← rest.mapM (heapTransformExpr heapVar)
+            return ⟨ .Assign (tgt' :: targets') (← heapTransformExpr heapVar v), md ⟩
+    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← heapTransformExpr heapVar t) f (← heapTransformExpr heapVar v), md ⟩
     | .PrimitiveOp op args =>
-      let args' ← args.mapM recurse
+      let args' ← args.mapM (heapTransformExpr heapVar)
       return ⟨ .PrimitiveOp op args', md ⟩
-    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
-    | .AsType t ty => return ⟨ .AsType (← recurse t) ty, md ⟩
-    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
-    | .Forall n ty b => return ⟨ .Forall n ty (← recurse b), md ⟩
-    | .Exists n ty b => return ⟨ .Exists n ty (← recurse b), md ⟩
-    | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
-    | .Old v => return ⟨ .Old (← recurse v), md ⟩
-    | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
-    | .Assert c => return ⟨ .Assert (← recurse c), md ⟩
-    | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
-    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
-    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
-    | _ => return expr
+    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← heapTransformExpr heapVar l) (← heapTransformExpr heapVar r), md ⟩
+    | .AsType t ty => return ⟨ .AsType (← heapTransformExpr heapVar t) ty, md ⟩
+    | .IsType t ty => return ⟨ .IsType (← heapTransformExpr heapVar t) ty, md ⟩
+    | .Forall n ty b => return ⟨ .Forall n ty (← heapTransformExpr heapVar b), md ⟩
+    | .Exists n ty b => return ⟨ .Exists n ty (← heapTransformExpr heapVar b), md ⟩
+    | .Assigned n => return ⟨ .Assigned (← heapTransformExpr heapVar n), md ⟩
+    | .Old v => return ⟨ .Old (← heapTransformExpr heapVar v), md ⟩
+    | .Fresh v => return ⟨ .Fresh (← heapTransformExpr heapVar v), md ⟩
+    | .Assert c => return ⟨ .Assert (← heapTransformExpr heapVar c), md ⟩
+    | .Assume c => return ⟨ .Assume (← heapTransformExpr heapVar c), md ⟩
+    | .ProveBy v p => return ⟨ .ProveBy (← heapTransformExpr heapVar v) (← heapTransformExpr heapVar p), md ⟩
+    | .ContractOf ty f => return ⟨ .ContractOf ty (← heapTransformExpr heapVar f), md ⟩
+    | _ => return topExpr
+  termination_by sizeOf topExpr
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (have := StmtExprMd.sizeOf_val_lt topExpr; rw [_h] at this; simp at this
+         try (have := StmtExprMd.sizeOf_val_lt fieldSelectMd; rw [_h2] at this; simp at this)
+         try have := List.sizeOf_lt_of_mem ‹_›
+         omega)
+      | (have := List.sizeOf_lt_of_mem ‹_›; have := StmtExprMd.sizeOf_val_lt; simp_all; grind)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
   let heapInName := "$heap_in"
