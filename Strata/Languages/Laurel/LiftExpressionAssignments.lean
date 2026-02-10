@@ -52,7 +52,7 @@ def SequenceM.addDiagnostic (d : DiagnosticModel) : SequenceM Unit :=
   modify fun s => { s with diagnostics := d :: s.diagnostics }
 
 def checkOutsideCondition(md: Imperative.MetaData Core.Expression): SequenceM Unit := do
-  let state <- get
+  let state ← get
   if state.insideCondition then
     let fileRange := (Imperative.getFileRange md).get!
     SequenceM.addDiagnostic {
@@ -286,7 +286,7 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
 end
 
 def transformProcedureBody (body : StmtExprMd) : SequenceM StmtExprMd := do
-  let seqStmts <- transformStmt body
+  let seqStmts ← transformStmt body
   match seqStmts with
   | [single] => pure single
   | multiple => pure ⟨.Block multiple none, body.md⟩
