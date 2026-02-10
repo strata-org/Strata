@@ -180,9 +180,11 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let firstTarget := targets.head?.getD (panic "Assign must have non-empty targets")
       let resultExpr ← match firstTarget.val with
         | .Identifier varName => pure (⟨.Identifier (← getSubst varName), md⟩)
-        | _ => pure firstTarget
+        | _ => panic "Non-identifier targets not supported in the lift expression phase"
 
-      liftAssignExpr targets seqValue md
+      -- Use the original value (not seqValue) for the prepended assignment,
+      -- because prepended statements execute in program order and don't need substitutions.
+      liftAssignExpr targets value md
 
       return resultExpr
 
@@ -243,11 +245,35 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       match stmts.reverse with
       | [] => return bare (.Block [] metadata)
       | last :: restRev => do
-          -- Process all-but-last using transformExprDiscarded (result is discarded)
-          for s in restRev.reverse do
+          -- Pre-populate the environment with all LocalVariable declarations
+          -- so that getVarType works when creating snapshots
+          for s in stmts do
+            match s.val with
+            | .LocalVariable name ty _ => addToEnv name ty
+            | _ => pure ()
+          -- Process all-but-last right to left using transformExprDiscarded
+          for s in restRev do
             transformExprDiscarded s
           -- Last element is the expression value
           transformExpr last
+
+  | .LocalVariable name ty initializer =>
+      -- Add the variable to the environment
+      addToEnv name ty
+      -- If the substitution map has an entry for this variable, it was
+      -- assigned to the right and we need to lift this declaration so it
+      -- appears before the snapshot that references it.
+      let hasSubst := (← get).subst.lookup name |>.isSome
+      if hasSubst then
+        match initializer with
+        | some initExpr =>
+            let seqInit ← transformExpr initExpr
+            addPrepend (⟨.LocalVariable name ty (some seqInit), expr.md⟩)
+        | none =>
+            addPrepend (⟨.LocalVariable name ty none, expr.md⟩)
+        return ⟨.Identifier (← getSubst name), expr.md⟩
+      else
+        return expr
 
   | _ => return expr
 
@@ -258,8 +284,10 @@ partial def transformExprDiscarded (expr : StmtExprMd) : LiftM Unit := do
   let md := expr.md
   match expr.val with
   | .Assign targets value =>
-      let seqValue ← transformExpr value
-      liftAssignExpr targets seqValue md
+      -- Transform value to process nested assignments (side-effect only),
+      -- but use original value for the prepended assignment (no substitutions needed).
+      let _ ← transformExpr value
+      liftAssignExpr targets value md
   | _ =>
       let result ← transformExpr expr
       addPrepend result
@@ -297,19 +325,10 @@ partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
           return [stmt]
 
   | .Assign targets value =>
-      -- Statement-level assignment: snapshot before, then assign
       let seqValue ← transformExpr value
       let prepends ← takePrepends
-      let mut snapshots : List StmtExprMd := []
-      for target in targets do
-        match target.val with
-        | .Identifier varName =>
-            let snapshotName ← freshTempFor varName
-            let snapshotType ← getVarType varName
-            snapshots := snapshots ++ [bare (.LocalVariable snapshotName snapshotType (some (bare (.Identifier varName))))]
-        | _ => pure ()
       modify fun s => { s with subst := [] }
-      return prepends ++ snapshots ++ [⟨.Assign targets seqValue, md⟩]
+      return prepends ++ [⟨.Assign targets seqValue, md⟩]
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
