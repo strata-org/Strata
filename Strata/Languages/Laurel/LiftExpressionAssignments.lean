@@ -196,7 +196,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
             processBlock tail
         termination_by sizeOf remStmts
         decreasing_by
-          all_goals (simp_wf; have := StmtExprMd.sizeOf_val_lt ‹_›; try omega)
+          all_goals (simp_wf; try (have := StmtExprMd.sizeOf_val_lt ‹_›; omega))
           subst_vars; rename_i heq; cases heq; omega
       processBlock stmts
 
@@ -212,12 +212,9 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   | _ => return expr  -- Other cases
   termination_by sizeOf expr
   decreasing_by
-    all_goals simp_wf
-    all_goals
-      have := StmtExprMd.sizeOf_val_lt expr
-      rw [_h] at this; simp at this
-      try have := List.sizeOf_lt_of_mem ‹_›
-      grind
+    all_goals (simp_wf; have := StmtExprMd.sizeOf_val_lt expr; rw [_h] at this; simp at this)
+    all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
+    all_goals omega
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
@@ -281,12 +278,9 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
       return [stmt]
   termination_by sizeOf stmt
   decreasing_by
-    all_goals simp_wf
-    all_goals
-      have := StmtExprMd.sizeOf_val_lt stmt
-      rw [_h] at this; simp at this
-      try have := List.sizeOf_lt_of_mem ‹_›
-      grind
+    all_goals (simp_wf; have := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at this; simp at this)
+    all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
+    all_goals omega
 
 
 end
