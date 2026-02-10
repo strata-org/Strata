@@ -32,9 +32,12 @@ def formatOperation : Operation → Format
   | .Geq => ">="
 
 mutual
-partial def formatHighType (t : HighTypeMd) : Format := formatHighTypeVal t.val
+def formatHighType (t : HighTypeMd) : Format :=
+  have : sizeOf t.val < sizeOf t := by cases t; simp +arith
+  formatHighTypeVal t.val
+  termination_by sizeOf t
 
-partial def formatHighTypeVal : HighType → Format
+def formatHighTypeVal : HighType → Format
   | .TVoid => "void"
   | .TBool => "bool"
   | .TInt => "int"
@@ -49,10 +52,14 @@ partial def formatHighTypeVal : HighType → Format
   | .Pure base => "pure(" ++ formatHighType base ++ ")"
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
+  termination_by t => sizeOf t
 
-partial def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
+def formatStmtExpr (s : StmtExprMd) : Format :=
+  have : sizeOf s.val < sizeOf s := by cases s; simp +arith
+  formatStmtExprVal s.val
+  termination_by sizeOf s
 
-partial def formatStmtExprVal (s:StmtExpr) : Format :=
+def formatStmtExprVal (s:StmtExpr) : Format :=
   match s with
   | .IfThenElse cond thenBr elseBr =>
       "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
@@ -85,7 +92,7 @@ partial def formatStmtExprVal (s:StmtExpr) : Format :=
   | .Assign targets value =>
       "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
-      formatStmtExpr target ++ "." ++ Format.text field
+      formatStmtExpr target ++ "#" ++ Format.text field
   | .PureFieldUpdate target field value =>
       formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
   | .StaticCall name args =>
@@ -121,11 +128,12 @@ partial def formatStmtExprVal (s:StmtExpr) : Format :=
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
+  termination_by sizeOf s
 
-partial def formatParameter (p : Parameter) : Format :=
+def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
 
-partial def formatBody : Body → Format
+def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque posts impl modif =>
       "opaque " ++
@@ -138,33 +146,33 @@ partial def formatBody : Body → Format
       | some e => " := " ++ formatStmtExpr e
   | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
 
-partial def formatProcedure (proc : Procedure) : Format :=
+def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
   Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
   formatBody proc.body
 
-partial def formatField (f : Field) : Format :=
+def formatField (f : Field) : Format :=
   (if f.isMutable then "var " else "val ") ++
   Format.text f.name ++ ": " ++ formatHighType f.type
 
-partial def formatCompositeType (ct : CompositeType) : Format :=
+def formatCompositeType (ct : CompositeType) : Format :=
   "composite " ++ Format.text ct.name ++
   (if ct.extending.isEmpty then Format.nil else " extends " ++
    Format.joinSep (ct.extending.map Format.text) ", ") ++
   " { " ++ Format.joinSep (ct.fields.map formatField) "; " ++ " }"
 
-partial def formatConstrainedType (ct : ConstrainedType) : Format :=
+def formatConstrainedType (ct : ConstrainedType) : Format :=
   "constrained " ++ Format.text ct.name ++
   " = " ++ Format.text ct.valueName ++ ": " ++ formatHighType ct.base ++
   " | " ++ formatStmtExpr ct.constraint
 
-partial def formatTypeDefinition : TypeDefinition → Format
+def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
   | .Constrained ty => formatConstrainedType ty
 
-partial def formatProgram (prog : Program) : Format :=
+def formatProgram (prog : Program) : Format :=
   Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
 
 end
