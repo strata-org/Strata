@@ -14,74 +14,62 @@ namespace Laurel
 
 def program := r"
 composite Container {
-  var value: int // var indicates mutable field
+  var intValue: int // var indicates mutable field
+  var boolValue: bool
 }
 
 procedure foo(c: Container, d: Container) returns (r: int)
-  requires c != d
+  requires c != d && d#intValue == 1
+  ensures d#intValue == 3
 {
-  var x: int := c#value;
-  var initialDValue: int := d#value;
-  d#value := d#value + 1;
-  c#value := c#value + 1;
-  assert x + 1 == c#value; // pass
-  assert initialDValue + 1 == d#value;
+  var x: int := c#intValue;
+  var initialDValue: int := d#intValue;
+  d#intValue := d#intValue + 1;
+  c#intValue := c#intValue + 1;
+  assert x + 1 == c#intValue; // pass
+  assert initialDValue + 1 == d#intValue;
 
   var e: Container := d;
-  e#value := e#value + 1;
-  assert e#value == d#value;
+  e#intValue := e#intValue + 1;
+  assert e#intValue == d#intValue;
 }
 
-// The following two need support for calling procedures in an expression context.
-//procedure caller(c: Container, d: Container) {
-//  var x: int := foo(c, d);
-//}
+procedure useBool(c: Container) returns (r: bool) {
+  r := c#boolValue;
+}
 
-//procedure impureContract(c: Container) {
-//  assert foo(c,c) == 3;
-//}
+procedure caller(c: Container, d: Container) {
+  assume c != d;
+  assume d#intValue == 1;
+  var x: int := foo(c, d);
+  assert d#intValue == 3;
+}
+
+procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
+  assume c != d;
+  assume d#intValue == 1;
+  var x: int := foo(c, d) + 1;
+  assert d#intValue == 3;
+}
+
+procedure subsequentHeapMutations(c: Container) {
+  // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
+  var sum: int := ((c#intValue := 1;) + c#intValue) + (c#intValue := 2;);
+  assert sum == 4;
+}
+
+procedure implicitEquality(c: Container, d: Container) {
+  c#intValue := 1;
+  d#intValue := 2;
+  if (c#intValue == d#intValue) {
+// ATM, the assertion in this test is proven not to hold even though it holds
+    assert c == d;
+//  ^^^^^^^^^^^^^^ error: assertion does not hold
+  } else {
+    assert c != d;
+  }
+}
 "
 
+#guard_msgs(drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile
-
-/-
-Translation towards SMT:
-
-type Composite;
-type Field;
-val value: Field
-
-function foo(heap_in: Heap, c: Composite, d: Composite) returns (r: int, out_heap: Heap) {
-  var heap = heap_in;
-  var x = read(heap, c, value);
-  heap = update(heap, d, value, read(heap, d, value));
-  heap_out = heap;
-}
-
-proof foo_body {
-  var heap_in;
-  var Heap;
-  var c: Composite;
-  var d: Composite;
-  var r: int;
-  var out_heap: Heap;
-
-  var heap = heap_in;
-  var x = read(heap, c, value);
-  heap = update(heap, d, value, read(heap, d, value));
-  assert x == read(heap, c, value);
-}
-
-proof caller {
-  var heap_in;
-  var Heap;
-  var c: Composite;
-  var d: Composite;
-  var heap_out: Heap;
-
-  heap = heap_in;
-  var x: int;
-  (x, heap) = foo(heap, c, d);
-  heap_out = heap;
-}
--/

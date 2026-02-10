@@ -199,7 +199,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.assign, #[arg0, arg1] =>
       let target ← translateStmtExpr arg0
       let value ← translateStmtExpr arg1
-      return mkStmtExprMd (.Assign target value) md
+      return mkStmtExprMd (.Assign [target] value) md
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
@@ -326,7 +326,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- If there are postconditions, use Opaque body; otherwise use Transparent
     let procBody := match postconditions with
       | [] => Body.Transparent body
-      | posts => Body.Opaque posts (some body) .nondeterministic none
+      | posts => Body.Opaque posts (some body) none
     return {
       name := name
       inputs := parameters
@@ -354,6 +354,34 @@ def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
   | _, _ =>
     TransM.error s!"parseConstrainedType expects constrainedType, got {repr op.name}"
 
+def parseField (arg : Arg) : TransM Field := do
+  let .op op := arg
+    | TransM.error s!"parseField expects operation"
+  match op.name, op.args with
+  | q`Laurel.mutableField, #[nameArg, typeArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    return { name := name, isMutable := true, type := fieldType }
+  | q`Laurel.immutableField, #[nameArg, typeArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    return { name := name, isMutable := false, type := fieldType }
+  | _, _ =>
+    TransM.error s!"parseField expects mutableField or immutableField, got {repr op.name}"
+
+def parseComposite (arg : Arg) : TransM TypeDefinition := do
+  let .op op := arg
+    | TransM.error s!"parseComposite expects operation"
+  match op.name, op.args with
+  | q`Laurel.composite, #[nameArg, fieldsArg] =>
+    let name ← translateIdent nameArg
+    let fields ← match fieldsArg with
+      | .seq _ _ args => args.toList.mapM parseField
+      | _ => pure []
+    return .Composite { name := name, extending := [], fields := fields, instanceProcedures := [] }
+  | _, _ =>
+    TransM.error s!"parseComposite expects composite, got {repr op.name}"
+
 inductive TopLevelItem where
   | proc (p : Procedure)
   | typeDef (t : TypeDefinition)
@@ -366,9 +394,9 @@ def parseTopLevel (arg : Arg) : TransM (Option TopLevelItem) := do
   | q`Laurel.topLevelProcedure, #[procArg] =>
     let proc ← parseProcedure procArg
     return some (.proc proc)
-  | q`Laurel.topLevelComposite, #[_compositeArg] =>
-    -- TODO: handle composite types
-    return none
+  | q`Laurel.topLevelComposite, #[compositeArg] =>
+    let typeDef ← parseComposite compositeArg
+    return some (.typeDef typeDef)
   | q`Laurel.topLevelConstrainedType, #[ctArg] =>
     let ct ← parseConstrainedType ctArg
     return some (.typeDef (.Constrained ct))

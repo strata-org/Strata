@@ -82,10 +82,6 @@ structure Procedure: Type where
   decreases : Option StmtExprMd -- optionally prove termination
   body : Body
 
-inductive Determinism where
-  | deterministic (reads: Option StmtExprMd)
-  | nondeterministic
-
 structure Parameter where
   name : Identifier
   type : HighTypeMd
@@ -96,7 +92,7 @@ inductive HighType : Type where
   | TInt
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
   | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
-  | TField /- Internal type for field constants in heap parameterization pass. Not accessible via grammar. -/
+  | TTypedField (valueType : HighTypeMd) /- Field constant with known value type. Not accessible via grammar. -/
   | UserDefined (name: Identifier)
   | Applied (base : HighTypeMd) (typeArguments : List HighTypeMd)
   /- Pure represents a composite type that does not support reference equality -/
@@ -110,7 +106,7 @@ inductive HighType : Type where
 inductive Body where
   | Transparent (body : StmtExprMd)
 /- Without an implementation, the postcondition is assumed -/
-  | Opaque (postconditions : List StmtExprMd) (implementation : Option StmtExprMd) (determinism: Determinism) (modifies : Option StmtExprMd)
+  | Opaque (postconditions : List StmtExprMd) (implementation : Option StmtExprMd) (modifies : Option StmtExprMd)
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
   | Abstract (postconditions : List StmtExprMd)
@@ -142,8 +138,10 @@ inductive StmtExpr : Type where
   | LiteralInt (value: Int)
   | LiteralBool (value: Bool)
   | Identifier (name : Identifier)
-  /- Assign is only allowed in an impure context -/
-  | Assign (target : StmtExprMd) (value : StmtExprMd)
+  /- For single target assignments, use a single-element list.
+     Multiple targets are only allowed when the value is a StaticCall to a procedure
+     with multiple outputs, and the number of targets must match the number of outputs. -/
+  | Assign (targets : List StmtExprMd) (value : StmtExprMd)
   /- Used by itself for fields reads and in combination with Assign for field writes -/
   | FieldSelect (target : StmtExprMd) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/
@@ -201,13 +199,16 @@ end
 instance : Inhabited StmtExpr where
   default := .Hole
 
+instance : Inhabited HighTypeMd where
+  default := { val := HighType.TVoid, md := default }
+
 partial def highEq (a: HighTypeMd) (b: HighTypeMd) : Bool := match a.val, b.val with
   | HighType.TVoid, HighType.TVoid => true
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
   | HighType.TFloat64, HighType.TFloat64 => true
   | HighType.THeap, HighType.THeap => true
-  | HighType.TField, HighType.TField => true
+  | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.zip args2 |>.all (fun (a1, a2) => highEq a1 a2))

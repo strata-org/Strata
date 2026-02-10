@@ -40,7 +40,7 @@ partial def formatHighTypeVal : HighType → Format
   | .TInt => "int"
   | .TFloat64 => "float64"
   | .THeap => "Heap"
-  | .TField => "Field"
+  | .TTypedField _ => "Field"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
@@ -78,8 +78,10 @@ partial def formatStmtExprVal (s:StmtExpr) : Format :=
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .Identifier name => Format.text name
-  | .Assign target value =>
-      formatStmtExpr target ++ " := " ++ formatStmtExpr value
+  | .Assign [single] value =>
+      formatStmtExpr single ++ " := " ++ formatStmtExpr value
+  | .Assign targets value =>
+      "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
       formatStmtExpr target ++ "." ++ Format.text field
   | .PureFieldUpdate target field value =>
@@ -120,15 +122,10 @@ partial def formatStmtExprVal (s:StmtExpr) : Format :=
 partial def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
 
-partial def formatDeterminism : Determinism → Format
-  | .deterministic none => "deterministic"
-  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
-  | .nondeterministic => "nondeterministic"
-
 partial def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque posts impl determ modif =>
-      "opaque " ++ formatDeterminism determ ++
+  | .Opaque posts impl modif =>
+      "opaque " ++
       (match modif with
        | none => ""
        | some m => " modifies " ++ formatStmtExpr m) ++
@@ -186,9 +183,6 @@ instance : Std.ToFormat StmtExpr where
 
 instance : Std.ToFormat Parameter where
   format := formatParameter
-
-instance : Std.ToFormat Determinism where
-  format := formatDeterminism
 
 instance : Std.ToFormat Body where
   format := formatBody

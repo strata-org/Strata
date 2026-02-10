@@ -236,7 +236,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.LocalVariable name type none => do
     setLocal name (TypedValue.mk Value.VUnknown type)
     return voidTv
-  | StmtExpr.Assign (StmtExpr.Identifier localName) valueExpr => do
+  | StmtExpr.Assign [⟨StmtExpr.Identifier localName, _⟩] valueExpr => do
     let value ← eval valueExpr
     let oldTypedValue ← getLocal localName
     setLocal localName (TypedValue.mk value.val oldTypedValue.ty)
@@ -274,7 +274,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | KnownFieldSelect _ _ => panic! "not implemented: StaticFieldSelect"
 
 -- Support heap objects
-  | StmtExpr.Assign (KnownFieldSelect objExpr fieldName) valueExpr =>
+  | StmtExpr.Assign [⟨KnownFieldSelect objExpr fieldName, _⟩] valueExpr =>
     panic! "not implemented"
   -- do
   --     let objTv ← eval objExpr
@@ -290,7 +290,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   --     | EvalResult.Success _ _ => EvalResult.TypeError "Target is not an object"
   --     | result => result
   --    | _ => EvalResult.TypeError "Invalid assignment target"
-  | StmtExpr.Assign (StmtExpr.DynamicFieldAccess objExpr fieldName) valueExpr => panic! "not implemented"
+  | StmtExpr.Assign [⟨StmtExpr.DynamicFieldAccess objExpr fieldName, _⟩] valueExpr => panic! "not implemented"
   | StmtExpr.Assign _ valueExpr => withResult <| EvalResult.TypeError "Invalid assignment target"
 
 -- Instance related
