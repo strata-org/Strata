@@ -22,6 +22,7 @@ def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   | .int => .ok .Integer
   | .bool => .ok .Boolean
   | .string => .ok .String
+  | .tcons name _ => .ok (CProverGOTO.Ty.StructTag name)
   | _ => .error f!"[toGotoType] Not yet implemented: {ty}"
 
 def LExprT.getGotoType {T : LExprParamsT} (e : LExprT T) :

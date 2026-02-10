@@ -62,12 +62,15 @@ inductive Identifier where
   | primitive (p : Identifier.Primitive)
   /-- Bitvector types -/
   | bitVector (bv : Identifier.BitVector)
+  /-- A reference to a named struct type (like CBMC's `struct_tag`). -/
+  | structTag (name : String)
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Identifier where
   format i := match i with
     | .primitive p => f!"{p}"
     | .bitVector bv => f!"{bv}"
+    | .structTag name => f!"struct_tag({name})"
 
 end Ty
 
@@ -147,6 +150,11 @@ def SignedBV (width : Nat) : Ty :=
 @[match_pattern]
 def UnsignedBV (width : Nat) : Ty :=
   { id := .bitVector (.unsignedbv width) }
+
+/-- A reference to a named struct type (e.g., a user-defined datatype). -/
+@[match_pattern]
+def StructTag (name : _root_.String) : Ty :=
+  { id := .structTag name }
 
 end Ty
 

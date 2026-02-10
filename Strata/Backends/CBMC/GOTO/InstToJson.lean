@@ -51,6 +51,12 @@ def tyToJson (ty : Ty) : Json :=
   | .Empty => emptyType
   | .SignedBV width => mkSignedBVType width
   | .UnsignedBV width => mkUnsignedBVType width
+  | .StructTag name => Json.mkObj [
+      ("id", "struct_tag"),
+      ("namedSub", Json.mkObj [
+        ("identifier", Json.mkObj [("id", s!"tag-{name}")])
+      ])
+    ]
   | _ => Json.mkObj [("id", "unknown")]
 
 /-- Convert `Expr` to JSON format -/
