@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
 import Strata.Transform.ProcedureInlining
+import StrataTest.Backends.CBMC.CoreToCProverGOTO
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
@@ -311,6 +312,95 @@ def pyAnalyzeCommand : Command where
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
       IO.println s
 
+private def deriveBaseName (file : String) : String :=
+  let name := System.FilePath.fileName file |>.getD file
+  if name.endsWith ".python.st.ion" then (name.dropEnd 14).toString
+  else if name.endsWith ".st.ion" then (name.dropEnd 7).toString
+  else if name.endsWith ".st" then (name.dropEnd 3).toString
+  else name
+
+private partial def unwrapCmdExt : Core.Statement → Except Std.Format (Imperative.Stmt Core.Expression (Imperative.Cmd Core.Expression))
+  | .cmd (.cmd c) => .ok (.cmd c)
+  | .cmd (.call ..) => .error f!"[procedureToGotoCtx] Unexpected call statement; calls should be inlined."
+  | .block l stmts md => do
+    let stmts' ← stmts.mapM unwrapCmdExt
+    .ok (.block l stmts' md)
+  | .ite c t e md => do
+    let t' ← t.mapM unwrapCmdExt
+    let e' ← e.mapM unwrapCmdExt
+    .ok (.ite c t' e' md)
+  | .loop g m i body md => do
+    let body' ← body.mapM unwrapCmdExt
+    .ok (.loop g m i body' md)
+  | .goto l md => .ok (.goto l md)
+  | .funcDecl d md => .ok (.funcDecl d md)
+
+private def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
+    : Except Std.Format CoreToGOTO.CProverGOTO.Context := do
+  let pname := Core.CoreIdent.toPretty p.header.name
+  if !p.header.typeArgs.isEmpty then
+    .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."
+  if 1 < p.header.outputs.length then
+    .error f!"[procedureToGotoCtx] Multi-return procedures unsupported."
+  let ret_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
+  let ret_ty := if ret_tys.isEmpty then CProverGOTO.Ty.Empty else ret_tys[0]!
+  let formals := p.header.inputs.keys.map Core.CoreIdent.toPretty
+  let formals_tys ← p.header.inputs.values.mapM Lambda.LMonoTy.toGotoType
+  let new_formals := formals.map (CProverGOTO.mkFormalSymbol pname ·)
+  let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
+  let locals := (Imperative.Block.definedVars p.body).map Core.CoreIdent.toPretty
+  let body ← p.body.mapM unwrapCmdExt
+  let ans ← Imperative.Stmts.toGotoTransform Env pname body (loc := 0)
+  let ending_insts : Array CProverGOTO.Instruction :=
+    #[{ type := .END_FUNCTION, locationNum := ans.nextLoc + 1 }]
+  let pgm := { name := pname,
+               parameterIdentifiers := new_formals.toArray,
+               instructions := ans.instructions ++ ending_insts }
+  return { program := pgm, formals := formals_tys, ret := ret_ty, locals := locals }
+
+def pyAnalyzeToGotoCommand : Command where
+  name := "pyAnalyzeToGoto"
+  args := [ "file" ]
+  help := "Translate a Strata Python Ion file to CProver GOTO JSON files."
+  callback := fun _ v => do
+    let filePath := v[0]
+    let pgm ← readPythonStrata filePath
+    let preludePgm := Strata.Python.Core.prelude
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm
+    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    match Core.Transform.runProgram (targetProcList := .none)
+          (Core.ProcedureInlining.inlineCallCmd
+            (doInline := λ name _ => name ≠ "main"))
+          newPgm .emp with
+    | ⟨.error e, _⟩ => panic! e
+    | ⟨.ok (_changed, newPgm), _⟩ =>
+      -- Type-check the full program (registers Python types like ExceptOrNone)
+      let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+      let Env := Lambda.TEnv.default
+      let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env newPgm with
+        | .ok r => pure r
+        | .error e => panic! s!"{e.format none}"
+      -- Find the main procedure
+      let some mainDecl := tcPgm.decls.find? fun d =>
+          match d with
+          | .proc p _ => Core.CoreIdent.toPretty p.header.name == "main"
+          | _ => false
+        | panic! "No main procedure found"
+      let some p := mainDecl.getProc?
+        | panic! "main is not a procedure"
+      -- Translate procedure to GOTO (mirrors CoreToGOTO.transformToGoto post-typecheck logic)
+      let baseName := deriveBaseName filePath
+      let programName := baseName
+      match procedureToGotoCtx Env p with
+      | .error e => panic! s!"{e}"
+      | .ok ctx =>
+        let json := CoreToGOTO.CProverGOTO.Context.toJson programName ctx
+        let symTabFile := s!"{programName}.symtab.json"
+        let gotoFile := s!"{programName}.goto.json"
+        IO.FS.writeFile symTabFile json.symtab.pretty
+        IO.FS.writeFile gotoFile json.goto.pretty
+        IO.println s!"Written {symTabFile} and {gotoFile}"
+
 def javaGenCommand : Command where
   name := "javaGen"
   args := [ "dialect-file", "package", "output-dir" ]
@@ -375,6 +465,7 @@ def commandList : List Command := [
       printCommand,
       diffCommand,
       pyAnalyzeCommand,
+      pyAnalyzeToGotoCommand,
       pyTranslateCommand,
       pySpecsCommand,
       laurelAnalyzeCommand,
