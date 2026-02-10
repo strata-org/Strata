@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
+import Strata.Languages.Core.SarifOutput
 import Strata.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
@@ -112,13 +113,14 @@ structure Command where
   name : String
   args : List String
   help : String
-  callback : Strata.DialectFileMap → Vector String args.length → IO Unit
+  flags : List String := []
+  callback : Strata.DialectFileMap → Vector String args.length → List String → IO Unit
 
 def checkCommand : Command where
   name := "check"
   args := [ "file" ]
   help := "Check a dialect or program file."
-  callback := fun fm v => do
+  callback := fun fm v _flags => do
     let _ ← readFile fm v[0]
     pure ()
 
@@ -126,7 +128,7 @@ def toIonCommand : Command where
   name := "toIon"
   args := [ "input", "output" ]
   help := "Read a Strata text file and translate into Ion."
-  callback := fun searchPath v => do
+  callback := fun searchPath v _flags => do
     let (_, pd) ← readFile searchPath v[0]
     match pd with
     | .dialect d =>
@@ -138,7 +140,7 @@ def printCommand : Command where
   name := "print"
   args := [ "file" ]
   help := "Write a Strata text or Ion file to standard output."
-  callback := fun searchPath v => do
+  callback := fun searchPath v _flags => do
     let (ld, pd) ← readFile searchPath v[0]
     match pd with
     | .dialect d =>
@@ -153,7 +155,7 @@ def diffCommand : Command where
   name := "diff"
   args := [ "file1", "file2" ]
   help := "Check if two program files are syntactically equal."
-  callback := fun fm v => do
+  callback := fun fm v _flags => do
     let ⟨_, p1⟩ ← readFile fm v[0]
     let ⟨_, p2⟩ ← readFile fm v[1]
     match p1, p2 with
@@ -180,7 +182,7 @@ def pySpecsCommand : Command where
   name := "pySpecs"
   args := [ "python_path", "strata_path" ]
   help := "Experimental command to translate a Python specification source file."
-  callback := fun _ v => do
+  callback := fun _ v _flags => do
     let dialectFile := "Tools/Python/dialects/Python.dialect.st.ion"
     let pythonFile : System.FilePath := v[0]
     let strataDir : System.FilePath := v[1]
@@ -213,7 +215,7 @@ def pyTranslateCommand : Command where
   name := "pyTranslate"
   args := [ "file" ]
   help := "Translate a Strata Python Ion file to Strata Core. Write results to stdout."
-  callback := fun _ v => do
+  callback := fun _ v _flags => do
     let pgm ← readPythonStrata v[0]
     let preludePgm := Strata.Python.Core.prelude
     let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm
@@ -244,9 +246,11 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × Lean.FileMap)
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file", "verbose" ]
-  help := "Analyze a Strata Python Ion file. Write results to stdout."
-  callback := fun _ v => do
+  help := "Analyze a Strata Python Ion file. Write results to stdout. Supports --sarif flag."
+  flags := [ "--sarif" ]
+  callback := fun _ v activeFlags => do
     let verbose := v[1] == "1"
+    let outputSarif := activeFlags.contains "--sarif"
     let filePath := v[0]
     let pgm ← readPythonStrata filePath
     -- Try to read the Python source for line number conversion
@@ -310,12 +314,25 @@ def pyAnalyzeCommand : Command where
           | none => ("", "")
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
       IO.println s
+      -- Output in SARIF format if requested
+      if outputSarif then
+        let files := match pySourceOpt with
+          | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
+          | none => Map.empty
+        let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
+        let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
+        let sarifFile := filePath ++ ".sarif"
+        try
+          IO.FS.writeFile sarifFile sarifJson
+          IO.println s!"SARIF output written to {sarifFile}"
+        catch e =>
+          IO.eprintln s!"Error writing SARIF output to {sarifFile}: {e.toString}"
 
 def javaGenCommand : Command where
   name := "javaGen"
   args := [ "dialect-file", "package", "output-dir" ]
   help := "Generate Java classes from a DDM dialect file."
-  callback := fun fm v => do
+  callback := fun fm v _flags => do
     let (ld, pd) ← readFile fm v[0]
     match pd with
     | .dialect d =>
@@ -337,7 +354,7 @@ def laurelAnalyzeCommand : Command where
   name := "laurelAnalyze"
   args := []
   help := "Analyze a Laurel Ion program from stdin. Write diagnostics to stdout."
-  callback := fun _ _ => do
+  callback := fun _ _ _flags => do
     -- Read bytes from stdin
     let stdinBytes ← (← IO.getStdin).readBinToEnd
 
@@ -397,25 +414,29 @@ def main (args : List String) : IO Unit := do
     | none => exitFailure s!"Unknown command {cmd}"
     | some cmd =>
       let expectedArgs := cmd.args.length
-      let rec process (sp : Strata.DialectFileMap) args (cmdArgs : List String) : IO _ := do
+      let rec process (sp : Strata.DialectFileMap) args (cmdArgs : List String) (activeFlags : List String) : IO _ := do
             match cmdArgs with
-            | cmd :: cmdArgs =>
-              match cmd with
+            | arg :: cmdArgs =>
+              match arg with
               | "--include" =>
                 let path :: cmdArgs := cmdArgs
                   | exitFailure s!"Expected path after --path."
                 match ← sp.add path |>.toBaseIO with
                 | .error msg => exitFailure msg
-                | .ok sp => process sp args cmdArgs
+                | .ok sp => process sp args cmdArgs activeFlags
               | _ =>
-                if cmd.startsWith "--" then
-                  exitFailure s!"Unknown option {cmd}."
-                process sp (args.push cmd) cmdArgs
+                if arg.startsWith "--" then
+                  if cmd.flags.contains arg then
+                    process sp args cmdArgs (arg :: activeFlags)
+                  else
+                    exitFailure s!"Unknown option {arg}."
+                else
+                  process sp (args.push arg) cmdArgs activeFlags
             | [] =>
-              pure (sp, args)
-      let (sp, args) ← process {} #[] args
+              pure (sp, args, activeFlags)
+      let (sp, args, activeFlags) ← process {} #[] args []
       if p : args.size = cmd.args.length then
-        cmd.callback sp ⟨args, p⟩
+        cmd.callback sp ⟨args, p⟩ activeFlags
       else
         exitFailure s!"{cmd.name} expects {expectedArgs} argument(s)."
   | [] => do
