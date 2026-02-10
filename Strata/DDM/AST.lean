@@ -105,8 +105,7 @@ inductive TypeExprF (α : Type) where
   /-- A polymorphic type variable (universally quantified).
       Used for polymorphic function type parameters -/
 | tvar (ann : α) (name : String)
-  /-- A reference to a global variable along with any arguments to ensure it is
-      well-typed. -/
+  /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
 | fvar (ann : α) (fvar : FreeVarIndex) (args : Array (TypeExprF α))
   /-- A function type. -/
 | arrow (ann : α) (arg : TypeExprF α) (res : TypeExprF α)
@@ -154,8 +153,8 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .ident n i a =>
     .ident n i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .bvar n idx => bindings n idx
-  | .fvar n idx a => .fvar n idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .tvar n name => pure (.tvar n name)
+  | .fvar n idx a => .fvar n idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
 
@@ -659,8 +658,8 @@ def ann : PreType → SourceRange
 def ofType : TypeExprF SourceRange → PreType
 | .ident loc name args => .ident loc name (args.map fun a => .ofType a)
 | .bvar loc idx => .bvar loc idx
-| .fvar loc idx args => .fvar loc idx (args.map fun a => .ofType a)
 | .tvar loc name => .tvar loc name
+| .fvar loc idx args => .fvar loc idx (args.map fun a => .ofType a)
 | .arrow loc a r => .arrow loc (.ofType a) (.ofType r)
 termination_by tp => tp
 

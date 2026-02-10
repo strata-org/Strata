@@ -400,12 +400,12 @@ private protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeEx
       let args : Array (Ion SymbolId) := #[ionSymbol! "ident", ← toIon ann, v]
       Ion.sexp <$> a.attach.mapM_off (init := args) fun ⟨e, _⟩ =>
         e.toIon refs
-    -- A polymorphic type variable with the given name.
-    | .tvar ann name =>
-      return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
     -- A bound type variable with the given index.
     | .bvar ann vidx =>
       return Ion.sexp #[ionSymbol! "bvar", ← toIon ann, .int vidx]
+    -- A polymorphic type variable with the given name.
+    | .tvar ann name =>
+      return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
     | .fvar ann idx a => do
       let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon ann, .int idx]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ =>
@@ -957,13 +957,13 @@ private protected def toIon (refs : SymbolIdCache) (tpe : PreType) : InternM (Io
     -- A bound type variable with the given index.
     | .bvar loc vidx =>
       return Ion.sexp #[ionSymbol! "bvar", ← toIon loc, .int vidx]
+    -- A polymorphic type variable with the given name.
+    | .tvar loc name =>
+      return Ion.sexp #[ionSymbol! "tvar", ← toIon loc, .string name]
     | .fvar loc idx a => do
       let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon loc, .int idx]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ => e.toIon refs
       return Ion.sexp s
-    -- A polymorphic type variable with the given name.
-    | .tvar loc name =>
-      return Ion.sexp #[ionSymbol! "tvar", ← toIon loc, .string name]
     | .arrow loc l r => do
       return Ion.sexp #[ionSymbol! "arrow", ← toIon loc, ← l.toIon refs, ← r.toIon refs]
     | .funMacro loc i r =>
