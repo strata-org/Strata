@@ -14,31 +14,37 @@ namespace Laurel
 /-
 Transform assignments that appear in expression contexts into preceding statements.
 
-Each lifted assignment is preceded by a before-snapshot that captures the variable's
-value prior to the assignment. This preserves the old value for use by other parts
-of the program (e.g., postconditions via `old()`).
-
 Example 1 — Assignments in expression position:
   var y: int := x + (x := 1;) + x + (x := 2;);
 
 Becomes:
-  var $x_0 := x;              -- first snapshot of x
-  x := 1;                     -- lifted assignment
-  var $x_1 := x;              -- second snapshot
-  x := 2;                     -- lifted assignment
-  var $x_2 := x;              -- third snapshot
-  var y: int := $x_0 + $x_1 + $x_1 + $x_2;
+  var $t_0 := x;
+  x := 1;
+  var $t_1 := x;
+  var $t_2 := x;
+  x := 2;
+  var $t_3 := x;
+
+
+  var $x_0 := x;              -- before snapshot 0
+  x := 1;                     -- lifted first assignment
+  var $x_1 := x;              -- before snapshot 1
+  x := 2;                     -- lifted second assignment
+  var y: int := $x_0 + $x_1 + $x_1 + x;
 
 Example 2 — Conditional (if-then-else) inside an expression position:
   var z: bool := (if (b) { b := false; } else (b := true;)) || b;
 
 Becomes:
-  var $b_0 := b;               -- first snapshot of b
-  if ($b_0) { b := false; }    -- assignment from then-branch, guarded by condition
-  var $b_1 := b;               -- second snapshot of b
-  if (!$b_0) { b := true; }    -- assignment from else-branch, guarded by negated condition
-  var $b_2 := b;               -- second snapshot of b
-  z := (if ($b_0) then $b_1 else $b_2) || b
+  var $c_0: bool;
+  if (b) {
+    b := false;
+    $c_0 := b;
+  } else {
+    b := true;
+    $c_0 := b;
+  }
+  var z: bool := #c_0 || b;
 
 Example 3 — Statement-level assignment:
   x := expr;
@@ -195,19 +201,21 @@ def transformTarget (expr : StmtExpr) : SequenceM StmtExpr := do
       return .StaticCall name seqArgs
   | _ => return expr  -- Identifiers and other targets stay as-is (no snapshot substitution)
 
-/-- Create a before-snapshot and after-snapshot for a variable assignment.
-    Prepends both snapshot declarations and the assignment.
-    Sets retroactive snapshot to before-snapshot and forward snapshot to after-snapshot.
-    Returns the after-snapshot variable name. -/
-def SequenceM.snapshotAssignment (varName : Identifier) : SequenceM Identifier := do
-  -- Before-snapshot: captures value before the assignment
-  let beforeName ← SequenceM.freshTempFor varName
-  let varType ← SequenceM.getVarType varName
-  let beforeDecl := StmtExpr.LocalVariable beforeName varType (some (.Identifier varName))
-  SequenceM.addPrependedStmt beforeDecl
-  -- Set retroactive snapshot so applyRetroactiveSnapshots can fix earlier siblings
-  SequenceM.setRetroactiveSnapshot varName beforeName
-  return beforeName
+/-- Ensure a retroactive snapshot exists for a variable before an assignment.
+    If a forward snapshot already exists (from a prior assignment), reuse it
+    as the retroactive target. Otherwise, create a new before-snapshot. -/
+def SequenceM.ensureRetroactiveSnapshot (varName : Identifier) : SequenceM Unit := do
+  -- If there's already a forward snapshot, use it as the retroactive target
+  match ← SequenceM.getForwardSnapshot varName with
+  | some existingSnapshot =>
+      SequenceM.setRetroactiveSnapshot varName existingSnapshot
+  | none =>
+      -- No prior snapshot exists — create a before-snapshot
+      let beforeName ← SequenceM.freshTempFor varName
+      let varType ← SequenceM.getVarType varName
+      let beforeDecl := StmtExpr.LocalVariable beforeName varType (some (.Identifier varName))
+      SequenceM.addPrependedStmt beforeDecl
+      SequenceM.setRetroactiveSnapshot varName beforeName
 
 /-- Create an after-snapshot for a variable, set forward snapshot, return snapshot name -/
 def SequenceM.afterSnapshot (varName : Identifier) : SequenceM Identifier := do
@@ -230,12 +238,11 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       -- This is an assignment in expression context
       let seqValue ← transformExpr value
       let condStack ← SequenceM.getConditionStack
-      -- For each target: create before-snapshot, then execute the assignment
+      -- For each target: ensure retroactive snapshot exists, then execute the assignment
       for target in targets do
         match target with
         | .Identifier varName =>
-            -- Before-snapshot: captures value before the assignment
-            let _beforeName ← SequenceM.snapshotAssignment varName
+            SequenceM.ensureRetroactiveSnapshot varName
         | _ => pure ()
       -- Wrap the assignment in conditionals if we're inside conditional branches
       let assignStmt := StmtExpr.Assign targets seqValue md
@@ -262,11 +269,13 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       -- Snapshot the condition if it's a variable that might be modified by branches
       let stableCond ← match seqCond with
         | .Identifier varName =>
-            -- Use the before-snapshot of the condition variable
+            -- Snapshot the condition variable to stabilize it
             let condSnapshotName ← SequenceM.freshTempFor varName
             let condType ← SequenceM.getVarType varName
             let condDecl := StmtExpr.LocalVariable condSnapshotName condType (some seqCond)
             SequenceM.addPrependedStmt condDecl
+            -- Register as forward snapshot so branches can reuse it as retroactive target
+            SequenceM.setForwardSnapshot varName condSnapshotName
             pure (.Identifier condSnapshotName)
         | _ => pure seqCond
       -- Save snapshot state so both branches start from the same state
@@ -303,11 +312,11 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
             | .Assign targets value md =>
                 let seqTargets ← targets.mapM transformTarget
                 let seqValue ← transformExpr value
-                -- Snapshot BEFORE the assignment to preserve the old value
+                -- Ensure retroactive snapshot exists before the assignment
                 for target in seqTargets do
                   match target with
                   | .Identifier varName =>
-                      let _beforeName ← SequenceM.snapshotAssignment varName
+                      SequenceM.ensureRetroactiveSnapshot varName
                   | _ => pure ()
                 let assignStmt := StmtExpr.Assign seqTargets seqValue md
                 SequenceM.addPrependedStmt assignStmt
