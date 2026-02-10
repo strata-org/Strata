@@ -58,25 +58,27 @@ private def testCallElim
 
 /--
 info: New Program:
-(procedure Double :  ((n : int)) → ((result : int)))
-modifies: []
-preconditions: ⏎
-postconditions: (double_correct, ((result : int) == (((~Int.Mul : (arrow int (arrow int int))) (n : int)) #2)))
-body: result := (((~Int.Add : (arrow int (arrow int int))) (n : int)) (n : int))
-
-(procedure TestProc :  ((x : int)) → ((output : int)))
-modifies: []
-preconditions: ⏎
-postconditions: (testProc_result, ((output : int) == (((~Int.Mul : (arrow int (arrow int int))) (x : int)) #4)))
-body: init (tmp_arg_3 : int) := (x : int)
-init (tmp_output_4 : int) := output
-havoc output
-assume [callElimAssume_double_correct_5] (output == (((~Int.Mul : (arrow int (arrow int int))) tmp_arg_3) #2))
-init (tmp_arg_0 : int) := (output : int)
-init (tmp_output_1 : int) := output
-havoc output
-assume [callElimAssume_double_correct_2] (output == (((~Int.Mul : (arrow int (arrow int int))) tmp_arg_0) #2))
-
+procedure Double :  ((n : int)) → ((result : int))
+  modifies: []
+  preconditions: ⏎
+  postconditions: (double_correct, ((result : int) == (((~Int.Mul : (arrow int (arrow int int))) (n : int)) #2)))
+{
+  result := (((~Int.Add : (arrow int (arrow int int))) (n : int)) (n : int))
+}
+procedure TestProc :  ((x : int)) → ((output : int))
+  modifies: []
+  preconditions: ⏎
+  postconditions: (testProc_result, ((output : int) == (((~Int.Mul : (arrow int (arrow int int))) (x : int)) #4)))
+{
+  init (tmp_arg_3 : int) := (x : int)
+  init (tmp_output_4 : int) := output
+  havoc output
+  assume [callElimAssume_double_correct_5] (output == (((~Int.Mul : (arrow int (arrow int int))) tmp_arg_3) #2))
+  init (tmp_arg_0 : int) := (output : int)
+  init (tmp_output_1 : int) := output
+  havoc output
+  assume [callElimAssume_double_correct_2] (output == (((~Int.Mul : (arrow int (arrow int int))) tmp_arg_0) #2))
+}
 ---
 info:
 Obligation: double_correct
