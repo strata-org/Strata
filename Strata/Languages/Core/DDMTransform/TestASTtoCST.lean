@@ -28,11 +28,13 @@ type T0;
 type T1 (x : Type);
 type Byte := bv8;
 type IntMap := Map int int;
+type MyMap (a : Type, b : Type);
+type Foo (a : Type, b : Type) := Map b a;
 const fooConst : int;
 function id(x : int, y : int) : int { y }
 #end
 
-#print CoreDDM.Expr
+--- #print CoreDDM.Expr
 
 #eval do
   -- Use old translator to get AST
@@ -43,7 +45,7 @@ function id(x : int, y : int) : int { y }
   -- Convert AST → CST
   let (cmds, errs) := programToCST (M := SourceRange) ToCSTContext.empty ast
   if !errs.isEmpty then
-    IO.println "AST to CST Error: {errs}"
+    IO.println f!"AST to CST Error: {repr errs}"
 
   -- Format with original global context
   let ctx := FormatContext.ofDialects testProgram.dialects
