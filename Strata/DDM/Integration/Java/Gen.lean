@@ -390,10 +390,12 @@ public def generateDialect (d : Dialect) (package : String) : Except String Gene
           | none => none
         | _ => none
       if fieldEntries.isEmpty then none
-      else some s!"        \"{opName}\", java.util.Map.of({", ".intercalate fieldEntries})"
+      else
+        let inner := fieldEntries.map fun e => s!"java.util.Map.entry({e})"
+        some s!"        java.util.Map.entry(\"{opName}\", java.util.Map.ofEntries({", ".intercalate inner}))"
     | _ => none
   let separatorMap := if separatorEntries.isEmpty then "java.util.Map.of()"
-    else s!"java.util.Map.of(\n{",\n".intercalate separatorEntries})"
+    else s!"java.util.Map.ofEntries(\n{",\n".intercalate separatorEntries})"
 
   return {
     sourceRange := generateSourceRange package
