@@ -69,22 +69,13 @@ private theorem HighTypeMd.sizeOf_val_lt (e : HighTypeMd) : sizeOf e.val < sizeO
   cases e <;> simp_wf <;> omega
 
 /-- Tactic for proving termination of functions that recurse on `StmtExprMd` sub-terms.
-    Handles three cases:
-    - Direct structural decrease (`omega`)
-    - Sub-term of the matched constructor (`sizeOf_val_lt` + `rw`/`simp`)
-    - List element of a matched constructor field (`sizeOf_lt_of_mem` + above) -/
+    Handles direct sub-terms and list elements of the matched constructor. -/
 macro "stmtexpr_wf " e:ident ", " h:ident : tactic =>
   `(tactic| (
-    all_goals simp_wf
+    all_goals (cases $e:ident; subst $h:ident; simp_wf)
     all_goals first
       | omega
-      | (have hv := StmtExprMd.sizeOf_val_lt $e
-         conv at hv => rw [show _ = _ from $h]
-         simp at hv; omega)
-      | (have := List.sizeOf_lt_of_mem ‹_›
-         have hv := StmtExprMd.sizeOf_val_lt $e
-         conv at hv => rw [show _ = _ from $h]
-         simp at hv; omega)))
+      | (have := List.sizeOf_lt_of_mem ‹_›; omega)))
 
 def translateType (ty : HighType) : LMonoTy :=
   match ty with
