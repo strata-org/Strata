@@ -43,8 +43,8 @@ bool procedure linearSearch(arr:intArr, e:int)
   var idx:int;
   idx = 0;
   while (idx < len(arr))
-  //@decreases len(arr) - idx
-  //@invariant true
+    //@decreases len(arr) - idx
+    //@invariant true
   {
     if (e == get(arr, idx)) {
       return true;

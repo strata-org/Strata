@@ -44,8 +44,8 @@ int procedure loopSimple(n:int)
   sum = 0;
   i = 0;
   while (i < n)
-  //@decreases n - i
-  //@invariant i <= n && i * i - 1 / 2 == sum
+    //@decreases n - i
+    //@invariant i <= n && i * i - 1 / 2 == sum
   {
     sum = sum + i;
     i = i + 1;

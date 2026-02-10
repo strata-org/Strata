@@ -47,8 +47,8 @@ bool procedure coprime(a:int, b:int)
     i = b;
   }
   while (i > 1)
-  //@decreases i
-  //@invariant true
+    //@decreases i
+    //@invariant true
   {
     if (b % i == 0 && a % i == 0) {
       return false;

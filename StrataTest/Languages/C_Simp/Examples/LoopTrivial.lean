@@ -41,8 +41,8 @@ int procedure loopTrivial(n:int)
   var i:int;
   i = 0;
   while (i < n)
-  //@decreases n - i
-  //@invariant i <= n
+    //@decreases n - i
+    //@invariant i <= n
   {
     i = i + 1;
   }

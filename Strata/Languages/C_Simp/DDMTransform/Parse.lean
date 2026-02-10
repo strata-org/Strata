@@ -98,7 +98,7 @@ op invariant (e : bool) : InvariantCat => "//@invariant " e;
 op while_command (g : bool,
                   measure: Option MeasureCat,
                   invariant: Option InvariantCat,
-                  b : Block) : Statement => "while" " (" g ")" "\n" measure "\n" invariant "\n" b;
+                  b : Block) : Statement => "while" " (" g ")\n" indent(2, measure "\n" invariant) "\n" b;
 
 op assign (tp : Type, v : Ident, val : tp) : Statement => v " = " val ";";
 op return (tp: Type, e : tp) : Statement => "return " e ";";
