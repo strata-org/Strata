@@ -43,7 +43,9 @@ def javaReservedWords : Std.HashSet String := Std.HashSet.ofList [
   -- Literals (cannot be used as identifiers)
   "true", "false", "null",
   -- Underscore (Java 9+)
-  "_"
+  "_",
+  -- Common java.lang classes that would cause ambiguity
+  "String", "Object", "Integer", "Boolean", "Long", "Double", "Float", "Character", "Byte", "Short"
 ]
 
 def escapeJavaName (name : String) : String :=
