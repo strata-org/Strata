@@ -63,8 +63,9 @@ private def SubstMap.lookup (m : SubstMap) (name : Identifier) : Option Identifi
 
 private def SubstMap.set (m : SubstMap) (name : Identifier) (value : Identifier) : SubstMap :=
   (name, value) :: m.filter (·.1 != name)
+
 structure LiftState where
-  /-- Statements to prepend before the current expression (in reverse order) -/
+  /-- Statements to prepend (in reverse order — newest first) -/
   prependedStmts : List StmtExprMd := []
   /-- Counter for generating unique temp names per variable -/
   varCounters : List (Identifier × Nat) := []
@@ -72,12 +73,20 @@ structure LiftState where
   subst : SubstMap := []
   /-- Type environment -/
   env : LaurelTypes.TypeEnv := []
-  /-- Type definitions for type inference -/
+  /-- Type definitions from the program -/
   types : List TypeDefinition := []
   /-- Global counter for fresh conditional variables -/
   condCounter : Nat := 0
 
 abbrev LiftM := StateM LiftState
+
+private def emptyMd : Imperative.MetaData Core.Expression := #[]
+
+/-- Wrap a StmtExpr value with empty metadata -/
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, emptyMd⟩
+
+/-- Wrap a HighType value with empty metadata -/
+private def bareType (v : HighType) : HighTypeMd := ⟨v, emptyMd⟩
 
 private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters
@@ -96,13 +105,13 @@ private def addPrepend (stmt : StmtExprMd) : LiftM Unit :=
 private def takePrepends : LiftM (List StmtExprMd) := do
   let stmts := (← get).prependedStmts
   modify fun s => { s with prependedStmts := [] }
-  return stmts.reverse
+  return stmts
 
 private def getVarType (varName : Identifier) : LiftM HighTypeMd := do
   let env := (← get).env
-  match env.find? (fun (n, _) => n == name) with
+  match env.find? (fun (n, _) => n == varName) with
   | some (_, ty) => return ty
-  | none => return default
+  | none => panic s!"Could not find {varName} in environment."
 
 private def addToEnv (varName : Identifier) (ty : HighTypeMd) : LiftM Unit :=
   modify fun s => { s with env := (varName, ty) :: s.env }
@@ -115,17 +124,9 @@ private def getSubst (varName : Identifier) : LiftM Identifier := do
 private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit :=
   modify fun s => { s with subst := s.subst.set varName value }
 
-private def inferExprType (expr : StmtExprMd) : LiftM HighTypeMd := do
+private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
   return LaurelTypes.computeExprType s.env s.types expr
-
-/-- Helper to wrap a StmtExpr with metadata from a source expression -/
-private def mkMd (e : StmtExpr) (src : StmtExprMd) : StmtExprMd :=
-  { val := e, md := src.md }
-
-/-- Helper to wrap a StmtExpr with empty metadata -/
-private def mkMdEmpty (e : StmtExpr) : StmtExprMd :=
-  { val := e, md := #[] }
 
 /-- Check if an expression contains any assignments (recursively). -/
 private partial def containsAssignment : StmtExprMd → Bool
@@ -142,40 +143,45 @@ mutual
 /--
 Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
-Returns the transformed (pure) expression.
 -/
 partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   let md := expr.md
   match expr.val with
   | .Identifier name =>
-      return mkMd (.Identifier (← getSubst name)) expr
+      return ⟨.Identifier (← getSubst name), md⟩
 
   | .LiteralInt _ | .LiteralBool _ | .LiteralString _ => return expr
 
   | .Assign targets value =>
+      -- Assignment in expression position.
       let seqValue ← transformExpr value
-      let firstTarget := targets.head?.getD (mkMdEmpty (.Identifier "__unknown"))
+      -- The expression result is the current substitution for the target
+      -- (we already know what it maps to AFTER this assignment from right-to-left traversal)
+      let firstTarget := targets.head?.getD (bare (.Identifier "__unknown"))
       let resultExpr ← match firstTarget.val with
-        | .Identifier varName => pure (mkMd (.Identifier (← getSubst varName)) expr)
+        | .Identifier varName => pure (⟨.Identifier (← getSubst varName), md⟩)
         | _ => pure firstTarget
+      -- Create a before-snapshot and update substitution
       match firstTarget.val with
       | .Identifier varName =>
           let snapshotName ← freshTempFor varName
           let varType ← getVarType varName
-          addPrepend (mkMd (.LocalVariable snapshotName varType (some (mkMd (.Identifier varName) expr))) expr)
-          addPrepend (mkMd (.Assign targets seqValue) expr)
+          -- Assignment first, then snapshot (cons pushes to front, so snapshot ends up before assignment)
+          addPrepend (⟨.Assign targets seqValue, md⟩)
+          addPrepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, md⟩)), md⟩)
           setSubst varName snapshotName
       | _ =>
-          addPrepend (mkMd (.Assign targets seqValue) expr)
+          addPrepend (⟨.Assign targets seqValue, md⟩)
       return resultExpr
 
   | .PrimitiveOp op args =>
+      -- Process arguments right to left
       let seqArgs ← args.reverse.mapM transformExpr
-      return mkMd (.PrimitiveOp op seqArgs.reverse) expr
+      return ⟨.PrimitiveOp op seqArgs.reverse, md⟩
 
   | .StaticCall name args =>
       let seqArgs ← args.reverse.mapM transformExpr
-      return mkMd (.StaticCall name seqArgs.reverse) expr
+      return ⟨.StaticCall name seqArgs.reverse, md⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
       let thenHasAssign := containsAssignment thenBranch
@@ -183,48 +189,55 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         | some e => containsAssignment e
         | none => false
       if thenHasAssign || elseHasAssign then
+        -- Lift the entire if-then-else. Introduce a fresh variable for the result.
         let condVar ← freshCondVar
         let seqCond ← transformExpr cond
+        -- Save outer state
         let savedSubst := (← get).subst
         let savedPrepends := (← get).prependedStmts
         -- Process then-branch from scratch
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqThen ← transformExpr thenBranch
         let thenPrepends ← takePrepends
-        let thenBlock := mkMd (.Block (thenPrepends ++ [mkMd (.Assign [mkMd (.Identifier condVar) expr] seqThen) expr]) none) expr
+        let thenBlock := bare (.Block (thenPrepends ++ [⟨.Assign [bare (.Identifier condVar)] seqThen, md⟩]) none)
         -- Process else-branch from scratch
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqElse ← match elseBranch with
           | some e => do
               let se ← transformExpr e
               let elsePrepends ← takePrepends
-              pure (some (mkMd (.Block (elsePrepends ++ [mkMd (.Assign [mkMd (.Identifier condVar) expr] se) expr]) none) expr))
+              pure (some (bare (.Block (elsePrepends ++ [⟨.Assign [bare (.Identifier condVar)] se, md⟩]) none)))
           | none => pure none
         -- Restore outer state
         modify fun s => { s with subst := savedSubst, prependedStmts := savedPrepends }
-        let condType ← inferExprType seqThen
-        addPrepend (mkMd (.LocalVariable condVar condType none) expr)
-        addPrepend (mkMd (.IfThenElse seqCond thenBlock seqElse) expr)
-        return mkMd (.Identifier condVar) expr
+        -- Infer type from the then-branch result
+        let condType ← computeType seqThen
+        -- IfThenElse added first (cons puts it deeper), then declaration (cons puts it on top)
+        -- Output order: declaration, then if-then-else
+        addPrepend (⟨.IfThenElse seqCond thenBlock seqElse, md⟩)
+        addPrepend (bare (.LocalVariable condVar condType none))
+        return bare (.Identifier condVar)
       else
+        -- No assignments in branches — recurse normally
         let seqCond ← transformExpr cond
         let seqThen ← transformExpr thenBranch
         let seqElse ← match elseBranch with
           | some e => pure (some (← transformExpr e))
           | none => pure none
-        return mkMd (.IfThenElse seqCond seqThen seqElse) expr
+        return ⟨.IfThenElse seqCond seqThen seqElse, md⟩
 
   | .Block stmts metadata =>
-      let rec processBlock (remStmts : List StmtExprMd) : LiftM StmtExprMd := do
-        match remStmts with
-        | [] => return mkMd (.Block [] metadata) expr
-        | [last] => transformExpr last
-        | head :: tail => do
-            let lifted ← transformStmt head
-            for s in lifted do
-              addPrepend s
-            processBlock tail
-      processBlock stmts
+      -- Block in expression position: lift all but last to prepends
+      match stmts.reverse with
+      | [] => return bare (.Block [] metadata)
+      | last :: restRev => do
+          -- Process all-but-last in forward order as statements
+          for s in restRev.reverse do
+            let lifted ← transformStmt s
+            for l in lifted do
+              addPrepend l
+          -- Last element is the expression value
+          transformExpr last
 
   | _ => return expr
 
@@ -238,16 +251,16 @@ partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .Assert cond =>
       let seqCond ← transformExpr cond
       let prepends ← takePrepends
-      return prepends ++ [mkMd (.Assert seqCond) stmt]
+      return prepends ++ [⟨.Assert seqCond, md⟩]
 
   | .Assume cond =>
       let seqCond ← transformExpr cond
       let prepends ← takePrepends
-      return prepends ++ [mkMd (.Assume seqCond) stmt]
+      return prepends ++ [⟨.Assume seqCond, md⟩]
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
-      return [mkMd (.Block seqStmts.flatten metadata) stmt]
+      return [bare (.Block seqStmts.flatten metadata)]
 
   | .LocalVariable name ty initializer =>
       addToEnv name ty
@@ -256,11 +269,12 @@ partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
           let seqInit ← transformExpr initExpr
           let prepends ← takePrepends
           modify fun s => { s with subst := [] }
-          return prepends ++ [mkMd (.LocalVariable name ty (some seqInit)) stmt]
+          return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
       | none =>
           return [stmt]
 
   | .Assign targets value =>
+      -- Statement-level assignment: snapshot before, then assign
       let seqValue ← transformExpr value
       let prepends ← takePrepends
       let mut snapshots : List StmtExprMd := []
@@ -269,36 +283,36 @@ partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         | .Identifier varName =>
             let snapshotName ← freshTempFor varName
             let snapshotType ← getVarType varName
-            snapshots := snapshots ++ [mkMd (.LocalVariable snapshotName snapshotType (some (mkMd (.Identifier varName) target))) stmt]
+            snapshots := snapshots ++ [bare (.LocalVariable snapshotName snapshotType (some (bare (.Identifier varName))))]
         | _ => pure ()
       modify fun s => { s with subst := [] }
-      return prepends ++ snapshots ++ [mkMd (.Assign targets seqValue) stmt]
+      return prepends ++ snapshots ++ [⟨.Assign targets seqValue, md⟩]
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
       let seqThen ← do
         let stmts ← transformStmt thenBranch
-        pure (mkMd (.Block stmts none) thenBranch)
+        pure (bare (.Block stmts none))
       let seqElse ← match elseBranch with
         | some e => do
             let se ← transformStmt e
-            pure (some (mkMd (.Block se none) e))
+            pure (some (bare (.Block se none)))
         | none => pure none
-      return condPrepends ++ [mkMd (.IfThenElse seqCond seqThen seqElse) stmt]
+      return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, md⟩]
 
   | .While cond inv dec body =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
       let seqBody ← do
         let stmts ← transformStmt body
-        pure (mkMd (.Block stmts none) body)
-      return condPrepends ++ [mkMd (.While seqCond inv dec seqBody) stmt]
+        pure (bare (.Block stmts none))
+      return condPrepends ++ [⟨.While seqCond inv dec seqBody, md⟩]
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
       let prepends ← takePrepends
-      return prepends ++ [mkMd (.StaticCall name seqArgs) stmt]
+      return prepends ++ [⟨.StaticCall name seqArgs, md⟩]
 
   | _ => return [stmt]
 
@@ -308,11 +322,12 @@ def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
   let stmts ← transformStmt body
   match stmts with
   | [single] => pure single
-  | multiple => pure (mkMd (.Block multiple none) body)
+  | multiple => pure (bare (.Block multiple none))
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
-  let initEnv : LaurelTypes.TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
-                           proc.outputs.map (fun p => (p.name, p.type))
+  let initEnv : LaurelTypes.TypeEnv :=
+    proc.inputs.map (fun p => (p.name, p.type)) ++
+    proc.outputs.map (fun p => (p.name, p.type))
   modify fun s => { s with subst := [], prependedStmts := [], varCounters := [], env := initEnv }
   match proc.body with
   | .Transparent bodyExpr =>
@@ -323,9 +338,9 @@ def transformProcedure (proc : Procedure) : LiftM Procedure := do
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftExpressionAssignments (program : Program) : Except (Array DiagnosticModel) Program :=
-  let initState : LiftState := {}
+def liftExpressionAssignments (program : Program) : Program :=
+  let initState : LiftState := { types := program.types }
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
-  .ok { program with staticProcedures := seqProcedures }
+  { program with staticProcedures := seqProcedures }
 
 end Laurel
