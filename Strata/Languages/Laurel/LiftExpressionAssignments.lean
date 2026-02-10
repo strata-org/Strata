@@ -57,13 +57,7 @@ Becomes:
 -/
 
 /-- Substitution map: variable name → name to use in expressions -/
-private abbrev SubstMap := List (Identifier × Identifier)
-
-private def SubstMap.lookup (m : SubstMap) (name : Identifier) : Option Identifier :=
-  m.find? (·.1 == name) |>.map (·.2)
-
-private def SubstMap.set (m : SubstMap) (name : Identifier) (value : Identifier) : SubstMap :=
-  (name, value) :: m.filter (·.1 != name)
+private abbrev SubstMap := Map Identifier Identifier
 
 structure LiftState where
   /-- Statements to prepend (in reverse order — newest first) -/
@@ -118,12 +112,12 @@ private def addToEnv (varName : Identifier) (ty : HighTypeMd) : LiftM Unit :=
   modify fun s => { s with env := (varName, ty) :: s.env }
 
 private def getSubst (varName : Identifier) : LiftM Identifier := do
-  match (← get).subst.lookup varName with
+  match (← get).subst.find? varName with
   | some mapped => return mapped
   | none => return varName
 
 private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit :=
-  modify fun s => { s with subst := s.subst.set varName value }
+  modify fun s => { s with subst := s.subst.insert varName value }
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
@@ -263,7 +257,7 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       -- If the substitution map has an entry for this variable, it was
       -- assigned to the right and we need to lift this declaration so it
       -- appears before the snapshot that references it.
-      let hasSubst := (← get).subst.lookup name |>.isSome
+      let hasSubst := (← get).subst.find? name |>.isSome
       if hasSubst then
         match initializer with
         | some initExpr =>
