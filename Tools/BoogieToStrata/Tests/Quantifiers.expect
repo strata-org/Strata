@@ -13,4 +13,4 @@ Quantifiers.core.st(158, 4) [assert_10]: ✅ pass
 Quantifiers.core.st(170, 4) [assert_11]: ✅ pass
 Quantifiers.core.st(183, 4) [assert_12]: ✅ pass
 Quantifiers.core.st(195, 4) [assert_13]: ✅ pass
-Finished with 10 goals passed, 4 failed.
+Finished with 12 goals passed, 2 failed.
