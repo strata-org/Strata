@@ -57,9 +57,6 @@ structure ToCSTContext where
   freeVars : Array String := #[]
   deriving Repr
 
-/-- Monad for AST->CST conversion with context and error tracking -/
-abbrev ToCSTM (M : Type) := StateT ToCSTContext (Except (List (ASTToCSTError M)))
-
 namespace ToCSTContext
 
 def empty : ToCSTContext := {}
@@ -73,11 +70,19 @@ def addBoundTypeVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext 
 def addFreeVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
   { ctx with freeVars := ctx.freeVars.push name }
 
+def addFreeVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
+  { ctx with freeVars := ctx.freeVars.append names }
+
 def addBoundVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
   { ctx with boundVars := ctx.boundVars.push name }
 
+def addBoundVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
+  { ctx with boundVars := ctx.boundVars.append names }
+
 end ToCSTContext
 
+/-- Monad for AST->CST conversion with context and error tracking -/
+abbrev ToCSTM (M : Type) := StateT ToCSTContext (Except (List (ASTToCSTError M)))
 /-- Throw an error in ToCSTM -/
 def ToCSTM.throwError [Inhabited M] (err : ASTToCSTError M) : ToCSTM M α :=
   throw [err]
@@ -88,6 +93,7 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
   let ctx ← get
   match ty with
   | .ftvar name =>
+    -- Lambda `.ftvars` are really just bound type variables.
     match ctx.boundTypeVars.toList.findIdx? (· == name) with
     | some idx =>
       if idx < ctx.boundTypeVars.size then
@@ -117,6 +123,39 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
       pure (.fvar default idx argTys.toArray)
     | none => ToCSTM.throwError (.unsupportedConstruct s!"unknown type constructor {name}" default)
   | _ => ToCSTM.throwError (.unsupportedConstruct s!"unknown type {ty}" default)
+
+/-- Convert a type constructor declaration to CST -/
+def typeConToCST [Inhabited M] (tcons : TypeConstructor)
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  let name : Ann String M := ⟨default, tcons.name⟩
+  let args : Ann (Option (Bindings M)) M :=
+    if tcons.numargs = 0 then
+      ⟨default, none⟩
+    else
+      let bindings := List.range tcons.numargs |>.map fun i =>
+        let paramName : Ann String M := ⟨default, s!"a{i}"⟩
+        let paramType := TypeP.type default
+        Binding.mkBinding default paramName paramType
+      ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+  pure (.command_typedecl default name args)
+
+/-- Convert a type synonym declaration to CST -/
+def typeSynToCST [Inhabited M] (syn : TypeSynonym)
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  let name : Ann String M := ⟨default, syn.name⟩
+  let args : Ann (Option (Bindings M)) M :=
+    if syn.typeArgs.isEmpty then
+      ⟨default, none⟩
+    else
+      let bindings := syn.typeArgs.map fun param =>
+        let paramName : Ann String M := ⟨default, param⟩
+        let paramType := TypeP.type default
+        Binding.mkBinding default paramName paramType
+      ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+  let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
+  modify (·.addBoundTypeVars syn.typeArgs.toArray)
+  let rhs ← lmonoTyToCoreType syn.type
+  pure (.command_typesynonym default name args targs rhs)
 
 def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :=
   match c with
@@ -224,49 +263,20 @@ partial def lappToExpr [Inhabited M]
 
 end
 
-/-- Convert a type constructor declaration to CST -/
-def typeConToCST [Inhabited M] (tcons : TypeConstructor)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
-  let name : Ann String M := ⟨default, tcons.name⟩
-  let args : Ann (Option (Bindings M)) M :=
-    if tcons.numargs = 0 then
-      ⟨default, none⟩
-    else
-      let bindings := List.range tcons.numargs |>.map fun i =>
-        let paramName : Ann String M := ⟨default, s!"a{i}"⟩
-        let paramType := TypeP.type default
-        Binding.mkBinding default paramName paramType
-      ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
-  pure (.command_typedecl default name args)
-
-/-- Convert a type synonym declaration to CST -/
-def typeSynToCST [Inhabited M] (syn : TypeSynonym)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
-  let name : Ann String M := ⟨default, syn.name⟩
-  let args : Ann (Option (Bindings M)) M :=
-    if syn.typeArgs.isEmpty then
-      ⟨default, none⟩
-    else
-      let bindings := syn.typeArgs.map fun param =>
-        let paramName : Ann String M := ⟨default, param⟩
-        let paramType := TypeP.type default
-        Binding.mkBinding default paramName paramType
-      ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
-  let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
-  modify (·.addBoundTypeVars syn.typeArgs.toArray)
-  let rhs ← lmonoTyToCoreType syn.type
-  pure (.command_typesynonym default name args targs rhs)
-
 /-- Convert a function declaration to CST -/
 def funcToCST [Inhabited M]
     (func : Lambda.LFunc CoreLParams)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, func.name.name⟩
+  -- Add type arguments to context and create TypeArgs.
+  modify (·.addBoundTypeVars func.typeArgs.toArray)
   let typeArgs : Ann (Option (TypeArgs M)) M :=
     if func.typeArgs.isEmpty then
       ⟨default, none⟩
     else
-      ⟨default, none⟩
+      let tvars := func.typeArgs.map fun tv =>
+        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
   let processInput (id : CoreLParams.Identifier) (ty : Lambda.LMonoTy) : ToCSTM M (Binding M × String) := do
     let paramName : Ann String M := ⟨default, id.name⟩
     let paramType ← lmonoTyToCoreType ty
@@ -280,7 +290,8 @@ def funcToCST [Inhabited M]
   match func.body with
   | none => pure (.command_fndecl default name typeArgs b r)
   | some body => do
-    modify fun ctx => { ctx with boundVars := ctx.boundVars ++ paramNames }
+    -- Add formals to the context.
+    modify (·.addBoundVars paramNames)
     let bodyExpr ← lexprToExpr body true
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r bodyExpr inline?)

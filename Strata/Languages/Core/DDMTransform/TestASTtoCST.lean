@@ -32,10 +32,27 @@ type MyMap (a : Type, b : Type);
 type Foo (a : Type, b : Type) := Map b a;
 const fooConst : int;
 function id(x : int, y : int) : int { y }
+function foo<T1, T2>(x : T1) : Map T1 T2;
 #end
 
 --- #print CoreDDM.Expr
 
+/--
+info: Rendered Program:
+
+type T0;
+type T1 (a0 : Type);
+type Byte := bv8;
+type IntMap := Map int int;
+type MyMap (a0 : Type, a1 : Type);
+type Foo (a : Type, b : Type) := Map b a;
+function fooConst () : int;
+function id (x : int, y : int) : int {
+y
+}
+function foo<T1, T2> (x : T1) : Map T1 T2;
+-/
+#guard_msgs in
 #eval do
   -- Use old translator to get AST
   let (ast, errs) := TransM.run Inhabited.default (translateProgram testProgram)
