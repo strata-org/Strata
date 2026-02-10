@@ -513,10 +513,10 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
 /--
 Translate Laurel Program to Core Program
 -/
-def translate (program : Program) : Core.Program × Array DiagnosticModel :=
+def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
-  let program := (liftExpressionAssignments program).toOption.get!
+  let program <- liftExpressionAssignments program
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
@@ -530,7 +530,7 @@ def translate (program : Program) : Core.Program × Array DiagnosticModel :=
   let constDecls := program.constants.map translateConstant
   let typeDecls := [fieldTypeDecl, compositeTypeDecl, boxTypeDecl]
   let funcDecls := [readFunction, updateFunction]
-  ({ decls := typeDecls ++ funcDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  pure ({ decls := typeDecls ++ funcDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
@@ -539,23 +539,22 @@ def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default)
     (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let (strataCoreProgram, translateDiags) := translate program
-    -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
+  let (strataCoreProgram, translateDiags) ← match translate program with
+    | .error translateErrorDiags => return .error translateErrorDiags
+    | .ok result => pure result
+
+  -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
   -- Debug: Print the generated Strata Core program
   dbg_trace "=== Generated Strata Core Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format strataCoreProgram) 100))
   dbg_trace "================================="
-
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))
         (Core.verify smtsolver strataCoreProgram tempDir .none options)
   let ioResult ← match tempDir with
-  | .none =>
-    IO.FS.withTempDir runner
-  | .some p =>
-    IO.FS.createDirAll ⟨p⟩
-    runner ⟨p⟩
+    | .none => IO.FS.withTempDir runner
+    | .some p => IO.FS.createDirAll ⟨p⟩; runner ⟨p⟩
   if translateDiags.isEmpty then
     return .ok ioResult
   else
