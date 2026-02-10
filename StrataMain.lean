@@ -248,7 +248,11 @@ def pyAnalyzeCommand : Command where
           "<ion_file>: path to a .python.st.ion file generated from Python source. " ++
           "<verbose>: set to '1' for verbose output (displays parsed program, Core translation, and inlined program), or '0' for concise verification results only."
   callback := fun _ v => do
-    let verbose := v[1] == "1"
+    let verbose ←
+      match v[1] with
+      | "0" => pure false
+      | "1" => pure true
+      | other => exitFailure ("Invalid value for <verbose>: " ++ other ++ ". Expected '0' or '1'.")
     let filePath := v[0]
     let pgm ← readPythonStrata filePath
     -- Try to read the Python source for line number conversion
