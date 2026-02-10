@@ -57,6 +57,9 @@ structure ToCSTContext where
   freeVars : Array String := #[]
   deriving Repr
 
+/-- Monad for AST->CST conversion with context and error tracking -/
+abbrev ToCSTM (M : Type) := StateT ToCSTContext (Except (List (ASTToCSTError M)))
+
 namespace ToCSTContext
 
 def empty : ToCSTContext := {}
@@ -75,169 +78,155 @@ def addBoundVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
 
 end ToCSTContext
 
+/-- Throw an error in ToCSTM -/
+def ToCSTM.throwError [Inhabited M] (err : ASTToCSTError M) : ToCSTM M α :=
+  throw [err]
+
 /-- Convert `LMonoTy` to `CoreType` -/
-def lmonoTyToCoreType [Inhabited M] (ctx : ToCSTContext) (ty : Lambda.LMonoTy) :
-    CoreType M × List (ASTToCSTError M) :=
+def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
+    ToCSTM M (CoreType M) := do
+  let ctx ← get
   match ty with
   | .ftvar name =>
     match ctx.boundTypeVars.toList.findIdx? (· == name) with
     | some idx =>
       if idx < ctx.boundTypeVars.size then
         let bvarIdx := ctx.boundTypeVars.size - (idx + 1)
-        (.bvar default bvarIdx, [])
+        pure (.bvar default bvarIdx)
       else
-        (.bvar default 0, [.unsupportedConstruct s!"unbound ftvar {name}" default])
-    | none => (.bvar default 0, [.unsupportedConstruct s!"unbound ftvar {name}" default])
-  | .bitvec 1 => (.bv1 default, [])
-  | .bitvec 8 => (.bv8 default, [])
-  | .bitvec 16 => (.bv16 default, [])
-  | .bitvec 32 => (.bv32 default, [])
-  | .bitvec 64 => (.bv64 default, [])
-  | .bool => (.bool default, [])
-  | .int => (.int default, [])
-  | .string => (.string default, [])
-  | .real => (.real default, [])
-  | .tcons "regex" [] => (.regex default, [])
-  | .tcons "Map" [k, v] =>
-    let (kty, kerrs) := lmonoTyToCoreType ctx k
-    let (vty, verrs) := lmonoTyToCoreType ctx v
-    (.Map default kty vty, kerrs ++ verrs)
+        ToCSTM.throwError (.unsupportedConstruct s!"unbound ftvar {name}" default)
+    | none => ToCSTM.throwError (.unsupportedConstruct s!"unbound ftvar {name}" default)
+  | .bitvec 1 => pure (.bv1 default)
+  | .bitvec 8 => pure (.bv8 default)
+  | .bitvec 16 => pure (.bv16 default)
+  | .bitvec 32 => pure (.bv32 default)
+  | .bitvec 64 => pure (.bv64 default)
+  | .bool => pure (.bool default)
+  | .int => pure (.int default)
+  | .string => pure (.string default)
+  | .real => pure (.real default)
+  | .tcons "regex" [] => pure (.regex default)
+  | .tcons "Map" [k, v] => do
+    let kty ← lmonoTyToCoreType k
+    let vty ← lmonoTyToCoreType v
+    pure (.Map default kty vty)
   | .tcons name args =>
     match ctx.freeVars.toList.findIdx? (· == name) with
-    | some idx =>
-      let (argTys, argErrs) := args.foldl
-        (init := (#[], []))
-        fun (tys, errs) arg =>
-          let (ty, tyErrs) := lmonoTyToCoreType ctx arg
-          (tys.push ty, errs ++ tyErrs)
-      (.fvar default idx argTys, argErrs)
-    | none => (.fvar default 0 #[],
-                [.unsupportedConstruct s!"unknown type constructor {name}" default])
-  | _ =>
-    (default, [.unsupportedConstruct s!"unknown type {ty}" default])
+    | some idx => do
+      let argTys ← args.mapM lmonoTyToCoreType
+      pure (.fvar default idx argTys.toArray)
+    | none => ToCSTM.throwError (.unsupportedConstruct s!"unknown type constructor {name}" default)
+  | _ => ToCSTM.throwError (.unsupportedConstruct s!"unknown type {ty}" default)
 
-def lconstToExpr [Inhabited M] (c : Lambda.LConst) :
-    CoreDDM.Expr M × List (ASTToCSTError M) :=
+def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :=
   match c with
-  | .boolConst true => (.btrue default, [])
-  | .boolConst false => (.bfalse default, [])
-  | .intConst n => (.natToInt default ⟨default, n.toNat⟩, [])
+  | .boolConst true => pure (.btrue default)
+  | .boolConst false => pure (.bfalse default)
+  | .intConst n => pure (.natToInt default ⟨default, n.toNat⟩)
   | .realConst r =>
     match Strata.Decimal.fromRat r with
-    | some d => (.realLit default ⟨default, d⟩, [])
-    | none => (.btrue default,
-      [.unsupportedConstruct s!"real {r}" default])
-  | .strConst s => (.strLit default ⟨default, s⟩, [])
-  | .bitvecConst 1 n => (.bv1Lit default ⟨default, n.toNat⟩, [])
-  | .bitvecConst 8 n => (.bv8Lit default ⟨default, n.toNat⟩, [])
-  | .bitvecConst 16 n => (.bv16Lit default ⟨default, n.toNat⟩, [])
-  | .bitvecConst 32 n => (.bv32Lit default ⟨default, n.toNat⟩, [])
-  | .bitvecConst 64 n => (.bv64Lit default ⟨default, n.toNat⟩, [])
-  | .bitvecConst w _ => (.btrue default,
-    [.unsupportedConstruct s!"bitvec width {w}" default])
+    | some d => pure (.realLit default ⟨default, d⟩)
+    | none => ToCSTM.throwError (.unsupportedConstruct s!"real {r}" default)
+  | .strConst s => pure (.strLit default ⟨default, s⟩)
+  | .bitvecConst 1 n => pure (.bv1Lit default ⟨default, n.toNat⟩)
+  | .bitvecConst 8 n => pure (.bv8Lit default ⟨default, n.toNat⟩)
+  | .bitvecConst 16 n => pure (.bv16Lit default ⟨default, n.toNat⟩)
+  | .bitvecConst 32 n => pure (.bv32Lit default ⟨default, n.toNat⟩)
+  | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
+  | .bitvecConst w _ => ToCSTM.throwError (.unsupportedConstruct s!"bitvec width {w}" default)
 
 partial def lopToExpr [Inhabited M]
-    (name : Lambda.Identifier CoreLParams.mono.base.IDMeta) :
-    CoreDDM.Expr M × List (ASTToCSTError M) :=
+    (name : Lambda.Identifier CoreLParams.mono.base.IDMeta) : ToCSTM M (CoreDDM.Expr M) :=
   match name.name with
-  | "not" => (.not default (.btrue default), [])
-  | "true" => (.btrue default, [])
-  | "false" => (.bfalse default, [])
-  | _ => (.fvar default 0, [.unsupportedConstruct s!"op {name.name}" default])
+  | "not" => pure (.not default (.btrue default))
+  | "true" => pure (.btrue default)
+  | "false" => pure (.bfalse default)
+  | _ => ToCSTM.throwError (.unsupportedConstruct s!"op {name.name}" default)
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
-partial def lexprToExpr [Inhabited M] (ctx : ToCSTContext)
+partial def lexprToExpr [Inhabited M]
     (e : Lambda.LExpr CoreLParams.mono)
-    (LambdaFVarsBound : Bool) :
-    CoreDDM.Expr M × List (ASTToCSTError M) :=
+    (LambdaFVarsBound : Bool) : ToCSTM M (CoreDDM.Expr M) := do
+  let ctx ← get
   match e with
   | .const _ c => lconstToExpr c
   | .bvar _ idx =>
     if idx < ctx.boundVars.size then
       let bvarIdx := ctx.boundVars.size - (idx + 1)
-      (.bvar default bvarIdx, [])
+      pure (.bvar default bvarIdx)
     else
-      (.bvar default 0, [.unsupportedConstruct s!"bvar {idx}" default])
+      ToCSTM.throwError (.unsupportedConstruct s!"bvar {idx}" default)
   | .fvar _ id _ =>
     if LambdaFVarsBound then
       match ctx.boundVars.toList.findIdx? (· == id.name) with
-      | some idx => (.bvar default (ctx.boundVars.size - (idx + 1)), [])
-      | none => (.bvar default 0, [.unsupportedConstruct s!"fvar {id.name}" default])
+      | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
+      | none => ToCSTM.throwError (.unsupportedConstruct s!"fvar {id.name}" default)
     else
       match ctx.freeVars.toList.findIdx? (· == id.name) with
-      | some idx => (.fvar default idx, [])
-      | none => (.fvar default 0, [.unsupportedConstruct s!"fvar {id.name}" default])
+      | some idx => pure (.fvar default idx)
+      | none => ToCSTM.throwError (.unsupportedConstruct s!"fvar {id.name}" default)
   | .op _ name _ => lopToExpr name
-  | .app _ fn arg => lappToExpr ctx fn arg LambdaFVarsBound
-  | .ite _ c t f => liteToExpr ctx c t f LambdaFVarsBound
-  | .eq _ e1 e2 => leqToExpr ctx e1 e2 LambdaFVarsBound
-  | .abs _ _ _ =>
-    (.fvar default 0, [.unsupportedConstruct "lambda" default])
-  | .quant _ _ _ _ _ =>
-    (.fvar default 0, [.unsupportedConstruct "quantifier" default])
+  | .app _ fn arg => lappToExpr fn arg LambdaFVarsBound
+  | .ite _ c t f => liteToExpr c t f LambdaFVarsBound
+  | .eq _ e1 e2 => leqToExpr e1 e2 LambdaFVarsBound
+  | .abs _ _ _ => ToCSTM.throwError (.unsupportedConstruct "lambda" default)
+  | .quant _ _ _ _ _ => ToCSTM.throwError (.unsupportedConstruct "quantifier" default)
 
-partial def liteToExpr [Inhabited M] (ctx : ToCSTContext)
-    (c t f : Lambda.LExpr CoreLParams.mono) (bound : Bool) :
-    CoreDDM.Expr M × List (ASTToCSTError M) :=
-  let (cExpr, cErrs) := lexprToExpr ctx c bound
-  let (tExpr, tErrs) := lexprToExpr ctx t bound
-  let (fExpr, fErrs) := lexprToExpr ctx f bound
+partial def liteToExpr [Inhabited M]
+    (c t f : Lambda.LExpr CoreLParams.mono) (bound : Bool) : ToCSTM M (CoreDDM.Expr M) := do
+  let cExpr ← lexprToExpr c bound
+  let tExpr ← lexprToExpr t bound
+  let fExpr ← lexprToExpr f bound
   let ty := CoreType.bool default
-  (.if default ty cExpr tExpr fExpr, cErrs ++ tErrs ++ fErrs)
+  pure (.if default ty cExpr tExpr fExpr)
 
-partial def leqToExpr [Inhabited M] (ctx : ToCSTContext)
-    (e1 e2 : Lambda.LExpr CoreLParams.mono) (bound : Bool) :
-    CoreDDM.Expr M × List (ASTToCSTError M) :=
-  let (e1Expr, e1Errs) := lexprToExpr ctx e1 bound
-  let (e2Expr, e2Errs) := lexprToExpr ctx e2 bound
+partial def leqToExpr [Inhabited M]
+    (e1 e2 : Lambda.LExpr CoreLParams.mono) (bound : Bool) : ToCSTM M (CoreDDM.Expr M) := do
+  let e1Expr ← lexprToExpr e1 bound
+  let e2Expr ← lexprToExpr e2 bound
   let ty := CoreType.bool default
-  (.equal default ty e1Expr e2Expr, e1Errs ++ e2Errs)
+  pure (.equal default ty e1Expr e2Expr)
 
-partial def lappToExpr [Inhabited M] (ctx : ToCSTContext)
-    (fn arg : Lambda.LExpr CoreLParams.mono) (bound : Bool) :
-    CoreDDM.Expr M × List (ASTToCSTError M) :=
+partial def lappToExpr [Inhabited M]
+    (fn arg : Lambda.LExpr CoreLParams.mono) (bound : Bool) : ToCSTM M (CoreDDM.Expr M) :=
   match fn with
-  | .op _ name _ =>
-    let (argExpr, argErrs) := lexprToExpr ctx arg bound
+  | .op _ name _ => do
+    let argExpr ← lexprToExpr arg bound
     match name.name with
-    | "not" => (.not default argExpr, argErrs)
-    | _ => (.fvar default 0, argErrs ++ [.unsupportedConstruct s!"unary op {name.name}" default])
+    | "not" => pure (.not default argExpr)
+    | _ => ToCSTM.throwError (.unsupportedConstruct s!"unary op {name.name}" default)
   | .app _ fn2 arg1 =>
     match fn2 with
-    | .op _ name _ =>
-      let (arg1Expr, arg1Errs) := lexprToExpr ctx arg1 bound
-      let (arg2Expr, arg2Errs) := lexprToExpr ctx arg bound
-      let allErrs := arg1Errs ++ arg2Errs
+    | .op _ name _ => do
+      let arg1Expr ← lexprToExpr arg1 bound
+      let arg2Expr ← lexprToExpr arg bound
       match name.name with
-      | "and" => (.and default arg1Expr arg2Expr, allErrs)
-      | "or" => (.or default arg1Expr arg2Expr, allErrs)
-      | "implies" => (.implies default arg1Expr arg2Expr, allErrs)
-      | "equiv" => (.equiv default arg1Expr arg2Expr, allErrs)
-      | "str_concat" => (.str_concat default arg1Expr arg2Expr, allErrs)
-      | "str_inregex" => (.str_inregex default arg1Expr arg2Expr, allErrs)
-      | _ => (.fvar default 0, allErrs ++ [.unsupportedConstruct s!"binary op {name.name}" default])
+      | "and" => pure (.and default arg1Expr arg2Expr)
+      | "or" => pure (.or default arg1Expr arg2Expr)
+      | "implies" => pure (.implies default arg1Expr arg2Expr)
+      | "equiv" => pure (.equiv default arg1Expr arg2Expr)
+      | "str_concat" => pure (.str_concat default arg1Expr arg2Expr)
+      | "str_inregex" => pure (.str_inregex default arg1Expr arg2Expr)
+      | _ => ToCSTM.throwError (.unsupportedConstruct s!"binary op {name.name}" default)
     | .app _ fn3 arg1 =>
       match fn3 with
-      | .op _ name _ =>
-        let (arg1Expr, arg1Errs) := lexprToExpr ctx arg1 bound
-        let (arg2Expr, arg2Errs) := lexprToExpr ctx arg bound
-        let (arg3Expr, arg3Errs) := lexprToExpr ctx arg bound
-        let allErrs := arg1Errs ++ arg2Errs ++ arg3Errs
+      | .op _ name _ => do
+        let arg1Expr ← lexprToExpr arg1 bound
+        let arg2Expr ← lexprToExpr arg bound
+        let arg3Expr ← lexprToExpr arg bound
         match name.name with
-        | "str_substr" => (.str_substr default arg1Expr arg2Expr arg3Expr, allErrs)
-        | _ => (.fvar default 0, allErrs ++ [.unsupportedConstruct s!"ternary op {name.name}" default])
-      | _ => (.fvar default 0, [.unsupportedConstruct "nested app" default])
-    | _ => (.fvar default 0, [.unsupportedConstruct "complex app" default])
-  | _ => (.fvar default 0, [.unsupportedConstruct "general app" default])
-
+        | "str_substr" => pure (.str_substr default arg1Expr arg2Expr arg3Expr)
+        | _ => ToCSTM.throwError (.unsupportedConstruct s!"ternary op {name.name}" default)
+      | _ => ToCSTM.throwError (.unsupportedConstruct "nested app" default)
+    | _ => ToCSTM.throwError (.unsupportedConstruct "complex app" default)
+  | _ => ToCSTM.throwError (.unsupportedConstruct "general app" default)
 
 end
 
 /-- Convert a type constructor declaration to CST -/
 def typeConToCST [Inhabited M] (tcons : TypeConstructor)
-    (_md : Imperative.MetaData Expression) :
-    Command M × List (ASTToCSTError M) :=
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, tcons.name⟩
   let args : Ann (Option (Bindings M)) M :=
     if tcons.numargs = 0 then
@@ -248,12 +237,11 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
         let paramType := TypeP.type default
         Binding.mkBinding default paramName paramType
       ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
-  (.command_typedecl default name args, [])
+  pure (.command_typedecl default name args)
 
 /-- Convert a type synonym declaration to CST -/
-def typeSynToCST [Inhabited M] (ctx : ToCSTContext) (syn : TypeSynonym)
-    (_md : Imperative.MetaData Expression) :
-    Command M × List (ASTToCSTError M) :=
+def typeSynToCST [Inhabited M] (syn : TypeSynonym)
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, syn.name⟩
   let args : Ann (Option (Bindings M)) M :=
     if syn.typeArgs.isEmpty then
@@ -265,79 +253,55 @@ def typeSynToCST [Inhabited M] (ctx : ToCSTContext) (syn : TypeSynonym)
         Binding.mkBinding default paramName paramType
       ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
   let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
-  let ctx := ctx.addBoundTypeVars syn.typeArgs.toArray
-  let (rhs, errs) := lmonoTyToCoreType ctx syn.type
-  (.command_typesynonym default name args targs rhs, errs)
+  modify (·.addBoundTypeVars syn.typeArgs.toArray)
+  let rhs ← lmonoTyToCoreType syn.type
+  pure (.command_typesynonym default name args targs rhs)
 
 /-- Convert a function declaration to CST -/
-def funcToCST [Inhabited M] (ctx : ToCSTContext)
+def funcToCST [Inhabited M]
     (func : Lambda.LFunc CoreLParams)
-    (_md : Imperative.MetaData Expression) :
-    Command M × List (ASTToCSTError M) :=
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, func.name.name⟩
   let typeArgs : Ann (Option (TypeArgs M)) M :=
     if func.typeArgs.isEmpty then
       ⟨default, none⟩
     else
-      -- FIXME
       ⟨default, none⟩
-      -- let tvars : Array (TypeVar M) := (func.typeArgs.map fun tv =>
-      --   TypeVar.type_var (Ann.mk default tv : Ann String M) : TypeVar M).toArray
-      -- ⟨default, some (TypeArgs.type_args default (Ann.mk default tvars))⟩
-  let (bindings, bindErrs, paramNames) := func.inputs.foldl
-    (init := ([], [], #[]))
-    fun (acc, errs, names) (id, ty) =>
-      let paramName : Ann String M := ⟨default, id.name⟩
-      let (paramType, tyErrs) := lmonoTyToCoreType ctx ty
-      let binding := Binding.mkBinding default paramName
-        (TypeP.expr paramType)
-      (acc ++ [binding], errs ++ tyErrs, names.push id.name)
-  let b : Bindings M := .mkBindings default ⟨default,
-    bindings.toArray⟩
-  let (r, retErrs) := lmonoTyToCoreType ctx func.output
-  let allErrs := bindErrs ++ retErrs
+  let processInput (id : CoreLParams.Identifier) (ty : Lambda.LMonoTy) : ToCSTM M (Binding M × String) := do
+    let paramName : Ann String M := ⟨default, id.name⟩
+    let paramType ← lmonoTyToCoreType ty
+    let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
+    pure (binding, id.name)
+  let results ← func.inputs.toList.mapM (fun (id, ty) => processInput id ty)
+  let bindings := results.map (·.1)
+  let paramNames := results.map (·.2) |>.toArray
+  let b : Bindings M := .mkBindings default ⟨default, bindings.toArray⟩
+  let r ← lmonoTyToCoreType func.output
   match func.body with
-  | none =>
-    (.command_fndecl default name typeArgs b r, allErrs)
-  | some body =>
-    let bodyCtx := { ctx with boundVars := ctx.boundVars ++ paramNames }
-    let (bodyExpr, bodyErrs) := lexprToExpr bodyCtx body true
+  | none => pure (.command_fndecl default name typeArgs b r)
+  | some body => do
+    modify fun ctx => { ctx with boundVars := ctx.boundVars ++ paramNames }
+    let bodyExpr ← lexprToExpr body true
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
-    (.command_fndef default name typeArgs b r bodyExpr inline?,
-     allErrs ++ bodyErrs)
+    pure (.command_fndef default name typeArgs b r bodyExpr inline?)
 
-/-- Convert a `Core.Decl` to a Core `Command`, returning updated context -/
-def declToCST [Inhabited M] (ctx : ToCSTContext) (decl : Core.Decl) :
-    Command M × List (ASTToCSTError M) × ToCSTContext :=
+/-- Convert a `Core.Decl` to a Core `Command` -/
+def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (Command M) :=
   match decl with
-  | .type (.con tcons) md =>
-    let ctx := ctx.addFreeVar tcons.name
-    let (cmd, errs) := typeConToCST tcons md
-    (cmd, errs, ctx)
-  | .type (.syn syn) md =>
-    let ctx := ctx.addFreeVar syn.name
-    let (cmd, errs) := typeSynToCST ctx syn md
-    (cmd, errs, ctx)
-  | .func func md =>
-    let ctx := ctx.addFreeVar func.name.name
-    let (cmd, errs) := funcToCST ctx func md
-    (cmd, errs, ctx)
-  | _ =>
-    let name : Ann String M := ⟨default, "TODO"⟩
-    let args : Ann (Option (Bindings M)) M := ⟨default, none⟩
-    (.command_typedecl default name args,
-     [.unsupportedConstruct "unimplemented decl" default], ctx)
+  | .type (.con tcons) md => do
+    modify (·.addFreeVar tcons.name)
+    typeConToCST tcons md
+  | .type (.syn syn) md => do
+    modify (·.addFreeVar syn.name)
+    typeSynToCST syn md
+  | .func func md => do
+    modify (·.addFreeVar func.name.name)
+    funcToCST func md
+  | _ => ToCSTM.throwError (.unsupportedConstruct "unimplemented decl" default)
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
-def programToCST [Inhabited M] (ctx : ToCSTContext)
-    (prog : Core.Program) :
-    List (Command M) × List (ASTToCSTError M) :=
-  let (cmds, errs, _) := prog.decls.foldl
-    (init := ([], [], ctx))
-    fun (cmds, errs, ctx) decl =>
-      let (cmd, declErrs, ctx') := declToCST ctx decl
-      (cmds ++ [cmd], errs ++ declErrs, ctx')
-  (cmds, errs)
+def programToCST [Inhabited M] (prog : Core.Program) : ToCSTM M (List (Command M)) :=
+  prog.decls.mapM declToCST
 
 end ToCST
 

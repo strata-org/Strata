@@ -43,21 +43,21 @@ function id(x : int, y : int) : int { y }
     IO.println f!"CST to AST Error: {errs}"
 
   -- Convert AST → CST
-  let (cmds, errs) := programToCST (M := SourceRange) ToCSTContext.empty ast
-  if !errs.isEmpty then
+  match (programToCST (M := SourceRange) ast).run ToCSTContext.empty with
+  | .error errs =>
     IO.println f!"AST to CST Error: {repr errs}"
+  | .ok (cmds, _finalCtx) =>
+    -- Format with original global context
+    let ctx := FormatContext.ofDialects testProgram.dialects
+      testProgram.globalContext {}
+    let state : FormatState := {
+      openDialects := testProgram.dialects.toList.foldl (init := {})
+        fun a (d : Dialect) => a.insert d.name
+    }
 
-  -- Format with original global context
-  let ctx := FormatContext.ofDialects testProgram.dialects
-    testProgram.globalContext {}
-  let state : FormatState := {
-    openDialects := testProgram.dialects.toList.foldl (init := {})
-      fun a (d : Dialect) => a.insert d.name
-  }
-
-  -- Display commands using mformat
-  IO.println "Rendered Program:\n"
-  for cmd in cmds do
-    IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
+    -- Display commands using mformat
+    IO.println "Rendered Program:\n"
+    for cmd in cmds do
+      IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
 
 end Strata.Test
