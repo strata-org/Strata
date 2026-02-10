@@ -86,13 +86,15 @@ termination_by sizeOf ty
 decreasing_by all_goals simp_wf; have := HighTypeMd.sizeOf_val_lt ‹_›; omega
 
 /-- Translate type, resolving constrained types to their base type recursively -/
-partial def translateTypeWithCT (ctMap : ConstrainedTypeMap) (ty : HighType) : LMonoTy :=
+def translateTypeWithCT (ctMap : ConstrainedTypeMap) (ty : HighType) : LMonoTy :=
   match ty with
   | .Applied ctor [elemTy] =>
     match ctor.val with
     | .UserDefined "Array" => .tcons "Array" [translateTypeWithCT ctMap elemTy.val]
     | _ => translateType (resolveBaseType ctMap ty)
   | _ => translateType (resolveBaseType ctMap ty)
+termination_by sizeOf ty
+decreasing_by simp_wf; have := HighTypeMd.sizeOf_val_lt ‹_›; omega
 
 /-- Translate HighTypeMd, extracting the value -/
 def translateTypeMdWithCT (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : LMonoTy :=
@@ -154,8 +156,8 @@ def isHeapFunction (name : Identifier) : Bool :=
   name == "heapRead" || name == "heapStore"
 
 /-- Translate simple expressions (for constraints - no quantifiers) -/
-partial def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExprMd) : Except String Core.Expression.Expr :=
-  match expr.val with
+def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExprMd) : Except String Core.Expression.Expr :=
+  match _h : expr.val with
   | .LiteralBool b => pure (.const () (.boolConst b))
   | .LiteralInt i => pure (.const () (.intConst i))
   | .LiteralString s => pure (.const () (.strConst s))
@@ -172,6 +174,10 @@ partial def translateSimpleExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (ex
   | .Forall _ _ _ => throw "Quantifiers not supported in constrained type constraints"
   | .Exists _ _ _ => throw "Quantifiers not supported in constrained type constraints"
   | _ => throw "Unsupported expression in constrained type constraint"
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (have := StmtExprMd.sizeOf_val_lt expr; rw [_h] at this; simp at this; omega)
 
 /-- Build map of pre-translated constraints -/
 def buildTranslatedConstraintMap (ctMap : ConstrainedTypeMap) : Except String TranslatedConstraintMap :=
@@ -209,8 +215,8 @@ def normalizeCallee (callee : Identifier) : Identifier :=
 
 /-- Extract sequence bounds from Seq.From/Take/Drop chain.
     Note: Seq.From only works with simple Identifier arguments; complex expressions are not supported. -/
-partial def translateSeqBounds (env : TypeEnv) (expr : StmtExprMd) : Except String SeqBounds :=
-  match expr.val with
+def translateSeqBounds (env : TypeEnv) (expr : StmtExprMd) : Except String SeqBounds :=
+  match _h : expr.val with
   | .StaticCall callee [arr] =>
       if normalizeCallee callee == "Seq.From" then
         match arr.val with
@@ -244,6 +250,10 @@ partial def translateSeqBounds (env : TypeEnv) (expr : StmtExprMd) : Except Stri
       else
         throw s!"Not a sequence expression: {callee}"
   | _ => throw "Not a sequence expression"
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (have := StmtExprMd.sizeOf_val_lt expr; rw [_h] at this; simp at this; omega)
 
 /-- Inject constraint into quantifier body. For forall uses ==>, for exists uses &&. -/
 def injectQuantifierConstraint (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
@@ -261,8 +271,8 @@ def injectQuantifierConstraint (ctMap : ConstrainedTypeMap) (tcMap : TranslatedC
 /--
 Translate Laurel StmtExpr to Core Expression
 -/
-partial def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr : StmtExprMd) : Except String Core.Expression.Expr :=
-  match expr.val with
+def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr : StmtExprMd) : Except String Core.Expression.Expr :=
+  match _h : expr.val with
   | .LiteralBool b => pure (.const () (.boolConst b))
   | .LiteralInt i => pure (.const () (.intConst i))
   | .LiteralString s => pure (.const () (.strConst s))
@@ -346,7 +356,7 @@ partial def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
       -- Use glob for all functions including heap functions
       let fnIdent := Core.CoreIdent.glob normName
       let fnOp := LExpr.op () fnIdent none
-      let translatedArgs ← args.mapM (translateExpr ctMap tcMap env)
+      let translatedArgs ← args.attach.mapM fun ⟨a, _⟩ => translateExpr ctMap tcMap env a
       let expandedArgs := expandArrayArgs env args translatedArgs
       pure (expandedArgs.foldl (fun acc a => .app () acc a) fnOp)
   | .ReferenceEquals e1 e2 => do
@@ -372,6 +382,14 @@ partial def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
       pure (LExpr.quant () .exist (some coreType) (LExpr.noTrigger ()) finalBody)
   | .Return (some e) => translateExpr ctMap tcMap env e
   | _ => throw s!"translateExpr: unsupported {Std.Format.pretty (Std.ToFormat.format expr.val)}"
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := StmtExprMd.sizeOf_val_lt expr; rw [_h] at this; simp at this; omega)
+    | (have := List.sizeOf_lt_of_mem ‹_›;
+       have := StmtExprMd.sizeOf_val_lt expr; rw [_h] at this; simp at this; omega)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).get!
@@ -425,22 +443,35 @@ def getArrayElemConstrainedType (env : TypeEnv) (arr : StmtExprMd) : Option Iden
   | _ => none
 
 /-- Collect Array.Get accesses with constrained element types -/
-partial def collectConstrainedArrayAccesses (env : TypeEnv) (tcMap : TranslatedConstraintMap) (expr : StmtExprMd) : List (StmtExprMd × StmtExprMd × TranslatedConstraint) :=
-  let rec go e := match e.val with
-    | .StaticCall callee [arr, idx] =>
-      let sub := go arr ++ go idx
-      if normalizeCallee callee == "Array.Get" then
-        match getArrayElemConstrainedType env arr >>= tcMap.get? with
-        | some tc => (arr, idx, tc) :: sub
-        | none => sub
-      else sub
-    | .PrimitiveOp _ args | .StaticCall _ args => args.flatMap go
-    | .IfThenElse c t e => go c ++ go t ++ (e.map go |>.getD [])
-    | .Assign ts v => ts.flatMap go ++ go v
-    | .Return (some v) | .Assert v | .Assume v => go v
-    | .LocalVariable _ _ (some init) => go init
-    | _ => []
-  go expr
+def collectConstrainedArrayAccesses (env : TypeEnv) (tcMap : TranslatedConstraintMap) (e : StmtExprMd) : List (StmtExprMd × StmtExprMd × TranslatedConstraint) :=
+  match _h : e.val with
+  | .StaticCall callee [arr, idx] =>
+    let sub := collectConstrainedArrayAccesses env tcMap arr ++ collectConstrainedArrayAccesses env tcMap idx
+    if normalizeCallee callee == "Array.Get" then
+      match getArrayElemConstrainedType env arr >>= tcMap.get? with
+      | some tc => (arr, idx, tc) :: sub
+      | none => sub
+    else sub
+  | .PrimitiveOp _ args | .StaticCall _ args =>
+    args.attach.flatMap fun ⟨a, _⟩ => collectConstrainedArrayAccesses env tcMap a
+  | .IfThenElse c t el =>
+    collectConstrainedArrayAccesses env tcMap c ++
+    collectConstrainedArrayAccesses env tcMap t ++
+    (match el with | some x => collectConstrainedArrayAccesses env tcMap x | none => [])
+  | .Assign ts v =>
+    ts.attach.flatMap (fun ⟨a, _⟩ => collectConstrainedArrayAccesses env tcMap a) ++
+    collectConstrainedArrayAccesses env tcMap v
+  | .Return (some v) | .Assert v | .Assume v => collectConstrainedArrayAccesses env tcMap v
+  | .LocalVariable _ _ (some init) => collectConstrainedArrayAccesses env tcMap init
+  | _ => []
+termination_by sizeOf e
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := StmtExprMd.sizeOf_val_lt e; rw [_h] at this; simp at this; omega)
+    | (have := List.sizeOf_lt_of_mem ‹_›;
+       have := StmtExprMd.sizeOf_val_lt e; rw [_h] at this; simp at this; omega)
 
 /-- Generate assume statements for constrained array element accesses -/
 def genArrayElemAssumes (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr : StmtExprMd)
@@ -457,7 +488,7 @@ def genArrayElemAssumes (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr 
 Translate Laurel StmtExpr to Core Statements
 Takes the type environment, output parameter names, and postconditions to assert at returns
 -/
-partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (env : TypeEnv) (outputParams : List Parameter) (postconds : List (String × Core.Expression.Expr)) (stmt : StmtExprMd) : Except String (TypeEnv × List Core.Statement) := do
+def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (env : TypeEnv) (outputParams : List Parameter) (postconds : List (String × Core.Expression.Expr)) (stmt : StmtExprMd) : Except String (TypeEnv × List Core.Statement) := do
   -- Generate assumes for constrained array element accesses before the statement
   let arrayElemAssumes ← genArrayElemAssumes tcMap env stmt (translateExpr ctMap tcMap env)
   let mkReturnStmts (valueOpt : Option Core.Expression.Expr) : Except String (TypeEnv × List Core.Statement) := do
@@ -469,7 +500,7 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
         pure (env, arrayElemAssumes ++ [assignStmt] ++ postAsserts ++ [noFallThrough])
     | none, _ => pure (env, arrayElemAssumes ++ postAsserts ++ [noFallThrough])
     | some _, none => throw "Return statement with value but procedure has no output parameters"
-  match stmt.val with
+  match _h : stmt.val with
   | .Assert cond => do
       let coreExpr ← translateExpr ctMap tcMap env cond
       pure (env, arrayElemAssumes ++ [Core.Statement.assert ("assert" ++ getNameFromMd stmt.md) coreExpr stmt.md])
@@ -584,6 +615,14 @@ partial def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstr
           let coreExpr ← translateExpr ctMap tcMap env stmt
           mkReturnStmts (some coreExpr)
       | none => pure (env, [])  -- No output param - ignore expression result
+termination_by sizeOf stmt
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at this; simp at this; omega)
+    | (have := List.sizeOf_lt_of_mem ‹_›;
+       have := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at this; simp at this; omega)
 
 /-- Translate parameter with constrained type resolution -/
 def translateParameterToCoreWithCT (ctMap : ConstrainedTypeMap) (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
@@ -838,20 +877,26 @@ Check if a StmtExpr is a pure expression (can be used as a Core function body).
 Pure expressions don't contain statements like assignments, loops, or local variables.
 A Block with a single pure expression is also considered pure.
 -/
-partial def isPureExpr : StmtExprMd → Bool
-  | ⟨.LiteralBool _, _⟩ => true
-  | ⟨.LiteralInt _, _⟩ => true
-  | ⟨.LiteralString _, _⟩ => true
-  | ⟨.Identifier _, _⟩ => true
-  | ⟨.PrimitiveOp _ args, _⟩ => args.all isPureExpr
-  | ⟨.IfThenElse c t (some e), _⟩ => isPureExpr c && isPureExpr t && isPureExpr e
-  | ⟨.StaticCall _ args, _⟩ => args.all isPureExpr
-  | ⟨.ReferenceEquals e1 e2, _⟩ => isPureExpr e1 && isPureExpr e2
-  | ⟨.Block [single] _, _⟩ => isPureExpr single
-  | ⟨.Forall _ _ body, _⟩ => isPureExpr body
-  | ⟨.Exists _ _ body, _⟩ => isPureExpr body
-  | ⟨.Return (some e), _⟩ => isPureExpr e
+def isPureExpr (e : StmtExprMd) : Bool :=
+  match _h : e.val with
+  | .LiteralBool _ | .LiteralInt _ | .LiteralString _ | .Identifier _ => true
+  | .PrimitiveOp _ args => args.attach.all fun ⟨a, _⟩ => isPureExpr a
+  | .IfThenElse c t (some el) => isPureExpr c && isPureExpr t && isPureExpr el
+  | .StaticCall _ args => args.attach.all fun ⟨a, _⟩ => isPureExpr a
+  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
+  | .Block [single] _ => isPureExpr single
+  | .Forall _ _ body => isPureExpr body
+  | .Exists _ _ body => isPureExpr body
+  | .Return (some ret) => isPureExpr ret
   | _ => false
+termination_by sizeOf e
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := StmtExprMd.sizeOf_val_lt e; rw [_h] at this; simp at this; omega)
+    | (have := List.sizeOf_lt_of_mem ‹_›;
+       have := StmtExprMd.sizeOf_val_lt e; rw [_h] at this; simp at this; omega)
 
 /--
 Check if a procedure can be translated as a Core function.
