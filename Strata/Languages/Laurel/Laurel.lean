@@ -68,7 +68,7 @@ structure HighTypeMd where
   md : Imperative.MetaData Core.Expression
   deriving Repr
 
-/-- A wrapper that adds metadata to any type -/
+/-- A wrapper that adds metadata to StmtExpr -/
 structure StmtExprMd where
   val : StmtExpr
   md : Imperative.MetaData Core.Expression
@@ -203,6 +203,9 @@ instance : Inhabited StmtExpr where
 
 instance : Inhabited HighTypeMd where
   default := { val := HighType.TVoid, md := default }
+
+theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
+  cases e; rename_i val md; show sizeOf val < 1 + sizeOf val + sizeOf md; omega
 
 partial def highEq (a: HighTypeMd) (b: HighTypeMd) : Bool := match a.val, b.val with
   | HighType.TVoid, HighType.TVoid => true

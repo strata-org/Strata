@@ -41,7 +41,7 @@ partial def formatHighTypeVal : HighType → Format
   | .TFloat64 => "float64"
   | .TString => "string"
   | .THeap => "Heap"
-  | .TTypedField _ => "Field"
+  | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++

@@ -100,19 +100,6 @@ partial def transformTarget (expr : StmtExprMd) : SequenceM StmtExprMd := do
       return ⟨ .StaticCall name seqArgs, expr.md ⟩
   | _ => return expr  -- Identifiers and other targets stay as-is (no snapshot substitution)
 
-/-- Helper to create a StmtExprMd with empty metadata -/
-def mkStmtExprMdEmpty' (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
-
--- Add Inhabited instance for StmtExprMd to help with partial definitions
-instance : Inhabited StmtExprMd where
-  default := ⟨.Hole, #[]⟩
-
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
-
 mutual
 /-
 Process an expression, extracting any assignments to preceding statements.

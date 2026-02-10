@@ -40,12 +40,6 @@ structure AnalysisResult where
   writesHeapDirectly : Bool := false
   callees : List Identifier := []
 
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
-
 mutual
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
   termination_by sizeOf expr
