@@ -7,7 +7,7 @@ module
 
 import Lean.PrettyPrinter.Formatter
 import Lean.PrettyPrinter.Parenthesizer
-import Strata.DDM.Util.String
+import all Strata.DDM.Util.String
 
 public meta import Lean.Elab.Syntax
 

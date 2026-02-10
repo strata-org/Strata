@@ -6,9 +6,10 @@
 
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Util.DecidableEq
-import Lean.Data.Position
+import Strata.Util.FileRange
 
 namespace Imperative
+open Strata (DiagnosticModel FileRange)
 
 ---------------------------------------------------------------------
 
@@ -65,22 +66,6 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
       | .label s => f!"MetaDataElem.Field.label {s}"
     Repr.addAppParen res prec
 
-inductive Uri where
-  | file (path: String)
-  deriving DecidableEq
-
-instance : ToFormat Uri where
- format fr := match fr with | .file path => path
-
-structure FileRange where
-  file: Uri
-  start: Lean.Position
-  ending: Lean.Position
-  deriving DecidableEq
-
-instance : ToFormat FileRange where
- format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
-
 /-- A metadata value, which can be either an expression, a message, or a fileRange -/
 inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a structured expression. -/
@@ -90,17 +75,19 @@ inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
 
-
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
-  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
+  format f := match f with
+              | .expr e => f!"{e}"
+              | .msg s => f!"{s}"
+              | .fileRange r => f!"{r}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
     let res :=
       match v with
-      | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
-      | .msg s => f!"MetaDataElem.Value.msg {s}"
-      | .fileRange fr => f!"MetaDataElem.Value.fileRange {fr}"
+      | .expr e => f!".expr {reprPrec e prec}"
+      | .msg s => f!".msg {s}"
+      | .fileRange fr => f!".fileRange {fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -182,5 +169,33 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+
+def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
+  let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
+  match fileRangeElement.value with
+    | .fileRange fileRange =>
+      some fileRange
+    | _ => none
+
+/-- Create a DiagnosticModel from metadata and a message.
+    Uses the file range from metadata if available, otherwise uses a default location. -/
+def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) : DiagnosticModel :=
+  match getFileRange md with
+  | some fr => DiagnosticModel.withRange fr msg
+  | none => DiagnosticModel.fromMessage msg
+
+/-- Create a DiagnosticModel from metadata and a Format message. -/
+def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) : DiagnosticModel :=
+  MetaData.toDiagnostic md (toString msg)
+
+/-- Get the file range from metadata as a DiagnosticModel (for formatting).
+    This is a compatibility function that formats the file range using byte offsets.
+    For proper line/column display, use toDiagnostic and format with a FileMap at the top level. -/
+def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fileMap : Option Lean.FileMap := none) (includeEnd? : Bool := false) : Format :=
+  match getFileRange md with
+  | some fr => fr.format fileMap includeEnd?
+  | none => f!""
+
+---------------------------------------------------------------------
 
 end Imperative

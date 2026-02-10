@@ -4,10 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
+import Lean.Elab.Command
 
 open Strata
 open String
+open Lean Elab
 namespace StrataTest.Util
 
 /-- A diagnostic expectation parsed from source comments -/
@@ -28,27 +30,26 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
   for i in [0:lines.length] do
     let line := lines[i]!
     -- Check if this is a comment line with diagnostic expectation
-    if line.trimLeft.startsWith "//" then
-      let trimmed := line.trimLeft.drop 2  -- Remove "//"
+    if line.trimAsciiStart.startsWith "//" then
+      let trimmed := line.trimAsciiStart.drop 2 |>.toString -- Remove "//"
       -- Find the caret sequence
-      let caretStart := trimmed.find (· == '^')
-      let mut currentCaret := caretStart
-      while not (Pos.Raw.atEnd trimmed currentCaret) && (Pos.Raw.get trimmed currentCaret) == '^' do
-        currentCaret := Pos.Raw.next trimmed currentCaret
+      let caretStart := trimmed.find (· = '^')
+      -- Find end of carets
+      let currentCaret := caretStart.find (· ≠ '^')
 
       -- Get the message part after carets
-      let afterCarets := trimmed.drop currentCaret.byteIdx |>.trim
+      let afterCarets := trimmed.extract currentCaret trimmed.endPos |>.trimAscii |>.toString
       if afterCarets.length > 0 then
         -- Parse level and message
         match afterCarets.splitOn ":" with
         | level :: messageParts =>
-          let level := level.trim
-          let message := (": ".intercalate messageParts).trim
+          let level := level.trimAscii.toString
+          let message := (": ".intercalate messageParts).trimAscii.toString
 
           -- Calculate column positions (carets are relative to line start including comment spacing)
-          let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).length + "//".length
-          let caretColStart := commentPrefix + caretStart.byteIdx
-          let caretColEnd := commentPrefix + currentCaret.byteIdx
+          let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).toString.length + "//".length
+          let caretColStart := commentPrefix + caretStart.offset.byteIdx
+          let caretColEnd := commentPrefix + currentCaret.offset.byteIdx
 
           -- The diagnostic is on the previous line
           if i > 0 then
@@ -75,17 +76,20 @@ def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :
   diag.ending.column == exp.colEnd &&
   stringContains diag.message exp.message
 
-/-- Generic test function for files with diagnostic expectations.
-    Takes a function that processes a file path and returns a list of diagnostics. -/
-def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) : IO Unit := do
-  let content <- IO.FS.readFile filePath
+/-- Test input with line offset - adds imaginary newlines to the start of the input -/
+def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
+    (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
+
+  -- Add imaginary newlines to the start of the input so the reported line numbers match the Lean source file
+  let offsetInput := String.join (List.replicate lineOffset "\n") ++ input
+  let inputContext := Parser.stringInputContext filename offsetInput
 
   -- Parse diagnostic expectations from comments
-  let expectations := parseDiagnosticExpectations content
+  let expectations := parseDiagnosticExpectations offsetInput
   let expectedErrors := expectations.filter (fun e => e.level == "error")
 
   -- Get actual diagnostics from the language-specific processor
-  let diagnostics <- processFn filePath
+  let diagnostics <- process inputContext
 
   -- Check if all expected errors are matched
   let mut allMatched := true
@@ -97,7 +101,6 @@ def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) :
       allMatched := false
       unmatchedExpectations := unmatchedExpectations.append [exp]
 
-  -- Check if there are unexpected diagnostics
   let mut unmatchedDiagnostics := []
   for diag in diagnostics do
     let matched := expectedErrors.any (fun exp => matchesDiagnostic diag exp)
@@ -108,7 +111,6 @@ def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) :
   -- Report results
   if allMatched && diagnostics.size == expectedErrors.length then
     IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
-    -- Print details of matched expectations
     for exp in expectedErrors do
       IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
   else
@@ -124,5 +126,9 @@ def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) :
       IO.println s!"\nUnexpected diagnostics:"
       for diag in unmatchedDiagnostics do
         IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+    throw (IO.userError "Test failed")
+
+def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
+  testInputWithOffset filename input 0 process
 
 end StrataTest.Util

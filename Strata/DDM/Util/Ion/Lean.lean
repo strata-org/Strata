@@ -240,7 +240,7 @@ public meta def getIonEntriesImpl : Lean.Elab.Term.TermElab := fun stx _ =>
   | _ =>
     throwUnsupportedSyntax
 
-private meta def mkIdent (si : SourceInfo) (n : Name) : TSyntax `ident := ⟨.ident si n.toString.toSubstring n []⟩
+private meta def mkIdent (si : SourceInfo) (n : Name) : TSyntax `ident := ⟨.ident si n.toString.toRawSubstring n []⟩
 
 syntax (name := declareIonSymbolTable) "#declareIonSymbolTable" ident : command -- declare the syntax
 

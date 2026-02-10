@@ -68,12 +68,23 @@ def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : P
 def PathConditions.removeByNames (ps : PathConditions P) (names : List String) : PathConditions P :=
   ps.map (fun pc => pc.filter (fun (name, _) => !names.contains name))
 
+inductive PropertyType where
+  | cover
+  | assert
+  deriving Repr, DecidableEq
+
+instance : ToFormat PropertyType where
+  format p := match p with
+    | .cover => "cover"
+    | .assert => "assert"
+
 /--
 A proof obligation can be discharged by some backend solver or a dedicated
 decision procedure or via denotation into Lean.
 -/
 structure ProofObligation (P : PureExpr) where
   label : String
+  property : PropertyType
   assumptions : PathConditions P
   obligation : P.Expr
   metadata : MetaData P
@@ -87,6 +98,7 @@ instance [BEq P.Ident] [BEq P.Expr] [BEq (MetaData P)] : BEq (ProofObligation P)
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] : ToFormat (ProofObligation P) where
   format ob := f!"Label: {ob.label}\n\
+                  Property : {ob.property}\n\
                   Assumptions: {PathConditions.format' ob.assumptions}\n\
                   Obligation: {ob.obligation}\n\
                   Metadata: {ob.metadata}\n"

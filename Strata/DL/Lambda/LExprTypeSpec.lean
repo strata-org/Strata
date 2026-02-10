@@ -244,15 +244,19 @@ example : LExpr.HasType LContext.default { types := [[(⟨"x", ()⟩, t[∀a. %a
 example : LExpr.HasType LContext.default { types := [[(⟨"m", ()⟩, t[∀a. %a → int])]]}
                         esM[(m #true)]
                         t[int] := by
-  apply LExpr.HasType.tapp _ _ _ _ _ t[bool] <;> (try simp +ground)
-  <;> try apply LExpr.HasType.tbool_const <;> simp[KnownTypes.containsName]
-  apply LExpr.HasType.tinst _ _ t[∀a. %a → int] t[bool → int] "a" mty[bool]
-  · apply LExpr.HasType.tvar
-    simp +ground
+  apply LExpr.HasType.tapp _ _ _ _ _ t[bool]
+  · simp
+    apply LExpr.HasType.tinst _ _ t[∀a. %a → int] t[bool → int] "a" mty[bool]
+    · apply LExpr.HasType.tvar
+      simp +ground
+    · simp [LTy.open, List.removeAll,
+            LMonoTy.subst, LMonoTys.subst, LMonoTys.subst.substAux,
+            Subst.hasEmptyScopes,
+            Map.isEmpty, Maps.find?, Map.find?]
+  · apply LExpr.HasType.tbool_const
+    solveKnownNames
   · simp +ground
-    exact rfl
-  solveKnownNames
-  done
+  · simp +ground
 
 example : LExpr.HasType {} {} esM[λ %0] t[∀a. %a → %a] := by
   have h_tabs := @LExpr.HasType.tabs (T := ⟨Unit, Unit⟩) _ {} {} () ("a", none) t[%a] esM[%0] t[%a] none

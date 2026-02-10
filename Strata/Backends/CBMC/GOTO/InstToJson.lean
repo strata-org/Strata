@@ -54,7 +54,7 @@ def tyToJson (ty : Ty) : Json :=
   | _ => Json.mkObj [("id", "unknown")]
 
 /-- Convert `Expr` to JSON format -/
-partial def exprToJson (expr : Expr) : Json :=
+def exprToJson (expr : Expr) : Json :=
   let srcField := sourceLocationToJson expr.sourceLoc
   let exprObj := match expr.id with
     | .nullary (.symbol name) => mkSymbolWithSourceLocation name (tyToJson expr.type) expr.sourceLoc
@@ -118,6 +118,10 @@ partial def exprToJson (expr : Expr) : Json :=
       ]
     | _ => panic s!"[exprToJson] Unsupported expr: {format expr}"
   exprObj
+  termination_by (SizeOf.sizeOf expr)
+  decreasing_by all_goals (
+    cases expr; simp_all; rename_i x_in;
+    have := List.sizeOf_lt_of_mem x_in; omega)
 
 /-- Convert `Code` to Json -/
 def codeToJson (code : Code) : Json :=

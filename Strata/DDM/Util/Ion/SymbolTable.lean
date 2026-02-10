@@ -5,9 +5,9 @@
 -/
 module
 
+import Lean.Elab.Command
 public import Strata.DDM.Util.Ion.AST
-meta import Lean.Elab.Command
-meta import Strata.DDM.Util.Lean
+import all Strata.DDM.Util.Lean
 
 public section
 namespace Ion

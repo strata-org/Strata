@@ -36,24 +36,24 @@ bool procedure linearSearch (arr: intArr, e: int)
 
 /--
 info: program C_Simp;
-(bool)procedurelinearSearch(arr:intArr, e:int)//@pretrue;
+bool procedure linearSearch(arr:intArr, e:int)//@pretrue;
 //@posttrue;
   ({
   varidx:int;
-  (idx)=0;
-  while((idx)<(len(arr)))
-  //@decreases((len(arr))-(idx))//@invariant(true)({
-  if((e)==(get(arr,idx))){
+  idx=0;
+  while(idx<(len(arr)))
+  //@decreases((len(arr))-idx)//@invariant(true)({
+  if(e==(get(arr,idx))){
   returntrue;
   }
-  ()(idx)=(idx)+(1);
+  ()idx=idx+(1);
   }
   )returnfalse;
   }
   )
 -/
 #guard_msgs in
-#eval IO.println LinearSearchEnv.format.render
+#eval IO.println LinearSearchEnv
 
 /--
 info: function linearSearch {
@@ -102,4 +102,4 @@ else{}
 return := #false
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program LinearSearchEnv)
+#eval Strata.to_core (Strata.C_Simp.get_program LinearSearchEnv)

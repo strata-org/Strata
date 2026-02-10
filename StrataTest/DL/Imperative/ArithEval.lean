@@ -184,6 +184,7 @@ State:
 error: none
 warnings: []
 deferred: #[Label: x_value_eq
+ Property : assert
  Assumptions: ⏎
  Obligation: true
  Metadata: ⏎
@@ -211,6 +212,7 @@ State:
 error: none
 warnings: []
 deferred: #[Label: x_value_eq
+ Property : assert
  Assumptions: ⏎
  Obligation: ($__x0 : Num) = 100
  Metadata: ⏎

@@ -6,6 +6,10 @@
 
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
+import Strata.DDM.AST
+import Strata.DDM.Util.Array
+import Strata.DL.Util.Func
+import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
 
 /-!
@@ -23,10 +27,10 @@ Also see `Strata.DL.Lambda.IntBoolFactory` for a concrete example of a factory.
 
 
 namespace Lambda
-
+open Strata
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta]
+variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
 ---------------------------------------------------------------------
 
@@ -52,70 +56,40 @@ abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
 abbrev LTySignature := Signature IDMeta LTy
 
+def inline_attr : String := "inline"
+def inline_if_constr_attr : String := "inline_if_constr"
+def eval_if_constr_attr : String := "eval_if_constr"
+
+-- Re-export Func from Util for backward compatibility
+open Strata.DL.Util (Func TyIdentifier)
 
 /--
-A Lambda factory function, where the body can be optional. Universally
-quantified type identifiers, if any, appear before this signature and can
+A Lambda factory function - instantiation of `Func` for Lambda expressions.
+
+Universally quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
-
-A optional evaluation function can be provided in the `concreteEval` field for
-each factory function to allow the partial evaluator to do constant propagation
-when all the arguments of a function are concrete. Such a function should take
-two inputs: a function call expression and also -- somewhat redundantly, but
-perhaps more conveniently -- the list of arguments in this expression.  Here's
-an example of a `concreteEval` function for `Int.Add`:
-
-```
-(fun e args => match args with
-               | [e1, e2] =>
-                 let e1i := LExpr.denoteInt e1
-                 let e2i := LExpr.denoteInt e2
-                 match e1i, e2i with
-                 | some x, some y => (.const (toString (x + y)) mty[int])
-                 | _, _ => e
-               | _ => e)
-```
-
-Note that if there is an arity mismatch or if the arguments are not
-concrete/constants, this fails and we return the original term `e`.
-
-(TODO) Can we enforce well-formedness of the denotation function? E.g., that it
-has the right number and type of arguments, etc.?
-(TODO) Use `.bvar`s in the body to correspond to the formals instead of using
-`.fvar`s.
 -/
-structure LFunc (T : LExprParams) where
-  name     : T.Identifier
-  typeArgs : List TyIdentifier := []
-  isConstr : Bool := false --whether function is datatype constructor
-  inputs   : @LMonoTySignature T.IDMeta
-  output   : LMonoTy
-  body     : Option (LExpr T.mono) := .none
-  -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
-  -- a function, etc.).
-  attr     : Array String := #[]
-  -- The T.Metadata argument is the metadata that will be attached to the
-  -- resulting expression of concreteEval if evaluation was successful.
-  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
-  axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
+abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+
+/--
+Helper constructor for LFunc to maintain backward compatibility.
+-/
+def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
+    (isConstr : Bool := false) (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
+    (body : Option (LExpr T.mono) := .none) (attr : Array String := #[])
+    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
+    (axioms : List (LExpr T.mono) := []) : LFunc T :=
+  Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms
+
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
-instance : ToFormat (LFunc T) where
-  format f :=
-    let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
-    let typeArgs := if f.typeArgs.isEmpty
-                    then f!""
-                    else f!"∀{f.typeArgs}."
-    let type := f!"{typeArgs} ({Signature.format f.inputs}) → {f.output}"
-    let sep := if f.body.isNone then f!";" else f!" :="
-    let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
-    f!"{attr}\
-       func {f.name} : {type}{sep}\
-       {body}"
+-- Provide explicit instance for LFunc to ensure proper resolution
+instance [ToFormat T.IDMeta] [Inhabited T.Metadata] : ToFormat (LFunc T) where
+  format := Func.format
 
-def LFunc.type (f : (LFunc T)) : Except Format LTy := do
+def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then
     .error f!"[{f.name}] Duplicates found in the formals!\
               {Format.line}\
@@ -131,6 +105,15 @@ def LFunc.type (f : (LFunc T)) : Except Format LTy := do
   | [] => .ok (.forAll f.typeArgs f.output)
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
+
+omit [Inhabited T.Metadata] [ToFormat T.IDMeta] in
+theorem LFunc.type_inputs_nodup [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
+    f.type = .ok ty → f.inputs.keys.Nodup := by
+  intro h
+  simp only [LFunc.type, bind, Except.bind] at h
+  -- At this point grind is possible if this proof needs maintenance
+  split at h <;> try contradiction
+  simp_all
 
 def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
   let input_tys := f.inputs.values
@@ -148,7 +131,7 @@ def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
 
 def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
   { f with
-    body := f.body.map LExpr.eraseTypes,
+    body := f.body.map LExpr.eraseTypes
     axioms := f.axioms.map LExpr.eraseTypes
   }
 
@@ -168,6 +151,10 @@ def Factory.default : @Factory T := #[]
 instance : Inhabited (@Factory T) where
   default := @Factory.default T
 
+instance : Membership (LFunc T) (@Factory T) where
+  mem x f := Array.Mem x f
+
+
 def Factory.getFunctionNames (F : @Factory T) : Array T.Identifier :=
   F.map (fun f => f.name)
 
@@ -177,21 +164,23 @@ def Factory.getFactoryLFunc (F : @Factory T) (name : String) : Option (LFunc T) 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Format (@Factory T) :=
+def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except DiagnosticModel (@Factory T) :=
   match F.getFactoryLFunc func.name.name with
   | none => .ok (F.push func)
   | some func' =>
-    .error f!"A function of name {func.name} already exists! \
+    .error <| DiagnosticModel.fromFormat f!"A function of name {func.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Function: {func'}\n\
               New Function:{func}"
+
 
 /--
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def Factory.addFactory (F newF : @Factory T) : Except Format (@Factory T) :=
+def Factory.addFactory (F newF : @Factory T) : Except DiagnosticModel (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
+
 
 def getLFuncCall {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
   go e []

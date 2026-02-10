@@ -2,8 +2,6 @@
 # Script to run basic test of strata generator.
 set -e
 
-test_dir="$PWD/test_results"
-
 strata=../../.lake/build/bin/strata
 
 if [ ! -f $strata ]; then
@@ -11,10 +9,12 @@ if [ ! -f $strata ]; then
   exit 1
 fi
 
-mkdir -p "$test_dir/dialects"
+dialect_dir="dialects"
 
-python3 -m strata.gen dialect "$test_dir/dialects"
-$strata print "$test_dir/dialects/Python.dialect.st.ion" > "$test_dir/dialects/Python.dialect.st"
+mkdir -p "$dialect_dir"
 
-$strata check "$test_dir/dialects/Python.dialect.st.ion"
-$strata check "$test_dir/dialects/Python.dialect.st"
+python3 -m strata.gen dialect "$dialect_dir"
+$strata print "$dialect_dir/Python.dialect.st.ion" > "$dialect_dir/Python.dialect.st"
+
+$strata check "$dialect_dir/Python.dialect.st.ion"
+$strata check "$dialect_dir/Python.dialect.st"

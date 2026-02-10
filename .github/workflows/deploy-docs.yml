@@ -1,0 +1,38 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy_doc:
+    name: Deploy documentation
+    runs-on: ubuntu-latest
+    environment: github-pages
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build documentation package
+        uses: leanprover/lean-action@v1
+        with:
+          build-args: '--wfail'
+          lake-package-directory: 'docs/verso'
+      - name: Build documentation
+        run: ./generate.sh
+        working-directory: docs/verso
+      - name: Create documentation index
+        run: |
+          cp index.html _out/
+          cp ../../strata_logo.png _out/
+        working-directory: docs/verso
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/verso/_out
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

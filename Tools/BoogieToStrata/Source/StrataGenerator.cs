@@ -212,7 +212,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void EmitHeader() {
-        WriteLine("program Boogie;");
+        WriteLine("program Core;");
         WriteLine("type StrataHeap;");
         WriteLine("type StrataRef;");
         WriteLine("type StrataField (t: Type);");
@@ -927,12 +927,10 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
 
         WriteLine(")");
-        if (whileCmd.Invariants.Count != 0) {
-            IncIndent();
-            Indent("invariant");
-            EmitSeparated(whileCmd.Invariants, i => VisitExpr(i.Expr), " && ");
-            WriteLine(";");
-            DecIndent();
+        foreach (var inv in whileCmd.Invariants) {
+            Indent("invariant ");
+            VisitExpr(inv.Expr);
+            WriteLine("");
         }
         IndentLine("{");
         IncIndent();

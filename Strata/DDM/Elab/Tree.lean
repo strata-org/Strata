@@ -32,6 +32,11 @@ over the parameters.
 Variable belongs to the particular category below.
 -/
 | cat (k : SyntaxCat)
+/--
+Variable is a polymorphic type variable (for function type parameters).
+These are passed through to the dialect's typechecker for inference.
+-/
+| tvar (ann : SourceRange) (name : String)
 deriving Inhabited, Repr
 
 namespace BindingKind
@@ -48,6 +53,7 @@ def ofCat (c : SyntaxCat) : BindingKind :=
 def categoryOf : BindingKind → SyntaxCat
 | .expr tp => .atom tp.ann q`Init.Expr
 | .type loc _ _ => .atom loc q`Init.Type
+| .tvar loc _ => .atom loc q`Init.Type
 | .cat c => c
 
 instance : ToStrataFormat BindingKind where
@@ -55,6 +61,7 @@ instance : ToStrataFormat BindingKind where
     match bk with
     | .expr tp => mformat tp
     | .type _ params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
+    | .tvar _ name => mformat f!"tvar({name})"
     | .cat c => mformat c
 
 end BindingKind
@@ -161,6 +168,15 @@ protected def pushBindings (tctx : TypingContext) (b : Bindings) : TypingContext
   b.toArray.foldl .push tctx
 
 /--
+Create a new TypingContext with a different GlobalContext but the same local
+bindings. Used for recursive datatype definitions where the datatype name needs to be added to the GlobalContext before parsing constructor field types.
+-/
+protected def withGlobalContext (tctx : TypingContext) (gctx : GlobalContext) : TypingContext where
+  globalContext := gctx
+  bindings := tctx.bindings
+  map := tctx.map
+
+/--
 This contains information about a bound or global variable.
 -/
 inductive VarBinding
@@ -237,11 +253,7 @@ structure OptionInfo extends ElabInfo where
   deriving Inhabited, Repr
 
 structure SeqInfo extends ElabInfo where
-  args : Array Arg
-  resultCtx : TypingContext
-deriving Inhabited, Repr
-
-structure CommaSepInfo extends ElabInfo where
+  sep : SepFormat
   args : Array Arg
   resultCtx : TypingContext
 deriving Inhabited, Repr
@@ -258,7 +270,6 @@ inductive Info
 | ofBytesInfo (info : ConstInfo ByteArray)
 | ofOptionInfo (info : OptionInfo)
 | ofSeqInfo (info : SeqInfo)
-| ofCommaSepInfo (info : CommaSepInfo)
 deriving Inhabited, Repr
 
 namespace Info
@@ -292,7 +303,6 @@ def elabInfo (info : Info) : ElabInfo :=
   | .ofBytesInfo info => info.toElabInfo
   | .ofOptionInfo info => info.toElabInfo
   | .ofSeqInfo info => info.toElabInfo
-  | .ofCommaSepInfo info => info.toElabInfo
 
 def inputCtx (info : Info) : TypingContext := info.elabInfo.inputCtx
 
@@ -338,8 +348,7 @@ def arg : Tree → Arg
       | #[x] => some x.arg
       | _ => panic! "Unexpected option"
     .option info.loc r
-  | .ofSeqInfo info => .seq info.loc info.args
-  | .ofCommaSepInfo info => .commaSepList info.loc info.args
+  | .ofSeqInfo info => .seq info.loc info.sep info.args
 
 theorem sizeOf_children (t : Tree) (i : Nat) (p : i < t.children.size) : sizeOf t[i] < sizeOf t := by
   match t with
@@ -361,7 +370,6 @@ def resultContext (t : Tree) : TypingContext :=
     else
       info.inputCtx
   | .ofSeqInfo info => info.resultCtx
-  | .ofCommaSepInfo info => info.resultCtx
 termination_by t
 
 def isSpecificOp (tree : Tree) (expected : QualifiedIdent) : Bool :=
@@ -375,14 +383,20 @@ def asOption? (t : Tree) : Option (Option Tree) :=
   | _ => none
 
 def asCommaSepInfo? (t : Tree) : Option (Array Tree) :=
-  if let .ofCommaSepInfo _ := t.info then
-    some t.children
+  if let .ofSeqInfo info := t.info then
+    if info.sep == .comma then
+      some t.children
+    else
+      none
   else
     none
 
 def asCommaSepInfo! (t : Tree) : Array Tree :=
-  if let .ofCommaSepInfo _ := t.info then
-    t.children
+  if let .ofSeqInfo info := t.info then
+    if info.sep == .comma then
+      t.children
+    else
+      panic! "Expected commaSepInfo"
   else
     panic! "Expected commaSepInfo"
 

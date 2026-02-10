@@ -109,7 +109,7 @@ op procedure (retType: Type,
               name : Ident,
               @[scope(b)] pre: bool,
               @[scope(b)] post: bool,
-              @[scope(b)] body : Block) : Command => retType "procedure" name typeArgs b
+              @[scope(b)] body : Block) : Command => retType " procedure " name typeArgs b
                                                      "//@pre" indent(2, pre) ";\n"
                                                      "//@post" indent(2, post) ";\n"
                                                      indent(2, body);

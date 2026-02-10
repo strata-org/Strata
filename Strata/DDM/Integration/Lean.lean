@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean.Gen
-import Strata.DDM.Integration.Lean.HashCommands
+public import Strata.DDM.Integration.Lean.Gen
+public import Strata.DDM.Integration.Lean.HashCommands

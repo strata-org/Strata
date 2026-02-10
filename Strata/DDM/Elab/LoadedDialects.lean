@@ -121,7 +121,7 @@ def strata_ion_dialect_ext : String := ".dialect.st.ion"
 
 def matchExt (path : String) (ext : String) : Option String :=
   if path.endsWith ext then
-    some (path.dropRight ext.length)
+    some (path.dropEnd ext.length).toString
   else
     none
 
@@ -153,7 +153,8 @@ def add (m : DialectFileMap) (dir : System.FilePath) : EIO String DialectFileMap
     else if let some stem := matchExt entry.fileName strata_ion_dialect_ext then
       m.addEntry stem .ion entry.path
     else do
-      let _ ← IO.eprintln s!"Skipping {dir / entry.fileName}" |>.toBaseIO
+      if !entry.fileName.startsWith "." then
+        let _ ← IO.eprintln s!"Skipping {dir / entry.fileName}" |>.toBaseIO
       pure m
 
 def ofDirs (dirs : Array System.FilePath) : EIO String DialectFileMap :=

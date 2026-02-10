@@ -10,12 +10,18 @@ public import Strata.DDM.Util.Ion.Deserialize
 public import Strata.DDM.Util.Ion.Serialize
 public import Strata.DDM.Util.Ion.SymbolTable
 
-import Strata.DDM.Util.Fin
+import all Strata.DDM.Util.ByteArray
+import all Strata.DDM.Util.Fin
 import Strata.DDM.Util.Ion.Deserialize
 import Strata.DDM.Util.Ion.JSON
 
 public section
 namespace Ion
+
+/--
+Returns true if this starts with the Ion binary version marker.
+-/
+def isIonFile (bytes : ByteArray) : Bool := bytes.startsWith binaryVersionMarker
 
 structure Position where
   indices : Array Nat := #[]
@@ -37,10 +43,6 @@ public instance : ToString Position where
     .intercalate "." ("root" :: l)
 
 end Position
-
-#guard toString Position.root = "root"
-#guard toString (Position.root |>.push 0) = "root.0"
-#guard toString (Position.root |>.push 0 |>.push 1) = "root.0.1"
 
 namespace SymbolTable
 
@@ -145,7 +147,7 @@ def internAndSerialize (values : List (Ion String)) (symbols : SymbolTable := .s
 /--
 Write a list of Ion values to file.
 -/
-def writeBinaryFile (path : System.FilePath) (values : List (Ion String)) (symbols : SymbolTable := system): IO Unit := do
+def writeBinaryFile (path : System.FilePath) (values : List (Ion String)) (symbols : SymbolTable := .system): IO Unit := do
   IO.FS.writeBinFile path (internAndSerialize values symbols)
 
 end Ion

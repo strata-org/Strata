@@ -4,12 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Boogie
+import Strata.Languages.Core.Core
 
 namespace Strata
 namespace Python
 
-/-- A type identifier in the Python Boogie prelude. -/
+/-- A type identifier in the Strata Core prelude for Python. -/
 abbrev TypeId := String
 
 /-- An argument declaration for a Python method -/
@@ -48,7 +48,7 @@ structure FuncDecl where
 instance : Inhabited FuncDecl where
   default := { args := #[], argIndexMap := {} }
 
-/-- The name of a Python method as encoded in the Boogie dialect-/
+/-- The name of a Python method as encoded in the Strata Core dialect-/
 abbrev FuncName := String
 
 /-- A collection of function signatures. -/
@@ -58,19 +58,19 @@ deriving Inhabited
 
 namespace Signatures
 
-def getFuncSigOrder (db : Signatures) (fname: FuncName) : List String :=
+def getFuncSigOrder (db : Signatures) (fname: FuncName) : Except String (List String) :=
   match  db.functions[fname]? with
-  | some decl => decl.args |>.map (·.name) |>.toList
-  | none => panic! s!"Missing function signature : {fname}"
+  | some decl => .ok (decl.args |>.map (·.name) |>.toList)
+  | none => .error s!"Missing function signature : {fname}"
 
 -- We should extract the function signatures from the prelude:
-def getFuncSigType (db : Signatures) (fname: FuncName) (arg: String) : String :=
+def getFuncSigType (db : Signatures) (fname: FuncName) (arg: String) : Except String String :=
   match  db.functions[fname]? with
-  | none => panic! s!"Missing function signature : {fname}"
+  | none => .error s!"Missing function signature : {fname}"
   | some decl =>
     match decl.argIndexMap[arg]? with
-    | none => panic! s!"Unrecognized arg : {arg}"
-    | some idx => decl.args[idx].type
+    | none => .error s!"Unrecognized arg : {arg}"
+    | some idx => .ok decl.args[idx].type
 
 end Signatures
 
@@ -143,7 +143,7 @@ def coreSignatures : Signatures := addCoreDecls |>.run
 
 end
 
-def TypeStrToBoogieExpr (ty: String) : Boogie.Expression.Expr :=
+def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
   if !ty.endsWith "OrNone" then
     panic! s!"Should only be called for possibly None types. Called for: {ty}"
   else

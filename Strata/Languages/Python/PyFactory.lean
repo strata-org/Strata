@@ -4,8 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Verifier
-import Strata.Languages.Python.Regex.ReToBoogie
+import Strata.Languages.Core.Verifier
+import Strata.Languages.Python.Regex.ReToCore
 
 namespace Strata
 namespace Python
@@ -27,7 +27,7 @@ if not re.match(REGEX, name) then # default flags == 0
 ...
 ```
 
-## Corresponding Strata.Boogie:
+## Corresponding Strata.Core:
 
 ```
 procedure _main () {
@@ -61,10 +61,10 @@ if not PyReMatch(REGEX, name, 0) then
 
 -/
 
-open Boogie
+open Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
-def reCompileFunc : LFunc Boogie.BoogieLParams :=
+def reCompileFunc : LFunc Core.CoreLParams :=
     { name := "PyReCompile",
       typeArgs := [],
       inputs := [("string", mty[string]),
@@ -78,10 +78,10 @@ def reCompileFunc : LFunc Boogie.BoogieLParams :=
             -- (FIXME): We use `.match` mode below because we support only
             -- `re.match` for now. However, `re.compile` isn't mode-specific in
             -- general.
-            let (expr, maybe_err) := pythonRegexToBoogie s .match
+            let (expr, maybe_err) := pythonRegexToCore s .match
             match maybe_err with
             | none =>
-              -- Note: Do not use `eb` (in Boogie.Syntax) here (e.g., see below)
+              -- Note: Do not use `eb` (in Strata Core Syntax) here (e.g., see below)
               -- eb[(~ExceptErrorRegex_mkOK expr)]
               -- that captures `expr` as an `.fvar`.
               .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkOK" none) [expr])
@@ -94,7 +94,7 @@ def reCompileFunc : LFunc Boogie.BoogieLParams :=
           | _ => .none)
       }
 
-def ReFactory : @Factory Boogie.BoogieLParams :=
+def ReFactory : @Factory Core.CoreLParams :=
     #[
       reCompileFunc
     ]

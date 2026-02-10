@@ -21,6 +21,7 @@ private abbrev LExprTP : Imperative.PureExpr :=
    { Ident := TestParams.Identifier,
      Expr := Lambda.LExprT TestParams.mono,
      Ty := Lambda.LMonoTy,
+     ExprMetadata := TestParams.Metadata,
      TyEnv := @Lambda.TEnv TestParams.IDMeta,
      TyContext := @Lambda.LContext TestParams,
      EvalEnv := Lambda.LState TestParams
@@ -44,7 +45,7 @@ private def lookupType (T : LExprTP.TyEnv) (i : LExprTP.Ident) : Except Format C
     else .error f!"Poly-type unexpected in the context for {i}: {ty}"
 
 private def updateType (T : LExprTP.TyEnv) (i : LExprTP.Ident) (ty : LExprTP.Ty) : LExprTP.TyEnv :=
-  T.insertInContext i (.forAll [] ty)
+  T.addInNewestContext [(i, (.forAll [] ty))]
 
 instance : Imperative.ToGoto LExprTP where
   lookupType := lookupType

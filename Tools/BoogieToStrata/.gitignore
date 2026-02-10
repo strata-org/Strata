@@ -4,6 +4,6 @@
 bin
 obj
 vcs
-Tests/*.boogie.st
+Tests/*.core.st
 Tests/*.out
 Tests/*.err

@@ -38,6 +38,8 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   This will likely be removed, in favor of an alternative view of imperative
   programs that is purely untructured. -/
   | goto     (label : String) (md : MetaData P := .empty)
+  /-- A function declaration within a statement block. -/
+  | funcDecl (decl : PureFunc P) (md : MetaData P := .empty)
   deriving Inhabited
 
 /-- A block is simply an abbreviation for a list of commands. -/
@@ -69,19 +71,22 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       motive (Stmt.loop guard measure invariant body md))
     (goto_case : ∀ (label : String) (md : MetaData P),
       motive (Stmt.goto label md))
+    (funcDecl_case : ∀ (decl : PureFunc P) (md : MetaData P),
+      motive (Stmt.funcDecl decl md))
     (s : Stmt P Cmd) : motive s :=
   match s with
   | Stmt.cmd c => cmd_case c
   | Stmt.block label b md =>
-    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
+    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
   | Stmt.ite cond thenb elseb md =>
     ite_case cond thenb elseb md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
   | Stmt.loop guard measure invariant body md =>
     loop_case guard measure invariant body md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
   | Stmt.goto label md => goto_case label md
+  | Stmt.funcDecl decl md => funcDecl_case decl md
   termination_by s
 
 ---------------------------------------------------------------------
@@ -97,6 +102,7 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   | .ite c tss ess _ => 3 + sizeOf c + Block.sizeOf tss + Block.sizeOf ess
   | .loop g _ _ bss _ => 3 + sizeOf g + Block.sizeOf bss
   | .goto _ _ => 1
+  | .funcDecl _ _ => 1
 
 @[simp]
 def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
@@ -105,6 +111,12 @@ def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
   | s :: srest => 1 + Stmt.sizeOf s + Block.sizeOf srest
 
 end
+
+theorem sizeOf_stmt_in_block {s : Imperative.Stmt P C} {b: Imperative.Block P C} (s_in: s ∈ b) : s.sizeOf < b.sizeOf := by
+  induction b with
+  | nil => grind
+  | cons hd tl IH =>
+    rw[List.mem_cons] at s_in; simp only [Block.sizeOf]; grind
 
 instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
   sizeOf := Stmt.sizeOf
@@ -142,6 +154,34 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### NoFuncDecl
+
+Predicate stating that a statement or block contains no function declarations.
+This is useful when converting to non-deterministic statements which don't have function declarations.
+-/
+
+mutual
+/-- Returns true if the statement contains no function declarations. -/
+def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.noFuncDecl bss
+  | .ite _ tss ess _ => Block.noFuncDecl tss && Block.noFuncDecl ess
+  | .loop _ _ _ bss _ => Block.noFuncDecl bss
+  | .goto _ _ => true
+  | .funcDecl _ _ => false
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no function declarations. -/
+def Block.noFuncDecl (ss : Block P C) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noFuncDecl s && Block.noFuncDecl srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### HasVars -/
 
 mutual
@@ -153,6 +193,14 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
   | .ite _ tbss ebss _ => Block.getVars tbss ++ Block.getVars ebss
   | .loop _ _ _ bss _ => Block.getVars bss
   | .goto _ _  => []
+  | .funcDecl decl _ =>
+    -- Get free variables from function body, excluding formal parameters
+    match decl.body with
+    | none => []
+    | some body =>
+      let bodyVars := HasVarsPure.getVars body
+      let formals := decl.inputs.map (·.1)
+      bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
   termination_by (Stmt.sizeOf s)
 
 def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
@@ -177,6 +225,7 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .cmd cmd => HasVarsImp.definedVars cmd
   | .block _ bss _ => Block.definedVars bss
   | .ite _ tbss ebss _ => Block.definedVars tbss ++ Block.definedVars ebss
+  | .funcDecl decl _ => [decl.name]  -- Function declaration defines the function name
   | _ => []
   termination_by (Stmt.sizeOf s)
 
@@ -196,6 +245,7 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .block _ bss _ => Block.modifiedVars bss
   | .ite _ tbss ebss _ => Block.modifiedVars tbss ++ Block.modifiedVars ebss
   | .loop _ _ _ bss _ => Block.modifiedVars bss
+  | .funcDecl _ _ => []  -- Function declarations don't modify variables
   termination_by (Stmt.sizeOf s)
 
 def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
@@ -244,7 +294,7 @@ instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
 open Std (ToFormat Format format)
 
 mutual
-partial def formatStmt (P : PureExpr) (s : Stmt P C)
+def formatStmt (P : PureExpr) (s : Stmt P C)
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
   match s with
   | .cmd cmd => format cmd
@@ -256,14 +306,17 @@ partial def formatStmt (P : PureExpr) (s : Stmt P C)
   | .loop guard measure invariant body md => f!"{md}while ({guard}) ({measure}) ({invariant}) " ++
                         Format.bracket "{" f!"{formatBlock P body}" "}"
   | .goto label md => f!"{md}goto {label}"
+  | .funcDecl _ md => f!"{md}funcDecl <function>"
+  termination_by s.sizeOf
 
-partial def formatBlock (P : PureExpr) (ss : List (Stmt P C))
+def formatBlock (P : PureExpr) (ss : List (Stmt P C))
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
     match ss with
     | [] => f!""
     | s :: rest => formatStmt P s ++
                    if rest.isEmpty then f!""
                    else f!"\n{formatBlock P rest}"
+  termination_by (Block.sizeOf ss)
 end
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]

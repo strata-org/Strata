@@ -46,6 +46,8 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
         results := results.push { obligation, result := .err msg }
         break
       | .ok terms =>
+        let tempDir ← IO.toEIO (fun e => f!"{e}") IO.FS.createTempDir
+        let filename := tempDir / s!"{obligation.label}.smt2"
         let ans ←
             IO.toEIO
               (fun e => f!"{e}")
@@ -53,7 +55,7 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
                encodeArithToSMTTerms typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
-                smtsolver (Imperative.smt2_filename obligation.label)
+                smtsolver filename.toString
                 terms)
         match ans with
         | .ok (result, estate) =>

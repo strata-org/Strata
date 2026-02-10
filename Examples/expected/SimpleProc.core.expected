@@ -1,0 +1,5 @@
+Successfully parsed.
+SimpleProc.core.st(21, 2) [Test_ensures_0]: ✅ pass
+SimpleProc.core.st(22, 2) [Test_ensures_1]: ✅ pass
+SimpleProc.core.st(23, 2) [Test_ensures_2]: ✅ pass
+All 3 goals passed.

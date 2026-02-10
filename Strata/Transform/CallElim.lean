@@ -4,23 +4,25 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Transform.BoogieTransform
+import Strata.Transform.CoreTransform
 
 /-! # Call Elimination Transformation -/
 
-namespace Boogie
+namespace Core
 namespace CallElim
 
-open Boogie.Transform
+open Core.Transform
 
 /--
-The main call elimination transformation algorithm on a single statement.
+The main call elimination transformation algorithm on a single command.
 The returned result is a sequence of statements
 -/
-def callElimStmt (st: Statement) (p : Program)
-  : BoogieTransformM (List Statement) := do
-    match st with
+def callElimCmd (cmd: Command)
+  : CoreTransformM (Option (List Statement)) := do
+    match cmd with
       | .call lhs procName args _ =>
+
+        let some p := (← get).currentProgram | throw "program not available"
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
@@ -74,27 +76,34 @@ def callElimStmt (st: Statement) (p : Program)
 
         -- construct assumes and asserts in place of pre/post conditions
         -- generate asserts based on pre-conditions, substituting procedure arguments
-        let asserts := createAsserts
-                        (Procedure.Spec.getCheckExprs
-                          proc.spec.preconditions)
+        let asserts ← createAsserts proc.spec.preconditions
                         (arg_subst ++ ret_subst)
         -- generate assumes based on post-conditions, substituting procedure arguments and returns
-        let assumes := createAssumes postconditions
+        let assumes ← createAssumes
+                        (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
 
+        -- Update cached CallGraph
+        let σ ← get
+        match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
+        | .some cg, .some callerName =>
+          let cg' ← cg.decrementEdge callerName procName
+          set { σ with
+              cachedAnalyses := { σ.cachedAnalyses with
+                callGraph := .some cg'}}
+        | .some _, .none =>
+          /- Invalidate CallGraph -/
+          set { σ with
+              cachedAnalyses := { σ.cachedAnalyses with callGraph := .none }}
+        | _, _ => set σ
+
         return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
-      | _ => return [ st ]
-
-def callElimStmts (ss: List Statement) (prog : Program) :=
-  runStmts callElimStmt ss prog
-
-def callElimL (dcls : List Decl) (prog : Program) :=
-  runProcedures callElimStmt dcls prog
+      | _ => return .none
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/
-def callElim' (p : Program) : BoogieTransformM Program :=
-  runProgram callElimStmt p
+def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
+  runProgram (targetProcList := .none) callElimCmd p
 
 end CallElim
-end Boogie
+end Core

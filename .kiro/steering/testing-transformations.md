@@ -19,11 +19,11 @@ Use Plausible for property-based testing of transformations. Three-step process:
 - Statements: commands (assign, assert, assume, havoc), control flow (if, loop, block)
 - Bias towards operations over constants for interesting tests
 
-**Key types from `Strata/Languages/Boogie/`:**
+**Key types from `Strata/Languages/Core/`:**
 - `Expression.Expr` (Expressions.lean)
 - `Statement` (Statement.lean)
 - `Command` (atomic operations)
-- `BoogieIdent` (identifiers)
+- `CoreIdent` (identifiers)
 
 ## Measurement Functions
 
@@ -78,8 +78,8 @@ Write **total** (not `partial`) Lean functions to measure program properties.
 |-----------|----------|
 | Expression AST | `Strata/DL/Lambda/LExpr.lean` |
 | Statement AST | `Strata/DL/Imperative/Stmt.lean` |
-| Boogie expressions | `Strata/Languages/Boogie/Expressions.lean` |
-| Boogie statements | `Strata/Languages/Boogie/Statement.lean` |
+| Strata Core expressions | `Strata/Languages/Core/Expressions.lean` |
+| Strata Core statements | `Strata/Languages/Core/Statement.lean` |
 | Transformations | `Strata/Transform/*.lean` |
 | Transform tests | `StrataTest/Transform/*.lean` |
 

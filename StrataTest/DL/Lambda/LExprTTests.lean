@@ -34,7 +34,7 @@ private instance : Coe String TestParams.Identifier where
                             esM[((λ %0) y)]
          return (format $ ans.fst)
 
-/-- info: error: Cannot unify differently named type constructors bool and int! -/
+/-- info: error: Impossible to unify bool with int. -/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default (TEnv.default.updateContext { types := [[("x", t[bool])]] })
                          esM[if #true then (x == #5) else (x == #6)]
@@ -102,7 +102,9 @@ private instance : Coe String TestParams.Identifier where
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[((λλ (%0 %1)) #5)]
          return (format ans.fst.toLMonoTy)
 
-/-- info: error: Ftvar $__ty0 is in the free variables of (arrow $__ty0 $__ty3)! -/
+/--
+info: error: Failed occurs check: $__ty0 cannot be unified with (arrow $__ty0 $__ty3) because it would create a circular dependency during unification.
+-/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default
                             esM[λ(%0 %0)]
@@ -134,7 +136,9 @@ info: ok: (arrow (arrow $__ty2 (arrow $__ty8 $__ty9)) (arrow (arrow $__ty2 $__ty
                             esM[λλλ ((%2 %0) (%1 %0))]
          return (format $ ans.fst.toLMonoTy)
 
-/-- info: error: Ftvar $__ty1 is in the free variables of (arrow $__ty1 $__ty5)! -/
+/--
+info: error: Failed occurs check: $__ty1 cannot be unified with (arrow $__ty1 $__ty5) because it would create a circular dependency during unification.
+-/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default
                             esM[λλ(%1 (%0 %0))]
@@ -180,7 +184,10 @@ Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
                              esM[((~SynonymTest #20) #30)]
          return (format $ ans.fst.toLMonoTy)
 
-/-- info: error: Cannot unify differently named type constructors int and bool! -/
+/--
+info: error: Impossible to unify (arrow int int) with (arrow bool $__ty0).
+First mismatch: int with bool.
+-/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) { LContext.default with functions := testIntFns } TEnv.default
                              esM[(~Int.Neg #true)]

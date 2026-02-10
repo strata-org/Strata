@@ -5,45 +5,15 @@
 -/
 module
 import all Init.Data.String.Defs
+import all Strata.DDM.Util.ByteArray
 
 /-
-This file contains auxillary definitions for String that could be
-potentially useful to add.
+This file contains auxillary definitions for String.
+
+If they are general purpose, we keep them as private symbols
+that could be imported via import all.  Otherwise they are
+added to Strata.
 -/
-
-public section
-namespace Strata
-
-/--
-Return true if this is a non-printable 8-bit character
--/
-private def useXHex ( c : Char) : Bool :=
-  c < '\x20' ∨ '\x7f' ≤ c ∧ (c < '\xa1' ∨ c == '\xad')
-
-private def escapeStringLitAux (acc : String) (c : Char) : String :=
-  if c == '"' then
-    acc ++ "\\\""
-  else if c == '\\' then
-    acc ++ "\\\\"
-  else if c == '\n' then
-    acc ++ "\\n"
-  else if c == '\r' then
-    acc ++ "\\r"
-  else if c == '\t' then
-    acc ++ "\\t"
-  else if useXHex c then
-    let i := c.toNat
-    let digits := Nat.toDigits 16 i
-    if i < 16 then
-      s!"{acc}\\x0{digits[0]!}"
-    else
-      assert! digits.length = 2
-      s!"{acc}\\x{digits[0]!}{digits[1]!}"
-  else
-    acc.push c
-
-def escapeStringLit (s : String) : String :=
-  s.foldl escapeStringLitAux "\"" ++ "\""
 
 namespace String
 
@@ -51,23 +21,16 @@ namespace String
 theorem isEmpty_eq (s : _root_.String) : s.isEmpty = (s == "") := by
   simp only [String.isEmpty, BEq.beq, String.utf8ByteSize_eq_zero_iff]
 
-end String
-
-end Strata
-
-namespace String
+def replicate (n : Nat) (c : Char) := n.repeat (a := "") (·.push c)
 
 /--
 Indicates s has a substring at the given index.
 
 Requires a bound check that shows index is in bounds.
 -/
-private def hasSubstringAt (s sub : String) (i : Pos.Raw) (index_bound : i.byteIdx + sub.utf8ByteSize ≤ s.utf8ByteSize) : Bool :=
-  sub.bytes.size.all fun j jb =>
-    have p : i.byteIdx + j < s.bytes.size := by
-      change i.byteIdx + sub.bytes.size ≤ s.bytes.size at index_bound
-      grind
-    s.bytes[i.byteIdx + j]'p == sub.bytes[j]
+private def hasSubstringAt (s sub : String) (i : Pos.Raw)
+              (index_bound : i.byteIdx + sub.utf8ByteSize ≤ s.utf8ByteSize) : Bool :=
+  s.toByteArray.startsWith' (offset := i.byteIdx) sub.toByteArray index_bound
 
 /--
 Auxiliary for `indexOf`. Preconditions:
@@ -119,4 +82,40 @@ info: [""]
 #eval "".splitLines
 
 end String
+
+public section
+namespace Strata
+
+/--
+Return true if this is a non-printable 8-bit character
+-/
+private def useXHex ( c : Char) : Bool :=
+  c < '\x20' ∨ '\x7f' ≤ c ∧ (c < '\xa1' ∨ c == '\xad')
+
+private def escapeStringLitAux (acc : String) (c : Char) : String :=
+  if c == '"' then
+    acc ++ "\\\""
+  else if c == '\\' then
+    acc ++ "\\\\"
+  else if c == '\n' then
+    acc ++ "\\n"
+  else if c == '\r' then
+    acc ++ "\\r"
+  else if c == '\t' then
+    acc ++ "\\t"
+  else if useXHex c then
+    let i := c.toNat
+    let digits := Nat.toDigits 16 i
+    if i < 16 then
+      s!"{acc}\\x0{digits[0]!}"
+    else
+      assert! digits.length = 2
+      s!"{acc}\\x{digits[0]!}{digits[1]!}"
+  else
+    acc.push c
+
+def escapeStringLit (s : String) : String :=
+  s.foldl escapeStringLitAux "\"" ++ "\""
+
+end Strata
 end

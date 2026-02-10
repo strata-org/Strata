@@ -21,6 +21,7 @@ Also see `Strata.DL.Lambda.LExprT`.
 namespace Lambda
 open Std (ToFormat Format format)
 open LExpr
+open Strata
 
 ---------------------------------------------------------------------
 
@@ -198,7 +199,7 @@ def KnownTypes.keywords (ks : KnownTypes) : List String :=
 def KnownTypes.toList (ks: KnownTypes) : List KnownType :=
   (Std.HashMap.toList ks).map (fun x => ⟨x.1, x.2⟩)
 
-def KnownTypes.addWithError (ks: KnownTypes) (x: KnownType) (f: Format) : Except Format KnownTypes :=
+def KnownTypes.addWithError (ks: KnownTypes) (x: KnownType) (f: DiagnosticModel) : Except DiagnosticModel KnownTypes :=
   Identifiers.addWithError ks ⟨x.name, x.arity⟩ f
 
 def KnownTypes.contains (ks: KnownTypes) (x: KnownType) : Bool :=
@@ -218,9 +219,6 @@ deriving Inhabited
 def LDatatype.toKnownType (d: LDatatype IDMeta) : KnownType :=
   { name := d.name, metadata := d.typeArgs.length}
 
-def TypeFactory.toKnownTypes (t: @TypeFactory IDMeta) : KnownTypes :=
-  makeKnownTypes (t.foldr (fun t l => t.toKnownType :: l) [])
-
 /--
 A type environment `TEnv` contains
 - genEnv: `TGenEnv` to track the generator state as well as the typing context
@@ -235,9 +233,13 @@ structure TEnv (IDMeta : Type) where
 deriving Inhabited
 
 /--
-Context data that does not change throughout type checking: a
-factory of user-specified functions and data structures for ensuring unique
-names of types and functions.
+Context data for type checking: a factory of user-specified functions and
+data structures for ensuring unique names of types and functions.
+
+This context is typically constant during expression type checking, but may
+be extended during statement type checking when local function declarations
+(`funcDecl`) add new functions to the factory.
+
 Invariant: all functions defined in `TypeFactory.genFactory`
 for `datatypes` should be in `functions`.
 -/
@@ -312,17 +314,17 @@ instance [ToFormat IDMeta] : ToFormat (TEnv IDMeta) where
        subst: {s.stateSubstInfo.subst}"
 
 instance : ToFormat (LContext T) where
-  format s := f!" known types:{Format.line}{s.knownTypes}\
+  format s := f!" known types:{Format.line}{s.knownTypes}\n\
                  identifiers:{Format.line}{s.idents}"
 
 
-def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: Format) : Except Format (LContext T) := do
+def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
   .ok {C with knownTypes := (← C.knownTypes.addWithError k f)}
 
-def LContext.addKnownTypes (C : LContext T) (k : KnownTypes) : Except Format (LContext T) := do
-  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ f!"Error: type {k} already known") C
+def LContext.addKnownTypes (C : LContext T) (k : KnownTypes) : Except DiagnosticModel (LContext T) := do
+  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ (DiagnosticModel.fromFormat f!"Error: type {k} already known")) C
 
-def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: Format) : Except Format (LContext T) := do
+def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
   let i ← C.idents.addWithError i f
   .ok {C with idents := i}
 
@@ -333,28 +335,27 @@ def LContext.addFactoryFunctions (C : LContext T) (fact : @Factory T) : LContext
   { C with functions := C.functions.append fact }
 
 /--
-Add a datatype `d` to an `LContext` `C`.
-This adds `d` to `C.datatypes`, adds the derived functions
-(e.g. eliminators, testers) to `C.functions`, and adds `d` to
-`C.knownTypes`. It performs error checking for name clashes.
+Add a mutual block of datatypes `block` to an `LContext` `C`.
+This adds all types to `C.datatypes` and `C.knownTypes`,
+adds the derived functions (e.g. eliminators, testers),
+and performs error checking for name clashes.
 -/
-def LContext.addDatatype [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (d: LDatatype T.IDMeta) : Except Format (LContext T) := do
-  -- Ensure not in known types
-  if C.knownTypes.containsName d.name then
-    .error f!"Cannot name datatype same as known type!\n\
-                      {d}\n\
-                      KnownTypes' names:\n\
-                      {C.knownTypes.keywords}"
-  let ds ← C.datatypes.addDatatype d
+def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta]
+  (C: LContext T) (block: MutualDatatype T.IDMeta) : Except DiagnosticModel (LContext T) := do
+  -- Check for name clashes with known types
+  for d in block do
+    if C.knownTypes.containsName d.name then
+      throw <| DiagnosticModel.fromFormat f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
+  let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
   -- Add factory functions, checking for name clashes
-  let f ← d.genFactory
+  let f ← genBlockFactory block
   let fs ← C.functions.addFactory f
   -- Add datatype names to knownTypes
-  let ks ← C.knownTypes.add d.toKnownType
+  let ks ← block.foldlM (fun ks d => ks.add d.toKnownType) C.knownTypes
   .ok {C with datatypes := ds, functions := fs, knownTypes := ks}
 
-def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except Format (LContext T) :=
-  Array.foldlM (fun C d => C.addDatatype d) C f
+def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except DiagnosticModel (LContext T) :=
+  f.foldlM (fun C block => C.addMutualBlock block) C
 
 /--
 Replace the global substitution in `T.state.subst` with `S`.
@@ -400,23 +401,12 @@ def TEnv.popContext (Env : (TEnv IDMeta)) : (TEnv IDMeta) :=
   let ctx' := { ctx with types := ctx.types.pop }
   Env.updateContext ctx'
 
-def TGenEnv.insertInContext [DecidableEq (Identifier IDMeta)] (Env : TGenEnv IDMeta) (x : Identifier IDMeta) (ty : LTy) : TGenEnv IDMeta :=
-  let ctx := Env.context
-  let ctx' := { ctx with types := ctx.types.insert x ty }
-  { Env with context := ctx' }
-
 /--
-Insert `(x, ty)` in `T.context`.
+Insert each element in `map` in the newest `T.context`.
 -/
-def TEnv.insertInContext {T: LExprParams} [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (x : T.Identifier) (ty : LTy) : TEnv T.IDMeta :=
-  { Env with genEnv := TGenEnv.insertInContext Env.genEnv x ty}
-
-/--
-Insert each element in `map` in `T.context`.
--/
-def TEnv.addToContext (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) : TEnv T.IDMeta :=
+def TEnv.addInNewestContext (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) : TEnv T.IDMeta :=
   let ctx := Env.context
-  let types := List.foldl (fun m (x, v) => m.insert x v) ctx.types map
+  let types := ctx.types.addInNewest map
   let ctx' := { ctx with types := types }
   Env.updateContext ctx'
 
@@ -555,197 +545,152 @@ instance : Inhabited (Option LMonoTy × TEnv IDMeta) where
   default := (none, TEnv.default)
 
 /--
-Return the instantiated definition of `mty` -- which is expected to be
-`.tcons name args` --  if it is a type alias registered in the typing
-environment `T`.
+Return the instantiated definition of `.tcons name args` if it is a registered
+type alias.
 
-This function does not descend into the subtrees of `mty`, nor does it check
-whether the de-aliased types are registered/known.
+This function does not descend into the subtrees of types in `args`, nor does it
+check whether the de-aliased types are registered/known.
 -/
-def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) : (Option LMonoTy × TEnv IDMeta) :=
-  match mty with
-  | .ftvar _ =>
-    -- We can't have a free variable be the LHS of an alias definition because
-    -- then it will unify with every type.
-    (none, Env)
-  | .bitvec _ =>
-    -- A bitvector cannot be a type alias.
-    (none, Env)
-  | .tcons name args =>
-    match Env.context.aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) with
-    | none => (none, Env)
-    | some alias =>
-      let (lst, Env) := LMonoTys.instantiateEnv alias.typeArgs [(.tcons name (alias.typeArgs.map (fun a => .ftvar a))), alias.type] Env
-      -- (FIXME): Use `LMonoTys.instantiate_length` to remove the `!` below.
-      let alias_inst := lst[0]!
-      let alias_def := lst[1]!
-      match Constraints.unify [(mty, alias_inst)] Env.stateSubstInfo with
-      | .error e =>
-        panic! s!"[LMonoTy.aliasDef?] {e}"
-      | .ok S =>
-        (alias_def.subst S.subst, Env.updateSubst S)
+def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
+    (Env : TEnv IDMeta) : Except Format (LMonoTy × TEnv IDMeta) := do
+  let inputMty := .tcons name args
+  -- Look for a matching alias with same name and arity.
+  let matchingAlias := Env.context.aliases.find?
+                        (fun a => a.name == name && a.typeArgs.length == args.length)
+  match matchingAlias with
+  | none => return (inputMty, Env)
+  | some alias =>
+    -- Create instantiation pair: [alias pattern, alias definition].
+    -- The alias pattern and definition share the same type variables here.
+    let aliasPattern := .tcons name (alias.typeArgs.map .ftvar)
+    let typesToInstantiate := [aliasPattern, alias.type]
+    -- Instantiate both types with fresh variables.
+    -- (FIXME) Would be nice to have the following LHS instead of
+    -- `instTypesWithEnv`, but Lean erases the RHS needed in the length proof
+    -- below if we do so.
+    -- let (instantiatedTypes, updatedEnv) := ...
+    let instTypesWithEnv := LMonoTys.instantiateEnv alias.typeArgs typesToInstantiate Env
+    have : 1 < instTypesWithEnv.fst.length := by
+      simp only [LMonoTys.instantiateEnv, liftGenEnv, instTypesWithEnv, typesToInstantiate]
+      have hlen := @LMonoTys.instantiate_length _ alias.typeArgs typesToInstantiate Env.genEnv _
+      simp [typesToInstantiate] at hlen
+      grind
+    -- Extract the instantiated pattern and definition.
+    let instantiatedPattern := instTypesWithEnv.fst[0]'(by grind)
+    let instantiatedDefinition := instTypesWithEnv.fst[1]'(by grind)
+    let newEnv := instTypesWithEnv.snd
+    -- Unify the input type with the instantiated alias pattern.
+    match Constraints.unify [(inputMty, instantiatedPattern)] newEnv.stateSubstInfo with
+    | .error e =>
+      -- We don't expect this unification to fail; after all,
+      -- `instantiatedPattern` is more general than `.tcons name args`.
+      .error f!"🚨 Implementation error: \
+                 Unification failed in LMonoTy.tconsAlias: {e}"
+    | .ok substInfo =>
+      -- Apply the substitution to get the final definition.
+      let finalDefinition := instantiatedDefinition.subst substInfo.subst
+      return (finalDefinition, newEnv.updateSubst substInfo)
 
--- Only `FooAlias` is dealiased, not `BarAlias`. Note that the type variables
--- are instantiated appropriately and the global substitution is updated.
--- See `resolveAliases` for a version that also de-aliases `BarAlias`.
 /--
-info: Ans: some (Foo $__ty0 (BarAlias $__ty0 $__ty0))
-Subst:
-[(p, $__ty0) ($__ty1, (BarAlias $__ty0 $__ty0))]
+Return the instantiated definition of `mty` if it is a registered
+type alias.
+
+This function does not descend into any subtrees of types in `args`, nor does it
+check whether the de-aliased types are registered/known.
 -/
-#guard_msgs in
-open LTy.Syntax in
-#eval let (ans, Env) := LMonoTy.aliasDef?
-        mty[FooAlias %p (BarAlias %p %p)]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]})
-      format f!"Ans: {ans}\n\
-                Subst:\n{Env.stateSubstInfo.subst}"
-
-/-- info: some (Foo $__ty0 (BarAlias q $__ty0)) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef?
-        mty[FooAlias %p (BarAlias %q %p)]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]} )
-      |>.fst |> format
-
-/-- info: some int -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myInt]
-      ( (@TEnv.default String).updateContext
-                  { aliases := [{ typeArgs := [],
-                                  name := "myInt",
-                                  type := mty[int]}]} )
-      |>.fst |> format
-
-/-- info: some bool -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef?
-        mty[BadBoolAlias %p %q]
-        ( (@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "BadBoolAlias",
-                                     type := mty[bool]}]} )
-      |>.fst |> format
-
-/-- info: none -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myInt]
-                    ( (@TEnv.default String).updateContext
-                      { aliases := [{
-                         typeArgs := ["a"],
-                         name := "myInt",
-                         type := mty[int]}] })
-      |>.fst |> format
-
-/-- info: some (myDef int) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myAlias int bool]
-                    ( (@TEnv.default String).updateContext
-                      { aliases := [{
-                        typeArgs := ["a", "b"],
-                        name := "myAlias",
-                        type := mty[myDef %a]}] })
-      |>.fst |> format
+def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta)
+    : Except Format (LMonoTy × TEnv IDMeta) := do
+  match mty with
+  | .tcons name args => LMonoTy.tconsAlias name args Env
+  | .bitvec _ | .ftvar _ => return (mty, Env)
 
 mutual
 /--
 De-alias `mty`, including at the subtrees.
 -/
-partial def LMonoTy.resolveAliases [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) : (Option LMonoTy × TEnv IDMeta) :=
-  let (maybe_mty, Env) := LMonoTy.aliasDef? mty Env
-  match maybe_mty with
-  | some (.tcons name args) =>
-    let (args', Env) := LMonoTys.resolveAliases args Env.context.aliases Env
-    match args' with
-    | none => (some (.tcons name args), Env)
-    | some args' => (some (.tcons name args'), Env)
-  | some mty' => (some mty', Env)
-  | none =>
-    match mty with
-    | .ftvar _ => (some mty, Env)
-    | .bitvec _ => (some mty, Env)
-    | .tcons name mtys =>
-      let (maybe_mtys, Env) := LMonoTys.resolveAliases mtys Env.context.aliases Env
-      match maybe_mtys with
-      | none => (none, Env)
-      | some mtys' => (some (.tcons name mtys'), Env)
+def LMonoTy.resolveAliases [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
+    Except Format (LMonoTy × TEnv IDMeta) := do
+  match mty with
+  | .ftvar _ =>
+    -- Free variables cannot be type aliases (would unify with every type).
+    return (mty, Env)
+  | .bitvec _ =>
+    -- Bitvectors cannot be type aliases.
+    return (mty, Env)
+  | .tcons name args =>
+    let (args', Env) ← LMonoTys.resolveAliases args Env
+    let (mty', Env) ← LMonoTy.tconsAlias name args' Env
+    return (mty', Env)
 
 /--
 De-alias `mtys`, including at the subtrees.
 -/
-partial def LMonoTys.resolveAliases [ToFormat IDMeta] (mtys : LMonoTys) (aliases : List TypeAlias) (Env : (TEnv IDMeta)) :
-    (Option LMonoTys × (TEnv IDMeta)) :=
-    match mtys with
-    | [] => (some [], Env)
-    | mty :: mrest =>
-      let (mty', Env) := LMonoTy.resolveAliases mty Env
-      let (mrest', Env) := LMonoTys.resolveAliases mrest aliases Env
-      if h : mty'.isSome && mrest'.isSome then
-        ((mty'.get (by simp_all) :: mrest'.get (by simp_all)), Env)
-      else
-        (none, Env)
+def LMonoTys.resolveAliases [ToFormat IDMeta] (mtys : LMonoTys)
+    (Env : (TEnv IDMeta)) : Except Format (LMonoTys × (TEnv IDMeta)) := do
+  match mtys with
+  | [] => return ([], Env)
+  | mty :: mrest =>
+    let (mty', Env) ← LMonoTy.resolveAliases mty Env
+    let (mrest', Env) ← LMonoTys.resolveAliases mrest Env
+    return (mty' :: mrest', Env)
 end
 
 /--
-info: De-aliased type: some (Foo $__ty0 (Bar $__ty3 $__ty3))
-Subst:
-[(p, $__ty3) ($__ty1, (BarAlias $__ty3 $__ty3)) ($__ty0, $__ty3) ($__ty2, $__ty3)]
+Resolve type aliases in a list of constructors.
 -/
-#guard_msgs in
-open LTy.Syntax in
-#eval let (ty, Env) := LMonoTy.resolveAliases
-        mty[FooAlias %p (BarAlias %p %p)]
-        ((@TEnv.default String).updateContext
-          { aliases := [{ typeArgs := ["x", "y"],
-                                     name := "FooAlias",
-                                     type := mty[Foo %x %y]},
-                                   { typeArgs := ["a", "b"],
-                                     name := "BarAlias",
-                                     type := mty[Bar %a %b]
-                                   }
-                                  ]})
-      format f!"De-aliased type: {ty}\n\
-                Subst:\n{Env.stateSubstInfo.subst}"
+def LConstrs.resolveAliases [ToFormat IDMeta]
+    (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta) :
+    Except Format (List (LConstr IDMeta) × TEnv IDMeta) := do
+  constrs.foldrM (fun c (acc, Env) => do
+    let (args', Env) ← go c.args Env
+    return ({ c with args := args' } :: acc, Env)) ([], Env)
+  where go args Env := do
+    let names := args.map (·.fst)
+    let tys := args.map (·.snd)
+    let (tys', Env) ← LMonoTys.resolveAliases tys Env
+    let args' := names.zip tys'
+    return (args', Env)
+
+theorem LConstrs.resolveAliases_length [ToFormat IDMeta]
+  (constrs : List (LConstr IDMeta)) (Env : TEnv IDMeta)
+  (result : List (LConstr IDMeta) × TEnv IDMeta)
+  (h : LConstrs.resolveAliases constrs Env = .ok result) :
+  result.fst.length = constrs.length := by
+  simp only [LConstrs.resolveAliases] at h
+  induction constrs generalizing result with
+  | nil => simp_all [List.foldrM, pure, Except.pure]; grind
+  | cons hd tl ih =>
+    simp [List.foldrM_cons, Bind.bind, Except.bind, Pure.pure, Except.pure] at h ih
+    split at h
+    case h_1 => simp_all
+    case h_2 x v heq =>
+      have ih' := @ih v.fst v.snd heq
+      grind
+
+/--
+Resolve type aliases in constructor argument types within a mutual datatype block.
+-/
+def MutualDatatype.resolveAliases [ToFormat IDMeta] (block : MutualDatatype IDMeta) (Env : TEnv IDMeta) :
+    Except Format (MutualDatatype IDMeta × TEnv IDMeta) := do
+  block.foldrM (fun d (acc, Env) =>
+    match h: LConstrs.resolveAliases d.constrs Env with
+    | .error e => .error e
+    | .ok (constrs', Env) =>
+      have h : constrs'.length != 0 := by
+        rename_i E
+        have Hlen := LConstrs.resolveAliases_length d.constrs E
+        rw[h] at Hlen
+        cases d; grind
+      return ({ d with constrs := constrs', constrs_ne := h } :: acc, Env)) ([], Env)
 
 /--
 Instantiate and de-alias `ty`, including at the subtrees.
 -/
-def LTy.resolveAliases [ToFormat IDMeta] (ty : LTy) (Env : TEnv IDMeta) : Option LMonoTy × TEnv IDMeta :=
+def LTy.resolveAliases [ToFormat IDMeta] (ty : LTy) (Env : TEnv IDMeta) :
+    Except Format (LMonoTy × TEnv IDMeta) :=
   let (mty, Env') := ty.instantiate Env.genEnv
   let Env := {Env with genEnv := Env'}
   LMonoTy.resolveAliases mty Env
-
-/-- info: some (arrow bool $__ty0) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval LTy.resolveAliases
-        t[∀x. (FooAlias %x %x) → %x]
-        ((@TEnv.default String).updateContext { aliases := [{
-                                        typeArgs := ["x", "y"],
-                                        name := "FooAlias",
-                                        type := mty[bool]}]} )
-      |>.fst |>.format
 
 mutual
 /--
@@ -780,11 +725,14 @@ perform resolution of type aliases and subsequent checks for registered types.
 def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.IDMeta) :
     Except Format (LMonoTy × (TEnv T.IDMeta)) := do
   let ftvs := mty.freeVars
-  let (mtys, Env) := LMonoTys.instantiateEnv ftvs [mty] Env
-  let mtyi := mtys[0]!
-  let (mtyi, Env) := match mtyi.resolveAliases Env with
-                  | (some ty', Env) => (ty', Env)
-                  | (none, Env) => (mtyi, Env)
+  let instTypesWithEnv := LMonoTys.instantiateEnv ftvs [mty] Env
+  have : 0 < instTypesWithEnv.fst.length := by
+    simp [instTypesWithEnv, LMonoTys.instantiateEnv, liftGenEnv]
+    have := @LMonoTys.instantiate_length _ ftvs [mty] Env.genEnv _
+    grind
+  let mtyi := instTypesWithEnv.fst[0]'(by exact this)
+  let Env := instTypesWithEnv.snd
+  let (mtyi, Env) ← mtyi.resolveAliases Env
   if isInstanceOfKnownType mtyi C
   then return (mtyi, Env)
   else .error f!"Type {mty} is not an instance of a previously registered type!\n\
@@ -794,52 +742,20 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
 -/
-def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) : Except Format (LMonoTy × TEnv T.IDMeta) := do
-  let (mty, Env) := match ty.resolveAliases Env with
-                  | (some ty', Env) => (ty', Env)
-                  | (none, Env) =>
-                    let (ty, Env') := ty.instantiate Env.genEnv
-                    (ty, {Env with genEnv := Env'})
+def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) :
+    Except Format (LMonoTy × TEnv T.IDMeta) := do
+  let (mty, Env) ← ty.resolveAliases Env
   if isInstanceOfKnownType mty C
   then return (mty, Env)
   else .error f!"Type {ty} is not an instance of a previously registered type!\n\
                  Known Types: {C.knownTypes}"
 
-section
-
-open LTy.Syntax
-
-/-- info: false -/
-#guard_msgs in
-#eval isInstanceOfKnownType mty[myTy (myTy)]
-                            { @LContext.default ⟨Unit, String⟩ with
-                                knownTypes := makeKnownTypes [LTy.toKnownType! t[∀a. myTy %a],
-                                               LTy.toKnownType! t[int]] }
-
-abbrev TTyDefault: LExprParams := {Metadata := Unit, IDMeta := TyIdentifier}
-/-- info: false -/
-#guard_msgs in
-#eval isInstanceOfKnownType mty[Foo] (@LContext.default TTyDefault)
-
-/--
-info: error: Type (arrow int Foo) is not an instance of a previously registered type!
-Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
--/
-#guard_msgs in
-#eval do let ans ← t[int → Foo].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
-         return format ans
-
-/-- info: ok: (arrow int bool) -/
-#guard_msgs in
-#eval do let ans ← t[int → bool].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
-         return format ans.fst
-end
-
 /--
 Instantiate the scheme `ty` and apply the global substitution `Env.state.subst` to
 it.
 -/
-def LTy.instantiateAndSubst (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) : Except Format (LMonoTy × TEnv T.IDMeta) := do
+def LTy.instantiateAndSubst (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta)
+    : Except Format (LMonoTy × TEnv T.IDMeta) := do
   let (mty, Env) ← LTy.instantiateWithCheck ty C Env
   let mty := LMonoTy.subst Env.stateSubstInfo.subst mty
   return (mty, Env)
@@ -877,11 +793,6 @@ def Identifier.instantiateAndSubsts (xs : List T.Identifier) (C: LContext T)  (E
       | none => return none
       | some (xtys, Env) => return ((xty :: xtys), Env)
 
-/-- info: (arrow $__ty0 b) -/
-#guard_msgs in
-open LTy.Syntax in
-#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)).fst
-
 /--
 Instantiate the scheme `∀tyArgs. s` by _consistently_ filling in fresh type
 variables for all the variables bound by the universal quantifier.
@@ -902,20 +813,6 @@ def LMonoTySignature.instantiate (C: LContext T)  (Env : TEnv T.IDMeta) (tyArgs 
       let (mt, Env) ← LTy.instantiateWithCheck t C Env
       let (mtrest, Env) ← go Env trest
       .ok (mt :: mtrest, Env)
-
-/--
-info: ok: (x : $__ty0) (y : int) (z : $__ty0)
--/
-#guard_msgs in
-open LTy.Syntax in
-#eval do let ans ← (LMonoTySignature.instantiate (@LContext.default {Metadata := Unit, IDMeta := Unit})
-                    ((@TEnv.default Unit).updateContext
-                                          { aliases := [{ typeArgs := ["a", "b"],
-                                                          name := "myInt",
-                                                          type := mty[int]}] })
-                    ["a", "b"]
-                    [("x", mty[%a]), ("y", mty[myInt %a %b]), ("z", mty[%a])])
-         return Signature.format ans.fst
 
 /--
 Trivial conversion of a `MonoTySignature` to a `TySignature`, with an empty list

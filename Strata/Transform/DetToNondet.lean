@@ -7,7 +7,7 @@
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.NondetStmt
-import Strata.Languages.Boogie.StatementType
+import Strata.Languages.Core.StatementType
 
 /-! # Deterministic-to-Nondeterministic Transformation -/
 
@@ -29,6 +29,7 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   | .loop   guard _measure _inv bss md =>
     .loop (.seq (.assume "guard" guard md) (BlockToNondetStmt bss))
   | .goto _ _ => (.assume "skip" Imperative.HasBool.tt)
+  | .funcDecl _ _ => (.assume "skip" Imperative.HasBool.tt)
 
 /-- Deterministic-to-nondeterministic transformation for multiple
 (deterministic) statements -/

@@ -6,7 +6,6 @@
 
 import Strata.DL.Imperative.PureExpr
 
--- open Imperative Boogie
 namespace Imperative
 
 /-! # Pure Expression Variable Lookup : HasVarsPure -/

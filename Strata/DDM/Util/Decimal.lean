@@ -5,11 +5,11 @@
 -/
 module
 
-import Lean.ToExpr
-import Strata.DDM.Util.Lean
 public import Lean.ToExpr
 
-private def String.replicate (n : Nat) (c : Char) := n.repeat (a := "") (·.push c)
+import Lean.ToExpr
+import all Strata.DDM.Util.Lean
+import all Strata.DDM.Util.String
 
 public section
 namespace Strata
@@ -65,16 +65,5 @@ private instance : Quote Decimal where
 end
 
 end Decimal
-
-#guard s!"{Decimal.mk 0 0}" = "0.0"
-#guard s!"{Decimal.mk 1 0}" = "1.0"
-#guard s!"{Decimal.mk (-3) 0}" = "-3.0"
-#guard s!"{Decimal.mk 4 2}" = "400.0"
-#guard s!"{Decimal.mk (-4) 2}" = "-400.0"
-#guard s!"{Decimal.mk (42) (-2)}" = "0.42"
-#guard s!"{Decimal.mk (-42) (-2)}" = "-0.42"
-#guard s!"{Decimal.mk (-134) (-2)}" = "-1.34"
-#guard s!"{Decimal.mk (-142) 10}" = "-142e10"
-#guard s!"{Decimal.mk (-142) 10}" = "-142e10"
 
 end Strata

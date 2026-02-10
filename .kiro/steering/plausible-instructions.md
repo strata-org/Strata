@@ -63,7 +63,7 @@ instance : Shrinkable (α × β) where
 ```
 
 ### Strata-Specific Types
-For Lambda expressions, Imperative statements, or Boogie constructs, ensure generators produce well-typed, valid AST nodes.
+For Lambda expressions, Imperative statements, or Strata Core constructs, ensure generators produce well-typed, valid AST nodes.
 
 ## Usage Modes
 

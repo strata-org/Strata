@@ -246,7 +246,7 @@ def Op.mkName : Op → String
   | .not           => "not"
   | .and           => "and"
   | .or            => "or"
-  | .eq            => "eq"
+  | .eq            => "="
   | .ite           => "ite"
   | .implies       => "=>"
   | .distinct      => "distinct"

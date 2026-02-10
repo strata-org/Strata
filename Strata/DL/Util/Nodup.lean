@@ -168,9 +168,10 @@ theorem loop_shrink_nodup : ∀ α {h: α} {t l l' : List α} [BEq α] [LawfulBE
         rw [Heq1] at H
         have Heq2 : (h' :: (l' ++ l)) = ((h' :: l') ++ l) := by rfl
         rw [Heq2]
-        split <;> try simp_all
-        . grind
-        . apply t_ih <;> assumption
+        split
+        · apply @t_ih h
+          grind
+        · apply t_ih <;> assumption
 
 theorem loop_insert_nodup : ∀ α {h : α} {t l l': List α} [BEq α] [LawfulBEq α],
   ¬ h ∈ l → ¬ h ∈ l' →

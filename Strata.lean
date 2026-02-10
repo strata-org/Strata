@@ -5,6 +5,7 @@
 -/
 
 -- This module serves as the root of the `Strata` library.
+-- In each category, imports are sorted by alphabetical order.
 
 /- DDM -/
 import Strata.DDM.Integration.Lean
@@ -15,8 +16,14 @@ import Strata.DL.SMT.SMT
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.Imperative
 
-/- Boogie -/
-import Strata.Languages.Boogie.StatementSemantics
+/- Utilities -/
+import Strata.Util.Sarif
+
+/- Strata Languages -/
+import Strata.Languages.Core.FactoryWF
+import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
@@ -24,3 +31,6 @@ import Strata.Transform.DetToNondetCorrect
 
 /- Backends -/
 import Strata.Backends.CBMC.CProver
+
+/- Simple API -/
+import Strata.SimpleAPI

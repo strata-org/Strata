@@ -15,6 +15,7 @@ import Plausible.Sampleable
 import Plausible.DeriveArbitrary
 import Plausible.Attr
 import Strata.DL.Lambda.PlausibleHelpers
+import Strata.Util.Random
 
 -- -- Add these if depending on Chamelean for instance generation.
 -- import Plausible.Chamelean.ArbitrarySizedSuchThat
@@ -197,11 +198,6 @@ inductive MapsInsert : Maps α β → α → β → Maps α β → Prop where
 instance instStringSuchThatIsInt : ArbitrarySizedSuchThat String (fun s => s.isInt) where
   arbitrarySizedST _ := toString <$> (Arbitrary.arbitrary : Gen Int)
 
-#guard_msgs(drop info) in
-#eval
-  let P : String → Prop := fun s => s.isInt
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
 def ArrayFind (a : Array α) (x : α)  := x ∈ a
 
 instance instArrayFindSuchThat {α} {a} : ArbitrarySizedSuchThat α (fun x => ArrayFind a x) where
@@ -331,8 +327,6 @@ instance : Arbitrary LMonoTy where
 instance : Arbitrary LTy where
   arbitrary := LTy.forAll [] <$> Arbitrary.arbitrary
 
--- #eval Gen.printSamples (Arbitrary.arbitrary : Gen LMonoTy)
-
 -- -- This works
 -- derive_generator fun α β m y => ∃ x, @MapFind α β m x y
 
@@ -367,12 +361,6 @@ instance {α β m_1 y_1_1} [BEq β] : ArbitrarySizedSuchThat α (fun x_1_1 => @M
               | _ => MonadExcept.throw Plausible.Gen.genericFailure)])
     fun size => aux_arb size size α β m_1 y_1_1
 
-/-- info: 2 -/
-#guard_msgs(info) in
-#eval
-  let P : Nat → Prop := fun n : Nat => MapFind [((2 : Nat), "foo")] n "foo"
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
 -- -- This works
 -- derive_generator fun α β tys y => ∃ x, @MapsFind α β tys x y
 
@@ -404,12 +392,6 @@ instance [DecidableEq β] : ArbitrarySizedSuchThat α (fun x_1 => @MapsFind α �
                 return x_1
               | _ => MonadExcept.throw Plausible.Gen.genericFailure)])
     fun size => aux_arb size size α β tys_1 y_1
-
-/-- info: 2 -/
-#guard_msgs(info) in
-#eval
-  let P : Nat → Prop := fun n : Nat => MapsFind [[((2 : Nat), "foo")]] n "foo"
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
 -- -- This works
 -- derive_generator fun α β m x_1 => ∃ y_1, @MapFind α β m x_1 y_1
@@ -444,12 +426,6 @@ instance [DecidableEq α] : ArbitrarySizedSuchThat β (fun y_1_1 => @MapFind α 
               | _ => MonadExcept.throw Plausible.Gen.genericFailure)])
     fun size => aux_arb size size α β m_1 x_1_1
 
-/-- info: "foo" -/
-#guard_msgs(info) in
-#eval
-  let P : String → Prop := fun s : String => MapFind [((2 : Nat), "foo")] 2 s
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
 /-- Creates a fresh identifier from a list -/
 def getFreshIdent (pre : String) (l : List TyIdentifier) : TyIdentifier :=
 if pre ∉ l then pre else
@@ -472,13 +448,6 @@ instance instArbitrarySizedSuchThatFresh {T : LExprParams} [DecidableEq T.IDMeta
     let allTyVars := allTypes.map LTy.freeVars |>.flatten
     let pre ← Arbitrary.arbitrary
     return getFreshIdent pre allTyVars
-
-#guard_msgs(drop info) in
-#eval
-  let ty := .forAll [] (LMonoTy.bool)
-  let ctx : TContext TrivialParams.IDMeta := ⟨[[(⟨"foo", ()⟩, ty)]], []⟩
-  let P : TyIdentifier → Prop := fun s : String => TContext.isFresh s ctx
-  Gen.runUntil .none (@ArbitrarySizedSuchThat.arbitrarySizedST _ P (@instArbitrarySizedSuchThatFresh _ _ ctx) 10) 10
 
 -- -- This works
 -- derive_checker fun α β m x => @MapNotFound α β m x
@@ -505,13 +474,6 @@ instance [DecidableEq α_1] : DecOpt (@MapNotFound α_1 β_1 m_1 x_1) where
               DecOpt.andOptList [aux_dec initSize size' α β m x_1, DecOpt.decOpt (Ne x_1 z) initSize]
             | _ => Except.ok Bool.false])
     fun size => aux_dec size size α_1 β_1 m_1 x_1
-
-/-- info: false -/
-#guard_msgs(info) in
-#eval DecOpt.decOpt (MapNotFound [("foo", 4)] "foo") 5
-/-- info: true -/
-#guard_msgs(info) in
-#eval DecOpt.decOpt (MapNotFound [("foo", 4)] "bar") 5
 
 -- -- This works
 -- derive_generator fun α β m x_1_1 ty_1_1 => ∃ m', @MapReplace α β m x_1_1 ty_1_1 m'
@@ -557,12 +519,6 @@ instance [DecidableEq α] : ArbitrarySizedSuchThat (Map α β) (fun m'_1 => @Map
               | _ => MonadExcept.throw Plausible.Gen.genericFailure)])
     fun size => aux_arb size size α β m_1 x_1_1_1 ty_1_1_1
 
-/-- info: [(2, "new")] -/
-#guard_msgs(info) in
-#eval
-  let P : Map Nat String → Prop := fun m' => MapReplace [((2 : Nat), "old")] 2 "new" m'
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
 -- -- This works
 -- derive_checker fun α β m x => @MapsNotFound α β m x
 
@@ -589,13 +545,6 @@ instance [DecidableEq α_1] : DecOpt (@MapsNotFound α_1 β_1 m_1 x_1) where
               DecOpt.andOptList [aux_dec initSize size' α β ms x_1, DecOpt.decOpt (MapNotFound m x_1) initSize]
             | _ => Except.ok Bool.false])
     fun size => aux_dec size size α_1 β_1 m_1 x_1
-
-/-- info: false -/
-#guard_msgs(info) in
-#eval DecOpt.decOpt (MapsNotFound [[("foo", 4)]] "foo") 5
-/-- info: true -/
-#guard_msgs(info) in
-#eval DecOpt.decOpt (MapsNotFound [[("foo", 4)]] "bar") 5
 
 -- -- This works
 -- derive_generator fun α β tys_1 x_1 ty_1 => ∃ (Γ_1 : Maps α β), @MapsReplace α β tys_1 x_1 ty_1 Γ_1
@@ -628,12 +577,6 @@ instance [DecidableEq α] : ArbitrarySizedSuchThat (Maps α β) (fun Γ_1_1 => @
               | _ => MonadExcept.throw Plausible.Gen.genericFailure)])
     fun size => aux_arb size size α β tys_1_1 x_1_1 ty_1_1
 
-/-- info: [[(2, "new")]] -/
-#guard_msgs(info) in
-#eval
-  let P : Maps Nat String → Prop := fun m' => MapsReplace [[((2 : Nat), "old")]] 2 "new" m'
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
 -- -- This works
 -- derive_generator (fun α β tys_1 x_1 => ∃ (z : β), @MapsFind α β tys_1 x_1 z)
 instance [DecidableEq α][DecidableEq β] : ArbitrarySizedSuchThat β (fun z_1 => @MapsFind α β tys_1_1 x_1_1 z_1) where
@@ -664,12 +607,6 @@ instance [DecidableEq α][DecidableEq β] : ArbitrarySizedSuchThat β (fun z_1 =
                 return z_1
               | _ => MonadExcept.throw Plausible.Gen.genericFailure)])
     fun size => aux_arb size size α β tys_1_1 x_1_1
-
-/-- info: "old" -/
-#guard_msgs(info) in
-#eval
-  let P : _ → Prop := fun z => MapsFind [[((2 : Nat), "old")]] 2 z
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
 -- -- This works
 -- derive_generator (fun α β tys x ty => ∃ Γ, @MapsInsert α β tys x ty Γ)
@@ -768,38 +705,6 @@ instance [Plausible.Arbitrary α_1] [DecidableEq α_1] [Plausible.Arbitrary β_1
         ]
       | _ => throw Plausible.Gen.genericFailure
   fun size => aux_arb size size α_1 β_1 Γ_1
-
-/-- info: [[(2, "new")]] -/
-#guard_msgs(info) in
-#eval
-  let P : Maps Nat String → Prop := fun m' => MapsInsert [[((2 : Nat), "old")]] 2 "new" m'
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
-/-- info: [[], [(2, "new")]] -/
-#guard_msgs(info) in
-#eval
-  let P : Maps Nat String → Prop := fun m' => MapsInsert [[], [((2 : Nat), "old")]] 2 "new" m'
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
-/-- info: [[(2, "new")], [(3, "old")]] -/
-#guard_msgs(info) in
-#eval
-  let P : Maps Nat String → Prop := fun m' => MapsInsert [[], [((3 : Nat), "old")]] 2 "new" m'
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
-/-- info: (3, "old") -/
-#guard_msgs(info) in
-#eval
-  let P : _ → Prop := fun m => MapsFind₂ [[], [((3 : Nat), "old")]] m
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
-/-- error: Generation failure:Gen.runUtil: Out of attempts
--/
-#guard_msgs(error) in
-#eval
-  let P : String × Nat → Prop := fun m => MapsFind₂ [[], []] m
-  Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
-
 
 -- -- This works
 -- derive_generator fun ty ty₂ => ∃ ty₁, IsUnaryArg ty ty₁ ty₂
@@ -1051,7 +956,7 @@ instance {T : LExprParams}
                   return Lambda.LExpr.fvar m x.fst none
                 else
                   throw Gen.genericFailure),
-            (0, -- FIXME: for now we avoid generating lambdas for the boogie translator.
+            (0, -- FIXME: for now we avoid generating lambdas for the Strata Core translator.
               match ty_1 with
               |
               Lambda.LTy.forAll (List.nil)
@@ -1153,9 +1058,6 @@ instance {T : LExprParams}
     fun size => aux_arb size size ctx_1 ty_1
 
 
-#guard_msgs(drop info) in
-#eval Gen.printSamples (Arbitrary.arbitrary : Gen LMonoTy)
-
 abbrev example_lctx : LContext TrivialParams :=
 { LContext.empty with knownTypes := KnownTypes.default
                       functions := Lambda.IntBoolFactory
@@ -1164,18 +1066,6 @@ abbrev example_lctx : LContext TrivialParams :=
 abbrev example_ctx : TContext Unit := ⟨[[]], []⟩
 -- abbrev example_ty : LTy := .forAll [] <| .tcons "bool" []
 abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcons "bool" []]
-
-/-- info: [[({ name := "y", metadata := () }, Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "int" []))]] -/
-#guard_msgs(info) in
-#eval
-  let P : Maps (Identifier Unit) LTy → Prop := fun Γ => MapsInsert (example_ctx.types) "y" (.forAll [] (.tcons "int" [])) Γ
-  Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
-
-
-#guard_msgs(drop info) in
-#time #eval
-    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
-    Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 4) 4
 
 def example_lstate :=
   { LState.init (T := TrivialParams) with config :=
@@ -1222,14 +1112,6 @@ match shrinked with
 | .some y => y
 | .none => x
 
-/-- info: [LExpr.fvar () { name := "x", metadata := () } none, LExpr.fvar () { name := "y", metadata := () } none] -/
-#guard_msgs(info) in
-#eval Shrinkable.shrink (LExpr.eq (T := TrivialParams.mono) () (.fvar () "x" .none) (.fvar () "y" .none))
-
-/-- info: 2 -/
-#guard_msgs(info) in
-#eval shrinkFun (fun n : Nat => n % 3 == 2) 42
-
 def annotate (t : LExpr TrivialParams.mono) :=
   let state : TState := {}
   let env : TEnv Unit := { genEnv := ⟨example_ctx, state⟩ }
@@ -1237,33 +1119,6 @@ def annotate (t : LExpr TrivialParams.mono) :=
 
 def canAnnotate (t : LExpr TrivialParams.mono) : Bool :=
   (annotate t).isOk
-
-
-#guard_msgs(drop info) in
-#eval do
-    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
-    let t ← Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
-    IO.println s!"Generated {t}"
-
-
-/-- info: Generating terms of type
-Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" [], Lambda.LMonoTy.tcons "bool" []])
-in context
-{ types := [[]], aliases := [] }
-in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
--/
-#guard_msgs in
-#eval do
-  IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
-                factory\n{example_lctx.functions.map (fun f : LFunc TrivialParams => f.name)}\n"
-  for i in List.range 100 do
-    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
-    let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
-    -- IO.println s!"Generated {t}"
-    if !(canAnnotate t) then
-      let .error e := annotate t | throw <| IO.Error.userError "Unreachable"
-      IO.println s!"FAILED({i}): {e}\n{t}\n\nSHRUNK TO:\n{shrinkFun (not ∘ canAnnotate) t}\n\n"
 
 def isIntConst (t : LExpr TrivialParams.mono) : Bool :=
 match t with
@@ -1273,22 +1128,3 @@ match t with
 def reduces (t : LExpr TrivialParams.mono) : Bool :=
   let t' := t.eval 1000 example_lstate
   isIntConst t'
-
-/-- info: Generating terms of type
-Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" [], Lambda.LMonoTy.tcons "bool" []])
-in context
-{ types := [[]], aliases := [] }
-in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
--/
-#guard_msgs(info, drop error) in
-#eval do
-  IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
-                factory\n{example_lctx.functions.map (fun f : LFunc _ => f.name)}\n"
-  for _i in List.range 100 do
-    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t (.forAll [] (.tcons "int" []))
-    let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
-    -- Unfortunately this *can* fail, if we compare two terms at arrow types, or try to take mod 0 etc.
-    if !(reduces t) then
-      -- IO.println s!"NOT A VALUE({i}): {t}\nREDUCES TO\n{t.eval 10000 example_lstate}\n\n"
-      continue

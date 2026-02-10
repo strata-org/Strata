@@ -8,6 +8,9 @@ import Strata.DDM.Elab
 import Strata.DDM.Parser
 import Strata.DDM.Format
 
+/-
+Allows testing whether a DDM dialect can parse and print a given program without losing information.
+-/
 open Strata
 
 namespace StrataTest.DDM
@@ -17,7 +20,7 @@ def stripComments (s : String) : String :=
   let rec stripMultiLine (str : String) (startIdx : Nat) (acc : String) : String :=
     if startIdx >= str.length then acc
     else
-      let remaining := str.drop startIdx
+      let remaining := str.drop startIdx |>.toString
       match remaining.splitOn "/*" with
       | [] => acc
       | [rest] => acc ++ rest
@@ -59,13 +62,13 @@ structure GrammarTestResult where
 
     Returns:
     - GrammarTestResult with parse/format results -/
-def testGrammarFile (dialect: Dialect) (filePath : String) : IO GrammarTestResult := do
+def testGrammarFile (dialect: Dialect) (ctx : Lean.Parser.InputContext) : IO GrammarTestResult := do
   try
     let loaded := .ofDialects! #[initDialect, dialect]
-    let (inputContext, ddmProgram) ← Strata.Elab.parseStrataProgramFromDialect loaded dialect.name filePath
-    let formatted := ddmProgram.format.render
+    let ddmProgram ← Strata.Elab.parseStrataProgramFromDialect loaded dialect.name ctx
+    let formatted := toString ddmProgram
     let normalizedInput := normalizeWhitespace <| stripComments <|
-      s!"program {dialect.name}; " ++ inputContext.inputString
+      s!"program {dialect.name}; " ++ ctx.inputString
     let normalizedOutput := normalizeWhitespace formatted
 
     let isMatch := normalizedInput == normalizedOutput

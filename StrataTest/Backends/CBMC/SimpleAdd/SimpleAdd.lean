@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Backends.CBMC.BoogieToCProverGOTO
+import StrataTest.Backends.CBMC.CoreToCProverGOTO
 
 open Std (ToFormat Format format)
 -------------------------------------------------------------------------------
@@ -13,7 +13,7 @@ namespace Strata
 
 protected def simpleAdd : Program :=
 #strata
-program Boogie;
+program Core;
 procedure simpleAdd (x : bv32, y : bv32) returns () {
 
   assume (x < bv{32}(0xFFFF0000));
@@ -27,9 +27,9 @@ procedure simpleAdd (x : bv32, y : bv32) returns () {
 };
 #end
 
--- #eval BoogieToGOTO.getGotoJson "simpleAddU" Strata.simpleAddU
+-- #eval CoreToGOTO.getGotoJson "simpleAddU" Strata.simpleAddU
 
--- #eval BoogieToGOTO.writeToGotoJson (programName := "simpleAdd")
+-- #eval CoreToGOTO.writeToGotoJson (programName := "simpleAdd")
 --       (symTabFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.symtab.json")
 --       (gotoFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.goto.json")
 --       Strata.simpleAdd

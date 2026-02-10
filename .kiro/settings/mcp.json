@@ -22,7 +22,9 @@
         "lean_loogle",
         "lean_leanfinder",
         "lean_state_search",
-        "lean_hammer_premise"
+        "lean_hammer_premise",
+        "lean_file_outline",
+        "lean_local_search"
       ]
     }
   }

@@ -24,6 +24,9 @@ structure ArgElaborator where
   argLevel : Nat
   -- Index of argument to use for typing context (if specified, must be less than argIndex)
   contextLevel : Option (Fin argLevel) := .none
+  -- Datatype scope: (nameLevel, typeParamsLevel) for recursive datatype definitions
+  -- When set, the datatype name is added to the typing context as a type
+  datatypeScope : Option (Fin argLevel × Fin argLevel) := .none
   -- Whether to unwrap this argument
   unwrap : Bool := false
 deriving Inhabited, Repr
@@ -61,6 +64,7 @@ private def push (as : ArgElaborators)
     syntaxLevel := sc
     argLevel := argLevel.val
     contextLevel := argDecls.argScopeLevel argLevel
+    datatypeScope := argDecls.argScopeDatatypeLevel argLevel
   }
   have scp : sc < sc + 1 := by grind
   { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
@@ -76,6 +80,7 @@ private def pushWithUnwrap
     syntaxLevel := sc
     argLevel := argLevel.val
     contextLevel := argDecls.argScopeLevel argLevel
+    datatypeScope := argDecls.argScopeDatatypeLevel argLevel
     unwrap := unwrap
   }
   have scp : sc < sc + 1 := by grind
@@ -91,7 +96,7 @@ private def addElaborators (argDecls : ArgDecls) (p : ArgElaborators) (a : Synta
     else
       panic! "Invalid index"
   | .str s =>
-    if s.trim.isEmpty then
+    if s.trimAscii.isEmpty then
       p
     else
       p.inc

@@ -6,7 +6,7 @@ inclusion: always
 
 ## Overview
 
-Strata is a Lean4 verification framework using **dialects** as composable language building blocks. The primary target is the **Boogie dialect** for deductive program verification.
+Strata is a Lean4 verification framework using **dialects** as composable language building blocks. The primary target is the **Strata Core dialect** for deductive program verification.
 
 ## Repository Structure
 
@@ -27,19 +27,23 @@ Strata is a Lean4 verification framework using **dialects** as composable langua
 **`Strata/DL/`** - Dialect Library
 - `Lambda/` - Pure functional expressions (base layer)
 - `Imperative/` - Statements with control flow (builds on Lambda)
-- `SMT/` - SMT-LIB encoding and solver interface
+- `SMT/` - The SMT-LIB standard definition and its solver interface
 - `Util/` - Shared utilities (maps, lists, string generation)
 
 **`Strata/Languages/`** - Concrete Language Implementations
-- `Boogie/` - Primary verification language (procedures, contracts, VCG, SMT encoding)
+- `Core/` - Primary verification language (procedures, contracts, VCG, SMT encoding)
 - `C_Simp/` - Simplified C-like language
 - `Dyn/` - Dynamic language example
+- `Laurel/` - A common representation for front-end languages like Java, Python and JavaScript.
+Translated to Core.
+- `Python/` - The well-known Python language
 
 **`Strata/Transform/`** - Program Transformations
 - Each transformation has implementation + optional correctness proof (`*Correct.lean`)
+- `CallElim` - Procedure call elimination via inlining the contract
 - `DetToNondet` - Deterministic to non-deterministic control flow
-- `CallElim` - Procedure call elimination via inlining
 - `LoopElim` - Loop elimination using invariants
+- `ProcedureInlining` - Procedure call elimination via inlining the body
 
 **`Strata/Backends/`** - Verification Backends
 - `CBMC/` - C Bounded Model Checker integration
@@ -51,7 +55,7 @@ Strata is a Lean4 verification framework using **dialects** as composable langua
 Dialects are composable language layers, each defining syntax, types, and semantics:
 - **Lambda** - Base expression layer (functional)
 - **Imperative** - Adds statements and control flow (uses Lambda expressions)
-- **Boogie** - Adds procedures, contracts, and verification (uses Imperative statements)
+- **Strata Core (or simply Core)** - Adds procedures, contracts, and verification (uses Imperative statements)
 
 ### Lambda Dialect (Expressions)
 
@@ -84,11 +88,13 @@ Statement-level constructs parameterized by expression and command types:
 - `StmtSemantics.lean` - Operational semantics
 - `Cmd.lean` - Command interface
 
-## Boogie Dialect
+## The Strata Core Dialect
 
-**Location:** `Strata/Languages/Boogie/`
+**Location:** `Strata/Languages/Core/`
 
-Intermediate Verification Language for deductive program verification, mirroring the [Boogie verifier](https://github.com/boogie-org/boogie).
+Intermediate Verification Language for deductive program verification.
+Its syntax is highly motivated by the [Boogie verifier](https://github.com/boogie-org/boogie),
+but has additional convenient syntactic features.
 
 ### Types (`Factory.lean`)
 - Primitives: `bool`, `int`, `real`, `bv<n>`, `string`
@@ -129,8 +135,8 @@ Top-level structure:
 ## Other Languages
 
 **C_Simp** (`Strata/Languages/C_Simp/`) - Simplified C-like language
-- Verification via transformation to Boogie
-- Pipeline: Parse → Transform loops → Translate to Boogie → VCG → SMT
+- Verification via transformation to Strata Core
+- Pipeline: Parse → Transform loops → Translate to Strata Core → VCG → SMT
 
 **Dyn** (`Strata/Languages/Dyn/`) - Dynamic language example demonstrating dialect extensibility
 
@@ -158,13 +164,13 @@ Program-to-program translations for simplification and verification. Each has op
 | Expression types | `Strata/DL/Lambda/LTy.lean` |
 | Statement AST | `Strata/DL/Imperative/Stmt.lean` |
 | Statement semantics | `Strata/DL/Imperative/StmtSemantics.lean` |
-| Boogie expressions | `Strata/Languages/Boogie/Expressions.lean` |
-| Boogie commands | `Strata/Languages/Boogie/Statement.lean` |
-| Boogie procedures | `Strata/Languages/Boogie/Procedure.lean` |
-| Boogie programs | `Strata/Languages/Boogie/Program.lean` |
-| Boogie operators | `Strata/Languages/Boogie/Factory.lean` |
-| Boogie VCG | `Strata/Languages/Boogie/Verifier.lean` |
-| SMT encoding | `Strata/Languages/Boogie/SMTEncoder.lean` |
+| Strata Core expressions | `Strata/Languages/Core/Expressions.lean` |
+| Strata Core commands | `Strata/Languages/Core/Statement.lean` |
+| Strata Core procedures | `Strata/Languages/Core/Procedure.lean` |
+| Strata Core programs | `Strata/Languages/Core/Program.lean` |
+| Strata Core operators | `Strata/Languages/Core/Factory.lean` |
+| Strata Core VCG | `Strata/Languages/Core/Verifier.lean` |
+| SMT encoding | `Strata/Languages/Core/SMTEncoder.lean` |
 | SMT solver | `Strata/DL/SMT/Solver.lean` |
 | Transformations | `Strata/Transform/*.lean` |
 
@@ -175,21 +181,21 @@ Program-to-program translations for simplification and verification. Each has op
 
 **Executables:**
 - `StrataVerify` - Main verifier
-- `BoogieToGoto` - Boogie to GOTO translation
+- `StrataCoreToGoto` - Strata Core to GOTO translation
 - `StrataToCBMC` - CBMC backend
 
 **Commands:**
 ```bash
 lake build                                          # Build all
 lake test                                           # Run tests
-lake exe StrataVerify Examples/SimpleProc.boogie.st # Verify program
+lake exe StrataVerify Examples/SimpleProc.core.st   # Verify program
 ```
 
 ## Verification Workflow
 
-1. Write program (`.boogie.st` file)
+1. Write program (`.core.st` file)
 2. Parse (DDM parser)
-3. Type check (Boogie type system)
+3. Type check (Strata Core's type system)
 4. Transform (optional: eliminate calls/loops)
 5. Generate VCs (symbolic execution)
 6. Encode to SMT (SMT-LIB format)
@@ -204,7 +210,7 @@ Generated VCs saved in `vcs/*.smt2`
 
 Before starting any implementation task:
 
-1. **Identify the layer** you're working on (Lambda, Imperative, Boogie, Transform)
+1. **Identify the layer** you're working on (Lambda, Imperative, Strata Core, Transform)
 2. **Read the core files** for that layer from the Key Files Quick Reference table
 3. **Read related files** in the same directory to understand patterns and conventions
 4. **Check for similar implementations** in other dialects or transformations
@@ -212,7 +218,7 @@ Before starting any implementation task:
 
 **Example workflows:**
 
-- **Adding a Boogie feature:** Read `Expressions.lean`, `Statement.lean`, `Factory.lean`, then check `StrataTest/Languages/Boogie/` for test patterns
+- **Adding a feature to Strata Core:** Read `Expressions.lean`, `Statement.lean`, `Factory.lean`, then check `StrataTest/Languages/Core/` for test patterns
 - **Creating a transformation:** Read existing transforms (`DetToNondet.lean`, `CallElim.lean`), their correctness proofs, and tests in `StrataTest/Transform/`
 - **Modifying expressions:** Read `Strata/DL/Lambda/LExpr.lean`, `LExprEval.lean`, `LTy.lean` to understand the AST, evaluation, and type system
 - **Working with statements:** Read `Strata/DL/Imperative/Stmt.lean` and `StmtSemantics.lean` before making changes
@@ -223,7 +229,7 @@ Before starting any implementation task:
 
 - **File organization:** Mirror test structure in `StrataTest/` to match `Strata/`
 - **Naming:** Use descriptive names; transformations end with `Correct.lean` for proofs
-- **Example files:** Use pattern `<name>.<dialect>.st` (e.g., `SimpleProc.boogie.st`)
+- **Example files:** Use pattern `<name>.<dialect>.st` (e.g., `SimpleProc.core.st`)
 - **Proofs:** Transformation correctness proofs are optional but encouraged
 - **Documentation:** Reference `docs/Architecture.md` for design philosophy, `docs/GettingStarted.md` for tutorials
 
@@ -231,6 +237,6 @@ Before starting any implementation task:
 
 - **Expressions:** Start with Lambda dialect (`Strata/DL/Lambda/`)
 - **Statements:** Build on Imperative dialect (`Strata/DL/Imperative/`)
-- **New languages:** Extend existing dialects, follow Boogie as reference
+- **New languages:** Extend existing dialects, follow Strata Core as reference
 - **Transformations:** Implement in `Strata/Transform/`, add tests in `StrataTest/Transform/`
 - **Testing:** Add examples in `Examples/`, unit tests and property-based tests in `StrataTest/`

@@ -286,10 +286,10 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
         ]
       ]
     ]
-  | .havoc _ _ => panic! "Unimplemented"
+  | .havoc _ _ | .cover _ _ _ => panic! "Unimplemented"
 
 mutual
-partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
+def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
   let cfg := CBMCConfig.empty
   Json.mkObj [
     ("id", "code"),
@@ -301,8 +301,10 @@ partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_S
     ]),
     ("sub", Json.arr (b.map (stmtToJson · loc)).toArray)
   ]
+  termination_by b.sizeOf
+  decreasing_by (apply Imperative.sizeOf_stmt_in_block; assumption)
 
-partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
+ def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
   | .ite cond thenb elseb _ =>
@@ -320,6 +322,7 @@ partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
       ])
     ]
   | _ => panic! "Unimplemented"
+  termination_by e.sizeOf
 end
 
 def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
