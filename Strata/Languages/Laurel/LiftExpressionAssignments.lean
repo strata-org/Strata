@@ -17,9 +17,10 @@ Transform assignments that appear in expression contexts into preceding statemen
 
 When we see expressions, we traverse them right to left.
 For each variable, we maintain a substitution map, which is initially filled with the actual variable.
-If we encounter an assignment, we replace it with the current substitution for that variable. We then come up with a new snapshot variable name, and push that to the subsitution map, we also push both the assignment and an assignment to the snapshot variable to a stack over prependStatements.
+If we encounter an assignment, we replace it with the current substitution for that variable. We then come up with a new snapshot variable name, and push that to the subsitution map.
+We also push both the assignment and an assignment to the snapshot variable to a stack over prependStatements.
 
-When we encounter an if-then-else, we rerun our algorithm from scratch on both branches. If any assignments were discovered in the branches, lift the entire if-then-else by putting it on the prependStatements stack. Introduce a fresh variable and for each branch, assign the last statement in that branch to the fresh variable.
+When we encounter an if-then-else, we rerun our algorithm from scratch on both branches, so nested assignments are moved to the start of each branch. If any assignments were discovered in the branches, lift the entire if-then-else by putting it on the prependStatements stack. Introduce a fresh variable and for each branch, assign the last statement in that branch to the fresh variable.
 
 Example 1 — Assignments in expression position:
   var y: int := x + (x := 1;) + x + (x := 2;);
@@ -139,6 +140,26 @@ private partial def containsAssignment : StmtExprMd → Bool
   | ⟨.Block stmts _, _⟩ => stmts.any containsAssignment
   | _ => false
 
+/--
+Shared logic for lifting an assignment in expression position:
+prepends the assignment, creates before-snapshots for all targets,
+and updates substitutions. The value should already be transformed by the caller.
+-/
+private def liftAssignExpr (targets : List StmtExprMd) (seqValue : StmtExprMd)
+    (md : Imperative.MetaData Core.Expression) : LiftM Unit := do
+  -- Prepend the assignment itself
+  addPrepend (⟨.Assign targets seqValue, md⟩)
+  -- Create a before-snapshot for each target and update substitutions
+  for target in targets do
+    match target.val with
+    | .Identifier varName =>
+        let snapshotName ← freshTempFor varName
+        let varType ← getVarType varName
+        -- Snapshot goes before the assignment (cons pushes to front)
+        addPrepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, md⟩)), md⟩)
+        setSubst varName snapshotName
+    | _ => pure ()
+
 mutual
 /--
 Process an expression in expression context, traversing arguments right to left.
@@ -153,26 +174,13 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .LiteralInt _ | .LiteralBool _ | .LiteralString _ => return expr
 
   | .Assign targets value =>
-      -- Assignment in expression position.
       let seqValue ← transformExpr value
-      -- The expression result is the current substitution for the target
-      -- (we already know what it maps to AFTER this assignment from right-to-left traversal)
-      let firstTarget := targets.head?.getD (bare (.Identifier "__unknown"))
-      let resultExpr ← match firstTarget.val with
+      liftAssignExpr targets seqValue md
+      -- The expression result is the current substitution for the first target
+      let firstTarget := targets.head?.getD (panic "Assign must have non-empty targets")
+      match firstTarget.val with
         | .Identifier varName => pure (⟨.Identifier (← getSubst varName), md⟩)
         | _ => pure firstTarget
-      -- Create a before-snapshot and update substitution
-      match firstTarget.val with
-      | .Identifier varName =>
-          let snapshotName ← freshTempFor varName
-          let varType ← getVarType varName
-          -- Assignment first, then snapshot (cons pushes to front, so snapshot ends up before assignment)
-          addPrepend (⟨.Assign targets seqValue, md⟩)
-          addPrepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, md⟩)), md⟩)
-          setSubst varName snapshotName
-      | _ =>
-          addPrepend (⟨.Assign targets seqValue, md⟩)
-      return resultExpr
 
   | .PrimitiveOp op args =>
       -- Process arguments right to left
@@ -231,15 +239,28 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       match stmts.reverse with
       | [] => return bare (.Block [] metadata)
       | last :: restRev => do
-          -- Process all-but-last in forward order as statements
+          -- Process all-but-last using transformExprDiscarded (result is discarded)
           for s in restRev.reverse do
-            let lifted ← transformStmt s
-            for l in lifted do
-              addPrepend l
+            transformExprDiscarded s
           -- Last element is the expression value
           transformExpr last
 
   | _ => return expr
+
+/--
+Transform an expression whose result value is discarded (e.g. non-last elements in a block).
+Assignments are lifted to prepends. For non-assignment expressions, the transformed result
+is also added to prepends (it may still have side effects like function calls).
+-/
+partial def transformExprDiscarded (expr : StmtExprMd) : LiftM Unit := do
+  let md := expr.md
+  match expr.val with
+  | .Assign targets value =>
+      let seqValue ← transformExpr value
+      liftAssignExpr targets seqValue md
+  | _ =>
+      let result ← transformExpr expr
+      addPrepend result
 
 /--
 Process a statement, handling any assignments in its sub-expressions.

@@ -203,6 +203,9 @@ inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
 
+instance : Inhabited StmtExprMd  where
+  default := ⟨ .Hole, .empty ⟩
+
 instance : Inhabited StmtExpr where
   default := .Hole
 
