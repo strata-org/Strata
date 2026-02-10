@@ -5,7 +5,7 @@ Quantifiers.core.st(64, 4) [assert_2]: 🟡 unknown
 Quantifiers.core.st(76, 4) [assert_3]: ✅ pass
 Quantifiers.core.st(89, 4) [assert_4]: ✅ pass
 Quantifiers.core.st(99, 4) [assert_5]: ✅ pass
-Quantifiers.core.st(110, 4) [assert_6]: 🟡 unknown
+Quantifiers.core.st(110, 4) [assert_6]: ✅ pass
 Quantifiers.core.st(123, 4) [assert_7]: ✅ pass
 Quantifiers.core.st(134, 4) [assert_8]: ✅ pass
 Quantifiers.core.st(146, 4) [assert_9]: ✅ pass
