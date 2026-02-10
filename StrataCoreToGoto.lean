@@ -3,12 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Lean.Data.Json
 
 import StrataTest.Backends.CBMC.CoreToCProverGOTO
 import Strata.Languages.Core.Verifier
 import Strata.Util.IO
-import Std.Internal.Parsec
 
 open Strata
 
