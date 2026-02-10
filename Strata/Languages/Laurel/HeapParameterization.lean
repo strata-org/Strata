@@ -43,7 +43,7 @@ structure AnalysisResult where
 mutual
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
   termination_by sizeOf expr
-  decreasing_by simp_wf; have := StmtExprMd.sizeOf_val_lt expr; omega
+  decreasing_by cases expr <;> simp_wf <;> omega
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
