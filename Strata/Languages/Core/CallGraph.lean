@@ -5,25 +5,60 @@
 -/
 
 import Strata.Languages.Core.Program
-import Strata.Transform.CallElim
 
 ---------------------------------------------------------------------
 namespace Core
 
 /-- Generic call graph structure -/
 structure CallGraph where
-  callees : Std.HashMap String (List String)
-  callers : Std.HashMap String (List String)
+  -- A map from caller to a list of (callee, # of calls)
+  callees : Std.HashMap String (Std.HashMap String Nat)
+  -- A map from callee to a list of (caller, # of calls)
+  callers : Std.HashMap String (Std.HashMap String Nat)
+deriving Repr
 
 def CallGraph.empty : CallGraph :=
   { callees := Std.HashMap.emptyWithCapacity,
     callers := Std.HashMap.emptyWithCapacity }
 
 def CallGraph.getCallees (cg : CallGraph) (name : String) : List String :=
-  if h : cg.callees.contains name then cg.callees[name]'h else []
+  if h : cg.callees.contains name then (cg.callees[name]'h).keys else []
+
+def CallGraph.getCalleesWithCount (cg : CallGraph) (name : String)
+  : Std.HashMap String Nat :=
+  if h : cg.callees.contains name then (cg.callees[name]'h) else {}
 
 def CallGraph.getCallers (cg : CallGraph) (name : String) : List String :=
-  if h : cg.callers.contains name then cg.callers[name]'h else []
+  if h : cg.callers.contains name then (cg.callers[name]'h).keys else []
+
+def CallGraph.getCallersWithCount (cg : CallGraph) (name : String)
+  : Std.HashMap String Nat :=
+  if h : cg.callers.contains name then (cg.callers[name]'h) else {}
+
+/-- Decrement the number on edge (caller -> callee) by 1. If the result is 0,
+  erase the empty entry -/
+def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
+  : Except String CallGraph :=
+  let decrement_count (m : Std.HashMap String Nat) (key : String)
+    : Except String (Std.HashMap String Nat) := do
+    let some v := m[key]? | throw s!"{key} not available at {repr m}"
+    if v == 1 then
+      return m.erase key
+    else
+      return m.insert key (v - 1)
+  let modify {β} [Repr β] (m : Std.HashMap String β) (key : String)
+      (fn : β → Except String β) : Except String (Std.HashMap String β) := do
+    let some v := m[key]? | throw s!"{key} not available at {repr m}"
+    let v' ← fn v
+    return m.insert key v'
+
+  do
+  let new_callees ← modify cg.callees caller (decrement_count · callee)
+  let new_callers ← modify cg.callers callee (decrement_count · caller)
+  return {
+    callees := new_callees
+    callers := new_callers
+  }
 
 /-- Compute transitive closure of callees; the result does not contain `name`. -/
 partial def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
@@ -53,18 +88,21 @@ partial def CallGraph.getCallersClosure (cg : CallGraph) (name : String) : List 
         go (head :: visited) (newCallers ++ tail)
   (go [] [name]).filter (· ≠ name)
 
-/-- Build call graph from name-calls pairs -/
+/-- Build call graph from name-callees pairs -/
 def buildCallGraph (items : List (String × List String)) : CallGraph :=
   let calleeMap := items.foldl (fun acc (name, calls) =>
-    acc.insert name calls.dedup) Std.HashMap.emptyWithCapacity
+    acc.insert name (Std.HashMap.ofList calls.occurrences))
+    Std.HashMap.emptyWithCapacity
 
-  let callerMap :=
-    calleeMap.fold (fun acc caller callees =>
+  let callerMapNodedup :=
+    items.foldl (fun acc ⟨caller,callees⟩ =>
       callees.foldl (fun acc' callee =>
         let existingCallers := Option.getD (acc'.get? callee) []
-        acc'.insert callee (caller :: existingCallers).dedup)
+        acc'.insert callee (caller :: existingCallers))
       acc)
       Std.HashMap.emptyWithCapacity
+  let callerMap := callerMapNodedup.map
+    (fun _ v => Std.HashMap.ofList v.occurrences)
 
   { callees := calleeMap, callers := callerMap }
 
@@ -197,41 +235,6 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
         functionsSet.binSearch (CoreIdent.toPretty op) (· < ·) |>.isSome)
       if hasRelevantOp then none else some a.name
     | _ => none)
-
-/--
-Filter program to keep only target procedures, applying the specified transform
-to them and pruning away all other procedures.
--/
-def Program.filterProcedures (prog : Program) (targetProcs : List String)
-    (transform : Program → Transform.CoreTransformM Program) :
-    Except Core.Transform.Err Program := do
-  let cg := prog.toProcedureCG
-  let allNeededProcs := (targetProcs ++ cg.getAllCalleesClosure targetProcs).dedup
-  let neededProcsSet := allNeededProcs.toArray.qsort (· < ·)
-  let targetProcsSet := targetProcs.toArray.qsort (· < ·)
-
-  -- Create intermediate program with target procedures + dependencies.
-  let intermediateDecls := prog.decls.filter (fun decl =>
-    match decl with
-    | .proc p _ =>
-      let procName := CoreIdent.toPretty p.header.name
-      neededProcsSet.binSearch procName (· < ·) |>.isSome
-    | _ => true) -- Keep all non-procedure declarations
-
-  let intermediateProg := { prog with decls := intermediateDecls }
-
-  -- Apply the specified transform.
-  let elimProg ← Transform.run intermediateProg transform
-
-  -- Remove non-target procedures from the result.
-  let finalDecls := elimProg.decls.filter (fun decl =>
-    match decl with
-    | .proc p _ =>
-      let procName := CoreIdent.toPretty p.header.name
-      targetProcsSet.binSearch procName (· < ·) |>.isSome
-    | _ => true) -- Keep all non-procedure declarations
-
-  return { elimProg with decls := finalDecls }
 
 ---------------------------------------------------------------------
 

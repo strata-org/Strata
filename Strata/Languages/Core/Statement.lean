@@ -369,7 +369,6 @@ def Statement.substFvar (s : Core.Statement)
       axioms := decl.axioms.map (Lambda.LExpr.substFvar · fr to) }
     .funcDecl decl' md
   termination_by s.sizeOf
-  decreasing_by all_goals(simp_wf; try omega)
 end
 
 ---------------------------------------------------------------------
