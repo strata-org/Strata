@@ -243,8 +243,10 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × Lean.FileMap)
 
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
-  args := [ "file", "verbose" ]
-  help := "Analyze a Strata Python Ion file. Write results to stdout."
+  args := [ "ion_file", "verbose" ]
+  help := "Analyze and verify assertions in a Strata Python Ion file. " ++
+          "<ion_file>: path to a .python.st.ion file generated from Python source. " ++
+          "<verbose>: set to '1' for verbose output (displays parsed program, Core translation, and inlined program), or '0' for concise verification results only."
   callback := fun _ v => do
     let verbose := v[1] == "1"
     let filePath := v[0]
@@ -389,7 +391,8 @@ def main (args : List String) : IO Unit := do
     IO.println "Usage: strata <command> [flags]...\n"
     for cmd in commandList do
       let args := cmd.args.foldl (init := s!"  {cmd.name}") fun s a => s!"{s} <{a}>"
-      IO.println s!"  {args}: {cmd.help}"
+      IO.println s!"{args}"
+      IO.println s!"      {cmd.help}"
     IO.println "\nFlags:"
     IO.println "  --include path: Adds a path to Strata for searching for dialects."
   | cmd :: args =>
