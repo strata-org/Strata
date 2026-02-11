@@ -51,19 +51,20 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
         let ans ←
             IO.toEIO
               (fun e => f!"{e}")
-              (@Imperative.dischargeObligation Arith.PureExpr _
-               encodeArithToSMTTerms typedVarToSMT
+              (@Imperative.SMT.dischargeObligation Arith.PureExpr _
+               (encodeArithToSMTTerms terms) typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
                 smtsolver filename.toString
-                terms)
+                #["--produce-models"] false)
         match ans with
         | .ok (result, estate) =>
-           results := results.push { obligation, result, estate }
+           let vcres := { obligation, result, estate }
+           results := results.push vcres
            if result ≠ .unsat then
             let prog := f!"\n\nEvaluated program:\n{format cmds}"
-            dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
-                         \n\nResult: {result}\
+            dbg_trace f!"\n\nCould not be proved!\
+                         \n\nResult: {vcres}\
                          {if verbose then prog else ""}"
             break
         | .error e =>

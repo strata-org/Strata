@@ -8,8 +8,10 @@ import Strata.DL.SMT.SMT
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Imperative.EvalContext
 
-namespace Imperative.SMT
+namespace Imperative
 open Std (ToFormat Format format)
+
+namespace SMT
 ---------------------------------------------------------------------
 
 /--
@@ -171,4 +173,47 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
   | .ok result => return .ok (result, estate)
 
 ---------------------------------------------------------------------
-end Imperative.SMT
+end SMT
+
+
+/--
+SMT solver's `result` along with an SMT encoder state `estate` for a given
+verification condition `obligation`.
+Currently, this data structure is only used in the Arith example of StrataTest.
+-/
+structure VCResult (P : Imperative.PureExpr) where
+  obligation : Imperative.ProofObligation P
+  result : SMT.Result P.Ident := .unknown
+  estate : Strata.SMT.EncoderState := Strata.SMT.EncoderState.init
+
+instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.CounterEx P.Ident)]
+  : ToFormat (VCResult P) where
+  format r :=
+    let result_fmt := match r.result with
+      | .sat cex  =>
+        if cex.isEmpty then
+          f!"failed\nNo counterexample available."
+        else
+          f!"failed\nCounterexample: {cex}"
+      | .unsat => f!"verified"
+      | .unknown => f!"unknown"
+      | .err msg => f!"err {msg}"
+    f!"Obligation: {r.obligation.label}\n\
+                 Result: {result_fmt}"
+
+/--
+An array of `VCResult`s.
+-/
+abbrev VCResults (P : Imperative.PureExpr) := Array (VCResult P)
+
+def VCResults.format [ToFormat (VCResult P)] (rs : VCResults P) : Format :=
+  let rsf := rs.map (fun r => f!"{Format.line}{r}")
+  Format.joinSep rsf.toList Format.line
+
+instance [ToFormat (VCResult P)] : ToFormat (VCResults P) where
+  format := VCResults.format
+
+instance [ToFormat (VCResult P)] : ToString (VCResults P) where
+  toString rs := toString (VCResults.format rs)
+
+end Imperative
