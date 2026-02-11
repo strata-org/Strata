@@ -495,17 +495,30 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange fileRange =>
-      let message := match result with
-        | .fail => "assertion does not hold"
-        | .unknown => "assertion could not be proved"
-        | .implementationError msg => s!"verification error: {msg}"
-        | _ => panic "impossible"
+    let message := match result with
+      | .fail => "assertion does not hold"
+      | .unknown => "assertion could not be proved"
+      | .implementationError msg => s!"verification error: {msg}"
+      | _ => panic "impossible"
 
-      some (DiagnosticModel.withRange fileRange message)
-    | _ => none
+    let .some fileRangeElem := vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+      | some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! obligation label: {repr vcr.obligation.label}"
+        }
+
+    let result := match fileRangeElem.value with
+      | .fileRange fileRange =>
+        some {
+          fileRange := fileRange
+          message := message
+        }
+      | _ =>
+        some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
+        }
+    result
 
 structure Diagnostic where
   start : Lean.Position
