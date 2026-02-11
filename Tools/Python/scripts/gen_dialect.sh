@@ -2,7 +2,7 @@
 # Script to run basic test of strata generator.
 set -e
 
-strata=../../.lake/build/bin/strata
+strata=../../../.lake/build/bin/strata
 
 if [ ! -f $strata ]; then
   echo "strata is not built: $strata"
