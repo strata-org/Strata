@@ -244,7 +244,7 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × Lean.FileMap)
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "ion_file", "verbose" ]
-  help := "Analyze and verify assertions in a Strata Python Ion file. " ++
+  help := "Verify `assert` and `reach` commands in a Strata Python Ion file after inlining procedure calls. " ++
           "<ion_file>: path to a .python.st.ion file generated from Python source. " ++
           "<verbose>: set to '1' for verbose output (displays parsed program, Core translation, and inlined program), or '0' for concise verification results only."
   callback := fun _ v => do
