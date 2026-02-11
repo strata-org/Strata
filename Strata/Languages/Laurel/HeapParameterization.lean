@@ -179,19 +179,19 @@ Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
-partial def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
+def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
   recurse expr valueUsed
 where
   recurse (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
     let md := expr.md
-    match expr.val with
+    match _h : expr.val with
     | .FieldSelect selectTarget fieldName =>
         let fieldType ← lookupFieldType fieldName
         addFieldConstant fieldName fieldType.get!
         let selectTarget' ← recurse selectTarget
         return ⟨ .StaticCall "heapRead" [mkMd (.Identifier heapVar), selectTarget', mkMd (.Identifier fieldName)], md ⟩
     | .StaticCall callee args =>
-        let args' ← args.mapM recurse
+        let args' ← args.mapM (recurse ·)
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -210,7 +210,7 @@ where
           return ⟨ .StaticCall callee args', md ⟩
     | .InstanceCall callTarget callee args =>
         let t ← recurse callTarget
-        let args' ← args.mapM recurse
+        let args' ← args.mapM (recurse ·)
         return ⟨ .InstanceCall t callee args', md ⟩
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
@@ -225,6 +225,7 @@ where
               let s' ← recurse s (isLast && valueUsed)
               let rest' ← processStmts (idx + 1) rest
               pure (s' :: rest')
+          termination_by sizeOf remaining
         let stmts' ← processStmts 0 stmts
         return ⟨ .Block stmts' label, md ⟩
     | .LocalVariable n ty i =>
@@ -239,7 +240,7 @@ where
     | .Assign targets v =>
         match targets with
         | [fieldSelectMd] =>
-          match fieldSelectMd.val with
+          match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
             let fieldType ← lookupFieldType fieldName
             match fieldType with
@@ -259,11 +260,11 @@ where
             return ⟨ .Assign [] (← recurse v), md ⟩
         | tgt :: rest =>
             let tgt' ← recurse tgt
-            let targets' ← rest.mapM recurse
+            let targets' ← rest.mapM (recurse ·)
             return ⟨ .Assign (tgt' :: targets') (← recurse v), md ⟩
     | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), md ⟩
     | .PrimitiveOp op args =>
-      let args' ← args.mapM recurse
+      let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
     | .AsType t ty => return ⟨ .AsType (← recurse t) ty, md ⟩
@@ -278,6 +279,17 @@ where
     | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
     | _ => return expr
+    termination_by sizeOf expr
+    decreasing_by
+      all_goals simp_wf
+      all_goals
+        have hval := StmtExprMd.sizeOf_val_lt expr
+        rw [_h] at hval; simp at hval
+        first
+          | omega
+          | (have := List.sizeOf_lt_of_mem ‹_›; omega)
+          | -- For the FieldSelect-inside-Assign case: target < fieldSelectMd < expr
+            (have hfs := StmtExprMd.sizeOf_val_lt fieldSelectMd; rw [_h2] at hfs; simp at hfs; omega)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
   let heapInName := "$heap_in"
