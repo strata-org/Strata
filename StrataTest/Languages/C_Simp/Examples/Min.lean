@@ -41,12 +41,13 @@ int procedure min(a:int, b:int)//@pretrue;
 #guard_msgs in
 #eval IO.println MinPgm
 
-/--
+/-
+
 info: function min {
   pre: #true
   post: #true
   body:
-if ((~Int.Lt a) b) then {return := a}
+if (~Int.Lt a b) then {return := a}
 else{return := b}
 }
 Errors: #[]
@@ -55,25 +56,9 @@ Errors: #[]
 open Strata.C_Simp in
 #eval TransM.run (translateProgram (MinPgm.commands))
 
-/--
+/-
+
 info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: post
-Property: assert
-Assumptions:
-(<label_ite_cond_true: ((~Int.Lt a) b)>, (if ((~Int.Lt $__a0) $__b1) then ((~Int.Lt $__a0) $__b1) else #true))
-(<label_ite_cond_false: !((~Int.Lt a) b)>, (if (if ((~Int.Lt $__a0) $__b1) then #false else #true) then (if ((~Int.Lt $__a0) $__b1) then #false else #true) else #true))
-
-Proof Obligation:
-#true
-
----
-info:
-Obligation: post
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" MinPgm

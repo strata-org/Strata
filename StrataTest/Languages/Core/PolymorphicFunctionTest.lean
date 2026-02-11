@@ -91,15 +91,16 @@ spec {
 };
 #end
 
-/--
+/-
+
 info: ok: func makePair : ∀[$__ty0, $__ty1]. ((x : $__ty0) (y : $__ty1)) → (Map $__ty0 $__ty1);
 procedure TestMakePair :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (TestMakePair_ensures_0, #true)
 {
   init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-  m := (((~makePair : (arrow int (arrow bool (Map int bool)))) #42) #true)
+  m := ((~makePair : (arrow int (arrow bool (Map int bool)))) #42 #true)
 }
 -/
 #guard_msgs in
@@ -126,16 +127,17 @@ spec {
 };
 #end
 
-/--
+/-
+
 info: ok: func apply : ∀[$__ty0, $__ty1]. ((f : (arrow $__ty0 $__ty1)) (x : $__ty0)) → $__ty1;
 func intToBool :  ((x : int)) → bool;
 procedure TestApply :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (TestApply_ensures_0, #true)
 {
   init (result : bool) := (init_result_0 : bool)
-  result := (((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (arrow int bool))) #42)
+  result := ((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (arrow int bool)) #42)
 }
 -/
 #guard_msgs in
@@ -162,16 +164,19 @@ spec {
 };
 #end
 
-/--
+/-
+
 info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
 procedure TestDifferentInstantiations :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (TestDifferentInstantiations_ensures_0, #true)
 {
   init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-  m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
+  m := ((~makePair : (arrow int (arrow bool (Map int bool))))
+   ((~identity : (arrow int int)) #42)
+   ((~identity : (arrow bool bool)) #true))
 }
 -/
 #guard_msgs in

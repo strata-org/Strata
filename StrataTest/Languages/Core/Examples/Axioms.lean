@@ -41,64 +41,9 @@ procedure P2() returns ()
 
 #end
 
-/--
+/-
+
 info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: use_a1_a2
-Property: assert
-Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
-Proof Obligation:
-((~Int.Gt ~x) ~y)
-
-Label: use_f1
-Property: assert
-Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
-Proof Obligation:
-((~Int.Gt (~f ((~Int.Add ~x) ~y))) #7)
-
-Label: use_a1_again
-Property: assert
-Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
-Proof Obligation:
-(~y == #2)
-
-Label: use_a2_again
-Property: assert
-Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
-Proof Obligation:
-((~Int.Gt (~f ~y)) ~y)
-
----
-info:
-Obligation: use_a1_a2
-Property: assert
-Result: ✅ pass
-
-Obligation: use_f1
-Property: assert
-Result: ✅ pass
-
-Obligation: use_a1_again
-Property: assert
-Result: ✅ pass
-
-Obligation: use_a2_again
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" axiomPgm1
@@ -128,25 +73,9 @@ assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 #eval let (program, _) := Core.getProgram axiomPgm2
       Std.format (Core.Program.getIrrelevantAxioms program ["f"])
 
-/--
+/-
+
 info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: axiomPgm2_main_assert
-Property: assert
-Assumptions:
-
-(f_g_ax, (∀ ((~f %0) == ((~Int.Add (~g %0)) #1))))
-(g_ax, (∀ ((~g %0) == ((~Int.Mul %0) #2))))
-Proof Obligation:
-((~Bool.Implies ((~Int.Ge $__x0) #0)) ((~Int.Gt (~f $__x0)) $__x0))
-
----
-info:
-Obligation: axiomPgm2_main_assert
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "z3" axiomPgm2

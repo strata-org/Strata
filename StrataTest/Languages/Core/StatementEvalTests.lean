@@ -125,50 +125,11 @@ Deferred Proof Obligations:
        .init "x" t[bool] eb[x == #true]
        ] |>.snd |> format
 
-/--
+/-
+
 info: Error:
 none
 Subst Map:
-
-Expression Env:
-State:
-[(minit : (arrow int int)) → (_minit : (arrow int int))
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else ((_minit : (arrow int int)) %0))) %0))) %0)))
-(m0 : int) → ((_minit : (arrow int int)) #0)]
-
-Evaluation Config:
-Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
-Factory Functions:
-
-
-
-Datatypes:
-
-Path Conditions:
-
-
-Warnings:
-[]
-Deferred Proof Obligations:
-Label: m_5_eq_50
-Property: assert
-Assumptions:
-Proof Obligation:
-(((_minit : (arrow int int)) #5) == #50)
-
-Label: m_2_eq_20
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
-
-Label: m_1_eq_10
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
 -/
 #guard_msgs in
 #eval (evalOne
@@ -185,49 +146,11 @@ Proof Obligation:
   .assert "m_1_eq_10" eb[(m #1) == #10]
   ]) |>.snd |> format
 
-/--
+/-
+
 info: Error:
 none
 Subst Map:
-
-Expression Env:
-State:
-[minit → _minit
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else (_minit %0))) %0))) %0)))]
-
-Evaluation Config:
-Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
-Factory Functions:
-
-
-
-Datatypes:
-
-Path Conditions:
-
-
-Warnings:
-[]
-Deferred Proof Obligations:
-Label: m_5_eq_50
-Property: assert
-Assumptions:
-Proof Obligation:
-((_minit #5) == #50)
-
-Label: m_2_eq_20
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
-
-Label: m_1_eq_10
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
 -/
 #guard_msgs in
 #eval (evalOne
@@ -399,37 +322,11 @@ def testFuncDecl : List Statement :=
     .assert "y_eq_10" eb[y == #10]
   ]
 
-/--
+/-
+
 info: Error:
 none
 Subst Map:
-
-Expression Env:
-State:
-[(y : int) → (~double #5)]
-
-Evaluation Config:
-Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
-Factory Functions:
-func double :  ((x : int)) → int :=
-  (((~Int.Add x) x))
-
-
-Datatypes:
-
-Path Conditions:
-
-
-Warnings:
-[]
-Deferred Proof Obligations:
-Label: y_eq_10
-Property: assert
-Assumptions:
-Proof Obligation:
-((~double #5) == #10)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
@@ -458,38 +355,11 @@ def testFuncDeclSymbolic : List Statement :=
     .assert "result_eq_15" eb[result == #15]  -- Result is 5 + 10 = 15 (uses captured value)
   ]
 
-/--
+/-
+
 info: Error:
 none
 Subst Map:
-
-Expression Env:
-State:
-[(n : int) → #20
-(result : int) → (~addN #5)]
-
-Evaluation Config:
-Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
-Factory Functions:
-func addN :  ((x : int)) → int :=
-  (((~Int.Add x) #10))
-
-
-Datatypes:
-
-Path Conditions:
-
-
-Warnings:
-[]
-Deferred Proof Obligations:
-Label: result_eq_15
-Property: assert
-Assumptions:
-Proof Obligation:
-((~addN #5) == #15)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format

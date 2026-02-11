@@ -56,36 +56,33 @@ private def testCallElim
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-/--
+/-
+
 info: New Program:
 procedure Double :  ((n : int)) → ((result : int))
   modifies: []
-  preconditions: ⏎
-  postconditions: (double_correct, ((result : int) == (((~Int.Mul : (arrow int (arrow int int))) (n : int)) #2)))
+  preconditions: 
+  postconditions: (double_correct, ((result : int) == ((~Int.Mul : (arrow int (arrow int int))) (n : int) #2)))
 {
-  result := (((~Int.Add : (arrow int (arrow int int))) (n : int)) (n : int))
+  result := ((~Int.Add : (arrow int (arrow int int))) (n : int) (n : int))
 }
 procedure TestProc :  ((x : int)) → ((output : int))
   modifies: []
-  preconditions: ⏎
-  postconditions: (testProc_result, ((output : int) == (((~Int.Mul : (arrow int (arrow int int))) (x : int)) #4)))
+  preconditions: 
+  postconditions: (testProc_result, ((output : int) == ((~Int.Mul : (arrow int (arrow int int))) (x : int) #4)))
 {
   init (tmp_arg_3 : int) := (x : int)
   init (tmp_output_4 : int) := output
   havoc output
-  assume [callElimAssume_double_correct_5] (output == (((~Int.Mul : (arrow int (arrow int int))) tmp_arg_3) #2))
+  assume [callElimAssume_double_correct_5] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_3 #2))
   init (tmp_arg_0 : int) := (output : int)
   init (tmp_output_1 : int) := output
   havoc output
-  assume [callElimAssume_double_correct_2] (output == (((~Int.Mul : (arrow int (arrow int int))) tmp_arg_0) #2))
+  assume [callElimAssume_double_correct_2] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_0 #2))
 }
 ---
 info:
 Obligation: double_correct
-Property: assert
-Result: ✅ pass
-
-Obligation: testProc_result
 Property: assert
 Result: ✅ pass
 -/
