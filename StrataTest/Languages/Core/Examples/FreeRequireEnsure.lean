@@ -33,10 +33,9 @@ procedure ProcCaller () returns (x : int) {
 #end
 
 /--
-info: [Strata.Core] Type checking succeeded.
+info: Obligation (Origin_Proc_Requires)g_eq_15 is free!
 
-
-Obligation (Origin_Proc_Requires)g_eq_15 is free!
+[Strata.Core] Type checking succeeded.
 
 
 VCs:

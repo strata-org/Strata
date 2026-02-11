@@ -8,6 +8,7 @@
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.ProgramType
+import Strata.Transform.PreconditionAssert
 
 ---------------------------------------------------------------------
 
@@ -53,6 +54,9 @@ def typeCheck (options : Options) (program : Program)
 def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
+  -- Insert precondition asserts before type checking so that type variables
+  -- in the assertions get instantiated by the type checker.
+  let program := PreconditionAssert.run program
   let program ← typeCheck options program moreFns
   -- Extract datatypes from program declarations and add to environment
   let datatypes := program.decls.filterMap fun decl =>

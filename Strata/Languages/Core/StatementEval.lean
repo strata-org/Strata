@@ -129,16 +129,12 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- current values for unmodified.
     let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
 
-    -- Create pre-call substitution for preconditions.
-    let precond_subst := formal_arg_subst ++ current_globals
-    -- Generate precondition proof obligations.
-    let preconditions := callConditions proc .Requires proc.spec.preconditions precond_subst
-    -- It's safe to evaluate the preconditions in the current environment
-    -- (pre-call context).
-    let preconditions := preconditions.map
-        (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
-    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
-    let E := { E with deferred := E.deferred ++ deferred_pre }
+    /-
+      NOTE: Precondition proof obligations are NOT generated here.
+      They are inserted as explicit `assert` statements by the
+      PreconditionAssert transform (which runs before type checking),
+      so that type variables get instantiated properly.
+    -/
 
     -- Create post-call substitution for postconditions.
     let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
