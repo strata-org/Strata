@@ -70,18 +70,19 @@ function id (x : int, y : int) : int {
 y
 }
 function foo<T1, T2> (x : T1) : Map T1 T2;
-var g:int;
+var g:bool;
 procedure Test1 (x : bool) returns (y : bool)
  {
 (y) := x;
   }
 ;
-procedure Test2 (a : bool) returns (b : bool)
+procedure Test2 (x : bool) returns (y : bool)
 spec{
-  ensures [Test2_ensures_0]:b==a;
-    ensures [Test2_ensures_1]:a==b;
+  ensures [Test2_ensures_0]:y==x;
+    ensures [Test2_ensures_1]:x==y;
+    ensures [Test2_ensures_2]:g==g;
     } {
-(b) := a;
+(y) := x;
   }
 ;
 -/

@@ -35,7 +35,8 @@ inductive ASTToCSTError (M : Type) where
 namespace ASTToCSTError
 
 def toString [ToString M] : ASTToCSTError M → String
-  | unsupportedConstruct fn desc ctx _m => s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
+  | unsupportedConstruct fn desc ctx _m =>
+    s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
 
 instance [ToString M] : ToString (ASTToCSTError M) where
   toString := ASTToCSTError.toString
@@ -48,43 +49,93 @@ end ASTToCSTError
 
 section ToCST
 
-structure ToCSTContext where
-  /-- Track bound type variables -/
+structure Scope where
+  /-- Track bound type variables in this scope -/
   boundTypeVars : Array String := #[]
-  /-- Track bound variables -/
+  /-- Track bound variables in this scope -/
   boundVars : Array String := #[]
-  /-- Track free variables -/
+  /-- Track free variables in this scope -/
   freeVars : Array String := #[]
-  deriving Repr
+  deriving Inhabited, Repr
+
+structure ToCSTContext where
+  /-- Stack of scopes, with global scope at index 0 -/
+  scopes : Array Scope := #[{}]
+  deriving Inhabited, Repr
 
 namespace ToCSTContext
 
-def empty : ToCSTContext := {}
+def empty : ToCSTContext := { scopes := #[{}] }
 
+/-- Get all bound type variables across all scopes -/
+def boundTypeVars (ctx : ToCSTContext) : Array String :=
+  ctx.scopes.foldl (fun acc s => acc ++ s.boundTypeVars) #[]
+
+/-- Get all bound variables across all scopes -/
+def boundVars (ctx : ToCSTContext) : Array String :=
+  ctx.scopes.foldl (fun acc s => acc ++ s.boundVars) #[]
+
+/-- Get all free variables across all scopes -/
+def freeVars (ctx : ToCSTContext) : Array String :=
+  ctx.scopes.foldl (fun acc s => acc ++ s.freeVars) #[]
+
+/-- Add a bound type variable to the current scope -/
 def addBoundTypeVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
-  { ctx with boundTypeVars := ctx.boundTypeVars.push name }
+  let idx := ctx.scopes.size - 1
+  let scope := ctx.scopes[idx]!
+  let newScope := { scope with boundTypeVars := scope.boundTypeVars.push name }
+  { ctx with scopes := ctx.scopes.set! idx newScope }
 
+/-- Add bound type variables to the current scope -/
 def addBoundTypeVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
-  { ctx with boundTypeVars := ctx.boundTypeVars.append names }
+  let idx := ctx.scopes.size - 1
+  let scope := ctx.scopes[idx]!
+  let newScope := { scope with boundTypeVars := scope.boundTypeVars ++ names }
+  { ctx with scopes := ctx.scopes.set! idx newScope }
 
+/-- Add a free variable to the global scope (scope 0) -/
 def addFreeVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
-  { ctx with freeVars := ctx.freeVars.push name }
+  let scope := ctx.scopes[0]!
+  let newScope := { scope with freeVars := scope.freeVars.push name }
+  { ctx with scopes := ctx.scopes.set! 0 newScope }
 
+/-- Add free variables to the global scope (scope 0) -/
 def addFreeVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
-  { ctx with freeVars := ctx.freeVars.append names }
+  let scope := ctx.scopes[0]!
+  { ctx with scopes := ctx.scopes.set! 0 { scope with freeVars := scope.freeVars ++ names } }
 
+/-- Add a bound variable to the current scope -/
 def addBoundVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
-  { ctx with boundVars := ctx.boundVars.push name }
+  let idx := ctx.scopes.size - 1
+  let scope := ctx.scopes[idx]!
+  let newScope := { scope with boundVars := scope.boundVars.push name }
+  { ctx with scopes := ctx.scopes.set! idx newScope }
 
+/-- Add bound variables to the current scope -/
 def addBoundVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
-  { ctx with boundVars := ctx.boundVars.append names }
+  let idx := ctx.scopes.size - 1
+  let scope := ctx.scopes[idx]!
+  let newScope := { scope with boundVars := scope.boundVars ++ names }
+  { ctx with scopes := ctx.scopes.set! idx newScope }
+
+/-- Push a new scope onto the stack -/
+def pushScope (ctx : ToCSTContext) : ToCSTContext :=
+  { ctx with scopes := ctx.scopes.push {} }
+
+/-- Pop the current scope from the stack (never pops scope 0) -/
+def popScope (ctx : ToCSTContext) : ToCSTContext :=
+  if ctx.scopes.size > 1 then
+    { ctx with scopes := ctx.scopes.pop }
+  else
+    ctx
 
 end ToCSTContext
 
 /-- Monad for AST->CST conversion with context and error tracking -/
 abbrev ToCSTM (M : Type) := StateT ToCSTContext (Except (List (ASTToCSTError M)))
 /-- Throw an error in ToCSTM -/
-def ToCSTM.throwError [Inhabited M] (fn : String) (desc : String) : ToCSTM M α := do
+def ToCSTM.throwError [Inhabited M] (fn : String) (desc : String)
+    : ToCSTM M α := do
   let ctx ← get
   throw [.unsupportedConstruct fn desc (reprStr ctx) default]
 
@@ -129,10 +180,10 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
 def lTyToCoreType [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
   match ty with
   | .forAll typeVars monoTy => do
-    let savedCtx ← get
+    modify ToCSTContext.pushScope
     modify (ToCSTContext.addBoundTypeVars · typeVars.toArray)
     let result ← lmonoTyToCoreType monoTy
-    set savedCtx
+    modify ToCSTContext.popScope
     pure result
 
 /-- Convert a type constructor declaration to CST -/
@@ -153,7 +204,7 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST [Inhabited M] (syn : TypeSynonym)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
-  let savedCtx ← get
+  modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, syn.name⟩
   let args : Ann (Option (Bindings M)) M :=
     if syn.typeArgs.isEmpty then
@@ -167,7 +218,7 @@ def typeSynToCST [Inhabited M] (syn : TypeSynonym)
   let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
   modify (·.addBoundTypeVars syn.typeArgs.toArray)
   let rhs ← lmonoTyToCoreType syn.type
-  set savedCtx
+  modify ToCSTContext.popScope
   pure (.command_typesynonym default name args targs rhs)
 
 def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :=
@@ -210,11 +261,15 @@ partial def lexprToExpr [Inhabited M]
     else
       ToCSTM.throwError "lexprToExpr" s!"bvar {idx}"
   | .fvar _ id _ =>
-    if LambdaFVarsBound then
+    -- We first look for Lambda .fvars in the boundVars context, before checking
+    -- the freeVars context. Lambda .fvars can come from formals of a function
+    -- or procedure (DDM .bvar), but also from global variable declaration (DDM
+    -- .fvar).
+    --if LambdaFVarsBound then
       match ctx.boundVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
-      | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
-    else
+      | none => -- ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
+    -- else
       match ctx.freeVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.fvar default idx)
       | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
@@ -352,7 +407,7 @@ end
 
 /-- Convert a procedure to CST -/
 def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
-  let savedCtx ← get
+  modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   modify (ToCSTContext.addBoundTypeVars · proc.header.typeArgs.toArray)
   let typeArgs : Ann (Option (TypeArgs M)) M :=
@@ -415,14 +470,14 @@ def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
       ⟨default, some (Spec.spec_mk default specAnn)⟩
   let bodyCST ← blockToCST proc.body
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
-  set savedCtx
+  modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs inputs outputs spec body)
 
 /-- Convert a function declaration to CST -/
 def funcToCST [Inhabited M]
     (func : Lambda.LFunc CoreLParams)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
-  let savedCtx ← get
+  modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
   -- Add type arguments to context and create TypeArgs.
   modify (·.addBoundTypeVars func.typeArgs.toArray)
@@ -451,7 +506,7 @@ def funcToCST [Inhabited M]
     let bodyExpr ← lexprToExpr body true
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r bodyExpr inline?)
-  set savedCtx
+  modify ToCSTContext.popScope
   pure result
 
 /-- Convert a variable declaration to CST -/
