@@ -341,10 +341,11 @@ def pyAnalyzeLaurelCommand : Command where
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok coreProgram =>
+          if verbose then
+            IO.println "\n==== Core Program ===="
+            IO.print coreProgram
+
           let coreProgram := {decls := prelude.decls ++ coreProgram.decls }
-          -- if verbose then
-          --   IO.println "\n==== Core Program ===="
-          --   IO.print coreProgram
 
           -- Verify using Core verifier
           let solverName : String := "z3"

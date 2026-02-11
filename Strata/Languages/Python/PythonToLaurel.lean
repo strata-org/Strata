@@ -49,6 +49,11 @@ structure CoreProcedureSignature where
   outputs : List String
 deriving Inhabited
 
+inductive UnmodeledFunctionBehavior where
+  | havocOutputs
+  | havocInputsAndOutputs
+deriving Inhabited
+
 structure TranslationContext where
   /-- Map from variable names to their Laurel types -/
   variableTypes : List (String × HighTypeMd) := []
@@ -56,6 +61,12 @@ structure TranslationContext where
   functionSignatures : List (String × Procedure) := []
   /-- Map from prelude procedure names to their full signatures -/
   preludeProcedures : List (String × CoreProcedureSignature) := []
+  /-- Names of user-defined functions -/
+  userFunctions : List String := []
+  /-- Names of prelude types -/
+  preludeTypes : List String := []
+  /-- Behavior for unmodeled functions -/
+  unmodeledBehavior : UnmodeledFunctionBehavior := .havocOutputs
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -107,17 +118,34 @@ partial def pyExprToString (e : Python.expr SourceRange) : String :=
   | .Attribute _ val attr _ =>
     let base := pyExprToString val
     s!"{base}_{attr.val}"
+  | .Tuple _ elts _ =>
+    let args := elts.val.toList.map pyExprToString
+    String.intercalate ", " args
   | _ => "<unknown>"
 
-/-! ## Translation Functions -/
+/-- Map Python type strings to Core type names -/
+def pythonTypeToCoreType (typeStr : String) : Option String :=
+  match typeStr with
+  | "Dict[str, Any]" => some "DictStrAny"
+  | "List[str]" => some "ListStr"
+  | _ => none
 
 /-- Translate Python type annotation to Laurel HighType -/
-def translateType (typeStr : String) : Except TranslationError HighTypeMd :=
+def translateType (ctx : TranslationContext) (typeStr : String) : Except TranslationError HighTypeMd :=
   match typeStr with
   | "int" => .ok (mkHighTypeMd HighType.TInt)
   | "bool" => .ok (mkHighTypeMd HighType.TBool)
   | "str" => .ok (mkHighTypeMd HighType.TString)
-  | _ => throw (.typeError s!"Unsupported type: {typeStr}")
+  | _ =>
+    -- Check if it's a Python type that maps to Core
+    match pythonTypeToCoreType typeStr with
+    | some coreType => .ok (mkCoreType coreType)
+    | none =>
+      -- Check if it's a prelude type
+      if ctx.preludeTypes.contains typeStr then
+        .ok (mkCoreType typeStr)
+      else
+        throw (.typeError s!"Unsupported type: {typeStr}")
 
 /-- Create a None value for a given OrNone type -/
 def mkNoneForType (typeName : String) : StmtExprMd :=
@@ -126,6 +154,10 @@ def mkNoneForType (typeName : String) : StmtExprMd :=
   mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
 
 /-! ## Expression Translation -/
+
+/-- Check if a function has a model (is in prelude or user-defined) -/
+def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
+  ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName
 
 mutual
 
@@ -215,6 +247,14 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.PrimitiveOp laurelOp [operandExpr])
 
+  -- JoinedStr (f-strings) - return first part until we have string concat
+  | .JoinedStr _ values =>
+    if values.val.isEmpty then
+      return mkStmtExprMd (StmtExpr.LiteralString "")
+    else
+      let first ← translateExpr ctx values.val[0]!
+      return first
+
   | .Call _ f args _kwargs => translateCall ctx (pyExprToString f) args.val.toList
 
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
@@ -223,6 +263,11 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 partial def translateCall (ctx : TranslationContext) (funcName : String) (args : List (Python.expr SourceRange))
     : Except TranslationError StmtExprMd := do
   let mut translatedArgs ← args.mapM (translateExpr ctx)
+
+  -- Check if function has a model
+  if !hasModel ctx funcName then
+    -- Unmodeled function - use Hole
+    return mkStmtExprMd .Hole
 
   -- Check if this is a prelude procedure and fill in optional args
   if let some sig := ctx.preludeProcedures.lookup funcName then
@@ -273,7 +318,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .Name _ name _ => .ok name.val
       | _ => throw (.unsupportedConstruct "Only simple variable annotation supported" (toString (repr s)))
     let typeStr := pyExprToString annotation
-    let varType ← translateType typeStr
+    let varType ← translateType ctx typeStr
     -- Add to context
     let newCtx := { ctx with variableTypes := ctx.variableTypes ++ [(varName, varType)] }
     -- If there's an initializer, create declaration with init
@@ -334,6 +379,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   | .Import _ _ | .ImportFrom _ _ _ _ => return (ctx, mkStmtExprMd .Hole)
 
+  -- Try/except - translate body, ignore handlers for now
+  | .Try _ body _ _ _ => do
+    let (newCtx, bodyStmts) ← translateStmtList ctx body.val.toList
+    let block := mkStmtExprMd (StmtExpr.Block bodyStmts none)
+    return (newCtx, block)
+
+  | .Raise _ _ _ => return (ctx, mkStmtExprMd .Hole)
+
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 
 partial def translateStmtList (ctx : TranslationContext) (stmts : List (Python.stmt SourceRange))
@@ -372,13 +425,13 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
           let paramTypeStr ← match paramAnnotation.val with
             | some typeExpr => .ok (pyExprToString typeExpr)
             | none => throw (.typeError s!"Parameter {paramName.val} must have type annotation")
-          let paramType ← translateType paramTypeStr
+          let paramType ← translateType ctx paramTypeStr
           inputs := inputs ++ [{ name := paramName.val, type := paramType }]
           localCtx := { localCtx with variableTypes := localCtx.variableTypes ++ [(paramName.val, paramType)] }
 
     -- Translate return type
     let returnType ← match returns.val with
-      | some retExpr => translateType (pyExprToString retExpr)
+      | some retExpr => translateType ctx (pyExprToString retExpr)
       | none => .ok (mkHighTypeMd HighType.TVoid)
 
     -- Determine outputs based on return type
@@ -413,6 +466,15 @@ def getTypeName (ty : Lambda.LMonoTy) : String :=
   | .ftvar name => name
   | .bitvec n => s!"bv{n}"
 
+/-- Extract type names from a Core program -/
+def extractPreludeTypes (prelude : Core.Program) : List String :=
+  prelude.decls.flatMap fun decl =>
+    match decl with
+    | .type (.con tc) _ => [tc.name]
+    | .type (.syn ts) _ => [ts.name]
+    | .type (.data dts) _ => dts.map (·.name)
+    | _ => []
+
 /-- Extract procedure signatures from a Core program -/
 def extractPreludeProcedures (prelude : Core.Program) : List (String × CoreProcedureSignature) :=
   prelude.decls.filterMap fun decl =>
@@ -428,7 +490,19 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
   match pyModule with
   | .Module _ body _ => do
     let preludeProcedures := extractPreludeProcedures prelude
-    let ctx : TranslationContext := { preludeProcedures := preludeProcedures }
+    let preludeTypes := extractPreludeTypes prelude
+
+    -- Collect user function names
+    let userFunctions := body.val.toList.filterMap fun stmt =>
+      match stmt with
+      | .FunctionDef _ name _ _ _ _ _ _ => some name.val
+      | _ => none
+
+    let ctx : TranslationContext := {
+      preludeProcedures := preludeProcedures,
+      preludeTypes := preludeTypes,
+      userFunctions := userFunctions
+    }
 
     -- Separate functions from other statements
     let mut procedures : List Procedure := []
@@ -442,7 +516,6 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       | _ =>
         otherStmts := otherStmts ++ [stmt]
 
-    -- let ctx : TranslationContext := {variableTypes := [], functionSignatures := procedures.map (λ p => (p.name, p))}
     let (_, bodyStmts) ← translateStmtList ctx otherStmts
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" (mkHighTypeMd .TString) (some <| mkStmtExprMd (.LiteralString "__main__"))) :: bodyStmts
@@ -450,7 +523,6 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
 
     let mainProc : Procedure := {name := "__main__", inputs := [], outputs := [], preconditions := [], decreases := none, body := .Transparent bodyBlock}
 
-    -- Create Laurel program - use fully qualified name to avoid ambiguity
     let program : Laurel.Program := {
       staticProcedures := mainProc :: procedures
       staticFields := []

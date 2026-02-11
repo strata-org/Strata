@@ -387,6 +387,7 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
       let finalBody := injectQuantifierConstraint ctMap tcMap false ty coreIdent closedBody
       pure (LExpr.quant () .exist (some coreType) (LExpr.noTrigger ()) finalBody)
   | .Return (some e) => translateExpr ctMap tcMap env e
+  | .Hole => pure (LExpr.fvar () s!"DUMMY_VAR_{env.length}" none)
   | _ => throw s!"translateExpr: unsupported {Std.Format.pretty (Std.ToFormat.format expr.val)}"
 termination_by sizeOf expr
 decreasing_by stmtexpr_wf expr, _h

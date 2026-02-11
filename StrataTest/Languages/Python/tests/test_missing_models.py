@@ -1,7 +1,7 @@
 from typing import Dict, Any
-import boto3
+import test_helper
 
-foo: Client = foo.client('foo')
+foo: Client = test_helper.create_client('foo')
 
 try:
     response: Dict[str, Any] = foo.get_something(Keyword='bar')
