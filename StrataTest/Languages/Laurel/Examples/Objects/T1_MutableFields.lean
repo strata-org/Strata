@@ -40,12 +40,14 @@ procedure useBool(c: Container) returns (r: bool) {
 
 procedure caller(c: Container, d: Container) {
   assume d#intValue == 1;
+  assume c != d;
   var x: int := foo(c, d);
   assert d#intValue == 3;
 }
 
 procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
   assume d#intValue == 1;
+  assume c != d;
   var x: int := foo(c, d) + 1;
   assert d#intValue == 3;
 }
