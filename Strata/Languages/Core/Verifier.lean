@@ -12,6 +12,8 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 import Strata.DDM.AST
+import Strata.Transform.CallElim
+import Strata.Transform.FilterProcedures
 
 ---------------------------------------------------------------------
 
@@ -422,8 +424,15 @@ def verify (smtsolver : String) (program : Program)
     | some procs =>
        -- Verify specific procedures. By default, we apply the call elimination
        -- transform to the targeted procedures to inline the contracts of any
-       -- callees.
-      match program.filterProcedures procs (transform := CallElim.callElim') with
+       -- callees. Call elimination is applied once, since once is enough to
+       -- replace all calls with contracts.
+      let passes := fun prog => do
+        let prog ← FilterProcedures.run prog procs
+        let (_changed,prog) ← CallElim.callElim' prog
+        let prog ← FilterProcedures.run prog procs
+        return prog
+      let res := Transform.run program passes
+      match res with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   match Core.typeCheckAndPartialEval options finalProgram moreFns with
@@ -486,17 +495,30 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange fileRange =>
-      let message := match result with
-        | .fail => "assertion does not hold"
-        | .unknown => "assertion could not be proved"
-        | .implementationError msg => s!"verification error: {msg}"
-        | _ => panic "impossible"
+    let message := match result with
+      | .fail => "assertion does not hold"
+      | .unknown => "assertion could not be proved"
+      | .implementationError msg => s!"verification error: {msg}"
+      | _ => panic "impossible"
 
-      some (DiagnosticModel.withRange fileRange message)
-    | _ => none
+    let .some fileRangeElem := vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+      | some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! obligation label: {repr vcr.obligation.label}"
+        }
+
+    let result := match fileRangeElem.value with
+      | .fileRange fileRange =>
+        some {
+          fileRange := fileRange
+          message := message
+        }
+      | _ =>
+        some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
+        }
+    result
 
 structure Diagnostic where
   start : Lean.Position

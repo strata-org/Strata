@@ -42,7 +42,7 @@ private def testCallElim
     match Core.Transform.run program Core.CallElim.callElim' with
     | .error err =>
       panic! s!"Call elimination failed: {err}"
-    | .ok elimProgram =>
+    | .ok (_changed, elimProgram) =>
       dbg_trace f!"New Program:\n{elimProgram}"
       let runner tempDir :=
         EIO.toIO (fun dm => IO.Error.userError (toString (dm.format none)))

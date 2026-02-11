@@ -6,13 +6,74 @@
 
 import Strata.DDM.Integration.Lean
 
+/-!
+Tests for `#strata_gen`: exercises empty dialects, a dialect with types,
+expressions, and mutual recursion, and verifies round-trip correctness.
+-/
+
 namespace Strata
 
 class IsAST (β : Type → Type) (M : outParam (Type → Type)) where
-  toAst [Inhabited α] : β α → M α
-  ofAst [Inhabited α] [Repr α] : M α → OfAstM (β α)
+  toAst {α} [Inhabited α] : β α → M α
+  ofAst {α} [Inhabited α] [Repr α] : M α → OfAstM (β α)
 
 end Strata
+
+-- Make sure empty dialect works
+namespace EmptyD
+
+#dialect
+dialect EmptyDialect;
+#end
+
+
+#guard_msgs in
+set_option trace.Strata.generator true in
+#strata_gen EmptyDialect
+
+end EmptyD
+
+
+-- Make sure dialect with no types/expres works
+namespace EmptyExprD
+
+#dialect
+dialect EmptyExprDialect;
+
+op cmd (tp : Type, a : tp) : Command => "cmd " a;
+
+#end
+
+
+/--
+trace: [Strata.generator] Generating EmptyExprDialectType
+---
+trace: [Strata.generator] Generating EmptyExprDialectType.toAst
+---
+trace: [Strata.generator] Generating EmptyExprDialectType.ofAst
+---
+trace: [Strata.generator] Generating Expr
+---
+trace: [Strata.generator] Generating Expr.toAst
+---
+trace: [Strata.generator] Generating Expr.ofAst
+---
+trace: [Strata.generator] Generating Command
+---
+trace: [Strata.generator] Generating Command.toAst
+---
+trace: [Strata.generator] Generating Command.ofAst
+---
+trace: [Strata.generator] Declarations group: [Init.Type]
+[Strata.generator] Declarations group: [Init.Expr]
+[Strata.generator] Declarations group: [Init.Command]
+-/
+#guard_msgs in
+set_option trace.Strata.generator true in
+#strata_gen EmptyExprDialect
+
+end EmptyExprD
+
 
 #dialect
 dialect TestDialect;
@@ -110,11 +171,38 @@ info: opaque TestDialect.Expr.toAst : {α : Type} → [Inhabited α] → Expr α
 #guard_msgs in
 #print Expr.toAst
 
-deriving instance DecidableEq for TestDialectType
-deriving instance DecidableEq for TypeP
-deriving instance DecidableEq for Binding
-deriving instance DecidableEq for Bindings
-deriving instance DecidableEq for Expr
+/--
+info: inductive TestDialect.Expr : Type → Type
+number of parameters: 1
+constructors:
+TestDialect.Expr.fvar : {α : Type} → α → Nat → Expr α
+TestDialect.Expr.bvar : {α : Type} → α → Nat → Expr α
+TestDialect.Expr.trueExpr : {α : Type} → α → Expr α
+TestDialect.Expr.and : {α : Type} → α → Expr α → Expr α → Expr α
+TestDialect.Expr.lambda : {α : Type} → α → TestDialectType α → Bindings α → Expr α → Expr α
+-/
+#guard_msgs in
+#print Expr
+
+/--
+info: inductive TestDialect.TestDialectType : Type → Type
+number of parameters: 1
+constructors:
+TestDialect.TestDialectType.bvar : {α : Type} → α → Nat → TestDialectType α
+TestDialect.TestDialectType.tvar : {α : Type} → α → String → TestDialectType α
+TestDialect.TestDialectType.fvar : {α : Type} → α → Nat → Array (TestDialectType α) → TestDialectType α
+TestDialect.TestDialectType.arrow : {α : Type} → α → TestDialectType α → TestDialectType α → TestDialectType α
+TestDialect.TestDialectType.bool : {α : Type} → α → TestDialectType α
+TestDialect.TestDialectType.set : {α : Type} → α → TestDialectType α → TestDialectType α
+-/
+#guard_msgs in
+#print TestDialectType
+
+deriving instance BEq for TestDialectType
+deriving instance BEq for TypeP
+deriving instance BEq for Binding
+deriving instance BEq for Bindings
+deriving instance BEq for Expr
 
 instance : Strata.IsAST Expr Strata.ExprF where
   toAst := Expr.toAst
@@ -133,7 +221,8 @@ def testRoundTrip {β M} [h : Strata.IsAST β M] [BEq (β Unit)] (e : β Unit) :
 #guard testRoundTrip <| TestDialectType.set () (.bool ())
 
 #guard testRoundTrip <| Expr.trueExpr ()
-#guard testRoundTrip <| Expr.lambda () (.bool ()) (Bindings.mkBindings () ⟨(), #[]⟩) (.trueExpr ())
+#guard testRoundTrip <|
+  Expr.lambda () (.bool ()) (Bindings.mkBindings () ⟨(), #[]⟩) (.trueExpr ())
 #guard testRoundTrip <| Expr.fvar () 1
 
 open Strata (OfAstM)
