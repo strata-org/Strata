@@ -331,6 +331,10 @@ spec {
   assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 };
 
+datatype PyAnyType () {
+  PyAnyType_Inhabitant()
+};
+
 #end
 
 def Core.prelude : Core.Program :=

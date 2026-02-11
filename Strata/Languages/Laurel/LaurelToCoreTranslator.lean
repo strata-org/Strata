@@ -43,6 +43,7 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
   | .UserDefined _ => .tcons "Composite" []
+  | .TCore s => .tcons s []
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by cases elementType; term_by_mem
@@ -87,7 +88,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       | none =>
           -- Check if this is a constant (field constant) or local variable
           if isConstant constants name then
-            let ident := Core.CoreIdent.glob name
+            let ident := Core.CoreIdent.unres name
             .op () ident none
           else
             let ident := Core.CoreIdent.locl name
@@ -351,7 +352,7 @@ def translateConstant (c : Constant) : Core.Decl :=
   match c.type.val with
   | .TTypedField _ =>
       .func {
-        name := Core.CoreIdent.glob c.name
+        name := Core.CoreIdent.unres c.name
         typeArgs := []
         inputs := []
         output := .tcons "Field" []
@@ -360,7 +361,7 @@ def translateConstant (c : Constant) : Core.Decl :=
   | _ =>
       let ty := translateType c.type
       .func {
-        name := Core.CoreIdent.glob c.name
+        name := Core.CoreIdent.unres c.name
         typeArgs := []
         inputs := []
         output := ty
