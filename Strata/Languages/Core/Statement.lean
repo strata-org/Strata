@@ -18,6 +18,8 @@ import Strata.Util.Tactics
 namespace Core
 open Imperative
 open Std (ToFormat Format format)
+open Std.Format
+
 ---------------------------------------------------------------------
 
 /--
@@ -55,13 +57,13 @@ instance : SizeOf (CmdExt P) where
   sizeOf := CmdExt.sizeOf
 
 instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
-    [ToFormat (List P.Ident)] [ToFormat (List P.Expr)] :
+    [ToFormat (List P.Ident)] [ToFormat P.Expr] :
     ToFormat (CmdExt P) where
   format c := match c with
     | .cmd c => format c
     | .call lhs pname args _md =>
       f!"call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
-      f!"{pname}({args})"
+      f!"{pname}({nestD <| group <| joinSep args ("," ++ line)})"
 
 ---------------------------------------------------------------------
 
