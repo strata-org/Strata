@@ -110,11 +110,6 @@ def mkStmtExprMdEmpty' (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 instance : Inhabited StmtExprMd where
   default := ⟨.Hole, #[]⟩
 
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
 
 mutual
 /-
@@ -212,7 +207,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
             processBlock tail
         termination_by sizeOf remStmts
         decreasing_by
-          all_goals (simp_wf; have := StmtExprMd.sizeOf_val_lt ‹_›; try omega)
+          all_goals (simp_wf; have := WithMetadata.sizeOf_val_lt ‹_›; try omega)
           subst_vars; rename_i heq; cases heq; omega
       processBlock stmts
 
@@ -230,7 +225,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt expr
+      have := WithMetadata.sizeOf_val_lt expr
       rw [_h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind
@@ -299,7 +294,7 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt stmt
+      have := WithMetadata.sizeOf_val_lt stmt
       rw [_h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind

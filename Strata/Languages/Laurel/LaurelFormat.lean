@@ -28,16 +28,11 @@ def formatOperation : Operation → Format
   | .Gt => ">"
   | .Geq => ">="
 
-private theorem HighTypeMd.sizeOf_val_lt (e : HighTypeMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
 
 mutual
 def formatHighType (t : HighTypeMd) : Format := formatHighTypeVal t.val
   termination_by sizeOf t
-  decreasing_by simp_wf; have := HighTypeMd.sizeOf_val_lt t; grind
+  decreasing_by simp_wf; have := WithMetadata.sizeOf_val_lt t; grind
 
 def formatHighTypeVal : HighType → Format
   | .TVoid => "void"
@@ -62,16 +57,11 @@ def formatHighTypeVal : HighType → Format
       | omega
 end
 
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
 
 mutual
 def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
   termination_by sizeOf s
-  decreasing_by simp_wf; have := StmtExprMd.sizeOf_val_lt s; grind
+  decreasing_by simp_wf; have := WithMetadata.sizeOf_val_lt s; grind
 
 def formatStmtExprVal (s : StmtExpr) : Format :=
   match s with

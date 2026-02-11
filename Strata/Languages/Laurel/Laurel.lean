@@ -199,6 +199,12 @@ end
 abbrev HighTypeMd := WithMetadata HighType
 abbrev StmtExprMd := WithMetadata StmtExpr
 
+theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
+  cases e
+  rename_i val md
+  show sizeOf val < 1 + sizeOf val + sizeOf md
+  omega
+
 instance : Inhabited StmtExpr where
   default := .Hole
 
@@ -258,7 +264,7 @@ Note that there are no explicit 'inductive datatypes'. Typed unions are created 
 creating a CompositeType for each constructor, and a ConstrainedType for their union.
 
 Example 1:
-`composite SomeT> { value: T }`
+`composite Some<T> { value: T }`
 `constrained Option<T> = value: Dynamic | value is Some<T> || value is Unit`
 
 Example 2:

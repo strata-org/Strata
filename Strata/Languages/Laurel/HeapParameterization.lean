@@ -40,18 +40,13 @@ structure AnalysisResult where
   writesHeapDirectly : Bool := false
   callees : List Identifier := []
 
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
 
 mutual
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
   termination_by sizeOf expr
   decreasing_by
     simp_wf
-    have := StmtExprMd.sizeOf_val_lt expr
+    have := WithMetadata.sizeOf_val_lt expr
     omega
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
@@ -94,7 +89,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
     all_goals simp_wf
     all_goals first
       | omega
-      | (have := StmtExprMd.sizeOf_val_lt ‹_›; omega)
+      | (have := WithMetadata.sizeOf_val_lt ‹_›; omega)
       | (subst_vars; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
 end
 
@@ -283,13 +278,13 @@ where
     decreasing_by
       all_goals simp_wf
       all_goals
-        have hval := StmtExprMd.sizeOf_val_lt expr
+        have hval := WithMetadata.sizeOf_val_lt expr
         rw [_h] at hval; simp at hval
         first
           | omega
           | (have := List.sizeOf_lt_of_mem ‹_›; omega)
           | -- For the FieldSelect-inside-Assign case: target < fieldSelectMd < expr
-            (have hfs := StmtExprMd.sizeOf_val_lt fieldSelectMd; rw [_h2] at hfs; simp at hfs; omega)
+            (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; rw [_h2] at hfs; simp at hfs; omega)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
   let heapInName := "$heap_in"
