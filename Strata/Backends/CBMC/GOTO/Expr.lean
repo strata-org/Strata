@@ -6,6 +6,7 @@
 
 import Strata.Backends.CBMC.GOTO.Type
 import Strata.Backends.CBMC.GOTO.SourceLocation
+import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
@@ -178,7 +179,7 @@ def Expr.beq (x y : Expr) : Bool :=
   x.id == y.id && x.type == y.type && x.sourceLoc == y.sourceLoc &&
   go x.operands y.operands
   termination_by (SizeOf.sizeOf x)
-  decreasing_by cases x; simp_wf; omega
+  decreasing_by cases x; term_by_mem
   where go xs ys :=
   match xs, ys with
   | [], [] => true
@@ -208,9 +209,7 @@ def formatExpr (e : Expr) : Format :=
     let operands := Format.joinSep formatted f!" "
     if operands.isEmpty then f!"({id} : {e.type})" else f!"(({id} {operands}) : {e.type})"
   termination_by (SizeOf.sizeOf e)
-  decreasing_by
-    all_goals (cases e; simp_all; subst_vars; try omega)
-    all_goals (rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
+  decreasing_by all_goals (cases e; term_by_mem)
 
 instance : ToFormat Expr where
   format e := formatExpr e
