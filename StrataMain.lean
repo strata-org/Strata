@@ -319,19 +319,41 @@ private def deriveBaseName (file : String) : String :=
   else if name.endsWith ".st" then (name.dropEnd 3).toString
   else name
 
-private partial def unwrapCmdExt : Core.Statement → Except Std.Format (Imperative.Stmt Core.Expression (Imperative.Cmd Core.Expression))
-  | .cmd (.cmd c) => .ok (.cmd c)
+private def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
+  match rn[id.name]? with
+  | some new => ⟨new, id.metadata⟩
+  | none => id
+
+private partial def renameExpr (rn : Std.HashMap String String) : Core.Expression.Expr → Core.Expression.Expr
+  | .fvar m name ty => .fvar m (renameIdent rn name) ty
+  | .app m f e => .app m (renameExpr rn f) (renameExpr rn e)
+  | .abs m ty e => .abs m ty (renameExpr rn e)
+  | .quant m qk ty tr e => .quant m qk ty (renameExpr rn tr) (renameExpr rn e)
+  | .ite m c t e => .ite m (renameExpr rn c) (renameExpr rn t) (renameExpr rn e)
+  | .eq m e1 e2 => .eq m (renameExpr rn e1) (renameExpr rn e2)
+  | e => e
+
+private def renameCmd (rn : Std.HashMap String String) : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
+  | .init name ty e md => .init (renameIdent rn name) ty (renameExpr rn e) md
+  | .set name e md => .set (renameIdent rn name) (renameExpr rn e) md
+  | .havoc name md => .havoc (renameIdent rn name) md
+  | .assert l e md => .assert l (renameExpr rn e) md
+  | .assume l e md => .assume l (renameExpr rn e) md
+  | .cover l e md => .cover l (renameExpr rn e) md
+
+private partial def unwrapCmdExt (rn : Std.HashMap String String) : Core.Statement → Except Std.Format (Imperative.Stmt Core.Expression (Imperative.Cmd Core.Expression))
+  | .cmd (.cmd c) => .ok (.cmd (renameCmd rn c))
   | .cmd (.call ..) => .error f!"[procedureToGotoCtx] Unexpected call statement; calls should be inlined."
   | .block l stmts md => do
-    let stmts' ← stmts.mapM unwrapCmdExt
+    let stmts' ← stmts.mapM (unwrapCmdExt rn)
     .ok (.block l stmts' md)
   | .ite c t e md => do
-    let t' ← t.mapM unwrapCmdExt
-    let e' ← e.mapM unwrapCmdExt
-    .ok (.ite c t' e' md)
+    let t' ← t.mapM (unwrapCmdExt rn)
+    let e' ← e.mapM (unwrapCmdExt rn)
+    .ok (.ite (renameExpr rn c) t' e' md)
   | .loop g m i body md => do
-    let body' ← body.mapM unwrapCmdExt
-    .ok (.loop g m i body' md)
+    let body' ← body.mapM (unwrapCmdExt rn)
+    .ok (.loop (renameExpr rn g) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
   | .goto l md => .ok (.goto l md)
   | .funcDecl d md => .ok (.funcDecl d md)
 
@@ -349,7 +371,11 @@ private def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure
   let new_formals := formals.map (CProverGOTO.mkFormalSymbol pname ·)
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
   let locals := (Imperative.Block.definedVars p.body).map Core.CoreIdent.toPretty
-  let body ← p.body.mapM unwrapCmdExt
+  let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
+  let rn : Std.HashMap String String :=
+    (formals.zip new_formals ++ locals.zip new_locals).foldl
+      (init := {}) fun m (k, v) => m.insert k v
+  let body ← p.body.mapM (unwrapCmdExt rn)
   let ans ← Imperative.Stmts.toGotoTransform Env pname body (loc := 0)
   let ending_insts : Array CProverGOTO.Instruction :=
     #[{ type := .END_FUNCTION, locationNum := ans.nextLoc + 1 }]
@@ -357,6 +383,57 @@ private def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure
                parameterIdentifiers := new_formals.toArray,
                instructions := ans.instructions ++ ending_insts }
   return { program := pgm, formals := formals_tys, ret := ret_ty, locals := locals }
+
+private def datatypeToSymbolEntry (dt : Lambda.LDatatype Core.Visibility) :
+    Except Std.Format (String × CProverGOTO.CBMCSymbol) := do
+  let mut components : Array (String × Lean.Json) :=
+    #[("$tag", CProverGOTO.tyToJson .Integer)]
+  for constr in dt.constrs do
+    for (fieldId, fieldTy) in constr.args do
+      let gty ← Lambda.LMonoTy.toGotoType fieldTy
+      components := components.push (fieldId.name, CProverGOTO.tyToJson gty)
+  let componentsSub := components.map fun (name, tyJson) =>
+    Lean.Json.mkObj [
+      ("id", ""),
+      ("namedSub", Lean.Json.mkObj [
+        ("#pretty_name", Lean.Json.mkObj [("id", name)]),
+        ("name", Lean.Json.mkObj [("id", name)]),
+        ("type", tyJson)
+      ])
+    ]
+  let structTy := Lean.Json.mkObj [
+    ("id", "struct"),
+    ("namedSub", Lean.Json.mkObj [
+      ("tag", Lean.Json.mkObj [("id", dt.name)]),
+      ("components", Lean.Json.mkObj [
+        ("id", ""),
+        ("sub", Lean.Json.arr componentsSub)
+      ])
+    ])
+  ]
+  return (s!"tag-{dt.name}", {
+    baseName := dt.name
+    isType := true
+    mode := "C"
+    module := ""
+    name := s!"tag-{dt.name}"
+    prettyName := s!"struct {dt.name}"
+    type := structTy
+    value := Lean.Json.mkObj [("id", "nil")]
+  })
+
+private def collectDatatypeSymbols (pgm : Core.Program) :
+    Except Std.Format (Map String CProverGOTO.CBMCSymbol) := do
+  let mut syms : List (String × CProverGOTO.CBMCSymbol) := []
+  for decl in pgm.decls do
+    match decl with
+    | .type (.data dts) _ =>
+      for dt in dts do
+        if dt.typeArgs.isEmpty then
+          let entry ← datatypeToSymbolEntry dt
+          syms := syms ++ [entry]
+    | _ => pure ()
+  return syms
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -390,14 +467,22 @@ def pyAnalyzeToGotoCommand : Command where
         | panic! "main is not a procedure"
       -- Translate procedure to GOTO (mirrors CoreToGOTO.transformToGoto post-typecheck logic)
       let baseName := deriveBaseName filePath
-      let programName := baseName
+      let procName := Core.CoreIdent.toPretty p.header.name
       match procedureToGotoCtx Env p with
       | .error e => panic! s!"{e}"
       | .ok ctx =>
-        let json := CoreToGOTO.CProverGOTO.Context.toJson programName ctx
-        let symTabFile := s!"{programName}.symtab.json"
-        let gotoFile := s!"{programName}.goto.json"
-        IO.FS.writeFile symTabFile json.symtab.pretty
+        let json := CoreToGOTO.CProverGOTO.Context.toJson procName ctx
+        -- Add datatype definitions to the symbol table
+        let typeSyms ← match collectDatatypeSymbols tcPgm with
+          | .ok s => pure s
+          | .error e => panic! s!"{e}"
+        let typeSymsJson := Lean.toJson typeSyms
+        let symtab := match json.symtab, typeSymsJson with
+          | .obj m1, .obj m2 => Lean.Json.obj (m2.foldl (init := m1) fun m k v => m.insert k v)
+          | _, _ => json.symtab
+        let symTabFile := s!"{baseName}.symtab.json"
+        let gotoFile := s!"{baseName}.goto.json"
+        IO.FS.writeFile symTabFile symtab.pretty
         IO.FS.writeFile gotoFile json.goto.pretty
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
