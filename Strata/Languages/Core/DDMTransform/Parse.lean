@@ -294,6 +294,16 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
 
+// Function declaration statement
+@[declareFn(name, b, r)]
+op funcDecl_statement (name : Ident,
+                       typeArgs : Option TypeArgs,
+                       @[scope(typeArgs)] b : Bindings,
+                       @[scope(typeArgs)] r : Type,
+                       @[scope(b)] body : r,
+                       inline? : Option Inline) : Statement =>
+  inline? "function " name typeArgs b " : " r " { " body " }";
+
 @[scope(b)]
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
@@ -303,6 +313,10 @@ op command_axiom (label : Option Label, e : bool) : Command =>
 
 op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
   "distinct " label "[" exprs "]" ";\n";
+
+// Top-level block command for parsing statements directly
+op command_block (b : Block) : Command =>
+  b ";\n";
 
 // =====================================================================
 // Datatype Syntax Categories
