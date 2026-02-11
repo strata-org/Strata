@@ -8,7 +8,7 @@ import Strata.DL.SMT.SMT
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Imperative.EvalContext
 
-namespace Imperative
+namespace Imperative.SMT
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
@@ -37,47 +37,34 @@ inductive Result (Ident : Type) where
   | unsat
   | unknown
   | err (msg : String)
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
-instance {Ident} [ToFormat Ident] : ToFormat (Result Ident) where
-  format r := match r with
-    | .sat cex  =>
-      if cex.isEmpty then
-        f!"failed\nNo counterexample available."
-      else
-        f!"failed\nCounterexample: {cex}"
-    | .unsat => f!"verified"
-    | .unknown => f!"unknown"
-    | .err msg => f!"err {msg}"
+def Result.isSat {T} (r : Result T) : Bool :=
+  match r with | .sat _ => true | _ => false
 
-/--
-SMT solver's `result` along with an SMT encoder state `estate` for a given
-verification condition `obligation`.
--/
-structure VCResult (P : Imperative.PureExpr) where
-  obligation : Imperative.ProofObligation P
-  result : Result P.TypedIdent := .unknown
-  estate : Strata.SMT.EncoderState := Strata.SMT.EncoderState.init
+def Result.formatWithVerbose {Ident} [ToFormat Ident]
+  (r : Result Ident) (verbose : Bool) : Format :=
+  match r with
+  | .sat m  =>
+    if (not verbose) || m.isEmpty then
+      f!"sat"
+    else f!"sat\nModel: {m}"
+  | .unsat => f!"unsat"
+  | .unknown => f!"unknown"
+  | .err msg => f!"err {msg}"
 
-instance [ToFormat (Result P.TypedIdent)] : ToFormat (VCResult P) where
-  format r := f!"Obligation: {r.obligation.label}\n\
-                 Result: {r.result}"
-                --  EState : {repr r.estate.terms}
+instance {Ident} [ToFormat Ident]: ToFormat (Result Ident) where
+  format r := r.formatWithVerbose true
 
-/--
-An array of `VCResult`s.
--/
-abbrev VCResults (P : Imperative.PureExpr) := Array (VCResult P)
-
-def VCResults.format [ToFormat (VCResult P)] (rs : VCResults P) : Format :=
-  let rsf := rs.map (fun r => f!"{Format.line}{r}")
-  Format.joinSep rsf.toList Format.line
-
-instance [ToFormat (VCResult P)] : ToFormat (VCResults P) where
-  format := VCResults.format
-
-instance [ToFormat (VCResult P)] : ToString (VCResults P) where
-  toString rs := toString (VCResults.format rs)
+def Result.formatModelIfSat {Ident} [ToFormat Ident]
+  (r : Result Ident) (verbose : Bool) : Format :=
+  match r with
+  | .sat m =>
+    if (not verbose) || m.isEmpty then
+      f!""
+    else
+      f!"\nModel:\n{m}"
+  | _ => f!""
 
 
 /--
@@ -88,7 +75,7 @@ def getSMTId {Ident Ty} [ToFormat Ident]
     (x : Ident) (ty : Option Ty) (E : Strata.SMT.EncoderState) :
     Except Format String := do
   match (x, ty) with
-  | (var, none) => .error f!"Expected type-annotated variable {var}!"
+  | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
   | (var, some ty) => do
     let (var', ty') ← typedVarToSMTFn var ty
     let key : Strata.SMT.UF := { id := var', args := [], out := ty' }
@@ -101,13 +88,13 @@ def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) :
 def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (cexs : List Strata.SMT.CExParser.KeyValue)
-    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.TypedIdent) := do
+    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
   match vars with
   | [] => return []
   | (var, ty) :: vrest =>
     let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
     let value ← findCExValue id cexs
-    let pair := ((var, ty), value)
+    let pair := (var, value)
     let rest ← processModel typedVarToSMTFn vrest cexs E
     .ok (pair :: rest)
   where findCExValue id cexs : Except Format String :=
@@ -125,46 +112,63 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
+/--
+Interprets the output of SMT solver.
+-/
 def solverResult {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (output : IO.Process.Output)
-    (E : Strata.SMT.EncoderState) : Except Format (Result P.TypedIdent) := do
+    (E : Strata.SMT.EncoderState) (smtsolver : String)
+    : Except Format (Result P.Ident) := do
   let stdout := output.stdout
-  let pos := stdout.find fun c => c == '\n' || c == '\r'
-  let verdict := stdout.extract stdout.startPos pos
+  let pos := stdout.find (· == '\n')
+  let verdict := stdout.extract stdout.startPos pos |>.trimAscii
   let rest := stdout.extract pos stdout.endPos
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest
-    let model ← processModel typedVarToSMTFn vars rawModel E
-    .ok (.sat model)
+    -- We suppress any model processing errors.
+    -- Likely, these would be because of the suboptimal implementation
+    -- of the model parser, which shouldn't hold back useful
+    -- feedback (i.e., problem was `sat`) from the user.
+    match (processModel typedVarToSMTFn vars rawModel E) with
+    | .ok model => .ok (.sat model)
+    | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
+  | _     =>
+    let stderr := output.stderr
+    let hasExecError := (stderr.splitOn "could not execute external process").length > 1
+    let hasFileError := (stderr.splitOn "No such file or directory").length > 1
+    let suggestion :=
+      if (hasExecError || hasFileError) && smtsolver == defaultSolver then
+        s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver."
+      else ""
+    .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 
+/--
+Writes the proof obligation to file, discharge the obligation using SMT solver,
+and parse the output of the SMT solver.
+-/
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
-  (encodeTerms : List Strata.SMT.Term → Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
+  (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
-  (vars : List P.TypedIdent) (smtsolver filename : String)
-  (terms : List Strata.SMT.Term) :
-  IO (Except Format (Result P.TypedIdent × Strata.SMT.EncoderState)) := do
+  (vars : List P.TypedIdent)
+  (smtsolver filename : String)
+  (solver_options : Array String) (printFilename : Bool) :
+  IO (Except Format (Result P.Ident × Strata.SMT.EncoderState)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
-  let (ids, estate) ← encodeTerms terms solver
+
+  let (ids, estate) ← encodeSMT solver
+
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
-  let produce_models ←
-    if smtsolver.endsWith "z3" then
-      -- No need to specify -model because we already have `get-value` in the
-      -- generated SMT file.
-      .ok ""
-    else if smtsolver.endsWith "cvc5" then
-      .ok "--produce-models"
-    else
-      return .error f!"Unsupported SMT solver: {smtsolver}"
-  let solver_output ← runSolver smtsolver #[filename, produce_models]
-  match solverResult typedVarToSMTFn vars solver_output estate with
+  if printFilename then IO.println s!"Wrote problem to {filename}."
+
+  let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)
+  match solverResult typedVarToSMTFn vars solver_output estate smtsolver with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
 ---------------------------------------------------------------------
-end Imperative
+end Imperative.SMT
