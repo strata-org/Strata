@@ -412,6 +412,21 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
     pure (fst ++ ListMap.ofList [(id, mty)])
+  | q`Core.mkBindings =>
+    let args ← checkOpArg arg q`Core.mkBindings 1
+    let .seq _ _ bindingSeq := args[0]!
+      | TransM.error s!"mkBindings expects seq {repr args[0]!}"
+    let bindings ← bindingSeq.mapM (fun bindingArg => do
+      let .op bindingOp := bindingArg
+        | TransM.error s!"Expected binding op {repr bindingArg}"
+      if bindingOp.name == q`Core.mkBinding then
+        let bindingArgs ← checkOpArg bindingArg q`Core.mkBinding 2
+        let id ← translateIdent CoreIdent bindingArgs[0]!
+        let mty ← translateLMonoTy bindings bindingArgs[1]!
+        pure (id, mty)
+      else
+        TransM.error s!"Expected mkBinding, got {bindingOp.name}")
+    pure bindings.toList
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
 def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
@@ -865,14 +880,33 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | _ => TransM.error s!"translateExpr unimplemented {repr op} {repr args}"
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
-  | .bvar _ i, [] => do
+  | .bvar _ i, argsa => do
     if i < bindings.boundVars.size then
       let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
-      match expr with
-      | .bvar m _ => return .bvar m i
-      | _ => return expr
+      match argsa with
+      | [] =>
+        match expr with
+        | .bvar m _ => return .bvar m i
+        | _ => return expr
+      | _ =>
+        let args ← translateExprs p bindings argsa.toArray
+        return .mkApp () expr args.toList
     else
-      TransM.error s!"translateExpr out-of-range bound variable: {i}"
+      -- Bound variable index exceeds boundVars - check if it's a local function
+      let funcIndex := i - bindings.boundVars.size
+      if funcIndex < bindings.freeVars.size then
+        let decl := bindings.freeVars[funcIndex]!
+        match decl with
+        | .func func _md =>
+          let funcOp := .op () func.name (some func.output)
+          match argsa with
+          | [] => return funcOp
+          | _ =>
+            let args ← translateExprs p bindings argsa.toArray
+            return .mkApp () funcOp args.toList
+        | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
+      else
+        TransM.error s!"translateExpr out-of-range bound variable: {i}"
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
@@ -1053,6 +1087,57 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateIdent String la
     let md ← getOpMetaData op
     return ([.goto l md], bindings)
+  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, _axiomsa, bodya] =>
+    let name ← translateIdent CoreIdent namea
+    let inputs ← translateMonoDeclList bindings bindingsa
+    let outputMono ← translateLMonoTy bindings returna
+    let output : Expression.Ty := .forAll [] outputMono
+    let inputsConverted : ListMap Expression.Ident Expression.Ty :=
+      inputs.map (fun (id, mty) => (id, .forAll [] mty))
+
+    -- The DDM parser's declareFn annotation adds the function name to scope,
+    -- then @[scope(b)] adds the parameters. So in the body, the scope order is:
+    -- Index 0: parameters (from @[scope(b)])
+    -- Index 1: function name (from declareFn)
+    -- Index 2+: outer scope variables
+    --
+    -- We need to include both the function and parameters in boundVars.
+    -- The function is represented as an op expression that can be called.
+    let funcBinding : LExpr CoreLParams.mono := .op () name (some outputMono)
+    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+    -- Order: existing boundVars, then function, then parameters
+    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
+
+    -- Translate body with function parameters in scope
+    let body ← match bodya with
+      | .option _ (.some bodyExpr) => do
+        let expr ← translateExpr p bodyBindings bodyExpr
+        pure (some expr)
+      | .option _ .none => pure none
+      | _ => do
+        let expr ← translateExpr p bodyBindings bodya
+        pure (some expr)
+
+    let decl : PureFunc Expression := {
+      name := name,
+      inputs := inputsConverted,
+      output := output,
+      body := body,
+      axioms := []
+    }
+    let md ← getOpMetaData op
+    -- Create a Function for the freeVars
+    let func := { name := name,
+                  typeArgs := [],
+                  inputs := inputs,
+                  output := outputMono,
+                  body := body,
+                  attr := #[] }
+    let funcDecl := Core.Decl.func func md
+    -- Add the function to the local scope for subsequent statements
+    let newFreeVars := bindings.freeVars.push funcDecl
+    let updatedBindings := { bindings with freeVars := newFreeVars }
+    return ([.funcDecl decl md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1201,6 +1286,26 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                 }
                 md,
           origBindings)
+
+---------------------------------------------------------------------
+
+/-- Translate a top-level block command as a nameless parameterless procedure -/
+def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_block 1
+  let (body, bindings) ← translateBlock p bindings op.args[0]!
+  let md ← getOpMetaData op
+  return (.proc { header := { name := "",
+                              typeArgs := [],
+                              inputs := [],
+                              outputs := [] },
+                  spec := { modifies := [],
+                            preconditions := [],
+                            postconditions := [] },
+                  body := body
+                }
+                md,
+          bindings)
 
 ---------------------------------------------------------------------
 
@@ -1510,6 +1615,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
+          | q`Core.command_block =>
+            translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
         pure ([decl], bindings)
     let (decls, bindings) ← go (count + 1) max bindings ops

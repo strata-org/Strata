@@ -1269,8 +1269,11 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
       match tctx.lookupVar fn with
       | some (.fvar idx k) =>
         pure (ExprF.fvar fnLoc idx, k)
-      | some (.bvar idx tp) =>
-        logError fnLoc s!"Bound functions not yet supported."
+      | some (.bvar idx (.expr tp)) =>
+        -- Support bound function calls
+        pure (ExprF.bvar fnLoc idx, .expr tp)
+      | some (.bvar idx _) =>
+        logError fnLoc s!"Bound variable {fn} is not a function"
         return default
       | none =>
         logError fnLoc s!"Unknown variable {fn}"
