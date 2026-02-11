@@ -34,6 +34,11 @@ const fooConst : int;
 function id(x : int, y : int) : int { y }
 function foo<T1, T2>(x : T1) : Map T1 T2;
 
+// axiom [fooConst_value]: fooConst == 5;
+
+// function f(x: int): int;
+// axiom [f1]: (f(5) > 5);
+
 var g : bool;
 
 procedure Test1(x : bool) returns (y : bool)
@@ -96,7 +101,11 @@ spec{
   -- Convert AST → CST
   match (programToCST (M := SourceRange) ast).run ToCSTContext.empty with
   | .error errs =>
-    IO.println f!"AST to CST Error: {repr errs}"
+    IO.println "AST to CST Error:"
+    for err in errs do
+      match err with
+      | .unsupportedConstruct fn desc ctx _md =>
+        IO.println s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
   | .ok (cmds, _finalCtx) =>
     -- Format with original global context
     let ctx := FormatContext.ofDialects testProgram.dialects

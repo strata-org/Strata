@@ -67,6 +67,19 @@ namespace ToCSTContext
 
 def empty : ToCSTContext := { scopes := #[{}] }
 
+/-- Format context for error messages -/
+def toErrorString (ctx : ToCSTContext) : String :=
+  let lines := ctx.scopes.toList.mapIdx fun i scope =>
+    let header := if i = 0 then "Global scope:" else s!"Scope {i}:"
+    let btv := if scope.boundTypeVars.isEmpty then ""
+               else s!"\n  boundTypeVars: {scope.boundTypeVars.toList}"
+    let bv := if scope.boundVars.isEmpty then ""
+              else s!"\n  boundVars: {scope.boundVars.toList}"
+    let fv := if scope.freeVars.isEmpty then ""
+              else s!"\n  freeVars: {scope.freeVars.toList}"
+    s!"{header}{btv}{bv}{fv}"
+  String.intercalate "\n" lines
+
 /-- Get all bound type variables across all scopes -/
 def boundTypeVars (ctx : ToCSTContext) : Array String :=
   ctx.scopes.foldl (fun acc s => acc ++ s.boundTypeVars) #[]
@@ -137,7 +150,7 @@ abbrev ToCSTM (M : Type) := StateT ToCSTContext (Except (List (ASTToCSTError M))
 def ToCSTM.throwError [Inhabited M] (fn : String) (desc : String)
     : ToCSTM M α := do
   let ctx ← get
-  throw [.unsupportedConstruct fn desc (reprStr ctx) default]
+  throw [.unsupportedConstruct fn desc ctx.toErrorString default]
 
 /-- Convert `LMonoTy` to `CoreType` -/
 def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
@@ -264,7 +277,7 @@ partial def lexprToExpr [Inhabited M]
     -- We first look for Lambda .fvars in the boundVars context, before checking
     -- the freeVars context. Lambda .fvars can come from formals of a function
     -- or procedure (DDM .bvar), but also from global variable declaration (DDM
-    -- .fvar).
+    -- .fvar). Note that Strata Core does not allow variable shadowing.
     --if LambdaFVarsBound then
       match ctx.boundVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
@@ -509,6 +522,22 @@ def funcToCST [Inhabited M]
   modify ToCSTContext.popScope
   pure result
 
+/-- Convert an axiom to CST -/
+def axiomToCST [Inhabited M] (ax : Axiom)
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  let labelAnn : Ann (Option (Label M)) M := ⟨
+      default, some (.label default ⟨default, ax.name⟩)⟩
+  let exprCST ← lexprToExpr ax.e false
+  pure (.command_axiom default labelAnn exprCST)
+
+/-- Convert a distinct declaration to CST -/
+def distinctToCST [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr CoreLParams.mono))
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, name.toPretty⟩)⟩
+  let exprsCST ← es.mapM (lexprToExpr · false)
+  let exprsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, exprsCST.toArray⟩
+  pure (.command_distinct default labelAnn exprsAnn)
+
 /-- Convert a variable declaration to CST -/
 def varToCST [Inhabited M]
     (name : CoreIdent) (ty : Lambda.LTy) (_e : Lambda.LExpr CoreLParams.mono)
@@ -537,10 +566,13 @@ def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (Command M) :=
   | .proc proc _md => do
     modify (·.addFreeVar proc.header.name.toPretty)
     procToCST proc
-  | _ => ToCSTM.throwError "declToCST" "unimplemented decl"
+  | .ax ax md => axiomToCST ax md
+  | .distinct name es md => distinctToCST name es md
+  | _ => ToCSTM.throwError "declToCST" "Missing Construct"
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
-def programToCST [Inhabited M] (prog : Core.Program) : ToCSTM M (List (Command M)) :=
+def programToCST [Inhabited M] (prog : Core.Program) :
+    ToCSTM M (List (Command M)) :=
   prog.decls.mapM declToCST
 
 end ToCST
