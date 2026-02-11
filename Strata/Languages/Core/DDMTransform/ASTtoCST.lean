@@ -182,7 +182,8 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     let vty ← lmonoTyToCoreType v
     pure (.Map default kty vty)
   | .tcons name args =>
-    match ctx.freeVars.toList.findIdx? (· == name) with
+    let ctx ← get
+    match ctx.scopes[0]!.freeVars.toList.findIdx? (· == name) with
     | some idx => do
       let argTys ← args.mapM lmonoTyToCoreType
       pure (.fvar default idx argTys.toArray)
@@ -213,6 +214,52 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
         Binding.mkBinding default paramName paramType
       ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
   pure (.command_typedecl default name args)
+
+/-- Convert a datatype declaration to CST -/
+def datatypeToCST [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
+    (_md : Imperative.MetaData Expression) : ToCSTM M (List (Command M)) := do
+  -- Process each datatype independently
+  let mut results := []
+  for dt in datatypes do
+    -- Add this datatype name to freeVars
+    modify (·.addFreeVar dt.name)
+    -- modify ToCSTContext.pushScope
+    let name : Ann String M := ⟨default, dt.name⟩
+    modify (·.addBoundTypeVars dt.typeArgs.toArray)
+    let args : Ann (Option (Bindings M)) M :=
+      if dt.typeArgs.isEmpty then
+        ⟨default, none⟩
+      else
+        let bindings := dt.typeArgs.map fun param =>
+          let paramName : Ann String M := ⟨default, param⟩
+          let paramType := TypeP.type default
+          Binding.mkBinding default paramName paramType
+        ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+    let processConstr (c : Lambda.LConstr Visibility) : ToCSTM M (Constructor M) := do
+      -- Add constructor name and tester name to free variables
+      modify (·.addFreeVar c.name.name)
+      modify (·.addFreeVar c.testerName)
+      -- Add accessor function names to free variables
+      for (id, _) in c.args do
+        modify (·.addFreeVar (Lambda.destructorFuncName dt id))
+      let constrName : Ann String M := ⟨default, c.name.name⟩
+      let constrArgs ←
+        if c.args.isEmpty then
+          pure ⟨default, none⟩
+        else do
+          let bindings ← c.args.mapM fun (id, ty) => do
+            let paramName : Ann String M := ⟨default, id.name⟩
+            let paramType ← lmonoTyToCoreType ty
+            pure (Binding.mkBinding default paramName (TypeP.expr paramType))
+          pure ⟨default, some ⟨default, bindings.toArray⟩⟩
+      pure (Constructor.constructor_mk default constrName constrArgs)
+    let constrs ← dt.constrs.mapM processConstr
+    let constrList := constrs.tail.foldl
+      (fun acc c => ConstructorList.constructorListPush default acc c)
+      (ConstructorList.constructorListAtom default constrs.head!)
+    -- modify ToCSTContext.popScope
+    results := results ++ [.command_datatype default name args constrList]
+  pure results
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST [Inhabited M] (syn : TypeSynonym)
@@ -549,31 +596,42 @@ def varToCST [Inhabited M]
   pure (.command_var default bind)
 
 /-- Convert a `Core.Decl` to a Core `Command` -/
-def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (Command M) :=
+def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
   match decl with
   | .var name ty e md => do
     modify (·.addFreeVar name.toPretty)
-    varToCST name ty e md
+    let cmd ← varToCST name ty e md
+    pure [cmd]
   | .type (.con tcons) md => do
     modify (·.addFreeVar tcons.name)
-    typeConToCST tcons md
+    let cmd ← typeConToCST tcons md
+    pure [cmd]
   | .type (.syn syn) md => do
     modify (·.addFreeVar syn.name)
-    typeSynToCST syn md
+    let cmd ← typeSynToCST syn md
+    pure [cmd]
+  | .type (.data datatypes) md =>
+    datatypeToCST datatypes md
   | .func func md => do
     modify (·.addFreeVar func.name.name)
-    funcToCST func md
+    let cmd ← funcToCST func md
+    pure [cmd]
   | .proc proc _md => do
     modify (·.addFreeVar proc.header.name.toPretty)
-    procToCST proc
-  | .ax ax md => axiomToCST ax md
-  | .distinct name es md => distinctToCST name es md
-  | _ => ToCSTM.throwError "declToCST" "Missing Construct"
+    let cmd ← procToCST proc
+    pure [cmd]
+  | .ax ax md => do
+    let cmd ← axiomToCST ax md
+    pure [cmd]
+  | .distinct name es md => do
+    let cmd ← distinctToCST name es md
+    pure [cmd]
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
 def programToCST [Inhabited M] (prog : Core.Program) :
-    ToCSTM M (List (Command M)) :=
-  prog.decls.mapM declToCST
+    ToCSTM M (List (Command M)) := do
+  let cmdLists ← prog.decls.mapM declToCST
+  pure cmdLists.flatten
 
 end ToCST
 

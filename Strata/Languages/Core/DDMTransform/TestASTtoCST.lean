@@ -26,10 +26,16 @@ def testProgram : Program :=
 program Core;
 type T0;
 type T1 (x : Type);
+
 type Byte := bv8;
 type IntMap := Map int int;
+
 type MyMap (a : Type, b : Type);
 type Foo (a : Type, b : Type) := Map b a;
+
+datatype List () { Nil(), Cons(head: int, tail: List) };
+datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
+
 const fooConst : int;
 function id(x : int, y : int) : int { y }
 function foo<T1, T2>(x : T1) : Map T1 T2;
@@ -70,6 +76,8 @@ type Byte := bv8;
 type IntMap := Map int int;
 type MyMap (a0 : Type, a1 : Type);
 type Foo (a : Type, b : Type) := Map b a;
+datatype List {(Nil()),(Cons(head : int, tail : List))};
+datatype Tree {(Leaf(val : int)),(Node(left : Tree, right : Tree))};
 function fooConst () : int;
 function id (x : int, y : int) : int {
 y
