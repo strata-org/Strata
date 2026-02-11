@@ -43,18 +43,13 @@ structure AnalysisResult where
   writesHeapDirectly : Bool := false
   callees : List Identifier := []
 
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
 
 mutual
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
   termination_by sizeOf expr
   decreasing_by
     simp_wf
-    have := StmtExprMd.sizeOf_val_lt expr
+    have := WithMetadata.sizeOf_val_lt expr
     omega
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
@@ -66,7 +61,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
   | .LocalVariable _ _ i => if let some x := i then collectExprMd x
-  | .While c i d b => collectExprMd c; collectExprMd b; if let some x := i then collectExprMd x; if let some x := d then collectExpr x
+  | .While c i d b => collectExprMd c; collectExprMd b; if let some x := i then collectExprMd x; if let some x := d then collectExprMd x
   | .Return v => if let some x := v then collectExprMd x
   | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)
@@ -97,7 +92,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
     all_goals simp_wf
     all_goals first
       | omega
-      | (have := StmtExprMd.sizeOf_val_lt ‹_›; omega)
+      | (have := WithMetadata.sizeOf_val_lt ‹_›; omega)
       | (subst_vars; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
 end
 
@@ -209,12 +204,12 @@ Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
-partial def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
+def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
   recurse expr valueUsed
 where
   recurse (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
     let md := expr.md
-    match expr.val with
+    match _h : expr.val with
     | .FieldSelect selectTarget fieldName =>
         let fieldType ← lookupFieldType fieldName
         let valTy := fieldType.getD (panic "could not find field type")
@@ -223,7 +218,7 @@ where
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
     | .StaticCall callee args =>
-        let args' ← args.mapM recurse
+        let args' ← args.mapM (recurse ·)
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -242,7 +237,7 @@ where
           return ⟨ .StaticCall callee args', md ⟩
     | .InstanceCall callTarget callee args =>
         let t ← recurse callTarget
-        let args' ← args.mapM recurse
+        let args' ← args.mapM (recurse ·)
         return ⟨ .InstanceCall t callee args', md ⟩
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
@@ -257,6 +252,7 @@ where
               let s' ← recurse s (isLast && valueUsed)
               let rest' ← processStmts (idx + 1) rest
               pure (s' :: rest')
+          termination_by sizeOf remaining
         let stmts' ← processStmts 0 stmts
         return ⟨ .Block stmts' label, md ⟩
     | .LocalVariable n ty i =>
@@ -271,7 +267,7 @@ where
     | .Assign targets v =>
         match targets with
         | [fieldSelectMd] =>
-          match fieldSelectMd.val with
+          match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
             let fieldType ← lookupFieldType fieldName
             let valTy := fieldType.getD (panic "could not find field type")
@@ -293,11 +289,11 @@ where
             return ⟨ .Assign [] (← recurse v), md ⟩
         | tgt :: rest =>
             let tgt' ← recurse tgt
-            let targets' ← rest.mapM recurse
+            let targets' ← rest.mapM (recurse ·)
             return ⟨ .Assign (tgt' :: targets') (← recurse v), md ⟩
     | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), md ⟩
     | .PrimitiveOp op args =>
-      let args' ← args.mapM recurse
+      let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
     | .AsType t ty => return ⟨ .AsType (← recurse t) ty, md ⟩
@@ -312,6 +308,17 @@ where
     | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
     | _ => return expr
+    termination_by sizeOf expr
+    decreasing_by
+      all_goals simp_wf
+      all_goals
+        have hval := WithMetadata.sizeOf_val_lt expr
+        rw [_h] at hval; simp at hval
+        first
+          | omega
+          | (have := List.sizeOf_lt_of_mem ‹_›; omega)
+          | -- For the FieldSelect-inside-Assign case: target < fieldSelectMd < expr
+            (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; rw [_h2] at hfs; simp at hfs; omega)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
   let heapInName := "$heap_in"

@@ -24,20 +24,15 @@ open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp
 
 namespace Strata.Laurel
 
+open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
-
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
 
 /-
 Translate Laurel HighType to Core Type
 -/
-partial def translateType (ty : HighTypeMd) : LMonoTy :=
-  match ty.val with
+def translateType (ty : HighTypeMd) : LMonoTy :=
+  match _h : ty.val with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
@@ -46,7 +41,12 @@ partial def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
   | .UserDefined _ => .tcons "Composite" []
-  | _ => panic s!"unsupported type {repr ty}"
+  | _ => panic s!"unsupported type {ToFormat.format ty}"
+termination_by ty.val
+decreasing_by
+  rw [_h]; simp [sizeOf, HighType._sizeOf_1]
+  have := WithMetadata.sizeOf_val_lt elementType
+  omega
 
 def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
@@ -164,7 +164,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt expr
+      have := WithMetadata.sizeOf_val_lt expr
       rw [h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind
@@ -289,7 +289,7 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt stmt
+      have := WithMetadata.sizeOf_val_lt stmt
       rw [h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind
@@ -470,7 +470,7 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt expr
+      have := WithMetadata.sizeOf_val_lt expr
       rw [_h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind
