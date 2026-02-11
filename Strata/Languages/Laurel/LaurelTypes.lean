@@ -38,12 +38,12 @@ and variable declarations.
 -/
 partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
   match expr with
-  | StmtExprMd.mk val md =>
+  | WithMetadata.mk val md =>
   match val with
   -- Literals
-  | .LiteralInt _ => HighTypeMd.mk .TInt md
-  | .LiteralBool _ => HighTypeMd.mk .TBool md
-  | .LiteralString _ => HighTypeMd.mk .TString md
+  | .LiteralInt _ => WithMetadata.mk .TInt md
+  | .LiteralBool _ => WithMetadata.mk .TBool md
+  | .LiteralString _ => WithMetadata.mk .TString md
   -- Variables
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
@@ -52,7 +52,7 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr 
   -- Field access
   | .FieldSelect target fieldName =>
       match (computeExprType env types target) with
-      | HighTypeMd.mk (.UserDefined typeName) _ =>
+      | WithMetadata.mk (.UserDefined typeName) _ =>
           match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
           | none => panic s!"Could not find field in type"
@@ -65,32 +65,32 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr 
   -- Operators
   | .PrimitiveOp op _ =>
       match op with
-      | .Eq | .Neq | .And | .Or | .Not | .Lt | .Leq | .Gt | .Geq => HighTypeMd.mk .TBool md
-      | .Neg | .Add | .Sub | .Mul | .Div | .Mod => HighTypeMd.mk .TInt md
+      | .Eq | .Neq | .And | .Or | .Not | .Lt | .Leq | .Gt | .Geq => WithMetadata.mk .TBool md
+      | .Neg | .Add | .Sub | .Mul | .Div | .Mod => WithMetadata.mk .TInt md
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
   | .Block stmts _ => match stmts.getLast? with
     | some last => computeExprType env types last
-    | none => HighTypeMd.mk .TVoid md
+    | none => WithMetadata.mk .TVoid md
   -- Statements (void-typed)
-  | .LocalVariable _ _ _ => HighTypeMd.mk .TVoid md
-  | .While _ _ _ _ => HighTypeMd.mk .TVoid md
-  | .Exit _ => HighTypeMd.mk .TVoid md
-  | .Return _ => HighTypeMd.mk .TVoid md
-  | .Assign _ _ => HighTypeMd.mk .TVoid md
-  | .Assert _ => HighTypeMd.mk .TVoid md
-  | .Assume _ => HighTypeMd.mk .TVoid md
+  | .LocalVariable _ _ _ => WithMetadata.mk .TVoid md
+  | .While _ _ _ _ => WithMetadata.mk .TVoid md
+  | .Exit _ => WithMetadata.mk .TVoid md
+  | .Return _ => WithMetadata.mk .TVoid md
+  | .Assign _ _ => WithMetadata.mk .TVoid md
+  | .Assert _ => WithMetadata.mk .TVoid md
+  | .Assume _ => WithMetadata.mk .TVoid md
   -- Instance related
   | .This => panic "Not supported"
-  | .ReferenceEquals _ _ => HighTypeMd.mk .TBool md
+  | .ReferenceEquals _ _ => WithMetadata.mk .TBool md
   | .AsType _ ty => ty
-  | .IsType _ _ => HighTypeMd.mk .TBool md
+  | .IsType _ _ => WithMetadata.mk .TBool md
   -- Verification specific
-  | .Forall _ _ _ => HighTypeMd.mk .TBool md
-  | .Exists _ _ _ => HighTypeMd.mk .TBool md
-  | .Assigned _ => HighTypeMd.mk .TBool md
+  | .Forall _ _ _ => WithMetadata.mk .TBool md
+  | .Exists _ _ _ => WithMetadata.mk .TBool md
+  | .Assigned _ => WithMetadata.mk .TBool md
   | .Old v => computeExprType env types v
-  | .Fresh _ => HighTypeMd.mk .TBool md
+  | .Fresh _ => WithMetadata.mk .TBool md
   -- Proof related
   | .ProveBy v _ => computeExprType env types v
   | .ContractOf _ _ => panic "Not supported"

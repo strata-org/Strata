@@ -168,7 +168,6 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .LiteralInt _ | .LiteralBool _ | .LiteralString _ => return expr
 
   | .Assign targets value =>
-      let seqValue ← transformExpr value
       -- The expression result is the current substitution for the first target
       -- (we already know what it maps to AFTER this assignment from right-to-left traversal)
       let firstTarget := targets.head?.getD (panic "Assign must have non-empty targets")
@@ -350,7 +349,8 @@ partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, md⟩]
 
-  | _ => return [stmt]
+  | _ =>
+      return [stmt]
 
 end
 

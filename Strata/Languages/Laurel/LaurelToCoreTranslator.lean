@@ -22,20 +22,15 @@ open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp
 
 namespace Strata.Laurel
 
+open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
-
-private theorem StmtExprMd.sizeOf_val_lt (e : StmtExprMd) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
 
 /-
 Translate Laurel HighType to Core Type
 -/
-partial def translateType (ty : HighTypeMd) : LMonoTy :=
-  match ty.val with
+def translateType (ty : HighTypeMd) : LMonoTy :=
+  match _h : ty.val with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
@@ -43,7 +38,12 @@ partial def translateType (ty : HighTypeMd) : LMonoTy :=
   | .THeap => .tcons "Heap" []
   | .TTypedField valueType => .tcons "Field" [translateType valueType]
   | .UserDefined _ => .tcons "Composite" []
-  | _ => panic s!"unsupported type {repr ty}"
+  | _ => panic s!"unsupported type {ToFormat.format ty}"
+termination_by ty.val
+decreasing_by
+  rw [_h]; simp [sizeOf, HighType._sizeOf_1]
+  have := WithMetadata.sizeOf_val_lt valueType
+  omega
 
 abbrev TypeEnv := List (Identifier × HighTypeMd)
 
@@ -121,7 +121,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt expr
+      have := WithMetadata.sizeOf_val_lt expr
       rw [h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind
@@ -155,7 +155,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
       let boogieType := LTy.forAll [] boogieMonoType
       let ident := Core.CoreIdent.locl name
       match initializer with
-      | some (⟨ .StaticCall callee args, callMd⟩) =>
+      | some (⟨ .StaticCall callee args, _⟩) =>
           -- Check if this is a heap function (heapRead/heapStore) or a regular procedure call
           -- Heap functions should be translated as expressions, not call statements
           if callee == "heapRead" || callee == "heapStore" then
@@ -236,7 +236,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt stmt
+      have := WithMetadata.sizeOf_val_lt stmt
       rw [h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind
@@ -417,7 +417,7 @@ Pure expressions don't contain statements like assignments, loops, or local vari
 A Block with a single pure expression is also considered pure.
 -/
 def isPureExpr(expr: StmtExprMd): Bool :=
-  match h : expr.val with
+  match _h : expr.val with
   | .LiteralBool _ => true
   | .LiteralInt _ => true
   | .LiteralString _ => true
@@ -433,8 +433,8 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   decreasing_by
     all_goals simp_wf
     all_goals
-      have := StmtExprMd.sizeOf_val_lt expr
-      rw [h] at this; simp at this
+      have := WithMetadata.sizeOf_val_lt expr
+      rw [_h] at this; simp at this
       try have := List.sizeOf_lt_of_mem ‹_›
       grind
 
