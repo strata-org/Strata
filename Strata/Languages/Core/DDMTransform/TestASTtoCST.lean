@@ -34,18 +34,22 @@ const fooConst : int;
 function id(x : int, y : int) : int { y }
 function foo<T1, T2>(x : T1) : Map T1 T2;
 
+var g : bool;
+
 procedure Test1(x : bool) returns (y : bool)
 {
   y := x;
 };
 
-procedure Test2(a : bool) returns (b : bool)
+procedure Test2(x : bool) returns (y : bool)
 spec {
-  ensures (b == a);
-  ensures (a == b);
+  ensures (y == x);
+  ensures (x == y);
+  ensures (g == g);
+  // ensures (g == old(g));
 }
 {
-  b := a;
+  y := x;
 };
 
 #end
@@ -66,6 +70,7 @@ function id (x : int, y : int) : int {
 y
 }
 function foo<T1, T2> (x : T1) : Map T1 T2;
+var g:int;
 procedure Test1 (x : bool) returns (y : bool)
  {
 (y) := x;

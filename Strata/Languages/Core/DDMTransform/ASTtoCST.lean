@@ -28,14 +28,14 @@ open Strata.CoreDDM
 
 /-- Errors that can occur during AST→CST conversion (formatting) -/
 inductive ASTToCSTError (M : Type) where
-  | unsupportedConstruct (description : String) (metadata : M) :
+  | unsupportedConstruct (fn : String) (description : String) (context : String) (metadata : M) :
       ASTToCSTError M
   deriving Repr, Inhabited
 
 namespace ASTToCSTError
 
 def toString [ToString M] : ASTToCSTError M → String
-  | unsupportedConstruct desc _m => s!"Unsupported construct: {desc}"
+  | unsupportedConstruct fn desc ctx _m => s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
 
 instance [ToString M] : ToString (ASTToCSTError M) where
   toString := ASTToCSTError.toString
@@ -84,8 +84,9 @@ end ToCSTContext
 /-- Monad for AST->CST conversion with context and error tracking -/
 abbrev ToCSTM (M : Type) := StateT ToCSTContext (Except (List (ASTToCSTError M)))
 /-- Throw an error in ToCSTM -/
-def ToCSTM.throwError [Inhabited M] (err : ASTToCSTError M) : ToCSTM M α :=
-  throw [err]
+def ToCSTM.throwError [Inhabited M] (fn : String) (desc : String) : ToCSTM M α := do
+  let ctx ← get
+  throw [.unsupportedConstruct fn desc (reprStr ctx) default]
 
 /-- Convert `LMonoTy` to `CoreType` -/
 def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
@@ -100,8 +101,8 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
         let bvarIdx := ctx.boundTypeVars.size - (idx + 1)
         pure (.bvar default bvarIdx)
       else
-        ToCSTM.throwError (.unsupportedConstruct s!"unbound ftvar {name}" default)
-    | none => ToCSTM.throwError (.unsupportedConstruct s!"unbound ftvar {name}" default)
+        ToCSTM.throwError "lmonoTyToCoreType" s!"unbound ftvar {name}"
+    | none => ToCSTM.throwError "lmonoTyToCoreType" s!"unbound ftvar {name}"
   | .bitvec 1 => pure (.bv1 default)
   | .bitvec 8 => pure (.bv8 default)
   | .bitvec 16 => pure (.bv16 default)
@@ -121,8 +122,8 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     | some idx => do
       let argTys ← args.mapM lmonoTyToCoreType
       pure (.fvar default idx argTys.toArray)
-    | none => ToCSTM.throwError (.unsupportedConstruct s!"unknown type constructor {name}" default)
-  | _ => ToCSTM.throwError (.unsupportedConstruct s!"unknown type {ty}" default)
+    | none => ToCSTM.throwError "lmonoTyToCoreType" s!"unknown type constructor {name}"
+  | _ => ToCSTM.throwError "lmonoTyToCoreType" s!"unknown type {ty}"
 
 /-- Convert `LTy` to `CoreType` -/
 def lTyToCoreType [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
@@ -177,14 +178,14 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :
   | .realConst r =>
     match Strata.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
-    | none => ToCSTM.throwError (.unsupportedConstruct s!"real {r}" default)
+    | none => ToCSTM.throwError "lconstToExpr" s!"real {r}"
   | .strConst s => pure (.strLit default ⟨default, s⟩)
   | .bitvecConst 1 n => pure (.bv1Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 8 n => pure (.bv8Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 16 n => pure (.bv16Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 32 n => pure (.bv32Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
-  | .bitvecConst w _ => ToCSTM.throwError (.unsupportedConstruct s!"bitvec width {w}" default)
+  | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr" s!"bitvec width {w}"
 
 partial def lopToExpr [Inhabited M]
     (name : Lambda.Identifier CoreLParams.mono.base.IDMeta) : ToCSTM M (CoreDDM.Expr M) :=
@@ -192,7 +193,7 @@ partial def lopToExpr [Inhabited M]
   | "not" => pure (.not default (.btrue default))
   | "true" => pure (.btrue default)
   | "false" => pure (.bfalse default)
-  | _ => ToCSTM.throwError (.unsupportedConstruct s!"op {name.name}" default)
+  | _ => ToCSTM.throwError "lopToExpr" s!"op {name.name}"
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
@@ -207,22 +208,22 @@ partial def lexprToExpr [Inhabited M]
       let bvarIdx := ctx.boundVars.size - (idx + 1)
       pure (.bvar default bvarIdx)
     else
-      ToCSTM.throwError (.unsupportedConstruct s!"bvar {idx}" default)
+      ToCSTM.throwError "lexprToExpr" s!"bvar {idx}"
   | .fvar _ id _ =>
     if LambdaFVarsBound then
       match ctx.boundVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
-      | none => ToCSTM.throwError (.unsupportedConstruct s!"fvar {id.name}" default)
+      | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
     else
       match ctx.freeVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.fvar default idx)
-      | none => ToCSTM.throwError (.unsupportedConstruct s!"fvar {id.name}" default)
+      | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
   | .op _ name _ => lopToExpr name
   | .app _ fn arg => lappToExpr fn arg LambdaFVarsBound
   | .ite _ c t f => liteToExpr c t f LambdaFVarsBound
   | .eq _ e1 e2 => leqToExpr e1 e2 LambdaFVarsBound
-  | .abs _ _ _ => ToCSTM.throwError (.unsupportedConstruct "lambda" default)
-  | .quant _ _ _ _ _ => ToCSTM.throwError (.unsupportedConstruct "quantifier" default)
+  | .abs _ _ _ => ToCSTM.throwError "lexprToExpr" "lambda"
+  | .quant _ _ _ _ _ => ToCSTM.throwError "lexprToExpr" "quantifier"
 
 partial def liteToExpr [Inhabited M]
     (c t f : Lambda.LExpr CoreLParams.mono) (bound : Bool) : ToCSTM M (CoreDDM.Expr M) := do
@@ -246,7 +247,7 @@ partial def lappToExpr [Inhabited M]
     let argExpr ← lexprToExpr arg bound
     match name.name with
     | "not" => pure (.not default argExpr)
-    | _ => ToCSTM.throwError (.unsupportedConstruct s!"unary op {name.name}" default)
+    | _ => ToCSTM.throwError "lappToExpr" s!"unary op {name.name}"
   | .app _ fn2 arg1 =>
     match fn2 with
     | .op _ name _ => do
@@ -259,7 +260,7 @@ partial def lappToExpr [Inhabited M]
       | "equiv" => pure (.equiv default arg1Expr arg2Expr)
       | "str_concat" => pure (.str_concat default arg1Expr arg2Expr)
       | "str_inregex" => pure (.str_inregex default arg1Expr arg2Expr)
-      | _ => ToCSTM.throwError (.unsupportedConstruct s!"binary op {name.name}" default)
+      | _ => ToCSTM.throwError "lappToExpr" s!"binary op {name.name}"
     | .app _ fn3 arg1 =>
       match fn3 with
       | .op _ name _ => do
@@ -268,10 +269,10 @@ partial def lappToExpr [Inhabited M]
         let arg3Expr ← lexprToExpr arg bound
         match name.name with
         | "str_substr" => pure (.str_substr default arg1Expr arg2Expr arg3Expr)
-        | _ => ToCSTM.throwError (.unsupportedConstruct s!"ternary op {name.name}" default)
-      | _ => ToCSTM.throwError (.unsupportedConstruct "nested app" default)
-    | _ => ToCSTM.throwError (.unsupportedConstruct "complex app" default)
-  | _ => ToCSTM.throwError (.unsupportedConstruct "general app" default)
+        | _ => ToCSTM.throwError "lappToExpr" s!"ternary op {name.name}"
+      | _ => ToCSTM.throwError "lappToExpr" "nested app"
+    | _ => ToCSTM.throwError "lappToExpr" "complex app"
+  | _ => ToCSTM.throwError "lappToExpr" "general app"
 
 end
 
@@ -327,7 +328,7 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
   | .goto label _md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     pure (.goto_statement default labelAnn)
-  | .funcDecl _ _ => ToCSTM.throwError (.unsupportedConstruct "funcDecl in statement" default)
+  | .funcDecl _ _ => ToCSTM.throwError "stmtToCST" "funcDecl in statement"
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement) : ToCSTM M (CoreDDM.Block M) := do
   let stmtsCST ← stmts.mapM stmtToCST
@@ -453,9 +454,22 @@ def funcToCST [Inhabited M]
   set savedCtx
   pure result
 
+/-- Convert a variable declaration to CST -/
+def varToCST [Inhabited M]
+    (name : CoreIdent) (ty : Lambda.LTy) (_e : Lambda.LExpr CoreLParams.mono)
+    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  let nameAnn : Ann String M := ⟨default, name.toPretty⟩
+  let tyCST ← lTyToCoreType ty
+  let typeArgs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
+  let bind := Bind.bind_mk default nameAnn typeArgs tyCST
+  pure (.command_var default bind)
+
 /-- Convert a `Core.Decl` to a Core `Command` -/
 def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (Command M) :=
   match decl with
+  | .var name ty e md => do
+    modify (·.addFreeVar name.toPretty)
+    varToCST name ty e md
   | .type (.con tcons) md => do
     modify (·.addFreeVar tcons.name)
     typeConToCST tcons md
@@ -468,7 +482,7 @@ def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (Command M) :=
   | .proc proc _md => do
     modify (·.addFreeVar proc.header.name.toPretty)
     procToCST proc
-  | _ => ToCSTM.throwError (.unsupportedConstruct "unimplemented decl" default)
+  | _ => ToCSTM.throwError "declToCST" "unimplemented decl"
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
 def programToCST [Inhabited M] (prog : Core.Program) : ToCSTM M (List (Command M)) :=
