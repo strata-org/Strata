@@ -2,6 +2,10 @@
 # Script to run basic test of strata generator.
 set -e
 
+# Get the directory where this script is located
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+cd "$script_dir"
+
 strata=../../../.lake/build/bin/strata
 
 if [ ! -f $strata ]; then
