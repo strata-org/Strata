@@ -85,7 +85,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
     all_goals simp_wf
     all_goals first
       | omega
-      | (have := StmtExprMd.sizeOf_val_lt ‹_›; omega)
+      | (have := WithMetadata.sizeOf_val_lt ‹_›; omega)
       | (subst_vars; have := List.sizeOf_lt_of_mem ‹_›; omega)
 end
 
@@ -291,11 +291,13 @@ def heapTransformExpr (heapVar : Identifier) (topExpr : StmtExprMd) (valueUsed :
   decreasing_by
     all_goals simp_wf
     all_goals first
-      | (have := StmtExprMd.sizeOf_val_lt topExpr; rw [_h] at this; simp at this
-         try (have := StmtExprMd.sizeOf_val_lt fieldSelectMd; rw [_h2] at this; simp at this)
+      | (have := WithMetadata.sizeOf_val_lt topExpr; rw [_h] at this; simp at this
+         try (have := WithMetadata.sizeOf_val_lt fieldSelectMd; rw [_h2] at this; simp at this)
          try have := List.sizeOf_lt_of_mem ‹_›
          omega)
-      | (have := List.sizeOf_lt_of_mem ‹_›; have := StmtExprMd.sizeOf_val_lt; simp_all; grind)
+      | (have := List.sizeOf_lt_of_mem ‹_›;
+         have : ∀ (e : StmtExprMd), sizeOf e.val < sizeOf e := WithMetadata.sizeOf_val_lt;
+         simp_all; grind)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
   let heapInName := "$heap_in"

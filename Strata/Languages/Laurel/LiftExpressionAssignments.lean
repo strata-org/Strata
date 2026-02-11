@@ -100,6 +100,14 @@ partial def transformTarget (expr : StmtExprMd) : SequenceM StmtExprMd := do
       return ⟨ .StaticCall name seqArgs, expr.md ⟩
   | _ => return expr  -- Identifiers and other targets stay as-is (no snapshot substitution)
 
+/-- Helper to create a StmtExprMd with empty metadata -/
+def mkStmtExprMdEmpty' (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+
+-- Add Inhabited instance for StmtExprMd to help with partial definitions
+instance : Inhabited StmtExprMd where
+  default := ⟨.Hole, #[]⟩
+
+
 mutual
 /-
 Process an expression, extracting any assignments to preceding statements.
@@ -196,7 +204,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
             processBlock tail
         termination_by sizeOf remStmts
         decreasing_by
-          all_goals (simp_wf; try (have := StmtExprMd.sizeOf_val_lt ‹_›; omega))
+          all_goals (simp_wf; try (have := WithMetadata.sizeOf_val_lt ‹_›; omega))
           subst_vars; rename_i heq; cases heq; omega
       processBlock stmts
 
@@ -212,7 +220,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   | _ => return expr  -- Other cases
   termination_by sizeOf expr
   decreasing_by
-    all_goals (simp_wf; have := StmtExprMd.sizeOf_val_lt expr; rw [_h] at this; simp at this)
+    all_goals (simp_wf; have := WithMetadata.sizeOf_val_lt expr; rw [_h] at this; simp at this)
     all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
     all_goals omega
 
@@ -278,7 +286,7 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
       return [stmt]
   termination_by sizeOf stmt
   decreasing_by
-    all_goals (simp_wf; have := StmtExprMd.sizeOf_val_lt stmt; rw [_h] at this; simp at this)
+    all_goals (simp_wf; have := WithMetadata.sizeOf_val_lt stmt; rw [_h] at this; simp at this)
     all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
     all_goals omega
 

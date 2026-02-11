@@ -22,6 +22,7 @@ open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp
 
 namespace Strata.Laurel
 
+open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
 
@@ -65,9 +66,6 @@ partial def resolveBaseType (ctMap : ConstrainedTypeMap) (ty : HighType) : HighT
 /-
 Translate Laurel HighType to Core Type
 -/
-private theorem HighTypeMd.sizeOf_val_lt (e : HighTypeMd) : sizeOf e.val < sizeOf e := by
-  cases e <;> simp_wf <;> omega
-
 /-- Tactic for proving termination of functions that recurse on `StmtExprMd` sub-terms.
     Handles direct sub-terms and list elements of the matched constructor. -/
 macro "stmtexpr_wf " e:ident ", " h:ident : tactic =>
@@ -92,7 +90,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
 termination_by sizeOf ty
-decreasing_by all_goals simp_wf; have := HighTypeMd.sizeOf_val_lt ‹_›; omega
+decreasing_by all_goals simp_wf; have := WithMetadata.sizeOf_val_lt ‹_›; omega
 
 /-- Translate type, resolving constrained types to their base type recursively -/
 def translateTypeWithCT (ctMap : ConstrainedTypeMap) (ty : HighType) : LMonoTy :=
@@ -103,7 +101,7 @@ def translateTypeWithCT (ctMap : ConstrainedTypeMap) (ty : HighType) : LMonoTy :
     | _ => translateType (resolveBaseType ctMap ty)
   | _ => translateType (resolveBaseType ctMap ty)
 termination_by sizeOf ty
-decreasing_by all_goals simp_wf; have := HighTypeMd.sizeOf_val_lt ‹_›; omega
+decreasing_by all_goals simp_wf; have := WithMetadata.sizeOf_val_lt ‹_›; omega
 
 /-- Translate HighTypeMd, extracting the value -/
 def translateTypeMdWithCT (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : LMonoTy :=

@@ -33,9 +33,9 @@ def formatOperation : Operation → Format
 
 mutual
 def formatHighType (t : HighTypeMd) : Format :=
-  have : sizeOf t.val < sizeOf t := by cases t; simp +arith
   formatHighTypeVal t.val
   termination_by sizeOf t
+  decreasing_by simp_wf; have := WithMetadata.sizeOf_val_lt t; omega
 
 def formatHighTypeVal : HighType → Format
   | .TVoid => "void"
@@ -53,13 +53,18 @@ def formatHighTypeVal : HighType → Format
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
   termination_by t => sizeOf t
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (have := List.sizeOf_lt_of_mem ‹_›; omega)
+      | omega
 
 def formatStmtExpr (s : StmtExprMd) : Format :=
-  have : sizeOf s.val < sizeOf s := by cases s; simp +arith
   formatStmtExprVal s.val
   termination_by sizeOf s
+  decreasing_by simp_wf; have := WithMetadata.sizeOf_val_lt s; omega
 
-def formatStmtExprVal (s:StmtExpr) : Format :=
+def formatStmtExprVal (s : StmtExpr) : Format :=
   match s with
   | .IfThenElse cond thenBr elseBr =>
       "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
@@ -129,6 +134,12 @@ def formatStmtExprVal (s:StmtExpr) : Format :=
   | .All => "all"
   | .Hole => "<?>"
   termination_by sizeOf s
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (have := List.sizeOf_lt_of_mem ‹_›; omega)
+      | omega
+end
 
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
@@ -174,8 +185,6 @@ def formatTypeDefinition : TypeDefinition → Format
 
 def formatProgram (prog : Program) : Format :=
   Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
-
-end
 
 instance : Std.ToFormat Operation where
   format := formatOperation
