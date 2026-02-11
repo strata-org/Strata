@@ -22,7 +22,9 @@ def testRoundTrip {α} [FromIon α] [BEq α] [Inhabited α] (toF : α → ByteAr
 def testDialectRoundTrip (d : Dialect) : Bool :=
   testRoundTrip Dialect.toIon d
 
-def testProgramRoundTrip (p : Program) : Bool :=
+/-- Test that a `Program` can round-trip through Ion
+serialization without losing commands. -/
+private def testProgramRoundTrip (p : Program) : Bool :=
   let bs := p.toIon
   match Program.fromIon p.dialects p.dialect bs with
   | .error msg => @panic _ ⟨false⟩ msg

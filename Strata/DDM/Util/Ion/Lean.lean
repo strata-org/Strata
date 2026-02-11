@@ -39,7 +39,9 @@ def id! (ctx : String) (refs : SymbolIdCache) (i : Nat) : SymbolId :=
   if p : refs.offset + i < refs.globalCache.size then
    .mk refs.globalCache[refs.offset + i]
   else
-    panic! s!"Invalid string id for '{ctx}': {refs.offset} + {i} (max = {refs.globalCache.size})"
+    panic! s!"Invalid string id for '{ctx}': \
+      {refs.offset} + {i} \
+      (max = {refs.globalCache.size})"
 
 /--
 Returns the symbol id cache for the given type and index.
@@ -227,14 +229,21 @@ meta unsafe def declareIonRefCacheImpl : Elab.Term.TermElab := fun stx _ =>
     -- Ensure the referenced type has been declared with ionScope!
     match s.getEntries? fldName with
     | none =>
-      throwErrorAt stx s!"Type {fldName} has not been declared with ionScope! Cannot reference undeclared type. Make sure the toIon function for {fldName} has been defined and compiled before this usage."
+      throwErrorAt stx s!"Type {fldName} has not been \
+        declared with ionScope! Cannot reference \
+        undeclared type. Make sure the toIon function \
+        for {fldName} has been defined and compiled \
+        before this usage."
     | some _ => pure ()
 
     -- Ensure we're not trying to reference the same type we're currently inside
     match s.scope with
     | some (scopeName, _) =>
       if scopeName == fldName then
-        throwErrorAt stx s!"Cannot use ionRefEntry! to reference {fldName} from within its own ionScope! Use the 'refs' parameter directly instead."
+        throwErrorAt stx s!"Cannot use ionRefEntry! to \
+          reference {fldName} from within its own \
+          ionScope! Use the 'refs' parameter directly \
+          instead."
     | none => pure ()
 
     let (r, e) ← resolveEntry stx (.record fldName)

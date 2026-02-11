@@ -13,7 +13,7 @@ namespace Strata.Python
 Test that the Python CorePrelude can be serialized to Ion format and
 deserialized back without loss of information.
 -/
-def testCorePreludeRoundTrip : Bool :=
+private def testCorePreludeRoundTrip : Bool :=
   let prelude := Python.corePrelude
   let bytes := prelude.toIon
   match Program.fromIon Strata.Core_map Strata.Core.name bytes with
