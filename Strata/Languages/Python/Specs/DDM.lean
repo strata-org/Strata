@@ -13,7 +13,6 @@ import Strata.DDM.Util.ByteArray
 import Strata.DDM.Format
 import Strata.DDM.BuiltinDialects.Init
 public import Strata.DDM.Integration.Lean.OfAstM
-public import Strata.DDM.Integration.Lean.BoolConv
 import Strata.DDM.Ion
 
 public section
