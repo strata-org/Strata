@@ -201,10 +201,7 @@ abbrev HighTypeMd := WithMetadata HighType
 abbrev StmtExprMd := WithMetadata StmtExpr
 
 theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
-  cases e
-  rename_i val md
-  show sizeOf val < 1 + sizeOf val + sizeOf md
-  omega
+  cases e; grind
 
 instance : Inhabited StmtExpr where
   default := .Hole
