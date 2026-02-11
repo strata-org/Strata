@@ -295,7 +295,6 @@ def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Ex
     | none => body
   ) e
 
-
 abbrev StmtsStack := List Statements
 
 def StmtsStack.push (stk : StmtsStack) (ss : Statements) : StmtsStack :=
