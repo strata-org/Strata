@@ -72,7 +72,8 @@ instance : ToString TranslationError where
 
 /-- Create default metadata for Laurel AST nodes -/
 def defaultMetadata : Imperative.MetaData Core.Expression :=
-  #[]
+  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ ⟨"foo"⟩ , 0, 0 ⟩ ⟩
+  #[fileRangeElt]
 
 /-- Create a HighTypeMd with default metadata -/
 def mkHighTypeMd (ty : HighType) : HighTypeMd :=
@@ -103,6 +104,7 @@ def translateType (typeStr : String) : Except TranslationError HighTypeMd :=
   match typeStr with
   | "int" => .ok (mkHighTypeMd HighType.TInt)
   | "bool" => .ok (mkHighTypeMd HighType.TBool)
+  | "str" => .ok (mkHighTypeMd HighType.TString)
   | _ => throw (.typeError s!"Unsupported type: {typeStr}")
 
 /-- Translate Python expression to Laurel StmtExpr -/
@@ -115,6 +117,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   | .Constant _ (.ConNeg _ n) _ =>
     return mkStmtExprMd (StmtExpr.LiteralInt (-n.val))
+
+  -- String literals
+  | .Constant _ (.ConString _ s) _ =>
+    return mkStmtExprMd (StmtExpr.LiteralString s.val)
 
   -- Boolean literals
   | .Constant _ (.ConTrue _) _ =>
@@ -187,6 +193,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.PrimitiveOp laurelOp [operandExpr])
 
+  | .Call _ f args _kwargs => return mkStmtExprMd (StmtExpr.StaticCall (pyExprToString f) (← args.val.toList.mapM (translateExpr ctx)))
+
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
 
 /-! ## Statement Translation
@@ -210,7 +218,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => throw (.unsupportedConstruct "Only simple variable assignment supported" (toString (repr s)))
     let valueExpr ← translateExpr ctx value
     let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
-    let assignStmt := mkStmtExprMd (StmtExpr.Assign targetExpr valueExpr)
+    let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
     return (ctx, assignStmt)
 
   -- Annotated assignment: x: int = expr
@@ -277,6 +285,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Expr _ value => do
     let expr ← translateExpr ctx value
     return (ctx, expr)
+
+  | .Import _ _ | .ImportFrom _ _ _ _ => return (ctx, mkStmtExprMd .Hole)
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 
@@ -364,14 +374,16 @@ def pythonToLaurel (pyModule : Python.Command SourceRange) : Except TranslationE
       | _ =>
         otherStmts := otherStmts ++ [stmt]
 
-    -- For now, we don't support module-level statements other than function definitions
-    if !otherStmts.isEmpty then
-      throw (.unsupportedConstruct "Module-level statements (other than function definitions) not yet supported"
-        s!"Found {otherStmts.length} non-function statements")
+    let ctx : TranslationContext := {variableTypes := [], functionSignatures := procedures.map (λ p => (p.name, p))}
+    let (_, bodyStmts) ← translateStmtList ctx otherStmts
+    let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" (mkHighTypeMd .TString) (some <| mkStmtExprMd (.LiteralString "__main__"))) :: bodyStmts
+    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
+
+    let mainProc : Procedure := {name := "__main__", inputs := [], outputs := [], preconditions := [], decreases := none, body := .Transparent bodyBlock}
 
     -- Create Laurel program - use fully qualified name to avoid ambiguity
     let program : Laurel.Program := {
-      staticProcedures := procedures
+      staticProcedures := mainProc :: procedures
       staticFields := []
       types := []
       constants := []

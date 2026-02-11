@@ -11,7 +11,7 @@ for test_file in tests/test_*.py; do
         if [ -f "$expected_file" ]; then
             (cd ../../../Tools/Python && python -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
 
-            output=$(cd ../../.. && lake exe strata pyAnalyze "StrataTest/Languages/Python/${ion_file}" 0)
+            output=$(cd ../../.. && lake exe strata pyAnalyzeLaurel "StrataTest/Languages/Python/${ion_file}" 0)
 
             if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
                 echo "ERROR: Analysis output for $base_name does not match expected result"

@@ -200,6 +200,9 @@ end
 instance : Inhabited StmtExpr where
   default := .Hole
 
+instance: Inhabited StmtExprMd where
+  default := {val := .Hole, md := default}
+
 instance : Inhabited HighTypeMd where
   default := { val := HighType.TVoid, md := default }
 
