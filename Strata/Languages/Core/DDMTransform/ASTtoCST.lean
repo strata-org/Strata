@@ -298,7 +298,7 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
   | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr" s!"bitvec width {w}"
 
-partial def lopToExpr [Inhabited M]
+def lopToExpr [Inhabited M]
     (name : Lambda.Identifier CoreLParams.mono.base.IDMeta) : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
   -- Check if this is a 0-ary function constant in freeVars
@@ -359,8 +359,25 @@ partial def lappToExpr [Inhabited M]
   match fn with
   | .op _ name _ => do
     let argExpr ← lexprToExpr arg bound
+    let ty := CoreType.int default  -- placeholder type
     match name.name with
     | "Bool.Not" => pure (.not default argExpr)
+    | "Int.Neg" | "Real.Neg" => pure (.neg_expr default ty argExpr)
+    | "Bv1.Not" => pure (.bvnot default (.bv1 default) argExpr)
+    | "Bv8.Not" => pure (.bvnot default (.bv8 default) argExpr)
+    | "Bv16.Not" => pure (.bvnot default (.bv16 default) argExpr)
+    | "Bv32.Not" => pure (.bvnot default (.bv32 default) argExpr)
+    | "Bv64.Not" => pure (.bvnot default (.bv64 default) argExpr)
+    | "old" => pure (.old default ty argExpr)
+    | "Bv8.Extract_7_7" => pure (.bvextract_7_7 default argExpr)
+    | "Bv16.Extract_15_15" => pure (.bvextract_15_15 default argExpr)
+    | "Bv32.Extract_31_31" => pure (.bvextract_31_31 default argExpr)
+    | "Bv16.Extract_7_0" => pure (.bvextract_7_0_16 default argExpr)
+    | "Bv32.Extract_7_0" => pure (.bvextract_7_0_32 default argExpr)
+    | "Bv32.Extract_15_0" => pure (.bvextract_15_0_32 default argExpr)
+    | "Bv64.Extract_7_0" => pure (.bvextract_7_0_64 default argExpr)
+    | "Bv64.Extract_15_0" => pure (.bvextract_15_0_64 default argExpr)
+    | "Bv64.Extract_31_0" => pure (.bvextract_31_0_64 default argExpr)
     | "str_len" => pure (.str_len default argExpr)
     | "str_toregex" => pure (.str_toregex default argExpr)
     | "re_star" => pure (.re_star default argExpr)
@@ -372,11 +389,112 @@ partial def lappToExpr [Inhabited M]
     | .op _ name _ => do
       let arg1Expr ← lexprToExpr arg1 bound
       let arg2Expr ← lexprToExpr arg bound
+      let ty := CoreType.int default  -- placeholder type
       match name.name with
       | "Bool.And" => pure (.and default arg1Expr arg2Expr)
       | "Bool.Or" => pure (.or default arg1Expr arg2Expr)
       | "Bool.Implies" => pure (.implies default arg1Expr arg2Expr)
       | "Bool.Equiv" => pure (.equiv default arg1Expr arg2Expr)
+      | "Int.Add" | "Real.Add" => pure (.add_expr default ty arg1Expr arg2Expr)
+      | "Int.Sub" | "Real.Sub" => pure (.sub_expr default ty arg1Expr arg2Expr)
+      | "Int.Mul" | "Real.Mul" => pure (.mul_expr default ty arg1Expr arg2Expr)
+      | "Int.Div" | "Real.Div" => pure (.div_expr default ty arg1Expr arg2Expr)
+      | "Int.Mod" => pure (.mod_expr default ty arg1Expr arg2Expr)
+      | "Int.Le" | "Real.Le" => pure (.le default ty arg1Expr arg2Expr)
+      | "Int.Lt" | "Real.Lt" => pure (.lt default ty arg1Expr arg2Expr)
+      | "Int.Ge" | "Real.Ge" => pure (.ge default ty arg1Expr arg2Expr)
+      | "Int.Gt" | "Real.Gt" => pure (.gt default ty arg1Expr arg2Expr)
+      | "Bv1.And" => pure (.bvand default (.bv1 default) arg1Expr arg2Expr)
+      | "Bv8.And" => pure (.bvand default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.And" => pure (.bvand default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.And" => pure (.bvand default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.And" => pure (.bvand default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv1.Or" => pure (.bvor default (.bv1 default) arg1Expr arg2Expr)
+      | "Bv8.Or" => pure (.bvor default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.Or" => pure (.bvor default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.Or" => pure (.bvor default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.Or" => pure (.bvor default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv1.Xor" => pure (.bvxor default (.bv1 default) arg1Expr arg2Expr)
+      | "Bv8.Xor" => pure (.bvxor default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.Xor" => pure (.bvxor default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.Xor" => pure (.bvxor default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.Xor" => pure (.bvxor default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.Add" => pure (.add_expr default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.Add" => pure (.add_expr default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.Add" => pure (.add_expr default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.Add" => pure (.add_expr default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.Sub" => pure (.sub_expr default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.Sub" => pure (.sub_expr default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.Sub" => pure (.sub_expr default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.Sub" => pure (.sub_expr default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.Mul" => pure (.mul_expr default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.Mul" => pure (.mul_expr default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.Mul" => pure (.mul_expr default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.Mul" => pure (.mul_expr default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.UDiv" => pure (.div_expr default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.UDiv" => pure (.div_expr default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.UDiv" => pure (.div_expr default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.UDiv" => pure (.div_expr default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.URem" => pure (.mod_expr default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.URem" => pure (.mod_expr default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.URem" => pure (.mod_expr default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.URem" => pure (.mod_expr default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.SDiv" => pure (.bvsdiv default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.SDiv" => pure (.bvsdiv default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.SDiv" => pure (.bvsdiv default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.SDiv" => pure (.bvsdiv default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.SRem" => pure (.bvsmod default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.SRem" => pure (.bvsmod default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.SRem" => pure (.bvsmod default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.SRem" => pure (.bvsmod default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.Shl" => pure (.bvshl default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.Shl" => pure (.bvshl default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.Shl" => pure (.bvshl default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.Shl" => pure (.bvshl default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.LShr" => pure (.bvushr default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.LShr" => pure (.bvushr default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.LShr" => pure (.bvushr default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.LShr" => pure (.bvushr default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.AShr" => pure (.bvsshr default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.AShr" => pure (.bvsshr default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.AShr" => pure (.bvsshr default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.AShr" => pure (.bvsshr default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.ULe" => pure (.le default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.ULe" => pure (.le default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.ULe" => pure (.le default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.ULe" => pure (.le default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.ULt" => pure (.lt default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.ULt" => pure (.lt default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.ULt" => pure (.lt default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.ULt" => pure (.lt default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.UGe" => pure (.ge default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.UGe" => pure (.ge default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.UGe" => pure (.ge default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.UGe" => pure (.ge default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.UGt" => pure (.gt default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.UGt" => pure (.gt default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.UGt" => pure (.gt default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.UGt" => pure (.gt default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.SLe" => pure (.bvsle default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.SLe" => pure (.bvsle default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.SLe" => pure (.bvsle default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.SLe" => pure (.bvsle default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.SLt" => pure (.bvslt default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.SLt" => pure (.bvslt default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.SLt" => pure (.bvslt default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.SLt" => pure (.bvslt default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.SGe" => pure (.bvsge default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.SGe" => pure (.bvsge default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.SGe" => pure (.bvsge default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.SGe" => pure (.bvsge default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv8.SGt" => pure (.bvsgt default (.bv8 default) arg1Expr arg2Expr)
+      | "Bv16.SGt" => pure (.bvsgt default (.bv16 default) arg1Expr arg2Expr)
+      | "Bv32.SGt" => pure (.bvsgt default (.bv32 default) arg1Expr arg2Expr)
+      | "Bv64.SGt" => pure (.bvsgt default (.bv64 default) arg1Expr arg2Expr)
+      | "Bv1.Concat" => pure (.bvconcat8 default arg1Expr arg2Expr)
+      | "Bv8.Concat" => pure (.bvconcat16 default arg1Expr arg2Expr)
+      | "Bv16.Concat" => pure (.bvconcat32 default arg1Expr arg2Expr)
+      | "select" => pure (.map_get default ty ty arg1Expr arg2Expr)
       | "str_concat" => pure (.str_concat default arg1Expr arg2Expr)
       | "str_inregex" => pure (.str_inregex default arg1Expr arg2Expr)
       | "re_range" => pure (.re_range default arg1Expr arg2Expr)
@@ -390,13 +508,17 @@ partial def lappToExpr [Inhabited M]
         let arg1Expr ← lexprToExpr arg1 bound
         let arg2Expr ← lexprToExpr arg bound
         let arg3Expr ← lexprToExpr arg bound
+        let ty := CoreType.int default  -- placeholder type
         match name.name with
         | "str_substr" => pure (.str_substr default arg1Expr arg2Expr arg3Expr)
         | "re_loop" => pure (.re_loop default arg1Expr arg2Expr arg3Expr)
+        | "update" => pure (.map_set default ty ty arg1Expr arg2Expr arg3Expr)
         | _ => ToCSTM.throwError "lappToExpr" s!"ternary op {name.name}"
       | _ => ToCSTM.throwError "lappToExpr" "nested app"
-    | _ => ToCSTM.throwError "lappToExpr" "complex app"
-  | _ => ToCSTM.throwError "lappToExpr" "general app"
+    | _ =>
+      ToCSTM.throwError "lappToExpr" s!"general binary application not yet supported"
+  | _ =>
+    ToCSTM.throwError "lappToExpr" s!"general application not yet supported"
 
 end
 

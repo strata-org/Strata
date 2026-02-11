@@ -57,7 +57,7 @@ spec {
   ensures (y == x);
   ensures (x == y);
   ensures (g == g);
-  // ensures (g == old(g));
+  ensures (g == old(g));
 }
 {
   y := x || x;
@@ -95,6 +95,7 @@ spec{
   ensures [Test2_ensures_0]:y==x;
     ensures [Test2_ensures_1]:x==y;
     ensures [Test2_ensures_2]:g==g;
+    ensures [Test2_ensures_3]:g==old(g);
     } {
 (y) := x||x;
   }
