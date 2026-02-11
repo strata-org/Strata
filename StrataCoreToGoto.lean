@@ -60,7 +60,7 @@ def main (args : List String) : IO UInt32 := do
     | .ok pgm =>
       let symTabFile := s!"{dir}/{programName}.symtab.json"
       let gotoFile := s!"{dir}/{programName}.goto.json"
-      CoreToGOTO.writeToGotoJson (programName := programName)
+      CoreToGOTO.writeToGotoJson
         (symTabFileName := symTabFile)
         (gotoFileName := gotoFile)
         pgm
