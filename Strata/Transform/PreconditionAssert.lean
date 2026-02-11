@@ -31,8 +31,7 @@ Given a procedure's preconditions and the formal→actual substitution,
 produce a list of `assert` statements.
 -/
 private def mkPrecondAsserts
-    (proc : Procedure) (args : List Expression.Expr)
-    (md : Imperative.MetaData Expression) : List Statement :=
+    (proc : Procedure) (args : List Expression.Expr) : List Statement :=
   let subst := proc.header.inputs.keys.zip args
   proc.spec.preconditions.flatMap fun (label, check) =>
     let label' := s!"(Origin_{proc.header.name.name}_Requires){label}"
@@ -42,7 +41,7 @@ private def mkPrecondAsserts
       []
     | .Default =>
       let expr := LExpr.substFvars check.expr subst
-      [Statement.assert label' expr md]
+      [Statement.assert label' expr check.md]
 
 mutual
 
@@ -53,7 +52,7 @@ private def transformStmt (p : Program) (s : Statement) : List Statement :=
   match s with
   | .cmd (.call lhs pname args md) =>
     match Program.Procedure.find? p pname with
-    | some proc => mkPrecondAsserts proc args md ++ [.cmd (.call lhs pname args md)]
+    | some proc => mkPrecondAsserts proc args ++ [.cmd (.call lhs pname args md)]
     | none => [s]
   | .block label bss md =>
     [.block label (transformStmts p bss) md]
