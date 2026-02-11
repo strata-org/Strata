@@ -333,10 +333,10 @@ partial def lexprToExpr [Inhabited M]
       match ctx.freeVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.fvar default idx)
       | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
-  | .op _ name _ => lopToExpr name
-  | .app _ fn arg => lappToExpr fn arg LambdaFVarsBound
   | .ite _ c t f => liteToExpr c t f LambdaFVarsBound
   | .eq _ e1 e2 => leqToExpr e1 e2 LambdaFVarsBound
+  | .op _ name _ => lopToExpr name
+  | .app _ fn arg => lappToExpr fn arg LambdaFVarsBound
   | .abs _ _ _ => ToCSTM.throwError "lexprToExpr" "lambda"
   | .quant _ _ _ _ _ => ToCSTM.throwError "lexprToExpr" "quantifier"
 
