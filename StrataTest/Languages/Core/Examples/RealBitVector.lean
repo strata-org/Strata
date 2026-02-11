@@ -249,7 +249,7 @@ Obligation: bad_shift
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, #b00000100) ($__y1, #b00000100)
+($__x0, #b10011001) ($__y1, #b00000010)
 -/
 #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm (options := .quiet)
