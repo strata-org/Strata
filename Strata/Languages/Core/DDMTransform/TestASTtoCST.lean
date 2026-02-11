@@ -40,7 +40,7 @@ const fooConst : int;
 function id(x : int, y : int) : int { y }
 function foo<T1, T2>(x : T1) : Map T1 T2;
 
-// axiom [fooConst_value]: fooConst == 5;
+axiom [fooConst_value]: fooConst == 5;
 
 // function f(x: int): int;
 // axiom [f1]: (f(5) > 5);
@@ -60,7 +60,7 @@ spec {
   // ensures (g == old(g));
 }
 {
-  y := x;
+  y := x || x;
 };
 
 #end
@@ -83,6 +83,7 @@ function id (x : int, y : int) : int {
 y
 }
 function foo<T1, T2> (x : T1) : Map T1 T2;
+axiom [fooConst_value]:fooConst==5;
 var g:bool;
 procedure Test1 (x : bool) returns (y : bool)
  {
@@ -95,7 +96,7 @@ spec{
     ensures [Test2_ensures_1]:x==y;
     ensures [Test2_ensures_2]:g==g;
     } {
-(y) := x;
+(y) := x||x;
   }
 ;
 -/

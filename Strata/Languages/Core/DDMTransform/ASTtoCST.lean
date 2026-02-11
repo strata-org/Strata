@@ -299,12 +299,13 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :
   | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr" s!"bitvec width {w}"
 
 partial def lopToExpr [Inhabited M]
-    (name : Lambda.Identifier CoreLParams.mono.base.IDMeta) : ToCSTM M (CoreDDM.Expr M) :=
-  match name.name with
-  | "not" => pure (.not default (.btrue default))
-  | "true" => pure (.btrue default)
-  | "false" => pure (.bfalse default)
-  | _ => ToCSTM.throwError "lopToExpr" s!"op {name.name}"
+    (name : Lambda.Identifier CoreLParams.mono.base.IDMeta) : ToCSTM M (CoreDDM.Expr M) := do
+  let ctx ← get
+  -- Check if this is a 0-ary function constant in freeVars
+  match ctx.freeVars.toList.findIdx? (· == name.name) with
+  | some idx => pure (.fvar default idx)
+  | none => ToCSTM.throwError "lopToExpr" s!"op {name.name} not found"
+
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
@@ -325,11 +326,9 @@ partial def lexprToExpr [Inhabited M]
     -- the freeVars context. Lambda .fvars can come from formals of a function
     -- or procedure (DDM .bvar), but also from global variable declaration (DDM
     -- .fvar). Note that Strata Core does not allow variable shadowing.
-    --if LambdaFVarsBound then
-      match ctx.boundVars.toList.findIdx? (· == id.name) with
-      | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
-      | none => -- ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
-    -- else
+    match ctx.boundVars.toList.findIdx? (· == id.name) with
+    | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
+    | none =>
       match ctx.freeVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.fvar default idx)
       | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
@@ -337,7 +336,7 @@ partial def lexprToExpr [Inhabited M]
   | .eq _ e1 e2 => leqToExpr e1 e2 LambdaFVarsBound
   | .op _ name _ => lopToExpr name
   | .app _ fn arg => lappToExpr fn arg LambdaFVarsBound
-  | .abs _ _ _ => ToCSTM.throwError "lexprToExpr" "lambda"
+  | .abs _ _ _ => ToCSTM.throwError "lexprToExpr" "lambda not supported in CoreDDM"
   | .quant _ _ _ _ _ => ToCSTM.throwError "lexprToExpr" "quantifier"
 
 partial def liteToExpr [Inhabited M]
@@ -361,7 +360,12 @@ partial def lappToExpr [Inhabited M]
   | .op _ name _ => do
     let argExpr ← lexprToExpr arg bound
     match name.name with
-    | "not" => pure (.not default argExpr)
+    | "Bool.Not" => pure (.not default argExpr)
+    | "str_len" => pure (.str_len default argExpr)
+    | "str_toregex" => pure (.str_toregex default argExpr)
+    | "re_star" => pure (.re_star default argExpr)
+    | "re_plus" => pure (.re_plus default argExpr)
+    | "re_comp" => pure (.re_comp default argExpr)
     | _ => ToCSTM.throwError "lappToExpr" s!"unary op {name.name}"
   | .app _ fn2 arg1 =>
     match fn2 with
@@ -369,12 +373,16 @@ partial def lappToExpr [Inhabited M]
       let arg1Expr ← lexprToExpr arg1 bound
       let arg2Expr ← lexprToExpr arg bound
       match name.name with
-      | "and" => pure (.and default arg1Expr arg2Expr)
-      | "or" => pure (.or default arg1Expr arg2Expr)
-      | "implies" => pure (.implies default arg1Expr arg2Expr)
-      | "equiv" => pure (.equiv default arg1Expr arg2Expr)
+      | "Bool.And" => pure (.and default arg1Expr arg2Expr)
+      | "Bool.Or" => pure (.or default arg1Expr arg2Expr)
+      | "Bool.Implies" => pure (.implies default arg1Expr arg2Expr)
+      | "Bool.Equiv" => pure (.equiv default arg1Expr arg2Expr)
       | "str_concat" => pure (.str_concat default arg1Expr arg2Expr)
       | "str_inregex" => pure (.str_inregex default arg1Expr arg2Expr)
+      | "re_range" => pure (.re_range default arg1Expr arg2Expr)
+      | "re_concat" => pure (.re_concat default arg1Expr arg2Expr)
+      | "re_union" => pure (.re_union default arg1Expr arg2Expr)
+      | "re_inter" => pure (.re_inter default arg1Expr arg2Expr)
       | _ => ToCSTM.throwError "lappToExpr" s!"binary op {name.name}"
     | .app _ fn3 arg1 =>
       match fn3 with
@@ -384,6 +392,7 @@ partial def lappToExpr [Inhabited M]
         let arg3Expr ← lexprToExpr arg bound
         match name.name with
         | "str_substr" => pure (.str_substr default arg1Expr arg2Expr arg3Expr)
+        | "re_loop" => pure (.re_loop default arg1Expr arg2Expr arg3Expr)
         | _ => ToCSTM.throwError "lappToExpr" s!"ternary op {name.name}"
       | _ => ToCSTM.throwError "lappToExpr" "nested app"
     | _ => ToCSTM.throwError "lappToExpr" "complex app"
