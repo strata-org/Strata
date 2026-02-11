@@ -41,13 +41,8 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by
-  simp_wf
-  rw [_h]
-  have h1 : sizeOf valueType.val < sizeOf valueType := WithMetadata.sizeOf_val_lt valueType
-  have h2 : sizeOf valueType ≤ sizeOf (HighType.TTypedField valueType) := by
-    cases valueType with | mk val md =>
-    simp only [sizeOf, Procedure._sizeOf_4, WithMetadata._sizeOf_1]
-    omega
+  rw [_h]; simp [sizeOf, HighType._sizeOf_1]
+  have := WithMetadata.sizeOf_val_lt valueType
   omega
 
 abbrev TypeEnv := List (Identifier × HighTypeMd)

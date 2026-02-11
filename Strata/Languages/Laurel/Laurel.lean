@@ -62,6 +62,22 @@ structure WithMetadata (t : Type) : Type where
   val : t
   md : Imperative.MetaData Core.Expression
 
+inductive HighType : Type where
+  | TVoid
+  | TBool
+  | TInt
+  | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
+  | TString /- String type for text data -/
+  | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
+  | TTypedField (valueType : WithMetadata HighType) /- Field constant with known value type. Not accessible via grammar. -/
+  | UserDefined (name : Identifier)
+  | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
+  /- Pure represents a composite type that does not support reference equality -/
+  | Pure (base : WithMetadata HighType)
+  /- Java has implicit intersection types.
+     Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
+  | Intersection (types : List (WithMetadata HighType))
+
 mutual
 
 structure Procedure : Type where
@@ -80,21 +96,6 @@ inductive Determinism where
 structure Parameter where
   name : Identifier
   type : WithMetadata HighType
-inductive HighType : Type where
-  | TVoid
-  | TBool
-  | TInt
-  | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
-  | TString /- String type for text data -/
-  | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
-  | TTypedField (valueType : WithMetadata HighType) /- Field constant with known value type. Not accessible via grammar. -/
-  | UserDefined (name : Identifier)
-  | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
-  /- Pure represents a composite type that does not support reference equality -/
-  | Pure (base : WithMetadata HighType)
-  /- Java has implicit intersection types.
-     Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
-  | Intersection (types : List (WithMetadata HighType))
 
 /- No support for something like function-by-method yet -/
 inductive Body where
