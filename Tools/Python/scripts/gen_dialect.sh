@@ -4,9 +4,11 @@ set -e
 
 # Get the directory where this script is located
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-cd "$script_dir"
+# Change to the parent directory (Tools/Python) so dialects and imports match other scripts
+tools_python_dir="$(cd "$script_dir/.." && pwd)"
+cd "$tools_python_dir"
 
-strata=../../../.lake/build/bin/strata
+strata=../../.lake/build/bin/strata
 
 if [ ! -f $strata ]; then
   echo "strata is not built: $strata"
