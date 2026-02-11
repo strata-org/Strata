@@ -35,8 +35,7 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 
 #guard TransM.run Inhabited.default (translateProgram QuantTypeAliases) |>.snd |>.isEmpty
 
-/-
-
+/--
 info: type Core.Boundedness.Infinite Ref []
 type Core.Boundedness.Infinite Field []
 type Struct := (Map Field int)
@@ -91,9 +90,38 @@ Errors: #[]
 #eval TransM.run Inhabited.default (translateProgram QuantTypeAliases)
 
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: assert0
+Property: assert
+Assumptions:
+
+(axiom_0, (∀ (∀ (∀ (∀ (~Bool.Implies (~Bool.Not (%2 == %1)) ((~select %3 %2) == (~select (~update %3 %1 %0) %2))))))))
+(axiom_1, (∀ (∀ (∀ ((~select
+     (~update %2 %1 %0)
+     %1) == %0))))) (axiom_2, (∀ (∀ (∀ (∀ (~Bool.Implies
+     (~Bool.Not (%2 == %1))
+     ((~select
+       %3
+       %2) == (~select (~update %3 %1 %0) %2)))))))) (axiom_3, (∀ (∀ (∀ ((~select (~update %2 %1 %0) %1) == %0)))))
+Proof Obligation:
+((~select
+  (~select
+   (~update
+    $__h0
+    $__ref1
+    (~update (~select $__h0 $__ref1) $__field2 (~Int.Add (~select (~select $__h0 $__ref1) $__field2) #1)))
+   $__ref1)
+  $__field2) == (~Int.Add (~select (~select $__h0 $__ref1) $__field2) #1))
+
+---
+info:
+Obligation: assert0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" QuantTypeAliases

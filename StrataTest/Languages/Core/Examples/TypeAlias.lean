@@ -120,9 +120,24 @@ procedure test () returns () {
 };
 #end
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: assert_0
+Property: assert
+Assumptions:
+(assume_0, (init_v_2 == #0))
+
+Proof Obligation:
+((~MapGetEq init_d_0 init_k_1 init_v_2) == (~MapGetEq init_d_0 init_k_1 #0))
+
+---
+info:
+Obligation: assert_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" funcAndTypeAliasesPgm

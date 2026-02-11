@@ -10,8 +10,7 @@ namespace Strata.Python.Tests
 
 open Strata.Python
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b))
   (~Re.Union
@@ -22,8 +21,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "ab.*" -- Encoded as `ab(|.|..*.)`
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b))
   (~Re.Union
@@ -36,8 +34,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "ab(c$)*"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b))
   (~Re.Union
@@ -52,43 +49,37 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "ab(^c$)*"
 
-/-
-
+/--
 info: ((~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "ab"
 
-/-
-
+/--
 info: ((~Re.Union (~Str.ToRegEx #a) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "a|b"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "^ab"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #b)) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "^ab$"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
 #eval Std.format$ pythonRegexToCore "(a$)b"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Concat
    (~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #)) (~Str.ToRegEx #)) (~Str.ToRegEx #a))
@@ -99,8 +90,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^^^a$$"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Str.ToRegEx #)
   (~Re.Concat
@@ -111,8 +101,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^(^^a$$)"
 
-/-
-
+/--
 info: ((~Re.Union
   (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
   (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #b)) (~Str.ToRegEx #))),
@@ -121,8 +110,7 @@ info: ((~Re.Union
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "(^a$)|(^b$)"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Str.ToRegEx #c)
   (~Re.Union (~Re.Concat ~Re.None (~Str.ToRegEx #a)) (~Re.Concat ~Re.None (~Str.ToRegEx #b)))),
@@ -131,8 +119,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "c((^a)|(^b))"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Union (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Re.Concat (~Str.ToRegEx #b) ~Re.None))
   (~Str.ToRegEx #c)),
@@ -141,15 +128,13 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "((a$)|(b$))c"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Union (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)) (~Str.ToRegEx #c)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "((a$)|(b))c"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Str.ToRegEx #c)
   (~Re.Union
@@ -160,22 +145,19 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "c((a$)|(^b$))"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Union (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)) (~Str.ToRegEx #c)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "((a$)|(b))c"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #) ~Re.None) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^$b"
 
-/-
-
+/--
 info: ((~Re.Union
   (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
   (~Re.Concat (~Re.Concat (~Str.ToRegEx #) ~Re.None) (~Str.ToRegEx #b))),
@@ -184,8 +166,7 @@ info: ((~Re.Union
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^a$|^$b"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Concat
    (~Str.ToRegEx #c)
@@ -196,8 +177,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "c(^a|b$)d"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Concat
    (~Str.ToRegEx #c)
@@ -208,8 +188,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "(c(^a|b$))d"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Union (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Re.Concat (~Str.ToRegEx #b) ~Re.None))
   (~Re.Union (~Re.Concat ~Re.None (~Str.ToRegEx #c)) (~Re.Concat (~Str.ToRegEx #d) (~Str.ToRegEx #)))),
@@ -218,8 +197,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "(^a|b$)(^c|d$)"
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Concat
    (~Re.Union (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Re.Concat (~Str.ToRegEx #b) ~Re.None))
@@ -230,36 +208,31 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "((^a|b$)^)c"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Union (~Str.ToRegEx #) ~Re.None) (~Str.ToRegEx #c)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "(^|$)c"
 
-/-
-
+/--
 info: ((~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^^"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #)) (~Str.ToRegEx #)) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^$$^"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Union (~Str.ToRegEx #) (~Str.ToRegEx #)) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "(^|$)^"
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
@@ -273,22 +246,19 @@ info: (~Re.All,
 #eval Std.format $ pythonRegexToCore "x{100,2}" .fullmatch
 
 -- (unmatchable)
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "a^b" .fullmatch
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) ~Re.None) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^a^b" .fullmatch
 
-/-
-
+/--
 info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
@@ -298,8 +268,7 @@ info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), n
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "[^b]" .fullmatch
 
-/-
-
+/--
 info: ((~Re.Comp (~Re.Range #A #Z)), none)
 -/
 #guard_msgs in
@@ -313,8 +282,7 @@ info: ((~Re.Comp (~Re.Range #A #Z)), none)
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "a" .fullmatch
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Str.ToRegEx #a)
   (~Re.Union
@@ -326,8 +294,7 @@ info: ((~Re.Concat
 #eval Std.format $ pythonRegexToCore "a" .match
 
 -- search mode tests
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Union
    (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
@@ -342,8 +309,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "a" .search
 
-/-
-
+/--
 info: ((~Re.Concat
   (~Re.Union
    (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
@@ -358,8 +324,7 @@ info: ((~Re.Concat
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^a$" .search
 
-/-
-
+/--
 info: ((~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)), none)
 -/
 #guard_msgs in

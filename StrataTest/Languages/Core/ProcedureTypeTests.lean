@@ -14,8 +14,7 @@ section Tests
 open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
-/-
-
+/--
 info: ok: (procedure P :  ((x : int)) → ((y : int))
    modifies: []
    preconditions: (0_lt_x, ((~Int.Lt : (arrow int (arrow int bool))) #0 (x : int)))
@@ -44,8 +43,7 @@ info: ok: (procedure P :  ((x : int)) → ((y : int))
                             .empty
          return format ans
 
-/-
-
+/--
 info: ok: procedure P :  ((a : int)) → ()
   modifies: [g]
   preconditions: 
@@ -77,8 +75,7 @@ info: ok: procedure P :  ((a : int)) → ()
                         } .empty
           return format ans.fst
 
-/-
-
+/--
 info: ok: procedure P :  ((a : int)) → ()
   modifies: [g]
   preconditions: 

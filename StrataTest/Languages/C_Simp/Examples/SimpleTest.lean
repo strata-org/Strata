@@ -52,8 +52,7 @@ int procedure simpleTest(x:int, y:int)//@prey>(0);
 #eval IO.println SimpleTestEnv
 
 
-/-
-
+/--
 info: function simpleTest {
   pre: (~Int.Gt y #0)
   post: #true
@@ -72,9 +71,49 @@ Errors: #[]
 open Strata.C_Simp in
 #eval TransM.run (translateProgram (SimpleTestEnv.commands))
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: test_assert
+Property: assert
+Assumptions:
+(pre, (~Int.Gt $__y1 #0))
+
+Proof Obligation:
+(~Int.Gt (~Int.Add $__x0 $__y1) $__x0)
+
+Label: post
+Property: assert
+Assumptions:
+(pre, (~Int.Gt $__y1 #0))
+(<label_ite_cond_true: (~Int.Gt z #10)>, (if (~Int.Gt
+  (~Int.Add $__x0 $__y1)
+  #10) then (~Int.Gt
+  (~Int.Add $__x0 $__y1)
+  #10) else #true)) (<label_ite_cond_false: !(~Int.Gt z #10)>, (if (if (~Int.Gt
+   (~Int.Add $__x0 $__y1)
+   #10) then #false else #true) then (if (~Int.Gt
+   (~Int.Add $__x0 $__y1)
+   #10) then #false else #true) else #true)) (test_assume, (~Int.Gt
+ (if (~Int.Gt
+   (~Int.Add $__x0 $__y1)
+   #10) then (~Int.Sub (~Int.Add $__x0 $__y1) #1) else (~Int.Add (~Int.Add $__x0 $__y1) #1))
+ #0))
+
+Proof Obligation:
+#true
+
+---
+info:
+Obligation: test_assert
+Property: assert
+Result: ✅ pass
+
+Obligation: post
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" SimpleTestEnv

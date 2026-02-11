@@ -112,14 +112,27 @@ spec {
 };
 #end
 
-/-
-
+/--
 info: ok: type:
 List
 Type Arguments:
 [a]
 Constructors:
 [Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]
+
+procedure TestListInt :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: (TestListInt_ensures_0, #true)
+{
+  init (xs : (List int)) := (init_xs_0 : (List int))
+  init (h : int) := (init_h_1 : int)
+  xs := ((~Cons : (arrow int (arrow (List int) (List int))))
+   #1
+   ((~Cons : (arrow int (arrow (List int) (List int)))) #2 (~Nil : (List int))))
+  h := ((~List..head : (arrow (List int) int)) (xs : (List int)))
+  assert [headIs1] ((h : int) == #1)
+}
 -/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
@@ -199,14 +212,31 @@ spec {
 };
 #end
 
-/-
-
+/--
 info: ok: type:
 Option
 Type Arguments:
 [a]
 Constructors:
 [Name: None Args: [] Tester: Option..isNone , Name: Some Args: [(value, a)] Tester: Option..isSome ]
+
+type:
+List
+Type Arguments:
+[a]
+Constructors:
+[Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]
+
+procedure TestNestedPoly :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: (TestNestedPoly_ensures_0, #true)
+{
+  init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
+  x := ((~Some : (arrow (List int) (Option (List int))))
+   ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))
+  assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))
+}
 -/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst

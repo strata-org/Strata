@@ -229,8 +229,7 @@ First mismatch: int with bool.
                              esM[((~Int.Add x) (~Int.Neg #30))]
          return (format $ ans.fst.toLMonoTy)
 
-/-
-
+/--
 info: ok: ((~Int.Add : (arrow int (arrow int int))) (x : int) ((~Int.Neg : (arrow int int)) #30))
 -/
 #guard_msgs in

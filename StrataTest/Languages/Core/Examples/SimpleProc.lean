@@ -31,8 +31,7 @@ spec {
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.snd |>.isEmpty
 
-/-
-
+/--
 info: var (g : bool) := init_g_0
 procedure Test :  ((x : bool)) → ((y : bool))
   modifies: []
@@ -47,9 +46,48 @@ Errors: #[]
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm)
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: Test_ensures_0
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+((~Bool.Or $__x0 $__x0) == $__x0)
+
+Label: Test_ensures_1
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+($__x0 == (~Bool.Or $__x0 $__x0))
+
+Label: Test_ensures_2
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+#true
+
+---
+info:
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass
+
+Obligation: Test_ensures_1
+Property: assert
+Result: ✅ pass
+
+Obligation: Test_ensures_2
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" simpleProcPgm

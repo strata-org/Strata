@@ -91,8 +91,7 @@ spec {
 };
 #end
 
-/-
-
+/--
 info: ok: func makePair : ∀[$__ty0, $__ty1]. ((x : $__ty0) (y : $__ty1)) → (Map $__ty0 $__ty1);
 procedure TestMakePair :  () → ()
   modifies: []
@@ -127,8 +126,7 @@ spec {
 };
 #end
 
-/-
-
+/--
 info: ok: func apply : ∀[$__ty0, $__ty1]. ((f : (arrow $__ty0 $__ty1)) (x : $__ty0)) → $__ty1;
 func intToBool :  ((x : int)) → bool;
 procedure TestApply :  () → ()
@@ -164,8 +162,7 @@ spec {
 };
 #end
 
-/-
-
+/--
 info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
 procedure TestDifferentInstantiations :  () → ()
@@ -203,7 +200,7 @@ spec {
 #end
 
 /--
-info: error: (5249-5272) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
+info: error: (5240-5263) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
 First mismatch: int with bool.
 -/
 #guard_msgs in

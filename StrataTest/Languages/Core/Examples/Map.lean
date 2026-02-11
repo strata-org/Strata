@@ -28,8 +28,7 @@ procedure P() returns ()
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
 
-/-
-
+/--
 info: func a :  () → (Map int bool);
 procedure P :  () → ()
   modifies: []
@@ -47,9 +46,54 @@ Errors: #[]
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mapPgm)
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: a_zero_true
+Property: assert
+Assumptions:
+(a_zero_true_assumption, ((~select ~a #0) == #true))
+
+Proof Obligation:
+(~select ~a #0)
+
+Label: a_one_true
+Property: assert
+Assumptions:
+(a_zero_true_assumption, ((~select ~a #0) == #true))
+
+Proof Obligation:
+(~select ~a #1)
+
+
+
+Result: Obligation: a_one_true
+Property: assert
+Result: ❌ fail
+
+
+Evaluated program:
+func a :  () → (Map int bool);
+procedure P :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assume [a_zero_true_assumption] ((~select ~a #0) == #true)
+  assert [a_zero_true] (~select ~a #0)
+  assert [a_one_true] (~select ~a #1)
+}
+---
+info:
+Obligation: a_zero_true
+Property: assert
+Result: ✅ pass
+
+Obligation: a_one_true
+Property: assert
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" mapPgm

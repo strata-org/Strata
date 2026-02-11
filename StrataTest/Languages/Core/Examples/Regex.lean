@@ -47,9 +47,120 @@ procedure main() returns () {
 #end
 
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: hello_dot_ends_with_period
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx #hello. ~cannot_end_with_period))
+
+Label: dot_ends_with_period
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx #. ~cannot_end_with_period))
+
+Label: bye_exclaim_no_end_with_period
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Str.InRegEx #bye! ~cannot_end_with_period)
+
+Label: ok_chars_str
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Str.InRegEx #test-str-1 ~ok_chars_regex)
+
+Label: cannot_contain_exclaim
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx #test-str! ~ok_chars_regex))
+
+Label: has_to_be_at_least_1_char
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx # ~ok_chars_regex))
+
+Label: cannot_exceed_10_chars
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx #0123456789a ~ok_chars_regex))
+
+Label: optionally_a_check1
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Str.InRegEx #a ~optionally_a)
+
+Label: optionally_a_check2
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx #b ~optionally_a))
+
+---
+info:
+Obligation: hello_dot_ends_with_period
+Property: assert
+Result: ✅ pass
+
+Obligation: dot_ends_with_period
+Property: assert
+Result: ✅ pass
+
+Obligation: bye_exclaim_no_end_with_period
+Property: assert
+Result: ✅ pass
+
+Obligation: ok_chars_str
+Property: assert
+Result: ✅ pass
+
+Obligation: cannot_contain_exclaim
+Property: assert
+Result: ✅ pass
+
+Obligation: has_to_be_at_least_1_char
+Property: assert
+Result: ✅ pass
+
+Obligation: cannot_exceed_10_chars
+Property: assert
+Result: ✅ pass
+
+Obligation: optionally_a_check1
+Property: assert
+Result: ✅ pass
+
+Obligation: optionally_a_check2
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm1
@@ -79,9 +190,86 @@ procedure main(n : int) returns () {
 };
 #end
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: assert_0
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx #0123456789a (~bad_re_loop $__n0)))
+
+Label: assert_1
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Str.InRegEx #a (~bad_re_loop #1))
+
+
+
+Result: Obligation: assert_0
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
+
+
+Evaluated program:
+func bad_re_loop :  ((n : int)) → regex :=
+  (((~Re.Loop : (arrow regex (arrow int (arrow int regex))))
+   ((~Re.Range : (arrow string (arrow string regex))) #a #z)
+   #1
+   (n : int)))
+procedure main :  ((n : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  init (n1 : int) := init_n1_0
+  n1 := #1
+  assert [assert_0] (~Bool.Not (~Str.InRegEx #0123456789a (~bad_re_loop $__n0)))
+  assert [assert_1] (~Str.InRegEx #a (~bad_re_loop #1))
+}
+
+
+Result: Obligation: assert_1
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
+
+
+Evaluated program:
+func bad_re_loop :  ((n : int)) → regex :=
+  (((~Re.Loop : (arrow regex (arrow int (arrow int regex))))
+   ((~Re.Range : (arrow string (arrow string regex))) #a #z)
+   #1
+   (n : int)))
+procedure main :  ((n : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  init (n1 : int) := init_n1_0
+  n1 := #1
+  assert [assert_0] (~Bool.Not (~Str.InRegEx #0123456789a (~bad_re_loop $__n0)))
+  assert [assert_1] (~Str.InRegEx #a (~bad_re_loop #1))
+}
+---
+info:
+Obligation: assert_0
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
+
+Obligation: assert_1
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm2
@@ -100,9 +288,24 @@ procedure main(n : int) returns () {
 };
 #end
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: assert_0
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not (~Str.InRegEx init_s_0 ~Re.None))
+
+---
+info:
+Obligation: assert_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm3

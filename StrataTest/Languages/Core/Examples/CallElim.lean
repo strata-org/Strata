@@ -56,8 +56,7 @@ private def testCallElim
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-/-
-
+/--
 info: New Program:
 procedure Double :  ((n : int)) → ((result : int))
   modifies: []
@@ -83,6 +82,10 @@ procedure TestProc :  ((x : int)) → ((output : int))
 ---
 info:
 Obligation: double_correct
+Property: assert
+Result: ✅ pass
+
+Obligation: testProc_result
 Property: assert
 Result: ✅ pass
 -/

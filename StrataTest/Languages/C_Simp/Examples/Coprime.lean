@@ -60,8 +60,7 @@ bool procedure coprime(a:int, b:int)//@pre(a>(0))&&(b>(0));
 #eval IO.println CoprimePgm
 
 
-/-
-
+/--
 info: function coprime {
   pre: (~Bool.And (~Int.Gt a #0) (~Int.Gt b #0))
   post: #true
@@ -83,8 +82,7 @@ Errors: #[]
 open Strata.C_Simp in
 #eval TransM.run (translateProgram (CoprimePgm.commands))
 
-/-
-
+/--
 info: procedure coprime :  ((a : int) (b : int)) → ((return : bool))
   modifies: []
   preconditions: (pre, (~Bool.And (~Int.Gt a #0) (~Int.Gt b #0)))

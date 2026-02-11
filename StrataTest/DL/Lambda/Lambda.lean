@@ -35,21 +35,25 @@ New Function:func Int.Add :  () → int;
   let ans ← typeCheckAndPartialEval TypeFactory.default F esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
   return format ans
 
-/-
-
+/--
 info: Annotated expression:
 ((~Int.Le : (arrow int (arrow int bool)))
  ((~Int.Div : (arrow int (arrow int int))) #300 ((~Int.Add : (arrow int (arrow int int))) #2 #1))
  #100)
+
+---
+info: #true
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval TypeFactory.default  (IntBoolFactory : @Factory TestParams)
                 esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
 
-/-
-
+/--
 info: Annotated expression:
 ((~Int.Div : (arrow int (arrow int int))) ((~Int.Add : (arrow int (arrow int int))) #2 #1))
+
+---
+info: (λ ((~Int.Div : (arrow int (arrow int int))) #3 %0))
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval TypeFactory.default  (IntBoolFactory : @Factory TestParams)

@@ -55,8 +55,7 @@ bool procedure linearSearch(arr:intArr, e:int)//@pretrue;
 #guard_msgs in
 #eval IO.println LinearSearchEnv
 
-/-
-
+/--
 info: function linearSearch {
   pre: #true
   post: #true
@@ -79,8 +78,7 @@ Errors: #[]
 open Strata.C_Simp in
 #eval TransM.run (translateProgram (LinearSearchEnv.commands))
 
-/-
-
+/--
 info: procedure linearSearch :  ((arr : intArr) (e : int)) → ((return : bool))
   modifies: []
   preconditions: (pre, #true)

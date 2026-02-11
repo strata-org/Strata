@@ -31,8 +31,7 @@ procedure P() returns ()
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram realPgm) |>.snd |>.isEmpty
 
-/-
-
+/--
 info: func x :  () → real;
 func y :  () → real;
 axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
@@ -54,9 +53,58 @@ Errors: #[]
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram realPgm)
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: real_add_ge_good
+Property: assert
+Assumptions:
+
+(real_x_ge_1, (~Real.Ge ~x #1))
+(real_y_ge_2, (~Real.Ge ~y #2))
+Proof Obligation:
+(~Real.Ge (~Real.Add ~x ~y) #3)
+
+Label: real_add_ge_bad
+Property: assert
+Assumptions:
+
+(real_x_ge_1, (~Real.Ge ~x #1))
+(real_y_ge_2, (~Real.Ge ~y #2))
+Proof Obligation:
+(~Real.Ge (~Real.Add ~x ~y) #4)
+
+
+
+Result: Obligation: real_add_ge_bad
+Property: assert
+Result: ❌ fail
+
+
+Evaluated program:
+func x :  () → real;
+func y :  () → real;
+axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
+axiom real_y_ge_2: ((~Real.Ge : (arrow real (arrow real bool))) (~y : real) #2);
+procedure P :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assert [real_add_ge_good] (~Real.Ge (~Real.Add ~x ~y) #3)
+  assert [real_add_ge_bad] (~Real.Ge (~Real.Add ~x ~y) #4)
+}
+---
+info:
+Obligation: real_add_ge_good
+Property: assert
+Result: ✅ pass
+
+Obligation: real_add_ge_bad
+Property: assert
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" realPgm
@@ -91,8 +139,7 @@ spec {
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram bvPgm) |>.snd |>.isEmpty
 
-/-
-
+/--
 info: func x :  () → bv8;
 func y :  () → bv8;
 axiom bv_x_ge_1: ((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #1 (~x : bv8));
@@ -118,9 +165,38 @@ Errors: #[]
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram bvPgm)
 
-/-
-
+/--
 info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: bv_add_ge
+Property: assert
+Assumptions:
+
+(bv_x_ge_1, (~Bv8.ULe #1 ~x))
+(bv_y_ge_2, (~Bv8.ULe #2 ~y))
+Proof Obligation:
+((~Bv8.Add ~x ~y) == (~Bv8.Add ~y ~x))
+
+Label: Q_ensures_0
+Property: assert
+Assumptions:
+
+(bv_x_ge_1, (~Bv8.ULe #1 ~x))
+(bv_y_ge_2, (~Bv8.ULe #2 ~y))
+Proof Obligation:
+((~Bv1.Add $__x0 $__x0) == (~Bv1.Sub $__x0 $__x0))
+
+---
+info:
+Obligation: bv_add_ge
+Property: assert
+Result: ✅ pass
+
+Obligation: Q_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" bvPgm
@@ -143,12 +219,37 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 };
 #end
 
-/-
-
+/--
 info:
 Obligation: add_comm
 Property: assert
 Result: ✅ pass
+
+Obligation: xor_cancel
+Property: assert
+Result: ✅ pass
+
+Obligation: div_shift
+Property: assert
+Result: ✅ pass
+
+Obligation: mul_shift
+Property: assert
+Result: ✅ pass
+
+Obligation: demorgan
+Property: assert
+Result: ✅ pass
+
+Obligation: mod_and
+Property: assert
+Result: ✅ pass
+
+Obligation: bad_shift
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, #b00000100) ($__y1, #b00000100)
 -/
 #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm (options := .quiet)
