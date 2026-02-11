@@ -331,6 +331,20 @@ spec {
   assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 };
 
+procedure test_helper.procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
+spec {
+  requires [req_name_is_foo]: req_name == "foo";
+  requires [req_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
+  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
+  ensures [ensures_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
+}
+{
+  assert [assert_name_is_foo]: req_name == "foo";
+  assert [assert_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
+  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
+  assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
+};
+
 #end
 
 def Core.prelude : Core.Program :=

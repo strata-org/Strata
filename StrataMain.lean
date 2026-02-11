@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
 import Strata.Transform.ProcedureInlining
+import Strata.Languages.Python.CorePrelude
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
@@ -324,25 +325,26 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print pgm
     assert! cmds.size == 1
 
-    let laurelPgm := Strata.Python.pythonToLaurel cmds[0]!
+    let prelude := Strata.Python.Core.prelude
+
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
       | .ok laurelProgram =>
         if verbose then
           IO.println "\n==== Laurel Program ===="
-          IO.println s!"Procedures: {laurelProgram.staticProcedures.length}"
-          for proc in laurelProgram.staticProcedures do
-            IO.println s!"  - {proc.name}"
+          IO.println f!"{laurelProgram}"
 
         -- Translate Laurel to Core
         match Strata.Laurel.translate laurelProgram with
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok coreProgram =>
-          if verbose then
-            IO.println "\n==== Core Program ===="
-            IO.print coreProgram
+          let coreProgram := {decls := prelude.decls ++ coreProgram.decls }
+          -- if verbose then
+          --   IO.println "\n==== Core Program ===="
+          --   IO.print coreProgram
 
           -- Verify using Core verifier
           let solverName : String := "z3"

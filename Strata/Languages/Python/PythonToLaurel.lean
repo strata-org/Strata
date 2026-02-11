@@ -10,6 +10,8 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PythonDialect
+import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Core.Program
 
 /-!
 # Python to Laurel Translation
@@ -42,11 +44,18 @@ The translation context tracks information needed during translation:
 - Current scope information
 -/
 
+structure CoreProcedureSignature where
+  inputs : List String
+  outputs : List String
+deriving Inhabited
+
 structure TranslationContext where
   /-- Map from variable names to their Laurel types -/
   variableTypes : List (String × HighTypeMd) := []
   /-- Map from function names to their signatures -/
   functionSignatures : List (String × Procedure) := []
+  /-- Map from prelude procedure names to their full signatures -/
+  preludeProcedures : List (String × CoreProcedureSignature) := []
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -79,6 +88,9 @@ def defaultMetadata : Imperative.MetaData Core.Expression :=
 def mkHighTypeMd (ty : HighType) : HighTypeMd :=
   { val := ty, md := defaultMetadata }
 
+def mkCoreType (s: String): HighTypeMd :=
+  {val := .TCore s , md := defaultMetadata}
+
 /-- Create a StmtExprMd with default metadata -/
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
   { val := expr, md := defaultMetadata }
@@ -94,7 +106,7 @@ partial def pyExprToString (e : Python.expr SourceRange) : String :=
     s!"{base}[{arg}]"
   | .Attribute _ val attr _ =>
     let base := pyExprToString val
-    s!"{base}.{attr.val}"
+    s!"{base}_{attr.val}"
   | _ => "<unknown>"
 
 /-! ## Translation Functions -/
@@ -106,6 +118,16 @@ def translateType (typeStr : String) : Except TranslationError HighTypeMd :=
   | "bool" => .ok (mkHighTypeMd HighType.TBool)
   | "str" => .ok (mkHighTypeMd HighType.TString)
   | _ => throw (.typeError s!"Unsupported type: {typeStr}")
+
+/-- Create a None value for a given OrNone type -/
+def mkNoneForType (typeName : String) : StmtExprMd :=
+  -- First construct None_none(), then wrap it in the appropriate OrNone constructor
+  let noneVal := mkStmtExprMd (StmtExpr.StaticCall "None_none" [])
+  mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
+
+/-! ## Expression Translation -/
+
+mutual
 
 /-- Translate Python expression to Laurel StmtExpr -/
 partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRange)
@@ -193,9 +215,33 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.PrimitiveOp laurelOp [operandExpr])
 
-  | .Call _ f args _kwargs => return mkStmtExprMd (StmtExpr.StaticCall (pyExprToString f) (← args.val.toList.mapM (translateExpr ctx)))
+  | .Call _ f args _kwargs => translateCall ctx (pyExprToString f) args.val.toList
 
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
+
+/-- Translate function call, filling in optional arguments with None if needed -/
+partial def translateCall (ctx : TranslationContext) (funcName : String) (args : List (Python.expr SourceRange))
+    : Except TranslationError StmtExprMd := do
+  let mut translatedArgs ← args.mapM (translateExpr ctx)
+
+  -- Check if this is a prelude procedure and fill in optional args
+  if let some sig := ctx.preludeProcedures.lookup funcName then
+    let numProvided := translatedArgs.length
+    let numExpected := sig.inputs.length
+
+    if numProvided < numExpected then
+      -- Fill remaining args with None of the appropriate type
+      for i in [numProvided:numExpected] do
+        let paramType := sig.inputs[i]!
+        translatedArgs := translatedArgs ++ [mkNoneForType paramType]
+
+    if sig.outputs.length > 0 then
+      let call := mkStmtExprMd (StmtExpr.StaticCall funcName translatedArgs)
+      return mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier "maybe_except")] call)
+
+  return mkStmtExprMd (StmtExpr.StaticCall funcName translatedArgs)
+
+end
 
 /-! ## Statement Translation
 
@@ -302,6 +348,9 @@ partial def translateStmtList (ctx : TranslationContext) (stmts : List (Python.s
 
 end
 
+def prependExceptHandlingHelper (l: List StmtExprMd) : List StmtExprMd :=
+  mkStmtExprMd (.LocalVariable "maybe_except" (mkCoreType "ExceptOrNone") none) :: l
+
 /-- Translate Python function to Laurel Procedure -/
 def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
     : Except TranslationError Laurel.Procedure := do
@@ -340,6 +389,7 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
 
     -- Translate function body
     let (_, bodyStmts) ← translateStmtList localCtx body.val.toList
+    let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
     -- Create procedure with transparent body (no contracts for now)
@@ -356,11 +406,29 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
 
   | _ => throw (.internalError "Expected FunctionDef")
 
+/-- Extract type name from LMonoTy -/
+def getTypeName (ty : Lambda.LMonoTy) : String :=
+  match ty with
+  | .tcons name _ => name
+  | .ftvar name => name
+  | .bitvec n => s!"bv{n}"
+
+/-- Extract procedure signatures from a Core program -/
+def extractPreludeProcedures (prelude : Core.Program) : List (String × CoreProcedureSignature) :=
+  prelude.decls.filterMap fun decl =>
+    match Core.Program.Procedure.find? prelude decl.name with
+    | some proc =>
+      let inputs := proc.header.inputs.values.map getTypeName
+      let outputs := proc.header.outputs.values.map getTypeName
+      some (proc.header.name.name, { inputs := inputs, outputs := outputs })
+    | none => none
+
 /-- Translate Python module to Laurel Program -/
-def pythonToLaurel (pyModule : Python.Command SourceRange) : Except TranslationError Laurel.Program := do
+def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRange) : Except TranslationError Laurel.Program := do
   match pyModule with
   | .Module _ body _ => do
-    let ctx : TranslationContext := default
+    let preludeProcedures := extractPreludeProcedures prelude
+    let ctx : TranslationContext := { preludeProcedures := preludeProcedures }
 
     -- Separate functions from other statements
     let mut procedures : List Procedure := []
@@ -374,8 +442,9 @@ def pythonToLaurel (pyModule : Python.Command SourceRange) : Except TranslationE
       | _ =>
         otherStmts := otherStmts ++ [stmt]
 
-    let ctx : TranslationContext := {variableTypes := [], functionSignatures := procedures.map (λ p => (p.name, p))}
+    -- let ctx : TranslationContext := {variableTypes := [], functionSignatures := procedures.map (λ p => (p.name, p))}
     let (_, bodyStmts) ← translateStmtList ctx otherStmts
+    let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" (mkHighTypeMd .TString) (some <| mkStmtExprMd (.LiteralString "__main__"))) :: bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
@@ -392,33 +461,5 @@ def pythonToLaurel (pyModule : Python.Command SourceRange) : Except TranslationE
     return program
 
   | _ => throw (.internalError "Expected Module")
-
-/-! ## Verification Entry Point
-
-This will be the main entry point for verifying Python programs through Laurel.
--/
-
-def verifyPythonThroughLaurel (pyModule : Python.Command SourceRange)
-    (smtsolver : String := "cvc5")
-    : IO (Except TranslationError Core.VCResults) := do
-  -- Step 1: Translate Python to Laurel
-  let laurelProgram := pythonToLaurel pyModule
-  match laurelProgram with
-  | .error e => return .error e
-  | .ok laurelProg =>
-    -- Step 2: Translate Laurel to Core (using existing translator)
-    let coreProgram := Laurel.translate laurelProg
-    match coreProgram with
-    | .error diagnostics =>
-      return .error (.internalError s!"Laurel to Core translation failed: {diagnostics}")
-    | .ok coreProg =>
-      -- Step 3: Verify using Core verifier
-      try
-        let results ← IO.FS.withTempDir fun tempDir => do
-          EIO.toIO (fun e => IO.Error.userError (toString e))
-            (Core.verify smtsolver coreProg tempDir none default)
-        return .ok results
-      catch e =>
-        return .error (.internalError s!"Verification failed: {e}")
 
 end Strata.Python

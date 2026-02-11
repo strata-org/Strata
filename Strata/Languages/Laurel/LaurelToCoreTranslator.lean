@@ -90,6 +90,7 @@ def translateType (ty : HighType) : LMonoTy :=
     | .UserDefined "Array" => .tcons "Array" [translateType elemTy.val]
     | _ => panic s!"unsupported applied type {repr ty}"
   | .UserDefined _ => .tcons "Composite" []
+  | .TCore s => .tcons s []
   | _ => panic s!"unsupported type {repr ty}"
 termination_by sizeOf ty
 decreasing_by all_goals simp_wf; have := HighTypeMd.sizeOf_val_lt ‹_›; omega
