@@ -6,6 +6,7 @@
 
 inductive VerboseMode where
   | quiet
+  | results
   | normal
   | debug
   deriving Inhabited, Repr, DecidableEq
@@ -13,8 +14,9 @@ inductive VerboseMode where
 def VerboseMode.toNat (v : VerboseMode) : Nat :=
   match v with
   | .quiet => 0
-  | .normal => 1
-  | .debug => 2
+  | .results => 1
+  | .normal => 2
+  | .debug => 3
 
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
@@ -70,6 +72,9 @@ instance : Inhabited Options where
 
 def Options.quiet : Options :=
   { Options.default with verbose := .quiet }
+
+def Options.results : Options :=
+  { Options.default with verbose := .results }
 
 def Options.debug : Options :=
   { Options.default with verbose := .debug }
