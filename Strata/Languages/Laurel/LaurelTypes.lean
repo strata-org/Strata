@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Util.Tactics
 
 /-
 Type computation for Laurel StmtExpr.
@@ -36,7 +37,7 @@ Compute the HighType of a StmtExpr given a type environment and type definitions
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
 -/
-partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
+def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
   match expr with
   | WithMetadata.mk val md =>
   match val with
@@ -98,6 +99,8 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr 
   | .Abstract => panic "Not supported"
   | .All => panic "Not supported"
   | .Hole => panic "Not supported"
+  termination_by expr
+  decreasing_by cases x; term_by_mem
 
 end LaurelTypes
 end Strata.Laurel
