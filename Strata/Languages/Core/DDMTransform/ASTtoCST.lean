@@ -349,9 +349,6 @@ partial def lappToExprAcc [Inhabited M]
   | .op _ name _ => do
     let argExpr ← lexprToExpr arg
     lopToExpr name.name (acc ++ [argExpr])
-  | .fvar _ name _ => do
-    let argExpr ← lexprToExpr arg
-    lopToExpr name.name (acc ++ [argExpr])
   | _ => ToCSTM.throwError "lappToExprAcc" "unsupported application"
 
 partial def lopToExpr [Inhabited M]
@@ -369,7 +366,7 @@ partial def lopToExpr [Inhabited M]
         pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
       else
         ToCSTM.throwError "lopToExpr" s!"function {name} expects {expectedArity} arguments but got {actualArity}"
-    | _ => ToCSTM.throwError "lopToExpr" s!"unsupported arity or unknown operation: {name}"
+    | _ => ToCSTM.throwError "lopToExpr" s!"unknown operation: {name}"
   | none =>
     -- Either a built-in or an invalid operation.
   let ty := CoreType.int default  -- placeholder type

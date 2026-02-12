@@ -22,23 +22,6 @@ open Strata.CoreDDM
 open Strata
 open Core
 
-def fooPgm : Program :=
-#strata
-program Core;
-type Byte := bv8;
-function id(x : int, y : int) : int { y }
-axiom (id(4, 3) == 3);
-#end
-
-#eval
-  match Command.ofAst fooPgm.commands[1]! with
-  | .ok o =>
-    dbg_trace f!"{repr fooPgm.globalContext.nameMap}\n"
-    dbg_trace f!"{repr fooPgm.globalContext.vars}"
-    true
-  | _ => false
-
-
 def testProgram : Program :=
 #strata
 program Core;
@@ -85,11 +68,6 @@ spec {
 };
 
 #end
-
-#eval #["T0", "T1", "Byte", "IntMap", "MyMap", "Foo", "List", "Nil", "List..isNil", "Cons",
-                              "List..isCons", "List..head", "List..tail", "Tree", "Leaf", "Tree..isLeaf", "Tree..val",
-                              "Node", "Tree..isNode", "Tree..left", "Tree..right", "fooConst", "id", "foo", "f", "g",
-                              "Test1", "Test2"].size
 
 #eval testProgram.globalContext.nameMap
 #eval testProgram.globalContext.vars
