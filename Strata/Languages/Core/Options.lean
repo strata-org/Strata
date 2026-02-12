@@ -6,6 +6,7 @@
 
 inductive VerboseMode where
   | quiet
+  | models
   | normal
   | debug
   deriving Inhabited, Repr, DecidableEq
@@ -13,8 +14,9 @@ inductive VerboseMode where
 def VerboseMode.toNat (v : VerboseMode) : Nat :=
   match v with
   | .quiet => 0
-  | .normal => 1
-  | .debug => 2
+  | .models => 1
+  | .normal => 2
+  | .debug => 3
 
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
@@ -37,7 +39,7 @@ instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
   fun a b => decidable_of_iff (a.toNat ≤ b.toNat) Iff.rfl
 
 /-- Default SMT solver to use -/
-def defaultSolver : String := "z3"
+def defaultSolver : String := "cvc5"
 
 structure Options where
   verbose : VerboseMode
@@ -70,6 +72,9 @@ instance : Inhabited Options where
 
 def Options.quiet : Options :=
   { Options.default with verbose := .quiet }
+
+def Options.models : Options :=
+  { Options.default with verbose := .models }
 
 def Options.debug : Options :=
   { Options.default with verbose := .debug }

@@ -61,14 +61,10 @@ info:
 Obligation: callElimAssert_n_positive_6
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, 0)
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
 Result: ❌ fail
-Model:
-($__output2, 0) ($__x0, 0)
 
 Obligation: output_property
 Property: assert
@@ -90,14 +86,10 @@ Result: ✅ pass
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
 Result: ❌ fail
-Model:
-($__x2, 0)
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
 Result: ❌ fail
-Model:
-($__output4, 0) ($__x2, 0)
 
 Obligation: output_property
 Property: assert

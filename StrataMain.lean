@@ -358,7 +358,7 @@ def laurelAnalyzeBinaryCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels "z3" combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels "cvc5" combinedProgram
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
