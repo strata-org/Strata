@@ -8,6 +8,7 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Core.Verifier
+import Strata.Util.Tactics
 
 namespace Strata
 namespace Laurel
@@ -275,7 +276,7 @@ Transform an expression whose result value is discarded (e.g. non-last elements 
 -/
 partial def transformExprDiscarded (expr : StmtExprMd) : LiftM Unit := do
   let md := expr.md
-  match expr.val with
+  match h: expr.val with
   | .Assign targets value =>
       -- Transform value to process nested assignments (side-effect only),
       -- but use original value for the prepended assignment (no substitutions needed).

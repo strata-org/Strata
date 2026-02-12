@@ -6,6 +6,7 @@
 
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Util.Tactics
 
 /-
 Heap Parameterization Pass
@@ -44,10 +45,7 @@ structure AnalysisResult where
 mutual
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
   termination_by sizeOf expr
-  decreasing_by
-    simp_wf
-    have := WithMetadata.sizeOf_val_lt expr
-    omega
+  decreasing_by cases expr; term_by_mem
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
@@ -85,12 +83,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ContractOf _ f => collectExprMd f
   | _ => pure ()
   termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals first
-      | omega
-      | (have := WithMetadata.sizeOf_val_lt ‹_›; omega)
-      | (subst_vars; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
+  decreasing_by all_goals (simp_wf; try term_by_mem)
 end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
@@ -281,10 +274,9 @@ where
         have hval := WithMetadata.sizeOf_val_lt expr
         rw [_h] at hval; simp at hval
         first
-          | omega
-          | (have := List.sizeOf_lt_of_mem ‹_›; omega)
+          | term_by_mem
           | -- For the FieldSelect-inside-Assign case: target < fieldSelectMd < expr
-            (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; rw [_h2] at hfs; simp at hfs; omega)
+            (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; term_by_mem)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
   let heapInName := "$heap_in"
