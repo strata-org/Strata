@@ -86,12 +86,13 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   type FooAlias a := (Foo int bool)
   func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
-  (procedure P :  () → ())
-  modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
-  body: assert [test] (~fooAliasVal == ~fooVal)
-  ,
+  procedure P :  () → ()
+    modifies: []
+    preconditions: ⏎
+    postconditions: ⏎
+  {
+    assert [test] (~fooAliasVal == ~fooVal)
+  },
   Error:
   none
   Subst Map:
@@ -376,12 +377,14 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
-(procedure Test :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
+procedure Test :  () → ()
+  modifies: []
+  preconditions: ⏎
+  postconditions: ⏎
+{
+  init (m : (Map int bool)) := (init_m_0 : (Map int bool))
+  m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
+}
 -/
 #guard_msgs in
 #eval do

@@ -155,12 +155,14 @@ mutual
 /--
 Compute the size of `ty` as a tree.
 -/
+@[simp]
 def LMonoTy.size (ty : LMonoTy) : Nat :=
   match ty with
   | .ftvar _ => 1
   | .tcons _ args => 1 + LMonoTys.size args
   | .bitvec _ => 1
 
+@[simp]
 def LMonoTys.size (args : LMonoTys) : Nat :=
     match args with
     | [] => 0

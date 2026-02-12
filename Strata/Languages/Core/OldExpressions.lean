@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.Procedure
+import Strata.Util.Tactics
 
 namespace Core
 
@@ -126,8 +127,7 @@ def normalizeOldExpr (e : Expression.Expr) (inOld : Bool := false)
                       (normalizeOldExpr t inOld) (normalizeOldExpr f inOld)
   | .eq m e1 e2 => .eq m (normalizeOldExpr e1 inOld) (normalizeOldExpr e2 inOld)
     termination_by sizeOf e
-  decreasing_by
-    all_goals simp [sizeOf, Lambda.LExpr.sizeOf]; try simp_all; omega
+  decreasing_by all_goals (simp[sizeOf, Lambda.LExpr.sizeOf]; try term_by_mem)
 
 def normalizeOldExprs (sm : List Expression.Expr) :=
   sm.map normalizeOldExpr

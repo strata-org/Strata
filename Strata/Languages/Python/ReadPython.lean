@@ -3,11 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Python.PythonDialect
+module
 
+import Strata.DDM.Ion
+public import Strata.Languages.Python.PythonDialect
+
+public section
 namespace Strata.Python
 
-def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
+private def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
   if ! Ion.isIonFile bytes then
     throw <| s!"{strataPath} is not an Ion file."
   match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
@@ -25,7 +29,7 @@ def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except Str
   | .error msg =>
     throw s!"Error reading {strataPath}: {msg}"
 
-def formatParseFailureStderr (stderr : String) : Option String := do
+private def formatParseFailureStderr (stderr : String) : Option String := do
   match stderr.find? "Parse failure:\n" with
   | some idx =>
     match idx.find? "\n" with
@@ -108,6 +112,7 @@ def pythonToStrata (dialectFile pythonFile : System.FilePath)
     | .ok () => pure ()
     | .error msg => throw s!"Internal: Error deleting temp file {strataFile}: {msg}"
 
+/-- Reads a pre-compiled Strata file (Ion format) containing Python AST statements. -/
 def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
   let bytes ←
     match ← IO.FS.readBinFile strataPath |>.toBaseIO with
@@ -120,3 +125,4 @@ def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.st
   | .error msg => throw msg
 
 end Strata.Python
+end

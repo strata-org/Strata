@@ -29,12 +29,13 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram assertionNames) |>.snd |>.isEmpty
 
 /--
-info: (procedure Test :  ((x : int)) → ())
-modifies: []
-preconditions: (Test_requires_0, ((x : int) == #1))
-postconditions: ⏎
-body: assert [assert_0] ((x : int) == #1)
-
+info: procedure Test :  ((x : int)) → ()
+  modifies: []
+  preconditions: (Test_requires_0, ((x : int) == #1))
+  postconditions: ⏎
+{
+  assert [assert_0] ((x : int) == #1)
+}
 Errors: #[]
 -/
 #guard_msgs in

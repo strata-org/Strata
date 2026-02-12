@@ -15,6 +15,7 @@ namespace Core
 
 open Std (ToFormat Format format)
 open Lambda
+open Std.Format
 
 -- Type class instances to enable deriving for structures containing Expression.Expr
 instance : DecidableEq ExpressionMetadata :=
@@ -79,11 +80,11 @@ instance : Std.ToFormat Procedure.CheckAttr where
 structure Procedure.Check where
   expr : Expression.Expr
   attr : CheckAttr := .Default
-  md : Imperative.MetaData Expression := #[]
+  md : Imperative.MetaData Expression
   deriving Repr, DecidableEq
 
 instance : Inhabited Procedure.Check where
-  default := { expr := Inhabited.default }
+  default := { expr := Inhabited.default, md := #[] }
 
 instance : ToFormat Procedure.Check where
   format c := f!"{c.expr}{c.attr}"
@@ -139,9 +140,10 @@ structure Procedure where
 
 instance : ToFormat Procedure where
   format p :=
-    f!"({p.header})\n\
-       {p.spec}\n\
-       body: {p.body}\n"
+    f!"{p.header}\
+       {indentD <| format p.spec}{line}\
+       \{{indentD (format p.body)}{line}\
+       }"
 
 ---------------------------------------------------------------------
 

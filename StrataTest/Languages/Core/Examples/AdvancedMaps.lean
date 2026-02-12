@@ -59,23 +59,24 @@ type MapIMapII := (Map int MapII)
 var (a : MapII) := init_a_0
 var (b : (Map bool int)) := init_b_1
 var (c : (Map int MapII)) := init_c_2
-(procedure P :  () → ())
-modifies: [a, b, c]
-preconditions: (P_requires_3, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0)) (P_requires_4, ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #0) == (a : MapII)))
-postconditions: ⏎
-body: assert [c_0_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #0) == (a : MapII))
-c := ((((~update : (arrow (Map int MapII) (arrow int (arrow MapII (Map int MapII))))) (c : (Map int MapII))) #1) (a : MapII))
-assert [c_1_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #1) == (a : MapII))
-assert [a0eq0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0)
-a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) (a : MapII)) #1) #1)
-assert [a1eq1] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #1) == #1)
-a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) (a : MapII)) #0) #1)
-assert [a0eq1] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #1)
-assert [a0neq2] ((~Bool.Not : (arrow bool bool)) ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #2))
-b := ((((~update : (arrow (Map bool int) (arrow bool (arrow int (Map bool int))))) (b : (Map bool int))) #true) ((~Int.Neg : (arrow int int)) #1))
-assert [bTrueEqTrue] ((((~select : (arrow (Map bool int) (arrow bool int))) (b : (Map bool int))) #true) == ((~Int.Neg : (arrow int int)) #1))
-assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #1) == ((~Int.Neg : (arrow int int)) (((~select : (arrow (Map bool int) (arrow bool int))) (b : (Map bool int))) #true)))
-
+procedure P :  () → ()
+  modifies: [a, b, c]
+  preconditions: (P_requires_3, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0)) (P_requires_4, ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #0) == (a : MapII)))
+  postconditions: ⏎
+{
+  assert [c_0_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #0) == (a : MapII))
+  c := ((((~update : (arrow (Map int MapII) (arrow int (arrow MapII (Map int MapII))))) (c : (Map int MapII))) #1) (a : MapII))
+  assert [c_1_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #1) == (a : MapII))
+  assert [a0eq0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0)
+  a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) (a : MapII)) #1) #1)
+  assert [a1eq1] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #1) == #1)
+  a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) (a : MapII)) #0) #1)
+  assert [a0eq1] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #1)
+  assert [a0neq2] ((~Bool.Not : (arrow bool bool)) ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #2))
+  b := ((((~update : (arrow (Map bool int) (arrow bool (arrow int (Map bool int))))) (b : (Map bool int))) #true) ((~Int.Neg : (arrow int int)) #1))
+  assert [bTrueEqTrue] ((((~select : (arrow (Map bool int) (arrow bool int))) (b : (Map bool int))) #true) == ((~Int.Neg : (arrow int int)) #1))
+  assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #1) == ((~Int.Neg : (arrow int int)) (((~select : (arrow (Map bool int) (arrow bool int))) (b : (Map bool int))) #true)))
+}
 Errors: #[]
 -/
 #guard_msgs in

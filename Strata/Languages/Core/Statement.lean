@@ -13,10 +13,13 @@ import Strata.Languages.Core.Factory
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
+import Strata.Util.Tactics
 
 namespace Core
 open Imperative
 open Std (ToFormat Format format)
+open Std.Format
+
 ---------------------------------------------------------------------
 
 /--
@@ -54,13 +57,13 @@ instance : SizeOf (CmdExt P) where
   sizeOf := CmdExt.sizeOf
 
 instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
-    [ToFormat (List P.Ident)] [ToFormat (List P.Expr)] :
+    [ToFormat (List P.Ident)] [ToFormat P.Expr] :
     ToFormat (CmdExt P) where
   format c := match c with
     | .cmd c => format c
     | .call lhs pname args _md =>
       f!"call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
-      f!"{pname}({args})"
+      f!"{pname}({nestD <| group <| joinSep args ("," ++ line)})"
 
 ---------------------------------------------------------------------
 
@@ -132,15 +135,14 @@ def Statement.eraseTypes (s : Statement) : Statement :=
       axioms := decl.axioms.map Lambda.LExpr.eraseTypes }
     .funcDecl decl' md
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf <;> simp [sizeOf] <;> omega
+  decreasing_by all_goals simp[sizeOf] <;> term_by_mem
 
 def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
   | [] => []
   | s :: srest => Statement.eraseTypes s :: Statements.eraseTypes srest
   termination_by (sizeOf ss)
-  decreasing_by all_goals simp [sizeOf] <;> omega
+  decreasing_by all_goals simp [sizeOf] <;> term_by_mem
 end
 
 ---------------------------------------------------------------------
@@ -330,7 +332,7 @@ def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
   termination_by b.sizeOf
-  decreasing_by apply sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
@@ -378,7 +380,7 @@ def Block.renameLhs (b : Block)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
   termination_by b.sizeOf
-  decreasing_by apply sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.renameLhs (s : Core.Statement)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
@@ -404,7 +406,7 @@ def Statement.renameLhs (s : Core.Statement)
     .funcDecl decl' md
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
   termination_by s.sizeOf
-  decreasing_by all_goals(simp_wf; try omega)
+  decreasing_by all_goals term_by_mem
 end
 
 ---------------------------------------------------------------------

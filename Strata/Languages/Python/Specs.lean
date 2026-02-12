@@ -3,15 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Python.Specs.DDM
-import Strata.Languages.Python.ReadPython
-import Strata.DDM.Util.Fin
-import Strata.Util.DecideProp
+module
+
+public import Lean.Data.Position
+public import Std.Data.HashSet.Basic
+import        Strata.DDM.Format
+import all    Strata.DDM.Util.Fin
+public import Strata.DDM.Util.SourceRange
+import        Strata.Languages.Python.ReadPython
+import        Strata.Languages.Python.Specs.DDM
+public import Strata.Languages.Python.Specs.Decls
+import        Strata.Util.DecideProp
 
 namespace Strata.Python.Specs
 
 /-- String identifier for event types. -/
-abbrev EventType := String
+public abbrev EventType := String
 
 /-- Event type for module imports. -/
 def importEvent : EventType := "import"
@@ -55,7 +62,7 @@ added.
 inductive Iterable where
 | list
 
-structure SpecError where
+public structure SpecError where
   file : System.FilePath
   loc : Strata.SourceRange
   message : String
@@ -65,7 +72,7 @@ A Python module name split into its dot-separated components.
 For example, `typing.List` has components `["typing", "List"]`.
 The size constraint ensures at least one component exists.
 -/
-structure ModuleName where
+public structure ModuleName where
   components : Array String
   componentsSizePos : components.size > 0
 
@@ -89,7 +96,8 @@ def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) : Except
       ofStringAux mod a start next
   termination_by cur
 
-def ofString (mod : String) : Except String ModuleName :=
+/-- Parses a dot-separated module name string (e.g., "typing.List"). -/
+public def ofString (mod : String) : Except String ModuleName :=
   ofStringAux mod #[] mod.startPos mod.startPos
 
 instance : ToString ModuleName where
@@ -126,7 +134,8 @@ def findInPath (mod : ModuleName) (searchPath : System.FilePath) : EIO String Sy
 def strataDir (mod : ModuleName) (root : System.FilePath) : System.FilePath :=
   mod.foldlDirs (init := root) fun d c => d / c
 
-def strataFileName (mod : ModuleName) : String := s!"{mod.fileRoot}.pyspec.st.ion"
+/-- Generates the output filename for a module's spec file. -/
+public def strataFileName (mod : ModuleName) : String := s!"{mod.fileRoot}.pyspec.st.ion"
 
 end ModuleName
 
@@ -155,7 +164,7 @@ structure TypeSignature where
 
 namespace TypeSignature
 
-protected def ofList (l : List TypeDecl) : TypeSignature where
+def ofList (l : List TypeDecl) : TypeSignature where
   rank := l.foldl (init := {}) fun m d =>
     m.alter d.ident.pythonModule fun r =>
       match r with
@@ -163,7 +172,7 @@ protected def ofList (l : List TypeDecl) : TypeSignature where
       | .some none => .some none
       | .some (some m) => m |>.insert d.ident.name d.value
 
-protected def insert (sig : TypeSignature) (name : String) (m : Option (Std.HashMap String SpecValue)) :=
+def insert (sig : TypeSignature) (name : String) (m : Option (Std.HashMap String SpecValue)) :=
   { sig with rank := sig.rank.insert name m }
 
 end TypeSignature
@@ -243,7 +252,8 @@ class PySpecMClass (m : Type → Type) where
   specError (loc : SourceRange) (message : String) : m Unit
   runChecked {α} (act : m α) : m (Bool × α)
 
-export PySpecMClass (specError runChecked)
+abbrev specError := @PySpecMClass.specError
+abbrev runChecked := @PySpecMClass.runChecked
 
 abbrev PySpecM := ReaderT PySpecContext (StateT PySpecState BaseIO)
 
@@ -394,7 +404,6 @@ def translateCall (loc : SourceRange) (func : SpecValue)
   | _ =>
     specError loc s!"Unknown call {repr func}."
     return default
-
 
 def translateConstant (value : constant SourceRange) : PySpecM SpecValue := do
   match value with
@@ -706,7 +715,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     specError fnLoc "Method expecting self argument"
   let mut usedNames : Std.HashSet String := {}
   let mut specArgs : Array Arg := .emptyWithCapacity argc
-  for ⟨i, ib⟩ in Strata.Fin.range argc do
+  for ⟨i, ib⟩ in Fin.range argc do
     let a := posArgs[i]
     -- Arguments with defaults occur at end
     let d : Option _ :=
@@ -750,7 +759,6 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     postconditions := as.postconditions
   }
 
-
 def pySpecClassBody (loc : SourceRange) (className : String) (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
   let mut usedNames : Std.HashSet String := {}
   let mut methods : Array FunctionDecl := #[]
@@ -781,7 +789,6 @@ def checkLevel (loc : SourceRange) (level : Option (int SourceRange)) : PySpecM 
       specError loc s!"Local import {lvl.value} not supported."
   | none =>
     specError loc s!"Missing import level."
-
 
 def translateImportFrom (mod : String) (types : Std.HashMap String SpecValue) (names : Array (alias SourceRange)) : PySpecM Unit := do
   -- Check if module is a builtin (in prelude) - if so, don't generate extern declarations
@@ -992,7 +999,8 @@ partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRa
 
 end
 
-abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
+/-- Maps file paths to their FileMap for error location reporting. -/
+public abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
 
 def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.FilePath) (loc : SourceRange) : String :=
   match fmm[path]? with
@@ -1007,6 +1015,7 @@ def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.F
     else
       s!"{path}:{spos.line}:{spos.column+1}"
 
+/-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
 def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
     (fileMap : Lean.FileMap)
@@ -1035,7 +1044,8 @@ def translateModule
   let (res, s) ← translateModuleAux body |>.run ctx |>.run {}
   pure (←fileMapsRef.get, res, s.errors)
 
-def translateFile
+/-- Translates a Python source file to PySpec signatures. Main entry point for translation. -/
+public def translateFile
     (dialectFile strataDir pythonFile : System.FilePath)
     (pythonCmd : String := "python")
     (searchPath : Option System.FilePath := none) :

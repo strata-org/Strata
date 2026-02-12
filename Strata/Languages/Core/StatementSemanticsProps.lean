@@ -13,6 +13,7 @@ import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.StatementSemantics
+import Strata.Util.Tactics
 
 /-! ## Theorems related to StatementSemantics -/
 
@@ -2059,8 +2060,7 @@ theorem EvalBlockRefinesContract :
     . apply EvalBlockRefinesContract
       apply Hevals
   termination_by (Block.sizeOf ss)
-  decreasing_by
-    all_goals simp_all <;> omega
+  decreasing_by all_goals term_by_mem
 
 theorem EvalStmtRefinesContract :
   EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →

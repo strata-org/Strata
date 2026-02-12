@@ -11,6 +11,7 @@ import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.Statement
 import Strata.Transform.CoreTransform
+import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
 
@@ -24,7 +25,7 @@ mutual
 def Block.labels (b : Block): List String :=
   List.flatMap (fun s => Statement.labels s) b
   termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def Statement.labels (s : Core.Statement) : List String :=
   match s with
@@ -46,7 +47,7 @@ def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
   b.map (fun s => Statement.replaceLabels s map)
   termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def Statement.replaceLabels
     (s : Core.Statement) (map:Map String String) : Core.Statement :=

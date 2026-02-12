@@ -3,7 +3,7 @@
 This directory contains a Python package for strata along with a module
 `strata.gen` for generating Strata dialects and programs from Python.
 
-It can be installed by running `pip install .` from the root directory.
+It can be installed by running `pip install .` from this directory.
 
 ## Python versions
 

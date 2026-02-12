@@ -222,15 +222,16 @@ Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 Evaluated program:
 func bad_re_loop :  ((n : int)) → regex :=
   (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
-(procedure main :  ((n : int)) → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (n1 : int) := init_n1_0
-n1 := #1
-assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
-assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
-
+procedure main :  ((n : int)) → ()
+  modifies: []
+  preconditions: ⏎
+  postconditions: ⏎
+{
+  init (n1 : int) := init_n1_0
+  n1 := #1
+  assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+  assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
+}
 
 
 Result: Obligation: assert_1
@@ -242,15 +243,16 @@ Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 Evaluated program:
 func bad_re_loop :  ((n : int)) → regex :=
   (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
-(procedure main :  ((n : int)) → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (n1 : int) := init_n1_0
-n1 := #1
-assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
-assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
-
+procedure main :  ((n : int)) → ()
+  modifies: []
+  preconditions: ⏎
+  postconditions: ⏎
+{
+  init (n1 : int) := init_n1_0
+  n1 := #1
+  assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+  assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
+}
 ---
 info:
 Obligation: assert_0

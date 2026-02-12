@@ -12,6 +12,7 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.FunctionType
 import Strata.DL.Imperative.CmdType
+import Strata.Util.Tactics
 
 namespace Core
 namespace Statement
@@ -177,8 +178,7 @@ where
 
       go C Env srest (s' :: acc)
     termination_by Block.sizeOf ss
-    decreasing_by
-    all_goals simp_wf <;> omega
+    decreasing_by all_goals term_by_mem
 /--
 Apply type substitution `S` to a command.
 -/

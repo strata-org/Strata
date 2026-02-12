@@ -8,6 +8,7 @@ import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Factory
 import Strata.DL.Util.List
+import Strata.Util.Tactics
 
 /-!
 ## Lambda's Type Factory
@@ -708,8 +709,8 @@ def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   termination_by (adts.allDatatypes.length - seen.length, 0)
   decreasing_by
     apply Prod.Lex.left; simp only[List.length]
-    apply Nat.sub_succ_lt_self
-    have hlen := List.subset_nodup_length hn hsub'; simp_all; omega
+    have hlen := List.subset_nodup_length hn hsub'
+    simp_all; omega
 
 def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.allDatatypes))
@@ -728,9 +729,9 @@ def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   | _ => pure true -- Type variables and bitvectors are inhabited
 termination_by (adts.allDatatypes.length - seen.length, t.size)
 decreasing_by
-  . apply Prod.Lex.right; simp only[LMonoTy.size]; omega
-  . rename_i h; have := LMonoTy.size_lt_of_mem h;
-    apply Prod.Lex.right; simp only[LMonoTy.size]; omega
+  all_goals (
+    apply Prod.Lex.right;
+    term_by_mem [LMonoTy, LMonoTy.size_lt_of_mem])
 end
 
 /--

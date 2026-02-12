@@ -5,6 +5,7 @@
 -/
 
 import Strata.Backends.CBMC.GOTO.SourceLocation
+import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
@@ -93,7 +94,7 @@ def Ty.beq (x y : Ty) : Bool :=
   x.id == y.id && x.sourceLoc == y.sourceLoc &&
   go x.subtypes y.subtypes
   termination_by (SizeOf.sizeOf x)
-  decreasing_by cases x; simp; omega
+  decreasing_by cases x; term_by_mem
   where go xs ys :=
   match xs, ys with
   | [], [] => true
@@ -113,8 +114,7 @@ def formatTy (t : Ty) : Format :=
   else
     f!"({t.id} {subtypes})"
   termination_by (SizeOf.sizeOf t)
-  decreasing_by
-    cases t; simp_all; rename_i s_in; have := List.sizeOf_lt_of_mem s_in; omega
+  decreasing_by cases t; term_by_mem
 
 instance : ToFormat Ty where
   format t := formatTy t
