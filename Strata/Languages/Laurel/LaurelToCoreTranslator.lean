@@ -433,6 +433,10 @@ def getArrayElemConstrainedType (env : TypeEnv) (arr : StmtExprMd) : Option Iden
   | _ => none
 
 /-- Collect Array.Get accesses with constrained element types -/
+-- TODO: This is array-specific. The only reason arrays need special handling is that
+-- Array.Get is a built-in (translated to SMT `select`), not a procedure call, so there's
+-- no contract to assume from. If other built-in operations return constrained types in the
+-- future, this should be generalized.
 def collectConstrainedArrayAccesses (env : TypeEnv) (tcMap : TranslatedConstraintMap) (e : StmtExprMd) : List (StmtExprMd × StmtExprMd × TranslatedConstraint) :=
   match _h : e.val with
   | .StaticCall callee [arr, idx] =>
@@ -473,8 +477,12 @@ Translate Laurel StmtExpr to Core Statements
 Takes the type environment, output parameter names, and postconditions to assert at returns
 -/
 def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (env : TypeEnv) (outputParams : List Parameter) (postconds : List (String × Core.Expression.Expr)) (stmt : StmtExprMd) : Except String (TypeEnv × List Core.Statement) := do
-  -- Generate assumes for constrained array element accesses before the statement
-  let arrayElemAssumes ← genArrayElemAssumes tcMap env stmt (translateExpr ctMap tcMap env)
+  -- Generate assumes for constrained array element accesses in leaf expressions only.
+  -- Compound statements (Block, IfThenElse, While) don't generate assumes here —
+  -- their sub-statements handle their own assumes via recursive translateStmt calls.
+  let arrayElemAssumes ← match stmt.val with
+    | .Block _ _ | .IfThenElse _ _ _ | .While _ _ _ _ => pure []
+    | _ => genArrayElemAssumes tcMap env stmt (translateExpr ctMap tcMap env)
   let mkReturnStmts (valueOpt : Option Core.Expression.Expr) : Except String (TypeEnv × List Core.Statement) := do
     let postAsserts := postconds.map fun (label, expr) => Core.Statement.assert label expr stmt.md
     let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) stmt.md
