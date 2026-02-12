@@ -18,8 +18,26 @@ translator to obtain the AST.
 namespace Strata.Test
 
 open Strata.CoreDDM
+
 open Strata
 open Core
+
+def fooPgm : Program :=
+#strata
+program Core;
+function id(x : int, y : int) : int { y }
+axiom (id(4, 3) == 3);
+#end
+
+#print CoreDDM.Expr
+
+#eval
+  match Command.ofAst fooPgm.commands[1]! with
+  | .ok o =>
+    dbg_trace f!"{(repr o)} {repr fooPgm.globalContext}"
+    true
+  | _ => false
+
 
 def testProgram : Program :=
 #strata
@@ -58,6 +76,9 @@ spec {
   ensures (x == y);
   ensures (g == g);
   ensures (g == old(g));
+  ensures [test_foo]: (fooConst == 5);
+  //ensures [List_head_test]: (List..isNil(Nil()));
+  // ensures [test_id]: (id(4,3) == 4);
 }
 {
   y := x || x;
@@ -96,6 +117,7 @@ spec{
     ensures [Test2_ensures_1]:x==y;
     ensures [Test2_ensures_2]:g==g;
     ensures [Test2_ensures_3]:g==old(g);
+    ensures [test_foo]:fooConst==5;
     } {
 (y) := x||x;
   }
