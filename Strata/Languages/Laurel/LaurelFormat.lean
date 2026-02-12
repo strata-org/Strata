@@ -32,7 +32,7 @@ def formatOperation : Operation → Format
 mutual
 def formatHighType (t : HighTypeMd) : Format := formatHighTypeVal t.val
   termination_by sizeOf t
-  decreasing_by simp_wf; have := WithMetadata.sizeOf_val_lt t; grind
+  decreasing_by cases t; term_by_mem
 
 def formatHighTypeVal : HighType → Format
   | .TVoid => "void"
@@ -50,18 +50,14 @@ def formatHighTypeVal : HighType → Format
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
   termination_by t => sizeOf t
-  decreasing_by
-    all_goals simp_wf
-    all_goals first
-      | (have := List.sizeOf_lt_of_mem ‹_›; omega)
-      | omega
+  decreasing_by all_goals term_by_mem
 end
 
 
 mutual
 def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
   termination_by sizeOf s
-  decreasing_by simp_wf; have := WithMetadata.sizeOf_val_lt s; grind
+  decreasing_by cases s; term_by_mem
 
 def formatStmtExprVal (s : StmtExpr) : Format :=
   match s with
@@ -131,11 +127,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .All => "all"
   | .Hole => "<?>"
   termination_by sizeOf s
-  decreasing_by
-    all_goals simp_wf
-    all_goals first
-      | (have := List.sizeOf_lt_of_mem ‹_›; omega)
-      | omega
+  decreasing_by all_goals term_by_mem
 end
 
 def formatParameter (p : Parameter) : Format :=
