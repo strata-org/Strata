@@ -39,7 +39,7 @@ procedure P() returns ()
     assert f(23);
     assert f(-(5));
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q0(x : int) returns ()
@@ -49,7 +49,7 @@ procedure Q0(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q1(x : int) returns ()
@@ -59,7 +59,7 @@ procedure Q1(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q2(x : int) returns ()
@@ -69,7 +69,7 @@ procedure Q2(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q3(x : int) returns ()
@@ -79,12 +79,31 @@ procedure Q3(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 #end
 
 ---------------------------------------------------------------------
 
+def normalizeModelValues (s : String) : String :=
+  let lines := s.splitOn "\n"
+  let normalized := lines.map fun line =>
+    if line.startsWith "($__x" && line.contains ", " then
+      -- Extract the value after the comma
+      match line.splitOn ", " with
+      | [var, rest] =>
+        match rest.dropRight 1 |>.trim.toInt? with  -- Remove trailing ")" and parse
+        | some val =>
+          if val == 2 then
+            s!"{var}, VALUE_WAS_2)"
+          else
+            s!"{var}, model_not_2)"
+        | none => line
+      | _ => line
+    else
+      line
+  String.intercalate "\n" normalized
+
 /--
 info:
 Obligation: assert_0
@@ -107,53 +126,55 @@ Obligation: assert_4
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, 3)
+($__x0, model_not_2)
 
 Obligation: assert_5
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, 3)
+($__x0, model_not_2)
 
 Obligation: assert_6
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, 3)
+($__x1, model_not_2)
 
 Obligation: assert_7
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, 3)
+($__x1, model_not_2)
 
 Obligation: assert_8
 Property: assert
 Result: ❌ fail
 Model:
-($__x2, 3)
+($__x2, model_not_2)
 
 Obligation: assert_9
 Property: assert
 Result: ❌ fail
 Model:
-($__x2, 3)
+($__x2, model_not_2)
 
 Obligation: assert_10
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, 3)
+($__x3, model_not_2)
 
 Obligation: assert_11
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, 3)
+($__x3, model_not_2)
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm
-        (options := {Options.quiet with removeIrrelevantAxioms := true})
+#eval do
+  let results ← verify "cvc5" irrelevantAxiomsTestPgm
+        (options := {Options.models with removeIrrelevantAxioms := true})
+  IO.println (normalizeModelValues (toString results))
 
 ---------------------------------------------------------------------
 
@@ -208,7 +229,7 @@ Property: assert
 Result: 🟡 unknown
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm
-        (options := {Options.quiet with removeIrrelevantAxioms := false})
+#eval verify "cvc5" irrelevantAxiomsTestPgm
+        (options := {Options.models with removeIrrelevantAxioms := false})
 
 ---------------------------------------------------------------------
