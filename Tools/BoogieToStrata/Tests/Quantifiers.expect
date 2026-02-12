@@ -1,11 +1,11 @@
 Successfully parsed.
 Quantifiers.core.st(39, 4) [assert_0]: ✅ pass
 Quantifiers.core.st(51, 4) [assert_1]: 🟡 unknown
-Quantifiers.core.st(64, 4) [assert_2]: ✅ pass
-Quantifiers.core.st(76, 4) [assert_3]: 🟡 unknown
+Quantifiers.core.st(64, 4) [assert_2]: 🟡 unknown
+Quantifiers.core.st(76, 4) [assert_3]: ✅ pass
 Quantifiers.core.st(89, 4) [assert_4]: ✅ pass
-Quantifiers.core.st(99, 4) [assert_5]: 🟡 unknown
-Quantifiers.core.st(110, 4) [assert_6]: 🟡 unknown
+Quantifiers.core.st(99, 4) [assert_5]: ✅ pass
+Quantifiers.core.st(110, 4) [assert_6]: ✅ pass
 Quantifiers.core.st(123, 4) [assert_7]: ✅ pass
 Quantifiers.core.st(134, 4) [assert_8]: ✅ pass
 Quantifiers.core.st(146, 4) [assert_9]: ✅ pass
@@ -13,4 +13,4 @@ Quantifiers.core.st(158, 4) [assert_10]: ✅ pass
 Quantifiers.core.st(170, 4) [assert_11]: ✅ pass
 Quantifiers.core.st(183, 4) [assert_12]: ✅ pass
 Quantifiers.core.st(195, 4) [assert_13]: ✅ pass
-Finished with 10 goals passed, 4 failed.
+Finished with 12 goals passed, 2 failed.
