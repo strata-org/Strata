@@ -74,34 +74,36 @@ return := sum
 #eval Strata.C_Simp.get_program LoopSimplePgm
 
 /--
-info: (procedure loopSimple :  ((n : int)) → ((return : int)))
-modifies: []
-preconditions: (pre, ((~Int.Ge n) #0))
-postconditions: (post, #true)
-body: init (sum : int) := init_sum
-init (i : int) := init_i
-sum := #0
-i := #0
-if ((~Int.Lt i) n) then {first_iter_asserts : {assert [entry_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
-  assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
- arbitrary iter facts : {loop havoc : {havoc sum
-   havoc i}
-  arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt i) n)
-   assume [assume_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
-   assume [assume_measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
-  init (special-name-for-old-measure-value : int) := ((~Int.Sub n) i)
-  sum := ((~Int.Add sum) i)
-  i := ((~Int.Add i) #1)
-  assert [measure_decreases] ((~Int.Lt ((~Int.Sub n) i)) special-name-for-old-measure-value)
-  assert [measure_imp_not_guard] (if ((~Int.Le ((~Int.Sub n) i)) #0) then (~Bool.Not ((~Int.Lt i) n)) else #true)
-  assert [arbitrary_iter_maintain_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))}
- loop havoc : {havoc sum
-  havoc i}
- assume [not_guard] (~Bool.Not ((~Int.Lt i) n))
- assume [invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))}
-else{}
-assert [sum_assert] (((~Int.Div ((~Int.Mul n) ((~Int.Sub n) #1))) #2) == sum)
-return := sum
+info: procedure loopSimple :  ((n : int)) → ((return : int))
+  modifies: []
+  preconditions: (pre, ((~Int.Ge n) #0))
+  postconditions: (post, #true)
+{
+  init (sum : int) := init_sum
+  init (i : int) := init_i
+  sum := #0
+  i := #0
+  if ((~Int.Lt i) n) then {first_iter_asserts : {assert [entry_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
+    assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
+   arbitrary iter facts : {loop havoc : {havoc sum
+     havoc i}
+    arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt i) n)
+     assume [assume_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
+     assume [assume_measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
+    init (special-name-for-old-measure-value : int) := ((~Int.Sub n) i)
+    sum := ((~Int.Add sum) i)
+    i := ((~Int.Add i) #1)
+    assert [measure_decreases] ((~Int.Lt ((~Int.Sub n) i)) special-name-for-old-measure-value)
+    assert [measure_imp_not_guard] (if ((~Int.Le ((~Int.Sub n) i)) #0) then (~Bool.Not ((~Int.Lt i) n)) else #true)
+    assert [arbitrary_iter_maintain_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))}
+   loop havoc : {havoc sum
+    havoc i}
+   assume [not_guard] (~Bool.Not ((~Int.Lt i) n))
+   assume [invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))}
+  else{}
+  assert [sum_assert] (((~Int.Div ((~Int.Mul n) ((~Int.Sub n) #1))) #2) == sum)
+  return := sum
+}
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program LoopSimplePgm)

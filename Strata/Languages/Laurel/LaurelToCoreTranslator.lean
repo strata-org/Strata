@@ -18,6 +18,7 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
 open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
@@ -43,10 +44,7 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by ty.val
-decreasing_by
-  rw [_h]; simp [sizeOf, HighType._sizeOf_1]
-  have := WithMetadata.sizeOf_val_lt elementType
-  omega
+decreasing_by cases elementType; term_by_mem
 
 def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
@@ -162,12 +160,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
   decreasing_by
-    all_goals simp_wf
-    all_goals
-      have := WithMetadata.sizeOf_val_lt expr
-      rw [h] at this; simp at this
-      try have := List.sizeOf_lt_of_mem ‹_›
-      grind
+    all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
@@ -287,12 +280,9 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
   | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by
-    all_goals simp_wf
     all_goals
-      have := WithMetadata.sizeOf_val_lt stmt
-      rw [h] at this; simp at this
-      try have := List.sizeOf_lt_of_mem ‹_›
-      grind
+      have hlt := WithMetadata.sizeOf_val_lt stmt
+      cases stmt; term_by_mem
 
 /--
 Translate Laurel Parameter to Core Signature entry
@@ -467,13 +457,8 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .Block [single] _ => isPureExpr single
   | _ => false
   termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals
-      have := WithMetadata.sizeOf_val_lt expr
-      rw [_h] at this; simp at this
-      try have := List.sizeOf_lt_of_mem ‹_›
-      grind
+  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+
 
 /--
 Check if a procedure can be translated as a Core function.

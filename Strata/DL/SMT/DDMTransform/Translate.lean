@@ -5,6 +5,7 @@
 -/
 import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.Term
+import Strata.Util.Tactics
 
 namespace Strata
 
@@ -136,11 +137,7 @@ def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange :=
       let argsSExpr := args.val.map termToSExpr
       .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
   | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
-  decreasing_by
-    cases args
-    rename_i hargs
-    have := Array.sizeOf_lt_of_mem hargs
-    simp_all; omega
+  decreasing_by cases args; term_by_mem
 
 def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
   let srnone := SourceRange.none

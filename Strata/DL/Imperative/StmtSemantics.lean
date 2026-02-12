@@ -8,6 +8,7 @@
 
 import Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Imperative.Stmt
+import Strata.Util.Tactics
 
 ---------------------------------------------------------------------
 
@@ -151,7 +152,7 @@ theorem EvalStmtDefMonotone
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
   termination_by (Stmt.sizeOf s)
-  decreasing_by all_goals simp [*] at * <;> omega
+  decreasing_by all_goals term_by_mem
 
 theorem EvalBlockDefMonotone
   [DecidableEq P.Ident]
@@ -173,5 +174,5 @@ theorem EvalBlockDefMonotone
     apply EvalStmtDefMonotone <;> assumption
     assumption
   termination_by (Block.sizeOf ss)
-  decreasing_by all_goals simp [*] at * <;> decreasing_tactic
+  decreasing_by all_goals term_by_mem
 end
