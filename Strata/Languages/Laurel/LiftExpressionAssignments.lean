@@ -125,15 +125,21 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   return LaurelTypes.computeExprType s.env s.types expr
 
 /-- Check if an expression contains any assignments (recursively). -/
-private partial def containsAssignment : StmtExprMd → Bool
-  | ⟨.Assign .., _⟩ => true
-  | ⟨.PrimitiveOp _ args, _⟩ => args.any containsAssignment
-  | ⟨.IfThenElse cond th el, _⟩ =>
+private def containsAssignment (expr : StmtExprMd) : Bool :=
+  match expr with
+  | WithMetadata.mk val _ =>
+  match val with
+  | .Assign .. => true
+  | .StaticCall _ args1 => args1.attach.any (fun x => containsAssignment x.val)
+  | .PrimitiveOp _ args2 => args2.attach.any (fun x => containsAssignment x.val)
+  | .Block stmts _ => stmts.attach.any (fun x => containsAssignment x.val)
+  | .IfThenElse cond th el =>
       containsAssignment cond || containsAssignment th ||
       match el with | some e => containsAssignment e | none => false
-  | ⟨.StaticCall _ args, _⟩ => args.any containsAssignment
-  | ⟨.Block stmts _, _⟩ => stmts.any containsAssignment
   | _ => false
+  termination_by expr
+  decreasing_by
+    all_goals ((try cases x); simp_all; try term_by_mem)
 
 /--
 Shared logic for lifting an assignment in expression position:

@@ -37,7 +37,7 @@ Compute the HighType of a StmtExpr given a type environment and type definitions
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
 -/
-partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
+def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
   match expr with
   | WithMetadata.mk val md =>
   match val with
@@ -70,8 +70,10 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr 
       | .Neg | .Add | .Sub | .Mul | .Div | .Mod => WithMetadata.mk .TInt md
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
-  | .Block stmts _ => match stmts.getLast? with
-    | some last => computeExprType env types last
+  | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
+    | some last =>
+        have := List.mem_of_getLast? _blockGetLastResult
+        computeExprType env types last
     | none => WithMetadata.mk .TVoid md
   -- Statements (void-typed)
   | .LocalVariable _ _ _ => WithMetadata.mk .TVoid md
@@ -99,5 +101,6 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr 
   | .Abstract => panic "Not supported"
   | .All => panic "Not supported"
   | .Hole => panic "Not supported"
+
 end LaurelTypes
 end Strata.Laurel
