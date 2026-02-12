@@ -59,7 +59,7 @@ spec {
 info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 procedure TestIdentityInt :  () → ()
   modifies: []
-  preconditions: 
+  preconditions:
   postconditions: (TestIdentityInt_ensures_0, #true)
 {
   {
@@ -97,7 +97,7 @@ spec {
 info: ok: func makePair : ∀[$__ty0, $__ty1]. ((x : $__ty0) (y : $__ty1)) → (Map $__ty0 $__ty1);
 procedure TestMakePair :  () → ()
   modifies: []
-  preconditions: 
+  preconditions:
   postconditions: (TestMakePair_ensures_0, #true)
 {
   {
@@ -135,7 +135,7 @@ info: ok: func apply : ∀[$__ty0, $__ty1]. ((f : (arrow $__ty0 $__ty1)) (x : $_
 func intToBool :  ((x : int)) → bool;
 procedure TestApply :  () → ()
   modifies: []
-  preconditions: 
+  preconditions:
   postconditions: (TestApply_ensures_0, #true)
 {
   {
@@ -173,7 +173,7 @@ info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
 procedure TestDifferentInstantiations :  () → ()
   modifies: []
-  preconditions: 
+  preconditions:
   postconditions: (TestDifferentInstantiations_ensures_0, #true)
 {
   {
@@ -208,7 +208,7 @@ spec {
 #end
 
 /--
-info: error: (5240-5263) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
+info: error: (5293-5316) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
 First mismatch: int with bool.
 -/
 #guard_msgs in
