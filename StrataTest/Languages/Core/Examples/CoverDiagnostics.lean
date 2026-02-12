@@ -27,7 +27,7 @@ info: #["cover property is not satisfiable", "assertion does not hold"]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify "z3" coverDiagnosticsPgm (options := Options.quiet)
+  let results ← verify "cvc5" coverDiagnosticsPgm (options := Options.quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -53,7 +53,7 @@ info: #[]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify "z3" passingPgm (options := Options.quiet)
+  let results ← verify "cvc5" passingPgm (options := Options.quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -78,7 +78,7 @@ info: #["assertion could not be proved"]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify "z3" coverPassAssertFailPgm (options := Options.quiet)
+  let results ← verify "cvc5" coverPassAssertFailPgm (options := Options.quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
