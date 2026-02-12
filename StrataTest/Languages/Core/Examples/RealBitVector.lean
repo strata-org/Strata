@@ -38,8 +38,8 @@ axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
 axiom real_y_ge_2: ((~Real.Ge : (arrow real (arrow real bool))) (~y : real) #2);
 procedure P :  () → ()
   modifies: []
-  preconditions:
-  postconditions:
+  preconditions: ⏎
+  postconditions: ⏎
 {
   {
     assert [real_add_ge_good] ((~Real.Ge : (arrow real (arrow real bool)))
@@ -92,8 +92,8 @@ axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
 axiom real_y_ge_2: ((~Real.Ge : (arrow real (arrow real bool))) (~y : real) #2);
 procedure P :  () → ()
   modifies: []
-  preconditions:
-  postconditions:
+  preconditions: ⏎
+  postconditions: ⏎
 {
   {
     assert [real_add_ge_good] (~Real.Ge (~Real.Add ~x ~y) #3)
@@ -150,8 +150,8 @@ axiom bv_x_ge_1: ((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #1 (~x : bv8));
 axiom bv_y_ge_2: ((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #2 (~y : bv8));
 procedure P :  () → ()
   modifies: []
-  preconditions:
-  postconditions:
+  preconditions: ⏎
+  postconditions: ⏎
 {
   {
     assert [bv_add_ge] (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8)))
@@ -161,7 +161,7 @@ procedure P :  () → ()
 }
 procedure Q :  ((x : bv1)) → ((r : bv1))
   modifies: []
-  preconditions:
+  preconditions: ⏎
   postconditions: (Q_ensures_0, ((r : bv1) == ((~Bv1.Sub : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))))
 {
   {
