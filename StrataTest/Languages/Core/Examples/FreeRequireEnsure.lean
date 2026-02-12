@@ -75,22 +75,24 @@ Model:
 
 Evaluated program:
 var (g : int) := init_g_0
-(procedure Proc :  () → ())
-modifies: [g]
-preconditions: (g_eq_15, ((g : int) == #15) (Attribute: Core.Procedure.CheckAttr.Free))
-postconditions: (g_lt_10, (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) #10) (Attribute: Core.Procedure.CheckAttr.Free))
-body: assume [g_eq_15] ($__g0 == #15)
-assert [g_gt_10_internal] ((~Int.Gt $__g0) #10)
-g := ((~Int.Add $__g0) #1)
-assert [g_lt_10] #true
-
-(procedure ProcCaller :  () → ((x : int)))
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: call Proc([])
-assert [g_eq_15_internal] ($__g2 == #15)
-
+procedure Proc :  () → ()
+  modifies: [g]
+  preconditions: (g_eq_15, ((g : int) == #15) (Attribute: Core.Procedure.CheckAttr.Free))
+  postconditions: (g_lt_10, (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) #10) (Attribute: Core.Procedure.CheckAttr.Free))
+{
+  assume [g_eq_15] ($__g0 == #15)
+  assert [g_gt_10_internal] ((~Int.Gt $__g0) #10)
+  g := ((~Int.Add $__g0) #1)
+  assert [g_lt_10] #true
+}
+procedure ProcCaller :  () → ((x : int))
+  modifies: []
+  preconditions: ⏎
+  postconditions: ⏎
+{
+  call Proc()
+  assert [g_eq_15_internal] ($__g2 == #15)
+}
 ---
 info:
 Obligation: g_gt_10_internal

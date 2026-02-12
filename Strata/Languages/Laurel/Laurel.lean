@@ -7,6 +7,7 @@
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Core.Expressions
 import Strata.Languages.Core.Procedure
+import Strata.Util.Tactics
 
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
@@ -209,7 +210,7 @@ instance : Inhabited StmtExpr where
 instance : Inhabited HighTypeMd where
   default := { val := HighType.TVoid, md := default }
 
-partial def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match a.val, b.val with
+def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
@@ -219,11 +220,16 @@ partial def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match a.val, b.va
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
-      highEq b1 b2 && args1.length == args2.length && (args1.zip args2 |>.all (fun (a1, a2) => highEq a1 a2))
+      highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
-      ts1.length == ts2.length && (ts1.zip ts2 |>.all (fun (t1, t2) => highEq t1 t2))
+      ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
   | _, _ => false
+  termination_by (SizeOf.sizeOf a)
+  decreasing_by
+    all_goals (cases a; cases b; try term_by_mem)
+    . cases a1; term_by_mem
+    . cases t1; term_by_mem
 
 instance : BEq HighTypeMd where
   beq := highEq
