@@ -377,7 +377,6 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
-      dbg_trace s!"obligation: {obligation.obligation}"
       let (obligation, maybeResult) ← preprocessObligation obligation p options
       if h : maybeResult.isSome then
         let result := Option.get maybeResult h

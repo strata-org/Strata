@@ -607,7 +607,6 @@ def ProofObligation.toSMTTerms (E : Env)
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx
-  dbg_trace s!"obligation: {d.obligation}"
   let (obligation_pos_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx
   let obligation_term :=
     if d.property == .cover then
