@@ -41,12 +41,14 @@ procedure P :  () → ()
   preconditions: 
   postconditions: 
 {
-  assert [real_add_ge_good] ((~Real.Ge : (arrow real (arrow real bool)))
-   ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
-   #3)
-  assert [real_add_ge_bad] ((~Real.Ge : (arrow real (arrow real bool)))
-   ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
-   #4)
+  {
+    assert [real_add_ge_good] ((~Real.Ge : (arrow real (arrow real bool)))
+     ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
+     #3)
+    assert [real_add_ge_bad] ((~Real.Ge : (arrow real (arrow real bool)))
+     ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
+     #4)
+  }
 }
 Errors: #[]
 -/
@@ -93,8 +95,10 @@ procedure P :  () → ()
   preconditions: 
   postconditions: 
 {
-  assert [real_add_ge_good] (~Real.Ge (~Real.Add ~x ~y) #3)
-  assert [real_add_ge_bad] (~Real.Ge (~Real.Add ~x ~y) #4)
+  {
+    assert [real_add_ge_good] (~Real.Ge (~Real.Add ~x ~y) #3)
+    assert [real_add_ge_bad] (~Real.Ge (~Real.Add ~x ~y) #4)
+  }
 }
 ---
 info:
@@ -149,16 +153,20 @@ procedure P :  () → ()
   preconditions: 
   postconditions: 
 {
-  assert [bv_add_ge] (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8)))
-    (~x : bv8)
-    (~y : bv8)) == ((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~y : bv8) (~x : bv8)))
+  {
+    assert [bv_add_ge] (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8)))
+      (~x : bv8)
+      (~y : bv8)) == ((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~y : bv8) (~x : bv8)))
+  }
 }
 procedure Q :  ((x : bv1)) → ((r : bv1))
   modifies: []
   preconditions: 
   postconditions: (Q_ensures_0, ((r : bv1) == ((~Bv1.Sub : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))))
 {
-  r := ((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))
+  {
+    r := ((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))
+  }
 }
 Errors: #[]
 -/
@@ -249,7 +257,7 @@ Obligation: bad_shift
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, #b10011001) ($__y1, #b00000010)
+($__x0, #b00000100) ($__y1, #b00000100)
 -/
 #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm (options := .quiet)

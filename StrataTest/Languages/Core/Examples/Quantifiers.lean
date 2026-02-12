@@ -98,12 +98,14 @@ procedure Test :  ((x : int)) → ((r : int))
        %0
        (r : int))))))) (bad, (∀ ((~Int.Lt : (arrow int (arrow int bool))) %0 (x : int))))
 {
-  assert [good_assert] (∀ (~Bool.Not (%0 == (~Int.Add %0 #1))))
-  r := (~Int.Add $__x0 #1)
-  assert [good] (∀ (∃ ((~Int.Add
-      (~Int.Add $__x0 #1)
-      (~Int.Add %0 %1)) == (~Int.Add %1 (~Int.Add %0 (~Int.Add $__x0 #1))))))
-  assert [bad] (∀ (~Int.Lt %0 $__x0))
+  {
+    assert [good_assert] (∀ (~Bool.Not (%0 == (~Int.Add %0 #1))))
+    r := (~Int.Add $__x0 #1)
+    assert [good] (∀ (∃ ((~Int.Add
+        (~Int.Add $__x0 #1)
+        (~Int.Add %0 %1)) == (~Int.Add %1 (~Int.Add %0 (~Int.Add $__x0 #1))))))
+    assert [bad] (∀ (~Int.Lt %0 $__x0))
+  }
 }
 ---
 info:

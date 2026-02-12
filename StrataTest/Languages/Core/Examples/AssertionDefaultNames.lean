@@ -32,9 +32,11 @@ spec {
 info: procedure Test :  ((x : int)) → ()
   modifies: []
   preconditions: (Test_requires_0, ((x : int) == #1))
-  postconditions: ⏎
+  postconditions: 
 {
-  assert [assert_0] ((x : int) == #1)
+  {
+    assert [assert_0] ((x : int) == #1)
+  }
 }
 Errors: #[]
 -/

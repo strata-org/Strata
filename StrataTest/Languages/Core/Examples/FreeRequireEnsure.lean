@@ -82,18 +82,22 @@ procedure Proc :  () → ()
    (g : int)
    #10) (Attribute: Core.Procedure.CheckAttr.Free))
 {
-  assume [g_eq_15] ($__g0 == #15)
-  assert [g_gt_10_internal] (~Int.Gt $__g0 #10)
-  g := (~Int.Add $__g0 #1)
-  assert [g_lt_10] #true
+  {
+    assume [g_eq_15] ($__g0 == #15)
+    assert [g_gt_10_internal] (~Int.Gt $__g0 #10)
+    g := (~Int.Add $__g0 #1)
+    assert [g_lt_10] #true
+  }
 }
 procedure ProcCaller :  () → ((x : int))
   modifies: []
   preconditions: 
   postconditions: 
 {
-  call Proc()
-  assert [g_eq_15_internal] ($__g2 == #15)
+  {
+    call Proc()
+    assert [g_eq_15_internal] ($__g2 == #15)
+  }
 }
 ---
 info:

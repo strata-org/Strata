@@ -57,13 +57,19 @@ info: function simpleTest {
   pre: (~Int.Gt y #0)
   post: #true
   body:
-init (z : int) := init_z
-z := (~Int.Add x y)
-assert [test_assert] (~Int.Gt z x)
-if (~Int.Gt z #10) then {z := (~Int.Sub z #1)}
-else{z := (~Int.Add z #1)}
-assume [test_assume] (~Int.Gt z #0)
-return := #0
+{
+  init (z : int) := init_z
+  z := (~Int.Add x y)
+  assert [test_assert] (~Int.Gt z x)
+  if (~Int.Gt z #10) {
+    z := (~Int.Sub z #1)
+  }
+  else {
+    z := (~Int.Add z #1)
+  }
+  assume [test_assume] (~Int.Gt z #0)
+  return := #0
+}
 }
 Errors: #[]
 -/

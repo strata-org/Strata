@@ -340,12 +340,14 @@ private def prog2 : Statements := [
 ]
 
 /--
-info: init (x : int) := #0
-x := #1
-havoc x
-assert [x_eq_1] ($__x0 == #1)
-havoc x
-x := #8
+info: {
+  init (x : int) := #0
+  x := #1
+  havoc x
+  assert [x_eq_1] ($__x0 == #1)
+  havoc x
+  x := #8
+}
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |>.fst |> format

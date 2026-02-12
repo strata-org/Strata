@@ -20,7 +20,9 @@ info: ok: (procedure P :  ((x : int)) → ((y : int))
    preconditions: (0_lt_x, ((~Int.Lt : (arrow int (arrow int bool))) #0 (x : int)))
    postconditions: (ret_y_lt_0, ((~Int.Lt : (arrow int (arrow int bool))) (y : int) #0))
  {
-   y := ((~Int.Sub : (arrow int (arrow int int))) #0 (x : int))
+   {
+     y := ((~Int.Sub : (arrow int (arrow int int))) #0 (x : int))
+   }
  },
  context:
  types:   
@@ -51,7 +53,9 @@ info: ok: procedure P :  ((a : int)) → ()
     ((~old : (arrow int int)) (g : int))
     (a : int))))
 {
-  g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
+  {
+    g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
+  }
 }
 -/
 #guard_msgs in
@@ -83,7 +87,9 @@ info: ok: procedure P :  ((a : int)) → ()
     ((~old : (arrow int int)) (a : int))
     ((~old : (arrow int int)) (g : int)))))
 {
-  g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
+  {
+    g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
+  }
 }
 -/
 #guard_msgs in

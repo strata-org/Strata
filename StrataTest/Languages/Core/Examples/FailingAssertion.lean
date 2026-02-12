@@ -42,7 +42,9 @@ procedure P :  () → ()
   preconditions: (P_requires_1, (((~select : (arrow (Map int int) (arrow int int))) (a : MapII) #0) == #0))
   postconditions: 
 {
-  assert [assert_0] (((~select : (arrow (Map int int) (arrow int int))) (a : MapII) #0) == #1)
+  {
+    assert [assert_0] (((~select : (arrow (Map int int) (arrow int int))) (a : MapII) #0) == #1)
+  }
 }
 Errors: #[]
 -/
@@ -77,8 +79,10 @@ procedure P :  () → ()
   preconditions: (P_requires_1, (((~select : (arrow (Map int int) (arrow int int))) (a : (Map int int)) #0) == #0))
   postconditions: 
 {
-  assume [P_requires_1] ((~select $__a0 #0) == #0)
-  assert [assert_0] ((~select $__a0 #0) == #1)
+  {
+    assume [P_requires_1] ((~select $__a0 #0) == #0)
+    assert [assert_0] ((~select $__a0 #0) == #1)
+  }
 }
 ---
 info:

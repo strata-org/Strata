@@ -79,12 +79,14 @@ def p := (Stmt.ite xEq0
 info: {
   if ((x : int) == #0) {
     y := #1
-  }else {
+  }
+  else {
     y := #2
   }
   if ((x : int) == #0) {
     y := #1
-  }else {
+  }
+  else {
     y := #2
   }
 }
@@ -96,7 +98,8 @@ info: {
 /--
 info: if ((x : int) == #0) {
   y := #1
-}else {
+}
+else {
   y := #2
 }
 -/
@@ -105,7 +108,10 @@ info: if ((x : int) == #0) {
 
 
 -- 11. ite: empty branches
-/-- info: if #true {}else {} -/
+/--
+info: if #true {}
+else {}
+-/
 #guard_msgs in #eval! format (Stmt.ite tt ([] : Ss) ([] : Ss) : S)
 
 -- 12. loop: no measure, no invariant

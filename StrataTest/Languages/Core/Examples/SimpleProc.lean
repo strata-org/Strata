@@ -39,7 +39,9 @@ procedure Test :  ((x : bool)) → ((y : bool))
   postconditions: (Test_ensures_0, ((y : bool) == (x : bool))) (Test_ensures_1, ((x : bool) == (y : bool))) (Test_ensures_2, ((g : bool) == ((~old : (arrow a a))
     (g : bool))))
 {
-  y := ((~Bool.Or : (arrow bool (arrow bool bool))) (x : bool) (x : bool))
+  {
+    y := ((~Bool.Or : (arrow bool (arrow bool bool))) (x : bool) (x : bool))
+  }
 }
 Errors: #[]
 -/

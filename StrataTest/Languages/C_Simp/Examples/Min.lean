@@ -46,8 +46,14 @@ info: function min {
   pre: #true
   post: #true
   body:
-if (~Int.Lt a b) then {return := a}
-else{return := b}
+{
+  if (~Int.Lt a b) {
+    return := a
+  }
+  else {
+    return := b
+  }
+}
 }
 Errors: #[]
 -/
