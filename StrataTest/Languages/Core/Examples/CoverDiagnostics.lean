@@ -58,3 +58,28 @@ info: #[]
   return diagnostics.map DiagnosticModel.message
 
 ---------------------------------------------------------------------
+
+
+-- Test that satisfiable cover produces no diagnostic while unprovable assert does
+def coverPassAssertFailPgm :=
+#strata
+program Core;
+procedure Test() returns ()
+{
+  var x : int;
+
+  cover [satisfiable_cover]: (x > 0);
+  assert [unprovable_assert]: (x > 0);
+};
+#end
+
+/--
+info: #["assertion could not be proved"]
+-/
+#guard_msgs in
+#eval do
+  let results ← verify "z3" coverPassAssertFailPgm (options := Options.quiet)
+  let diagnostics := results.filterMap toDiagnosticModel
+  return diagnostics.map DiagnosticModel.message
+
+---------------------------------------------------------------------
