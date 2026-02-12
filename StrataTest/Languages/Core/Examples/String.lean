@@ -95,6 +95,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" strPgm
+#eval verify strPgm
 
 ---------------------------------------------------------------------

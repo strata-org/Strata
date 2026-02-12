@@ -97,7 +97,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" goodTypeAlias
+#eval verify goodTypeAlias
 
 --------------------------------------------------------------------
 
@@ -140,6 +140,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" funcAndTypeAliasesPgm
+#eval verify funcAndTypeAliasesPgm
 
 --------------------------------------------------------------------

@@ -39,7 +39,7 @@ Result: failed
 Counterexample: (($__x0, Num), 0)
 -/
 #guard_msgs in
-#eval Strata.ArithPrograms.verify "cvc5" testProgram1
+#eval Strata.ArithPrograms.verify testProgram1
 
 ---------------------------------------------------------------------
 
@@ -65,7 +65,7 @@ Obligation: x_eq_y
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.ArithPrograms.verify "cvc5" testProgram2
+#eval Strata.ArithPrograms.verify testProgram2
 
 ---------------------------------------------------------------------
 
@@ -91,6 +91,6 @@ Obligation: double_x_lemma
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.ArithPrograms.verify "cvc5" testProgram3
+#eval Strata.ArithPrograms.verify testProgram3
 
 ---------------------------------------------------------------------

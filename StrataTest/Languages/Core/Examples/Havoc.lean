@@ -84,6 +84,6 @@ Model:
 ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" havocPgm
+#eval verify havocPgm
 
 ---------------------------------------------------------------------
