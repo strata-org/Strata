@@ -20,7 +20,10 @@ open Std (ToFormat Format format)
 namespace CmdEval
 
 def eval (E : Env) (e : Expression.Expr) : Expression.Expr :=
-  LExpr.eval E.exprEnv.config.fuel E.exprEnv e
+  dbg_trace s!"e: {e}"
+  let res := LExpr.eval E.exprEnv.config.fuel E.exprEnv e
+  dbg_trace s!"res: {res}"
+  res
 
 def updateError (E : Env) (e : EvalError Expression) : Env :=
   { E with error := e }

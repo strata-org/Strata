@@ -379,11 +379,37 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   | .Import _ _ | .ImportFrom _ _ _ _ => return (ctx, mkStmtExprMd .Hole)
 
-  -- Try/except - translate body, ignore handlers for now
-  | .Try _ body _ _ _ => do
-    let (newCtx, bodyStmts) ← translateStmtList ctx body.val.toList
-    let block := mkStmtExprMd (StmtExpr.Block bodyStmts none)
-    return (newCtx, block)
+  -- Try/except - wrap body with exception checks and handlers
+  | .Try _ body handlers _ _ => do
+    let tryLabel := "try_end"
+    let handlerLabel := "exception_handlers"
+    
+    -- Translate try body
+    let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
+    
+    -- Insert exception checks after each statement in try body
+    let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
+      -- Check if maybe_except is an exception and exit to handlers if so
+      let isException := mkStmtExprMd (StmtExpr.StaticCall "ExceptOrNone..isExceptOrNone_mk_code" 
+        [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
+      let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException 
+        (mkStmtExprMd (StmtExpr.Exit handlerLabel)) none)
+      [stmt, exitToHandler]
+    
+    -- Translate exception handlers
+    let mut handlerStmts : List StmtExprMd := []
+    for handler in handlers.val do
+      match handler with
+      | .ExceptHandler _ _ _ handlerBody =>
+        let (_, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
+        handlerStmts := handlerStmts ++ hStmts
+    
+    -- Create handler block
+    let handlerBlock := mkStmtExprMd (StmtExpr.Block handlerStmts (some handlerLabel))
+    
+    -- Wrap in try block
+    let tryBlock := mkStmtExprMd (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel))
+    return (bodyCtx, tryBlock)
 
   | .Raise _ _ _ => return (ctx, mkStmtExprMd .Hole)
 
