@@ -39,7 +39,7 @@ procedure P() returns ()
     assert f(23);
     assert f(-(5));
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q0(x : int) returns ()
@@ -49,7 +49,7 @@ procedure Q0(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q1(x : int) returns ()
@@ -59,7 +59,7 @@ procedure Q1(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q2(x : int) returns ()
@@ -69,7 +69,7 @@ procedure Q2(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 
 procedure Q3(x : int) returns ()
@@ -79,7 +79,7 @@ procedure Q3(x : int) returns ()
     assert (x == 2);
     assert (x == 2);
   }
-  end : {}
+  _exit : {}
 };
 #end
 
