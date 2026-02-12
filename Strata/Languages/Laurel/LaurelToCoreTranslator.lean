@@ -296,7 +296,7 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
                 pure (.fvar () (Core.CoreIdent.locl name) (some coreTy))
         | none =>
             -- Not in env - assume it's a global constant
-            pure (.op () (Core.CoreIdent.glob name) none)
+            pure (.op () (Core.CoreIdent.unres name) none)
   | .PrimitiveOp op [e] => do
       let e' ← translateExpr ctMap tcMap env e
       translateUnaryOp op e'
@@ -321,7 +321,7 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
         | .Identifier name => pure (.fvar () (Core.CoreIdent.locl (name ++ "_len")) (some LMonoTy.int))
         | _ => throw "Array.Length on complex expressions not supported"
       else do
-        let calleeOp := LExpr.op () (Core.CoreIdent.glob norm) none
+        let calleeOp := LExpr.op () (Core.CoreIdent.unres norm) none
         let translated ← translateExpr ctMap tcMap env arg
         let expandedArgs := expandArrayArgs env [arg] [translated]
         pure (expandedArgs.foldl (fun acc a => .app () acc a) calleeOp)
@@ -352,7 +352,7 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
         pure (LExpr.quant () .exist (some LMonoTy.int) (LExpr.noTrigger ()) body)
       else do
         -- Default: treat as function call with array expansion
-        let calleeOp := LExpr.op () (Core.CoreIdent.glob norm) none
+        let calleeOp := LExpr.op () (Core.CoreIdent.unres norm) none
         let e1 ← translateExpr ctMap tcMap env arg1
         let e2 ← translateExpr ctMap tcMap env arg2
         let expandedArgs := expandArrayArgs env [arg1, arg2] [e1, e2]
@@ -360,7 +360,7 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
   | .StaticCall name args => do
       let normName := normalizeCallee name
       -- Use glob for all functions including heap functions
-      let fnIdent := Core.CoreIdent.glob normName
+      let fnIdent := Core.CoreIdent.unres normName
       let fnOp := LExpr.op () fnIdent none
       let translatedArgs ← args.attach.mapM fun ⟨a, _⟩ => translateExpr ctMap tcMap env a
       let expandedArgs := expandArrayArgs env args translatedArgs
@@ -854,7 +854,7 @@ def intModTFunc : Core.Decl :=
 def translateConstant (c : Constant) : Core.Decl :=
   let ty := translateType c.type.val
   .func {
-    name := Core.CoreIdent.glob c.name
+    name := Core.CoreIdent.unres c.name
     typeArgs := []
     inputs := []
     output := ty
@@ -922,7 +922,7 @@ def translateProcedureToFunction (ctMap : ConstrainedTypeMap) (tcMap : Translate
         pure (some expr)
     | _ => pure none
   pure (.func {
-    name := Core.CoreIdent.glob proc.name
+    name := Core.CoreIdent.unres proc.name
     typeArgs := []
     inputs := inputs
     output := outputTy
