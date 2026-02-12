@@ -61,6 +61,8 @@ structure Scope where
 structure ToCSTContext where
   /-- Stack of scopes, with global scope at index 0 -/
   scopes : Array Scope := #[{}]
+  /-- Global context from DDM program -/
+  globalContext : GlobalContext := {}
   deriving Inhabited, Repr
 
 namespace ToCSTContext
@@ -298,7 +300,11 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) : ToCSTM M (CoreDDM.Expr M) :
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
   | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr" s!"bitvec width {w}"
 
-#print CoreDDM.Expr
+/-- Count the arity of a function type by counting arrows -/
+def countArity (ty : TypeExpr) : Nat :=
+  match ty with
+  | .arrow _ _ rest => 1 + countArity rest
+  | _ => 0
 
 def lopToExpr1 [Inhabited M]
     (name : Lambda.Identifier CoreLParams.mono.base.IDMeta) :
@@ -365,21 +371,41 @@ partial def lappToExprAcc [Inhabited M]
   match fn with
   | .app _ fn2 arg1 => do
     let arg1Expr ← lexprToExpr arg1 bound
-    lappToExprAcc fn2 arg bound (arg1Expr :: acc)
+    lappToExprAcc fn2 arg bound (acc ++ [arg1Expr])
   | .op _ name _ => do
     let argExpr ← lexprToExpr arg bound
-    lopToExpr name.name (argExpr :: acc)
+    lopToExpr name.name (acc ++ [argExpr])
   | .fvar _ name _ => do
     let argExpr ← lexprToExpr arg bound
-    lopToExpr name.name (argExpr :: acc)
+    lopToExpr name.name (acc ++ [argExpr])
   | _ => ToCSTM.throwError "lappToExprAcc" "unsupported application"
 
 partial def lopToExpr [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) := do
+  let ctx ← get
+  -- User-defined functions.
+  match ctx.globalContext.findIndex? name with
+  | some idx =>
+    match ctx.globalContext.kindOf! idx with
+    | .expr ty =>
+      let expectedArity := countArity ty
+      let actualArity := args.length
+      if actualArity == expectedArity then
+        let fnExpr := CoreDDM.Expr.fvar default idx
+        pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
+      else
+        ToCSTM.throwError "lopToExpr" s!"function {name} expects {expectedArity} arguments but got {actualArity}"
+    | _ => ToCSTM.throwError "lopToExpr" s!"unsupported arity or unknown operation: {name}"
+  | none =>
+    -- Either a built-in or an invalid operation.
   let ty := CoreType.int default  -- placeholder type
   match args with
+  | [] => do
+    -- No built-in functions are 0-ary.
+    ToCSTM.throwError "lopToExpr" s!"0-ary op {name} not found"
   | [arg] =>
     match name with
+    | "old" => pure (.old default ty arg)
     | "Bool.Not" => pure (.not default arg)
     | "Int.Neg" | "Real.Neg" => pure (.neg_expr default ty arg)
     | "Bv1.Not" => pure (.bvnot default (.bv1 default) arg)
@@ -387,7 +413,6 @@ partial def lopToExpr [Inhabited M]
     | "Bv16.Not" => pure (.bvnot default (.bv16 default) arg)
     | "Bv32.Not" => pure (.bvnot default (.bv32 default) arg)
     | "Bv64.Not" => pure (.bvnot default (.bv64 default) arg)
-    | "old" => pure (.old default ty arg)
     | "Bv8.Extract_7_7" => pure (.bvextract_7_7 default arg)
     | "Bv16.Extract_15_15" => pure (.bvextract_15_15 default arg)
     | "Bv32.Extract_31_31" => pure (.bvextract_31_31 default arg)
@@ -522,16 +547,8 @@ partial def lopToExpr [Inhabited M]
     | "re_loop" => pure (.re_loop default arg1 arg2 arg3)
     | "update" => pure (.map_set default ty ty arg1 arg2 arg3)
     | _ => ToCSTM.throwError "lopToExpr" s!"ternary op {name}"
-  | [] => do
-    let ctx ← get
-    match ctx.freeVars.toList.findIdx? (· == name) with
-    | some idx => pure (.fvar default idx)
-    | none => ToCSTM.throwError "lopToExpr" s!"0-ary op {name} not found"
-  | _ => do
-    let ctx ← get
-    match ctx.freeVars.toList.findIdx? (· == name) with
-    | some _ => ToCSTM.throwError "lopToExpr" s!"user-defined function application not supported in CoreDDM: {name}"
-    | none => ToCSTM.throwError "lopToExpr" s!"unsupported arity or unknown operation: {name}"
+  | _ =>
+    ToCSTM.throwError "lopToExpr" s!"unknown operation: {name}"
 end
 
 mutual
@@ -771,8 +788,9 @@ def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
     pure [cmd]
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
-def programToCST [Inhabited M] (prog : Core.Program) :
+def programToCST [Inhabited M] (prog : Core.Program) (gctx : GlobalContext := {}) :
     ToCSTM M (List (Command M)) := do
+  modify fun ctx => { ctx with globalContext := gctx }
   let cmdLists ← prog.decls.mapM declToCST
   pure cmdLists.flatten
 

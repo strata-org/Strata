@@ -22,22 +22,6 @@ open Strata.CoreDDM
 open Strata
 open Core
 
-def fooPgm : Program :=
-#strata
-program Core;
-function id(x : int, y : int) : int { y }
-axiom (id(4, 3) == 3);
-#end
-
-#print CoreDDM.Expr
-
-#eval
-  match Command.ofAst fooPgm.commands[1]! with
-  | .ok o =>
-    dbg_trace f!"{(repr o)} {repr fooPgm.globalContext}"
-    true
-  | _ => false
-
 
 def testProgram : Program :=
 #strata
@@ -60,8 +44,8 @@ function foo<T1, T2>(x : T1) : Map T1 T2;
 
 axiom [fooConst_value]: fooConst == 5;
 
-// function f(x: int): int;
-// axiom [f1]: (f(5) > 5);
+function f(x: int): int;
+axiom [f1]: (f(5) > 5);
 
 var g : bool;
 
@@ -78,7 +62,7 @@ spec {
   ensures (g == old(g));
   ensures [test_foo]: (fooConst == 5);
   //ensures [List_head_test]: (List..isNil(Nil()));
-  // ensures [test_id]: (id(4,3) == 4);
+  ensures [test_id]: (id(4,3) == 4);
 }
 {
   y := x || x;
@@ -105,6 +89,8 @@ y
 }
 function foo<T1, T2> (x : T1) : Map T1 T2;
 axiom [fooConst_value]:fooConst==5;
+function f (x : int) : int;
+axiom [f1]:f(5)>5;
 var g:bool;
 procedure Test1 (x : bool) returns (y : bool)
  {
@@ -118,6 +104,7 @@ spec{
     ensures [Test2_ensures_2]:g==g;
     ensures [Test2_ensures_3]:g==old(g);
     ensures [test_foo]:fooConst==5;
+    ensures [test_id]:id(4, 3)==4;
     } {
 (y) := x||x;
   }
@@ -131,7 +118,7 @@ spec{
     IO.println f!"CST to AST Error: {errs}"
 
   -- Convert AST → CST
-  match (programToCST (M := SourceRange) ast).run ToCSTContext.empty with
+  match (programToCST (M := SourceRange) ast testProgram.globalContext).run ToCSTContext.empty with
   | .error errs =>
     IO.println "AST to CST Error:"
     for err in errs do
