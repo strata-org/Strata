@@ -27,7 +27,7 @@ info: #["cover property is not satisfiable", "assertion does not hold"]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify "cvc5" coverDiagnosticsPgm (options := Options.quiet)
+  let results ← verify "z3" coverDiagnosticsPgm (options := Options.quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -53,34 +53,8 @@ info: #[]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify "cvc5" passingPgm (options := Options.quiet)
+  let results ← verify "z3" passingPgm (options := Options.quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
-
----------------------------------------------------------------------
-
--- Test diagnostic messages are different for cover vs assert
-def mixedFailuresPgm :=
-#strata
-program Core;
-procedure Test() returns ()
-{
-  var x : int;
-  
-  cover [cover_fail]: (false);
-  assert [assert_fail]: (false);
-};
-#end
-
-/--
-info: #["cover property is not satisfiable", "assertion does not hold"]
--/
-#guard_msgs in
-#eval do
-  let results ← verify "cvc5" mixedFailuresPgm (options := Options.quiet)
-  let diagnostics := results.filterMap toDiagnosticModel
-  return diagnostics.map DiagnosticModel.message
-
----------------------------------------------------------------------
 
 ---------------------------------------------------------------------
