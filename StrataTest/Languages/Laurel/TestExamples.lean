@@ -29,7 +29,7 @@ def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
   | .error transErrors => throw (IO.userError s!"Translation errors: {transErrors}")
   | .ok laurelProgram =>
     let files := Map.insert Map.empty uri input.fileMap
-    let diagnostics ← Laurel.verifyToDiagnostics "z3" files laurelProgram
+    let diagnostics ← Laurel.verifyToDiagnostics "cvc5" files laurelProgram
 
     pure diagnostics
 
