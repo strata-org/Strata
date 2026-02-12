@@ -276,7 +276,7 @@ def pyAnalyzeCommand : Command where
       let vcResults ← IO.FS.withTempDir (fun tempDir =>
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
-            (Core.verify solverName newPgm tempDir .none
+            (Core.verify newPgm tempDir .none
               { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
                                       (moreFns := Strata.Python.ReFactory)))
       let mut s := ""
@@ -362,7 +362,7 @@ def laurelAnalyzeCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels "cvc5" combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
