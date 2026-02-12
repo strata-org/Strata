@@ -16,6 +16,8 @@ import Strata.Languages.Laurel.HeapParameterization
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
+import Strata.Languages.Laurel.LaurelFormat
+import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
 open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
@@ -327,28 +329,20 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
       if norm == "Array.Get" then do
         let arrExpr ← translateExpr ctMap tcMap env arg1
         let idxExpr ← translateExpr ctMap tcMap env arg2
-        -- Note: Element type constraints (e.g., Array<int32>) are not currently enforced on access
         let selectOp := LExpr.op () (Core.CoreIdent.unres "select") none
         pure (LExpr.mkApp () selectOp [arrExpr, idxExpr])
       else if norm == "Seq.Contains" then do
-        -- exists i :: start <= i < end && arr[i] == elem
         let bounds ← translateSeqBounds env arg1
         let elemExpr ← translateExpr ctMap tcMap env arg2
         let i := LExpr.bvar () 0
-        -- start <= i
         let geStart := LExpr.mkApp () intLeOp [bounds.start, i]
-        -- i < end
         let ltEnd := LExpr.mkApp () intLtOp [i, bounds.«end»]
-        -- arr[i]
         let selectOp := LExpr.op () (Core.CoreIdent.unres "select") none
         let arrAtI := LExpr.mkApp () selectOp [bounds.arr, i]
-        -- arr[i] == elem
         let eqElem := LExpr.eq () arrAtI elemExpr
-        -- start <= i && i < end && arr[i] == elem
         let body := LExpr.mkApp () boolAndOp [geStart, LExpr.mkApp () boolAndOp [ltEnd, eqElem]]
         pure (LExpr.quant () .exist (some LMonoTy.int) (LExpr.noTrigger ()) body)
       else do
-        -- Default: treat as function call with array expansion
         let calleeOp := LExpr.op () (Core.CoreIdent.glob norm) none
         let e1 ← translateExpr ctMap tcMap env arg1
         let e2 ← translateExpr ctMap tcMap env arg2
@@ -356,7 +350,6 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
         pure (expandedArgs.foldl (fun acc a => .app () acc a) calleeOp)
   | .StaticCall name args => do
       let normName := normalizeCallee name
-      -- Use glob for all functions including heap functions
       let fnIdent := Core.CoreIdent.glob normName
       let fnOp := LExpr.op () fnIdent none
       let translatedArgs ← args.attach.mapM fun ⟨a, _⟩ => translateExpr ctMap tcMap env a

@@ -7,6 +7,7 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Core.Verifier
+import Strata.Util.Tactics
 
 namespace Strata
 namespace Laurel
@@ -203,9 +204,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
                   SequenceM.addPrependedStmt s
             processBlock tail
         termination_by sizeOf remStmts
-        decreasing_by
-          all_goals (simp_wf; try (have := WithMetadata.sizeOf_val_lt ‹_›; omega))
-          subst_vars; rename_i heq; cases heq; omega
+        decreasing_by all_goals (simp_wf; term_by_mem)
       processBlock stmts
 
   -- Base cases: no assignments to extract
@@ -220,9 +219,9 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
   | _ => return expr  -- Other cases
   termination_by sizeOf expr
   decreasing_by
-    all_goals (simp_wf; have := WithMetadata.sizeOf_val_lt expr; rw [_h] at this; simp at this)
-    all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
-    all_goals omega
+    all_goals
+      have := WithMetadata.sizeOf_val_lt expr
+      cases expr; term_by_mem
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
@@ -286,9 +285,9 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
       return [stmt]
   termination_by sizeOf stmt
   decreasing_by
-    all_goals (simp_wf; have := WithMetadata.sizeOf_val_lt stmt; rw [_h] at this; simp at this)
-    all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
-    all_goals omega
+    all_goals
+      have := WithMetadata.sizeOf_val_lt stmt
+      cases stmt; term_by_mem
 
 
 end

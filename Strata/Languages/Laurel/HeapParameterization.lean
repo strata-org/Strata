@@ -6,6 +6,7 @@
 
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Util.Tactics
 
 /-
 Heap Parameterization Pass
@@ -43,7 +44,7 @@ structure AnalysisResult where
 mutual
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
   termination_by sizeOf expr
-  decreasing_by cases expr <;> simp_wf <;> omega
+  decreasing_by cases expr; term_by_mem
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
@@ -81,12 +82,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ContractOf _ f => collectExprMd f
   | _ => pure ()
   termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals first
-      | omega
-      | (have := WithMetadata.sizeOf_val_lt ‹_›; omega)
-      | (subst_vars; have := List.sizeOf_lt_of_mem ‹_›; omega)
+  decreasing_by all_goals (simp_wf; try term_by_mem)
 end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
