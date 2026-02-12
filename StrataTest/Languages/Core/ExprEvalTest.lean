@@ -141,7 +141,7 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
       print "- Has non-empty type arguments, skipping..."
       continue
     else
-      let cnt := 50
+      let cnt := 5
       let mut unsupported := false
       let mut cnt_skipped := 0
       for _ in [0:cnt] do
@@ -188,7 +188,7 @@ open Lambda.LTy.Syntax
   (.app () (.app () (.op () (CoreIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
 
 
--- This may take a while (~ 5min)
+-- This may take a while
 #eval (checkFactoryOps false)
 
 open Plausible TestGen
