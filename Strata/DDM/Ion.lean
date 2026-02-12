@@ -473,79 +473,114 @@ private instance {α} [FromIon α] : FromIon (TypeExprF α) where
   fromIon := TypeExprF.fromIon
 
 end TypeExprF
-mutual
 
-private protected def OperationF.toIon {α} [ToIon α] (refs : SymbolIdCache) (op : OperationF α) : InternM (Ion SymbolId) :=
-  ionScope! OperationF refs : do
-    let argEntry := ionRefEntry! ``ArgF
-    let args := #[ ← op.name.toIon, ← ToIon.toIon op.ann ]
-    let args ← op.args.attach.mapM_off (init := args) fun ⟨a, _⟩ =>
-      a.toIon argEntry
-    return .sexp args
-termination_by sizeOf op
-decreasing_by
-  · simp [Strata.OperationF.sizeOf_spec]
-    decreasing_tactic
+/-- Size measure for the flattened sum type used to prove
+termination of `ArgF.toIon`. -/
+private noncomputable
+abbrev sizeOf_flat {α}
+    (v : ArgF α ⊕ OperationF α ⊕ ExprF α) : Nat :=
+  match v with
+  | .inl a => sizeOf a
+  | .inr (.inl o) => sizeOf o
+  | .inr (.inr e) => sizeOf e
 
-private protected def ExprF.toIon {α} [ToIon α] (refs : SymbolIdCache) (e : ExprF α) : InternM (Ion SymbolId) :=
-  ionScope! ExprF refs :
-    match e with
-    | .bvar ann idx => do
-      return .sexp #[ ionSymbol! "bvar", ← toIon ann, .int idx ]
-    | .fvar ann lvl => do
-      return .sexp #[ ionSymbol! "fvar", ← toIon ann, .int lvl ]
-    | .fn ann ident =>
-      return .sexp #[ ionSymbol! "fn", ← toIon ann, ← ident.toIon ]
-    | .app ann f a => do
-      return .sexp #[ ionSymbol! "app", ← toIon ann, ← f.toIon refs, ← a.toIon (ionRefEntry! ``Arg) ]
-  termination_by sizeOf e
-  decreasing_by
-    · decreasing_tactic
-    · decreasing_tactic
-
-private protected def ArgF.toIon {α} [ToIon α] (refs : SymbolIdCache) (arg : ArgF α) : InternM (Ion SymbolId) :=
+/-- Serialize an `ArgF`, `OperationF`, or `ExprF` to Ion.
+Uses a sum type to avoid mutual recursion. -/
+@[specialize]
+private protected def ArgF.toIon {α} [ToIon α]
+    (refs : SymbolIdCache)
+    (v : ArgF α ⊕ OperationF α ⊕ ExprF α)
+    : InternM (Ion SymbolId) :=
   ionScope! ArgF refs :
-    match arg with
-    | .op o =>
-      return .sexp #[ ionSymbol! "op", ← o.toIon (ionRefEntry! ``OperationF) ]
-    | .expr e =>
-      return .sexp #[ ionSymbol! "expr", ← e.toIon (ionRefEntry! ``ExprF) ]
-    | .cat c =>
-      return .sexp #[ ionSymbol! "cat", ← c.toIon ]
-    | .type e =>
-      return .sexp #[ ionSymbol! "type", ← e.toIon (ionRefEntry! ``TypeExprF) ]
-    | .ident ann s  =>
-      return .sexp #[ ionSymbol! "ident", ← toIon ann, ← internSymbol s ]
-    | .num ann n    =>
-      return .sexp #[ ionSymbol! "num", ← toIon ann, .int n ]
-    | .decimal ann d =>
-      return .sexp #[ ionSymbol! "decimal", ← toIon ann, .decimal d]
-    | .strlit ann s =>
-      return .sexp #[ ionSymbol! "strlit", ← toIon ann, .string s]
-    | .bytes ann a =>
-      return .sexp #[ ionSymbol! "bytes", ← toIon ann, .blob a ]
-    | .option ann o => do
-      let mut args : Array (Ion _) := #[ ionSymbol! "option", ← toIon ann ]
-      match o with
-      | none => pure ()
-      | some a =>
-        args := args.push (← a.toIon refs )
+    match v with
+    | .inr (.inl o) => do
+      let args := #[ ← o.name.toIon, ← ToIon.toIon o.ann ]
+      let args ← o.args.attach.mapM_off (init := args) fun ⟨a, _⟩ =>
+        ArgF.toIon refs (.inl a)
       return .sexp args
-    | .seq ann sep l => do
-      let annIon ← toIon ann
-      let sepName := sep.toIonName
-      let symb := if sepName == "seq" then ionSymbol! "seq"
-                  else if sepName == "commaSepList" then ionSymbol! "commaSepList"
-                  else if sepName == "spaceSepList" then ionSymbol! "spaceSepList"
-                  else ionSymbol! "spacePrefixedList"
-      let args : Array (Ion _) := #[ symb, annIon ]
-      let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
-      return .sexp args
-  termination_by sizeOf arg
+    | .inr (.inr e) => do
+      match e with
+      | .bvar ann idx =>
+        pure <| .sexp #[ ionSymbol! "bvar", ← toIon ann, .int idx ]
+      | .fvar ann lvl =>
+        pure <| .sexp #[ ionSymbol! "fvar", ← toIon ann, .int lvl ]
+      | .fn ann fnIdent =>
+        pure <| .sexp #[ ionSymbol! "fn", ← toIon ann, ← fnIdent.toIon ]
+      | .app ann f a =>
+        pure <| .sexp #[
+          ionSymbol! "app",
+          ← toIon ann,
+          ← ArgF.toIon refs (.inr (.inr f)),
+          ← ArgF.toIon refs (.inl a)
+        ]
+    | .inl arg =>
+      match arg with
+      | .op o => do
+        return .sexp #[ ionSymbol! "op", ← ArgF.toIon refs (.inr (.inl o)) ]
+      | .expr e => do
+        return .sexp #[ ionSymbol! "expr", ← ArgF.toIon refs (.inr (.inr e)) ]
+      | .cat c =>
+        return .sexp #[ ionSymbol! "cat", ← c.toIon ]
+      | .type e =>
+        return .sexp #[ ionSymbol! "type",
+          ← e.toIon (ionRefEntry! ``TypeExprF) ]
+      | .ident ann s  =>
+        return .sexp #[ ionSymbol! "ident", ← toIon ann, ← internSymbol s ]
+      | .num ann n    =>
+        return .sexp #[ ionSymbol! "num", ← toIon ann, .int n ]
+      | .decimal ann d =>
+        return .sexp #[ ionSymbol! "decimal", ← toIon ann, .decimal d]
+      | .strlit ann s =>
+        return .sexp #[ ionSymbol! "strlit", ← toIon ann, .string s]
+      | .bytes ann a =>
+        return .sexp #[ ionSymbol! "bytes", ← toIon ann, .blob a ]
+      | .option ann o => do
+        let mut args : Array (Ion _) := #[ ionSymbol! "option", ← toIon ann ]
+        match o with
+        | none => pure ()
+        | some a =>
+          args := args.push (← ArgF.toIon refs (.inl a))
+        return .sexp args
+      | .seq ann sep l => do
+        let annIon ← toIon ann
+        let sepName := sep.toIonName
+        let symb :=
+          if sepName == "seq" then
+            ionSymbol! "seq"
+          else if sepName == "commaSepList" then
+            ionSymbol! "commaSepList"
+          else if sepName == "spaceSepList" then
+            ionSymbol! "spaceSepList"
+          else ionSymbol! "spacePrefixedList"
+        let args : Array (Ion _) := #[ symb, annIon ]
+        let args ← l.attach.mapM_off (init := args)
+          fun ⟨v, _⟩ => ArgF.toIon refs (.inl v)
+        return .sexp args
+  termination_by sizeOf_flat v
   decreasing_by
-    all_goals decreasing_tactic
+    · cases o
+      case mk ann name args =>
+        decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
 
-end
+/-- Serialize an `OperationF` to Ion via `ArgF.toIon`. -/
+private protected def OperationF.toIon {α}
+    [ToIon α] (refs : SymbolIdCache)
+    (op : OperationF α)
+    : InternM (Ion SymbolId) :=
+  ArgF.toIon refs (.inr (.inl op))
+
+/-- Serialize an `ExprF` to Ion via `ArgF.toIon`. -/
+private protected def ExprF.toIon {α}
+    [ToIon α] (refs : SymbolIdCache)
+    (e : ExprF α)
+    : InternM (Ion SymbolId) :=
+  ArgF.toIon refs (.inr (.inr e))
 
 mutual
 
@@ -588,14 +623,17 @@ private protected def ExprF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromI
     throw s!"Unexpected identifier {str}"
 termination_by v
 decreasing_by
-  · have _ : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf sexp[3] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
+  all_goals
+    first
+    | have h : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
+      decreasing_tactic
+    | have h : sizeOf sexp[3] < sizeOf sexp := by decreasing_tactic
+      decreasing_tactic
 
 private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (ArgF α)  := do
   let ⟨sexp, sexpP⟩ ← .asSexp "Arg" v
-  match ← .asSymbolString "Arg kind" sexp[0] with
+  let argKind ← .asSymbolString "Arg kind" sexp[0]
+  match argKind with
   | "op" =>
     let ⟨p⟩ ← .checkArgCount "op" sexp 2
     .op <$> Strata.OperationF.fromIon sexp[1]
@@ -1446,7 +1484,8 @@ private instance : CachedToIon Program where
   cachedToIon refs pgm :=
     ionScope! Program refs : do
       let hdr := Ion.sexp #[ ionSymbol! "program", .string pgm.dialect ]
-      let l ← pgm.commands.mapM_off (init := #[hdr]) fun cmd => cmd.toIon (ionRefEntry! ``OperationF)
+      let l ← pgm.commands.mapM_off (init := #[hdr])
+        fun cmd => cmd.toIon (ionRefEntry! ``ArgF)
       return .list l
 
 #declareIonSymbolTable Program
