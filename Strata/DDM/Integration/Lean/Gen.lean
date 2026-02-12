@@ -14,6 +14,7 @@ public meta import Strata.DDM.Integration.Lean.Env
 import             Strata.DDM.Integration.Lean.GenTrace
 public meta import Strata.DDM.Integration.Lean.OfAstM
 public meta import Strata.DDM.Util.Graph.Tarjan
+meta import        Strata.Util.DecideProp
 
 /-!
 Implements the `#strata_gen` command, which reads a dialect definition and
@@ -463,6 +464,10 @@ def makeBuiltinCtors (cat : QualifiedIdent) : Array DefaultCtor :=
       ],
       .mk "bvar" none #[
         { name := "idx", cat := .atom .none q`Init.Num, addAnn := false }
+      ],
+      .mk "app" none #[
+        { name := "fn", cat := .atom .none q`Init.Expr, addAnn := false },
+        { name := "arg", cat := .atom .none q`Init.Expr, addAnn := false }
       ]
     ]
   | q`Init.Type =>
@@ -927,29 +932,45 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
     let argDecls := op.argDecls
     let (annC, annI) ← genFreshIdentPair "ann"
     let ctor : Ident ← getCategoryOpIdent cat op.leanName
-    let args ← argDecls.mapM fun arg => do
-      return (← genFreshLeanName arg.name, arg.cat, arg.addAnn)
-    let argTerms : Array Term := args.map fun p => mkCanIdent src p.fst
+    -- Fresh Lean names for each constructor argument, used in generated code.
+    let argLeanNames : Vector Lean.Name argDecls.size ← Vector.ofFnM fun i => do
+          genFreshLeanName (argDecls[i]).name
+    -- Canonical identifiers for pattern matching on the constructor arguments.
+    let argTerms : Array Term :=
+      argLeanNames.toArray.map fun nm => (mkCanIdent src nm : Term)
     let pat : Term ← ``($ctor $annC $argTerms:term*)
     let rhs ← match op.strataName with
     | some nm =>
       -- Dialect-defined expression constructor
       let init := mkCApp ``ExprF.fn #[annI, quote nm]
-      args.foldlM (init := init) fun a (nm, tp, addAnn) => do
-        let e ← toAstApplyArg nm tp addAnn
+      Fin.foldlM argDecls.size (init := init) fun a ⟨i, ilt⟩ => do
+        have h : i < argLeanNames.size := by omega
+        let e ← toAstApplyArg argLeanNames[i] argDecls[i].cat argDecls[i].addAnn
         return Lean.Syntax.mkCApp ``ExprF.app #[annI, a, e]
     | none =>
-      -- Builtin expression constructor (fvar, bvar)
+      -- Builtin expression constructor (fvar, bvar, app)
       -- All builtin constructors defined in makeBuiltinCtors have addAnn := false
       match op.leanNameStr with
+      -- Free variable reference: Expr.fvar ann idx → ExprF.fvar ann idx
       | "fvar" =>
-        assert! args.size == 1
-        let (idxV, _, _) := args[0]!
-        pure <| mkCApp ``ExprF.fvar #[annI, mkIdentFrom src idxV]
+        let isTrue _ := decideProp (argDecls.size = 1)
+          | panic! "fvar expects 1 argument"
+        pure <| mkCApp ``ExprF.fvar #[annI, mkIdentFrom src argLeanNames[0]]
+      -- Bound variable reference: Expr.bvar ann idx → ExprF.bvar ann idx
       | "bvar" =>
-        assert! args.size == 1
-        let (idxV, _, _) := args[0]!
-        pure <| mkCApp ``ExprF.bvar #[annI, mkIdentFrom src idxV]
+        let isTrue _ := decideProp (argDecls.size = 1)
+          | panic! "bvar expects 1 argument"
+        pure <| mkCApp ``ExprF.bvar #[annI, mkIdentFrom src argLeanNames[0]]
+      -- Function application: Expr.app ann fn arg →
+      --   ExprF.app ann (toAst fn) (ArgF.expr (toAst arg))
+      | "app" =>
+        let isTrue _ := decideProp (argDecls.size = 2)
+          | panic! "app expects 2 arguments"
+        let toAst ← toAstIdentM q`Init.Expr
+        let fnTerm := mkApp toAst #[mkIdentFrom src argLeanNames[0]]
+        let argTerm :=
+          mkCApp ``ArgF.expr #[mkApp toAst #[mkIdentFrom src argLeanNames[1]]]
+        pure <| mkCApp ``ExprF.app #[annI, fnTerm, argTerm]
       | lname =>
         return panic! s!"Unknown builtin expression constructor: {lname}"
     `(matchAltExpr| | $pat => $rhs)
@@ -1278,23 +1299,41 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
   match cat with
   | q`Init.Expr =>
     let v ← genFreshLeanName "v"
-    let argsVar ← genFreshLeanName "args"
     let (annC, annI) ← genFreshIdentPair "ann"
+    -- `argsVar` is the Name used in pattern position (canonical) to bind the
+    -- HNF argument array (`vnf.args.val`).  `argsIdent` is the corresponding
+    -- term-side Ident used to reference those arguments in match RHS code.
+    let argsVar ← genFreshLeanName "args"
+    let argsIdent := mkIdentFrom src argsVar
     -- Filter to only dialect-defined expressions (with strataName)
     let dialectOps := ops.filter (·.strataName.isSome)
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat dialectOps
     let bvarCtor ← getCategoryOpIdent cat `bvar
     let fvarCtor ← getCategoryOpIdent cat `fvar
-    let argsIdent := mkIdentFrom src argsVar
+    let appCtor ← getCategoryOpIdent cat `app
     let cases : Array MatchAlt ←
       dialectOps.mapM (ofAstExprMatch nameIndexMap cat annI argsIdent)
     -- Builtin constructors defined in makeBuiltinCtors all have addAnn := false
+    -- After HNF, bvar/fvar may have args (partial application); fold them
+    -- into a chain of Expr.app constructors using `default` for the annotation
+    -- since HNF discards intermediate app annotations.
+    -- Fold HNF args into a chain of Expr.app constructors.
+    let foldArgs ← `(fun init =>
+      ($argsIdent).foldlM (init := init) fun acc arg =>
+        match arg with
+        | .expr e => do
+          let e' ← $ofAst:ident e
+          pure ($appCtor default acc e')
+        | _ => OfAstM.throwExpectedExpr arg)
     let rhs ←
       `(let vnf := ($(mkIdentFrom src v)).hnf
         let $(mkCanIdent src argsVar) := vnf.args.val
+        let foldArgs := $foldArgs
         match (vnf.fn) with
-        | Strata.ExprF.bvar ann idx => pure ($bvarCtor ann idx)
-        | Strata.ExprF.fvar ann i => pure ($fvarCtor ann i)
+        | Strata.ExprF.bvar ann idx => do
+          foldArgs ($bvarCtor ann idx)
+        | Strata.ExprF.fvar ann i => do
+          foldArgs ($fvarCtor ann i)
         | Strata.ExprF.fn $annC fnId =>
           (match ($ofAstNameMap[fnId]?) with
           $cases:matchAlt*
