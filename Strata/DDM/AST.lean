@@ -223,9 +223,23 @@ end SepFormat
 mutual
 
 inductive ExprF (α : Type) : Type where
+  /--
+  A bound variable reference (de Bruijn index).
+
+  If this is a function, then the arguments are always value-level;
+  type arguments are omitted.
+  -/
 | bvar (ann : α) (idx : Nat)
+  /--
+  A free variable reference.
+
+  If this is a function, then the arguments are always value-level;
+  type arguments are omitted.
+  -/
 | fvar (ann : α) (idx : FreeVarIndex)
+  /-- A named dialect function. -/
 | fn (ann : α) (ident : QualifiedIdent)
+  /-- Function application. -/
 | app (ann : α) (e : ExprF α) (a : ArgF α)
 deriving Inhabited, Repr
 
