@@ -543,15 +543,11 @@ private protected def ArgF.toIon {α} [ToIon α]
         return .sexp args
       | .seq ann sep l => do
         let annIon ← toIon ann
-        let sepName := sep.toIonName
-        let symb :=
-          if sepName == "seq" then
-            ionSymbol! "seq"
-          else if sepName == "commaSepList" then
-            ionSymbol! "commaSepList"
-          else if sepName == "spaceSepList" then
-            ionSymbol! "spaceSepList"
-          else ionSymbol! "spacePrefixedList"
+        let symb := match sep with
+          | .none        => ionSymbol! "seq"
+          | .comma       => ionSymbol! "commaSepList"
+          | .space       => ionSymbol! "spaceSepList"
+          | .spacePrefix => ionSymbol! "spacePrefixedList"
         let args : Array (Ion _) := #[ symb, annIon ]
         let args ← l.attach.mapM_off (init := args)
           fun ⟨v, _⟩ => ArgF.toIon refs (.inl v)
