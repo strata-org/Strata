@@ -258,7 +258,7 @@ instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
                  Property: {r.obligation.property}\n\
                  Result: {r.result}\
-                 {r.smtResult.formatModelIfSat true}"
+                 {r.smtResult.formatModelIfSat (r.verbose >= .models)}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.result with | .pass => true | _ => false
@@ -495,17 +495,30 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange fileRange =>
-      let message := match result with
-        | .fail => "assertion does not hold"
-        | .unknown => "assertion could not be proved"
-        | .implementationError msg => s!"verification error: {msg}"
-        | _ => panic "impossible"
+    let message := match result with
+      | .fail => "assertion does not hold"
+      | .unknown => "assertion could not be proved"
+      | .implementationError msg => s!"verification error: {msg}"
+      | _ => panic "impossible"
 
-      some (DiagnosticModel.withRange fileRange message)
-    | _ => none
+    let .some fileRangeElem := vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+      | some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! obligation label: {repr vcr.obligation.label}"
+        }
+
+    let result := match fileRangeElem.value with
+      | .fileRange fileRange =>
+        some {
+          fileRange := fileRange
+          message := message
+        }
+      | _ =>
+        some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
+        }
+    result
 
 structure Diagnostic where
   start : Lean.Position
@@ -514,7 +527,7 @@ structure Diagnostic where
   deriving Repr, BEq
 
 def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
-  let fileMap := (files.find? dm.fileRange.file).get!
+  let fileMap := (files.find? dm.fileRange.file).getD (panic s!"Could not find {repr dm.fileRange.file} in {repr files.keys} when converting model '{dm}' to a diagnostic")
   let startPos := fileMap.toPosition dm.fileRange.range.start
   let endPos := fileMap.toPosition dm.fileRange.range.stop
   {
