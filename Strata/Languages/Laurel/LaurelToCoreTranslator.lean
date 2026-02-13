@@ -631,7 +631,7 @@ def expandArrayParam (ctMap : ConstrainedTypeMap) (param : Parameter) : List (Co
 Translate Laurel Procedure to Core Procedure
 -/
 def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
-  (constants : List Constant) (_heapWriters : List Identifier) (proc : Procedure) : Except String Core.Decl := do
+  (constants : List Constant) (proc : Procedure) : Except String Core.Decl := do
   let inputs := proc.inputs.flatMap (expandArrayParam ctMap)
   let header : Core.Procedure.Header := {
     name := proc.name
@@ -930,17 +930,19 @@ def translateProcedureToFunction (ctMap : ConstrainedTypeMap) (tcMap : Translate
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) Core.Program := do
-  let heapWriters := computeWritesHeap program.staticProcedures
-  let heapProgram := heapParameterization program
-  let sequencedProgram ← liftExpressionAssignments heapProgram
+  let program := heapParameterization program
+  let program := liftExpressionAssignments program
+  dbg_trace "===  Program after heapParameterization + liftExpressionAssignments ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace "================================="
   -- Build constrained type maps
-  let ctMap := buildConstrainedTypeMap sequencedProgram.types
+  let ctMap := buildConstrainedTypeMap program.types
   let tcMap ← buildTranslatedConstraintMap ctMap |>.mapError fun e => #[{ fileRange := default, message := e }]
   -- Separate procedures that can be functions from those that must be procedures
-  let (funcProcs, procProcs) := sequencedProgram.staticProcedures.partition (canBeCoreFunction ctMap)
-  let procDecls ← procProcs.mapM (translateProcedure ctMap tcMap sequencedProgram.constants heapWriters) |>.mapError fun e => #[{ fileRange := default, message := e }]
+  let (funcProcs, procProcs) := program.staticProcedures.partition (canBeCoreFunction ctMap)
+  let procDecls ← procProcs.mapM (translateProcedure ctMap tcMap program.constants) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let laurelFuncDecls ← funcProcs.mapM (translateProcedureToFunction ctMap tcMap) |>.mapError fun e => #[{ fileRange := default, message := e }]
-  let constDecls := sequencedProgram.constants.map translateConstant
+  let constDecls := program.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl, arrayTypeSynonym]
   let funcDecls := [readFunction, updateFunction, intDivTFunc, intModTFunc]
   let axiomDecls := [readUpdateSameAxiom, readUpdateDiffAxiom]
