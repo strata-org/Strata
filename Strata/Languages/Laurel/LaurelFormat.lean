@@ -10,6 +10,7 @@ namespace Strata
 namespace Laurel
 
 open Std (Format)
+open Std.Format
 
 def formatOperation : Operation → Format
   | .Eq => "=="
@@ -69,7 +70,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       | none => ""
       | some e => " else " ++ formatStmtExpr e
   | .Block stmts _ =>
-      "{ " ++ Format.joinSep (stmts.map formatStmtExpr) "; " ++ " }"
+      group $ "{" ++ nestD (line ++ joinSep (stmts.map formatStmtExpr) (";" ++ line)) ++ line ++ "}"
   | .LocalVariable name ty init =>
       "var " ++ Format.text name ++ ": " ++ formatHighType ty ++
       match init with
