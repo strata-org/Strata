@@ -80,11 +80,11 @@ instance : Std.ToFormat Procedure.CheckAttr where
 structure Procedure.Check where
   expr : Expression.Expr
   attr : CheckAttr := .Default
-  md : Imperative.MetaData Expression
+  md : Imperative.MetaData Expression := #[]
   deriving Repr, DecidableEq
 
 instance : Inhabited Procedure.Check where
-  default := { expr := Inhabited.default, md := #[] }
+  default := { expr := Inhabited.default }
 
 instance : ToFormat Procedure.Check where
   format c := f!"{c.expr}{c.attr}"

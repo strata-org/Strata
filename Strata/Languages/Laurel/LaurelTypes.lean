@@ -16,8 +16,6 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-namespace LaurelTypes
-
 abbrev TypeEnv := List (Identifier × HighTypeMd)
 
 /--
@@ -42,9 +40,9 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | WithMetadata.mk val md =>
   match val with
   -- Literals
-  | .LiteralInt _ => WithMetadata.mk .TInt md
-  | .LiteralBool _ => WithMetadata.mk .TBool md
-  | .LiteralString _ => WithMetadata.mk .TString md
+  | .LiteralInt _ => ⟨ .TInt, md ⟩
+  | .LiteralBool _ => ⟨ .TBool, md ⟩
+  | .LiteralString _ => ⟨ .TString, md ⟩
   -- Variables
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
@@ -52,7 +50,7 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
       | none => panic s!"Could not find variable {name} in environment"
   -- Field access
   | .FieldSelect target fieldName =>
-      match (computeExprType env types target) with
+      match computeExprType env types target with
       | WithMetadata.mk (.UserDefined typeName) _ =>
           match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
@@ -66,34 +64,34 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   -- Operators
   | .PrimitiveOp op _ =>
       match op with
-      | .Eq | .Neq | .And | .Or | .Not | .Lt | .Leq | .Gt | .Geq => WithMetadata.mk .TBool md
-      | .Neg | .Add | .Sub | .Mul | .Div | .Mod => WithMetadata.mk .TInt md
+      | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
+      | .Neg | .Add | .Sub | .Mul | .Div | .Mod => ⟨ .TInt, md ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
         computeExprType env types last
-    | none => WithMetadata.mk .TVoid md
+    | none => ⟨ .TVoid, md ⟩
   -- Statements (void-typed)
-  | .LocalVariable _ _ _ => WithMetadata.mk .TVoid md
-  | .While _ _ _ _ => WithMetadata.mk .TVoid md
-  | .Exit _ => WithMetadata.mk .TVoid md
-  | .Return _ => WithMetadata.mk .TVoid md
-  | .Assign _ _ => WithMetadata.mk .TVoid md
-  | .Assert _ => WithMetadata.mk .TVoid md
-  | .Assume _ => WithMetadata.mk .TVoid md
+  | .LocalVariable _ _ _ => ⟨ .TVoid, md ⟩
+  | .While _ _ _ _ => ⟨ .TVoid, md ⟩
+  | .Exit _ => ⟨ .TVoid, md ⟩
+  | .Return _ => ⟨ .TVoid, md ⟩
+  | .Assign _ _ => ⟨ .TVoid, md ⟩
+  | .Assert _ => ⟨ .TVoid, md ⟩
+  | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related
-  | .This => panic "Not supported"
-  | .ReferenceEquals _ _ => WithMetadata.mk .TBool md
+  | .This => panic "Not supported" -- would need `this` type from context
+  | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
   | .AsType _ ty => ty
-  | .IsType _ _ => WithMetadata.mk .TBool md
+  | .IsType _ _ => ⟨ .TBool, md ⟩
   -- Verification specific
-  | .Forall _ _ _ => WithMetadata.mk .TBool md
-  | .Exists _ _ _ => WithMetadata.mk .TBool md
-  | .Assigned _ => WithMetadata.mk .TBool md
+  | .Forall _ _ _ => ⟨ .TBool, md ⟩
+  | .Exists _ _ _ => ⟨ .TBool, md ⟩
+  | .Assigned _ => ⟨ .TBool, md ⟩
   | .Old v => computeExprType env types v
-  | .Fresh _ => WithMetadata.mk .TBool md
+  | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType env types v
   | .ContractOf _ _ => panic "Not supported"
@@ -102,5 +100,4 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .All => panic "Not supported"
   | .Hole => panic "Not supported"
 
-end LaurelTypes
 end Strata.Laurel
