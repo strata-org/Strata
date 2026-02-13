@@ -93,7 +93,7 @@ jobs:
         shell: bash
         run: |
           ./run_py_analyze.sh
-          ./run_py_analyze_sarif.sh
+          python run_py_analyze_sarif.py
 
   lint_checks:
     name: Run lint checks
