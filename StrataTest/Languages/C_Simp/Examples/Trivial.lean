@@ -37,7 +37,9 @@ info: function trivial {
   pre: #true
   post: #true
   body:
-return := #true
+{
+  return := #true
+}
 }
 Errors: #[]
 -/
