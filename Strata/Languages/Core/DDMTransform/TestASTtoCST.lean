@@ -237,4 +237,77 @@ var m : (Map int bool);
 #guard_msgs in
 #eval ASTtoCST test4
 
+def test5 :=
+#strata
+program Core;
+
+procedure P(x: bv8, y: bv8, z: bv8) returns () {
+  assert [add_comm]: x + y == y + x;
+  assert [xor_cancel]: x ^ x == bv{8}(0);
+  assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
+  assert [mul_shift]: x * bv{8}(2) == x << bv{8}(1);
+  assert [demorgan]: ~(x & y) == ~x | ~y;
+  assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
+  assert [bad_shift]: x >> y == x << y;
+  var xy : bv16 := bvconcat{8}{8}(x, y);
+  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
+};
+#end
+
+/--
+info: Rendered Program:
+
+procedure P (x : bv8, y : bv8, z : bv8) returns ()
+ {
+assert [add_comm]: x+y==y+x;
+  assert [xor_cancel]: x^x==bv{8}(0);
+  assert [div_shift]: xdivbv{8}(2)==x>>bv{8}(1);
+  assert [mul_shift]: x*bv{8}(2)==x<<bv{8}(1);
+  assert [demorgan]: ~(x&y)==~x|~y;
+  assert [mod_and]: xmodbv{8}(2)==x&bv{8}(1);
+  assert [bad_shift]: x>>y==x<<y;
+  var xy : bv16 := bvconcat{8}{8}(x,y);
+  var xy2 : bv32 := bvconcat{16}{16}(xy,xy);
+  var xy4 : bv64 := bvconcat{32}{32}(xy,xy);
+  }
+;
+-/
+#guard_msgs in
+#eval ASTtoCST test5
+
+def test6 :=
+#strata
+program Core;
+
+var g : bool;
+
+procedure Test() returns () {
+  var x : bv8 := bv{8}(0);
+  var y : bv8 := bv{8}(0);
+  var z : bv8 := bv{8}(0);
+  var xy : bv16 := bvconcat{8}{8}(x, y);
+  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
+};
+#end
+
+/--
+info: Rendered Program:
+
+var g : bool;
+procedure Test () returns ()
+ {
+var x : bv8 := bv{8}(0);
+  var y : bv8 := bv{8}(0);
+  var z : bv8 := bv{8}(0);
+  var xy : bv16 := bvconcat{8}{8}(z,y);
+  var xy2 : bv32 := bvconcat{16}{16}(x,x);
+  var xy4 : bv64 := bvconcat{32}{32}(x,x);
+  }
+;
+-/
+#guard_msgs in
+#eval ASTtoCST test6
+
 end Strata.Test

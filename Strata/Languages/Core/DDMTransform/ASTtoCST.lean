@@ -94,7 +94,7 @@ def toErrorString (ctx : ToCSTContext) : String :=
 def boundVars (ctx : ToCSTContext) : Array String :=
   ctx.scopes.foldl (fun acc s => acc ++ s.boundVars) #[]
 
-/-- Get all free variables across all scopes -/
+/-- Get all free variables -/
 def freeVars (ctx : ToCSTContext) : Array String :=
   ctx.globalContext.vars.map (·.fst)
 
@@ -262,9 +262,8 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) :
   | .bitvecConst 16 n => pure (.bv16Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 32 n => pure (.bv32Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
-  | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr" "unsupported bitvec width" (toString w)
-
-#eval repr Core.builtinFunctions
+  | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr"
+                          "unsupported bitvec width" (toString w)
 
 /-- Handle 0-ary operations -/
 def handleZeroaryOps [Inhabited M] (name : String)
@@ -313,111 +312,85 @@ def handleUnaryOps [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv64.Extract_31_0" => pure (.bvextract_31_0_64 default arg)
   | _ => ToCSTM.throwError "handleUnaryOps" "unary op" name
 
-/-- Handle bitvector binary operations -/
+/-- Map from bitvector binary operation base names to DDM Expr constructors -/
+def bvBinaryOpMap [Inhabited M] :
+    List (String × (CoreType M → CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) :=
+ [
+  ("And", fun ty arg1 arg2 => .bvand default ty arg1 arg2),
+  ("Or", fun ty arg1 arg2 => .bvor default ty arg1 arg2),
+  ("Xor", fun ty arg1 arg2 => .bvxor default ty arg1 arg2),
+  ("Add", fun ty arg1 arg2 => .add_expr default ty arg1 arg2),
+  ("Sub", fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
+  ("Mul", fun ty arg1 arg2 => .mul_expr default ty arg1 arg2),
+  ("UDiv", fun ty arg1 arg2 => .div_expr default ty arg1 arg2),
+  ("UMod", fun ty arg1 arg2 => .mod_expr default ty arg1 arg2),
+  ("SDiv", fun ty arg1 arg2 => .bvsdiv default ty arg1 arg2),
+  ("SMod", fun ty arg1 arg2 => .bvsmod default ty arg1 arg2),
+  ("Shl", fun ty arg1 arg2 => .bvshl default ty arg1 arg2),
+  ("UShr", fun ty arg1 arg2 => .bvushr default ty arg1 arg2),
+  ("SShr", fun ty arg1 arg2 => .bvsshr default ty arg1 arg2),
+  ("ULe", fun ty arg1 arg2 => .le default ty arg1 arg2),
+  ("ULt", fun ty arg1 arg2 => .lt default ty arg1 arg2),
+  ("UGe", fun ty arg1 arg2 => .ge default ty arg1 arg2),
+  ("UGt", fun ty arg1 arg2 => .gt default ty arg1 arg2),
+  ("SLe", fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
+  ("SLt", fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
+  ("SGe", fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
+  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2)
+]
+
+/-- Map from bitvector sizes to their corresponding type constructors -/
+def bvTypeMap [Inhabited M] : List (Nat × (CoreType M)) := [
+  (1, .bv1 default),
+  (8, .bv8 default),
+  (16, .bv16 default),
+  (32, .bv32 default),
+  (64, .bv64 default)
+]
+
+/-- Map from bitvector sizes to their corresponding concat operations -/
+def bvConcatMap [Inhabited M] :
+    List (Nat × (CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) := [
+  (8, fun arg1 arg2 => .bvconcat8 default arg1 arg2),
+  (16, fun arg1 arg2 => .bvconcat16 default arg1 arg2),
+  (32, fun arg1 arg2 => .bvconcat32 default arg1 arg2)
+]
+
+/-- Auto-generated bitvector binary operations handler -/
 def handleBitvecBinaryOps [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
-  match name with
-  | "Bv1.And" => pure (.bvand default (.bv1 default) arg1 arg2)
-  | "Bv8.And" => pure (.bvand default (.bv8 default) arg1 arg2)
-  | "Bv16.And" => pure (.bvand default (.bv16 default) arg1 arg2)
-  | "Bv32.And" => pure (.bvand default (.bv32 default) arg1 arg2)
-  | "Bv64.And" => pure (.bvand default (.bv64 default) arg1 arg2)
-  | "Bv1.Or" => pure (.bvor default (.bv1 default) arg1 arg2)
-  | "Bv8.Or" => pure (.bvor default (.bv8 default) arg1 arg2)
-  | "Bv16.Or" => pure (.bvor default (.bv16 default) arg1 arg2)
-  | "Bv32.Or" => pure (.bvor default (.bv32 default) arg1 arg2)
-  | "Bv64.Or" => pure (.bvor default (.bv64 default) arg1 arg2)
-  | "Bv1.Xor" => pure (.bvxor default (.bv1 default) arg1 arg2)
-  | "Bv8.Xor" => pure (.bvxor default (.bv8 default) arg1 arg2)
-  | "Bv16.Xor" => pure (.bvxor default (.bv16 default) arg1 arg2)
-  | "Bv32.Xor" => pure (.bvxor default (.bv32 default) arg1 arg2)
-  | "Bv64.Xor" => pure (.bvxor default (.bv64 default) arg1 arg2)
-  | "Bv1.Add" => pure (.add_expr default (.bv1 default) arg1 arg2)
-  | "Bv8.Add" => pure (.add_expr default (.bv8 default) arg1 arg2)
-  | "Bv16.Add" => pure (.add_expr default (.bv16 default) arg1 arg2)
-  | "Bv32.Add" => pure (.add_expr default (.bv32 default) arg1 arg2)
-  | "Bv64.Add" => pure (.add_expr default (.bv64 default) arg1 arg2)
-  | "Bv1.Sub" => pure (.sub_expr default (.bv1 default) arg1 arg2)
-  | "Bv8.Sub" => pure (.sub_expr default (.bv8 default) arg1 arg2)
-  | "Bv16.Sub" => pure (.sub_expr default (.bv16 default) arg1 arg2)
-  | "Bv32.Sub" => pure (.sub_expr default (.bv32 default) arg1 arg2)
-  | "Bv64.Sub" => pure (.sub_expr default (.bv64 default) arg1 arg2)
-  | "Bv1.Mul" => pure (.mul_expr default (.bv1 default) arg1 arg2)
-  | "Bv8.Mul" => pure (.mul_expr default (.bv8 default) arg1 arg2)
-  | "Bv16.Mul" => pure (.mul_expr default (.bv16 default) arg1 arg2)
-  | "Bv32.Mul" => pure (.mul_expr default (.bv32 default) arg1 arg2)
-  | "Bv64.Mul" => pure (.mul_expr default (.bv64 default) arg1 arg2)
-  | "Bv1.UDiv" => pure (.div_expr default (.bv1 default) arg1 arg2)
-  | "Bv8.UDiv" => pure (.div_expr default (.bv8 default) arg1 arg2)
-  | "Bv16.UDiv" => pure (.div_expr default (.bv16 default) arg1 arg2)
-  | "Bv32.UDiv" => pure (.div_expr default (.bv32 default) arg1 arg2)
-  | "Bv64.UDiv" => pure (.div_expr default (.bv64 default) arg1 arg2)
-  | "Bv1.UMod" => pure (.mod_expr default (.bv1 default) arg1 arg2)
-  | "Bv8.UMod" => pure (.mod_expr default (.bv8 default) arg1 arg2)
-  | "Bv16.UMod" => pure (.mod_expr default (.bv16 default) arg1 arg2)
-  | "Bv32.UMod" => pure (.mod_expr default (.bv32 default) arg1 arg2)
-  | "Bv64.UMod" => pure (.mod_expr default (.bv64 default) arg1 arg2)
-  | "Bv1.SDiv" => pure (.bvsdiv default (.bv1 default) arg1 arg2)
-  | "Bv8.SDiv" => pure (.bvsdiv default (.bv8 default) arg1 arg2)
-  | "Bv16.SDiv" => pure (.bvsdiv default (.bv16 default) arg1 arg2)
-  | "Bv32.SDiv" => pure (.bvsdiv default (.bv32 default) arg1 arg2)
-  | "Bv64.SDiv" => pure (.bvsdiv default (.bv64 default) arg1 arg2)
-  | "Bv1.SMod" => pure (.bvsmod default (.bv1 default) arg1 arg2)
-  | "Bv8.SMod" => pure (.bvsmod default (.bv8 default) arg1 arg2)
-  | "Bv16.SMod" => pure (.bvsmod default (.bv16 default) arg1 arg2)
-  | "Bv32.SMod" => pure (.bvsmod default (.bv32 default) arg1 arg2)
-  | "Bv64.SMod" => pure (.bvsmod default (.bv64 default) arg1 arg2)
-  | "Bv1.Shl" => pure (.bvshl default (.bv1 default) arg1 arg2)
-  | "Bv8.Shl" => pure (.bvshl default (.bv8 default) arg1 arg2)
-  | "Bv16.Shl" => pure (.bvshl default (.bv16 default) arg1 arg2)
-  | "Bv32.Shl" => pure (.bvshl default (.bv32 default) arg1 arg2)
-  | "Bv64.Shl" => pure (.bvshl default (.bv64 default) arg1 arg2)
-  | "Bv1.UShr" => pure (.bvushr default (.bv1 default) arg1 arg2)
-  | "Bv8.UShr" => pure (.bvushr default (.bv8 default) arg1 arg2)
-  | "Bv16.UShr" => pure (.bvushr default (.bv16 default) arg1 arg2)
-  | "Bv32.UShr" => pure (.bvushr default (.bv32 default) arg1 arg2)
-  | "Bv64.UShr" => pure (.bvushr default (.bv64 default) arg1 arg2)
-  | "Bv1.SShr" => pure (.bvsshr default (.bv1 default) arg1 arg2)
-  | "Bv8.SShr" => pure (.bvsshr default (.bv8 default) arg1 arg2)
-  | "Bv16.SShr" => pure (.bvsshr default (.bv16 default) arg1 arg2)
-  | "Bv32.SShr" => pure (.bvsshr default (.bv32 default) arg1 arg2)
-  | "Bv64.SShr" => pure (.bvsshr default (.bv64 default) arg1 arg2)
-  | "Bv8.ULe" => pure (.le default (.bv8 default) arg1 arg2)
-  | "Bv16.ULe" => pure (.le default (.bv16 default) arg1 arg2)
-  | "Bv32.ULe" => pure (.le default (.bv32 default) arg1 arg2)
-  | "Bv64.ULe" => pure (.le default (.bv64 default) arg1 arg2)
-  | "Bv8.ULt" => pure (.lt default (.bv8 default) arg1 arg2)
-  | "Bv16.ULt" => pure (.lt default (.bv16 default) arg1 arg2)
-  | "Bv32.ULt" => pure (.lt default (.bv32 default) arg1 arg2)
-  | "Bv64.ULt" => pure (.lt default (.bv64 default) arg1 arg2)
-  | "Bv8.UGe" => pure (.ge default (.bv8 default) arg1 arg2)
-  | "Bv16.UGe" => pure (.ge default (.bv16 default) arg1 arg2)
-  | "Bv32.UGe" => pure (.ge default (.bv32 default) arg1 arg2)
-  | "Bv64.UGe" => pure (.ge default (.bv64 default) arg1 arg2)
-  | "Bv8.UGt" => pure (.gt default (.bv8 default) arg1 arg2)
-  | "Bv16.UGt" => pure (.gt default (.bv16 default) arg1 arg2)
-  | "Bv32.UGt" => pure (.gt default (.bv32 default) arg1 arg2)
-  | "Bv64.UGt" => pure (.gt default (.bv64 default) arg1 arg2)
-  | "Bv8.SLe" => pure (.bvsle default (.bv8 default) arg1 arg2)
-  | "Bv16.SLe" => pure (.bvsle default (.bv16 default) arg1 arg2)
-  | "Bv32.SLe" => pure (.bvsle default (.bv32 default) arg1 arg2)
-  | "Bv64.SLe" => pure (.bvsle default (.bv64 default) arg1 arg2)
-  | "Bv8.SLt" => pure (.bvslt default (.bv8 default) arg1 arg2)
-  | "Bv16.SLt" => pure (.bvslt default (.bv16 default) arg1 arg2)
-  | "Bv32.SLt" => pure (.bvslt default (.bv32 default) arg1 arg2)
-  | "Bv64.SLt" => pure (.bvslt default (.bv64 default) arg1 arg2)
-  | "Bv8.SGe" => pure (.bvsge default (.bv8 default) arg1 arg2)
-  | "Bv16.SGe" => pure (.bvsge default (.bv16 default) arg1 arg2)
-  | "Bv32.SGe" => pure (.bvsge default (.bv32 default) arg1 arg2)
-  | "Bv64.SGe" => pure (.bvsge default (.bv64 default) arg1 arg2)
-  | "Bv8.SGt" => pure (.bvsgt default (.bv8 default) arg1 arg2)
-  | "Bv16.SGt" => pure (.bvsgt default (.bv16 default) arg1 arg2)
-  | "Bv32.SGt" => pure (.bvsgt default (.bv32 default) arg1 arg2)
-  | "Bv64.SGt" => pure (.bvsgt default (.bv64 default) arg1 arg2)
-  | "Bv8.Concat" => pure (.bvconcat8 default arg1 arg2)
-  | "Bv16.Concat" => pure (.bvconcat16 default arg1 arg2)
-  | "Bv32.Concat" => pure (.bvconcat32 default arg1 arg2)
-  | _ => ToCSTM.throwError "handleBitvecBinaryOps" "binary op" name
+  -- Parse operation name: "BvN.Op" -> (N, "Op")
+  let parts := name.splitOn "."
+  match parts with
+  | [sizeStr, opName] =>
+    if sizeStr.startsWith "Bv" then
+      let sizeNumStr := sizeStr.drop 2
+      match sizeNumStr.toNat? with
+      | some size =>
+        -- Look up type for this size
+        match (bvTypeMap).find? (·.1 == size) with
+        | some (_, ty) =>
+          -- Handle concat operations
+          if opName == "Concat" then
+            match (bvConcatMap).find? (·.1 == size) with
+            | some (_, concatOp) => pure (concatOp arg1 arg2)
+            | none => ToCSTM.throwError "handleBitvecBinaryOps"
+                          "unsupported concat size" (toString size)
+          else
+            -- Handle regular binary operations
+            match (bvBinaryOpMap).find? (·.1 == opName) with
+            | some (_, op) => pure (op ty arg1 arg2)
+            | none => ToCSTM.throwError "handleBitvecBinaryOps"
+                              "unknown bitvec op" opName
+        | none => ToCSTM.throwError "handleBitvecBinaryOps"
+                      "unsupported bitvec size" (toString size)
+      | none => ToCSTM.throwError "handleBitvecBinaryOps"
+                  "invalid size format" (toString sizeNumStr)
+    else
+      ToCSTM.throwError "handleBitvecBinaryOps"
+              "not a bitvec operation" name
+  | _ => ToCSTM.throwError "handleBitvecBinaryOps"
+          "invalid operation format" name
 
 /-- Handle binary operations -/
 def handleBinaryOps [Inhabited M] (name : String)
@@ -618,7 +591,6 @@ partial def lappToExpr [Inhabited M]
     lopToExpr fn.name (e1Expr :: acc)
   | _ =>
     ToCSTM.throwError "lappToExpr" "unsupported application" (toString e)
-
 end
 
 mutual
@@ -627,9 +599,9 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement)
     : ToCSTM M (CoreDDM.Statement M) := do
   match s with
   | .init name ty expr _md => do
-    let nameAnn : Ann String M := ⟨default, name.name⟩
+    let nameAnn : Ann String M := ⟨default, name.toPretty⟩
     let tyCST ← lTyToCoreType ty
-    match expr with
+    let result ← match expr with
     | .fvar _ f _ =>
       let ctx ← get
       match ctx.findFreeVarIndex? f.name with
@@ -646,6 +618,9 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement)
     | _ => -- not an .fvar
       let exprCST ← lexprToExpr expr 0
       pure (.initStatement default tyCST nameAnn exprCST)
+    -- Add the newly declared variable to bound variables context
+    modify (·.addBoundVars #[name.toPretty])
+    pure result
   | .set name expr _md => do
     let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
     let exprCST ← lexprToExpr expr 0
@@ -695,7 +670,9 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement)
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (CoreDDM.Block M) := do
+  modify ToCSTContext.pushScope
   let stmtsCST ← stmts.toArray.mapM stmtToCST
+  modify ToCSTContext.popScope
   pure (.block default ⟨default, stmtsCST⟩)
 
 partial def elseToCST [Inhabited M] (stmts : List Core.Statement)
