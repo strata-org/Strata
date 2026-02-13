@@ -50,8 +50,6 @@ end ASTToCSTError
 section ToCST
 
 structure Scope where
-  /-- Track bound type variables in this scope -/
-  boundTypeVars : Array String := #[]
   /-- Track bound variables in this scope -/
   boundVars : Array String := #[]
   deriving Inhabited, Repr
@@ -71,16 +69,10 @@ def empty : ToCSTContext := { scopes := #[{}] }
 def toErrorString (ctx : ToCSTContext) : String :=
   let lines := ctx.scopes.toList.mapIdx fun i scope =>
     let header := if i = 0 then "Global scope:" else s!"Scope {i}:"
-    let btv := if scope.boundTypeVars.isEmpty then ""
-               else s!"\n  boundTypeVars: {scope.boundTypeVars.toList}"
     let bv := if scope.boundVars.isEmpty then ""
               else s!"\n  boundVars: {scope.boundVars.toList}"
-    s!"{header}{btv}{bv}"
+    s!"{header}{bv}"
   String.intercalate "\n" lines
-
-/-- Get all bound type variables across all scopes -/
-def boundTypeVars (ctx : ToCSTContext) : Array String :=
-  ctx.scopes.foldl (fun acc s => acc ++ s.boundTypeVars) #[]
 
 /-- Get all bound variables across all scopes -/
 def boundVars (ctx : ToCSTContext) : Array String :=
@@ -93,15 +85,6 @@ def freeVars (ctx : ToCSTContext) : Array String :=
 /-- Get free variable index -/
 def freeVarIndex? (ctx : ToCSTContext) (name : String) : Option FreeVarIndex :=
   ctx.globalContext.findIndex? name
-
-/-- Add bound type variables to the current scope -/
-def addBoundTypeVars (ctx : ToCSTContext) (names : Array String)
-    (reverse? : Bool := true) : ToCSTContext :=
-  let idx := ctx.scopes.size - 1
-  let scope := ctx.scopes[idx]!
-  let names := if reverse? then names.reverse else names
-  let newScope := { scope with boundTypeVars := names ++ scope.boundTypeVars }
-  { ctx with scopes := ctx.scopes.set! idx newScope }
 
 /-- Add bound variables to the current scope -/
 def addBoundVars (ctx : ToCSTContext) (names : Array String)
@@ -165,11 +148,8 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
 /-- Convert `LTy` to `CoreType` -/
 def lTyToCoreType [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
   match ty with
-  | .forAll typeVars monoTy => do
-    modify ToCSTContext.pushScope
-    modify (ToCSTContext.addBoundTypeVars · typeVars.toArray)
+  | .forAll _typeVars monoTy => do
     let result ← lmonoTyToCoreType monoTy
-    modify ToCSTContext.popScope
     pure result
 
 /-- Convert a type constructor declaration to CST -/
@@ -191,9 +171,7 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
 def datatypeToCST [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
     (_md : Imperative.MetaData Expression) : ToCSTM M (List (Command M)) := do
   let mut results := []
-  modify ToCSTContext.pushScope
   for dt in datatypes do
-    modify (·.addBoundTypeVars dt.typeArgs.toArray)
     let name : Ann String M := ⟨default, dt.name⟩
     let args : Ann (Option (Bindings M)) M :=
       if dt.typeArgs.isEmpty then
@@ -221,7 +199,6 @@ def datatypeToCST [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
       (fun acc c => ConstructorList.constructorListPush default acc c)
       (ConstructorList.constructorListAtom default constrs.head!)
     results := results ++ [.command_datatype default name args constrList]
-  modify ToCSTContext.popScope
   pure results
 
 /-- Convert a type synonym declaration to CST -/
@@ -239,7 +216,6 @@ def typeSynToCST [Inhabited M] (syn : TypeSynonym)
         Binding.mkBinding default paramName paramType
       ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
   let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
-  modify (·.addBoundTypeVars syn.typeArgs.toArray)
   let rhs ← lmonoTyToCoreType syn.type
   modify ToCSTContext.popScope
   pure (.command_typesynonym default name args targs rhs)
@@ -409,10 +385,9 @@ partial def lopToExpr [Inhabited M]
     | _ => ToCSTM.throwError "lopToExpr" s!"unknown operation: {name}"
   | none =>
     -- Either a built-in or an invalid operation.
-  let ty := CoreType.int default  -- placeholder type
+  let ty := CoreType.tvar default "$__unknown_type"
   match args with
   | [] => do
-    -- Trigger operations are handled at quantifier level, not as expressions
     ToCSTM.throwError "lopToExpr" s!"0-ary op {name} not found"
   | [arg] =>
     match name with
@@ -589,7 +564,8 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
   | .set name expr _md => do
     let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
     let exprCST ← lexprToExpr expr 0
-    let tyCST := CoreType.bool default  -- placeholder, ideally infer from expr
+    -- Type annotation required by CST but not semantically used.
+    let tyCST := CoreType.tvar default "$__unknown_type"
     pure (.assign default tyCST lhs exprCST)
   | .havoc name _md => do
     let nameAnn : Ann String M := ⟨default, name.name⟩
@@ -655,7 +631,6 @@ end
 def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
-  modify (ToCSTContext.addBoundTypeVars · proc.header.typeArgs.toArray)
   let typeArgs : Ann (Option (TypeArgs M)) M :=
     if proc.header.typeArgs.isEmpty then
       ⟨default, none⟩
@@ -725,8 +700,6 @@ def funcToCST [Inhabited M]
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
-  -- Add type arguments to context and create TypeArgs.
-  modify (·.addBoundTypeVars func.typeArgs.toArray)
   let typeArgs : Ann (Option (TypeArgs M)) M :=
     if func.typeArgs.isEmpty then
       ⟨default, none⟩
