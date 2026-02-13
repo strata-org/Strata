@@ -55,6 +55,17 @@ procedure blockWithTwoAssignmentsInExpression() {
   assert y == 2;
   assert z == 2;
 }
+
+procedure nestedImpureStatementsAndOpaque()
+  ensures true
+{
+  var y: int := 0;
+  var x: int := y;
+  var z: int := y := y + 1;;
+    assert x == y;
+//  ^^^^^^^^^^^^^^ error: assertion does not hold
+  assert z == y;
+}
 "
 
 #guard_msgs (error, drop all) in
