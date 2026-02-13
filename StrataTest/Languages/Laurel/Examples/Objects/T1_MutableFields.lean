@@ -18,6 +18,12 @@ composite Container {
   var boolValue: bool
 }
 
+procedure newsAreNotEqual() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  assert c != d;
+}
+
 procedure foo(c: Container, d: Container) returns (r: int)
 //        ^^^ error: an opaque procedure that mutates the heap must have a modifies clause
   requires c != d && d#intValue == 1
@@ -39,9 +45,10 @@ procedure useBool(c: Container) returns (r: bool) {
   r := c#boolValue;
 }
 
-procedure caller(c: Container, d: Container) {
+procedure caller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
   assume d#intValue == 1;
-  assume c != d;
   var x: int := foo(c, d);
   assert d#intValue == 3;
 }

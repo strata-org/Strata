@@ -170,7 +170,13 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
         ) ctx
       ) ctx
   | none =>
-    ctx.addSort { name := id, arity := args.length }
+    let ctx := ctx.addSort { name := id, arity := args.length }
+    -- Recurse into type arguments to discover nested types (e.g., Field inside Map)
+    args.foldl (fun (ctx : SMT.Context) arg =>
+      match arg with
+      | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+      | _ => ctx
+    ) ctx
 
 
 mutual
