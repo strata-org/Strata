@@ -56,7 +56,8 @@ procedure caller(c: Container, d: Container) {
 //}
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: an opaque procedure that mutates the heap must have a modifies clause
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
    ensures true
 {
     modifyContainerTransparant(c)

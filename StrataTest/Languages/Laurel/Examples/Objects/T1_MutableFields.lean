@@ -25,9 +25,7 @@ procedure newsAreNotEqual() {
 }
 
 procedure foo(c: Container, d: Container) returns (r: int)
-//        ^^^ error: an opaque procedure that mutates the heap must have a modifies clause
   requires c != d && d#intValue == 1
-  ensures d#intValue == 3
 {
   var x: int := c#intValue;
   var initialDValue: int := d#intValue;
@@ -39,6 +37,7 @@ procedure foo(c: Container, d: Container) returns (r: int)
   var e: Container := d;
   e#intValue := e#intValue + 1;
   assert e#intValue == d#intValue;
+  assert d#intValue == 3;
 }
 
 procedure useBool(c: Container) returns (r: bool) {
