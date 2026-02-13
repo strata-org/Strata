@@ -273,12 +273,20 @@ def pyAnalyzeCommand : Command where
         IO.print newPgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
       let verboseMode := VerboseMode.ofBool verbose
-      let vcResults ← IO.FS.withTempDir (fun tempDir =>
+      let options :=
+              { Options.default with
+                stopOnFirstError := false,
+                verbose := verboseMode,
+                removeIrrelevantAxioms := true,
+                solver := solverName }
+      let runVerification tempDir :=
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
-            (Core.verify newPgm tempDir .none
-              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
-                                      (moreFns := Strata.Python.ReFactory)))
+            (Core.verify newPgm tempDir .none options
+                                      (moreFns := Strata.Python.ReFactory))
+      let vcResults ← match options.vcDirectory with
+                      | .none => IO.FS.withTempDir runVerification
+                      | .some tempDir => runVerification tempDir
       let mut s := ""
       for vcResult in vcResults do
         -- Build location string based on available metadata
