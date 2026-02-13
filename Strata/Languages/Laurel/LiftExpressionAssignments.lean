@@ -263,8 +263,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
             | _ => pure ()
           -- Process all-but-last right to left using transformExprDiscarded
           for nonLastStatement in stmts.dropLast.reverse.attach do
-            have := List.dropLast_subset stmts
-            have stmtInStmts : nonLastStatement.val ∈ stmts := by grind
+            -- have := List.dropLast_subset stmts
+            -- have stmtInStmts : nonLastStatement.val ∈ stmts := by grind
             transformExprDiscarded nonLastStatement
           -- Last element is the expression value
           transformExpr last
@@ -290,7 +290,12 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | _ => return expr
   termination_by (sizeOf expr, 0)
   decreasing_by
-    all_goals (simp_all; term_by_mem)
+    all_goals (simp_all; try term_by_mem)
+    have := List.dropLast_subset stmts
+    have stmtInStmts : nonLastStatement.val ∈ stmts := by grind
+    -- term_by_mem gets a type error here, so we do it manually
+    have xSize := List.sizeOf_lt_of_mem stmtInStmts
+    omega
 
 /--
 Transform an expression whose result value is discarded (e.g. non-last elements in a block). All side-effects in Laurel are represented as assignments, so we only need to lift assignments, anything else can be forgotten.

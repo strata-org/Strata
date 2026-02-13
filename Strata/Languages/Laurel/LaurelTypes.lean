@@ -50,7 +50,7 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
       | none => panic s!"Could not find variable {name} in environment"
   -- Field access
   | .FieldSelect target fieldName =>
-      match (computeExprType env types target) with
+      match computeExprType env types target with
       | WithMetadata.mk (.UserDefined typeName) _ =>
           match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
