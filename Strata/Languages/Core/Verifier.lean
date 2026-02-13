@@ -258,7 +258,7 @@ instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
                  Property: {r.obligation.property}\n\
                  Result: {r.result}\
-                 {r.smtResult.formatModelIfSat true}"
+                 {r.smtResult.formatModelIfSat (r.verbose >= .models)}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.result with | .pass => true | _ => false

@@ -295,17 +295,17 @@ def Test2 :=
 program Core;
 procedure f(x : bool) returns (y : bool) {
   if (x) {
-    goto end;
+    goto _exit;
   } else { y := false;
   }
-  end: {}
+  _exit: {}
 };
 
 procedure h() returns () {
   var b_in : bool;
   var b_out : bool;
   call b_out := f(b_in);
-  end: {}
+  _exit: {}
 };
 #end
 
@@ -314,10 +314,10 @@ def Test2Ans :=
 program Core;
 procedure f(x : bool) returns (y : bool) {
   if (x) {
-    goto end;
+    goto _exit;
   } else { y := false;
   }
-  end: {}
+  _exit: {}
 };
 
 procedure h() returns () {
@@ -335,7 +335,7 @@ procedure h() returns () {
     f_end: {}
     b_out := f_y;
   }
-  end: {}
+  _exit: {}
 };
 
 #end

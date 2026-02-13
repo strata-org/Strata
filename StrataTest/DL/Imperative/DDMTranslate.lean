@@ -78,6 +78,7 @@ number of parameters: 1
 constructors:
 ArithPrograms.Expr.fvar : {α : Type} → α → Nat → Expr α
 ArithPrograms.Expr.bvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
 ArithPrograms.Expr.numLit : {α : Type} → α → Strata.Ann Nat α → Expr α
 ArithPrograms.Expr.btrue : {α : Type} → α → Expr α
 ArithPrograms.Expr.bfalse : {α : Type} → α → Expr α
@@ -109,6 +110,7 @@ def translateExpr (bindings : TransBindings) (e : ArithPrograms.Expr α) : Trans
     let e1 ← translateExpr bindings e1
     let e2 ← translateExpr bindings e2
     return (.Eq e1 e2)
+  | .app .. => TransM.error "Unexpected app in ArithPrograms"
 
 /--
 info: inductive ArithPrograms.Label : Type → Type

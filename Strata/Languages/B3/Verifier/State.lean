@@ -174,7 +174,7 @@ def closeVerificationState (state : B3VerificationState) : IO Unit := do
 ---------------------------------------------------------------------
 
 /-- Create an interactive solver (Z3/CVC5) -/
-def createInteractiveSolver (solverPath : String := "z3") : IO Solver :=
+def createInteractiveSolver (solverPath : String := "cvc5") : IO Solver :=
   let args := if solverPath.endsWith "cvc5" || solverPath == "cvc5"
     then #["--lang", "smt2", "--incremental"]
     else #["-smt2", "-in"]  -- Z3 flags
