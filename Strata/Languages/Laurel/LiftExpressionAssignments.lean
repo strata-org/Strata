@@ -166,9 +166,10 @@ mutual
 Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
 -/
-partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
-  let md := expr.md
-  match expr.val with
+def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
+  match expr with
+  | WithMetadata.mk val md =>
+  match val with
   | .Identifier name =>
       return ⟨.Identifier (← getSubst name), md⟩
 
@@ -242,18 +243,24 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Block stmts metadata =>
       -- Block in expression position: lift all but last to prepends
-      match stmts.reverse with
-      | [] => return bare (.Block [] metadata)
-      | last :: restRev => do
+      match h_last : stmts.getLast? with
+      | none => return bare (.Block [] metadata)
+      | some last => do
+          have := List.mem_of_getLast? h_last
+
           -- Pre-populate the environment with all LocalVariable declarations
           -- so that getVarType works when creating snapshots
           for s in stmts do
-            match s.val with
+            match s with
+            | WithMetadata.mk val _ =>
+            match val with
             | .LocalVariable name ty _ => addToEnv name ty
             | _ => pure ()
           -- Process all-but-last right to left using transformExprDiscarded
-          for s in restRev do
-            transformExprDiscarded s
+          for nonLastStatement in stmts.dropLast.reverse.attach do
+            have := List.dropLast_subset stmts
+            have stmtInStmts : nonLastStatement.val ∈ stmts := by grind
+            transformExprDiscarded nonLastStatement
           -- Last element is the expression value
           transformExpr last
 
@@ -276,29 +283,38 @@ partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return expr
 
   | _ => return expr
+  termination_by (sizeOf expr, 0)
+  decreasing_by
+    all_goals (simp_all; term_by_mem)
 
 /--
 Transform an expression whose result value is discarded (e.g. non-last elements in a block). All side-effects in Laurel are represented as assignments, so we only need to lift assignments, anything else can be forgotten.
 -/
-partial def transformExprDiscarded (expr : StmtExprMd) : LiftM Unit := do
-  let md := expr.md
-  match h: expr.val with
+def transformExprDiscarded (expr2 : StmtExprMd) : LiftM Unit := do
+  match _hExpr: expr2 with
+  | WithMetadata.mk val md =>
+  match _h: val with
   | .Assign targets value =>
       -- Transform value to process nested assignments (side-effect only),
       -- but use original value for the prepended assignment (no substitutions needed).
       let _ ← transformExpr value
       liftAssignExpr targets value md
   | _ =>
-      let result ← transformExpr expr
+      let result ← transformExpr expr2
       addPrepend result
+  termination_by (sizeOf expr2, 1)
+  decreasing_by
+    simp_all; omega
+    rw [<- _hExpr]; omega
 
 /--
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original may expand into multiple).
 -/
-partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
-  let md := stmt.md
-  match stmt.val with
+def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
+  match stmt with
+  | WithMetadata.mk val md =>
+  match val with
   | .Assert cond =>
       let seqCond ← transformExpr cond
       let prepends ← takePrepends
@@ -358,7 +374,9 @@ partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
 
   | _ =>
       return [stmt]
-
+  termination_by (sizeOf stmt, 0)
+  decreasing_by
+    all_goals term_by_mem
 end
 
 def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
