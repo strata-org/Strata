@@ -12,6 +12,8 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 import Strata.DDM.AST
+import Strata.Transform.CallElim
+import Strata.Transform.FilterProcedures
 
 ---------------------------------------------------------------------
 
@@ -138,12 +140,12 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   return output
 
 def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.Output)
-    (ctx : SMT.Context) (E : EncoderState) :
+    (ctx : SMT.Context) (E : EncoderState) (smtsolver : String) :
   Except Format Result := do
   let stdout := output.stdout
-  let pos := (stdout.find (fun c => c == '\n')).byteIdx
-  let verdict := (stdout.take pos).trim
-  let rest := stdout.drop pos
+  let pos := stdout.find (· == '\n')
+  let verdict := stdout.extract stdout.startPos pos |>.trimAscii
+  let rest := stdout.extract pos stdout.endPos
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest
@@ -156,7 +158,12 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
+  | _     =>
+    let stderr := output.stderr
+    let hasExecError := (stderr.splitOn "could not execute external process").length > 1
+    let hasFileError := (stderr.splitOn "No such file or directory").length > 1
+    let suggestion := if (hasExecError || hasFileError) && smtsolver == defaultSolver then s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
+    .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
@@ -195,7 +202,7 @@ def dischargeObligation
   if options.verbose > .normal then IO.println s!"Wrote problem to {filename}."
   let flags := getSolverFlags options smtsolver
   let output ← runSolver smtsolver (#[filename] ++ flags)
-  match SMT.solverResult vars output ctx estate with
+  match SMT.solverResult vars output ctx estate smtsolver with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
@@ -251,7 +258,7 @@ instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
                  Property: {r.obligation.property}\n\
                  Result: {r.result}\
-                 {r.smtResult.formatModelIfSat true}"
+                 {r.smtResult.formatModelIfSat (r.verbose >= .models)}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.result with | .pass => true | _ => false
@@ -417,8 +424,15 @@ def verify (smtsolver : String) (program : Program)
     | some procs =>
        -- Verify specific procedures. By default, we apply the call elimination
        -- transform to the targeted procedures to inline the contracts of any
-       -- callees.
-      match program.filterProcedures procs (transform := CallElim.callElim') with
+       -- callees. Call elimination is applied once, since once is enough to
+       -- replace all calls with contracts.
+      let passes := fun prog => do
+        let prog ← FilterProcedures.run prog procs
+        let (_changed,prog) ← CallElim.callElim' prog
+        let prog ← FilterProcedures.run prog procs
+        return prog
+      let res := Transform.run program passes
+      match res with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   match Core.typeCheckAndPartialEval options finalProgram moreFns with
@@ -481,17 +495,30 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange fileRange =>
-      let message := match result with
-        | .fail => "assertion does not hold"
-        | .unknown => "assertion could not be proved"
-        | .implementationError msg => s!"verification error: {msg}"
-        | _ => panic "impossible"
+    let message := match result with
+      | .fail => "assertion does not hold"
+      | .unknown => "assertion could not be proved"
+      | .implementationError msg => s!"verification error: {msg}"
+      | _ => panic "impossible"
 
-      some (DiagnosticModel.withRange fileRange message)
-    | _ => none
+    let .some fileRangeElem := vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+      | some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! obligation label: {repr vcr.obligation.label}"
+        }
+
+    let result := match fileRangeElem.value with
+      | .fileRange fileRange =>
+        some {
+          fileRange := fileRange
+          message := message
+        }
+      | _ =>
+        some {
+          fileRange := default
+          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
+        }
+    result
 
 structure Diagnostic where
   start : Lean.Position
@@ -500,7 +527,7 @@ structure Diagnostic where
   deriving Repr, BEq
 
 def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
-  let fileMap := (files.find? dm.fileRange.file).get!
+  let fileMap := (files.find? dm.fileRange.file).getD (panic s!"Could not find {repr dm.fileRange.file} in {repr files.keys} when converting model '{dm}' to a diagnostic")
   let startPos := fileMap.toPosition dm.fileRange.range.start
   let endPos := fileMap.toPosition dm.fileRange.range.stop
   {

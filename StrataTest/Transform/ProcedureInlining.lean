@@ -13,6 +13,7 @@ import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.ProgramWF
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
+import Strata.Util.Tactics
 
 open Core
 open Core.Transform
@@ -118,14 +119,14 @@ def alphaEquivBlock (b1 b2: Core.Block) (map:IdMap)
         return newmap)
       map
   termination_by b1.sizeOf
-  decreasing_by cases st1; apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by cases st1; term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     : Except Format IdMap := do
   let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
 
-  match hs: (s1,s2) with
+  match _hs: (s1,s2) with
   | (.block lbl1 b1 _, .block lbl2 b2 _) =>
     -- Since 'goto lbl' can appear before 'lbl' is defined, update the label
     -- map here
@@ -203,7 +204,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | (_,_) => mk_err "Statements do not match"
   termination_by s1.sizeOf
-  decreasing_by all_goals(cases hs; simp_all; try omega)
+  decreasing_by all_goals(cases _hs; term_by_mem)
 
 end
 
@@ -227,8 +228,8 @@ def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram inlineCallCmd p .emp) with
-  | ⟨.ok res, _⟩ => res
+  match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
+  | ⟨.ok (_,res), _⟩ => res
   | ⟨.error e, _⟩ => panic! e
 
 def checkInlining (prog : Core.Program) (progAns : Core.Program)
@@ -294,17 +295,17 @@ def Test2 :=
 program Core;
 procedure f(x : bool) returns (y : bool) {
   if (x) {
-    goto end;
+    goto _exit;
   } else { y := false;
   }
-  end: {}
+  _exit: {}
 };
 
 procedure h() returns () {
   var b_in : bool;
   var b_out : bool;
   call b_out := f(b_in);
-  end: {}
+  _exit: {}
 };
 #end
 
@@ -313,10 +314,10 @@ def Test2Ans :=
 program Core;
 procedure f(x : bool) returns (y : bool) {
   if (x) {
-    goto end;
+    goto _exit;
   } else { y := false;
   }
-  end: {}
+  _exit: {}
 };
 
 procedure h() returns () {
@@ -334,7 +335,7 @@ procedure h() returns () {
     f_end: {}
     b_out := f_y;
   }
-  end: {}
+  _exit: {}
 };
 
 #end
@@ -395,6 +396,48 @@ procedure g() returns () {
 /-- info: ok: true -/
 #guard_msgs in
 #eval checkInlining (translate Test3) (translate Test3Ans)
+
+
+def TestRecursiveCall :=
+#strata
+program Core;
+procedure a1() returns () {
+};
+procedure a2() returns () {
+};
+
+procedure f() returns () {
+  call a1();
+  call a2();
+  call f();
+};
+#end
+
+def setCallGraph (p : Core.Program) : CoreTransformM Unit :=
+  modify (fun σ => { σ with cachedAnalyses :=
+    { callGraph := Program.toProcedureCG p } })
+
+def test := do
+  let p := translate TestRecursiveCall
+  let _ ← setCallGraph p
+  let (changed, _p) ← runProgram (targetProcList := .some ["f"])
+    (inlineCallCmd (doInline := fun name _ => name = "f")) p
+  let cg := (← get).cachedAnalyses.callGraph
+  return (changed, cg)
+
+/--
+info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1), ("a1", 2), ("a2", 2)]),
+              ("a1", Std.HashMap.ofList []),
+              ("a2", Std.HashMap.ofList [])],
+  callers := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1)]),
+              ("a1", Std.HashMap.ofList [("f", 2)]),
+              ("a2", Std.HashMap.ofList [("f", 2)])] }
+-/
+#guard_msgs in
+#eval ((match test .emp with
+  | ⟨.ok (changed, cg), _⟩ => f!"{repr changed}, {repr cg}"
+  | ⟨.error m, _⟩ => panic! s!"{m}"))
+
 
 
 end ProcedureInliningExamples

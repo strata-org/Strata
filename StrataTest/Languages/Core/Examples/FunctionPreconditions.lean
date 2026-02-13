@@ -280,12 +280,13 @@ Result: ❌ fail
 
 
 Evaluated program:
-(procedure badDiv$$wf :  ((x : int)) → ())
-modifies: []
-preconditions: 
-postconditions: 
-body: assert [badDiv_body_calls_Int.Div_0] #false
-
+procedure badDiv$$wf :  ((x : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assert [badDiv_body_calls_Int.Div_0] #false
+}
 func badDiv :  ((x : int)) → int :=
   ((((~Int.Div : (arrow int (arrow int int))) (x : int)) #0))
 ---

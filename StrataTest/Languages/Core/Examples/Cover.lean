@@ -47,8 +47,6 @@ Result: ✅ pass
 Obligation: reachable_cover
 Property: cover
 Result: ✅ pass
-Model:
-(init_x_0, 0)
 
 Obligation: unsatisfiable_cover
 Property: cover
@@ -59,7 +57,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" coverPgm1 (options := Options.quiet)
+#eval verify "cvc5" coverPgm1 (options := Options.quiet)
 
 ---------------------------------------------------------------------
 
@@ -89,14 +87,12 @@ Result: ❌ fail
 Obligation: ctest2
 Property: cover
 Result: ✅ pass
-Model:
-($__x0, 3)
 
 Obligation: atest2
 Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" coverPgm2 (options := Options.quiet)
+#eval verify "cvc5" coverPgm2 (options := Options.quiet)
 
 ---------------------------------------------------------------------

@@ -8,6 +8,7 @@ import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
 import Strata.DDM.AST
 import Strata.DDM.Util.Array
+import Strata.DL.Util.Func
 import Strata.DL.Util.List
 import Strata.DL.Util.ListMap
 
@@ -59,130 +60,34 @@ def inline_attr : String := "inline"
 def inline_if_constr_attr : String := "inline_if_constr"
 def eval_if_constr_attr : String := "eval_if_constr"
 
+-- Re-export Func from Util for backward compatibility
+open Strata.DL.Util (Func TyIdentifier)
+
 /--
-A Lambda factory function, where the body can be optional. Universally
-quantified type identifiers, if any, appear before this signature and can
+A Lambda factory function - instantiation of `Func` for Lambda expressions.
+
+Universally quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
-
-A optional evaluation function can be provided in the `concreteEval` field for
-each factory function to allow the partial evaluator to do constant propagation
-when all the arguments of a function are concrete. Such a function should take
-two inputs: a function call expression and also -- somewhat redundantly, but
-perhaps more conveniently -- the list of arguments in this expression.  Here's
-an example of a `concreteEval` function for `Int.Add`:
-
-```
-(fun e args => match args with
-               | [e1, e2] =>
-                 let e1i := LExpr.denoteInt e1
-                 let e2i := LExpr.denoteInt e2
-                 match e1i, e2i with
-                 | some x, some y => (.const (toString (x + y)) mty[int])
-                 | _, _ => e
-               | _ => e)
-```
-
-Note that if there is an arity mismatch or if the arguments are not
-concrete/constants, this fails and it returns .none.
-
-(TODO) Use `.bvar`s in the body to correspond to the formals instead of using
-`.fvar`s.
 -/
-structure LFunc (T : LExprParams) where
-  name     : T.Identifier
-  typeArgs : List TyIdentifier := []
-  isConstr : Bool := false --whether function is datatype constructor
-  inputs   : @LMonoTySignature T.IDMeta
-  output   : LMonoTy
-  body     : Option (LExpr T.mono) := .none
-  -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
-  -- a function, etc.).
-  attr     : Array String := #[]
-  -- The T.Metadata argument is the metadata that will be attached to the
-  -- resulting expression of concreteEval if evaluation was successful.
-  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
-  axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
-  preconditions : List (LExpr T.mono) := []
+abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
 
 /--
-Well-formedness properties of LFunc. These are split from LFunc because
-otherwise it becomes impossible to create a 'temporary' LFunc object whose
-wellformedness might not hold yet.
+Helper constructor for LFunc to maintain backward compatibility.
 -/
-structure LFuncWF {T : LExprParams} (f : LFunc T) where
-  -- No args have same name.
-  arg_nodup:
-    List.Nodup (f.inputs.map (·.1.name))
-  -- Free variables of body must be arguments.
-  body_freevars:
-    ∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)
-  -- concreteEval does not succeed if the length of args is incorrect.
-  concreteEval_argmatch:
-    ∀ fn md args res, f.concreteEval = .some fn
-      → fn md args = .some res
-      → args.length = f.inputs.length
-  -- Free variables of preconditions must be arguments.
-  precond_freevars:
-    ∀ p, p ∈ f.preconditions →
-      (LExpr.freeVars p).map (·.1.name) ⊆ f.inputs.map (·.1.name)
-
-instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
-  apply List.nodupDecidable
-
-instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
-    Decidable (∀ b freevars, f.body = .some b
-      → freevars = LExpr.freeVars b
-      → (∀ fv, fv ∈ freevars →
-          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)) :=
-  match Hbody: f.body with
-  | .some b =>
-    if Hall:(LExpr.freeVars b).all
-        (fun fv => List.any f.inputs (fun arg => fv.1.name == arg.1.name))
-    then by
-      apply isTrue
-      intros b' freevars Hb' Hfreevars fv' Hmem
-      cases Hb'
-      rw [← Hfreevars] at Hall
-      rw [List.all_eq_true] at Hall
-      have Hall' := Hall fv' Hmem
-      rw [List.any_eq_true] at Hall'
-      rcases Hall' with ⟨arg', H⟩
-      exists arg'
-      solve | (simp at H ; congr)
-    else by
-      apply isFalse
-      grind
-  | .none => by
-    apply isTrue; grind
-
-instance LFuncWF.precond_freevars_decidable {T : LExprParams} (f : LFunc T):
-  Decidable (∀ p, p ∈ f.preconditions →
-      (LExpr.freeVars p).map (·.1.name) ⊆ f.inputs.map (·.1.name)) := by
-  apply List.decidableBAll
-
--- LFuncWF.concreteEval_argmatch is not decidable.
+def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
+    (isConstr : Bool := false) (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
+    (body : Option (LExpr T.mono) := .none) (attr : Array String := #[])
+    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
+    (axioms : List (LExpr T.mono) := [])
+    (preconditions : List (LExpr T.mono) := []) : LFunc T :=
+  Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms preconditions
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
-instance : ToFormat (LFunc T) where
-  format f :=
-    let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
-    let typeArgs := if f.typeArgs.isEmpty
-                    then f!""
-                    else f!"∀{f.typeArgs}."
-    let type := f!"{typeArgs} ({Signature.format f.inputs}) → {f.output}"
-    let preconds := f.preconditions.map (f!"  requires {·}")
-    let precondsStr := if preconds.isEmpty then f!"" else Format.line ++ Format.joinSep preconds Format.line
-    let sep := if f.body.isNone then f!";" else f!" :="
-    let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
-    f!"{attr}\
-       func {f.name} : {type}{precondsStr}{sep}\
-       {body}"
+-- Provide explicit instance for LFunc to ensure proper resolution
+instance [ToFormat T.IDMeta] [Inhabited T.Metadata] : ToFormat (LFunc T) where
+  format := Func.format
 
 def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then
@@ -200,6 +105,15 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   | [] => .ok (.forAll f.typeArgs f.output)
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
+
+omit [Inhabited T.Metadata] [ToFormat T.IDMeta] in
+theorem LFunc.type_inputs_nodup [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
+    f.type = .ok ty → f.inputs.keys.Nodup := by
+  intro h
+  simp only [LFunc.type, bind, Except.bind] at h
+  -- At this point grind is possible if this proof needs maintenance
+  split at h <;> try contradiction
+  simp_all
 
 def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
   let input_tys := f.inputs.values
@@ -241,19 +155,6 @@ instance : Inhabited (@Factory T) where
 instance : Membership (LFunc T) (@Factory T) where
   mem x f := Array.Mem x f
 
-/--
-Well-formedness properties of Factory.
--/
-structure FactoryWF {T : LExprParams} (fac:Factory T) where
-  name_nodup:
-    List.Nodup (fac.toList.map (·.name.name))
-  lfuncs_wf:
-    ∀ (lf:LFunc T), lf ∈ fac → LFuncWF lf
-
-instance FactoryWF.name_nodup_decidable {T : LExprParams} (fac : Factory T):
-    Decidable (List.Nodup (fac.toList.map (·.name.name))) := by
-  apply List.nodupDecidable
-
 
 def Factory.getFunctionNames (F : @Factory T) : Array T.Identifier :=
   F.map (fun f => f.name)
@@ -275,88 +176,11 @@ def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Diagnostic
 
 
 /--
-If Factory.addFactoryFunc succeeds, and the input factory & LFunc were already
-well-formed, the returned factory is also well-formed.
--/
-theorem Factory.addFactoryFunc_wf
-  (F : @Factory T) (F_wf: FactoryWF F) (func : LFunc T) (func_wf: LFuncWF func):
-  ∀ F', F.addFactoryFunc func = .ok F' → FactoryWF F' :=
-by
-  unfold Factory.addFactoryFunc
-  unfold Factory.getFactoryLFunc
-  intros F' Hmatch
-  split at Hmatch -- Case-analysis on the match condition
-  · rename_i heq
-    cases Hmatch -- F' is Array.push F
-    apply FactoryWF.mk
-    · have Hnn := F_wf.name_nodup
-      grind [Array.toList_push,List]
-    · intros lf Hmem
-      rw [Array.mem_push] at Hmem
-      cases Hmem
-      · have Hwf := F_wf.lfuncs_wf
-        apply Hwf; assumption
-      · grind
-  · grind
-
-/--
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
 def Factory.addFactory (F newF : @Factory T) : Except DiagnosticModel (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
-
-
-/--
-If Factory.addFactory succeeds, and the input two factories were already
-well-formed, the returned factory is also well-formed.
--/
-theorem Factory.addFactory_wf
-  (F : @Factory T) (F_wf: FactoryWF F) (newF : @Factory T)
-  (newF_wf: FactoryWF newF):
-  ∀ F', F.addFactory newF = .ok F' → FactoryWF F' :=
-by
-  unfold Factory.addFactory
-  rw [← Array.foldlM_toList]
-  generalize Hl: newF.toList = l
-  induction l generalizing newF F
-  · rw [Array.toList_eq_nil_iff] at Hl
-    rw [List.foldlM_nil]
-    unfold Pure.pure Except.instMonad Except.pure
-    grind
-  · rename_i lf lf_tail tail_ih
-    have Hl: newF = (List.toArray [lf]) ++ (List.toArray lf_tail) := by grind
-    have Htail_wf: FactoryWF (lf_tail.toArray) := by
-      rw [Hl] at newF_wf
-      apply FactoryWF.mk
-      · have newF_wf_name_nodup := newF_wf.name_nodup
-        grind
-      · intro lf
-        have newF_wf_lfuncs_wf := newF_wf.lfuncs_wf lf
-        intro Hmem
-        apply newF_wf_lfuncs_wf
-        apply Array.mem_append_right
-        assumption
-    have Hhead_wf: LFuncWF lf := by
-      rw [Hl] at newF_wf
-      have Hwf := newF_wf.lfuncs_wf
-      apply Hwf
-      apply Array.mem_append_left
-      grind
-    intro F'
-    simp only [List.foldlM]
-    unfold bind
-    unfold Except.instMonad
-    simp only []
-    unfold Except.bind
-    intro H
-    split at H
-    · contradiction
-    · rename_i F_interm HaddFacFun
-      have HF_interm_wf: FactoryWF F_interm := by
-        apply (Factory.addFactoryFunc_wf F F_wf lf) <;> assumption
-      simp only [] at H
-      apply tail_ih F_interm HF_interm_wf (lf_tail.toArray) <;> grind
 
 
 def getLFuncCall {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=

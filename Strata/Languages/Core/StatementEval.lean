@@ -11,6 +11,8 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.CmdEval
+import Strata.DL.Lambda.LTyUnify
+import Strata.DL.Lambda.LExprT
 
 ---------------------------------------------------------------------
 
@@ -112,6 +114,48 @@ private def getCurrentGlobals (E : Env) : VarSubst :=
   E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
 
 /--
+Extract the type from an expression that has already been typechecked (so e.g.
+`.fvar` and `.op` nodes have their types stored in the `Option LMonoTy` field).
+-/
+private def getExprType (e : Expression.Expr) : Option LMonoTy :=
+  match e with
+  | .fvar _ _ ty => ty
+  | .op _ _ ty => ty
+  | .const _ c => some c.ty
+  | .app _ fn _ =>
+    -- For application, get the return type from the function type
+    match getExprType fn with
+    | some (.tcons "arrow" [_, ret]) => some ret
+    | _ => none
+  | .eq _ _ _ => some .bool
+  | .quant _ _ _ _ _ => some .bool
+  | .abs _ ty e =>
+    match ty, getExprType e with
+    | some ty1, some ty2 => some (.arrow ty1 ty2)
+    | _, _ => none
+  | .ite _ _ e1 e2 =>
+    let ty1 := getExprType e1
+    if ty1 == getExprType e2 then ty1 else none
+  | .bvar _ _ => none
+
+/--
+Compute type substitution by unifying actual argument types with input types
+and LHS types with output types.
+-/
+private def computeTypeSubst (input_tys output_tys: List LMonoTy)
+  (args : List Expression.Expr) (lhs : List Expression.Ident) (E : Env) :
+  Subst :=
+  let actual_tys := args.filterMap getExprType
+  let lhs_tys := lhs.filterMap (fun l =>
+    (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  let input_constraints := actual_tys.zip input_tys
+  let output_constraints := lhs_tys.zip output_tys
+  let constraints := input_constraints ++ output_constraints
+  match Constraints.unify constraints SubstInfo.empty with
+  | .ok substInfo => substInfo.subst
+  | .error _ => Subst.empty
+
+/--
 Evaluate a procedure call `lhs := pname(args)`.
 -/
 def Command.evalCall (E : Env) (old_var_subst : SubstMap)
@@ -119,6 +163,10 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
+    -- Compute type substitution to instantiate polymorphic type variables.
+    let tySubst := computeTypeSubst proc.header.inputs.values
+      proc.header.outputs.values args lhs E
+
     -- (Pre-call) Create formal-to-actual argument mapping.
     let formal_arg_subst := mkFormalArgSubst proc args E old_var_subst
     -- (Pre-call) Get current global values for old expression handling.
@@ -129,10 +177,13 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- current values for unmodified.
     let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
 
+    -- Apply type substitution to preconditions to instantiate type variables.
+    let preconditions_typed := proc.spec.preconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create pre-call substitution for preconditions.
     let precond_subst := formal_arg_subst ++ current_globals
     -- Generate precondition proof obligations.
-    let preconditions := callConditions proc .Requires proc.spec.preconditions precond_subst
+    let preconditions := callConditions proc .Requires preconditions_typed precond_subst
     -- It's safe to evaluate the preconditions in the current environment
     -- (pre-call context).
     let preconditions := preconditions.map
@@ -140,10 +191,13 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
 
+    -- Apply type substitution to postconditions to instantiate type variables.
+    let postconditions_typed := proc.spec.postconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create post-call substitution for postconditions.
     let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
     let postcond_subst_map := postcond_subst_init ++ current_globals
-    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst_map proc.spec.postconditions
+    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst_map postconditions_typed
     let postcond_subst_full :=  postcond_subst_init ++ globals_post_subst
     let postconditions := callConditions proc .Ensures postconditions postcond_subst_full
 
@@ -186,7 +240,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .goto _ _ => false
+  | .funcDecl _ _ | .goto _ _ => false  -- Function declarations and gotos don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -225,7 +279,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .goto _ _ => []
+  | .funcDecl _ _ | .goto _ _ => []  -- Function declarations and gotos don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -249,7 +303,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .goto _ _ => []
+  | .funcDecl _ _ | .goto _ _ => []  -- Function declarations and gotos don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -275,6 +329,25 @@ def createPassingAssertObligations
   asserts.toArray.map
     (fun (label, md) =>
       (Imperative.ProofObligation.mk label .assert [] (LExpr.true ()) md))
+
+/--
+Substitute free variables in an expression with their current values from the environment,
+excluding the given parameter names (which are bound by the function, not free).
+This implements value capture semantics for local function declarations (`funcDecl`).
+
+Unlike global functions (which are evaluated at the top level with no local state),
+local functions capture the values of free variables at the point of declaration.
+Parameters are excluded because they are bound by the function definition and should
+not be substituted with values from the enclosing scope.
+-/
+def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
+  let freeVars := Lambda.LExpr.freeVars e
+  let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
+  freeVarsToCapture.foldl (fun body fv =>
+    match env.exprEnv.state.find? fv.fst with
+    | some (_, val) => Lambda.LExpr.substFvar body fv.fst val
+    | none => body
+  ) e
 
 abbrev StmtsStack := List Statements
 
@@ -399,6 +472,25 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             panic! "Cannot evaluate `loop` statement. \
                     Please transform your program to eliminate loops before \
                     calling Core.Statement.evalAux"
+
+          | .funcDecl decl _ =>
+            -- Add function to factory with value capture semantics
+            let paramNames := decl.inputs.map (·.1)
+            let func : Lambda.LFunc CoreLParams := {
+              name := decl.name,
+              typeArgs := decl.typeArgs,
+              isConstr := decl.isConstr,
+              inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+              output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+              body := decl.body.map (captureFreevars Ewn.env paramNames),
+              attr := decl.attr,
+              concreteEval := decl.concreteEval,
+              axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
+            }
+            match Ewn.env.addFactoryFunc func with
+            | .ok env' => [{ Ewn with env := env' }]
+            | .error e =>
+              [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 

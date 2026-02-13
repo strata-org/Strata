@@ -8,6 +8,7 @@ import Lean.Elab.Command
 import Strata.Languages.Core.Identifiers
 import Strata.Languages.Core.Expressions
 import Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.FactoryWF
 import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 

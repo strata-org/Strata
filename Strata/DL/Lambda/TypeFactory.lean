@@ -8,6 +8,7 @@ import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Factory
 import Strata.DL.Util.List
+import Strata.Util.Tactics
 
 /-!
 ## Lambda's Type Factory
@@ -49,6 +50,9 @@ structure LConstr (IDMeta : Type) where
   testerName : String := "is" ++ name.name
 deriving Repr, DecidableEq
 
+instance [Inhabited IDMeta] : Inhabited (LConstr IDMeta) where
+  default := { name := default, args := [] }
+
 instance: ToFormat (LConstr IDMeta) where
   format c := f!"Name:{Format.line}{c.name}{Format.line}\
                  Args:{Format.line}{c.args}{Format.line}\
@@ -64,6 +68,9 @@ structure LDatatype (IDMeta : Type) where
   constrs: List (@LConstr IDMeta)
   constrs_ne : constrs.length != 0
 deriving Repr, DecidableEq
+
+instance [Inhabited IDMeta] : Inhabited (LDatatype IDMeta) where
+  default := { name := "", typeArgs := [], constrs := [default], constrs_ne := rfl }
 
 instance : ToFormat (LDatatype IDMeta) where
   format d := f!"type:{Format.line}{d.name}{Format.line}\
@@ -113,6 +120,28 @@ def checkUniform (c: Format) (n: String) (args: List LMonoTy) (t: LMonoTy) : Exc
   | _ => .ok ()
 
 /--
+Check that no datatypes in mutual block `block` appear nested inside another
+type constructor's arguments.
+The format `c` appears only for error message information.
+-/
+def checkNotNested (c: Format) (block: MutualDatatype IDMeta) (t: LMonoTy) :
+Except DiagnosticModel Unit :=
+  match t with
+  | .arrow t1 t2 => do
+    checkNotNested c block t1
+    checkNotNested c block t2
+  | .tcons n1 args1 =>
+    if n1 ∈ block.map (·.name) then .ok ()
+    else
+      match block.find? (fun d => args1.any (tyNameAppearsIn d.name)) with
+      | some d =>
+        .error <| DiagnosticModel.fromFormat
+        f!"Error in constructor {c}: Datatype {d.name} appears nested inside {t}. Nested datatypes are not supported in Strata Core."
+      | none => List.foldlM (fun _ => checkNotNested c block) () args1
+  | _ => .ok ()
+
+
+/--
 Check for strict positivity and uniformity of all datatypes in a mutual block
 within type `ty`. `c` appears only for error message information.
 -/
@@ -128,12 +157,14 @@ def checkStrictPosUnifTy (c: Format) (block: MutualDatatype IDMeta) (ty: LMonoTy
     block.foldlM (fun _ d => checkUniform c d.name (d.typeArgs.map .ftvar) ty) ()
 
 /--
-Check for strict positivity and uniformity across a mutual block of datatypes
+Check strict positivity, uniformity, and non-nesting of constructor arguments
+ across a mutual block of datatypes
 -/
-def checkStrictPosUnif (block: MutualDatatype IDMeta) : Except DiagnosticModel Unit :=
+def checkConstructorArgsWF (block: MutualDatatype IDMeta) : Except DiagnosticModel Unit :=
   block.foldlM (fun _ d =>
     d.constrs.foldlM (fun _ ⟨name, args, _⟩ =>
-      args.foldlM (fun _ ⟨_, ty⟩ =>
+      args.foldlM (fun _ ⟨_, ty⟩ => do
+        checkNotNested name.name block ty
         checkStrictPosUnifTy name.name block ty
       ) ()
     ) ()
@@ -541,8 +572,8 @@ def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : Mutual
 def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String := []) : Except DiagnosticModel (@TypeFactory IDMeta) := do
   -- Check for name clashes within block
   validateMutualBlock block
-  -- Check for positivity and uniformity
-  checkStrictPosUnif block
+  -- Check for positivity, uniformity, nesting
+  checkConstructorArgsWF block
   -- Check for duplicate names with existing types
   for d in block do
     match t.getType d.name with
@@ -692,8 +723,8 @@ def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   termination_by (adts.allDatatypes.length - seen.length, 0)
   decreasing_by
     apply Prod.Lex.left; simp only[List.length]
-    apply Nat.sub_succ_lt_self
-    have hlen := List.subset_nodup_length hn hsub'; simp_all; omega
+    have hlen := List.subset_nodup_length hn hsub'
+    simp_all; omega
 
 def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.allDatatypes))
@@ -712,9 +743,9 @@ def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   | _ => pure true -- Type variables and bitvectors are inhabited
 termination_by (adts.allDatatypes.length - seen.length, t.size)
 decreasing_by
-  . apply Prod.Lex.right; simp only[LMonoTy.size]; omega
-  . rename_i h; have := LMonoTy.size_lt_of_mem h;
-    apply Prod.Lex.right; simp only[LMonoTy.size]; omega
+  all_goals (
+    apply Prod.Lex.right;
+    term_by_mem [LMonoTy, LMonoTy.size_lt_of_mem])
 end
 
 /--

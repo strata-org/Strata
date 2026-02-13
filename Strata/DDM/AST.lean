@@ -6,10 +6,10 @@
 module
 
 public import Std.Data.HashMap.Basic
+public import Strata.DDM.AST.Datatype
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
-public import Lean.Data.Position
-public import Strata.DDM.AST.Datatype
+public import Strata.DDM.Util.SourceRange
 
 import Std.Data.HashMap
 import all Strata.DDM.Util.Array
@@ -35,9 +35,20 @@ def fullName (i : QualifiedIdent) : String := s!"{i.dialect}.{i.name}"
 instance : ToString QualifiedIdent where
   toString := fullName
 
+def ofString (fullname : String) : Option QualifiedIdent := do
+  let pos := fullname.find (· = '.')
+  if p : pos ≠ fullname.endPos then
+    return {
+      dialect := fullname.extract fullname.startPos pos
+      name := fullname.extract (pos.next p) fullname.endPos
+    }
+  else
+    none
+
 section
 open _root_.Lean
-public protected def quote (i : QualifiedIdent) : Term := Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
+public protected def quote (i : QualifiedIdent) : Term :=
+  Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
 
 instance : Quote QualifiedIdent where
   quote := QualifiedIdent.quote
@@ -147,6 +158,28 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
 
+/-- Monadic map over all annotations in a type expression. -/
+@[specialize]
+def mapAnnM {α β} {m} [Monad m] (t : TypeExprF α) (f : α → m β)
+    : m (TypeExprF β) := do
+  match t with
+  | .ident ann name args =>
+    return .ident (← f ann) name
+      (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+  | .bvar ann index => return .bvar (← f ann) index
+  | .tvar ann name => return .tvar (← f ann) name
+  | .fvar ann fv args =>
+    return .fvar (← f ann) fv
+      (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+  | .arrow ann arg res =>
+    return .arrow (← f ann) (← arg.mapAnnM f) (← res.mapAnnM f)
+termination_by t
+
+/-- Map over all annotations in a type expression. -/
+@[specialize]
+def mapAnn {α β} (t : TypeExprF α) (f : α → β) : TypeExprF β :=
+  t.mapAnnM (m := Id) f
+
 end TypeExprF
 
 /-- Separator format for sequence formatting -/
@@ -190,9 +223,23 @@ end SepFormat
 mutual
 
 inductive ExprF (α : Type) : Type where
+  /--
+  A bound variable reference (de Bruijn index).
+
+  If this is a function, then the arguments are always value-level;
+  type arguments are omitted.
+  -/
 | bvar (ann : α) (idx : Nat)
+  /--
+  A free variable reference.
+
+  If this is a function, then the arguments are always value-level;
+  type arguments are omitted.
+  -/
 | fvar (ann : α) (idx : FreeVarIndex)
+  /-- A named dialect function. -/
 | fn (ann : α) (ident : QualifiedIdent)
+  /-- Function application. -/
 | app (ann : α) (e : ExprF α) (a : ArgF α)
 deriving Inhabited, Repr
 
@@ -256,6 +303,10 @@ end OperationF
 
 namespace ExprF
 
+/--
+Flattens a curried application expression into its head and list of arguments.
+For example, `((f a) b) c` becomes `(f, [a, b, c])`.
+-/
 public def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α × List (ArgF α) :=
   match e with
   | .app _ f e => f.flatten (e :: prev)
@@ -263,121 +314,93 @@ public def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α 
 
 end ExprF
 
-/--
-Source location information in the DDM is defined
-by a range of bytes in a UTF-8 string with the input
-Line/column information can be construced from a
-`Lean.FileMap`
+/-- Monadic map over all annotations in a syntax category. -/
+@[specialize]
+def SyntaxCatF.mapAnnM {α β} {m} [Monad m] (c : SyntaxCatF α)
+    (f : α → m β) : m (SyntaxCatF β) := do
+  return {
+    ann := ← f c.ann
+    name := c.name
+    args := ← c.args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f
+  }
+termination_by sizeOf c
+decreasing_by
+  cases c
+  case mk ann name args =>
+    decreasing_tactic
 
-As an example, in the string `"123abc\ndef"`, the string
-`"abc"` has the position `{start := 3, stop := 6 }` while
-`"def"` has the position `{start := 7, stop := 10 }`.
--/
-structure SourceRange where
-  /-- The starting offset of the source range. -/
-  start : String.Pos.Raw
-  /-- One past the end of the range. -/
-  stop : String.Pos.Raw
-deriving DecidableEq, Inhabited, Repr
+/-- Map over all annotations in a syntax category. -/
+@[specialize]
+def SyntaxCatF.mapAnn {α β} (c : SyntaxCatF α) (f : α → β) : SyntaxCatF β :=
+  c.mapAnnM (m := Id) f
 
-namespace SourceRange
+mutual
 
-def none : SourceRange := { start := 0, stop := 0 }
+/-- Monadic map over all annotations in an expression. -/
+@[specialize]
+def ExprF.mapAnnM {α β} {m} [Monad m] (e : ExprF α) (f : α → m β)
+    : m (ExprF β) := do
+  match e with
+  | .bvar ann idx => return .bvar (← f ann) idx
+  | .fvar ann idx => return .fvar (← f ann) idx
+  | .fn ann ident => return .fn (← f ann) ident
+  | .app ann e a =>
+    return .app (← f ann) (← e.mapAnnM f) (← a.mapAnnM f)
+termination_by sizeOf e
 
-def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
+/-- Monadic map over all annotations in an argument. -/
+@[specialize]
+def ArgF.mapAnnM {α β} {m} [Monad m] (a : ArgF α) (f : α → m β)
+    : m (ArgF β) := do
+  match a with
+  | .op o => return .op (← o.mapAnnM f)
+  | .cat c => return .cat (← c.mapAnnM f)
+  | .expr e => return .expr (← e.mapAnnM f)
+  | .type t => return .type (← t.mapAnnM f)
+  | .ident ann i => return .ident (← f ann) i
+  | .num ann v => return .num (← f ann) v
+  | .decimal ann v => return .decimal (← f ann) v
+  | .strlit ann i => return .strlit (← f ann) i
+  | .bytes ann b => return .bytes (← f ann) b
+  | .option ann none => return .option (← f ann) none
+  | .option ann (some a) =>
+    return .option (← f ann) (some (← a.mapAnnM f))
+  | .seq ann sep l =>
+    return .seq (← f ann) sep
+      (← l.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
+termination_by sizeOf a
 
-instance : ToFormat SourceRange where
- format fr := f!"{fr.start}-{fr.stop}"
+/-- Map a monadic function over all annotations in an operation. -/
+@[specialize]
+def OperationF.mapAnnM {α β} {m} [Monad m] (op : OperationF α)
+    (f : α → m β) : m (OperationF β) := do
+  return {
+    ann := ← f op.ann
+    name := op.name
+    args := ← op.args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f
+  }
+termination_by sizeOf op
+decreasing_by
+  cases op
+  case mk ann name args =>
+    decreasing_tactic
 
-end SourceRange
+end
 
-inductive Uri where
-  | file (path: String)
-  deriving DecidableEq, Repr, Inhabited
+/-- Map a pure function over all annotations in an expression. -/
+@[specialize]
+def ExprF.mapAnn {α β} (e : ExprF α) (f : α → β) : ExprF β :=
+  e.mapAnnM (m := Id) f
 
-instance : ToFormat Uri where
- format fr := match fr with | .file path => path
+/-- Map a pure function over all annotations in an argument. -/
+@[specialize]
+def ArgF.mapAnn {α β} (a : ArgF α) (f : α → β) : ArgF β :=
+  a.mapAnnM (m := Id) f
 
-structure FileRange where
-  file: Uri
-  range: Strata.SourceRange
-  deriving DecidableEq, Repr, Inhabited
-
-instance : ToFormat FileRange where
- format fr := f!"{fr.file}:{fr.range}"
-
-/-- A default file range for errors without source location.
-This should only be used for generated nodes that are guaranteed to be correct. -/
-def FileRange.unknown : FileRange :=
-  { file := .file "<unknown>", range := SourceRange.none }
-
-/-- A diagnostic model that holds a file range and a message.
-    This can be converted to a formatted string using a FileMap. -/
-structure DiagnosticModel where
-  fileRange : FileRange
-  message : String
-  deriving Repr, BEq, Inhabited
-
-instance : Inhabited DiagnosticModel where
-  default := { fileRange := FileRange.unknown, message := "" }
-
-/-- Create a DiagnosticModel from just a message (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := msg }
-
-/-- Create a DiagnosticModel from a Format (using default location).
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := toString fmt }
-
-/-- Create a DiagnosticModel with source location. -/
-def DiagnosticModel.withRange (fr : FileRange) (msg : Format) : DiagnosticModel :=
-  { fileRange := fr, message := toString msg }
-
-/-- Format a file range using a FileMap to convert byte offsets to line/column positions. -/
-def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  let baseName := match fr.file with
-                  | .file path => (path.splitToList (· == '/')).getLast!
-  match fileMap with
-  | some fm =>
-    let startPos := fm.toPosition fr.range.start
-    let endPos := fm.toPosition fr.range.stop
-    if includeEnd? then
-      if startPos.line == endPos.line then
-        f!"{baseName}({startPos.line},({startPos.column}-{endPos.column}))"
-      else
-        f!"{baseName}(({startPos.line},{startPos.column})-({endPos.line},{endPos.column}))"
-    else
-      f!"{baseName}({startPos.line}, {startPos.column})"
-  | none =>
-    if fr.range.isNone then
-      f!""
-    else
-      f!"{baseName}({fr.range.start}-{fr.range.stop})"
-
-/-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
-def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  let rangeStr := dm.fileRange.format fileMap includeEnd?
-  if dm.fileRange.range.isNone then
-    f!"{dm.message}"
-  else
-    f!"{rangeStr} {dm.message}"
-
-/-- Format just the file range portion of a DiagnosticModel. -/
-def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  dm.fileRange.format fileMap includeEnd?
-
-/-- Update the file range of a DiagnosticModel if it's currently unknown.
-This should not be called, it only exists temporarily to enabling incrementally migrating code without error locations -/
-def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) : DiagnosticModel :=
-  if dm.fileRange.range.isNone then
-    { dm with fileRange := fr }
-  else
-    dm
-
-instance : ToString DiagnosticModel where
-  toString dm := dm.format none |> toString
+/-- Map a pure function over all annotations in an operation. -/
+@[specialize]
+def OperationF.mapAnn {α β} (op : OperationF α) (f : α → β) : OperationF β :=
+  op.mapAnnM (m := Id) f
 
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange
@@ -601,6 +624,10 @@ end Metadata
 
 abbrev Var := String
 
+/--
+Converts a deBruijn index to a level (counting from the start rather than
+the end). Used internally for metadata argument processing.
+-/
 private def catbvarLevel (varCount : Nat) : MetadataArg → Nat
 | .catbvar idx =>
   if idx < varCount then
@@ -1043,6 +1070,7 @@ A spec for introducing a new binding into a type context.
 inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
+| typeForward (_ : TypeBindingSpec argDecls)  -- Forward declaration (no AST node)
 | datatype (_ : DatatypeBindingSpec argDecls)
 | tvar (_ : TvarBindingSpec argDecls)
 deriving Repr
@@ -1052,11 +1080,13 @@ namespace BindingSpec
 def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
+| .typeForward v => v.nameIndex
 | .datatype v => v.nameIndex
 | .tvar v => v.nameIndex
 
 end BindingSpec
 
+/-- Monad for parsing new binding specifications, accumulating error messages. -/
 private abbrev NewBindingM := StateM (Array String)
 
 private def newBindingErr (msg : String) : NewBindingM Unit :=
@@ -1135,6 +1165,22 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := none }
+        | q`StrataDDL.declareTypeForward => do
+          let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
+            | newBindingErr s!"declareTypeForward has bad arguments {repr attr.args}."; return none
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+            | return panic! "Invalid name index"
+          let nameIndex := ⟨nameIndex, nameP⟩
+          checkNameIndexIsIdent argDecls nameIndex
+          let argsIndex ←
+                match mArgsArg with
+                | none => pure none
+                | some (.catbvar idx) =>
+                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
+                    | return panic! "Invalid arg index"
+                  pure <| some ⟨idx, argsP⟩
+                | _ => newBindingErr "declareTypeForward args invalid."; return none
+          some <$> .typeForward <$> pure { nameIndex, argsIndex, defIndex := none }
         | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
@@ -1317,7 +1363,7 @@ structure Collection (α : Type) where
 
 namespace Collection
 
-instance {m α} : ForIn m (Collection α) α where
+instance {m α} [Monad m] : ForIn m (Collection α) α where
   forIn c i f := private do
     let step d _h r :=
           match c.proj d with
@@ -1702,7 +1748,9 @@ end DialectMap
 mutual
 
 /--
-Invoke a function `f` over each of the declaration specifications for an arg.
+Recursively folds over all binding specifications declared within an argument.
+Used to collect type bindings, value bindings, and other declarations that
+appear nested within operation arguments.
 -/
 partial def foldOverArgBindingSpecs {α β}
     (m : DialectMap)
@@ -1739,7 +1787,7 @@ private partial def OperationF.foldBindingSpecs {α β}
         | some lvl => foldOverArgAtLevel m f init argDecls argsV lvl
       decl.newBindings.foldl (init := init) fun a b => f a op.ann b argsV
     else
-      @panic _ ⟨init⟩ "Expected arguments to match bindings"
+      @panic _ ⟨init⟩ s!"{op.name} expects {argDecls.size} arguments when {args.size} provided."
   | _ => @panic _ ⟨init⟩ s!"Unknown operation {op.name}"
 
 /--
@@ -1767,6 +1815,12 @@ inductive GlobalKind where
 | type (params : List String) (definition : Option TypeExpr)
 deriving BEq, Inhabited, Repr
 
+/-- State of a symbol in the GlobalContext -/
+inductive DeclState where
+  | forward   -- Symbol is forward-declared (no AST node will be generated)
+  | defined   -- Symbol has a complete definition
+deriving BEq, DecidableEq, Repr, Inhabited
+
 /-- Resolves a binding spec into a global kind. -/
 partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Option GlobalKind :=
   match b with
@@ -1792,7 +1846,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
         panic! s!"Expected new binding to be Type instead of {repr c}."
     | a =>
       panic! s!"Expected new binding to be bound to type instead of {repr a}."
-  | .type b =>
+  | .type b | .typeForward b =>
     let params : Array String :=
         match b.argsIndex with
         | none => #[]
@@ -1831,7 +1885,7 @@ Typing environment created from declarations in an environment.
 -/
 structure GlobalContext where
   nameMap : Std.HashMap Var FreeVarIndex
-  vars : Array (Var × GlobalKind)
+  vars : Array (Var × GlobalKind × DeclState)
 deriving Repr
 
 namespace GlobalContext
@@ -1851,12 +1905,45 @@ instance : Membership Var GlobalContext where
 def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
   inferInstanceAs (Decidable (v ∈ ctx.nameMap))
 
-def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
+/-- Add a forward declaration (must not exist). Used by @[declareTypeForward].
+    This adds to GlobalContext for name resolution but will NOT generate an AST node. -/
+def declareForward (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
   if v ∈ ctx then
-    panic! s!"Var {v} already defined"
+    .error s!"Symbol '{v}' is already in scope"
   else
     let idx := ctx.vars.size
-    { nameMap := ctx.nameMap.insert v idx, vars := ctx.vars.push (v, k) }
+    .ok { nameMap := ctx.nameMap.insert v idx,
+          vars := ctx.vars.push (v, k, .forward) }
+
+/-- Define a symbol. Used by @[declareDatatype], @[declareFn] with body, etc.
+    Replaces forward declaration, or adds new as defined. -/
+def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
+  match ctx.nameMap.get? v with
+  | none =>
+    -- Not declared, add as defined directly
+    let idx := ctx.vars.size
+    .ok { nameMap := ctx.nameMap.insert v idx,
+          vars := ctx.vars.push (v, k, .defined) }
+  | some idx =>
+    let (name, _, state) := ctx.vars[idx]!
+    match state with
+    | .forward =>
+      -- Replace forward declaration with definition (update in place)
+      .ok { ctx with vars := ctx.vars.set! idx (name, k, .defined) }
+    | .defined =>
+      .error s!"Symbol '{v}' is already defined"
+
+/-- Check if a symbol is forward-declared (not yet defined). -/
+def isForward (ctx : GlobalContext) (idx : FreeVarIndex) : Bool :=
+  match ctx.vars[idx]? with
+  | some (_, _, .forward) => true
+  | _ => false
+
+/-- Add a symbol as defined. -/
+def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
+  match ctx.define v k with
+  | .ok ctx' => ctx'
+  | .error msg => panic! msg
 
 /-- Return the index of the variable with the given name. -/
 def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
@@ -1865,7 +1952,7 @@ def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.va
 
 def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   assert! idx < ctx.vars.size
-  ctx.vars[idx]!.snd
+  ctx.vars[idx]!.2.1
 
 /-!
 ## Annotation-based Constructor Info Extraction
@@ -2066,9 +2153,11 @@ private def addDatatypeBindings
 
   let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
 
-  -- Step 1: Add datatype type
-  let gctx := gctx.push datatypeName (GlobalKind.type typeParams.toList none)
-  let datatypeIndex := gctx.vars.size - 1
+  -- Step 1: Add datatype type (or update forward declaration)
+  let gctx := match gctx.define datatypeName (GlobalKind.type typeParams.toList none) with
+    | .ok gctx' => gctx'
+    | .error msg => panic! s!"addDatatypeBindings: {msg}"
+  let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
   -- Step 2: Add constructor signatures
@@ -2093,6 +2182,17 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
           match b with
           | .datatype datatypeSpec =>
             addDatatypeBindings dialects gctx l dialectName datatypeSpec args
+          | .typeForward typeSpec =>
+            let name :=
+                  match args[typeSpec.nameIndex.toLevel] with
+                  | .ident _ e => e
+                  | a => panic! s!"Expected ident at {typeSpec.nameIndex.toLevel} {repr a}"
+            match resolveBindingIndices dialects l b args with
+            | some kind =>
+              match gctx.declareForward name kind with
+              | .ok gctx' => gctx'
+              | .error msg => panic! msg
+            | none => gctx
           | _ =>
             let name :=
                   match args[b.nameIndex.toLevel] with

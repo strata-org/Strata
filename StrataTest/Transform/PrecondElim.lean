@@ -67,12 +67,14 @@ procedure test(a : int) returns ()
 #end
 
 /--
-info: (procedure test :  ((a : int)) → ())
-modifies: []
-preconditions: 
-postconditions: 
-body: assert [init_calls_Int.Div_0] (~Bool.Not (a == #0))
-init (z : int) := ((~Int.Div #10) a)
+info: procedure test :  ((a : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assert [init_calls_Int.Div_0] (~Bool.Not (a == #0))
+  init (z : int) := ((~Int.Div #10) a)
+}
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram divInBodyPgm))
@@ -94,22 +96,24 @@ function foo(x : int, y : int) : int
 #end
 
 /--
-info: (procedure safeMod$$wf :  ((x : int) (y : int)) → ())
-modifies: []
-preconditions: 
-postconditions: 
-body: assume [precond_safeMod_0] (~Bool.Not (y == #0))
-assert [safeMod_body_calls_Int.Mod_0] (~Bool.Not (y == #0))
-
+info: procedure safeMod$$wf :  ((x : int) (y : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assume [precond_safeMod_0] (~Bool.Not (y == #0))
+  assert [safeMod_body_calls_Int.Mod_0] (~Bool.Not (y == #0))
+}
 func safeMod :  ((x : int) (y : int)) → int :=
   (((~Int.Mod x) y))
-(procedure foo$$wf :  ((x : int) (y : int)) → ())
-modifies: []
-preconditions: 
-postconditions: 
-body: assert [foo_precond_calls_safeMod_0] (~Bool.Not (y == #0))
-assume [precond_foo_0] ((~Int.Gt ((~safeMod x) y)) #0)
-
+procedure foo$$wf :  ((x : int) (y : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assert [foo_precond_calls_safeMod_0] (~Bool.Not (y == #0))
+  assume [precond_foo_0] ((~Int.Gt ((~safeMod x) y)) #0)
+}
 func foo :  ((x : int) (y : int)) → int :=
   (((~Int.Add x) y))
 -/
@@ -142,19 +146,22 @@ Type Arguments:
 Constructors:
 [Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, int), (tail, List)] Tester: List..isCons ]
 
-(procedure test$$wf :  ((xs : List)) → ())
-modifies: []
-preconditions: 
-postconditions: 
-body: assume [test_requires_0] (~List..isCons xs)
-assert [test_pre_test_requires_1_calls_List..head_0] (~List..isCons xs)
-assume [test_requires_1] ((~Int.Gt (~List..head xs)) #0)
-
-(procedure test :  ((xs : List)) → ())
-modifies: []
-preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List))) (test_requires_1, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) (xs : List))) #0))
-postconditions: 
-body:
+procedure test$$wf :  ((xs : List)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assume [test_requires_0] (~List..isCons xs)
+  assert [test_pre_test_requires_1_calls_List..head_0] (~List..isCons xs)
+  assume [test_requires_1] ((~Int.Gt (~List..head xs)) #0)
+}
+procedure test :  ((xs : List)) → ()
+  modifies: []
+  preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List))) (test_requires_1, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) (xs : List))) #0))
+  postconditions: 
+{
+  
+}
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram procContractADTPgm))
@@ -186,22 +193,25 @@ Type Arguments:
 Constructors:
 [Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, int), (tail, List)] Tester: List..isCons ]
 
-(procedure test$$wf :  ((xs : List)) → ())
-modifies: []
-preconditions: 
-postconditions: 
-body: assume [test_requires_0] (~List..isCons xs)
-assert [test_post_test_ensures_1_calls_List..head_0] (~List..isCons xs)
-assume [test_ensures_1] ((~Int.Gt (~List..head xs)) #0)
-assert [test_post_test_ensures_2_calls_List..head_0] (~List..isCons (~List..tail xs))
-assert [test_post_test_ensures_2_calls_List..tail_1] (~List..isCons xs)
-assume [test_ensures_2] ((~Int.Gt (~List..head (~List..tail xs))) #0)
-
-(procedure test :  ((xs : List)) → ())
-modifies: []
-preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List)))
-postconditions: (test_ensures_1, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) (xs : List))) #0)) (test_ensures_2, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) ((~List..tail : (arrow List List)) (xs : List)))) #0))
-body: 
+procedure test$$wf :  ((xs : List)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  assume [test_requires_0] (~List..isCons xs)
+  assert [test_post_test_ensures_1_calls_List..head_0] (~List..isCons xs)
+  assume [test_ensures_1] ((~Int.Gt (~List..head xs)) #0)
+  assert [test_post_test_ensures_2_calls_List..head_0] (~List..isCons (~List..tail xs))
+  assert [test_post_test_ensures_2_calls_List..tail_1] (~List..isCons xs)
+  assume [test_ensures_2] ((~Int.Gt (~List..head (~List..tail xs))) #0)
+}
+procedure test :  ((xs : List)) → ()
+  modifies: []
+  preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List)))
+  postconditions: (test_ensures_1, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) (xs : List))) #0)) (test_ensures_2, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) ((~List..tail : (arrow List List)) (xs : List)))) #0))
+{
+  
+}
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))

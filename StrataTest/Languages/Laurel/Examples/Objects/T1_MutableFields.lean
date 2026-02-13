@@ -40,8 +40,22 @@ procedure useBool(c: Container) returns (r: bool) {
 
 procedure caller(c: Container, d: Container) {
   assume d#intValue == 1;
+  assume c != d;
   var x: int := foo(c, d);
   assert d#intValue == 3;
+}
+
+procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
+  assume d#intValue == 1;
+  assume c != d;
+  var x: int := foo(c, d) + 1;
+  assert d#intValue == 3;
+}
+
+procedure subsequentHeapMutations(c: Container) {
+  // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
+  var sum: int := ((c#intValue := 1;) + c#intValue) + (c#intValue := 2;);
+  assert sum == 4;
 }
 
 procedure implicitEquality(c: Container, d: Container) {

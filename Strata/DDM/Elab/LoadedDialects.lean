@@ -121,7 +121,7 @@ def strata_ion_dialect_ext : String := ".dialect.st.ion"
 
 def matchExt (path : String) (ext : String) : Option String :=
   if path.endsWith ext then
-    some (path.dropRight ext.length)
+    some (path.dropEnd ext.length).toString
   else
     none
 

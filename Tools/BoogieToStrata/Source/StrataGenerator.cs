@@ -846,7 +846,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override ReturnCmd VisitReturnCmd(ReturnCmd node) {
-        IndentLine("goto end;");
+        IndentLine("goto _exit;");
         return node;
     }
 
@@ -927,12 +927,10 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
 
         WriteLine(")");
-        if (whileCmd.Invariants.Count != 0) {
-            IncIndent();
-            Indent("invariant");
-            EmitSeparated(whileCmd.Invariants, i => VisitExpr(i.Expr), " && ");
-            WriteLine(";");
-            DecIndent();
+        foreach (var inv in whileCmd.Invariants) {
+            Indent("invariant ");
+            VisitExpr(inv.Expr);
+            WriteLine("");
         }
         IndentLine("{");
         IncIndent();
@@ -1333,7 +1331,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             }
         }
 
-        IndentLine("end : {}");
+        IndentLine("_exit : {}");
 
         DecIndent();
         WriteLine("};");

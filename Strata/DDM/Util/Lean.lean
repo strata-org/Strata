@@ -16,7 +16,7 @@ namespace Lean
 /- Creates a local variable name from a string -/
 def mkLocalDeclId (name : String) : TSyntax `Lean.Parser.Command.declId :=
   let dName := .anonymous |>.str name
-  .mk (.ident .none name.toSubstring dName [])
+  .mk (.ident .none name.toRawSubstring dName [])
 
 partial def mkErrorMessage (c : InputContext) (pos : String.Pos.Raw) (stk : SyntaxStack) (e : Parser.Error) (isSilent : Bool := false) : Message := Id.run do
   let mut pos := pos
@@ -64,7 +64,7 @@ Prepend the current namespace to the Lean name and convert to an identifier.
 def scopedIdent (scope subName : Lean.Name) : Ident :=
   let name := scope ++ subName
   let nameStr := toString subName
-  .mk (.ident .none nameStr.toSubstring subName [.decl name []])
+  .mk (.ident .none nameStr.toRawSubstring subName [.decl name []])
 
 /--
 Prepend the current namespace to the Lean name and convert to an identifier.
@@ -76,7 +76,7 @@ def currScopedIdent {m} [Monad m] [Lean.MonadResolveName m]
 /- Returns an identifier from a string. -/
 def localIdent (name : String) : Ident :=
   let dName := .anonymous |>.str name
-  .mk (.ident .none name.toSubstring dName [])
+  .mk (.ident .none name.toRawSubstring dName [])
 
 /-- Create a canonical identifier. -/
 def mkCanIdent (src : Lean.Syntax) (val : Name) : Ident :=
@@ -87,7 +87,7 @@ Create an identifier to a fully qualified Lean name
 -/
 def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
-  .mk (.ident .none name.toString.toSubstring rootName [.decl name []])
+  .mk (.ident .none name.toString.toRawSubstring rootName [.decl name []])
 
 /--
 Create an array literal from an array of term.

@@ -56,6 +56,10 @@ instance : Inhabited (TransBindings × Arith.Command) where
 info: inductive ArithPrograms.ArithProgramsType : Type → Type
 number of parameters: 1
 constructors:
+ArithPrograms.ArithProgramsType.bvar : {α : Type} → α → Nat → ArithProgramsType α
+ArithPrograms.ArithProgramsType.tvar : {α : Type} → α → String → ArithProgramsType α
+ArithPrograms.ArithProgramsType.fvar : {α : Type} → α → Nat → Array (ArithProgramsType α) → ArithProgramsType α
+ArithPrograms.ArithProgramsType.arrow : {α : Type} → α → ArithProgramsType α → ArithProgramsType α → ArithProgramsType α
 ArithPrograms.ArithProgramsType.bool : {α : Type} → α → ArithProgramsType α
 ArithPrograms.ArithProgramsType.num : {α : Type} → α → ArithProgramsType α
 -/
@@ -66,12 +70,15 @@ def translateType (tp : ArithProgramsType α) : Arith.Ty :=
   match tp with
   | .num _ => .Num
   | .bool _ => .Bool
+  | .bvar _ _ | .tvar _ _ | .fvar _ _ _ | .arrow _ _ _ => .Num
 
 /--
 info: inductive ArithPrograms.Expr : Type → Type
 number of parameters: 1
 constructors:
 ArithPrograms.Expr.fvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.bvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
 ArithPrograms.Expr.numLit : {α : Type} → α → Strata.Ann Nat α → Expr α
 ArithPrograms.Expr.btrue : {α : Type} → α → Expr α
 ArithPrograms.Expr.bfalse : {α : Type} → α → Expr α
@@ -84,7 +91,7 @@ ArithPrograms.Expr.eq_expr : {α : Type} → α → ArithProgramsType α → Exp
 
 def translateExpr (bindings : TransBindings) (e : ArithPrograms.Expr α) : TransM Arith.Expr := do
   match e with
-  | .fvar _ i =>
+  | .fvar _ i | .bvar _ i =>
     assert! i < bindings.freeVars.size
     let id := bindings.freeVars[i]!
     return (.Var id .none)
@@ -103,6 +110,7 @@ def translateExpr (bindings : TransBindings) (e : ArithPrograms.Expr α) : Trans
     let e1 ← translateExpr bindings e1
     let e2 ← translateExpr bindings e2
     return (.Eq e1 e2)
+  | .app .. => TransM.error "Unexpected app in ArithPrograms"
 
 /--
 info: inductive ArithPrograms.Label : Type → Type

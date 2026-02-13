@@ -170,6 +170,11 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
     guardAsserts ++ invAsserts ++ [.loop guard measure invariant (transformStmts F body) md]
   | .goto lbl md =>
     [.goto lbl md]
+  -- TODO: Generate well-formedness checks for funcDecl preconditions
+  -- (similar to mkFuncWFProc but as blocks preceding the funcDecl statement)
+  | .funcDecl decl md =>
+    let decl' := { decl with preconditions := [] }
+    [.funcDecl decl' md]
   termination_by s.sizeOf
   decreasing_by all_goals (simp_wf; try omega)
 end

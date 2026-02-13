@@ -203,8 +203,13 @@ op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
 category Invariant;
 op invariant (e : Expr) : Invariant => "invariant" e ";";
 
-op while_statement (c : bool, i : Option Invariant, body : Block) : Statement =>
-  "while" "(" c ")" i body;
+category Invariants;
+op nilInvariants : Invariants => ;
+op consInvariants(e : Expr, is : Invariants) : Invariants =>
+  "invariant" e is;
+
+op while_statement (c : bool, is : Invariants, body : Block) : Statement =>
+  "while" "(" c ")" is body;
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call" vs ":=" f "(" expr ")" ";\n";
@@ -254,6 +259,10 @@ op command_procedure (name : Ident,
 op command_typedecl (name : Ident, args : Option Bindings) : Command =>
   "type " name args ";\n";
 
+@[declareTypeForward(name, some args)]
+op command_forward_typedecl (name : Ident, args : Option Bindings) : Command =>
+  "forward type " name args ";\n";
+
 @[aliasType(name, some args, rhs)]
 op command_typesynonym (name : Ident,
                         args : Option Bindings,
@@ -290,6 +299,17 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r "\n" indent(2, preconds) " {\n" indent(2, c) "\n}\n";
 
+// Function declaration statement
+@[declareFn(name, b, r)]
+op funcDecl_statement (name : Ident,
+                       typeArgs : Option TypeArgs,
+                       @[scope(typeArgs)] b : Bindings,
+                       @[scope(typeArgs)] r : Type,
+                       @[scope(b)] preconds : Seq SpecElt,
+                       @[scope(b)] body : r,
+                       inline? : Option Inline) : Statement =>
+  inline? "function " name typeArgs b " : " r "\n" indent(2, preconds) " { " body " }";
+
 @[scope(b)]
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
@@ -299,6 +319,10 @@ op command_axiom (label : Option Label, e : bool) : Command =>
 
 op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
   "distinct " label "[" exprs "]" ";\n";
+
+// Top-level block command for parsing statements directly
+op command_block (b : Block) : Command =>
+  b ";\n";
 
 // =====================================================================
 // Datatype Syntax Categories
@@ -328,6 +352,12 @@ op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>
   "datatype " name typeParams " {" constructors "}" ";\n";
+
+// Mutual block for defining mutually recursive types
+// Types should be forward-declared before the mutual block
+@[scope(commands)]
+op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
+  "mutual\n" indent(2, commands) "end;\n";
 
 #end
 

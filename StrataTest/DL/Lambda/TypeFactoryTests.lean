@@ -189,8 +189,9 @@ info: #2
 
 -- Test testers (isNil and isCons)
 
-/-- info: Annotated expression:
-((~isNil : (arrow (List $__ty11) bool)) (~Nil : (List $__ty11)))
+/--
+info: Annotated expression:
+((~isNil : (arrow (List $__ty1) bool)) (~Nil : (List $__ty1)))
 
 ---
 info: #true
@@ -211,8 +212,9 @@ info: #false
   typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams)
   ((LExpr.op () ("isNil" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) nil])
 
-/-- info: Annotated expression:
-((~isCons : (arrow (List $__ty11) bool)) (~Nil : (List $__ty11)))
+/--
+info: Annotated expression:
+((~isCons : (arrow (List $__ty1) bool)) (~Nil : (List $__ty1)))
 
 ---
 info: #false
@@ -550,21 +552,60 @@ def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constr
 #eval format $ typeCheckAndPartialEval #[[listTy], [nonUnifTy1]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-6. Nested types are allowed, though they won't produce a useful elimination principle (with trivial base case for inhabitation)
+6. Nested types are not allowed
 type Nest a := | Base | C (List (Nest a))
 -/
-def nestConstr1: LConstr Unit := {name := "C", args := [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩], testerName := "isC"}
-def nestConstr1Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
-def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"], constrs := [nestConstr1Base, nestConstr1], constrs_ne := rfl}
+def nestConstr1: LConstr Unit := {name := "C", args :=
+  [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩], testerName := "isC"}
+def nestConstr1Base: LConstr Unit :=
+  {name := "Base", args := [], testerName := "isBase"}
+def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"],constrs :=
+  [nestConstr1Base, nestConstr1], constrs_ne := rfl}
 
-/-- info: Annotated expression:
-#0
-
----
-info: #0
+/-- info: Error in constructor C: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[[listTy], [nestTy1]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+/-
+6b. Nested types with other type constructors are not allowed
+type Nest2 a := | C (Map int (Nest2 a))
+-/
+def nestConstr2: LConstr Unit := {name := "C", args :=
+  [⟨"x", .tcons "Map" [.int, .tcons "Nest2" [.ftvar "a"]]⟩], testerName :=
+  "isC"}
+def nestTy2 : LDatatype Unit := {name := "Nest2", typeArgs := ["a"], constrs :=
+  [nestConstr1Base, nestConstr2], constrs_ne := rfl}
+
+/-- info: Error in constructor C: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
+-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[[nestTy2]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+/-
+6c. Mutually recursive nesting is not allowed
+type MutNestA a := | MkA (List (MutNestB a))
+type MutNestB a := | MkB (MutNestA a) | BBase
+-/
+def mutNestAConstr: LConstr Unit := {name := "MkA", args :=
+  [⟨"x", .tcons "List" [.tcons "MutNestB" [.ftvar "a"]]⟩], testerName :=
+  "isMkA"}
+def mutNestATy : LDatatype Unit :=
+  {name := "MutNestA", typeArgs := ["a"],  constrs :=
+  [mutNestAConstr], constrs_ne := rfl}
+
+def mutNestBConstr: LConstr Unit := {name := "MkB", args :=
+  [⟨"x", .tcons "MutNestA" [.ftvar "a"]⟩], testerName := "isMkB"}
+def mutNestBBase: LConstr Unit := {name := "BBase", args := [], testerName :=
+"isBBase"}
+def mutNestBTy : LDatatype Unit :=
+  {name := "MutNestB", typeArgs := ["a"], constrs :=
+  [mutNestBBase, mutNestBConstr], constrs_ne := rfl}
+
+/-- info: Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
+-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[[listTy], [mutNestATy, mutNestBTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
 7. 2 constructors with the same name:
@@ -635,8 +676,9 @@ info: #true
   typeCheckAndPartialEval #[roseForestBlock] (Factory.default : @Factory TestParams)
     ((LExpr.op () ("isNode" : TestParams.Identifier) .none).mkApp () [node' (intConst () 1) fnil'])
 
-/-- info: Annotated expression:
-((~isFNil : (arrow (Forest $__ty17) bool)) (~FNil : (Forest $__ty17)))
+/--
+info: Annotated expression:
+((~isFNil : (arrow (Forest $__ty1) bool)) (~FNil : (Forest $__ty1)))
 
 ---
 info: #true

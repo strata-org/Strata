@@ -14,6 +14,7 @@ section Tests
 open Std (ToFormat Format format)
 
 open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Imperative (PureFunc)
 
 /--
 info: ok: init (x : int) := (xinit : int)
@@ -152,5 +153,44 @@ subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($
 end Tests
 
 ---------------------------------------------------------------------
+
+section FuncDeclTests
+
+open Std (ToFormat Format format)
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Imperative (PureFunc)
+
+/--
+Test funcDecl type checking: declare a function and call it in a subsequent statement.
+The function should be added to the type context so the call can be type-checked.
+-/
+def testFuncDeclTypeCheck : List Statement :=
+  let identityFunc : PureFunc Expression := {
+    name := CoreIdent.unres "identity",
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[x],  -- Simple identity function
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .funcDecl identityFunc,
+    .init "y" t[int] eb[(~identity #5)],  -- Call the declared function
+    .assert "y_eq_5" eb[y == #5]
+  ]
+
+/--
+info: ok: funcDecl <function>
+init (y : int) := ((~identity : (arrow int int)) #5)
+assert [y_eq_5] ((y : int) == #5)
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclTypeCheck
+         return format ans.fst
+
+end FuncDeclTests
 
 end Core
