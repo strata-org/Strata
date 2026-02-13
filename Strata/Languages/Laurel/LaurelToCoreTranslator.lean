@@ -39,7 +39,7 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
-  | .THeap => Core.mapTy (.tcons "Composite" []) (Core.mapTy (.tcons "Field" []) (.tcons "Box" []))
+  | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
   | .UserDefined _ => .tcons "Composite" []
@@ -61,6 +61,7 @@ abbrev FunctionNames := List Identifier
 def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" ||
+  name == "MkHeap" || name == "Heap..data" || name == "Heap..counter" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name

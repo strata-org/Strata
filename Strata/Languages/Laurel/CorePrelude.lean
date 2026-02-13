@@ -18,9 +18,10 @@ in Core grammar and parsed via DDM, replacing the previous hand-built
 Lean AST definitions.
 
 The heap model uses:
-- `Composite` - abstract type for object references
+- `Composite` - type synonym for int (object references are integers)
 - `Field` - abstract type for field names
 - `Box` - tagged union for field values (int, bool, real, Composite)
+- `Heap` - datatype with a `data` map and a `counter` for allocation
 - `readField` / `updateField` - heap access functions using nested maps
 -/
 def corePreludeDDM :=
@@ -29,7 +30,7 @@ program Core;
 
 // Abstract types for the heap model
 type Field;
-type Composite;
+type Composite := int;
 
 // Tagged union for field values
 datatype Box () {
@@ -39,17 +40,19 @@ datatype Box () {
   BoxComposite(compositeVal: Composite)
 };
 
-// Type alias for the heap
-type Heap := Map Composite (Map Field Box);
+// Heap datatype: contains the data map and an allocation counter
+datatype Heap () {
+  MkHeap(data: Map Composite (Map Field Box), counter: int)
+};
 
-// Read a field from the heap: readField(heap, obj, field) = heap[obj][field]
+// Read a field from the heap: readField(heap, obj, field) = Heap..data(heap)[obj][field]
 function readField(heap: Heap, obj: Composite, field: Field) : Box {
-  heap[obj][field]
+  Heap..data(heap)[obj][field]
 }
 
-// Update a field in the heap: updateField(heap, obj, field, val) = heap[obj := heap[obj][field := val]]
+// Update a field in the heap
 function updateField(heap: Heap, obj: Composite, field: Field, val: Box) : Heap {
-  heap[obj := heap[obj][field := val]]
+  MkHeap(Heap..data(heap)[obj := Heap..data(heap)[obj][field := val]], Heap..counter(heap))
 }
 
 #end

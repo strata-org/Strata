@@ -13,8 +13,9 @@ import Strata.Util.Tactics
 Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
-The heap is modeled as `Map Composite (Map Field Box)`, where Box is a sum type
-with constructors for each primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite).
+The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
+and a `counter: int` for allocating new objects. Box is a sum type with constructors for each
+primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
    - Input: `heap : THeap`
@@ -72,7 +73,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
   | .PrimitiveOp _ args => for a in args do collectExprMd a
-  | .New _ => pure ()
+  | .New _ => modify fun s => { s with writesHeapDirectly := true }
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
@@ -289,7 +290,18 @@ where
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
-    | .New name => return ⟨ .New name, md ⟩
+    | .New name =>
+        -- Allocate a new object: get the current counter, increment it, return the old value
+        -- 1. Save the current counter: $freshVar := Heap..counter(heapVar)
+        -- 2. Update the heap with incremented counter: heapVar := MkHeap(Heap..data(heapVar), Heap..counter(heapVar) + 1)
+        -- 3. Result is $freshVar (the old counter value, which is the new Composite reference)
+        let freshVar ← freshVarName
+        let getCounter := mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)])
+        let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
+        let newCounter := mkMd (.PrimitiveOp .Add [mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)]), mkMd (.LiteralInt 1)])
+        let newHeap := mkMd (.StaticCall "MkHeap" [mkMd (.StaticCall "Heap..data" [mkMd (.Identifier heapVar)]), newCounter])
+        let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
+        return ⟨ .Block [saveCounter, updateHeap, mkMd (.Identifier freshVar)] none, md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
     | .AsType t ty => return ⟨ .AsType (← recurse t) ty, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
