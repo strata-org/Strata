@@ -39,13 +39,16 @@ datatype Box () {
   BoxComposite(compositeVal: Composite)
 };
 
+// Type alias for the heap
+type Heap := Map Composite (Map Field Box);
+
 // Read a field from the heap: readField(heap, obj, field) = heap[obj][field]
-function readField(heap: Map Composite (Map Field Box), obj: Composite, field: Field) : Box {
+function readField(heap: Heap, obj: Composite, field: Field) : Box {
   heap[obj][field]
 }
 
 // Update a field in the heap: updateField(heap, obj, field, val) = heap[obj := heap[obj][field := val]]
-function updateField(heap: Map Composite (Map Field Box), obj: Composite, field: Field, val: Box) : Map Composite (Map Field Box) {
+function updateField(heap: Heap, obj: Composite, field: Field, val: Box) : Heap {
   heap[obj := heap[obj][field := val]]
 }
 
