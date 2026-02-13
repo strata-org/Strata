@@ -404,7 +404,7 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
     | .Transparent bodyExpr => some (translateExpr constants initEnv bodyExpr)
     | _ => none
   .func {
-    name := Core.CoreIdent.glob proc.name
+    name := Core.CoreIdent.unres proc.name
     typeArgs := []
     inputs := inputs
     output := outputTy
