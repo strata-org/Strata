@@ -93,6 +93,13 @@ procedure multipleModifiesClausesCaller(c: Container, d: Container, e: Container
   multipleModifiesClauses(c, d, e)
   assert x == e#value; // pass
 }
+
+procedure newObjectDoNotCountForModifies()
+  ensures true
+{
+  var c: Container := new Container;
+  c#value := 1;
+}
 "
 
 #guard_msgs (drop info, error) in
