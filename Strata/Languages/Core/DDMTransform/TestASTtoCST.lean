@@ -43,8 +43,14 @@ function foo<T1, T2>(x : T1) : Map T1 T2;
 
 axiom [fooConst_value]: fooConst == 5;
 
-function f(x: int): int;
-axiom [f1]: (f(5) > 5);
+function f1(x: int): int;
+axiom [f1_ax]: (forall x : int :: f1(x) > x);
+
+function f2(x : int, y : bool): bool;
+axiom [f2_ax]: (forall x : int, y : bool :: f2(x, true) == true);
+
+function f3(x : int, y : bool, z : regex): bool;
+axiom [f3_ax]: (forall x : int, y : bool, z : regex :: f3(x, y, z) == f2(x, y));
 
 var g : bool;
 
@@ -60,17 +66,12 @@ spec {
   ensures (g == g);
   ensures (g == old(g));
   ensures [test_foo]: (fooConst == 5);
-  //ensures [List_head_test]: (List..isNil(Nil()));
+  ensures [List_head_test]: (List..isNil(Nil()));
   ensures [test_id]: (id(4,3) == 4);
-}
-{
+} {
   y := x || x;
 };
-
 #end
-
-#eval testProgram.globalContext.nameMap
-#eval testProgram.globalContext.vars
 
 /--
 info: Rendered Program:
@@ -88,10 +89,14 @@ function id (x : int, y : int) : int {
 y
 }
 function foo<T1, T2> (x : T1) : Map T1 T2;
-axiom [fooConst_value]:fooConst==5;
-function f (x : int) : int;
-axiom [f1]:f(5)>5;
-var g:bool;
+axiom [fooConst_value]: fooConst==5;
+function f1 (x : int) : int;
+axiom [f1_ax]: forall x0 : int :: f1(x0)>x0;
+function f2 (x : int, y : bool) : bool;
+axiom [f2_ax]: forall x0 : int :: forall x1 : bool :: f2(x0, true)==true;
+function f3 (x : int, y : bool, z : regex) : bool;
+axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex :: f3(x0, x1, x2)==f2(x0, x1);
+var g : bool;
 procedure Test1 (x : bool) returns (y : bool)
  {
 (y) := x;
@@ -99,12 +104,13 @@ procedure Test1 (x : bool) returns (y : bool)
 ;
 procedure Test2 (x : bool) returns (y : bool)
 spec{
-  ensures [Test2_ensures_0]:y==x;
-    ensures [Test2_ensures_1]:x==y;
-    ensures [Test2_ensures_2]:g==g;
-    ensures [Test2_ensures_3]:g==old(g);
-    ensures [test_foo]:fooConst==5;
-    ensures [test_id]:id(4, 3)==4;
+  ensures [Test2_ensures_0]: y==x;
+    ensures [Test2_ensures_1]: x==y;
+    ensures [Test2_ensures_2]: g==g;
+    ensures [Test2_ensures_3]: g==old(g);
+    ensures [test_foo]: fooConst==5;
+    ensures [List_head_test]: List..isNil(Nil);
+    ensures [test_id]: id(4, 3)==4;
     } {
 (y) := x||x;
   }

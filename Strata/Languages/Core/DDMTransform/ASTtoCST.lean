@@ -94,32 +94,18 @@ def freeVars (ctx : ToCSTContext) : Array String :=
 def freeVarIndex? (ctx : ToCSTContext) (name : String) : Option FreeVarIndex :=
   ctx.globalContext.findIndex? name
 
-/-- Add a bound type variable to the current scope -/
-def addBoundTypeVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
-  let idx := ctx.scopes.size - 1
-  let scope := ctx.scopes[idx]!
-  let newScope := { scope with boundTypeVars := scope.boundTypeVars.push name }
-  { ctx with scopes := ctx.scopes.set! idx newScope }
-
 /-- Add bound type variables to the current scope -/
 def addBoundTypeVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
   let idx := ctx.scopes.size - 1
   let scope := ctx.scopes[idx]!
-  let newScope := { scope with boundTypeVars := scope.boundTypeVars ++ names }
-  { ctx with scopes := ctx.scopes.set! idx newScope }
-
-/-- Add a bound variable to the current scope -/
-def addBoundVar (ctx : ToCSTContext) (name : String) : ToCSTContext :=
-  let idx := ctx.scopes.size - 1
-  let scope := ctx.scopes[idx]!
-  let newScope := { scope with boundVars := scope.boundVars.push name }
+  let newScope := { scope with boundTypeVars := names.reverse ++ scope.boundTypeVars }
   { ctx with scopes := ctx.scopes.set! idx newScope }
 
 /-- Add bound variables to the current scope -/
 def addBoundVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
   let idx := ctx.scopes.size - 1
   let scope := ctx.scopes[idx]!
-  let newScope := { scope with boundVars := scope.boundVars ++ names }
+  let newScope := { scope with boundVars := names.reverse ++ scope.boundVars }
   { ctx with scopes := ctx.scopes.set! idx newScope }
 
 /-- Push a new scope onto the stack -/
@@ -153,8 +139,8 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     match ctx.boundTypeVars.toList.findIdx? (· == name) with
     | some idx =>
       if idx < ctx.boundTypeVars.size then
-        let bvarIdx := ctx.boundTypeVars.size - (idx + 1)
-        pure (.bvar default bvarIdx)
+        -- let bvarIdx := ctx.boundTypeVars.size - (idx + 1)
+        pure (.bvar default idx)
       else
         ToCSTM.throwError "lmonoTyToCoreType" s!"unbound ftvar {name}"
     | none => ToCSTM.throwError "lmonoTyToCoreType" s!"unbound ftvar {name}"
@@ -284,18 +270,34 @@ def countArity (ty : TypeExpr) : Nat :=
   | .arrow _ _ rest => 1 + countArity rest
   | _ => 0
 
+/-- Count the nesting depth of quantifiers in an expression -/
+def countQuantDepth (e : Lambda.LExpr CoreLParams.mono) : Nat :=
+  match e with
+  | .quant _ _ _ _ body => 1 + countQuantDepth body
+  | _ => 0
+
+/-- Collect all quantifier variable names from nested quantifiers -/
+def collectQuantVars (e : Lambda.LExpr CoreLParams.mono) (level : Nat)
+    : Array String :=
+  match e with
+  | .quant _ _ _ _ body =>
+    #[s!"x{level}"] ++ collectQuantVars body (level + 1)
+  | _ => #[]
+
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
 partial def lexprToExpr [Inhabited M]
-    (e : Lambda.LExpr CoreLParams.mono)
+    (e : Lambda.LExpr CoreLParams.mono) (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
   match e with
   | .const _ c => lconstToExpr c
   | .bvar _ idx =>
     if idx < ctx.boundVars.size then
-      let bvarIdx := ctx.boundVars.size - (idx + 1)
-      pure (.bvar default bvarIdx)
+      -- let lvl := ctx.boundVars.size - (idx + 1)
+      -- dbg_trace f!"BoundVars: {ctx.boundVars} qLevel: {qLevel}"
+      -- dbg_trace f!"{repr ctx.globalContext}"
+      pure (.bvar default idx)
     else
       ToCSTM.throwError "lexprToExpr" s!"bvar {idx}"
   | .fvar _ id _ =>
@@ -310,49 +312,79 @@ partial def lexprToExpr [Inhabited M]
       match ctx.freeVars.toList.findIdx? (· == id.name) with
       | some idx => pure (.fvar default idx)
       | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
-  | .ite _ c t f => liteToExpr c t f
-  | .eq _ e1 e2 => leqToExpr e1 e2
+  | .ite _ c t f => liteToExpr c t f qLevel
+  | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
-  | .app _ fn arg => lappToExpr fn arg
+  | .app _ _ _ => lappToExpr e qLevel
   | .abs _ _ _ => ToCSTM.throwError "lexprToExpr" "lambda not supported in CoreDDM"
-  | .quant _ _ _ _ _ => ToCSTM.throwError "lexprToExpr" "quantifier"
+  | .quant _ qkind ty trigger body =>
+    lquantToExpr qkind ty trigger body (qLevel + 1)
+
+partial def lquantToExpr [Inhabited M]
+    (qkind : Lambda.QuantifierKind) (ty : Option Lambda.LMonoTy)
+    (trigger : Lambda.LExpr CoreLParams.mono) (body : Lambda.LExpr CoreLParams.mono)
+    (qLevel : Nat)
+    : ToCSTM M (CoreDDM.Expr M) := do
+  -- dbg_trace f!"trigger: {trigger}"
+  let name : Ann String M := ⟨default, s!"x{qLevel - 1}"⟩
+  modify (·.addBoundVars #[name.val])
+  let tyExpr ← match ty with
+    | some t => lmonoTyToCoreType t
+    | none => ToCSTM.throwError "lquantToExpr" "quantifier missing type annotation"
+  let bind := Bind.bind_mk default name ⟨default, none⟩ tyExpr
+  let dl := DeclList.declAtom default bind
+  let hasNoTrigger := trigger matches .bvar _ 0
+  let triggerExpr ← if hasNoTrigger then pure (.bvar default 0)
+                    else lexprToExpr trigger qLevel
+  let bodyExpr ← lexprToExpr body qLevel
+  if hasNoTrigger then
+    match qkind with
+    | .all => pure (.forall default dl bodyExpr)
+    | .exist => pure (.exists default dl bodyExpr)
+  else
+    let trigAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, #[triggerExpr]⟩
+    let tg := TriggerGroup.trigger default trigAnn
+    let tl := Triggers.triggersAtom default tg
+    match qkind with
+    | .all => pure (.forallT default dl tl bodyExpr)
+    | .exist => pure (.existsT default dl tl bodyExpr)
 
 partial def liteToExpr [Inhabited M]
     (c t f : Lambda.LExpr CoreLParams.mono)
+    (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
-  let cExpr ← lexprToExpr c
-  let tExpr ← lexprToExpr t
-  let fExpr ← lexprToExpr f
+  let cExpr ← lexprToExpr c qLevel
+  let tExpr ← lexprToExpr t qLevel
+  let fExpr ← lexprToExpr f qLevel
   let ty := CoreType.bool default
   pure (.if default ty cExpr tExpr fExpr)
 
 partial def leqToExpr [Inhabited M]
-    (e1 e2 : Lambda.LExpr CoreLParams.mono) :
+    (e1 e2 : Lambda.LExpr CoreLParams.mono)
+    (qLevel : Nat) :
     ToCSTM M (CoreDDM.Expr M) := do
-  let e1Expr ← lexprToExpr e1
-  let e2Expr ← lexprToExpr e2
+  let e1Expr ← lexprToExpr e1 qLevel
+  let e2Expr ← lexprToExpr e2 qLevel
   let ty := CoreType.bool default
   pure (.equal default ty e1Expr e2Expr)
 
 partial def lappToExpr [Inhabited M]
-    (fn arg : Lambda.LExpr CoreLParams.mono)
+    (e : Lambda.LExpr CoreLParams.mono)
+    (qLevel : Nat) (acc : List (CoreDDM.Expr M) := [])
     : ToCSTM M (CoreDDM.Expr M) :=
-  lappToExprAcc fn arg []
-
-partial def lappToExprAcc [Inhabited M]
-    (fn arg : Lambda.LExpr CoreLParams.mono)
-    (acc : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) :=
-  match fn with
-  | .app _ fn2 arg1 => do
-    let arg1Expr ← lexprToExpr arg1
-    lappToExprAcc fn2 arg (acc ++ [arg1Expr])
-  | .op _ name _ => do
-    let argExpr ← lexprToExpr arg
-    lopToExpr name.name (acc ++ [argExpr])
-  | _ => ToCSTM.throwError "lappToExprAcc" "unsupported application"
+  match e with
+  | .app _ (.app m fn e1) e2 => do
+    let e2Expr ← lexprToExpr e2 qLevel
+    lappToExpr (.app m fn e1) qLevel (e2Expr :: acc)
+  | .app _ (.op _ fn _) e1 => do
+    let e1Expr ← lexprToExpr e1 qLevel
+    lopToExpr fn.name (e1Expr :: acc)
+  | _ =>
+    ToCSTM.throwError "lappToExpr" s!"unsupported application {e}"
 
 partial def lopToExpr [Inhabited M]
-    (name : String) (args : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) := do
+    (name : String) (args : List (CoreDDM.Expr M))
+    : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
   -- User-defined functions.
   match ctx.globalContext.findIndex? name with
@@ -529,11 +561,11 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
   | .init name ty expr _md => do
     let nameAnn : Ann String M := ⟨default, name.name⟩
     let tyCST ← lTyToCoreType ty
-    let exprCST ← lexprToExpr expr
+    let exprCST ← lexprToExpr expr 0
     pure (.initStatement default tyCST nameAnn exprCST)
   | .set name expr _md => do
     let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
-    let exprCST ← lexprToExpr expr
+    let exprCST ← lexprToExpr expr 0
     let tyCST := CoreType.bool default  -- placeholder, ideally infer from expr
     pure (.assign default tyCST lhs exprCST)
   | .havoc name _md => do
@@ -541,20 +573,20 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
     pure (.havoc_statement default nameAnn)
   | .assert label expr _md => do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr expr
+    let exprCST ← lexprToExpr expr 0
     pure (.assert default labelAnn exprCST)
   | .assume label expr _md => do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr expr
+    let exprCST ← lexprToExpr expr 0
     pure (.assume default labelAnn exprCST)
   | .cover label expr _md => do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr expr
+    let exprCST ← lexprToExpr expr 0
     pure (.cover default labelAnn exprCST)
   | .call lhs pname args _md => do
     let lhsAnn : Ann (Array (Ann String M)) M := ⟨default, (lhs.map fun id => ⟨default, id.name⟩).toArray⟩
     let pnameAnn : Ann String M := ⟨default, pname⟩
-    let argsCST ← args.mapM lexprToExpr
+    let argsCST ← args.mapM (fun a => lexprToExpr a 0)
     let argsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, argsCST.toArray⟩
     pure (.call_statement default lhsAnn pnameAnn argsAnn)
   | .block label stmts _md => do
@@ -562,12 +594,12 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
     let blockCST ← blockToCST stmts
     pure (.block_statement default labelAnn blockCST)
   | .ite cond thenb elseb _md => do
-    let condCST ← lexprToExpr cond
+    let condCST ← lexprToExpr cond 0
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
     pure (.if_statement default condCST thenCST elseCST)
   | .loop guard _measure invariant body _md => do
-    let guardCST ← lexprToExpr guard
+    let guardCST ← lexprToExpr guard 0
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
     pure (.while_statement default guardCST invs bodyCST)
@@ -592,7 +624,7 @@ partial def invariantsToCST [Inhabited M]
   match inv with
   | none => pure (.nilInvariants default)
   | some expr => do
-    let exprCST ← lexprToExpr expr
+    let exprCST ← lexprToExpr expr 0
     pure (.consInvariants default exprCST (.nilInvariants default))
 end
 
@@ -624,8 +656,8 @@ def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   let outputResults ← proc.header.outputs.toList.mapM (fun (id, ty) => processOutput id ty)
   let outputBinds := outputResults.map (·.1)
   let outputNames := outputResults.map (·.2) |>.toArray
-  modify (ToCSTContext.addBoundVars · inputNames)
-  modify (ToCSTContext.addBoundVars · outputNames)
+  modify (ToCSTContext.addBoundVars · outputNames.reverse)
+  modify (ToCSTContext.addBoundVars · inputNames.reverse)
   let outputs : Ann (Option (MonoDeclList M)) M :=
     if outputBinds.isEmpty then
       ⟨default, none⟩
@@ -644,13 +676,13 @@ def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
   for (label, check) in proc.spec.preconditions.toList do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr check.expr
+    let exprCST ← lexprToExpr check.expr 0
     let reqSpec := SpecElt.requires_spec default labelAnn freeAnn exprCST
     specElts := specElts ++ [reqSpec]
   -- Add ensures
   for (label, check) in proc.spec.postconditions.toList do
     let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
-    let exprCST ← lexprToExpr check.expr
+    let exprCST ← lexprToExpr check.expr 0
     let ensSpec := SpecElt.ensures_spec default labelAnn freeAnn exprCST
     specElts := specElts ++ [ensSpec]
   let specAnn : Ann (Array (SpecElt M)) M := ⟨default, specElts.toArray⟩
@@ -693,8 +725,8 @@ def funcToCST [Inhabited M]
   | none => pure (.command_fndecl default name typeArgs b r)
   | some body => do
     -- Add formals to the context.
-    modify (·.addBoundVars paramNames)
-    let bodyExpr ← lexprToExpr body
+    modify (·.addBoundVars paramNames.reverse)
+    let bodyExpr ← lexprToExpr body 0
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r bodyExpr inline?)
   modify ToCSTContext.popScope
@@ -705,14 +737,14 @@ def axiomToCST [Inhabited M] (ax : Axiom)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let labelAnn : Ann (Option (Label M)) M := ⟨
       default, some (.label default ⟨default, ax.name⟩)⟩
-  let exprCST ← lexprToExpr ax.e
+  let exprCST ← lexprToExpr ax.e 0
   pure (.command_axiom default labelAnn exprCST)
 
 /-- Convert a distinct declaration to CST -/
 def distinctToCST [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr CoreLParams.mono))
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, name.toPretty⟩)⟩
-  let exprsCST ← es.mapM lexprToExpr
+  let exprsCST ← es.mapM (fun a => lexprToExpr a 0)
   let exprsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, exprsCST.toArray⟩
   pure (.command_distinct default labelAnn exprsAnn)
 
