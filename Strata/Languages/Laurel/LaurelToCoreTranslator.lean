@@ -14,6 +14,7 @@ import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.CorePrelude
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -63,21 +64,6 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
-
-/-- Names that come from the Box datatype and must use unresolved visibility
-    to match the factory-generated operations. -/
-def isBoxDatatypeOp (name : Identifier) : Bool :=
-  name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
-  name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
-  name == "isBoxInt" || name == "isBoxBool" || name == "isBoxFloat64" || name == "isBoxComposite" ||
-  name == "Box$Elim"
-
-/-- Create the appropriate CoreIdent for a function/operation name.
-    Box datatype operations use .unres to match factory-generated names;
-    all other operations use .glob. -/
-def mkFuncIdent (name : Identifier) : Core.CoreIdent :=
-  if isBoxDatatypeOp name then Core.CoreIdent.unres name
-  else Core.CoreIdent.glob name
 
 /--
 Translate Laurel StmtExpr to Core Expression.
@@ -141,7 +127,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       .ite () bcond bthen belse
   | .Assign _ value => translateExpr constants env value boundVars
   | .StaticCall name args =>
-      let ident := mkFuncIdent name
+      let ident := Core.CoreIdent.unres name
       let fnOp := .op () ident none
       args.foldl (fun acc arg => .app () acc (translateExpr constants env arg boundVars)) fnOp
   | .Block [single] _ => translateExpr constants env single boundVars
@@ -348,76 +334,6 @@ def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (
     body := body
   }
 
-def heapTyMono : LMonoTy := Core.mapTy (.tcons "Composite" []) (Core.mapTy (.tcons "Field" []) (.tcons "Box" []))
-
-def fieldTypeDecl : Core.Decl := .type (.con { name := "Field", numargs := 0 })
-def compositeTypeDecl : Core.Decl := .type (.con { name := "Composite", numargs := 0 })
-
-/-- The Box datatype with constructors for each Laurel primitive type + Composite -/
-def boxDatatype : Lambda.LDatatype Core.Visibility :=
-  let id (s : String) : Lambda.Identifier Core.Visibility := ⟨s, Core.Visibility.unres⟩
-  { name := "Box"
-    typeArgs := []
-    constrs := [
-      { name := id "BoxInt", args := [(id "intVal", LMonoTy.int)] },
-      { name := id "BoxBool", args := [(id "boolVal", LMonoTy.bool)] },
-      { name := id "BoxFloat64", args := [(id "float64Val", .tcons "real" [])] },
-      { name := id "BoxComposite", args := [(id "compositeVal", .tcons "Composite" [])] }
-    ]
-    constrs_ne := by decide }
-
-def boxTypeDecl : Core.Decl := .type (.data [boxDatatype])
-
-def readFunction : Core.Decl :=
-  let compTy := LMonoTy.tcons "Composite" []
-  let fieldTy := LMonoTy.tcons "Field" []
-  let boxTy := LMonoTy.tcons "Box" []
-  let innerMapTy := Core.mapTy fieldTy boxTy
-  let outerMapTy := Core.mapTy compTy innerMapTy
-  -- readField(heap, obj, field) = select(select(heap, obj), field)
-  let heapVar := LExpr.fvar () (Core.CoreIdent.locl "heap") (some outerMapTy)
-  let objVar := LExpr.fvar () (Core.CoreIdent.locl "obj") (some compTy)
-  let fieldVar := LExpr.fvar () (Core.CoreIdent.locl "field") (some fieldTy)
-  let innerSelect := LExpr.mkApp () Core.mapSelectOp [heapVar, objVar]
-  let body := LExpr.mkApp () Core.mapSelectOp [innerSelect, fieldVar]
-  .func {
-    name := Core.CoreIdent.glob "readField"
-    typeArgs := []
-    inputs := [(Core.CoreIdent.locl "heap", outerMapTy),
-               (Core.CoreIdent.locl "obj", compTy),
-               (Core.CoreIdent.locl "field", fieldTy)]
-    output := boxTy
-    body := some body
-  }
-
-def updateFunction : Core.Decl :=
-  let compTy := LMonoTy.tcons "Composite" []
-  let fieldTy := LMonoTy.tcons "Field" []
-  let boxTy := LMonoTy.tcons "Box" []
-  let innerMapTy := Core.mapTy fieldTy boxTy
-  let outerMapTy := Core.mapTy compTy innerMapTy
-  -- updateField(heap, obj, field, val) = update(heap, obj, update(select(heap, obj), field, val))
-  let heapVar := LExpr.fvar () (Core.CoreIdent.locl "heap") (some outerMapTy)
-  let objVar := LExpr.fvar () (Core.CoreIdent.locl "obj") (some compTy)
-  let fieldVar := LExpr.fvar () (Core.CoreIdent.locl "field") (some fieldTy)
-  let valVar := LExpr.fvar () (Core.CoreIdent.locl "val") (some boxTy)
-  let innerSelect := LExpr.mkApp () Core.mapSelectOp [heapVar, objVar]
-  let innerUpdate := LExpr.mkApp () Core.mapUpdateOp [innerSelect, fieldVar, valVar]
-  let body := LExpr.mkApp () Core.mapUpdateOp [heapVar, objVar, innerUpdate]
-  .func {
-    name := Core.CoreIdent.glob "updateField"
-    typeArgs := []
-    inputs := [(Core.CoreIdent.locl "heap", outerMapTy),
-               (Core.CoreIdent.locl "obj", compTy),
-               (Core.CoreIdent.locl "field", fieldTy),
-               (Core.CoreIdent.locl "val", boxTy)]
-    output := outerMapTy
-    body := some body
-  }
-
--- No explicit read-over-write axioms needed: readField and updateField have bodies
--- defined in terms of map select/update, so the built-in map axioms handle this.
-
 def translateConstant (c : Constant) : Core.Decl :=
   match c.type.val with
   | .TTypedField _ =>
@@ -513,9 +429,8 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
   let constDecls := program.constants.map translateConstant
-  let typeDecls := [fieldTypeDecl, compositeTypeDecl, boxTypeDecl]
-  let funcDecls := [readFunction, updateFunction]
-  pure ({ decls := typeDecls ++ funcDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  let preludeDecls := corePrelude.decls
+  pure ({ decls := preludeDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
