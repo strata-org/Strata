@@ -18,13 +18,42 @@ translator to obtain the AST.
 namespace Strata.Test
 
 open Strata.CoreDDM
-
 open Strata
 open Core
 
-def testProgram : Program :=
+def ASTtoCST (program : Strata.Program) := do
+  -- Use old translator to get AST
+  let (ast, errs) := TransM.run Inhabited.default (translateProgram program)
+  if !errs.isEmpty then
+    IO.println f!"CST to AST Error: {errs}"
+  -- Convert AST → CST
+  match (programToCST (M := SourceRange) ast program.globalContext).run
+        ToCSTContext.empty with
+  | .error errs =>
+    IO.println "AST to CST Error:"
+    for err in errs do
+      match err with
+      | .unsupportedConstruct fn desc ctx _md =>
+        IO.println s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
+  | .ok (cmds, _finalCtx) =>
+    -- Format with original global context
+    let ctx := FormatContext.ofDialects program.dialects
+      program.globalContext {}
+    let state : FormatState := {
+      openDialects := program.dialects.toList.foldl (init := {})
+        fun a (d : Dialect) => a.insert d.name
+    }
+    -- Display commands using mformat
+    IO.println "Rendered Program:\n"
+    for cmd in cmds do
+      IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
+
+-------------------------------------------------------------------------------
+
+def test1 : Program :=
 #strata
 program Core;
+
 type T0;
 type T1 (x : Type);
 
@@ -35,6 +64,7 @@ type MyMap (a : Type, b : Type);
 type Foo (a : Type, b : Type) := Map b a;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
+
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
 const fooConst : int;
@@ -117,32 +147,20 @@ spec{
 ;
 -/
 #guard_msgs in
-#eval do
-  -- Use old translator to get AST
-  let (ast, errs) := TransM.run Inhabited.default (translateProgram testProgram)
-  if !errs.isEmpty then
-    IO.println f!"CST to AST Error: {errs}"
+#eval ASTtoCST test1
 
-  -- Convert AST → CST
-  match (programToCST (M := SourceRange) ast testProgram.globalContext).run ToCSTContext.empty with
-  | .error errs =>
-    IO.println "AST to CST Error:"
-    for err in errs do
-      match err with
-      | .unsupportedConstruct fn desc ctx _md =>
-        IO.println s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
-  | .ok (cmds, _finalCtx) =>
-    -- Format with original global context
-    let ctx := FormatContext.ofDialects testProgram.dialects
-      testProgram.globalContext {}
-    let state : FormatState := {
-      openDialects := testProgram.dialects.toList.foldl (init := {})
-        fun a (d : Dialect) => a.insert d.name
-    }
-    -- dbg_trace f!"Final Context: {repr finalCtx}"
-    -- Display commands using mformat
-    IO.println "Rendered Program:\n"
-    for cmd in cmds do
-      IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
+def test2 :=
+#strata
+program Core;
+
+datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
+procedure Extract<a>(xs : List a) returns (h : a)
+spec { requires List..isCons(xs); } {
+};
+#end
+
+
+#guard_msgs in
+#eval ASTtoCST test2
 
 end Strata.Test
