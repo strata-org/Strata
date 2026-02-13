@@ -263,8 +263,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
             | _ => pure ()
           -- Process all-but-last right to left using transformExprDiscarded
           for nonLastStatement in stmts.dropLast.reverse.attach do
-            -- have := List.dropLast_subset stmts
-            -- have stmtInStmts : nonLastStatement.val ∈ stmts := by grind
             transformExprDiscarded nonLastStatement
           -- Last element is the expression value
           transformExpr last
