@@ -51,25 +51,25 @@ Property: assert
 Assumptions:
 
 (a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
+(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
 Proof Obligation:
-((~Int.Gt ~x) ~y)
+(~Int.Gt ~x ~y)
 
 Label: use_f1
 Property: assert
 Assumptions:
 
 (a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
+(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
 Proof Obligation:
-((~Int.Gt (~f ((~Int.Add ~x) ~y))) #7)
+(~Int.Gt (~f (~Int.Add ~x ~y)) #7)
 
 Label: use_a1_again
 Property: assert
 Assumptions:
 
 (a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
+(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
 Proof Obligation:
 (~y == #2)
 
@@ -78,9 +78,9 @@ Property: assert
 Assumptions:
 
 (a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
+(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
 Proof Obligation:
-((~Int.Gt (~f ~y)) ~y)
+(~Int.Gt (~f ~y) ~y)
 
 ---
 info:
@@ -137,10 +137,10 @@ Label: axiomPgm2_main_assert
 Property: assert
 Assumptions:
 
-(f_g_ax, (∀ ((~f %0) == ((~Int.Add (~g %0)) #1))))
-(g_ax, (∀ ((~g %0) == ((~Int.Mul %0) #2))))
+(f_g_ax, (∀ ((~f %0) == (~Int.Add (~g %0) #1))))
+(g_ax, (∀ ((~g %0) == (~Int.Mul %0 #2))))
 Proof Obligation:
-((~Bool.Implies ((~Int.Ge $__x0) #0)) ((~Int.Gt (~f $__x0)) $__x0))
+(~Bool.Implies (~Int.Ge $__x0 #0) (~Int.Gt (~f $__x0) $__x0))
 
 ---
 info:

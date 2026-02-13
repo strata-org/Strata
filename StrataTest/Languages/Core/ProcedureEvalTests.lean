@@ -215,9 +215,9 @@ Deferred Proof Obligations:
 Label: ret_y_lt_0
 Property: assert
 Assumptions:
-(0_lt_x, ((~Int.Lt #0) $__x0))
+(0_lt_x, (~Int.Lt #0 $__x0))
 Proof Obligation:
-((~Int.Lt (~Int.Neg ($__x0 : int))) #0)
+(~Int.Lt (~Int.Neg ($__x0 : int)) #0)
 -/
 #guard_msgs in
 #eval do let E := Env.init

@@ -73,16 +73,18 @@ Constructors:
 
 procedure TestOptionInt :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (TestOptionInt_ensures_0, #true)
 {
-  init (x : (Option int)) := (init_x_0 : (Option int))
-  init (y : (Option int)) := (init_y_1 : (Option int))
-  init (v : int) := (init_v_2 : int)
-  x := (~None : (Option int))
-  y := ((~Some : (arrow int (Option int))) #42)
-  v := ((~Option..value : (arrow (Option int) int)) (y : (Option int)))
-  assert [valIs42] ((v : int) == #42)
+  {
+    init (x : (Option int)) := (init_x_0 : (Option int))
+    init (y : (Option int)) := (init_y_1 : (Option int))
+    init (v : int) := (init_v_2 : int)
+    x := (~None : (Option int))
+    y := ((~Some : (arrow int (Option int))) #42)
+    v := ((~Option..value : (arrow (Option int) int)) (y : (Option int)))
+    assert [valIs42] ((v : int) == #42)
+  }
 }
 -/
 #guard_msgs in
@@ -122,14 +124,18 @@ Constructors:
 
 procedure TestListInt :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (TestListInt_ensures_0, #true)
 {
-  init (xs : (List int)) := (init_xs_0 : (List int))
-  init (h : int) := (init_h_1 : int)
-  xs := (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (((~Cons : (arrow int (arrow (List int) (List int)))) #2) (~Nil : (List int))))
-  h := ((~List..head : (arrow (List int) int)) (xs : (List int)))
-  assert [headIs1] ((h : int) == #1)
+  {
+    init (xs : (List int)) := (init_xs_0 : (List int))
+    init (h : int) := (init_h_1 : int)
+    xs := ((~Cons : (arrow int (arrow (List int) (List int))))
+     #1
+     ((~Cons : (arrow int (arrow (List int) (List int)))) #2 (~Nil : (List int))))
+    h := ((~List..head : (arrow (List int) int)) (xs : (List int)))
+    assert [headIs1] ((h : int) == #1)
+  }
 }
 -/
 #guard_msgs in
@@ -172,16 +178,18 @@ Constructors:
 
 procedure TestEither :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (TestEither_ensures_0, #true)
 {
-  init (x : (Either int bool)) := (init_x_0 : (Either int bool))
-  init (y : (Either int bool)) := (init_y_1 : (Either int bool))
-  x := ((~Left : (arrow int (Either int bool))) #42)
-  y := ((~Right : (arrow bool (Either int bool))) #true)
-  assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Either int bool)))
-  assert [yIsRight] ((~Either..isRight : (arrow (Either int bool) bool)) (y : (Either int bool)))
-  assert [lValue] (((~Either..l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)
+  {
+    init (x : (Either int bool)) := (init_x_0 : (Either int bool))
+    init (y : (Either int bool)) := (init_y_1 : (Either int bool))
+    x := ((~Left : (arrow int (Either int bool))) #42)
+    y := ((~Right : (arrow bool (Either int bool))) #true)
+    assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Either int bool)))
+    assert [yIsRight] ((~Either..isRight : (arrow (Either int bool) bool)) (y : (Either int bool)))
+    assert [lValue] (((~Either..l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)
+  }
 }
 -/
 #guard_msgs in
@@ -227,12 +235,15 @@ Constructors:
 
 procedure TestNestedPoly :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (TestNestedPoly_ensures_0, #true)
 {
-  init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
-  x := ((~Some : (arrow (List int) (Option (List int)))) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (~Nil : (List int))))
-  assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))
+  {
+    init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
+    x := ((~Some : (arrow (List int) (Option (List int))))
+     ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))
+    assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))
+  }
 }
 -/
 #guard_msgs in

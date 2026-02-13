@@ -34,15 +34,21 @@ procedure P() returns ()
 /--
 info: func x :  () → real;
 func y :  () → real;
-axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) #1);
-axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) #2);
+axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
+axiom real_y_ge_2: ((~Real.Ge : (arrow real (arrow real bool))) (~y : real) #2);
 procedure P :  () → ()
   modifies: []
   preconditions: ⏎
   postconditions: ⏎
 {
-  assert [real_add_ge_good] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) #3)
-  assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) #4)
+  {
+    assert [real_add_ge_good] ((~Real.Ge : (arrow real (arrow real bool)))
+     ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
+     #3)
+    assert [real_add_ge_bad] ((~Real.Ge : (arrow real (arrow real bool)))
+     ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
+     #4)
+  }
 }
 Errors: #[]
 -/
@@ -58,19 +64,19 @@ Label: real_add_ge_good
 Property: assert
 Assumptions:
 
-(real_x_ge_1, ((~Real.Ge ~x) #1))
-(real_y_ge_2, ((~Real.Ge ~y) #2))
+(real_x_ge_1, (~Real.Ge ~x #1))
+(real_y_ge_2, (~Real.Ge ~y #2))
 Proof Obligation:
-((~Real.Ge ((~Real.Add ~x) ~y)) #3)
+(~Real.Ge (~Real.Add ~x ~y) #3)
 
 Label: real_add_ge_bad
 Property: assert
 Assumptions:
 
-(real_x_ge_1, ((~Real.Ge ~x) #1))
-(real_y_ge_2, ((~Real.Ge ~y) #2))
+(real_x_ge_1, (~Real.Ge ~x #1))
+(real_y_ge_2, (~Real.Ge ~y #2))
 Proof Obligation:
-((~Real.Ge ((~Real.Add ~x) ~y)) #4)
+(~Real.Ge (~Real.Add ~x ~y) #4)
 
 
 
@@ -82,15 +88,17 @@ Result: ❌ fail
 Evaluated program:
 func x :  () → real;
 func y :  () → real;
-axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) #1);
-axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) #2);
+axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
+axiom real_y_ge_2: ((~Real.Ge : (arrow real (arrow real bool))) (~y : real) #2);
 procedure P :  () → ()
   modifies: []
   preconditions: ⏎
   postconditions: ⏎
 {
-  assert [real_add_ge_good] ((~Real.Ge ((~Real.Add ~x) ~y)) #3)
-  assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) #4)
+  {
+    assert [real_add_ge_good] (~Real.Ge (~Real.Add ~x ~y) #3)
+    assert [real_add_ge_bad] (~Real.Ge (~Real.Add ~x ~y) #4)
+  }
 }
 ---
 info:
@@ -138,21 +146,27 @@ spec {
 /--
 info: func x :  () → bv8;
 func y :  () → bv8;
-axiom bv_x_ge_1: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #1) (~x : bv8));
-axiom bv_y_ge_2: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #2) (~y : bv8));
+axiom bv_x_ge_1: ((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #1 (~x : bv8));
+axiom bv_y_ge_2: ((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #2 (~y : bv8));
 procedure P :  () → ()
   modifies: []
   preconditions: ⏎
   postconditions: ⏎
 {
-  assert [bv_add_ge] ((((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~x : bv8)) (~y : bv8)) == (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~y : bv8)) (~x : bv8)))
+  {
+    assert [bv_add_ge] (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8)))
+      (~x : bv8)
+      (~y : bv8)) == ((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~y : bv8) (~x : bv8)))
+  }
 }
 procedure Q :  ((x : bv1)) → ((r : bv1))
   modifies: []
   preconditions: ⏎
-  postconditions: (Q_ensures_0, ((r : bv1) == (((~Bv1.Sub : (arrow bv1 (arrow bv1 bv1))) (x : bv1)) (x : bv1))))
+  postconditions: (Q_ensures_0, ((r : bv1) == ((~Bv1.Sub : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))))
 {
-  r := (((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1)) (x : bv1))
+  {
+    r := ((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))
+  }
 }
 Errors: #[]
 -/
@@ -168,19 +182,19 @@ Label: bv_add_ge
 Property: assert
 Assumptions:
 
-(bv_x_ge_1, ((~Bv8.ULe #1) ~x))
-(bv_y_ge_2, ((~Bv8.ULe #2) ~y))
+(bv_x_ge_1, (~Bv8.ULe #1 ~x))
+(bv_y_ge_2, (~Bv8.ULe #2 ~y))
 Proof Obligation:
-(((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
+((~Bv8.Add ~x ~y) == (~Bv8.Add ~y ~x))
 
 Label: Q_ensures_0
 Property: assert
 Assumptions:
 
-(bv_x_ge_1, ((~Bv8.ULe #1) ~x))
-(bv_y_ge_2, ((~Bv8.ULe #2) ~y))
+(bv_x_ge_1, (~Bv8.ULe #1 ~x))
+(bv_y_ge_2, (~Bv8.ULe #2 ~y))
 Proof Obligation:
-(((~Bv1.Add $__x0) $__x0) == ((~Bv1.Sub $__x0) $__x0))
+((~Bv1.Add $__x0 $__x0) == (~Bv1.Sub $__x0 $__x0))
 
 ---
 info:
