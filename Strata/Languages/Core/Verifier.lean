@@ -198,7 +198,9 @@ def addLocationInfo
       solver.setInfo "file" s!"\"{format fileRange.file}\""
       solver.setInfo "start" s!"{fileRange.range.start}"
       solver.setInfo "stop" s!"{fileRange.range.stop}"
-      solver.setInfo "unsat-message" s!"\"TODO\""
+      -- TODO: the following should probably be stored in metadata so it
+      -- can be set in an application-specific way.
+      solver.setInfo "unsat-message" s!"\"Assertion cannot be proven\""
     | .none => pure ()
 
 def dischargeObligation
