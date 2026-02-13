@@ -71,10 +71,12 @@ def SequenceM.withInsideCondition (m : SequenceM α) : SequenceM α := do
   modify fun s => { s with insideCondition := oldInsideCondition }
   return result
 
-def SequenceM.takePrependedStmts : SequenceM (List StmtExprMd) := do
-  let stmts := (← get).prependedStmts
+def SequenceM.takePrependedStmts : SequenceM StmtExprMd := do
+  let stmts := (← get).prependedStmts.reverse
   modify fun s => { s with prependedStmts := [] }
-  return stmts.reverse
+  match stmts with
+  | [single] => return single
+  | _ => return ⟨.Block stmts none, #[]⟩
 
 def SequenceM.freshTempFor (varName : Identifier) : SequenceM Identifier := do
   let counters := (← get).varCounters
@@ -203,8 +205,7 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
                   | _ => pure ()
             | _ =>
                 let seqStmt ← transformStmt head
-                for s in seqStmt do
-                  SequenceM.addPrependedStmt s
+                SequenceM.addPrependedStmt seqStmt
             processBlock tail
         termination_by sizeOf remStmts
         decreasing_by all_goals (simp_wf; term_by_mem)
@@ -228,9 +229,9 @@ def transformExpr (expr : StmtExprMd) : SequenceM StmtExprMd := do
 
 /-
 Process a statement, handling any assignments in its sub-expressions.
-Returns a list of statements (the original one may be split into multiple).
+Returns a single statement (may be wrapped in a block if prepended statements were generated).
 -/
-def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
+def transformStmt (stmt : StmtExprMd) : SequenceM StmtExprMd := do
   let md := stmt.md
   match _h : stmt.val with
   | .Assert cond =>
@@ -246,7 +247,8 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
-      return [⟨.Block (seqStmts.flatten) metadata, md⟩]
+      SequenceM.addPrependedStmt ⟨.Block seqStmts metadata, md⟩
+      SequenceM.takePrependedStmts
 
   | .LocalVariable name ty initializer =>
       SequenceM.addToEnv name ty
@@ -256,7 +258,7 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
           SequenceM.addPrependedStmt ⟨.LocalVariable name ty (some seqInit), md⟩
           SequenceM.takePrependedStmts
       | none =>
-          return [stmt]
+          return stmt
 
   | .Assign targets value =>
       let seqTargets ← targets.mapM transformTarget
@@ -268,15 +270,13 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
       let seqCond ← transformExpr cond
       SequenceM.withInsideCondition do
         let seqThen ← transformStmt thenBranch
-        let thenBlock : StmtExprMd := ⟨.Block seqThen none, md⟩
-
         let seqElse ← match elseBranch with
           | some e =>
               let se ← transformStmt e
-              pure (some ⟨ .Block se none, md ⟩)
+              pure (some se)
           | none => pure none
 
-        SequenceM.addPrependedStmt ⟨ .IfThenElse seqCond thenBlock seqElse, md ⟩
+        SequenceM.addPrependedStmt ⟨ .IfThenElse seqCond seqThen seqElse, md ⟩
         SequenceM.takePrependedStmts
 
   | .StaticCall name args =>
@@ -285,7 +285,7 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
       SequenceM.takePrependedStmts
 
   | _ =>
-      return [stmt]
+      return stmt
   termination_by sizeOf stmt
   decreasing_by
     all_goals
@@ -295,12 +295,6 @@ def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
 
 end
 
-def transformProcedureBody (body : StmtExprMd) : SequenceM StmtExprMd := do
-  let seqStmts <- transformStmt body
-  match seqStmts with
-  | [single] => pure single
-  | multiple => pure ⟨.Block multiple.reverse none, body.md⟩
-
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   -- Initialize environment with procedure parameters
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
@@ -309,7 +303,7 @@ def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   modify fun s => { s with insideCondition := false, varSnapshots := [], varCounters := [], env := initEnv }
   match proc.body with
   | .Transparent bodyExpr =>
-      let seqBody ← transformProcedureBody bodyExpr
+      let seqBody ← transformStmt bodyExpr
       pure { proc with body := .Transparent seqBody }
   | _ => pure proc  -- Opaque and Abstract bodies unchanged
 
