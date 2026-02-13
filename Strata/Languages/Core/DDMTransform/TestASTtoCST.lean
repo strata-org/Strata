@@ -113,7 +113,7 @@ type T1 (a0 : Type);
 type Byte := bv8;
 type IntMap := Map int int;
 type MyMap (a0 : Type, a1 : Type);
-type Foo (a : Type, b : Type) := Map tvar!b tvar!a;
+type Foo (a : Type, b : Type) := Map 'b 'a;
 datatype List {(Nil()),(Cons(head : int, tail : List))};
 datatype Tree {(Leaf(val : int)),(Node(left : Tree, right : Tree))};
 function fooConst () : int;
@@ -121,7 +121,7 @@ axiom [fooConst_value]: fooConst==5;
 function id (x : int, y : int) : int {
 y
 }
-function foo<T1, T2> (x : tvar!T1) : Map tvar!T1 tvar!T2;
+function foo<T1, T2> (x : 'T1) : Map 'T1 'T2;
 axiom [foo_ax]: forall x0 : int :: (foo(x0))[1]==true;
 function f1 (x : int) : int;
 axiom [f1_ax]: forall x0 : int :: f1(x0)>x0;
@@ -166,8 +166,8 @@ spec { requires List..isCons(xs); } {
 /--
 info: Rendered Program:
 
-datatype List (a : Type) {(Nil()),(Cons(head : tvar!a, tail : (List tvar!a)))};
-procedure Extract<a> (xs : (List tvar!a)) returns (h : tvar!a)
+datatype List (a : Type) {(Nil()),(Cons(head : 'a, tail : (List 'a)))};
+procedure Extract<a> (xs : (List 'a)) returns (h : 'a)
 spec{
   requires [Extract_requires_0]: List..isCons(xs);
     } {
@@ -225,8 +225,8 @@ procedure TestDifferentInstantiations() returns ()
 /--
 info: Rendered Program:
 
-function identity<a> (x : tvar!a) : tvar!a;
-function makePair<a, b> (x : tvar!a, y : tvar!b) : Map tvar!a tvar!b;
+function identity<a> (x : 'a) : 'a;
+function makePair<a, b> (x : 'a, y : 'b) : Map 'a 'b;
 procedure TestDifferentInstantiations () returns ()
  {
 var m : (Map int bool);
