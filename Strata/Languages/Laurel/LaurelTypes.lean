@@ -78,6 +78,7 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr:
   | .Assert _ => ⟨ .TVoid, md ⟩
   | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related
+  | .New name => ⟨ .UserDefined name, md ⟩
   | .This => panic "Not supported" -- would need `this` type from context
   | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
   | .AsType _ ty => ty

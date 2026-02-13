@@ -46,9 +46,10 @@ procedure caller(c: Container, d: Container) {
   assert d#intValue == 3;
 }
 
-procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
+procedure allowHeapMutatingCallerInExpression() {
+  var c: Container := new Container;
+  var d: Container := new Container;
   assume d#intValue == 1;
-  assume c != d;
   var x: int := foo(c, d) + 1;
   assert d#intValue == 3;
 }

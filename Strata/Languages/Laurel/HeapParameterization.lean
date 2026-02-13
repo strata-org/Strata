@@ -72,6 +72,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
   | .PrimitiveOp _ args => for a in args do collectExprMd a
+  | .New _ => pure ()
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
@@ -288,6 +289,7 @@ where
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
+    | .New name => return ⟨ .New name, md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
     | .AsType t ty => return ⟨ .AsType (← recurse t) ty, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩

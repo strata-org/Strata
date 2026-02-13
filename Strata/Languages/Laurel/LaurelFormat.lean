@@ -103,6 +103,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
   | .PrimitiveOp op args =>
       formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+  | .New name => "new " ++ Format.text name
   | .This => "this"
   | .ReferenceEquals lhs rhs =>
       formatStmtExpr lhs ++ " === " ++ formatStmtExpr rhs

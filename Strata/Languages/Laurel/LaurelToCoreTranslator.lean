@@ -369,6 +369,7 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .IfThenElse c t none => isPureExpr c && isPureExpr t
   | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
   | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .New _ => false
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .Block [single] _ => isPureExpr single
   | _ => false
