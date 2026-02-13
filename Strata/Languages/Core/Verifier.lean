@@ -483,11 +483,6 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Options := Option
   else
     .error <| DiagnosticModel.fromFormat s!"DDM Transform Error: {repr errors}"
 
-def Core.getProgram
-  (p : Strata.Program)
-  (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
-  TransM.run ictx (translateProgram p)
-
 def verify
     (env : Program)
     (ictx : InputContext := Inhabited.default)

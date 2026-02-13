@@ -4,11 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.AST
 import Strata.Languages.Core.DDMTransform.Parse
-import Strata.Languages.Core.CoreGen
 import Strata.DDM.Util.DecimalRat
-
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -1761,6 +1758,11 @@ def translateProgram (p : Program) : TransM Core.Program := do
   fun s => ((), { s with globalContext := p.globalContext })
   let decls ← translateCoreDecls p {}
   return { decls := decls }
+
+def Core.getProgram
+  (p : Strata.Program)
+  (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
+  TransM.run ictx (translateProgram p)
 
 ---------------------------------------------------------------------
 

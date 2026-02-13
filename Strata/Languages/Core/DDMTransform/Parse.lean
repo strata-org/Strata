@@ -361,7 +361,7 @@ op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
 
 namespace CoreDDM
 
---#strata_gen Boogie
+#strata_gen Core
 
 end CoreDDM
 
