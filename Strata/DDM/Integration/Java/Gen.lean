@@ -6,6 +6,7 @@
 module
 
 public import Strata.DDM.AST
+import Strata.DDM.Ion
 import Strata.DDM.Integration.Categories
 
 namespace Strata.Java
@@ -137,13 +138,7 @@ def argDeclKindToJavaType : ArgDeclKind → JavaType
 
 /-- Get Ion separator name for a list category, or none if not a list. -/
 def getSeparator (c : SyntaxCat) : Option String :=
-  match c.name with
-  | q`Init.Seq => some "seq"
-  | q`Init.CommaSepBy => some "commaSepList"
-  | q`Init.NewlineSepBy => some "newlineSepList"
-  | q`Init.SpaceSepBy => some "spaceSepList"
-  | q`Init.SpacePrefixSepBy => some "spacePrefixedList"
-  | _ => none
+  SepFormat.fromCategoryName? c.name |>.map SepFormat.toIonName
 
 /-- Extract the QualifiedIdent for categories that need Java interfaces, or none for primitives. -/
 partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :=
@@ -322,15 +317,22 @@ def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : Op
 
 def generateBuilders (package : String) (dialectName : String) (d : Dialect) (names : NameAssignments) : String :=
   let methods (op : OpDecl) :=
-    let fields := op.argDecls.toArray.map argDeclToJavaField
-    let (ps, as, checks) := fields.foldl (init := (#[], #[], #[])) fun (ps, as, checks) f =>
-      match f.type with
-      | .simple "java.math.BigInteger" _ =>
-        (ps.push s!"long {f.name}",
-         as.push s!"java.math.BigInteger.valueOf({f.name})",
-         checks.push s!"if ({f.name} < 0) throw new IllegalArgumentException(\"{f.name} must be non-negative\");")
-      | .simple "java.math.BigDecimal" _ => (ps.push s!"double {f.name}", as.push s!"java.math.BigDecimal.valueOf({f.name})", checks)
-      | t => (ps.push s!"{t.toJava} {f.name}", as.push f.name, checks)
+    let (ps, as, checks) := op.argDecls.toArray
+        |>.foldl (init := (#[], #[], #[])) fun (ps, as, checks) decl =>
+      let name := escapeJavaName decl.ident
+      let cat := decl.kind.categoryOf.name
+      if cat == q`Init.Num then
+        -- Long parameter must be non-negative.
+        (ps.push s!"long {name}",
+         as.push s!"java.math.BigInteger.valueOf({name})",
+         checks.push s!"if ({name} < 0) throw new IllegalArgumentException(\"{name} must be non-negative\");")
+      else if cat == q`Init.Decimal then
+        (ps.push s!"double {name}",
+         as.push s!"java.math.BigDecimal.valueOf({name})",
+         checks)
+      else
+        let t := (argDeclKindToJavaType decl.kind).toJava
+        (ps.push s!"{t} {name}", as.push name, checks)
     let methodName := escapeJavaName op.name
     let returnType := names.categories[op.category]!
     let recordName := names.operators[(op.category, op.name)]!

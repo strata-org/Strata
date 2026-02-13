@@ -200,24 +200,13 @@ def toString : SepFormat → String
   | .spacePrefix => "spacePrefixSepBy"
   | .newline => "newlineSepBy"
 
-def toIonName : SepFormat → String
-  | .none => "seq"
-  | .comma => "commaSepList"
-  | .space => "spaceSepList"
-  | .spacePrefix => "spacePrefixedList"
-  | .newline => "newlineSepList"
-
-def fromIonName? : String → Option SepFormat
-  | "seq" => some .none
-  | "commaSepList" => some .comma
-  | "spaceSepList" => some .space
-  | "spacePrefixedList" => some .spacePrefix
-  | "newlineSepList" => some .newline
+def fromCategoryName? : QualifiedIdent → Option SepFormat
+  | q`Init.Seq => some .none
+  | q`Init.CommaSepBy => some .comma
+  | q`Init.SpaceSepBy => some .space
+  | q`Init.SpacePrefixSepBy => some .spacePrefix
+  | q`Init.NewlineSepBy => some .newline
   | _ => none
-
-theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
-  fromIonName? (toIonName sep) = some sep := by
-  cases sep <;> rfl
 
 instance : ToString SepFormat where
   toString := SepFormat.toString

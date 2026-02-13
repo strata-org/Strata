@@ -227,20 +227,19 @@ private partial def whitespace : ParserFn := fun c s =>
       let j    := c.next' i h
       let curr := c.get j
       match curr with
-      | '/' =>
-        -- Treat as comment unless a token starting with "//" exists (e.g., //@pre)
-        match c.tokens.matchPrefix c.inputString i with
-        | some tk => if tk.startsWith "//" then s
-          else andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
-        | none =>
-          andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
-      | '*' =>
-        -- Treat as comment unless a token starting with "/*" exists
-        match c.tokens.matchPrefix c.inputString i with
-        | some tk => if tk.startsWith "/*" then s
-          else andthenFn (finishCommentBlock (pushMissingOnError := false)) whitespace c (s.next c (c.next j))
-        | none =>
-          andthenFn (finishCommentBlock (pushMissingOnError := false)) whitespace c (s.next c (c.next j))
+      | '/' => Id.run do
+        -- Treat // as comment unless a token covering both chars exists (e.g., //@pre)
+        if let some tk := c.tokens.matchPrefix c.inputString i then
+          if tk.utf8ByteSize >= 2 then
+            return s
+        andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
+      | '*' => Id.run do
+        -- Treat /* as comment unless a token covering both chars exists
+        if let some tk := c.tokens.matchPrefix c.inputString i then
+          if tk.utf8ByteSize >= 2 then
+            return s
+        andthenFn (finishCommentBlock (pushMissingOnError := false))
+          whitespace c (s.next c (c.next j))
       | _ =>
         s
     else s
