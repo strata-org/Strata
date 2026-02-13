@@ -49,6 +49,21 @@ end ASTToCSTError
 
 section ToCST
 
+/-- Constants for consistent naming -/
+def unknownTypeVar : String := "$__unknown_type"
+
+/-- Generate parameter names efficiently -/
+def mkParamName (i : Nat) : String := "a" ++ toString i
+
+/-- Generate quantifier variable names efficiently -/
+def mkQuantVarName (level : Nat) : String := "x" ++ toString level
+
+/-- Count the arity of a function type by counting arrows -/
+def countArity (ty : TypeExpr) : Nat :=
+  match ty with
+  | .arrow _ _ rest => 1 + countArity rest
+  | _ => 0
+
 structure Scope where
   /-- Track bound variables in this scope -/
   boundVars : Array String := #[]
@@ -68,10 +83,10 @@ def empty : ToCSTContext := { scopes := #[{}] }
 /-- Format context for error messages -/
 def toErrorString (ctx : ToCSTContext) : String :=
   let lines := ctx.scopes.toList.mapIdx fun i scope =>
-    let header := if i = 0 then "Global scope:" else s!"Scope {i}:"
+    let header := if i = 0 then "Global scope:" else "Scope " ++ toString i ++ ":"
     let bv := if scope.boundVars.isEmpty then ""
-              else s!"\n  boundVars: {scope.boundVars.toList}"
-    s!"{header}{bv}"
+              else "\n  boundVars: " ++ toString scope.boundVars.toList
+    header ++ bv
   String.intercalate "\n" lines
 
 /-- Get all bound variables across all scopes -/
@@ -96,7 +111,7 @@ def freeVarIndex? (ctx : ToCSTContext) (name : String) : Option FreeVarIndex :=
 
 /-- Add bound variables to the current scope -/
 def addBoundVars (ctx : ToCSTContext) (names : Array String)
-  (reverse? : Bool := true) : ToCSTContext :=
+    (reverse? : Bool := true) : ToCSTContext :=
   let idx := ctx.scopes.size - 1
   let scope := ctx.scopes[idx]!
   let names := if reverse? then names.reverse else names
@@ -120,10 +135,11 @@ end ToCSTContext
 abbrev ToCSTM (M : Type) :=
     StateT ToCSTContext (Except (List (ASTToCSTError M)))
 /-- Throw an error in ToCSTM -/
-def ToCSTM.throwError [Inhabited M] (fn : String) (desc : String)
-    : ToCSTM M α := do
+def ToCSTM.throwError [Inhabited M] (fn : String)
+    (desc : String) (detail : String) : ToCSTM M α := do
   let ctx ← get
-  throw [.unsupportedConstruct fn desc ctx.toErrorString default]
+  let msg := desc ++ ": " ++ detail
+  throw [.unsupportedConstruct fn msg ctx.toErrorString default]
 
 /-- Convert `LMonoTy` to `CoreType` -/
 def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
@@ -150,8 +166,8 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     | some idx => do
       let argTys ← args.mapM lmonoTyToCoreType
       pure (.fvar default idx argTys.toArray)
-    | none => ToCSTM.throwError "lmonoTyToCoreType" s!"unknown type constructor {name}"
-  | _ => ToCSTM.throwError "lmonoTyToCoreType" s!"unknown type {ty}"
+    | none => ToCSTM.throwError "lmonoTyToCoreType" "unknown type constructor" name
+  | _ => ToCSTM.throwError "lmonoTyToCoreType" "unknown type" (toString ty)
 
 /-- Convert `LTy` to `CoreType` -/
 def lTyToCoreType [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
@@ -169,7 +185,7 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
       ⟨default, none⟩
     else
       let bindings := List.range tcons.numargs |>.map fun i =>
-        let paramName : Ann String M := ⟨default, s!"a{i}"⟩
+        let paramName : Ann String M := ⟨default, mkParamName i⟩
         let paramType := TypeP.type default
         Binding.mkBinding default paramName paramType
       ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
@@ -238,23 +254,14 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) :
   | .realConst r =>
     match Strata.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
-    | none => ToCSTM.throwError "lconstToExpr" s!"real {r}"
+    | none => ToCSTM.throwError "lconstToExpr" "unsupported real" (toString r)
   | .strConst s => pure (.strLit default ⟨default, s⟩)
   | .bitvecConst 1 n => pure (.bv1Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 8 n => pure (.bv8Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 16 n => pure (.bv16Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 32 n => pure (.bv32Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
-  | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr" s!"bitvec width {w}"
-
-/-- Constants for consistent naming -/
-def unknownTypeVar : String := "$__unknown_type"
-
-/-- Count the arity of a function type by counting arrows -/
-def countArity (ty : TypeExpr) : Nat :=
-  match ty with
-  | .arrow _ _ rest => 1 + countArity rest
-  | _ => 0
+  | .bitvecConst w _ => ToCSTM.throwError "lconstToExpr" "unsupported bitvec width" (toString w)
 
 /-- Handle unary operations -/
 def handleUnaryOps [Inhabited M] (name : String) (arg : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
@@ -282,7 +289,7 @@ def handleUnaryOps [Inhabited M] (name : String) (arg : CoreDDM.Expr M) : ToCSTM
   | "re_star" => pure (.re_star default arg)
   | "re_plus" => pure (.re_plus default arg)
   | "re_comp" => pure (.re_comp default arg)
-  | _ => ToCSTM.throwError "handleUnaryOps" s!"unary op {name}"
+  | _ => ToCSTM.throwError "handleUnaryOps" "unary op" name
 
 /-- Handle bitvector binary operations -/
 def handleBitvecBinaryOps [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
@@ -377,7 +384,7 @@ def handleBitvecBinaryOps [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Exp
   | "Bv1.Concat" => pure (.bvconcat8 default arg1 arg2)
   | "Bv8.Concat" => pure (.bvconcat16 default arg1 arg2)
   | "Bv16.Concat" => pure (.bvconcat32 default arg1 arg2)
-  | _ => ToCSTM.throwError "handleBitvecBinaryOps" s!"binary op {name}"
+  | _ => ToCSTM.throwError "handleBitvecBinaryOps" "binary op" name
 
 /-- Handle binary operations -/
 def handleBinaryOps [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
@@ -412,7 +419,7 @@ def handleTernaryOps [Inhabited M] (name : String) (arg1 arg2 arg3 : CoreDDM.Exp
   | "str_substr" => pure (.str_substr default arg1 arg2 arg3)
   | "re_loop" => pure (.re_loop default arg1 arg2 arg3)
   | "update" => pure (.map_set default ty ty arg1 arg2 arg3)
-  | _ => ToCSTM.throwError "handleTernaryOps" s!"ternary op {name}"
+  | _ => ToCSTM.throwError "handleTernaryOps" "ternary op" name
 
 def lopToExpr [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
@@ -429,16 +436,17 @@ def lopToExpr [Inhabited M]
         let fnExpr := CoreDDM.Expr.fvar default idx
         pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
       else
-        ToCSTM.throwError "lopToExpr" s!"function {name} expects {expectedArity} arguments but got {actualArity}"
-    | _ => ToCSTM.throwError "lopToExpr" s!"unknown operation: {name}"
+        let msg := "function " ++ name ++ " expects " ++ toString expectedArity ++ " arguments but got " ++ toString actualArity
+        ToCSTM.throwError "lopToExpr" "function arity mismatch" msg
+    | _ => ToCSTM.throwError "lopToExpr" "unknown operation" name
   | none =>
     -- Either a built-in or an invalid operation.
     match args with
-    | [] => ToCSTM.throwError "lopToExpr" s!"0-ary op {name} not found"
+    | [] => ToCSTM.throwError "lopToExpr" "0-ary op not found" name
     | [arg] => handleUnaryOps name arg
     | [arg1, arg2] => handleBinaryOps name arg1 arg2
     | [arg1, arg2, arg3] => handleTernaryOps name arg1 arg2 arg3
-    | _ => ToCSTM.throwError "lopToExpr" s!"unknown operation: {name}"
+    | _ => ToCSTM.throwError "lopToExpr" "unknown operation" name
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
@@ -452,7 +460,7 @@ partial def lexprToExpr [Inhabited M]
     if idx < ctx.boundVars.size then
       pure (.bvar default idx)
     else
-      ToCSTM.throwError "lexprToExpr" s!"bvar {idx}"
+      ToCSTM.throwError "lexprToExpr" "bvar index out of bounds" (toString idx)
   | .fvar _ id _ =>
     -- We first look for Lambda .fvars in the boundVars context, before checking
     -- the freeVars context. Lambda .fvars can come from formals of a function
@@ -464,12 +472,12 @@ partial def lexprToExpr [Inhabited M]
     | none =>
       match ctx.findFreeVarIndex? id.name with
       | some idx => pure (.fvar default idx)
-      | none => ToCSTM.throwError "lexprToExpr" s!"fvar {id.name}"
+      | none => ToCSTM.throwError "lexprToExpr" "unbound fvar" id.name
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
-  | .abs _ _ _ => ToCSTM.throwError "lexprToExpr" "lambda not supported in CoreDDM"
+  | .abs _ _ _ => ToCSTM.throwError "lexprToExpr" "lambda not supported in CoreDDM" ""
   | .quant _ qkind ty trigger body =>
     lquantToExpr qkind ty trigger body (qLevel + 1)
 
@@ -491,12 +499,12 @@ partial def extractTriggerPatterns [Inhabited M]
       let restExprs ← extractTriggerPatterns rest qLevel
       pure (groupExprs ++ restExprs)
     else
-      ToCSTM.throwError "extractTriggerPatterns" s!"unexpected trigger operation {name.name}"
+      ToCSTM.throwError "extractTriggerPatterns" "unexpected trigger operation" name.name
   | .op _ name _ =>
     if name.name == "TriggerGroup.empty" || name.name == "Triggers.empty" then
       pure #[]
     else
-      ToCSTM.throwError "extractTriggerPatterns" s!"unexpected trigger operation {name.name}"
+      ToCSTM.throwError "extractTriggerPatterns" "unexpected trigger operation" name.name
   | _ =>
     -- Single trigger expression
     let expr ← lexprToExpr trigger qLevel
@@ -507,11 +515,11 @@ partial def lquantToExpr [Inhabited M]
     (trigger : Lambda.LExpr CoreLParams.mono) (body : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
-  let name : Ann String M := ⟨default, s!"x{qLevel - 1}"⟩
+  let name : Ann String M := ⟨default, mkQuantVarName (qLevel - 1)⟩
   modify (·.addBoundVars #[name.val])
   let tyExpr ← match ty with
     | some t => lmonoTyToCoreType t
-    | none => ToCSTM.throwError "lquantToExpr" "quantifier missing type annotation"
+    | none => ToCSTM.throwError "lquantToExpr" "quantifier missing type annotation" ""
   let bind := Bind.bind_mk default name ⟨default, none⟩ tyExpr
   let dl := DeclList.declAtom default bind
   let hasNoTrigger := trigger matches .bvar _ 0
@@ -561,7 +569,7 @@ partial def lappToExpr [Inhabited M]
     let e1Expr ← lexprToExpr e1 qLevel
     lopToExpr fn.name (e1Expr :: acc)
   | _ =>
-    ToCSTM.throwError "lappToExpr" s!"unsupported application {e}"
+    ToCSTM.throwError "lappToExpr" "unsupported application" (toString e)
 
 end
 
@@ -633,7 +641,7 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement) : ToCSTM M (CoreDDM.Sta
   | .goto label _md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     pure (.goto_statement default labelAnn)
-  | .funcDecl _ _ => ToCSTM.throwError "stmtToCST" "funcDecl in statement"
+  | .funcDecl _ _ => ToCSTM.throwError "stmtToCST" "funcDecl not allowed in statement" ""
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement) : ToCSTM M (CoreDDM.Block M) := do
   let stmtsCST ← stmts.toArray.mapM stmtToCST
