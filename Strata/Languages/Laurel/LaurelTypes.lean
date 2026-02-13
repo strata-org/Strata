@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Util.Tactics
 
 /-
 Type computation for Laurel StmtExpr.
@@ -34,9 +35,10 @@ Compute the HighType of a StmtExpr given a type environment and type definitions
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
 -/
-partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr: StmtExprMd) : HighTypeMd :=
-  let md := expr.md
-  match expr.val with
+def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
+  match expr with
+  | WithMetadata.mk val md =>
+  match val with
   -- Literals
   | .LiteralInt _ => ⟨ .TInt, md ⟩
   | .LiteralBool _ => ⟨ .TBool, md ⟩
@@ -45,11 +47,11 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr:
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
       | some (_, ty) => ty
-      | none => panic s!"Could not find variable name in environment"
+      | none => panic s!"Could not find variable {name} in environment"
   -- Field access
   | .FieldSelect target fieldName =>
-      match (computeExprType env types target).val with
-      | .UserDefined typeName =>
+      match computeExprType env types target with
+      | WithMetadata.mk (.UserDefined typeName) _ =>
           match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
           | none => panic s!"Could not find field in type"
@@ -66,8 +68,10 @@ partial def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr:
       | .Neg | .Add | .Sub | .Mul | .Div | .Mod => ⟨ .TInt, md ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
-  | .Block stmts _ => match stmts.getLast? with
-    | some last => computeExprType env types last
+  | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
+    | some last =>
+        have := List.mem_of_getLast? _blockGetLastResult
+        computeExprType env types last
     | none => ⟨ .TVoid, md ⟩
   -- Statements (void-typed)
   | .LocalVariable _ _ _ => ⟨ .TVoid, md ⟩
