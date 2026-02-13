@@ -9,6 +9,9 @@
 import Strata.DL.Imperative.Cmd
 
 namespace Imperative
+
+open Std.Format
+
 ---------------------------------------------------------------------
 
 /-! ## Statements
@@ -298,13 +301,17 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
   match s with
   | .cmd cmd => format cmd
-  | .block label bl md => f!"{md}{label} : " ++ Format.bracket "{" f!"{formatBlock P bl}" "}"
-  | .ite cond th el md => f!"{md}if {cond} then " ++
-                        Format.bracket "{" f!"{formatBlock P th}" "}" ++
-                        f!"{Format.line}else" ++
-                        Format.bracket "{" f!"{formatBlock P el}" "}"
-  | .loop guard measure invariant body md => f!"{md}while ({guard}) ({measure}) ({invariant}) " ++
-                        Format.bracket "{" f!"{formatBlock P body}" "}"
+  | .block label bl md => f!"{md}{label} :" ++ line ++ formatBlock P bl
+  | .ite cond th el md =>
+      let thenPart := formatBlock P th
+      let elsePart := formatBlock P el
+      f!"{md}if " ++ group f!"{nestD $ format cond} {thenPart}" ++ line ++ f!"else {elsePart}"
+
+  | .loop guard measure invariant body md =>
+      let body := formatBlock P body
+      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}({invariant})"
+      let children := group f!"{beforeBody}{line}{body}"
+      f!"{md}while{children}"
   | .goto label md => f!"{md}goto {label}"
   | .funcDecl _ md => f!"{md}funcDecl <function>"
   termination_by s.sizeOf
@@ -312,12 +319,14 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
 def formatBlock (P : PureExpr) (ss : List (Stmt P C))
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
     match ss with
-    | [] => f!""
-    | s :: rest => formatStmt P s ++
-                   if rest.isEmpty then f!""
-                   else f!"\n{formatBlock P rest}"
+    | [] => "{}"
+    | parts =>
+      let inner := line ++ (group $ joinSep (parts.map (fun s => formatStmt P s)) (format "\n"))
+      f!"\{{nestD inner}\n}"
   termination_by (Block.sizeOf ss)
+  decreasing_by all_goals (simp_wf; apply sizeOf_stmt_in_block; simp_all)
 end
+
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
         : ToFormat (Cmd P) where

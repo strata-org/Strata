@@ -520,9 +520,53 @@ instance : ToString LConst where
 instance (T : LExprParamsT) [Repr T.base.IDMeta] [Repr T.TypeType] [Repr T.base.Metadata] : ToString (LExpr T) where
    toString a := toString (repr a)
 
+private def collectAppSpine {T : LExprParamsT} : LExpr T → List (LExpr T)
+  | .app _ fn arg => collectAppSpine fn ++ [arg]
+  | other => [other]
+
+/-
+Theorem: For any application expression e, every element of collectAppSpine e
+is strictly smaller than e.
+
+Proof: By obtaining m, fn, arg from hApp, then by induction on fn.
+
+  Base case (fn is not .app):
+    1. collectAppSpine e = [fn, arg]
+       by definition (subst e = app m fn arg, fn not .app)
+    2. ec = fn or ec = arg
+    3. sizeOf e = 3 + sizeOf fn + sizeOf arg > sizeOf ec
+       by arithmetic
+
+  Inductive case (fn = app m' fn' arg'):
+    Assume: ∀ ec ∈ collectAppSpine (app m' fn' arg'),
+            ec.sizeOf < (app m' fn' arg').sizeOf  [IH]
+    1. collectAppSpine e = collectAppSpine (app m' fn' arg') ++ [arg]
+       by definition
+    2. Case ec ∈ collectAppSpine (app m' fn' arg'):
+       ec.sizeOf < sizeOf fn < sizeOf e by IH and arithmetic
+    3. Case ec = arg:
+       ec.sizeOf < sizeOf e by arithmetic
+-/
+private theorem collectAppSpine_lt {T : LExprParamsT} (e : LExpr T) (ec : LExpr T)
+    (hec : ec ∈ collectAppSpine e) (hApp : ∃ m fn arg, e = .app m fn arg) :
+    ec.sizeOf < e.sizeOf := by
+  obtain ⟨m, fn, arg, rfl⟩ := hApp
+  induction fn generalizing arg m ec with
+  | app m' fn' arg' ih =>
+    simp [collectAppSpine] at hec
+    cases hec with
+    | inl h =>
+      have := ih ec m' arg' (by simp [collectAppSpine]; exact Or.inl h)
+      simp [LExpr.sizeOf] at this ⊢; omega
+    | inr h =>
+      rcases h with rfl | rfl <;> simp [LExpr.sizeOf] <;> omega
+  | _ =>
+    simp [collectAppSpine] at hec
+    rcases hec with rfl | rfl <;> simp [LExpr.sizeOf] <;> omega
+
 private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] (e : LExpr T) :
     Format :=
-  match e with
+  match _: e with
   | .const _ c => f!"#{c}"
   | .op _ c ty =>
     match ty with
@@ -536,12 +580,17 @@ private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.
   | .abs _ _ e1 => Format.paren (f!"λ {formatLExpr T e1}")
   | .quant _ .all _ _ e1 => Format.paren (f!"∀ {formatLExpr T e1}")
   | .quant _ .exist _ _ e1 => Format.paren (f!"∃ {formatLExpr T e1}")
-  | .app _ e1 e2 => Format.paren (formatLExpr T e1 ++ " " ++ formatLExpr T e2)
-  | .ite _ c t e => Format.paren
+  | .app m fn arg =>
+    let fmts := (collectAppSpine e).attach.map (fun ⟨ec, hec⟩ =>
+      have : sizeOf ec < sizeOf e := collectAppSpine_lt e ec hec ⟨m, fn, arg, by subst_vars; rfl⟩
+      formatLExpr T ec)
+    Format.paren (Format.group (Format.joinSep fmts Format.line))
+  | .ite _ c t el => Format.paren
                       ("if " ++ formatLExpr T c ++
                        " then " ++ formatLExpr T t ++ " else "
-                       ++ formatLExpr T e)
+                       ++ formatLExpr T el)
   | .eq _ e1 e2 => Format.paren (formatLExpr T e1 ++ " == " ++ formatLExpr T e2)
+  termination_by sizeOf e
 
 instance (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] : ToFormat (LExpr T) where
   format := formatLExpr T

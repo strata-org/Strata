@@ -230,7 +230,7 @@ First mismatch: int with bool.
          return (format $ ans.fst.toLMonoTy)
 
 /--
-info: ok: (((~Int.Add : (arrow int (arrow int int))) (x : int)) ((~Int.Neg : (arrow int int)) #30))
+info: ok: ((~Int.Add : (arrow int (arrow int int))) (x : int) ((~Int.Neg : (arrow int int)) #30))
 -/
 #guard_msgs in
 #eval do let ans ← LExpr.annotate (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("x", t[int])]] })

@@ -88,19 +88,21 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   func fooVal :  () → (Foo int bool);
   procedure P :  () → ()
     modifies: []
-    preconditions: ⏎
-    postconditions: ⏎
+    preconditions: 
+    postconditions: 
   {
-    assert [test] (~fooAliasVal == ~fooVal)
+    {
+      assert [test] (~fooAliasVal == ~fooVal)
+    }
   },
   Error:
   none
   Subst Map:
-  ⏎
+  
   Expression Env:
   State:
-  ⏎
-  ⏎
+  
+  
   Evaluation Config:
   Eval Depth: 200
   Variable Prefix: $__
@@ -282,25 +284,25 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   func Bv64.SGe :  ((x : bv64) (y : bv64)) → bool;
   func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
-  ⏎
-  ⏎
+  
+  
   Datatypes:
-  ⏎
+  
   Path Conditions:
-  ⏎
-  ⏎
-  ⏎
+  
+  
+  
   Warnings:
   []
   Deferred Proof Obligations:
   Label: test
   Property: assert
   Assumptions:
-  ⏎
-  ⏎
+  
+  
   Proof Obligation:
   ((~fooAliasVal : (Foo int bool)) == (~fooVal : (Foo int bool)))
-  ⏎
+  
   )]
 -/
 #guard_msgs in
@@ -379,11 +381,15 @@ info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
 procedure Test :  () → ()
   modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+  preconditions: 
+  postconditions: 
 {
-  init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-  m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
+  {
+    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
+    m := ((~makePair : (arrow int (arrow bool (Map int bool))))
+     ((~identity : (arrow int int)) #42)
+     ((~identity : (arrow bool bool)) #true))
+  }
 }
 -/
 #guard_msgs in

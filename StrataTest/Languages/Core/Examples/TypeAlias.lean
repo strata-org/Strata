@@ -65,12 +65,14 @@ func fooConst1 :  () → (Foo int bool);
 func fooConst2 :  () → (Foo int bool);
 procedure P :  () → ()
   modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+  preconditions: 
+  postconditions: 
 {
-  assume [fooConst1_value] ((~fooConst1 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
-  assume [fooConst2_value] ((~fooConst2 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
-  assert [fooAssertion] ((~fooConst1 : (Foo int bool)) == (~fooConst2 : (Foo int bool)))
+  {
+    assume [fooConst1_value] ((~fooConst1 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
+    assume [fooConst2_value] ((~fooConst2 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
+    assert [fooAssertion] ((~fooConst1 : (Foo int bool)) == (~fooConst2 : (Foo int bool)))
+  }
 }
 -/
 #guard_msgs in
@@ -131,7 +133,7 @@ Assumptions:
 (assume_0, (init_v_2 == #0))
 
 Proof Obligation:
-((((~MapGetEq init_d_0) init_k_1) init_v_2) == (((~MapGetEq init_d_0) init_k_1) #0))
+((~MapGetEq init_d_0 init_k_1 init_v_2) == (~MapGetEq init_d_0 init_k_1 #0))
 
 ---
 info:
