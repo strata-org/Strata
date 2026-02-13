@@ -21,7 +21,12 @@ For each variable, we maintain a substitution map, which is initially filled wit
 If we encounter an assignment, we replace it with the current substitution for that variable. We then come up with a new snapshot variable name, and push that to the subsitution map.
 We also push both the assignment and an assignment to the snapshot variable to a stack over prependStatements.
 
-When we encounter an if-then-else, we rerun our algorithm from scratch on both branches, so nested assignments are moved to the start of each branch. If any assignments were discovered in the branches, lift the entire if-then-else by putting it on the prependStatements stack. Introduce a fresh variable and for each branch, assign the last statement in that branch to the fresh variable.
+When we encounter an if-then-else, we rerun our algorithm from scratch on both branches,
+so nested assignments are moved to the start of each branch.
+If any assignments were discovered in the branches,
+lift the entire if-then-else by putting it on the prependStatements stack.
+Introduce a fresh variable and for each branch,
+assign the last statement in that branch to the fresh variable.
 
 Example 1 — Assignments in expression position:
   var y: int := x + (x := 1;) + x + (x := 2;);
