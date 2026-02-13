@@ -177,4 +177,35 @@ spec{
 #guard_msgs in
 #eval ASTtoCST test2
 
+def test3 :=
+#strata
+program Core;
+
+function f1(x: int): int;
+axiom [f1_ax]: (forall x : int :: {f1(x)} f1(x) > x);
+
+function f2(x : int, y : bool): bool;
+axiom [f2_ax]: (forall x : int, y : bool :: {f2(x, true)}
+                    f2(x, true) == true);
+
+function f3(x : int, y : bool, z : regex): bool;
+axiom [f3_ax]: (forall x : int, y : bool, z : regex ::
+                  {f1(2), f3(x, y, z), f2(x, y), f1(x)}
+                  f3(x, y, z) == f2(x, y));
+
+#end
+
+/--
+info: Rendered Program:
+
+function f1 (x : int) : int;
+axiom [f1_ax]: forall x0 : int ::  { f1(x0) } f1(x0)>x0;
+function f2 (x : int, y : bool) : bool;
+axiom [f2_ax]: forall x0 : int :: forall x1 : bool ::  { f2(x0, true) } f2(x0, true)==true;
+function f3 (x : int, y : bool, z : regex) : bool;
+axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex ::  { f1(2), f3(x0, x1, x2), f2(x0, x1), f1(x0) } f3(x0, x1, x2)==f2(x0, x1);
+-/
+#guard_msgs in
+#eval ASTtoCST test3
+
 end Strata.Test

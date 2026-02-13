@@ -158,7 +158,7 @@ fn bvextract_31_0_64 (a : bv64) : bv32 => "bvextract{31}{0}{64}" "(" a ")";
 category TriggerGroup;
 category Triggers;
 op trigger (exprs : CommaSepBy Expr) : TriggerGroup =>
-  "{" exprs "}";
+  " { " exprs " } ";
 op triggersAtom (group : TriggerGroup) : Triggers =>
   group;
 op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>

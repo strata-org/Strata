@@ -317,12 +317,40 @@ partial def lexprToExpr [Inhabited M]
   | .quant _ qkind ty trigger body =>
     lquantToExpr qkind ty trigger body (qLevel + 1)
 
+/-- Extract trigger patterns from Lambda's trigger expression representation -/
+partial def extractTriggerPatterns [Inhabited M]
+    (trigger : Lambda.LExpr CoreLParams.mono) (qLevel : Nat)
+    : ToCSTM M (Array (CoreDDM.Expr M)) := do
+  match trigger with
+  | .bvar _ 0 => pure #[]  -- noTrigger
+  | .app _ (.app _ (.op _ name _) triggerExpr) rest =>
+    if name.name == "TriggerGroup.addTrigger" then
+      let expr ← lexprToExpr triggerExpr qLevel
+      let restExprs ← extractTriggerPatterns rest qLevel
+      pure (#[expr] ++ restExprs)
+    else if name.name == "Triggers.addGroup" then
+      -- Triggers.addGroup adds a trigger group to a triggers list
+      -- triggerExpr is a TriggerGroup, rest is the Triggers list
+      let groupExprs ← extractTriggerPatterns triggerExpr qLevel
+      let restExprs ← extractTriggerPatterns rest qLevel
+      pure (groupExprs ++ restExprs)
+    else
+      ToCSTM.throwError "extractTriggerPatterns" s!"unexpected trigger operation {name.name}"
+  | .op _ name _ =>
+    if name.name == "TriggerGroup.empty" || name.name == "Triggers.empty" then
+      pure #[]
+    else
+      ToCSTM.throwError "extractTriggerPatterns" s!"unexpected trigger operation {name.name}"
+  | _ =>
+    -- Single trigger expression
+    let expr ← lexprToExpr trigger qLevel
+    pure #[expr]
+
 partial def lquantToExpr [Inhabited M]
     (qkind : Lambda.QuantifierKind) (ty : Option Lambda.LMonoTy)
     (trigger : Lambda.LExpr CoreLParams.mono) (body : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
-  -- dbg_trace f!"trigger: {trigger}"
   let name : Ann String M := ⟨default, s!"x{qLevel - 1}"⟩
   modify (·.addBoundVars #[name.val])
   let tyExpr ← match ty with
@@ -331,15 +359,15 @@ partial def lquantToExpr [Inhabited M]
   let bind := Bind.bind_mk default name ⟨default, none⟩ tyExpr
   let dl := DeclList.declAtom default bind
   let hasNoTrigger := trigger matches .bvar _ 0
-  let triggerExpr ← if hasNoTrigger then pure (.bvar default 0)
-                    else lexprToExpr trigger qLevel
-  let bodyExpr ← lexprToExpr body qLevel
   if hasNoTrigger then
+    let bodyExpr ← lexprToExpr body qLevel
     match qkind with
     | .all => pure (.forall default dl bodyExpr)
     | .exist => pure (.exists default dl bodyExpr)
   else
-    let trigAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, #[triggerExpr]⟩
+    let triggerExprs ← extractTriggerPatterns trigger qLevel
+    let bodyExpr ← lexprToExpr body qLevel
+    let trigAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, triggerExprs.reverse⟩
     let tg := TriggerGroup.trigger default trigAnn
     let tl := Triggers.triggersAtom default tg
     match qkind with
@@ -401,7 +429,7 @@ partial def lopToExpr [Inhabited M]
   let ty := CoreType.int default  -- placeholder type
   match args with
   | [] => do
-    -- No built-in functions are 0-ary.
+    -- Trigger operations are handled at quantifier level, not as expressions
     ToCSTM.throwError "lopToExpr" s!"0-ary op {name} not found"
   | [arg] =>
     match name with
