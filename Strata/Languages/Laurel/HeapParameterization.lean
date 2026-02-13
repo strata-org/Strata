@@ -290,7 +290,7 @@ where
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
-    | .New name =>
+    | .New _name =>
         -- Allocate a new object: get the current counter, increment it, return the old value
         -- 1. Save the current counter: $freshVar := Heap..counter(heapVar)
         -- 2. Update the heap with incremented counter: heapVar := MkHeap(Heap..data(heapVar), Heap..counter(heapVar) + 1)
