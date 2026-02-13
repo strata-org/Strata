@@ -259,6 +259,10 @@ op command_procedure (name : Ident,
 op command_typedecl (name : Ident, args : Option Bindings) : Command =>
   "type " name args ";\n";
 
+@[declareTypeForward(name, some args)]
+op command_forward_typedecl (name : Ident, args : Option Bindings) : Command =>
+  "forward type " name args ";\n";
+
 @[aliasType(name, some args, rhs)]
 op command_typesynonym (name : Ident,
                         args : Option Bindings,
@@ -346,6 +350,12 @@ op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>
   "datatype " name typeParams " {" constructors "}" ";\n";
+
+// Mutual block for defining mutually recursive types
+// Types should be forward-declared before the mutual block
+@[scope(commands)]
+op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
+  "mutual\n" indent(2, commands) "end;\n";
 
 #end
 

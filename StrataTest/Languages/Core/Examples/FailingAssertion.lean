@@ -111,20 +111,14 @@ info:
 Obligation: assert_0
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, (- 1))
 
 Obligation: assert_1
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, (- 1))
 
 Obligation: assert_2
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, 7)
 -/
 #guard_msgs in
 #eval verify "cvc5" failingThrice (options := .quiet)
