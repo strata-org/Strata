@@ -151,8 +151,6 @@ theorem EvalStmtDefMonotone
   | .goto _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
-  termination_by (Stmt.sizeOf s)
-  decreasing_by all_goals term_by_mem
 
 theorem EvalBlockDefMonotone
   [DecidableEq P.Ident]
@@ -173,6 +171,4 @@ theorem EvalBlockDefMonotone
     apply EvalBlockDefMonotone (σ:=σ1) (δ:=δ1)
     apply EvalStmtDefMonotone <;> assumption
     assumption
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals term_by_mem
 end

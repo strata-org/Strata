@@ -2059,8 +2059,6 @@ theorem EvalBlockRefinesContract :
       -- apply Heval
     . apply EvalBlockRefinesContract
       apply Hevals
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals term_by_mem
 
 theorem EvalStmtRefinesContract :
   EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
