@@ -39,8 +39,9 @@ procedure modifyContainerTransparant(c: Container)
   c#value := c#value + 1;
 }
 
-procedure caller(c: Container, d: Container) {
-  assume c != d;
+procedure caller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
   var x: int := d#value;
   modifyContainerOpaque(c)
   assert x == d#value; // pass
@@ -85,10 +86,10 @@ procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
   modifies c
   modifies d
 
-procedure multipleModifiesClausesCaller(c: Container, d: Container, e: Container) {
-  assume c != d;
-  assume d != e;
-  assume c != e;
+procedure multipleModifiesClausesCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var e: Container := new Container;
   var x: int := e#value;
   multipleModifiesClauses(c, d, e)
   assert x == e#value; // pass
