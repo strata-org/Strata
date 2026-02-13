@@ -208,4 +208,33 @@ axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex ::  { f1
 #guard_msgs in
 #eval ASTtoCST test3
 
+def test4 :=
+#strata
+program Core;
+
+function identity<a>(x : a) : a;
+function makePair<a, b>(x : a, y : b) : Map a b;
+
+procedure TestDifferentInstantiations() returns ()
+{
+  var m : Map int bool;
+  m := makePair(identity(42), identity(true));
+};
+#end
+
+/--
+info: Rendered Program:
+
+function identity<a> (x : tvar!a) : tvar!a;
+function makePair<a, b> (x : tvar!a, y : tvar!b) : Map tvar!a tvar!b;
+procedure TestDifferentInstantiations () returns ()
+ {
+var m : (Map int bool);
+  (m) := makePair(identity(42), identity(true));
+  }
+;
+-/
+#guard_msgs in
+#eval ASTtoCST test4
+
 end Strata.Test
