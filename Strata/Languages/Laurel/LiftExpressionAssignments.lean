@@ -47,7 +47,7 @@ Becomes:
     b := true;
     $c_0 := b;
   }
-  var z: bool := #c_0 || b;
+  var z: bool := $c_0 || b;
 
 Example 3 — Statement-level assignment:
   x := expr;
