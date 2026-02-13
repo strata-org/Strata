@@ -68,10 +68,12 @@ datatype List () { Nil(), Cons(head: int, tail: List) };
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
 const fooConst : int;
-function id(x : int, y : int) : int { y }
-function foo<T1, T2>(x : T1) : Map T1 T2;
-
 axiom [fooConst_value]: fooConst == 5;
+
+function id(x : int, y : int) : int { y }
+
+function foo<T1, T2>(x : T1) : Map T1 T2;
+axiom [foo_ax]: (forall x : int :: (foo(x))[1] == true);
 
 function f1(x: int): int;
 axiom [f1_ax]: (forall x : int :: f1(x) > x);
@@ -111,15 +113,16 @@ type T1 (a0 : Type);
 type Byte := bv8;
 type IntMap := Map int int;
 type MyMap (a0 : Type, a1 : Type);
-type Foo (a : Type, b : Type) := Map b a;
+type Foo (a : Type, b : Type) := Map tvar!b tvar!a;
 datatype List {(Nil()),(Cons(head : int, tail : List))};
 datatype Tree {(Leaf(val : int)),(Node(left : Tree, right : Tree))};
 function fooConst () : int;
+axiom [fooConst_value]: fooConst==5;
 function id (x : int, y : int) : int {
 y
 }
-function foo<T1, T2> (x : T1) : Map T1 T2;
-axiom [fooConst_value]: fooConst==5;
+function foo<T1, T2> (x : tvar!T1) : Map tvar!T1 tvar!T2;
+axiom [foo_ax]: forall x0 : int :: (foo(x0))[1]==true;
 function f1 (x : int) : int;
 axiom [f1_ax]: forall x0 : int :: f1(x0)>x0;
 function f2 (x : int, y : bool) : bool;
@@ -160,6 +163,17 @@ spec { requires List..isCons(xs); } {
 #end
 
 
+/--
+info: Rendered Program:
+
+datatype List (a : Type) {(Nil()),(Cons(head : tvar!a, tail : (List tvar!a)))};
+procedure Extract<a> (xs : (List tvar!a)) returns (h : tvar!a)
+spec{
+  requires [Extract_requires_0]: List..isCons(xs);
+    } {
+}
+;
+-/
 #guard_msgs in
 #eval ASTtoCST test2
 

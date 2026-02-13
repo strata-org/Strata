@@ -133,25 +133,12 @@ def ToCSTM.throwError [Inhabited M] (fn : String) (desc : String)
   let ctx ← get
   throw [.unsupportedConstruct fn desc ctx.toErrorString default]
 
-#print CoreDDM.CoreType
-
 /-- Convert `LMonoTy` to `CoreType` -/
 def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     ToCSTM M (CoreType M) := do
-  let ctx ← get
   match ty with
   | .ftvar name =>
-    -- dbg_trace f!"lmonoTyToCoreType: ty: {ty} ctx: {repr ctx}"
     pure (.tvar default name)
-    -- Lambda `.ftvars` are really just bound type variables.
-    -- match ctx.boundTypeVars.toList.findIdx? (· == name) with
-    -- | some idx =>
-    --   if idx < ctx.boundTypeVars.size then
-    --     let bvarIdx := ctx.boundTypeVars.size - (idx + 1)
-    --     pure (.bvar default bvarIdx)
-    --   else
-    --     ToCSTM.throwError "lmonoTyToCoreType" s!"unbound ftvar {name}"
-    -- | none => ToCSTM.throwError "lmonoTyToCoreType" s!"unbound ftvar {name}"
   | .bitvec 1 => pure (.bv1 default)
   | .bitvec 8 => pure (.bv8 default)
   | .bitvec 16 => pure (.bv16 default)
@@ -203,12 +190,11 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
 /-- Convert a datatype declaration to CST -/
 def datatypeToCST [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
     (_md : Imperative.MetaData Expression) : ToCSTM M (List (Command M)) := do
-  modify ToCSTContext.pushScope
   let mut results := []
+  modify ToCSTContext.pushScope
   for dt in datatypes do
-    -- dbg_trace f!"dt: {dt}"
-    let name : Ann String M := ⟨default, dt.name⟩
     modify (·.addBoundTypeVars dt.typeArgs.toArray)
+    let name : Ann String M := ⟨default, dt.name⟩
     let args : Ann (Option (Bindings M)) M :=
       if dt.typeArgs.isEmpty then
         ⟨default, none⟩
@@ -226,7 +212,6 @@ def datatypeToCST [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
         else do
           let bindings ← c.args.mapM fun (id, ty) => do
             let paramName : Ann String M := ⟨default, id.name⟩
-            -- dbg_trace f!"id: {id} ty: {ty}"
             let paramType ← lmonoTyToCoreType ty
             pure (Binding.mkBinding default paramName (TypeP.expr paramType))
           pure ⟨default, some ⟨default, bindings.toArray⟩⟩
