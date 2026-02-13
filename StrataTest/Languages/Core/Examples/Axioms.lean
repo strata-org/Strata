@@ -149,6 +149,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" axiomPgm2
+#eval verify "cvc5" axiomPgm2
 
 ---------------------------------------------------------------------

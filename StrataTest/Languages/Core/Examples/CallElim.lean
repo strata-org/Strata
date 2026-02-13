@@ -46,7 +46,7 @@ private def testCallElim
       dbg_trace f!"New Program:\n{elimProgram}"
       let runner tempDir :=
         EIO.toIO (fun dm => IO.Error.userError (toString (dm.format none)))
-                    (Core.verify "z3" elimProgram tempDir .none Options.quiet)
+                    (Core.verify "cvc5" elimProgram tempDir .none Options.quiet)
       match tempDir with
       | .none =>
         IO.FS.withTempDir runner

@@ -11,6 +11,8 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.CmdEval
+import Strata.DL.Lambda.LTyUnify
+import Strata.DL.Lambda.LExprT
 
 ---------------------------------------------------------------------
 
@@ -112,6 +114,48 @@ private def getCurrentGlobals (E : Env) : VarSubst :=
   E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
 
 /--
+Extract the type from an expression that has already been typechecked (so e.g.
+`.fvar` and `.op` nodes have their types stored in the `Option LMonoTy` field).
+-/
+private def getExprType (e : Expression.Expr) : Option LMonoTy :=
+  match e with
+  | .fvar _ _ ty => ty
+  | .op _ _ ty => ty
+  | .const _ c => some c.ty
+  | .app _ fn _ =>
+    -- For application, get the return type from the function type
+    match getExprType fn with
+    | some (.tcons "arrow" [_, ret]) => some ret
+    | _ => none
+  | .eq _ _ _ => some .bool
+  | .quant _ _ _ _ _ => some .bool
+  | .abs _ ty e =>
+    match ty, getExprType e with
+    | some ty1, some ty2 => some (.arrow ty1 ty2)
+    | _, _ => none
+  | .ite _ _ e1 e2 =>
+    let ty1 := getExprType e1
+    if ty1 == getExprType e2 then ty1 else none
+  | .bvar _ _ => none
+
+/--
+Compute type substitution by unifying actual argument types with input types
+and LHS types with output types.
+-/
+private def computeTypeSubst (input_tys output_tys: List LMonoTy)
+  (args : List Expression.Expr) (lhs : List Expression.Ident) (E : Env) :
+  Subst :=
+  let actual_tys := args.filterMap getExprType
+  let lhs_tys := lhs.filterMap (fun l =>
+    (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  let input_constraints := actual_tys.zip input_tys
+  let output_constraints := lhs_tys.zip output_tys
+  let constraints := input_constraints ++ output_constraints
+  match Constraints.unify constraints SubstInfo.empty with
+  | .ok substInfo => substInfo.subst
+  | .error _ => Subst.empty
+
+/--
 Evaluate a procedure call `lhs := pname(args)`.
 -/
 def Command.evalCall (E : Env) (old_var_subst : SubstMap)
@@ -119,6 +163,10 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
+    -- Compute type substitution to instantiate polymorphic type variables.
+    let tySubst := computeTypeSubst proc.header.inputs.values
+      proc.header.outputs.values args lhs E
+
     -- (Pre-call) Create formal-to-actual argument mapping.
     let formal_arg_subst := mkFormalArgSubst proc args E old_var_subst
     -- (Pre-call) Get current global values for old expression handling.
@@ -129,10 +177,13 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- current values for unmodified.
     let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
 
+    -- Apply type substitution to preconditions to instantiate type variables.
+    let preconditions_typed := proc.spec.preconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create pre-call substitution for preconditions.
     let precond_subst := formal_arg_subst ++ current_globals
     -- Generate precondition proof obligations.
-    let preconditions := callConditions proc .Requires proc.spec.preconditions precond_subst
+    let preconditions := callConditions proc .Requires preconditions_typed precond_subst
     -- It's safe to evaluate the preconditions in the current environment
     -- (pre-call context).
     let preconditions := preconditions.map
@@ -140,10 +191,13 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
 
+    -- Apply type substitution to postconditions to instantiate type variables.
+    let postconditions_typed := proc.spec.postconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create post-call substitution for postconditions.
     let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
     let postcond_subst_map := postcond_subst_init ++ current_globals
-    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst_map proc.spec.postconditions
+    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst_map postconditions_typed
     let postcond_subst_full :=  postcond_subst_init ++ globals_post_subst
     let postconditions := callConditions proc .Ensures postconditions postcond_subst_full
 

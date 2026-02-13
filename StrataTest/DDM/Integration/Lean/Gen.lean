@@ -177,6 +177,7 @@ number of parameters: 1
 constructors:
 TestDialect.Expr.fvar : {α : Type} → α → Nat → Expr α
 TestDialect.Expr.bvar : {α : Type} → α → Nat → Expr α
+TestDialect.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
 TestDialect.Expr.trueExpr : {α : Type} → α → Expr α
 TestDialect.Expr.and : {α : Type} → α → Expr α → Expr α → Expr α
 TestDialect.Expr.lambda : {α : Type} → α → TestDialectType α → Bindings α → Expr α → Expr α
@@ -224,6 +225,8 @@ def testRoundTrip {β M} [h : Strata.IsAST β M] [BEq (β Unit)] (e : β Unit) :
 #guard testRoundTrip <|
   Expr.lambda () (.bool ()) (Bindings.mkBindings () ⟨(), #[]⟩) (.trueExpr ())
 #guard testRoundTrip <| Expr.fvar () 1
+#guard testRoundTrip <| Expr.app () (.fvar () 0) (.trueExpr ())
+#guard testRoundTrip <| Expr.app () (.app () (.fvar () 0) (.trueExpr ())) (.fvar () 1)
 
 open Strata (OfAstM)
 

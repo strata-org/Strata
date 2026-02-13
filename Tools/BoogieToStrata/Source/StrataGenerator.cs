@@ -846,7 +846,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override ReturnCmd VisitReturnCmd(ReturnCmd node) {
-        IndentLine("goto end;");
+        IndentLine("goto _exit;");
         return node;
     }
 
@@ -1331,7 +1331,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             }
         }
 
-        IndentLine("end : {}");
+        IndentLine("_exit : {}");
 
         DecIndent();
         WriteLine("};");
