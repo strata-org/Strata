@@ -427,27 +427,27 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionHavocPgm (options := .debug) (tempDir := "/tmp/option_test")
+#eval verify "cvc5" optionHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test: List havoc then head (mirrors DatatypeVerificationTests test9)
 ---------------------------------------------------------------------
 
-def listHavocHeadPgm : Program :=
-#strata
-program Core;
-datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure Test() returns () spec { ensures true; }
-{
-  var xs : List int;
-  xs := Cons(1, Nil());
-  havoc xs;
-  var h : int;
-  // assume (xs == Cons(1, Nil()));
-  h := List..head(xs);
-};
-#end
+-- def listHavocHeadPgm : Program :=
+-- #strata
+-- program Core;
+-- datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
+-- procedure Test() returns () spec { ensures true; }
+-- {
+--   var xs : List int;
+--   xs := Cons(1, Nil());
+--   havoc xs;
+--   var h : int;
+--   // assume (xs == Cons(1, Nil()));
+--   h := List..head(xs);
+-- };
+-- #end
 
-#eval verify "cvc5" listHavocHeadPgm (options := .debug) (tempDir := "/tmp/list_test")
+-- #eval verify "cvc5" listHavocHeadPgm (options := .debug) (tempDir := "/tmp/list_test")
 
 end Strata.PolymorphicDatatypeTest

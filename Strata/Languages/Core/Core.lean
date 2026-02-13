@@ -50,29 +50,31 @@ def typeCheck (options : Options) (program : Program)
 def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
+  -- Build environment with builtins + datatypes
+  let factory ← Core.Factory.addFactory moreFns
+  -- Build PrecondElim factory from pre-typecheck datatypes + program function decls
+  let preDataTypes := program.decls.filterMap fun decl =>
+    match decl with
+    | .type (.data d) _ => some d
+    | _ => none
+  let precondFactory ← preDataTypes.foldlM (fun F block => do
+    let bf ← Lambda.genBlockFactory (T := CoreLParams) block
+    F.addFactory bf) factory
+  let precondFactory := program.decls.foldl (fun F decl =>
+    match decl with
+    | .func func _ => F.push func
+    | _ => F) precondFactory
+  -- Run PrecondElim before typechecking so generated assertions get typechecked
+  let (program, _) := PrecondElim.precondElim program precondFactory
   let program ← typeCheck options program moreFns
-  -- Extract datatypes from program declarations and add to environment
+  -- Build evaluation environment from post-typecheck program (aliases resolved)
   let datatypes := program.decls.filterMap fun decl =>
     match decl with
     | .type (.data d) _ => some d
     | _ => none
-  let σ ← (Lambda.LState.init).addFactory Core.Factory
-  let σ ← σ.addFactory moreFns
-  let E := { Env.init with exprEnv := σ,
-                           program := program }
+  let σ ← (Lambda.LState.init).addFactory factory
+  let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
-  -- Build a Factory that includes all function declarations from the program
-  -- (needed for PrecondElim to find calls to user-defined partial functions)
-  let programFactory := program.decls.foldl (fun F decl =>
-    match decl with
-    | .func func _ => F.push func
-    | _ => F) E.factory
-  -- Run PrecondElim: insert assertions for partial function calls
-  -- and strip preconditions from function declarations.
-  -- The Factory is not updated here; Program.eval will add the
-  -- (now precondition-free) functions as it processes declarations.
-  let (program, _) := PrecondElim.precondElim program programFactory
-  let E := { E with program := program }
   let pEs := Program.eval E
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
