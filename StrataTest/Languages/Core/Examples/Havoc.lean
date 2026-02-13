@@ -29,13 +29,15 @@ procedure S() returns ()
 /--
 info: procedure S :  () → ()
   modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+  preconditions: 
+  postconditions: 
 {
-  init (x : int) := init_x_0
-  x := #1
-  havoc x
-  assert [x_eq_1] ((x : int) == #1)
+  {
+    init (x : int) := init_x_0
+    x := #1
+    havoc x
+    assert [x_eq_1] ((x : int) == #1)
+  }
 }
 Errors: #[]
 -/
@@ -67,13 +69,15 @@ Model:
 Evaluated program:
 procedure S :  () → ()
   modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+  preconditions: 
+  postconditions: 
 {
-  init (x : int) := init_x_0
-  x := #1
-  havoc x
-  assert [x_eq_1] ($__x0 == #1)
+  {
+    init (x : int) := init_x_0
+    x := #1
+    havoc x
+    assert [x_eq_1] ($__x0 == #1)
+  }
 }
 ---
 info:

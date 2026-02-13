@@ -210,6 +210,9 @@ instance : Inhabited StmtExpr where
 instance : Inhabited HighTypeMd where
   default := { val := HighType.TVoid, md := default }
 
+instance : Inhabited StmtExprMd where
+  default := { val := default, md := default }
+
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true
   | HighType.TBool, HighType.TBool => true
