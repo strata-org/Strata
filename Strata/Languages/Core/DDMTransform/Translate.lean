@@ -930,12 +930,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
         let decl := bindings.freeVars[funcIndex]!
         match decl with
         | .func func _md =>
-          let funcOp := .op () func.name (some func.output)
           match argsa with
-          | [] => return funcOp
+          | [] => return func.opExpr
           | _ =>
             let args ← translateExprs p bindings argsa.toArray
-            return .mkApp () funcOp args.toList
+            return .mkApp () func.opExpr args.toList
         | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
       else
         TransM.error s!"translateExpr out-of-range bound variable: {i}"
@@ -1149,12 +1148,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- Index 1: function name (from declareFn)
     -- Index 2+: outer scope variables
     --
-    -- We need to include both the function and parameters in boundVars.
+    -- We include both the function and parameters in boundVars.
     -- The function is represented as an op expression that can be called.
-    let funcBinding : LExpr CoreLParams.mono := .op () name (some outputMono)
+    let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
+    let funcBinding : LExpr CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-    -- Order: existing boundVars, then function, then parameters
-    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
+    -- Order: function first, then existing boundVars, then parameters
+    let bodyBindings := { bindings with boundVars := #[funcBinding] ++ bindings.boundVars ++ in_bindings }
 
     -- Translate preconditions
     let preconds ← translateFnPreconds p name bodyBindings precondsa
@@ -1187,9 +1187,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
                   attr := #[],
                   preconditions := preconds }
     let funcDecl := Core.Decl.func func md
-    -- Add the function to the local scope for subsequent statements
+    -- Add the function to boundVars for subsequent statements.
+    -- The DDM parser's declareFn adds the function at index 0 (most recent in scope),
+    -- so subsequent statements reference it via bvar index 0.
+    -- Note: funcBinding with proper type was already created above for bodyBindings.
+    let newBoundVars := bindings.boundVars.push funcBinding
     let newFreeVars := bindings.freeVars.push funcDecl
-    let updatedBindings := { bindings with freeVars := newFreeVars }
+    let updatedBindings := { bindings with boundVars := newBoundVars, freeVars := newFreeVars }
     return ([.funcDecl decl md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 

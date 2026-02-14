@@ -20,38 +20,30 @@ section PrecondElimTests
 def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
-def typeCheckProgram (p : Core.Program) : Core.Program × @Lambda.Factory CoreLParams :=
-  let env := (Lambda.LContext.default.addFactoryFunctions Core.Factory)
-  match Program.typeCheck env Lambda.TEnv.default p with
-  | .error e => panic! s!"Type check failed: {Std.format e}"
-  | .ok (p', _) =>
-    -- Build factory the same way typeCheckAndPartialEval does
-    let datatypes := p'.decls.filterMap fun decl =>
-      match decl with
-      | .type (.data d) _ => some d
-      | _ => none
-    let σ := (Lambda.LState.init).setFactory Core.Factory
-    let E := { Env.init with exprEnv := σ, program := p' }
-    match E.addDatatypes datatypes with
-    | .error e => panic! s!"addDatatypes failed: {Std.format e}"
-    | .ok E =>
-      -- Also add explicit function declarations
-      let E := p'.decls.foldl (fun E d =>
-        match d with
-        | .func f _ => match E.addFactoryFunc f with
-          | .ok E' => E'
-          | .error _ => E
-        | _ => E) E
-      (p', E.factory)
-
-def runPrecondElim (p : Core.Program) (F : @Lambda.Factory CoreLParams)
-    : Core.Program :=
-  (precondElim p F).fst
-
 def transformProgram (t : Strata.Program) : Core.Program :=
-  let p := translate t
-  let (p', F) := typeCheckProgram p
-  (runPrecondElim p' F).eraseTypes
+  let program := translate t
+  -- Build PrecondElim factory from pre-typecheck datatypes + program function decls
+  -- (mirrors typeCheckAndPartialEval logic)
+  let factory := Core.Factory
+  let preDataTypes := program.decls.filterMap fun decl =>
+    match decl with
+    | .type (.data d) _ => some d
+    | _ => none
+  let precondFactory := match preDataTypes.foldlM (fun F block => do
+    let bf ← Lambda.genBlockFactory (T := CoreLParams) block
+    F.addFactory bf) factory with
+    | .ok f => f
+    | .error e => panic! s!"genBlockFactory failed: {Std.format e}"
+  let precondFactory := program.decls.foldl (fun F decl =>
+    match decl with
+    | .func func _ => F.push func
+    | _ => F) precondFactory
+  -- Run PrecondElim before typechecking
+  let (program, _) := PrecondElim.precondElim program precondFactory
+  -- Type check (but don't partial eval)
+  match Core.typeCheck Options.default program with
+  | .error e => panic! s!"Type check failed: {Std.format e}"
+  | .ok program => program.eraseTypes
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -67,6 +59,9 @@ procedure test(a : int) returns ()
 #end
 
 /--
+info: [Strata.Core] Type checking succeeded.
+
+---
 info: procedure test :  ((a : int)) → ()
   modifies: []
   preconditions: 
@@ -96,6 +91,9 @@ function foo(x : int, y : int) : int
 #end
 
 /--
+info: [Strata.Core] Type checking succeeded.
+
+---
 info: procedure safeMod$$wf :  ((x : int) (y : int)) → ()
   modifies: []
   preconditions: 
@@ -139,6 +137,9 @@ spec {
 #end
 
 /--
+info: [Strata.Core] Type checking succeeded.
+
+---
 info: type:
 List
 Type Arguments:
@@ -186,6 +187,9 @@ spec {
 #end
 
 /--
+info: [Strata.Core] Type checking succeeded.
+
+---
 info: type:
 List
 Type Arguments:
@@ -215,5 +219,44 @@ procedure test :  ((xs : List)) → ()
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))
+
+/-! ### Test 5: Function decl statement with precondition referencing local variable -/
+
+def funcDeclPrecondPgm :=
+#strata
+program Core;
+
+procedure test() returns ()
+{
+  var x : int := 1;
+  function safeDiv(y : int) : int
+    requires y div x > 0;
+    { y div x }
+  var z : int := safeDiv(5);
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: procedure test :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  init (x : int) := #1
+  safeDiv$$wf : {init (y : int) := init_y
+   assert [safeDiv_precond_calls_Int.Div_0] (~Bool.Not (x == #0))
+   assume [precond_safeDiv_0] ((~Int.Gt ((~Int.Div y) x)) #0)
+   assert [safeDiv_body_calls_Int.Div_0] (~Bool.Not (x == #0))}
+  #[<[fileRange]: :6005-6078>] funcDecl <function>
+  assert [init_calls_safeDiv_0] ((~Int.Gt ((~Int.Div #5) x)) #0)
+  init (z : int) := (~safeDiv #5)
+}
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram funcDeclPrecondPgm))
 
 end PrecondElimTests

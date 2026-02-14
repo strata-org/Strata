@@ -142,39 +142,78 @@ def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function) : Option De
 
 /-! ## Statement transformation -/
 
+/-- Convert a PureFunc to an LFunc for adding to the factory -/
+def pureFuncToLFunc (decl : Imperative.PureFunc Expression) : Function := {
+  name := decl.name
+  typeArgs := decl.typeArgs
+  isConstr := decl.isConstr
+  inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
+  output := Lambda.LTy.toMonoTypeUnsafe decl.output
+  body := decl.body
+  attr := decl.attr
+  concreteEval := none
+  axioms := decl.axioms
+  preconditions := decl.preconditions
+}
+
 mutual
 def transformStmts (F : @Lambda.Factory CoreLParams) (ss : List Statement)
-    : List Statement :=
+    : List Statement × @Lambda.Factory CoreLParams :=
   match ss with
-  | [] => []
-  | s :: rest => transformStmt F s ++ transformStmts F rest
+  | [] => ([], F)
+  | s :: rest =>
+    let (s', F') := transformStmt F s
+    let (rest', F'') := transformStmts F' rest
+    (s' ++ rest', F'')
   termination_by Imperative.Block.sizeOf ss
   decreasing_by all_goals (simp_wf; omega)
 
 def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
-    : List Statement :=
+    : List Statement × @Lambda.Factory CoreLParams :=
   match s with
   | .cmd (.cmd c) =>
-    collectCmdAsserts F c ++ [.cmd (.cmd c)]
+    (collectCmdAsserts F c ++ [.cmd (.cmd c)], F)
   | .cmd (.call lhs pname args md) =>
-    collectCallAsserts F pname args ++ [.call lhs pname args md]
+    (collectCallAsserts F pname args ++ [.call lhs pname args md], F)
   | .block lbl b md =>
-    [.block lbl (transformStmts F b) md]
+    let (b', F') := transformStmts F b
+    ([.block lbl b' md], F')
   | .ite c thenb elseb md =>
-    [.ite c (transformStmts F thenb) (transformStmts F elseb) md]
+    let (thenb', F') := transformStmts F thenb
+    let (elseb', F'') := transformStmts F' elseb
+    ([.ite c thenb' elseb' md], F'')
   | .loop guard measure invariant body md =>
     let invAsserts := match invariant with
       | some inv => collectAsserts F inv "loop_invariant"
       | none => []
     let guardAsserts := collectAsserts F guard "loop_guard"
-    guardAsserts ++ invAsserts ++ [.loop guard measure invariant (transformStmts F body) md]
+    let (body', F') := transformStmts F body
+    (guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md], F')
   | .goto lbl md =>
-    [.goto lbl md]
-  -- TODO: Generate well-formedness checks for funcDecl preconditions
-  -- (similar to mkFuncWFProc but as blocks preceding the funcDecl statement)
+    ([.goto lbl md], F)
   | .funcDecl decl md =>
+    let funcName := decl.name.name
+    -- Add function to factory before processing its preconditions/body
+    let func := pureFuncToLFunc decl
+    let F' := F.push func
+    let (precondStmts, _) := decl.preconditions.foldl (fun (stmts, idx) precond =>
+      let asserts := collectAsserts F' precond s!"{funcName}_precond"
+      let assume := Statement.assume s!"precond_{funcName}_{idx}" precond
+      (stmts ++ asserts ++ [assume], idx + 1)) ([], 0)
+    let bodyStmts := match decl.body with
+      | none => []
+      | some body => collectAsserts F' body s!"{funcName}_body"
+    let wfStmts := precondStmts ++ bodyStmts
     let decl' := { decl with preconditions := [] }
-    [.funcDecl decl' md]
+    let wfBlock := wfStmts.filter fun s => match s with
+      | .assert _ _ _ => true | .assume _ _ _ => true | _ => false
+    if wfBlock.isEmpty then
+      ([.funcDecl decl' md], F')
+    else
+      -- Add init statements for function parameters so they're in scope
+      let paramInits := decl.inputs.toList.map fun (name, ty) =>
+        Statement.init name ty (.fvar () (CoreIdent.unres ("init_" ++ name.name)) none)
+      ([.block s!"{funcName}{wfSuffix}" (paramInits ++ wfBlock), .funcDecl decl' md], F')
   termination_by s.sizeOf
   decreasing_by all_goals (simp_wf; try omega)
 end
@@ -196,30 +235,33 @@ Returns the transformed program and a Factory with preconditions removed.
 -/
 def precondElim (p : Program) (F : @Lambda.Factory CoreLParams)
     : Program × @Lambda.Factory CoreLParams :=
-  let newDecls := transformDecls F p.decls
+  let (newDecls, _) := transformDecls F p.decls
   ({ decls := newDecls }, stripPreconditions F)
 where
   transformDecls (F : @Lambda.Factory CoreLParams) (decls : List Decl)
-      : List Decl :=
+      : List Decl × @Lambda.Factory CoreLParams :=
     match decls with
-    | [] => []
+    | [] => ([], F)
     | d :: rest =>
-      let rest' := transformDecls F rest
       match d with
       | .proc proc md =>
-        let body' := transformStmts F proc.body
+        let (body', F') := transformStmts F proc.body
         let proc' := { proc with body := body' }
         let procDecl := Decl.proc proc' md
+        let (rest', F'') := transformDecls F' rest
         match mkContractWFProc F proc with
-        | some wfDecl => wfDecl :: procDecl :: rest'
-        | none => procDecl :: rest'
+        | some wfDecl => (wfDecl :: procDecl :: rest', F'')
+        | none => (procDecl :: rest', F'')
       | .func func md =>
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
+        let (rest', F') := transformDecls F rest
         match mkFuncWFProc F func with
-        | some wfDecl => wfDecl :: funcDecl :: rest'
-        | none => funcDecl :: rest'
-      | _ => d :: rest'
+        | some wfDecl => (wfDecl :: funcDecl :: rest', F')
+        | none => (funcDecl :: rest', F')
+      | _ =>
+        let (rest', F') := transformDecls F rest
+        (d :: rest', F')
 
 end PrecondElim
 end Core

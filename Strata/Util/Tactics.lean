@@ -101,3 +101,19 @@ syntax "term_by_mem" "[" (ident "," ident),* "]" : tactic
 macro_rules
   | `(tactic| term_by_mem [ $[$types , $lemmas],* ]) =>
     `(tactic| solve | (add_mem_size_lemmas [$[$types, $lemmas],*]; (try simp_all); (try omega)))
+
+
+-- Test case: subset hypothesis should not be matched as membership
+example (l1 l2 : List Nat) (h_sub : l1 ⊆ l2) (x : Nat) (h_mem : x ∈ l1) :
+    sizeOf x < 1 + sizeOf l1 := by
+  term_by_mem
+
+-- Test case: List.Subset directly in context
+example (l1 l2 : List Nat) (h_sub : List.Subset l1 l2) (x : Nat) (h_mem : x ∈ l1) :
+    sizeOf x < 1 + sizeOf l1 := by
+  term_by_mem
+
+-- Test case: subset with membership in l2
+example (l1 l2 : List Nat) (h_sub : l1 ⊆ l2) (x : Nat) (h_mem : x ∈ l2) :
+    sizeOf x < 1 + sizeOf l2 := by
+  term_by_mem
