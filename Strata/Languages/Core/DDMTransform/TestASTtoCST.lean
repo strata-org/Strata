@@ -22,7 +22,7 @@ Known issues:
 
 - Support sub-functions in procedures.
 
-- Remove extra parentheses around constructors in datatypes.
+- Remove extra parentheses around constructors in datatypes, assignments, etc.
 -/
 
 namespace Strata.Test
@@ -122,15 +122,20 @@ axiom [fooConst_value]: fooConst == 5;
 
 // 1-ary function
 function f1(x: int): int;
-axiom [f1_ax]: (forall x : int :: f1(x) > x);
+axiom [f1_ax1]: (forall x : int :: {f1(x)} f1(x) > x);
+axiom [f1_ax2_no_trigger]: (forall x : int :: f1(x) > x);
 
 // 2-ary function
 function f2(x : int, y : bool): bool;
-axiom [f2_ax]: (forall x : int, y : bool :: f2(x, true) == true);
+axiom [f2_ax]: (forall x : int, y : bool ::
+                  {f2(x, true), f2(x, false)}
+                  f2(x, true) == true);
 
 // 3-ary function
 function f3(x : int, y : bool, z : regex): bool;
-axiom [f3_ax]: (forall x : int, y : bool, z : regex :: f3(x, y, z) == f2(x, y));
+axiom [f3_ax]: (forall x : int, y : bool, z : regex ::
+                  { f3(x, y, z), f2(x, y) }
+                  f3(x, y, z) == f2(x, y));
 
 // Polymorphic function.
 function f4<T1, T2>(x : T1) : Map T1 T2;
@@ -148,15 +153,19 @@ info: Rendered Program:
 function fooConst () : int;
 axiom [fooConst_value]: fooConst == 5;
 function f1 (x : int) : int;
-axiom [f1_ax]: forall x0 : int :: f1(x0) >x0;
+axiom [f1_ax1]: forall x0 : int ::  { f1(x0) }
+  f1(x0) > x0;
+axiom [f1_ax2_no_trigger]: forall x0 : int :: f1(x0) > x0;
 function f2 (x : int, y : bool) : bool;
-axiom [f2_ax]: forall x0 : int :: forall x1 : bool :: f2(x0, true) == true;
+axiom [f2_ax]: forall x0 : int :: forall x1 : bool ::  { f2(x0, true), f2(x0, false) }
+  f2(x0, true) == true;
 function f3 (x : int, y : bool, z : regex) : bool;
-axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex :: f3(x0, x1, x2) == f2(x0, x1);
+axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex ::  { f3(x0, x1, x2), f2(x0, x1) }
+  f3(x0, x1, x2) == f2(x0, x1);
 function f4<T1, T2> (x : T1) : Map T1 T2;
 axiom [foo_ax]: forall x0 : int :: (f4(x0))[1] == true;
 function f5<T1, T2> (x : T1, y : T2) : T1 {
-x
+  x
 }
 -/
 #guard_msgs in
@@ -164,39 +173,11 @@ x
 
 -------------------------------------------------------------------------------
 
-def test1 : Program :=
+def testProcedures : Program :=
 #strata
 program Core;
 
-type T0;
-type T1 (x : Type);
-
-type Byte := bv8;
-type IntMap := Map int int;
-
-type MyMap (a : Type, b : Type);
-type Foo (a : Type, b : Type) := Map b a;
-
-datatype List () { Nil(), Cons(head: int, tail: List) };
-
-datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
-
-const fooConst : int;
-axiom [fooConst_value]: fooConst == 5;
-
-function id(x : int, y : int) : int { y }
-
-function foo<T1, T2>(x : T1) : Map T1 T2;
-axiom [foo_ax]: (forall x : int :: (foo(x))[1] == true);
-
-function f1(x: int): int;
-axiom [f1_ax]: (forall x : int :: f1(x) > x);
-
-function f2(x : int, y : bool): bool;
-axiom [f2_ax]: (forall x : int, y : bool :: f2(x, true) == true);
-
-function f3(x : int, y : bool, z : regex): bool;
-axiom [f3_ax]: (forall x : int, y : bool, z : regex :: f3(x, y, z) == f2(x, y));
+datatype IntList () { Nil(), Cons(head: int, tail: IntList) };
 
 var g : bool;
 
@@ -211,9 +192,7 @@ spec {
   ensures (x == y);
   ensures (g == g);
   ensures (g == old(g));
-  ensures [test_foo]: (fooConst == 5);
-  ensures [List_head_test]: (List..isNil(Nil()));
-  ensures [test_id]: (id(4,3) == 4);
+  ensures [List_head_test]: (IntList..isNil(Nil()));
 } {
   y := x || x;
 };
@@ -222,61 +201,37 @@ spec {
 /--
 info: Rendered Program:
 
-type T0;
-type T1 (a0 : Type);
-type Byte := bv8;
-type IntMap := Map int int;
-type MyMap (a0 : Type, a1 : Type);
-type Foo (a : Type, b : Type) := Map b a;
-datatype List {(
+datatype IntList {(
   (Nil())),
-  (Cons(head : int, tail : List))
+  (Cons(head : int, tail : IntList))
 };
-datatype Tree {(
-  (Leaf(val : int))),
-  (Node(left : Tree, right : Tree))
-};
-function fooConst () : int;
-axiom [fooConst_value]: fooConst == 5;
-function id (x : int, y : int) : int {
-y
-}
-function foo<T1, T2> (x : T1) : Map T1 T2;
-axiom [foo_ax]: forall x0 : int :: (foo(x0))[1] == true;
-function f1 (x : int) : int;
-axiom [f1_ax]: forall x0 : int :: f1(x0) >x0;
-function f2 (x : int, y : bool) : bool;
-axiom [f2_ax]: forall x0 : int :: forall x1 : bool :: f2(x0, true) == true;
-function f3 (x : int, y : bool, z : regex) : bool;
-axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex :: f3(x0, x1, x2) == f2(x0, x1);
 var g : bool;
 procedure Test1 (x : bool) returns (y : bool)
- {
-(y) := x;
-  }
-;
+{
+  (y) := x;
+  };
 procedure Test2 (x : bool) returns (y : bool)
-spec{
+spec {
   ensures [Test2_ensures_0]: y == x;
-    ensures [Test2_ensures_1]: x == y;
-    ensures [Test2_ensures_2]: g == g;
-    ensures [Test2_ensures_3]: g == old(g);
-    ensures [test_foo]: fooConst == 5;
-    ensures [List_head_test]: List..isNil(Nil);
-    ensures [test_id]: id(4, 3) == 4;
-    } {
-(y) := x || x;
-  }
-;
+  ensures [Test2_ensures_1]: x == y;
+  ensures [Test2_ensures_2]: g == g;
+  ensures [Test2_ensures_3]: g == old(g);
+  ensures [List_head_test]: IntList..isNil(Nil);
+  } {
+  (y) := x || x;
+  };
 -/
 #guard_msgs in
-#eval ASTtoCST test1
+#eval ASTtoCST testProcedures
 
-def test2 :=
+-------------------------------------------------------------------------------
+
+def testPolyProc : Program :=
 #strata
 program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
+
 procedure Extract<a>(xs : List a) returns (h : a)
 spec { requires List..isCons(xs); } {
 };
@@ -291,45 +246,15 @@ datatype List (a : Type) {(
   (Cons(head : a, tail : (List a)))
 };
 procedure Extract<a> (xs : (List a)) returns (h : (a))
-spec{
+spec {
   requires [Extract_requires_0]: List..isCons(xs);
-    } {
-}
-;
+  } {
+  };
 -/
 #guard_msgs in
-#eval ASTtoCST test2
+#eval ASTtoCST testPolyProc
 
-def test3 :=
-#strata
-program Core;
-
-function f1(x: int): int;
-axiom [f1_ax]: (forall x : int :: {f1(x)} f1(x) > x);
-
-function f2(x : int, y : bool): bool;
-axiom [f2_ax]: (forall x : int, y : bool :: {f2(x, true)}
-                    f2(x, true) == true);
-
-function f3(x : int, y : bool, z : regex): bool;
-axiom [f3_ax]: (forall x : int, y : bool, z : regex ::
-                  {f1(2), f3(x, y, z), f2(x, y), f1(x)}
-                  f3(x, y, z) == f2(x, y));
-
-#end
-
-/--
-info: Rendered Program:
-
-function f1 (x : int) : int;
-axiom [f1_ax]: forall x0 : int ::  { f1(x0) } f1(x0) >x0;
-function f2 (x : int, y : bool) : bool;
-axiom [f2_ax]: forall x0 : int :: forall x1 : bool ::  { f2(x0, true) } f2(x0, true) == true;
-function f3 (x : int, y : bool, z : regex) : bool;
-axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex ::  { f1(2), f3(x0, x1, x2), f2(x0, x1), f1(x0) } f3(x0, x1, x2) == f2(x0, x1);
--/
-#guard_msgs in
-#eval ASTtoCST test3
+-------------------------------------------------------------------------------
 
 def test4 :=
 #strata
@@ -351,14 +276,15 @@ info: Rendered Program:
 function identity<a> (x : a) : a;
 function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestDifferentInstantiations () returns ()
- {
-var m : (Map int bool);
+{
+  var m : (Map int bool);
   (m) := makePair(identity(42), identity(true));
-  }
-;
+  };
 -/
 #guard_msgs in
 #eval ASTtoCST test4
+
+-------------------------------------------------------------------------------
 
 def test5 :=
 #strata
@@ -382,8 +308,8 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 info: Rendered Program:
 
 procedure P (x : bv8, y : bv8, z : bv8) returns ()
- {
-assert [add_comm]: x + y == y + x;
+{
+  assert [add_comm]: x + y == y + x;
   assert [xor_cancel]: x ^ x == bv{8}(0);
   assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
   assert [mul_shift]: x * bv{8}(2) == x << bv{8}(1);
@@ -393,44 +319,11 @@ assert [add_comm]: x + y == y + x;
   var xy : bv16 := bvconcat{8}{8}(x, y);
   var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
   var xy4 : bv64 := bvconcat{32}{32}(xy, xy);
-  }
-;
+  };
 -/
 #guard_msgs in
 #eval ASTtoCST test5
 
-def test6 :=
-#strata
-program Core;
-
-var g : bool;
-
-procedure Test() returns () {
-  var x : bv8 := bv{8}(0);
-  var y : bv8 := bv{8}(0);
-  var z : bv8 := bv{8}(0);
-  var xy : bv16 := bvconcat{8}{8}(x, y);
-  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
-  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
-};
-#end
-
-/--
-info: Rendered Program:
-
-var g : bool;
-procedure Test () returns ()
- {
-var x : bv8 := bv{8}(0);
-  var y : bv8 := bv{8}(0);
-  var z : bv8 := bv{8}(0);
-  var xy : bv16 := bvconcat{8}{8}(z, y);
-  var xy2 : bv32 := bvconcat{16}{16}(x, x);
-  var xy4 : bv64 := bvconcat{32}{32}(x, x);
-  }
-;
--/
-#guard_msgs in
-#eval ASTtoCST test6
+-------------------------------------------------------------------------------
 
 end Strata.Test

@@ -158,7 +158,7 @@ fn bvextract_31_0_64 (a : bv64) : bv32 => "bvextract{31}{0}{64}" "(" a ")";
 category TriggerGroup;
 category Triggers;
 op trigger (exprs : CommaSepBy Expr) : TriggerGroup =>
-  " { " exprs " } ";
+  " { " exprs " }\n  ";
 op triggersAtom (group : TriggerGroup) : Triggers =>
   group;
 op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
@@ -172,9 +172,9 @@ fn exists (d : DeclList, @[scope(d)] b : bool) : bool =>
 
 // Quantifiers with triggers
 fn forallT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "forall " d " :: " triggers b:3;
+  "forall " d " :: " triggers indent(2, b:3);
 fn existsT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "exists " d " :: " triggers b:3;
+  "exists " d " :: " triggers indent(2, b:3);
 
 category Lhs;
 op lhsIdent (v : Ident) : Lhs => v;
@@ -216,7 +216,7 @@ op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : S
 op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call" f "(" expr ")" ";\n";
 
-op block (c : Seq Statement) : Block => " {\n" indent(2, c) "}\n";
+op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b;
 op goto_statement (label : Ident) : Statement => "goto " label ";\n";
 
@@ -230,7 +230,7 @@ op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt
   free? "requires " label b ";\n";
 
 category Spec;
-op spec_mk (elts : Seq SpecElt) : Spec => "spec" "{\n" indent(2, elts) "}";
+op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 
 category Binding;
 @[declare(name, tp)]
@@ -248,7 +248,7 @@ op command_procedure (name : Ident,
                       @[scope(ret)] body : Option Block) :
   Command =>
   @[prec(10)] "procedure " name typeArgs b " returns " "(" ret ")\n"
-              indent(2, s) body ";\n";
+              s body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
 // type Array a;
@@ -292,7 +292,7 @@ op command_fndef (name : Ident,
                   // that the order of the arguments in the fndecl and fndef
                   // agree.
                   inline? : Option Inline) : Command =>
-  inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
+  inline? "function " name typeArgs b " : " r " {\n  " indent(2, c) "\n}\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]
