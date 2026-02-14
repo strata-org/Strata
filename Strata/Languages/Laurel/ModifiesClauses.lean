@@ -133,16 +133,19 @@ def transformModifiesClauses (constants : List Constant) (types : List TypeDefin
     (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
   match proc.body with
   | .Opaque postconds impl modifiesExprs =>
-      let env : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
-                            proc.outputs.map (fun p => (p.name, p.type)) ++
-                            constants.map (fun c => (c.name, c.type))
-      let heapInName := "$heap_in"
-      let heapOutName := "$heap_out"
-      let frameCondition := buildModifiesEnsures proc env types modifiesExprs heapInName heapOutName
-      let postconds' := match frameCondition with
-        | some frame => postconds ++ [frame]
-        | none => postconds
-      .ok { proc with body := .Opaque postconds' impl [] }
+      if hasHeapOut proc then
+        let env : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
+                              proc.outputs.map (fun p => (p.name, p.type)) ++
+                              constants.map (fun c => (c.name, c.type))
+        let heapInName := "$heap_in"
+        let heapOutName := "$heap_out"
+        let frameCondition := buildModifiesEnsures proc env types modifiesExprs heapInName heapOutName
+        let postconds' := match frameCondition with
+          | some frame => postconds ++ [frame]
+          | none => postconds
+        .ok { proc with body := .Opaque postconds' impl [] }
+      else
+        .ok proc
   | _ => .ok proc
 
 /--
