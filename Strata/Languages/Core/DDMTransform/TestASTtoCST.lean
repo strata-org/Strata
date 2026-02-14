@@ -256,7 +256,7 @@ spec {
 
 -------------------------------------------------------------------------------
 
-def test4 :=
+def polyFns :=
 #strata
 program Core;
 
@@ -282,11 +282,11 @@ procedure TestDifferentInstantiations () returns ()
   };
 -/
 #guard_msgs in
-#eval ASTtoCST test4
+#eval ASTtoCST polyFns
 
 -------------------------------------------------------------------------------
 
-def test5 :=
+def bitvecPgm :=
 #strata
 program Core;
 
@@ -322,7 +322,7 @@ procedure P (x : bv8, y : bv8, z : bv8) returns ()
   };
 -/
 #guard_msgs in
-#eval ASTtoCST test5
+#eval ASTtoCST bitvecPgm
 
 -------------------------------------------------------------------------------
 

@@ -665,8 +665,36 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement)
   | .goto label _md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     pure (.goto_statement default labelAnn)
-  | .funcDecl _ _ => ToCSTM.throwError
-                      "stmtToCST" "funcDecl not allowed in statement" ""
+  | .funcDecl decl _md => do
+    dbg_trace f!"decl: {decl}"
+    let name : Ann String M := ⟨default, decl.name.name⟩
+    let typeArgs : Ann (Option (TypeArgs M)) M :=
+      if decl.typeArgs.isEmpty then
+        ⟨default, none⟩
+      else
+        let tvars := decl.typeArgs.map fun tv =>
+          TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+        ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+    let processInput (id : CoreLParams.Identifier) (ty : Lambda.LTy) :
+            ToCSTM M (Binding M × String) := do
+      let paramName : Ann String M := ⟨default, id.name⟩
+      let paramType ← lTyToCoreType ty
+      let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
+      pure (binding, id.name)
+    let results ← decl.inputs.toArray.mapM (fun (id, ty) => processInput id ty)
+    let bindings := results.map (·.1)
+    let paramNames := results.map (·.2)
+    let b : Bindings M := .mkBindings default ⟨default, bindings⟩
+    let r ← lTyToCoreType decl.output
+    match decl.body with
+    | none =>
+      ToCSTM.throwError "stmtToCST" "funcDecl without body not supported in statements" ""
+    | some body => do
+      -- Add formals to the context
+      modify (·.addBoundVars (reverse? := false) paramNames)
+      let bodyExpr ← lexprToExpr body 0
+      let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
+      pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (CoreDDM.Block M) := do
