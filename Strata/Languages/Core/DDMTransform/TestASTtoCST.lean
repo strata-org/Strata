@@ -37,7 +37,7 @@ def ASTtoCST (program : Strata.Program) := do
   if !errs.isEmpty then
     IO.println f!"CST to AST Error: {errs}"
   -- Convert AST → CST
-  match (programToCST (M := SourceRange) ast program.globalContext).run
+  match (programToCST (M := SourceRange) ast).run
         ToCSTContext.empty with
   | .error errs =>
     IO.println "AST to CST Error:"
@@ -194,7 +194,9 @@ spec {
   ensures (g == old(g));
   ensures [List_head_test]: (IntList..isNil(Nil()));
 } {
+  var b : bool;
   y := x || x;
+  call b := Test1(5);
 };
 #end
 
@@ -218,7 +220,9 @@ spec {
   ensures [Test2_ensures_3]: g == old(g);
   ensures [List_head_test]: IntList..isNil(Nil);
   } {
+  var b : bool;
   (y) := x || x;
+  call b := Test1(5);
   };
 -/
 #guard_msgs in

@@ -35,11 +35,11 @@ inductive ASTToCSTError (M : Type) where
 
 namespace ASTToCSTError
 
-def toString [ToString M] : ASTToCSTError M → String
+def toString {M} [ToString M] : ASTToCSTError M → String
   | unsupportedConstruct fn desc ctx _m =>
     s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
 
-instance [ToString M] : ToString (ASTToCSTError M) where
+instance {M} [ToString M] : ToString (ASTToCSTError M) where
   toString := ASTToCSTError.toString
 
 end ASTToCSTError
@@ -73,8 +73,8 @@ structure Scope where
 structure ToCSTContext where
   /-- Stack of scopes, with global scope at index 0 -/
   scopes : Array Scope := #[{}]
-  /-- Global context from DDM program, used to track free variables -/
-  globalContext : GlobalContext := {}
+  /-- Free variables added during conversion -/
+  freeVars : Array String := #[]
   deriving Inhabited, Repr
 
 namespace ToCSTContext
@@ -94,21 +94,17 @@ def toErrorString (ctx : ToCSTContext) : String :=
 def boundVars (ctx : ToCSTContext) : Array String :=
   ctx.scopes.foldl (fun acc s => acc ++ s.boundVars) #[]
 
-/-- Get all free variables -/
-def freeVars (ctx : ToCSTContext) : Array String :=
-  ctx.globalContext.vars.map (·.fst)
-
 /-- Find index of bound variable in context -/
 def findBoundVarIndex? (ctx : ToCSTContext) (name : String) : Option Nat :=
   ctx.boundVars.findIdx? (· == name)
 
-/-- Find index of free variable in context -/
-def findFreeVarIndex? (ctx : ToCSTContext) (name : String) : Option Nat :=
+/-- Find index of free variable in freeVars -/
+def freeVarIndex? (ctx : ToCSTContext) (name : String) : Option Nat :=
   ctx.freeVars.findIdx? (· == name)
 
-/-- Get free variable index -/
-def freeVarIndex? (ctx : ToCSTContext) (name : String) : Option FreeVarIndex :=
-  ctx.globalContext.findIndex? name
+/-- Add free variables to the context -/
+def addFreeVars (ctx : ToCSTContext) (names : Array String) : ToCSTContext :=
+  { ctx with freeVars := ctx.freeVars ++ names }
 
 /-- Add bound variables to the current scope -/
 def addBoundVars (ctx : ToCSTContext) (names : Array String)
@@ -143,7 +139,7 @@ def ToCSTM.throwError [Inhabited M] (fn : String)
   throw [.unsupportedConstruct fn msg ctx.toErrorString default]
 
 /-- Convert `LMonoTy` to `CoreType` -/
-def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
+def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
     ToCSTM M (CoreType M) := do
   match ty with
   | .ftvar name => pure (.tvar default name)
@@ -167,20 +163,21 @@ def lmonoTyToCoreType [Inhabited M] (ty : Lambda.LMonoTy) :
     | some idx => do
       let argTys ← args.mapM lmonoTyToCoreType
       pure (.fvar default idx argTys.toArray)
-    | none => ToCSTM.throwError "lmonoTyToCoreType" "unknown type constructor" name
+    | _ => ToCSTM.throwError "lmonoTyToCoreType" "unknown type" (toString ty)
   | _ => ToCSTM.throwError "lmonoTyToCoreType" "unknown type" (toString ty)
 
 /-- Convert `LTy` to `CoreType` -/
-def lTyToCoreType [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
+def lTyToCoreType {M} [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
   match ty with
   | .forAll _typeVars monoTy => do
     let result ← lmonoTyToCoreType monoTy
     pure result
 
 /-- Convert a type constructor declaration to CST -/
-def typeConToCST [Inhabited M] (tcons : TypeConstructor)
+def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, tcons.name⟩
+  modify (·.addFreeVars #[name.val])
   let args : Ann (Option (Bindings M)) M :=
     if tcons.numargs = 0 then
       ⟨default, none⟩
@@ -193,8 +190,16 @@ def typeConToCST [Inhabited M] (tcons : TypeConstructor)
   pure (.command_typedecl default name args)
 
 /-- Convert a datatype declaration to CST -/
-def datatypeToCST [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
+def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
     (_md : Imperative.MetaData Expression) : ToCSTM M (List (Command M)) := do
+  -- Register datatype names, constructor names, tester names, and destructor
+  -- names as free variables
+  let dtNames := datatypes.map (·.name)
+  let constrNames := datatypes.flatMap (fun dt => dt.constrs.map (·.name.name))
+  let testerNames := datatypes.flatMap (fun dt => dt.constrs.map (·.testerName))
+  let destructorNames := datatypes.flatMap (fun dt =>
+    dt.constrs.flatMap (fun c => c.args.map (fun (id, _) => Lambda.destructorFuncName dt id)))
+  modify (·.addFreeVars (dtNames.toArray ++ constrNames.toArray ++ testerNames.toArray ++ destructorNames.toArray))
   let mut results := []
   for dt in datatypes do
     let name : Ann String M := ⟨default, dt.name⟩
@@ -228,10 +233,11 @@ def datatypeToCST [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
   pure results
 
 /-- Convert a type synonym declaration to CST -/
-def typeSynToCST [Inhabited M] (syn : TypeSynonym)
+def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, syn.name⟩
+  modify (·.addFreeVars #[name.val])
   let args : Ann (Option (Bindings M)) M :=
     if syn.typeArgs.isEmpty then
       ⟨default, none⟩
@@ -246,7 +252,7 @@ def typeSynToCST [Inhabited M] (syn : TypeSynonym)
   modify ToCSTContext.popScope
   pure (.command_typesynonym default name args targs rhs)
 
-def lconstToExpr [Inhabited M] (c : Lambda.LConst) :
+def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
     ToCSTM M (CoreDDM.Expr M) :=
   match c with
   | .boolConst true => pure (.btrue default)
@@ -266,7 +272,7 @@ def lconstToExpr [Inhabited M] (c : Lambda.LConst) :
                           "unsupported bitvec width" (toString w)
 
 /-- Handle 0-ary operations -/
-def handleZeroaryOps [Inhabited M] (name : String)
+def handleZeroaryOps {M} [Inhabited M] (name : String)
     : ToCSTM M (CoreDDM.Expr M) :=
   match name with
   | "Re.All" => pure (.re_all default)
@@ -275,7 +281,7 @@ def handleZeroaryOps [Inhabited M] (name : String)
   | _ => ToCSTM.throwError "lopToExpr" "0-ary op not found" name
 
 /-- Handle unary operations -/
-def handleUnaryOps [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
+def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
   match name with
@@ -313,7 +319,7 @@ def handleUnaryOps [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | _ => ToCSTM.throwError "handleUnaryOps" "unary op" name
 
 /-- Map from bitvector binary operation base names to DDM Expr constructors -/
-def bvBinaryOpMap [Inhabited M] :
+def bvBinaryOpMap {M} [Inhabited M] :
     List (String × (CoreType M → CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) :=
  [
   ("And", fun ty arg1 arg2 => .bvand default ty arg1 arg2),
@@ -340,7 +346,7 @@ def bvBinaryOpMap [Inhabited M] :
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/
-def bvTypeMap [Inhabited M] : List (Nat × (CoreType M)) := [
+def bvTypeMap {M} [Inhabited M] : List (Nat × (CoreType M)) := [
   (1, .bv1 default),
   (8, .bv8 default),
   (16, .bv16 default),
@@ -349,7 +355,7 @@ def bvTypeMap [Inhabited M] : List (Nat × (CoreType M)) := [
 ]
 
 /-- Map from bitvector sizes to their corresponding concat operations -/
-def bvConcatMap [Inhabited M] :
+def bvConcatMap {M} [Inhabited M] :
     List (Nat × (CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) := [
   (8, fun arg1 arg2 => .bvconcat8 default arg1 arg2),
   (16, fun arg1 arg2 => .bvconcat16 default arg1 arg2),
@@ -357,7 +363,7 @@ def bvConcatMap [Inhabited M] :
 ]
 
 /-- Auto-generated bitvector binary operations handler -/
-def handleBitvecBinaryOps [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M)
+def handleBitvecBinaryOps {M} [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
   -- Parse operation name: "BvN.Op" -> (N, "Op")
   let parts := name.splitOn "."
@@ -393,7 +399,7 @@ def handleBitvecBinaryOps [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Exp
           "invalid operation format" name
 
 /-- Handle binary operations -/
-def handleBinaryOps [Inhabited M] (name : String)
+def handleBinaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
   match name with
@@ -424,7 +430,7 @@ def handleBinaryOps [Inhabited M] (name : String)
   | _ => handleBitvecBinaryOps name arg1 arg2
 
 /-- Handle ternary operations -/
-def handleTernaryOps [Inhabited M] (name : String)
+def handleTernaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 arg3 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
   match name with
@@ -435,26 +441,15 @@ def handleTernaryOps [Inhabited M] (name : String)
   | "Re.Loop" => pure (.re_loop default arg1 arg2 arg3)
   | _ => ToCSTM.throwError "handleTernaryOps" "ternary op" name
 
-def lopToExpr [Inhabited M]
+def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
     : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
   -- User-defined functions.
-  match ctx.globalContext.findIndex? name with
+  match ctx.freeVarIndex? name with
   | some idx =>
-    match ctx.globalContext.kindOf! idx with
-    | .expr ty =>
-      let expectedArity := countArity ty
-      let actualArity := args.length
-      if actualArity == expectedArity then
-        let fnExpr := CoreDDM.Expr.fvar default idx
-        pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
-      else
-        let msg := "function " ++ name ++
-                    " expects " ++ toString expectedArity ++
-                    " arguments but got " ++ toString actualArity
-        ToCSTM.throwError "lopToExpr" "function arity mismatch" msg
-    | _ => ToCSTM.throwError "lopToExpr" "unknown operation" name
+    let fnExpr := CoreDDM.Expr.fvar default idx
+    pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
   | none =>
     -- Either a built-in or an invalid operation.
     match args with
@@ -466,7 +461,7 @@ def lopToExpr [Inhabited M]
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
-partial def lexprToExpr [Inhabited M]
+partial def lexprToExpr {M} [Inhabited M]
     (e : Lambda.LExpr CoreLParams.mono) (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
@@ -486,9 +481,14 @@ partial def lexprToExpr [Inhabited M]
     match ctx.findBoundVarIndex? id.name with
     | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
     | none =>
-      match ctx.findFreeVarIndex? id.name with
+      match ctx.freeVarIndex? id.name with
       | some idx => pure (.fvar default idx)
-      | none => ToCSTM.throwError "lexprToExpr" "unbound fvar" id.name
+      | none => do
+        -- Add unbound identifier as free variable
+        modify (·.addFreeVars #[id.name])
+        let ctx ← get
+        let idx := ctx.freeVars.size - 1
+        pure (.fvar default idx)
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
@@ -499,7 +499,7 @@ partial def lexprToExpr [Inhabited M]
     lquantToExpr qkind ty trigger body (qLevel + 1)
 
 /-- Extract trigger patterns from Lambda's trigger expression representation -/
-partial def extractTriggerPatterns [Inhabited M]
+partial def extractTriggerPatterns {M} [Inhabited M]
     (trigger : Lambda.LExpr CoreLParams.mono) (qLevel : Nat)
     : ToCSTM M (Array (CoreDDM.Expr M)) := do
   match trigger with
@@ -530,7 +530,7 @@ partial def extractTriggerPatterns [Inhabited M]
     let expr ← lexprToExpr trigger qLevel
     pure #[expr]
 
-partial def lquantToExpr [Inhabited M]
+partial def lquantToExpr {M} [Inhabited M]
     (qkind : Lambda.QuantifierKind) (ty : Option Lambda.LMonoTy)
     (trigger : Lambda.LExpr CoreLParams.mono) (body : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat)
@@ -559,7 +559,7 @@ partial def lquantToExpr [Inhabited M]
     | .all => pure (.forallT default dl tl bodyExpr)
     | .exist => pure (.existsT default dl tl bodyExpr)
 
-partial def liteToExpr [Inhabited M]
+partial def liteToExpr {M} [Inhabited M]
     (c t f : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
@@ -569,7 +569,7 @@ partial def liteToExpr [Inhabited M]
   let ty := CoreType.bool default
   pure (.if default ty cExpr tExpr fExpr)
 
-partial def leqToExpr [Inhabited M]
+partial def leqToExpr {M} [Inhabited M]
     (e1 e2 : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat) :
     ToCSTM M (CoreDDM.Expr M) := do
@@ -578,7 +578,7 @@ partial def leqToExpr [Inhabited M]
   let ty := CoreType.bool default
   pure (.equal default ty e1Expr e2Expr)
 
-partial def lappToExpr [Inhabited M]
+partial def lappToExpr {M} [Inhabited M]
     (e : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat) (acc : List (CoreDDM.Expr M) := [])
     : ToCSTM M (CoreDDM.Expr M) :=
@@ -595,7 +595,7 @@ end
 
 mutual
 /-- Convert Core.Statement to CoreDDM.Statement -/
-partial def stmtToCST [Inhabited M] (s : Core.Statement)
+partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     : ToCSTM M (CoreDDM.Statement M) := do
   match s with
   | .init name ty expr _md => do
@@ -604,12 +604,12 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement)
     let result ← match expr with
     | .fvar _ f _ =>
       let ctx ← get
-      match ctx.findFreeVarIndex? f.name with
+      match ctx.freeVarIndex? f.name with
       | some idx =>
         let exprCST := CoreDDM.Expr.fvar default idx
         pure (.initStatement default tyCST nameAnn exprCST)
-      | none =>
-        -- If this free variable isn't in scope, it's likely autogenerated in
+      | none => do
+        -- If this free variable isn't in scope, it's autogenerated in
         -- Core (i.e., default/havoc init value).
         let bind := Bind.bind_mk default nameAnn
                     ⟨default, none⟩ tyCST
@@ -666,7 +666,6 @@ partial def stmtToCST [Inhabited M] (s : Core.Statement)
     let labelAnn : Ann String M := ⟨default, label⟩
     pure (.goto_statement default labelAnn)
   | .funcDecl decl _md => do
-    dbg_trace f!"decl: {decl}"
     let name : Ann String M := ⟨default, decl.name.name⟩
     let typeArgs : Ann (Option (TypeArgs M)) M :=
       if decl.typeArgs.isEmpty then
@@ -703,7 +702,7 @@ partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
   modify ToCSTContext.popScope
   pure (.block default ⟨default, stmtsCST⟩)
 
-partial def elseToCST [Inhabited M] (stmts : List Core.Statement)
+partial def elseToCST {M} [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (Else M) := do
   if stmts.isEmpty then
     pure (.else0 default)
@@ -711,7 +710,7 @@ partial def elseToCST [Inhabited M] (stmts : List Core.Statement)
     let blockCST ← blockToCST stmts
     pure (.else1 default blockCST)
 
-partial def invariantsToCST [Inhabited M]
+partial def invariantsToCST {M} [Inhabited M]
     (inv : Option (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
   match inv with
   | none => pure (.nilInvariants default)
@@ -721,7 +720,7 @@ partial def invariantsToCST [Inhabited M]
 end
 
 /-- Convert a procedure to CST -/
-def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
+def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   let typeArgs : Ann (Option (TypeArgs M)) M :=
@@ -788,11 +787,13 @@ def procToCST [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   pure (.command_procedure default name typeArgs inputs outputs spec body)
 
 /-- Convert a function declaration to CST -/
-def funcToCST [Inhabited M]
+def funcToCST {M} [Inhabited M]
     (func : Lambda.LFunc CoreLParams)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
+  -- Register function name as free variable
+  modify (·.addFreeVars #[name.val])
   let typeArgs : Ann (Option (TypeArgs M)) M :=
     if func.typeArgs.isEmpty then
       ⟨default, none⟩
@@ -823,7 +824,7 @@ def funcToCST [Inhabited M]
   pure result
 
 /-- Convert an axiom to CST -/
-def axiomToCST [Inhabited M] (ax : Axiom)
+def axiomToCST {M} [Inhabited M] (ax : Axiom)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let labelAnn : Ann (Option (Label M)) M := ⟨
       default, some (.label default ⟨default, ax.name⟩)⟩
@@ -831,7 +832,7 @@ def axiomToCST [Inhabited M] (ax : Axiom)
   pure (.command_axiom default labelAnn exprCST)
 
 /-- Convert a distinct declaration to CST -/
-def distinctToCST [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr CoreLParams.mono))
+def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr CoreLParams.mono))
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, name.toPretty⟩)⟩
   let exprsCST ← es.mapM (fun a => lexprToExpr a 0)
@@ -839,7 +840,7 @@ def distinctToCST [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr Core
   pure (.command_distinct default labelAnn exprsAnn)
 
 /-- Convert a variable declaration to CST -/
-def varToCST [Inhabited M]
+def varToCST {M} [Inhabited M]
     (name : CoreIdent) (ty : Lambda.LTy) (_e : Lambda.LExpr CoreLParams.mono)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let nameAnn : Ann String M := ⟨default, name.toPretty⟩
@@ -849,7 +850,7 @@ def varToCST [Inhabited M]
   pure (.command_var default bind)
 
 /-- Convert a `Core.Decl` to a Core `Command` -/
-def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
+def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
   match decl with
   | .var name ty e md => do
     let cmd ← varToCST name ty e md
@@ -876,9 +877,8 @@ def declToCST [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
     pure [cmd]
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
-def programToCST [Inhabited M] (prog : Core.Program) (gctx : GlobalContext := {}) :
+def programToCST {M} [Inhabited M] (prog : Core.Program) :
     ToCSTM M (List (Command M)) := do
-  modify fun ctx => { ctx with globalContext := gctx }
   let cmdLists ← prog.decls.mapM declToCST
   pure cmdLists.flatten
 

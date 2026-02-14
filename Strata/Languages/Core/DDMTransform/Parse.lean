@@ -212,9 +212,9 @@ op while_statement (c : bool, is : Invariants, body : Block) : Statement =>
   "while" "(" c ")" is body;
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call" vs ":=" f "(" expr ")" ";\n";
+   "call " vs " := " f "(" expr ")" ";\n";
 op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call" f "(" expr ")" ";\n";
+   "call " f "(" expr ")" ";\n";
 
 op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b;
