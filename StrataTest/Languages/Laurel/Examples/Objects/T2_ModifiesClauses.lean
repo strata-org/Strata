@@ -65,19 +65,19 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 }
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+// the above error is because the body does not satisfy the modifies clause. error needs to be improved
   ensures true
   modifies d
-//         ^ error: assertion could not be proved
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
 {
     c#value := 2;
 }
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// the above error is because the body does not satisfy the modifies clause. error needs to be improved
   ensures true
   modifies d
-//         ^ error: assertion does not hold
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
 {
     modifyContainerTransparant(c)
 }

@@ -25,7 +25,7 @@ op varDecl (name: Ident, varType: Option OptionalType, assignment: Option Option
 op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
 // Instantiation
-op instantiate (name: Ident): StmtExpr => "new " name;
+op new(name: Ident): StmtExpr => "new " name;
 
 // Field access
 op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;

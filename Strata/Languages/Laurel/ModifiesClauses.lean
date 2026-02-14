@@ -83,37 +83,36 @@ Generates a single quantified formula:
 
 Returns `none` if there are no entries.
 -/
-def buildModifiesEnsures (env : TypeEnv)
+def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
     (types : List TypeDefinition) (modifiesExprs : List StmtExprMd)
     (heapInName heapOutName : Identifier) : Option StmtExprMd :=
   let entries := extractModifiesEntries env types modifiesExprs
-  if entries.isEmpty then none
-  else
-    let objName := "$modifies_obj"
-    let fldName := "$modifies_fld"
-    let obj := mkMd <| .Identifier objName
-    let fld := mkMd <| .Identifier fldName
-    let heapIn := mkMd <| .Identifier heapInName
-    let heapOut := mkMd <| .Identifier heapOutName
-    -- Build the "not modified" precondition from all entries
-    let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
-    -- Build the "obj is allocated" condition: $obj < $heap_in.counter
-    let heapCounter := mkMd <| .StaticCall "Heap..counter" [heapIn]
-    let objAllocated := mkMd <| .PrimitiveOp .Lt [obj, heapCounter]
-    -- Combine: $obj < $heap_in.counter && notModified($obj)
-    let antecedent := mkMd <| .PrimitiveOp .And [objAllocated, notModified]
-    -- Build: readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)
-    let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
-    let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
-    let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
-    -- Build: antecedent ==> heapUnchanged
-    let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
-    -- Build: forall $obj: Composite, $fld: Field => ...
-    -- Use TTypedField so that translateType maps this to Core's "Field" type
-    -- (UserDefined "Field" would incorrectly map to "Composite")
-    let innerForall := mkMd <| .Forall fldName (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) implBody
-    let outerForall := ⟨ .Forall objName (⟨ .UserDefined "Composite", .empty ⟩) innerForall, modifiesExprs.head!.md ⟩
-    some outerForall
+  let objName := "$modifies_obj"
+  let fldName := "$modifies_fld"
+  let obj := mkMd <| .Identifier objName
+  let fld := mkMd <| .Identifier fldName
+  let heapIn := mkMd <| .Identifier heapInName
+  let heapOut := mkMd <| .Identifier heapOutName
+  -- Build the "obj is allocated" condition: $obj < $heap_in.counter
+  let heapCounter := mkMd <| .StaticCall "Heap..counter" [heapIn]
+  let objAllocated := mkMd <| .PrimitiveOp .Lt [obj, heapCounter]
+  let antecedent := if entries.isEmpty
+    then objAllocated
+    else
+      -- Build the "not modified" precondition from all entries
+      -- Combine: $obj < $heap_in.counter && notModified($obj)
+      let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
+      mkMd <| .PrimitiveOp .And [objAllocated, notModified]
+  -- Build: readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)
+  let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
+  let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
+  let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
+  -- Build: antecedent ==> heapUnchanged
+  let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
+  -- Build: forall $obj: Composite, $fld: Field => ...
+  let innerForall := mkMd <| .Forall fldName (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) implBody
+  let outerForall := ⟨ .Forall objName (⟨ .UserDefined "Composite", .empty ⟩) innerForall, proc.md ⟩
+  some outerForall
 
 /--
 Check whether a procedure has a `$heap_out` output parameter,
@@ -134,48 +133,16 @@ def transformModifiesClauses (constants : List Constant) (types : List TypeDefin
     (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
   match proc.body with
   | .Opaque postconds impl modifiesExprs =>
-      if modifiesExprs.isEmpty then
-        -- No modifies clause: if the procedure has a heap out, add a postcondition
-        -- that all allocated objects are preserved between heaps.
-        -- Generates:
-        --   forall $obj: Composite, $fld: Field =>
-        --     $obj < $heap_in.counter ==> readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)
-        if hasHeapOut proc then
-          let heapInName := "$heap_in"
-          let heapOutName := "$heap_out"
-          let objName := "$modifies_obj"
-          let fldName := "$modifies_fld"
-          let obj := mkMd <| .Identifier objName
-          let fld := mkMd <| .Identifier fldName
-          let heapIn := mkMd <| .Identifier heapInName
-          let heapOut := mkMd <| .Identifier heapOutName
-          -- Build the "obj is allocated" condition: $obj < $heap_in.counter
-          let heapCounter := mkMd <| .StaticCall "Heap..counter" [heapIn]
-          let objAllocated := mkMd <| .PrimitiveOp .Lt [obj, heapCounter]
-          -- Build: readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)
-          let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
-          let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
-          let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
-          -- Build: $obj < $heap_in.counter ==> heapUnchanged
-          let implBody := mkMd <| .PrimitiveOp .Implies [objAllocated, heapUnchanged]
-          -- Build: forall $obj: Composite, $fld: Field => ...
-          let innerForall := mkMd <| .Forall fldName (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) implBody
-          let outerForall := ⟨ .Forall objName (⟨ .UserDefined "Composite", .empty ⟩) innerForall, proc.md ⟩
-          let postconds' := postconds ++ [outerForall]
-          .ok { proc with body := .Opaque postconds' impl [] }
-        else
-          .ok proc
-      else
-        let env : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
-                             proc.outputs.map (fun p => (p.name, p.type)) ++
-                             constants.map (fun c => (c.name, c.type))
-        let heapInName := "$heap_in"
-        let heapOutName := "$heap_out"
-        let frameCondition := buildModifiesEnsures env types modifiesExprs heapInName heapOutName
-        let postconds' := match frameCondition with
-          | some frame => postconds ++ [frame]
-          | none => postconds
-        .ok { proc with body := .Opaque postconds' impl [] }
+      let env : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
+                            proc.outputs.map (fun p => (p.name, p.type)) ++
+                            constants.map (fun c => (c.name, c.type))
+      let heapInName := "$heap_in"
+      let heapOutName := "$heap_out"
+      let frameCondition := buildModifiesEnsures proc env types modifiesExprs heapInName heapOutName
+      let postconds' := match frameCondition with
+        | some frame => postconds ++ [frame]
+        | none => postconds
+      .ok { proc with body := .Opaque postconds' impl [] }
   | _ => .ok proc
 
 /--
