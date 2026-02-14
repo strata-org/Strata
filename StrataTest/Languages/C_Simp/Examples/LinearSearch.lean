@@ -60,12 +60,22 @@ info: function linearSearch {
   pre: #true
   post: #true
   body:
-init (idx : int) := init_idx
-idx := #0
-while (((~Int.Lt idx) (~Array.Len arr))) (some ((~Int.Sub (~Array.Len arr)) idx)) (some #true) {if (e == ((~Array.Get arr) idx)) then {return := #true}
- else{}
- idx := ((~Int.Add idx) #1)}
-return := #false
+{
+  init (idx : int) := init_idx
+  idx := #0
+  while
+    (~Int.Lt idx (~Array.Len arr))
+    (some (~Int.Sub (~Array.Len arr) idx))
+    (some #true)
+  {
+    if (e == (~Array.Get arr idx)) {
+      return := #true
+    }
+    else {}
+    idx := (~Int.Add idx #1)
+  }
+  return := #false
+}
 }
 Errors: #[]
 -/
@@ -79,28 +89,51 @@ info: procedure linearSearch :  ((arr : intArr) (e : int)) → ((return : bool))
   preconditions: (pre, #true)
   postconditions: (post, #true)
 {
-  init (idx : int) := init_idx
-  idx := #0
-  if ((~Int.Lt idx) (~Array.Len arr)) then {first_iter_asserts : {assert [entry_invariant] #true
-    assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
-   arbitrary iter facts : {loop havoc : {havoc return
-     havoc idx}
-    arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt idx) (~Array.Len arr))
-     assume [assume_invariant] #true
-     assume [assume_measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
-    init (special-name-for-old-measure-value : int) := ((~Int.Sub (~Array.Len arr)) idx)
-    if (e == ((~Array.Get arr) idx)) then {return := #true}
-    else{}
-    idx := ((~Int.Add idx) #1)
-    assert [measure_decreases] ((~Int.Lt ((~Int.Sub (~Array.Len arr)) idx)) special-name-for-old-measure-value)
-    assert [measure_imp_not_guard] (if ((~Int.Le ((~Int.Sub (~Array.Len arr)) idx)) #0) then (~Bool.Not ((~Int.Lt idx) (~Array.Len arr))) else #true)
-    assert [arbitrary_iter_maintain_invariant] #true}
-   loop havoc : {havoc return
-    havoc idx}
-   assume [not_guard] (~Bool.Not ((~Int.Lt idx) (~Array.Len arr)))
-   assume [invariant] #true}
-  else{}
-  return := #false
+  {
+    init (idx : int) := init_idx
+    idx := #0
+    if (~Int.Lt idx (~Array.Len arr)) {
+      first_iter_asserts :
+      {
+        assert [entry_invariant] #true
+        assert [assert_measure_pos] (~Int.Ge (~Int.Sub (~Array.Len arr) idx) #0)
+      }
+      arbitrary iter facts :
+      {
+        loop havoc :
+        {
+          havoc return
+          havoc idx
+        }
+        arbitrary_iter_assumes :
+        {
+          assume [assume_guard] (~Int.Lt idx (~Array.Len arr))
+          assume [assume_invariant] #true
+          assume [assume_measure_pos] (~Int.Ge (~Int.Sub (~Array.Len arr) idx) #0)
+        }
+        init (special-name-for-old-measure-value : int) := (~Int.Sub (~Array.Len arr) idx)
+        if (e == (~Array.Get arr idx)) {
+          return := #true
+        }
+        else {}
+        idx := (~Int.Add idx #1)
+        assert [measure_decreases] (~Int.Lt (~Int.Sub (~Array.Len arr) idx) special-name-for-old-measure-value)
+        assert [measure_imp_not_guard] (if (~Int.Le
+          (~Int.Sub (~Array.Len arr) idx)
+          #0) then (~Bool.Not (~Int.Lt idx (~Array.Len arr))) else #true)
+        assert [arbitrary_iter_maintain_invariant] #true
+      }
+      loop havoc :
+      {
+        havoc return
+        havoc idx
+      }
+      assume [not_guard] (~Bool.Not (~Int.Lt idx (~Array.Len arr)))
+      assume [invariant] #true
+    }
+    else {}
+    return := #false
+  }
 }
 -/
 #guard_msgs in

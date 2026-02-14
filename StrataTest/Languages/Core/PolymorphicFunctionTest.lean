@@ -62,10 +62,12 @@ procedure TestIdentityInt :  () → ()
   preconditions: ⏎
   postconditions: (TestIdentityInt_ensures_0, #true)
 {
-  init (x : int) := (init_x_0 : int)
-  init (y : int) := (init_y_1 : int)
-  x := #42
-  y := ((~identity : (arrow int int)) (x : int))
+  {
+    init (x : int) := (init_x_0 : int)
+    init (y : int) := (init_y_1 : int)
+    x := #42
+    y := ((~identity : (arrow int int)) (x : int))
+  }
 }
 -/
 #guard_msgs in
@@ -98,8 +100,10 @@ procedure TestMakePair :  () → ()
   preconditions: ⏎
   postconditions: (TestMakePair_ensures_0, #true)
 {
-  init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-  m := (((~makePair : (arrow int (arrow bool (Map int bool)))) #42) #true)
+  {
+    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
+    m := ((~makePair : (arrow int (arrow bool (Map int bool)))) #42 #true)
+  }
 }
 -/
 #guard_msgs in
@@ -134,8 +138,10 @@ procedure TestApply :  () → ()
   preconditions: ⏎
   postconditions: (TestApply_ensures_0, #true)
 {
-  init (result : bool) := (init_result_0 : bool)
-  result := (((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (arrow int bool))) #42)
+  {
+    init (result : bool) := (init_result_0 : bool)
+    result := ((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (arrow int bool)) #42)
+  }
 }
 -/
 #guard_msgs in
@@ -170,8 +176,12 @@ procedure TestDifferentInstantiations :  () → ()
   preconditions: ⏎
   postconditions: (TestDifferentInstantiations_ensures_0, #true)
 {
-  init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-  m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
+  {
+    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
+    m := ((~makePair : (arrow int (arrow bool (Map int bool))))
+     ((~identity : (arrow int int)) #42)
+     ((~identity : (arrow bool bool)) #true))
+  }
 }
 -/
 #guard_msgs in
@@ -198,7 +208,7 @@ spec {
 #end
 
 /--
-info: error: (5249-5272) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
+info: error: (5305-5328) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
 First mismatch: int with bool.
 -/
 #guard_msgs in
