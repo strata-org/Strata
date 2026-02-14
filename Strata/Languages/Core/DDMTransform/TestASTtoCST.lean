@@ -13,6 +13,16 @@ import Strata.Languages.Core.DDMTransform.Parse
 
 This file tests one-direction conversion: AST → CST using the old
 translator to obtain the AST.
+
+Known issues:
+
+- We generate some bound variables' names during translation because the
+  semantic AST currently does not preserve them (e.g., bvars in quantifiers).
+  We can log the identifier names in metadata and recover them in the future.
+
+- Support sub-functions in procedures.
+
+- Remove extra parentheses around constructors in datatypes.
 -/
 
 namespace Strata.Test
@@ -47,6 +57,110 @@ def ASTtoCST (program : Strata.Program) := do
     IO.println "Rendered Program:\n"
     for cmd in cmds do
       IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
+
+-------------------------------------------------------------------------------
+
+def testTypes : Program :=
+#strata
+program Core;
+
+// Basic type declarations
+type T0;
+
+// Type aliases with built-in types
+type Byte := bv8;
+type IntMap := Map int int;
+
+// Polymorphic types
+type T1 (x : Type);
+type MyMap (a : Type, b : Type);
+type Foo (a : Type, b : Type) := Map b a;
+
+// Polymorphic Datatypes
+datatype List (a : Type)
+  { Nil(),
+    Cons(head: a, tail: List a) };
+
+type IntList := List int;
+
+datatype Tree (a : Type) {
+    Leaf(val: a),
+    Node(left: Tree a, right: Tree a) };
+#end
+
+/--
+info: Rendered Program:
+
+type T0;
+type Byte := bv8;
+type IntMap := Map int int;
+type T1 (a0 : Type);
+type MyMap (a0 : Type, a1 : Type);
+type Foo (a : Type, b : Type) := Map b a;
+datatype List (a : Type) {(
+  (Nil())),
+  (Cons(head : a, tail : (List a)))
+};
+type IntList := List int;
+datatype Tree (a : Type) {(
+  (Leaf(val : a))),
+  (Node(left : (Tree a), right : (Tree a)))
+};
+-/
+#guard_msgs in
+#eval ASTtoCST testTypes
+
+-------------------------------------------------------------------------------
+
+def testFnAxs : Program :=
+#strata
+program Core;
+
+// 0-ary function
+const fooConst : int;
+axiom [fooConst_value]: fooConst == 5;
+
+// 1-ary function
+function f1(x: int): int;
+axiom [f1_ax]: (forall x : int :: f1(x) > x);
+
+// 2-ary function
+function f2(x : int, y : bool): bool;
+axiom [f2_ax]: (forall x : int, y : bool :: f2(x, true) == true);
+
+// 3-ary function
+function f3(x : int, y : bool, z : regex): bool;
+axiom [f3_ax]: (forall x : int, y : bool, z : regex :: f3(x, y, z) == f2(x, y));
+
+// Polymorphic function.
+function f4<T1, T2>(x : T1) : Map T1 T2;
+axiom [foo_ax]: (forall x : int :: (f4(x))[1] == true);
+
+// Function with defined body
+function f5<T1, T2>(x : T1, y : T2) : T1 {
+  x
+}
+#end
+
+/--
+info: Rendered Program:
+
+function fooConst () : int;
+axiom [fooConst_value]: fooConst == 5;
+function f1 (x : int) : int;
+axiom [f1_ax]: forall x0 : int :: f1(x0) >x0;
+function f2 (x : int, y : bool) : bool;
+axiom [f2_ax]: forall x0 : int :: forall x1 : bool :: f2(x0, true) == true;
+function f3 (x : int, y : bool, z : regex) : bool;
+axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex :: f3(x0, x1, x2) == f2(x0, x1);
+function f4<T1, T2> (x : T1) : Map T1 T2;
+axiom [foo_ax]: forall x0 : int :: (f4(x0))[1] == true;
+function f5<T1, T2> (x : T1, y : T2) : T1 {
+x
+}
+-/
+#guard_msgs in
+#eval ASTtoCST testFnAxs
 
 -------------------------------------------------------------------------------
 
@@ -113,22 +227,28 @@ type T1 (a0 : Type);
 type Byte := bv8;
 type IntMap := Map int int;
 type MyMap (a0 : Type, a1 : Type);
-type Foo (a : Type, b : Type) := Map 'b 'a;
-datatype List {(Nil()),(Cons(head : int, tail : List))};
-datatype Tree {(Leaf(val : int)),(Node(left : Tree, right : Tree))};
+type Foo (a : Type, b : Type) := Map b a;
+datatype List {(
+  (Nil())),
+  (Cons(head : int, tail : List))
+};
+datatype Tree {(
+  (Leaf(val : int))),
+  (Node(left : Tree, right : Tree))
+};
 function fooConst () : int;
-axiom [fooConst_value]: fooConst==5;
+axiom [fooConst_value]: fooConst == 5;
 function id (x : int, y : int) : int {
 y
 }
-function foo<T1, T2> (x : 'T1) : Map 'T1 'T2;
-axiom [foo_ax]: forall x0 : int :: (foo(x0))[1]==true;
+function foo<T1, T2> (x : T1) : Map T1 T2;
+axiom [foo_ax]: forall x0 : int :: (foo(x0))[1] == true;
 function f1 (x : int) : int;
-axiom [f1_ax]: forall x0 : int :: f1(x0)>x0;
+axiom [f1_ax]: forall x0 : int :: f1(x0) >x0;
 function f2 (x : int, y : bool) : bool;
-axiom [f2_ax]: forall x0 : int :: forall x1 : bool :: f2(x0, true)==true;
+axiom [f2_ax]: forall x0 : int :: forall x1 : bool :: f2(x0, true) == true;
 function f3 (x : int, y : bool, z : regex) : bool;
-axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex :: f3(x0, x1, x2)==f2(x0, x1);
+axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex :: f3(x0, x1, x2) == f2(x0, x1);
 var g : bool;
 procedure Test1 (x : bool) returns (y : bool)
  {
@@ -137,15 +257,15 @@ procedure Test1 (x : bool) returns (y : bool)
 ;
 procedure Test2 (x : bool) returns (y : bool)
 spec{
-  ensures [Test2_ensures_0]: y==x;
-    ensures [Test2_ensures_1]: x==y;
-    ensures [Test2_ensures_2]: g==g;
-    ensures [Test2_ensures_3]: g==old(g);
-    ensures [test_foo]: fooConst==5;
+  ensures [Test2_ensures_0]: y == x;
+    ensures [Test2_ensures_1]: x == y;
+    ensures [Test2_ensures_2]: g == g;
+    ensures [Test2_ensures_3]: g == old(g);
+    ensures [test_foo]: fooConst == 5;
     ensures [List_head_test]: List..isNil(Nil);
-    ensures [test_id]: id(4, 3)==4;
+    ensures [test_id]: id(4, 3) == 4;
     } {
-(y) := x||x;
+(y) := x || x;
   }
 ;
 -/
@@ -166,8 +286,11 @@ spec { requires List..isCons(xs); } {
 /--
 info: Rendered Program:
 
-datatype List (a : Type) {(Nil()),(Cons(head : 'a, tail : (List 'a)))};
-procedure Extract<a> (xs : (List 'a)) returns (h : 'a)
+datatype List (a : Type) {(
+  (Nil())),
+  (Cons(head : a, tail : (List a)))
+};
+procedure Extract<a> (xs : (List a)) returns (h : (a))
 spec{
   requires [Extract_requires_0]: List..isCons(xs);
     } {
@@ -199,11 +322,11 @@ axiom [f3_ax]: (forall x : int, y : bool, z : regex ::
 info: Rendered Program:
 
 function f1 (x : int) : int;
-axiom [f1_ax]: forall x0 : int ::  { f1(x0) } f1(x0)>x0;
+axiom [f1_ax]: forall x0 : int ::  { f1(x0) } f1(x0) >x0;
 function f2 (x : int, y : bool) : bool;
-axiom [f2_ax]: forall x0 : int :: forall x1 : bool ::  { f2(x0, true) } f2(x0, true)==true;
+axiom [f2_ax]: forall x0 : int :: forall x1 : bool ::  { f2(x0, true) } f2(x0, true) == true;
 function f3 (x : int, y : bool, z : regex) : bool;
-axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex ::  { f1(2), f3(x0, x1, x2), f2(x0, x1), f1(x0) } f3(x0, x1, x2)==f2(x0, x1);
+axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex ::  { f1(2), f3(x0, x1, x2), f2(x0, x1), f1(x0) } f3(x0, x1, x2) == f2(x0, x1);
 -/
 #guard_msgs in
 #eval ASTtoCST test3
@@ -225,8 +348,8 @@ procedure TestDifferentInstantiations() returns ()
 /--
 info: Rendered Program:
 
-function identity<a> (x : 'a) : 'a;
-function makePair<a, b> (x : 'a, y : 'b) : Map 'a 'b;
+function identity<a> (x : a) : a;
+function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestDifferentInstantiations () returns ()
  {
 var m : (Map int bool);
@@ -260,16 +383,16 @@ info: Rendered Program:
 
 procedure P (x : bv8, y : bv8, z : bv8) returns ()
  {
-assert [add_comm]: x+y==y+x;
-  assert [xor_cancel]: x^x==bv{8}(0);
-  assert [div_shift]: xdivbv{8}(2)==x>>bv{8}(1);
-  assert [mul_shift]: x*bv{8}(2)==x<<bv{8}(1);
-  assert [demorgan]: ~(x&y)==~x|~y;
-  assert [mod_and]: xmodbv{8}(2)==x&bv{8}(1);
-  assert [bad_shift]: x>>y==x<<y;
-  var xy : bv16 := bvconcat{8}{8}(x,y);
-  var xy2 : bv32 := bvconcat{16}{16}(xy,xy);
-  var xy4 : bv64 := bvconcat{32}{32}(xy,xy);
+assert [add_comm]: x + y == y + x;
+  assert [xor_cancel]: x ^ x == bv{8}(0);
+  assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
+  assert [mul_shift]: x * bv{8}(2) == x << bv{8}(1);
+  assert [demorgan]: ~(x & y) == ~x | ~y;
+  assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
+  assert [bad_shift]: x >> y == x << y;
+  var xy : bv16 := bvconcat{8}{8}(x, y);
+  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : bv64 := bvconcat{32}{32}(xy, xy);
   }
 ;
 -/
@@ -301,9 +424,9 @@ procedure Test () returns ()
 var x : bv8 := bv{8}(0);
   var y : bv8 := bv{8}(0);
   var z : bv8 := bv{8}(0);
-  var xy : bv16 := bvconcat{8}{8}(z,y);
-  var xy2 : bv32 := bvconcat{16}{16}(x,x);
-  var xy4 : bv64 := bvconcat{32}{32}(x,x);
+  var xy : bv16 := bvconcat{8}{8}(z, y);
+  var xy2 : bv32 := bvconcat{16}{16}(x, x);
+  var xy4 : bv64 := bvconcat{32}{32}(x, x);
   }
 ;
 -/

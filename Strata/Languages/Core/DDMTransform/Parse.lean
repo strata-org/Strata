@@ -90,60 +90,60 @@ fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
 
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";
-fn str_concat (a : string, b : string) : string => "str.concat" "(" a "," b ")";
-fn str_substr (a : string, i : int, n : int) : string => "str.substr" "(" a "," i "," n ")";
+fn str_concat (a : string, b : string) : string => "str.concat" "(" a ", " b ")";
+fn str_substr (a : string, i : int, n : int) : string => "str.substr" "(" a ", " i ", " n ")";
 fn str_toregex (a : string) : regex => "str.to.re" "(" a ")";
-fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s "," a ")";
+fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s ", " a ")";
 fn re_allchar () : regex => "re.allchar" "(" ")";
 fn re_all () : regex => "re.all" "(" ")";
-fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 "," s2 ")";
-fn re_concat (r1 : regex, r2 : regex) : regex => "re.concat" "(" r1 "," r2 ")";
+fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 ", " s2 ")";
+fn re_concat (r1 : regex, r2 : regex) : regex => "re.concat" "(" r1 ", " r2 ")";
 fn re_star (r : regex) : regex => "re.*" "(" r ")";
 fn re_plus (r : regex) : regex => "re.+" "(" r ")";
-fn re_loop (r : regex, i : int, j : int) : regex => "re.loop" "(" r "," i "," j")";
-fn re_union (r1 : regex, r2 : regex) : regex => "re.union" "(" r1 "," r2 ")";
-fn re_inter (r1 : regex, r2 : regex) : regex => "re.inter" "(" r1 "," r2 ")";
+fn re_loop (r : regex, i : int, j : int) : regex => "re.loop" "(" r ", " i ", " j")";
+fn re_union (r1 : regex, r2 : regex) : regex => "re.union" "(" r1 ", " r2 ")";
+fn re_inter (r1 : regex, r2 : regex) : regex => "re.inter" "(" r1 ", " r2 ")";
 fn re_comp (r : regex) : regex => "re.comp" "(" r ")";
 fn re_none () : regex => "re.none" "(" ")";
 
 fn btrue : bool => "true";
 fn bfalse : bool => "false";
-fn equiv (a : bool, b : bool) : bool => @[prec(4)] a "<==>" b;
-fn implies (a : bool, b : bool) : bool => @[prec(5), rightassoc] a "==>" b;
-fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a "&&" b;
-fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a "||" b;
+fn equiv (a : bool, b : bool) : bool => @[prec(4)] a " <==> " b;
+fn implies (a : bool, b : bool) : bool => @[prec(5), rightassoc] a " ==> " b;
+fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a " && " b;
+fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " || " b;
 
-fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "==" b;
-fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "!=" b;
-fn le (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "<=" b;
-fn lt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "<" b;
-fn ge (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a ">=" b;
-fn gt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a ">" b;
+fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " == " b;
+fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " != " b;
+fn le (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " <= " b;
+fn lt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " < "  b;
+fn ge (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " >= " b;
+fn gt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " > "  b;
 
 fn neg_expr (tp : Type, a : tp) : tp => "-" a;
-fn add_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a "+" b;
-fn sub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a "-" b;
-fn mul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "*" b;
-fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "div" b;
-fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "mod" b;
+fn add_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " + " b;
+fn sub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " - " b;
+fn mul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " * " b;
+fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " div " b;
+fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " mod " b;
 
 fn bvnot (tp : Type, a : tp) : tp => "~" a;
-fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "&" b;
-fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "|" b;
-fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "^" b;
-fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "<<" b;
-fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>" b;
-fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>s" b;
-fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "sdiv" b;
-fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "smod" b;
-fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a "<s" b;
-fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a "<=s" b;
-fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a ">s" b;
-fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a ">=s" b;
+fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " & " b;
+fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " | " b;
+fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " ^ " b;
+fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " << " b;
+fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
+fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >>s " b;
+fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
+fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
+fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b;
+fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
+fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
+fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
 
-fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a "," b ")";
-fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a "," b ")";
-fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a "," b ")";
+fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a ", " b ")";
+fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a ", " b ")";
+fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a ", " b ")";
 
 fn bvextract_7_7 (a : bv8) : bv1 => "bvextract{7}{7}{8}" "(" a ")";
 fn bvextract_15_15 (a : bv16) : bv1 => "bvextract{15}{15}{16}" "(" a ")";
@@ -216,13 +216,13 @@ op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : S
 op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call" f "(" expr ")" ";\n";
 
-op block (c : Seq Statement) : Block => " {\n" indent(2, c:40) "}\n";
+op block (c : Seq Statement) : Block => " {\n" indent(2, c) "}\n";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b;
 op goto_statement (label : Ident) : Statement => "goto " label ";\n";
 
 category SpecElt;
 category Free;
-op free () : Free => "free";
+op free () : Free => "free ";
 op modifies_spec (nm : Ident) : SpecElt => "modifies " nm ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
   free? "ensures " label b ";\n";
@@ -327,25 +327,27 @@ category Constructor;
 category ConstructorList;
 
 @[constructor(name, fields)]
-op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) : Constructor =>
-  name "(" fields ")";
+op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) :
+    Constructor => @[prec(50)] name "(" fields ")";
 
 @[constructorListAtom(c)]
-op constructorListAtom (c : Constructor) : ConstructorList => c;
+op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c;
 
 @[constructorListPush(cl, c)]
-op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
-  cl "," c;
+op constructorListPush (cl : ConstructorList, c : Constructor)
+    : ConstructorList => cl ",\n  " c;
 
 // @[scopeDatatype(name, typeParams)] brings datatype name and parameters into
 // scope when parsing constructors for recursive types
 @[declareDatatype(name, typeParams, constructors,
-    perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
+    perConstructor([.datatype, .literal "..is", .constructor],
+                   [.datatype], .builtin "bool"),
     perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
-                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>
-  "datatype " name typeParams " {" constructors "}" ";\n";
+                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
+      : Command =>
+      "datatype " name typeParams " {" constructors "\n}" ";\n";
 
 #end
 
