@@ -179,12 +179,13 @@ program Core;
 
 datatype IntList () { Nil(), Cons(head: int, tail: IntList) };
 
-var g : bool;
-
 procedure Test1(x : bool) returns (y : bool)
 {
   y := x;
 };
+
+function intId(x : int): int;
+var g : bool;
 
 procedure Test2(x : bool) returns (y : bool)
 spec {
@@ -198,6 +199,8 @@ spec {
   y := x || x;
   call b := Test1(5);
 };
+
+function boolId(x : bool): bool;
 #end
 
 /--
@@ -207,11 +210,12 @@ datatype IntList {(
   (Nil())),
   (Cons(head : int, tail : IntList))
 };
-var g : bool;
 procedure Test1 (x : bool) returns (y : bool)
 {
   (y) := x;
   };
+function intId (x : int) : int;
+var g : bool;
 procedure Test2 (x : bool) returns (y : bool)
 spec {
   ensures [Test2_ensures_0]: y == x;
@@ -224,6 +228,7 @@ spec {
   (y) := x || x;
   call b := Test1(5);
   };
+function boolId (x : bool) : bool;
 -/
 #guard_msgs in
 #eval ASTtoCST testProcedures

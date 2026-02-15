@@ -484,11 +484,7 @@ partial def lexprToExpr {M} [Inhabited M]
       match ctx.freeVarIndex? id.name with
       | some idx => pure (.fvar default idx)
       | none => do
-        -- Add unbound identifier as free variable
-        modify (·.addFreeVars #[id.name])
-        let ctx ← get
-        let idx := ctx.freeVars.size - 1
-        pure (.fvar default idx)
+        ToCSTM.throwError "lexprToExpr" "fvar not found in: " (toString ctx.freeVars)
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
@@ -719,7 +715,9 @@ partial def invariantsToCST {M} [Inhabited M]
     pure (.consInvariants default exprCST (.nilInvariants default))
 end
 
-/-- Convert a procedure to CST -/
+/-- Convert a procedure to CST
+N.B.: We don't add the procedure name to the freeVars in the context.
+-/
 def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
@@ -792,8 +790,6 @@ def funcToCST {M} [Inhabited M]
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
-  -- Register function name as free variable
-  modify (·.addFreeVars #[name.val])
   let typeArgs : Ann (Option (TypeArgs M)) M :=
     if func.typeArgs.isEmpty then
       ⟨default, none⟩
@@ -821,6 +817,8 @@ def funcToCST {M} [Inhabited M]
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r bodyExpr inline?)
   modify ToCSTContext.popScope
+  -- Register function name as free variable
+  modify (·.addFreeVars #[name.val])
   pure result
 
 /-- Convert an axiom to CST -/
@@ -843,6 +841,8 @@ def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr 
 def varToCST {M} [Inhabited M]
     (name : CoreIdent) (ty : Lambda.LTy) (_e : Lambda.LExpr CoreLParams.mono)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+  -- Register name as free variable
+  modify (·.addFreeVars #[name.toPretty])
   let nameAnn : Ann String M := ⟨default, name.toPretty⟩
   let tyCST ← lTyToCoreType ty
   let typeArgs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
