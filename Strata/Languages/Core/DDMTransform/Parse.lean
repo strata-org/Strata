@@ -357,7 +357,7 @@ op command_datatype (name : Ident,
 // Types should be forward-declared before the mutual block
 @[scope(commands)]
 op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
-  "mutual\n" indent(2, commands) "end;\n";
+  "mutual\n  " indent(2, commands) "end;\n";
 
 #end
 

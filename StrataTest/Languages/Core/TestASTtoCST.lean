@@ -327,4 +327,91 @@ procedure P (x : bv8, y : bv8, z : bv8) returns ()
 
 -------------------------------------------------------------------------------
 
+private def polyRoseTreeHavocPgm : Program :=
+#strata
+program Core;
+
+forward type RoseTree (a : Type);
+forward type Forest (a : Type);
+mutual
+  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
+  datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
+end;
+
+procedure TestPolyRoseTreeHavoc() returns ()
+spec {
+  ensures true;
+}
+{
+  var t : RoseTree int;
+  var f : Forest int;
+  havoc t;
+  havoc f;
+  assume t == Node(42, FNil());
+  assume f == FCons(t, FNil());
+  assert [valIs42]: RoseTree..val(t) == 42;
+  assert [headIsT]: Forest..head(f) == t;
+  assert [headVal]: RoseTree..val(Forest..head(f)) == 42;
+};
+#end
+
+/--
+info: Rendered Program:
+
+forward type RoseTree (a : Type);
+forward type Forest (a : Type);
+mutual
+   datatype Forest (a : Type) {(
+    (FNil())),
+    (FCons(head : (RoseTree a), tail : (Forest a)))
+  };
+   datatype RoseTree (a : Type) {
+    (Node(val : a, children : (Forest a)))
+  };
+  end;
+procedure TestPolyRoseTreeHavoc () returns ()
+spec {
+  ensures [TestPolyRoseTreeHavoc_ensures_0]: true;
+  } {
+  var t : (RoseTree int);
+  var f : (Forest int);
+  havoc t;
+  havoc f;
+  assume [assume_0]: t == Node(42, FNil);
+  assume [assume_1]: f == FCons(t, FNil);
+  assert [valIs42]: RoseTree..val(t) == 42;
+  assert [headIsT]: Forest..head(f) == t;
+  assert [headVal]: RoseTree..val(Forest..head(f)) == 42;
+  };
+-/
+#guard_msgs in
+#eval ASTtoCST polyRoseTreeHavocPgm
+
+-------------------------------------------------------------------------------
+
+private def funcDeclStmtPgm : Program :=
+#strata
+program Core;
+
+procedure testFuncDecl(c: int) returns () {
+  function double(x : int) : int { x + x + c}
+  var y : int := 5;
+  var result : int := double(y);
+  assert result == 12;
+};
+
+#end
+
+-- BROKEN!
+#guard_msgs (drop all) in
+#eval ASTtoCST funcDeclStmtPgm
+-- AST to CST Error:
+-- Unsupported construct in funcDeclToStatement: funcDecl without body not supported in statements:
+-- Context: Global scope:
+-- Scope 1:
+--   boundVars: [c]
+-- Scope 2:
+
+-------------------------------------------------------------------------------
+
 end Strata.Test

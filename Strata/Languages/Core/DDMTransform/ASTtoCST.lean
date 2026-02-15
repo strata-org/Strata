@@ -19,14 +19,17 @@ Known issues:
 
 - Unsupported constructs (coming soon):
   -- Sub-functions (functions defined inside procedures)
-  -- Mutually recursive types
 
 - We generate some bound variables' names during translation because the
   semantic AST currently does not preserve them (e.g., bvars in quantifiers).
   We can log the identifier names during CST -> AST translation in the latter's
   metadata field and recover them in the future.
 
-- Remove extra parentheses around constructors in datatypes, assignments, etc.
+- Misc. formatting issues
+  -- Remove extra parentheses around constructors in datatypes, assignments,
+  etc.
+  -- Remove extra indentation from the last brace of a block or the `end`
+  keyword of a mutual block.
 -/
 
 namespace Strata
@@ -38,7 +41,7 @@ open Strata.CoreDDM
 -- Conversion Errors
 ---------------------------------------------------------------------
 
-/-- Errors that can occur during AST→CST conversion (formatting) -/
+/-- Errors that can occur during AST→CST conversion -/
 inductive ASTToCSTError (M : Type) where
   | unsupportedConstruct (fn : String) (description : String)
                          (context : String) (metadata : M) :
@@ -214,16 +217,30 @@ def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
 /-- Convert a datatype declaration to CST -/
 def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
     (_md : Imperative.MetaData Expression) : ToCSTM M (List (Command M)) := do
-  -- Register datatype names, constructor names, tester names, and destructor
-  -- names as free variables
+  -- Register datatype names first, then constructor/tester/destructor names.
+  -- For mutual datatypes, names may already be in context from forward
+  -- declarations.
   let dtNames := datatypes.map (·.name)
-  let constrNames := datatypes.flatMap (fun dt => dt.constrs.map (·.name.name))
-  let testerNames := datatypes.flatMap (fun dt => dt.constrs.map (·.testerName))
-  let destructorNames := datatypes.flatMap (fun dt =>
-    dt.constrs.flatMap (fun c => c.args.map (fun (id, _) => Lambda.destructorFuncName dt id)))
-  modify (·.addFreeVars (dtNames.toArray ++ constrNames.toArray ++ testerNames.toArray ++ destructorNames.toArray))
-  let mut results := []
+  for dtName in dtNames.reverse do
+    let ctx ← get
+    if ctx.freeVarIndex? dtName |>.isNone then
+      modify (·.addFreeVars #[dtName])
+
+  -- Then register constructor, tester, and destructor names
+  -- for each datatype.
   for dt in datatypes do
+    let constrNames := dt.constrs.map (·.name.name)
+    let testerNames := dt.constrs.map (·.testerName)
+    let destructorNames :=
+        dt.constrs.flatMap (fun c => c.args.map
+                              (fun (id, _) =>
+                                Lambda.destructorFuncName dt id))
+    modify (·.addFreeVars (constrNames.toArray ++
+                           testerNames.toArray ++
+                           destructorNames.toArray))
+
+  let processDatatype (dt : Lambda.LDatatype Visibility) :
+      ToCSTM M (Command M) := do
     let name : Ann String M := ⟨default, dt.name⟩
     let args : Ann (Option (Bindings M)) M :=
       if dt.typeArgs.isEmpty then
@@ -248,11 +265,40 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
           pure ⟨default, some ⟨default, bindings.toArray⟩⟩
       pure (Constructor.constructor_mk default constrName constrArgs)
     let constrs ← dt.constrs.mapM processConstr
-    let constrList := constrs.tail.foldl
-      (fun acc c => ConstructorList.constructorListPush default acc c)
-      (ConstructorList.constructorListAtom default constrs.head!)
-    results := results ++ [.command_datatype default name args constrList]
-  pure results
+    let constrList ←
+      if constrs.isEmpty then
+        ToCSTM.throwError "datatypeToCST" "datatype has no constructors" dt.name
+      else if constrs.length == 1 then
+        pure (ConstructorList.constructorListAtom default constrs[0]!)
+      else
+        pure (constrs.tail.foldl
+          (fun acc c => ConstructorList.constructorListPush default acc c)
+          (ConstructorList.constructorListAtom default constrs[0]!))
+    pure (.command_datatype default name args constrList)
+
+  match datatypes with
+  | [dt] => do
+    -- Single datatype - no mutual block needed
+    let cmd ← processDatatype dt
+    pure [cmd]
+  | _ => do
+    -- Multiple datatypes - generate forward declarations and mutual block.
+    let mut forwardDecls : List (Command M) := []
+    for dt in datatypes.reverse do
+      let name : Ann String M := ⟨default, dt.name⟩
+      let args : Ann (Option (Bindings M)) M :=
+        if dt.typeArgs.isEmpty then
+          ⟨default, none⟩
+        else
+          let bindings := dt.typeArgs.map fun param =>
+            let paramName : Ann String M := ⟨default, param⟩
+            let paramType := TypeP.type default
+            Binding.mkBinding default paramName paramType
+          ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+      forwardDecls := forwardDecls ++ [.command_forward_typedecl default name args]
+    let cmds ← datatypes.mapM processDatatype
+    let mutualCmd := Command.command_mutual default ⟨default, cmds.toArray⟩
+    pure (forwardDecls ++ [mutualCmd])
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)
@@ -611,8 +657,41 @@ partial def lappToExpr {M} [Inhabited M]
     ToCSTM.throwError "lappToExpr" "unsupported application" (toString e)
 end
 
+/-- Convert a function declaration to a statement -/
+def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression)
+    : ToCSTM M (CoreDDM.Statement M) := do
+  let name : Ann String M := ⟨default, decl.name.name⟩
+  let typeArgs : Ann (Option (TypeArgs M)) M :=
+    if decl.typeArgs.isEmpty then
+      ⟨default, none⟩
+    else
+      let tvars := decl.typeArgs.map fun tv =>
+        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let processInput (id : CoreLParams.Identifier) (ty : Lambda.LTy) :
+          ToCSTM M (Binding M × String) := do
+    let paramName : Ann String M := ⟨default, id.name⟩
+    let paramType ← lTyToCoreType ty
+    let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
+    pure (binding, id.name)
+  let results ← decl.inputs.toArray.mapM (fun (id, ty) => processInput id ty)
+  let bindings := results.map (·.1)
+  let paramNames := results.map (·.2)
+  let b : Bindings M := .mkBindings default ⟨default, bindings⟩
+  let r ← lTyToCoreType decl.output
+  match decl.body with
+  | none =>
+    ToCSTM.throwError "funcDeclToStatement"
+            "funcDecl without body not supported in statements" ""
+  | some body => do
+    -- Add formals to the context
+    modify (·.addBoundVars (reverse? := false) paramNames)
+    let bodyExpr ← lexprToExpr body 0
+    let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
+    pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
+
 mutual
-/-- Convert Core.Statement to CoreDDM.Statement -/
+/-- Convert `Core.Statement` to `CoreDDM.Statement` -/
 partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     : ToCSTM M (CoreDDM.Statement M) := do
   match s with
@@ -685,35 +764,7 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
   | .goto label _md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     pure (.goto_statement default labelAnn)
-  | .funcDecl decl _md => do
-    let name : Ann String M := ⟨default, decl.name.name⟩
-    let typeArgs : Ann (Option (TypeArgs M)) M :=
-      if decl.typeArgs.isEmpty then
-        ⟨default, none⟩
-      else
-        let tvars := decl.typeArgs.map fun tv =>
-          TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
-        ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
-    let processInput (id : CoreLParams.Identifier) (ty : Lambda.LTy) :
-            ToCSTM M (Binding M × String) := do
-      let paramName : Ann String M := ⟨default, id.name⟩
-      let paramType ← lTyToCoreType ty
-      let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
-      pure (binding, id.name)
-    let results ← decl.inputs.toArray.mapM (fun (id, ty) => processInput id ty)
-    let bindings := results.map (·.1)
-    let paramNames := results.map (·.2)
-    let b : Bindings M := .mkBindings default ⟨default, bindings⟩
-    let r ← lTyToCoreType decl.output
-    match decl.body with
-    | none =>
-      ToCSTM.throwError "stmtToCST" "funcDecl without body not supported in statements" ""
-    | some body => do
-      -- Add formals to the context
-      modify (·.addBoundVars (reverse? := false) paramNames)
-      let bodyExpr ← lexprToExpr body 0
-      let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
-      pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
+  | .funcDecl decl _md => funcDeclToStatement decl
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (CoreDDM.Block M) := do
@@ -841,7 +892,7 @@ def funcToCST {M} [Inhabited M]
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r bodyExpr inline?)
   modify ToCSTContext.popScope
-  -- Register function name as free variable
+  -- Register function name as free variable.
   modify (·.addFreeVars #[name.val])
   pure result
 
