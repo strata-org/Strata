@@ -88,20 +88,20 @@ Proof Obligation:
 Label: a6
 Property: assert
 Assumptions:
-(<label_ite_cond_true: ((~Int.Gt x) #0)>, ((~Int.Gt $__x2) #0))
+(<label_ite_cond_true: (~Int.Gt x #0)>, (~Int.Gt $__x2 #0))
 
 
 Proof Obligation:
-((~Int.Gt ((~Int.Mul $__x2) #2)) $__x2)
+(~Int.Gt (~Int.Mul $__x2 #2) $__x2)
 
 Label: a7
 Property: assert
 Assumptions:
-(<label_ite_cond_false: !((~Int.Gt x) #0)>, (if ((~Int.Gt $__x2) #0) then #false else #true))
+(<label_ite_cond_false: !(~Int.Gt x #0)>, (if (~Int.Gt $__x2 #0) then #false else #true))
 
 
 Proof Obligation:
-((~Int.Le $__x2) #0)
+(~Int.Le $__x2 #0)
 
 ---
 info:

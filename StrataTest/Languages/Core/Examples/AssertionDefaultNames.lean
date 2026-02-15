@@ -32,9 +32,11 @@ spec {
 info: procedure Test :  ((x : int)) → ()
   modifies: []
   preconditions: (Test_requires_0, ((x : int) == #1))
-  postconditions: ⏎
+  postconditions: 
 {
-  assert [assert_0] ((x : int) == #1)
+  {
+    assert [assert_0] ((x : int) == #1)
+  }
 }
 Errors: #[]
 -/
@@ -61,6 +63,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" assertionNames
+#eval verify "cvc5" assertionNames
 
 ---------------------------------------------------------------------

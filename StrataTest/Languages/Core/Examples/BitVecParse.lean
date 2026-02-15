@@ -53,11 +53,13 @@ Result: ❌ fail
 Evaluated program:
 procedure bitVecParseTest :  () → ()
   modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+  preconditions: 
+  postconditions: 
 {
-  assert [bitvec32_test] #true
-  assert [bitvec64_test] #false
+  {
+    assert [bitvec32_test] #true
+    assert [bitvec64_test] #false
+  }
 }
 ---
 info:
