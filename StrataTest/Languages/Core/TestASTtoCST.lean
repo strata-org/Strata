@@ -10,7 +10,6 @@ import Strata.Languages.Core.DDMTransform.Parse
 
 
 -- Tests for Core.Program → CST Conversion
-
 -- This file tests one-direction conversion: AST → CST using the old
 -- translator to obtain the AST.
 
@@ -49,7 +48,7 @@ def ASTtoCST (program : Strata.Program) := do
 
 -------------------------------------------------------------------------------
 
-def testTypes : Program :=
+private def testTypes : Program :=
 #strata
 program Core;
 
@@ -101,7 +100,7 @@ datatype Tree (a : Type) {(
 
 -------------------------------------------------------------------------------
 
-def testFnAxs : Program :=
+private def testFnAxs : Program :=
 #strata
 program Core;
 
@@ -224,7 +223,7 @@ function boolId (x : bool) : bool;
 
 -------------------------------------------------------------------------------
 
-def testPolyProc : Program :=
+private def testPolyProc : Program :=
 #strata
 program Core;
 
@@ -254,7 +253,7 @@ spec {
 
 -------------------------------------------------------------------------------
 
-def polyFns :=
+private def polyFns :=
 #strata
 program Core;
 
@@ -284,7 +283,7 @@ procedure TestDifferentInstantiations () returns ()
 
 -------------------------------------------------------------------------------
 
-def bitvecPgm :=
+private def bitvecPgm :=
 #strata
 program Core;
 
