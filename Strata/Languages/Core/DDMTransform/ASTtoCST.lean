@@ -6,7 +6,6 @@
 
 import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Core.Program
-import Strata.Languages.Core.CoreGen
 import Strata.DDM.Util.DecimalRat
 
 /-!
@@ -15,6 +14,19 @@ import Strata.DDM.Util.DecimalRat
 This module converts Core.Program AST to Core CST (concrete syntax).
 Used for formatting and pretty-printing Core constructs using DDM's
 formatting system.
+
+Known issues:
+
+- Unsupported constructs (coming soon):
+  -- Sub-functions (functions defined inside procedures)
+  -- Mutually recursive types
+
+- We generate some bound variables' names during translation because the
+  semantic AST currently does not preserve them (e.g., bvars in quantifiers).
+  We can log the identifier names during CST -> AST translation in the latter's
+  metadata field and recover them in the future.
+
+- Remove extra parentheses around constructors in datatypes, assignments, etc.
 -/
 
 namespace Strata
@@ -885,5 +897,4 @@ def programToCST {M} [Inhabited M] (prog : Core.Program) :
 end ToCST
 
 ---------------------------------------------------------------------
-
 end Strata

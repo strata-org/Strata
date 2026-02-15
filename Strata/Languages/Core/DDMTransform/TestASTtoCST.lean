@@ -8,22 +8,11 @@ import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.Languages.Core.DDMTransform.Parse
 
-/-!
-# Tests for Core.Program → CST Conversion
 
-This file tests one-direction conversion: AST → CST using the old
-translator to obtain the AST.
+-- Tests for Core.Program → CST Conversion
 
-Known issues:
-
-- We generate some bound variables' names during translation because the
-  semantic AST currently does not preserve them (e.g., bvars in quantifiers).
-  We can log the identifier names in metadata and recover them in the future.
-
-- Support sub-functions in procedures.
-
-- Remove extra parentheses around constructors in datatypes, assignments, etc.
--/
+-- This file tests one-direction conversion: AST → CST using the old
+-- translator to obtain the AST.
 
 namespace Strata.Test
 
