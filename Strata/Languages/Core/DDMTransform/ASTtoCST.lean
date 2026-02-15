@@ -127,6 +127,16 @@ def addBoundVars (ctx : ToCSTContext) (names : Array String)
   let newScope := { scope with boundVars := names ++ scope.boundVars }
   { ctx with scopes := ctx.scopes.set! idx newScope }
 
+/-- Push bound variables to the current scope.
+Unlike `addBoundVars`, the variable is added to the end of the bound variables.
+-/
+def pushBoundVar (ctx : ToCSTContext) (name : String)
+    : ToCSTContext :=
+  let idx := ctx.scopes.size - 1
+  let scope := ctx.scopes[idx]!
+  let newScope := { scope with boundVars := scope.boundVars.push name }
+  { ctx with scopes := ctx.scopes.set! idx newScope }
+
 /-- Push a new scope onto the stack -/
 def pushScope (ctx : ToCSTContext) : ToCSTContext :=
   { ctx with scopes := ctx.scopes.push {} }
@@ -626,8 +636,10 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     | _ => -- not an .fvar
       let exprCST ← lexprToExpr expr 0
       pure (.initStatement default tyCST nameAnn exprCST)
-    -- Add the newly declared variable to bound variables context
-    modify (·.addBoundVars #[name.toPretty])
+    -- Push the newly declared variable to the *end of the bound variables
+    -- context* so that the most recently declared variable has the lowest
+    -- index.
+    modify (·.pushBoundVar name.toPretty)
     pure result
   | .set name expr _md => do
     let lhs := Lhs.lhsIdent default ⟨default, name.name⟩

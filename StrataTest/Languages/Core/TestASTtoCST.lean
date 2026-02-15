@@ -183,9 +183,11 @@ spec {
   ensures (g == old(g));
   ensures [List_head_test]: (IntList..isNil(Nil()));
 } {
-  var b : bool;
+  var b0 : bool;
   y := x || x;
-  call b := Test1(5);
+  call b0 := Test1(5);
+  var b1 : bool;
+  call b1 := Test1(6);
 };
 
 function boolId(x : bool): bool;
@@ -212,9 +214,11 @@ spec {
   ensures [Test2_ensures_3]: g == old(g);
   ensures [List_head_test]: IntList..isNil(Nil);
   } {
-  var b : bool;
+  var b0 : bool;
   (y) := x || x;
-  call b := Test1(5);
+  call b0 := Test1(5);
+  var b1 : bool;
+  call b1 := Test1(6);
   };
 function boolId (x : bool) : bool;
 -/
@@ -315,7 +319,7 @@ procedure P (x : bv8, y : bv8, z : bv8) returns ()
   assert [bad_shift]: x >> y == x << y;
   var xy : bv16 := bvconcat{8}{8}(x, y);
   var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
-  var xy4 : bv64 := bvconcat{32}{32}(xy, xy);
+  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
   };
 -/
 #guard_msgs in
