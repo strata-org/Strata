@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DDM.AST
 import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
+public import Strata.DDM.Integration.Lean.OfAstM
 
 ---------------------------------------------------------------------
-
+public section
 namespace Strata
 
 ---------------------------------------------------------------------
@@ -368,3 +369,4 @@ end CoreDDM
 ---------------------------------------------------------------------
 
 end Strata
+end

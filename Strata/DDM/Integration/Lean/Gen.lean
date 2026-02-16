@@ -25,7 +25,7 @@ category used by the dialect.
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote
   withTraceNode mkIdentFrom)
 open Lean.Elab (throwUnsupportedSyntax)
-open Lean.Elab.Command (CommandElab CommandElabM elabCommand)
+open Lean.Elab.Command (CommandElab CommandElabM elabCommand getScope)
 open Lean.MonadOptions (getOptions)
 open Lean.MonadResolveName (getCurrNamespace)
 open Lean.Parser.Command (ctor)
@@ -40,22 +40,24 @@ namespace Lean
 
 /--
 Prepend the current namespace to the Lean name and convert to an identifier.
+When in a module file and not in a `public section`, uses `mkPrivateName` to
+resolve the `.decl` pre-resolution hint to the private-mangled name.
 -/
-def mkScopedIdent (scope : Name) (subName : Lean.Name) : Ident :=
-  let fullName := scope ++ subName
+def mkScopedIdent (subName : Lean.Name) : CommandElabM Ident := do
+  let env ← getEnv
+  let scope ← getScope
+  let fullName := scope.currNamespace ++ subName
+  let resolvedName :=
+    if !env.header.isModule || scope.isPublic then
+      fullName
+    else
+      Lean.mkPrivateName env fullName
   let nameStr := toString subName
-  .mk (.ident .none nameStr.toRawSubstring subName [.decl fullName []])
-
-/--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def currScopedIdent {m} [Monad m] [Lean.MonadResolveName m]
-    (subName : Lean.Name) : m Ident := do
-  (mkScopedIdent · subName) <$> getCurrNamespace
+  return .mk (.ident .none nameStr.toRawSubstring subName [.decl resolvedName []])
 
 end Lean
 
-open Lean (currScopedIdent)
+open Lean (mkScopedIdent)
 
 def arrayLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
   ``( (#[ $as:term,* ] : Array _) )
@@ -650,21 +652,6 @@ def mkCategoryIdent (scope : Name) (name : Name) : Ident :=
   aux name []
 
 /--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def scopedIdent (scope subName : Lean.Name) : Ident :=
-  let name := scope ++ subName
-  let nameStr := toString subName
-  .mk (.ident .none nameStr.toRawSubstring subName [.decl name []])
-
-/--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def mkScopedIdent {m} [Monad m] [Lean.MonadResolveName m]
-    (subName : Lean.Name) : m Ident :=
-  (scopedIdent · subName) <$> getCurrNamespace
-
-/--
 Returns the Lean name for a category, looking it up in the context's
 category name map which handles naming conflicts.
 -/
@@ -682,7 +669,7 @@ or a generated category name.
 def getCategoryIdent (cat : QualifiedIdent) : GenM Ident := do
   if let some nm := declaredCategories[cat]? then
     return mkRootIdent nm
-  currScopedIdent (← getCategoryScopedName cat)
+  mkScopedIdent (← getCategoryScopedName cat)
 
 /-- Returns a Lean term for a category type applied to the annotation type. -/
 def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
@@ -691,7 +678,7 @@ def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
 
 /-- Returns a scoped identifier for a constructor in a category. -/
 def getCategoryOpIdent (cat : QualifiedIdent) (name : Name) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ name
+  mkScopedIdent <| (← getCategoryScopedName cat) ++ name
 
 /--
 Generates a Lean type term for a `SyntaxCat`, recursing into parameterized
@@ -828,11 +815,11 @@ def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
 
 /-- Returns the identifier for a category's toAst function. -/
 def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
+  mkScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
 
 /-- Returns the identifier for a category's ofAst function. -/
 def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
+  mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
 
 /-- Wraps a value with an `Ann`-extracted annotation into an AST argument. -/
 def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
@@ -1322,7 +1309,7 @@ def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor)
     | none => map  -- Skip operators without a name
     | some name => map.insert name map.size  -- Assign the next available index
   let ofAstNameMap ←
-    currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.nameIndexMap
+    mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.nameIndexMap
   let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat :=
     Std.HashMap.ofList $(quote nameIndexMap.toList))
   pure (nameIndexMap, ofAstNameMap, cmd)
