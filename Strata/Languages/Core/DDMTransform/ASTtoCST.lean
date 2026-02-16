@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.DDMTransform.Parse
+import Strata.Languages.Core.DDMTransform.Grammar
 import Strata.Languages.Core.Program
 import Strata.DDM.Util.DecimalRat
 
