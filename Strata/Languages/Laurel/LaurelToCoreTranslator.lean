@@ -862,96 +862,7 @@ def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstrain
     body := body
   }) .empty
 
-def heapTypeDecl : Core.Decl := .type (.con { name := "Heap", numargs := 0 })
-def fieldTypeDecl : Core.Decl := .type (.con { name := "Field", numargs := 1 })
-def compositeTypeDecl : Core.Decl := .type (.con { name := "Composite", numargs := 0 })
 def arrayTypeSynonym : Core.Decl := .type (.syn { name := "Array", typeArgs := ["T"], type := .tcons "Map" [.int, .ftvar "T"] })
-
-def readFunction : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let tVar := LMonoTy.ftvar "T"
-  let fieldTy := LMonoTy.tcons "Field" [tVar]
-  .func {
-    name := Core.CoreIdent.glob "heapRead"
-    typeArgs := ["T"]
-    inputs := [(Core.CoreIdent.locl "heap", heapTy),
-               (Core.CoreIdent.locl "obj", compTy),
-               (Core.CoreIdent.locl "field", fieldTy)]
-    output := tVar
-    body := none
-  }
-
-def updateFunction : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let tVar := LMonoTy.ftvar "T"
-  let fieldTy := LMonoTy.tcons "Field" [tVar]
-  .func {
-    name := Core.CoreIdent.glob "heapStore"
-    typeArgs := ["T"]
-    inputs := [(Core.CoreIdent.locl "heap", heapTy),
-               (Core.CoreIdent.locl "obj", compTy),
-               (Core.CoreIdent.locl "field", fieldTy),
-               (Core.CoreIdent.locl "val", tVar)]
-    output := heapTy
-    body := none
-  }
-
--- Axiom: forall h, o, f, v :: heapRead(heapStore(h, o, f, v), o, f) == v
--- Using int for field values since Core doesn't support polymorphism in axioms
-def readUpdateSameAxiom : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
-  -- Build: heapRead(heapStore(h, o, f, v), o, f) == v using de Bruijn indices
-  -- Quantifier order (outer to inner): int (v), Field int (f), Composite (o), Heap (h)
-  -- So: h is bvar 0, o is bvar 1, f is bvar 2, v is bvar 3
-  let h := LExpr.bvar () 0
-  let o := LExpr.bvar () 1
-  let f := LExpr.bvar () 2
-  let v := LExpr.bvar () 3
-  let updateOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
-  let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
-  let updateExpr := LExpr.mkApp () updateOp [h, o, f, v]
-  let readExpr := LExpr.mkApp () readOp [updateExpr, o, f]
-  let eqBody := LExpr.eq () readExpr v
-  -- Wrap in foralls: forall v:int, f:Field int, o:Composite, h:Heap
-  let body := LExpr.all () (some LMonoTy.int) <|
-              LExpr.all () (some fieldTy) <|
-              LExpr.all () (some compTy) <|
-              LExpr.all () (some heapTy) eqBody
-  .ax { name := "heapRead_heapStore_same", e := body }
-
--- Axiom: forall h, o1, o2, f1, f2, v :: (o1 != o2 || f1 != f2) ==> heapRead(heapStore(h, o1, f1, v), o2, f2) == heapRead(h, o2, f2)
-def readUpdateDiffAxiom : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
-  -- Quantifier order (outer to inner): int (v), Field (f2), Field (f1), Composite (o2), Composite (o1), Heap (h)
-  -- So: h is bvar 0, o1 is bvar 1, o2 is bvar 2, f1 is bvar 3, f2 is bvar 4, v is bvar 5
-  let h := LExpr.bvar () 0
-  let o1 := LExpr.bvar () 1
-  let o2 := LExpr.bvar () 2
-  let f1 := LExpr.bvar () 3
-  let f2 := LExpr.bvar () 4
-  let v := LExpr.bvar () 5
-  let updateOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
-  let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
-  let updateExpr := LExpr.mkApp () updateOp [h, o1, f1, v]
-  let lhs := LExpr.mkApp () readOp [updateExpr, o2, f2]
-  let rhs := LExpr.mkApp () readOp [h, o2, f2]
-  let objsDiff := LExpr.app () boolNotOp (LExpr.eq () o1 o2)
-  let fieldsDiff := LExpr.app () boolNotOp (LExpr.eq () f1 f2)
-  let precond := LExpr.mkApp () boolOrOp [objsDiff, fieldsDiff]
-  let implBody := LExpr.mkApp () boolImpliesOp [precond, LExpr.eq () lhs rhs]
-  let body := LExpr.all () (some LMonoTy.int) <|
-              LExpr.all () (some fieldTy) <|
-              LExpr.all () (some fieldTy) <|
-              LExpr.all () (some compTy) <|
-              LExpr.all () (some compTy) <|
-              LExpr.all () (some heapTy) implBody
-  .ax { name := "heapRead_heapStore_diff", e := body }
 
 /-- Truncating division (Java/C semantics): truncates toward zero -/
 def intDivTFunc : Core.Decl :=
@@ -1097,11 +1008,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procDecls ← procProcs.mapM (translateProcedure ctMap tcMap program.constants funcNames) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let laurelFuncDecls ← funcProcs.mapM (translateProcedureToFunction ctMap tcMap program.constants) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let constDecls := program.constants.map translateConstant
-  let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl, arrayTypeSynonym]
-  let funcDecls := [readFunction, updateFunction, intDivTFunc, intModTFunc]
-  let axiomDecls := [readUpdateSameAxiom, readUpdateDiffAxiom]
+  let typeDecls := [arrayTypeSynonym]
+  let funcDecls := [intDivTFunc, intModTFunc]
   let preludeDecls := corePrelude.decls
-  return ({ decls := preludeDecls ++ typeDecls ++ funcDecls ++ axiomDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  return ({ decls := preludeDecls ++ typeDecls ++ funcDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
