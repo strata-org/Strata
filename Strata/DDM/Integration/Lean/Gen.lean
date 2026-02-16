@@ -7,11 +7,14 @@ module
 
 public meta import Lean.Elab.Command
 public meta import Strata.DDM.AST
+public import      Strata.DDM.BuiltinDialects.Init  -- Generated code references Init dialect types
+public import      Strata.DDM.HNF  -- Generated ofAst code uses ExprF.hnf
 public meta import Strata.DDM.BuiltinDialects.Init
 meta import        Strata.DDM.BuiltinDialects.StrataDDL
 public meta import Strata.DDM.Integration.Categories
 public meta import Strata.DDM.Integration.Lean.Env
-import             Strata.DDM.Integration.Lean.GenTrace
+public meta import Strata.DDM.Integration.Lean.GenTrace  -- trace.Strata.generator option
+public import      Strata.DDM.Integration.Lean.OfAstM  -- Generated ofAst code uses OfAstM combinators
 public meta import Strata.DDM.Integration.Lean.OfAstM
 public meta import Strata.DDM.Util.Graph.Tarjan
 meta import        Strata.Util.DecideProp
