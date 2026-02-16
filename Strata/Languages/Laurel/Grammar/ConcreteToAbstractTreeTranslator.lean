@@ -136,6 +136,12 @@ instance : Inhabited Procedure where
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   match name with
   | q`Laurel.add => some Operation.Add
+  | q`Laurel.sub => some Operation.Sub
+  | q`Laurel.mul => some Operation.Mul
+  | q`Laurel.div => some Operation.Div
+  | q`Laurel.mod => some Operation.Mod
+  | q`Laurel.divT => some Operation.DivT
+  | q`Laurel.modT => some Operation.ModT
   | q`Laurel.eq => some Operation.Eq
   | q`Laurel.neq => some Operation.Neq
   | q`Laurel.gt => some Operation.Gt
@@ -144,6 +150,13 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.ge => some Operation.Geq
   | q`Laurel.and => some Operation.And
   | q`Laurel.or => some Operation.Or
+  | q`Laurel.implies => some Operation.Implies
+  | _ => none
+
+def getUnaryOp? (name : QualifiedIdent) : Option Operation :=
+  match name with
+  | q`Laurel.not => some Operation.Not
+  | q`Laurel.neg => some Operation.Neg
   | _ => none
 
 mutual
@@ -215,6 +228,32 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
       return mkStmtExprMd (.FieldSelect obj field) md
+    | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
+      let cond ← translateStmtExpr condArg
+      let invariants ← match invSeqArg with
+        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+            | .op invOp => match invOp.name, invOp.args with
+              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
+              | _, _ => TransM.error "Expected invariantClause"
+            | _ => TransM.error "Expected operation"
+        | _ => pure []
+      let body ← translateStmtExpr bodyArg
+      return mkStmtExprMd (.While cond invariants none body) md
+    | q`Laurel.forallExpr, #[nameArg, tyArg, bodyArg] =>
+      let name ← translateIdent nameArg
+      let ty ← translateHighType tyArg
+      let body ← translateStmtExpr bodyArg
+      return mkStmtExprMd (.Forall name ty body) md
+    | q`Laurel.existsExpr, #[nameArg, tyArg, bodyArg] =>
+      let name ← translateIdent nameArg
+      let ty ← translateHighType tyArg
+      let body ← translateStmtExpr bodyArg
+      return mkStmtExprMd (.Exists name ty body) md
+    | _, #[arg0] => match getUnaryOp? op.name with
+      | some primOp =>
+        let inner ← translateStmtExpr arg0
+        return mkStmtExprMd (.PrimitiveOp primOp [inner]) md
+      | none => TransM.error s!"Unknown unary operation: {op.name}"
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0

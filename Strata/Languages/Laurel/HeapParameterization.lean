@@ -59,7 +59,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
   | .LocalVariable _ _ i => if let some x := i then collectExprMd x
-  | .While c i d b => collectExprMd c; collectExprMd b; if let some x := i then collectExprMd x; if let some x := d then collectExprMd x
+  | .While c invs d b => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
   | .Return v => if let some x := v then collectExprMd x
   | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)
@@ -251,9 +251,9 @@ where
     | .LocalVariable n ty i =>
         let i' ← match i with | some x => some <$> recurse x | none => pure none
         return ⟨ .LocalVariable n ty i', md ⟩
-    | .While c i d b =>
-        let i' ← match i with | some x => some <$> recurse x | none => pure none
-        return ⟨ .While (← recurse c) i' d (← recurse b false), md ⟩
+    | .While c invs d b =>
+        let invs' ← invs.mapM (recurse ·)
+        return ⟨ .While (← recurse c) invs' d (← recurse b false), md ⟩
     | .Return v =>
         let v' ← match v with | some x => some <$> recurse x | none => pure none
         return ⟨ .Return v', md ⟩
