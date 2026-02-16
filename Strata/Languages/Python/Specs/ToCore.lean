@@ -142,7 +142,9 @@ Handles:
 - Union[None, str] → StrOrNone
 - Union[None, int] → IntOrNone
 - Union[None, bool] → BoolOrNone
+- Union[None, float] → string
 - Union[None, Literal["A"], Literal["B"], ...] → StrOrNone
+- Union[None, Literal[1], Literal[2], ...] → IntOrNone
 - Union[None, List[T]] → string
 - Union[None, Dict[K,V]] → string
 - Union[None, Any] → string
@@ -168,6 +170,10 @@ def detectOptionalType (ty : SpecType) : ToCoreM (Option (CoreDDM.CoreType Sourc
   if otherAtoms.all (fun a => match a with | .stringLiteral _ => true | _ => false) then
     return some (.fvar ty.loc ctx.strOrNoneIndex #[])
 
+  -- If all non-None atoms are int literals → IntOrNone
+  if otherAtoms.all (fun a => match a with | .intLiteral _ => true | _ => false) then
+    return some (.fvar ty.loc ctx.intOrNoneIndex #[])
+
   -- If exactly one non-None atom, match on its type
   if otherAtoms.size == 1 then
     match otherAtoms[0]! with
@@ -186,10 +192,16 @@ def detectOptionalType (ty : SpecType) : ToCoreM (Option (CoreDDM.CoreType Sourc
         return some (.string ty.loc)
       else if nm == PythonIdent.builtinsBytes then
         return some (.string ty.loc)
+      else if nm == PythonIdent.builtinsFloat then
+        -- FIXME: Should map to RealOrNone once we add that type to CorePrelude
+        specError ty.loc "Union[None, float] mapped to string - needs RealOrNone type"
+        return some (.string ty.loc)
       else
         return none
     | .typedDict _ _ _ =>
       return some (.fvar default ctx.dictStrAnyIndex #[])
+    | .intLiteral _ =>
+      return some (.fvar ty.loc ctx.intOrNoneIndex #[])
     | _ => return none
   else
     return none
@@ -206,6 +218,9 @@ def specTypeToCoreType (ty : SpecType) : ToCoreM (CoreDDM.CoreType SourceRange) 
       -- Check if all atoms are string literals (Literal["A"] | Literal["B"] | ...)
       if ty.atoms.all (fun a => match a with | .stringLiteral _ => true | _ => false) then
         return .string ty.loc
+      -- Check if all atoms are int literals (Literal[1] | Literal[2] | ...)
+      if ty.atoms.all (fun a => match a with | .intLiteral _ => true | _ => false) then
+        return .int ty.loc
       -- Check if this is a Union[None, T] pattern we support
       match ← detectOptionalType ty with
       | some coreType =>
