@@ -227,17 +227,19 @@ private partial def whitespace : ParserFn := fun c s =>
       let j    := c.next' i h
       let curr := c.get j
       match curr with
-      | '/' =>
-        match c.tokens.matchPrefix c.inputString i with
-        | some _ => s
-        | none =>
-          andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
-      | '*' =>
-        match c.tokens.matchPrefix c.inputString i with
-        | some _ => s
-        | none =>
-          let j := c.next j
-          andthenFn (finishCommentBlock (pushMissingOnError := false)) whitespace c (s.next c j)
+      | '/' => Id.run do
+        -- Treat // as comment unless a token covering both chars exists (e.g., //@pre)
+        if let some tk := c.tokens.matchPrefix c.inputString i then
+          if tk.utf8ByteSize >= 2 then
+            return s
+        andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
+      | '*' => Id.run do
+        -- Treat /* as comment unless a token covering both chars exists
+        if let some tk := c.tokens.matchPrefix c.inputString i then
+          if tk.utf8ByteSize >= 2 then
+            return s
+        andthenFn (finishCommentBlock (pushMissingOnError := false))
+          whitespace c (s.next c (c.next j))
       | _ =>
         s
     else s
@@ -897,7 +899,7 @@ partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metad
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     commaSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
-  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.Seq =>
+  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.NewlineSepBy | q`Init.Seq =>
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     (if isNonempty then many1Parser else manyParser) <$> catParser ctx cat.args[0]!

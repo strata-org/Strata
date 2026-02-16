@@ -25,7 +25,6 @@ Features currently not present:
 Design choices:
 - Pure contracts: contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
 - Procedures: instead of functions and methods we have a single more general concept called a 'procedure'.
-- Determinism: procedures can be marked as deterministic or not. For deterministic procedures with a non-empty reads clause, we can assume the result is unchanged if the read references are the same.
 - Opacity: procedures can have a body that's transparant or opaque. Only an opaque body may declare a postcondition.
 - StmtExpr: Statements and expressions are part of the same type. This reduces duplication since the same concepts are needed in both, such as conditions and variable declarations.
 - Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
@@ -55,13 +54,17 @@ inductive Operation : Type where
   | Eq | Neq
   | And | Or | Not | Implies
   /- Works on Int/Float64 -/
-  | Neg | Add | Sub | Mul | Div | Mod
+  | Neg | Add | Sub | Mul | Div | Mod | DivT | ModT
   | Lt | Leq | Gt | Geq
   deriving Repr
+
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
 
 structure WithMetadata (t : Type) : Type where
   val : t
   md : Imperative.MetaData Core.Expression
+  deriving Repr
 
 inductive HighType : Type where
   | TVoid
@@ -79,6 +82,7 @@ inductive HighType : Type where
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List (WithMetadata HighType))
+  deriving Repr
 
 mutual
 
@@ -86,15 +90,10 @@ structure Procedure : Type where
   name : Identifier
   inputs : List Parameter
   outputs : List Parameter
-  precondition : WithMetadata StmtExpr
-  determinism : Determinism
+  preconditions : List (WithMetadata StmtExpr)
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
   body : Body
   md : Imperative.MetaData Core.Expression
-
-inductive Determinism where
-  | deterministic (reads : Option (WithMetadata StmtExpr))
-  | nondeterministic
 
 structure Parameter where
   name : Identifier
@@ -105,12 +104,12 @@ inductive Body where
   | Transparent (body : WithMetadata StmtExpr)
 /- Without an implementation, the postcondition is assumed -/
   | Opaque
-      (postcondition : List (WithMetadata StmtExpr))
+      (postconditions : List (WithMetadata StmtExpr))
       (implementation : Option (WithMetadata StmtExpr))
       (modifies : List (WithMetadata StmtExpr))
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
-  | Abstract (postcondition : WithMetadata StmtExpr)
+  | Abstract (postconditions : List (WithMetadata StmtExpr))
 
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
@@ -130,11 +129,9 @@ inductive StmtExpr : Type where
   /- The initializer must be set if this StmtExpr is pure -/
   | LocalVariable (name : Identifier) (type : WithMetadata HighType) (initializer : Option (WithMetadata StmtExpr))
   /- While is only allowed in an impure context
-    The invariant and decreases are always pure
+    The invariants and decreases are always pure
   -/
-  | While (cond : WithMetadata StmtExpr) (invariant : Option (WithMetadata StmtExpr))
-    (decreases : Option (WithMetadata StmtExpr))
-    (body : WithMetadata StmtExpr)
+  | While (cond : WithMetadata StmtExpr) (invariants : List (WithMetadata StmtExpr)) (decreases : Option (WithMetadata StmtExpr)) (body : WithMetadata StmtExpr)
   | Exit (target : Identifier)
   | Return (value : Option (WithMetadata StmtExpr))
 /- Expression like -/
@@ -204,7 +201,7 @@ abbrev HighTypeMd := WithMetadata HighType
 abbrev StmtExprMd := WithMetadata StmtExpr
 
 theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
-  cases e; grind
+  cases e <;> simp_wf <;> omega
 
 instance : Inhabited StmtExpr where
   default := .Hole

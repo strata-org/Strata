@@ -16,22 +16,24 @@ def formatOperation : Operation → Format
   | .Neq => "!="
   | .And => "&&"
   | .Or => "||"
-  | .Not => "!"
   | .Implies => "==>"
+  | .Not => "!"
   | .Neg => "-"
   | .Add => "+"
   | .Sub => "-"
   | .Mul => "*"
   | .Div => "/"
   | .Mod => "%"
+  | .DivT => "/t"
+  | .ModT => "%t"
   | .Lt => "<"
   | .Leq => "<="
   | .Gt => ">"
   | .Geq => ">="
 
-
 mutual
-def formatHighType (t : HighTypeMd) : Format := formatHighTypeVal t.val
+def formatHighType (t : HighTypeMd) : Format :=
+  formatHighTypeVal t.val
   termination_by sizeOf t
   decreasing_by cases t; term_by_mem
 
@@ -55,9 +57,9 @@ def formatHighTypeVal : HighType → Format
   decreasing_by all_goals term_by_mem
 end
 
-
 mutual
-def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
+def formatStmtExpr (s : StmtExprMd) : Format :=
+  formatStmtExprVal s.val
   termination_by sizeOf s
   decreasing_by cases s; term_by_mem
 
@@ -75,8 +77,10 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       match init with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
-  | .While cond _ _ body =>
-      "while " ++ formatStmtExpr cond ++ " " ++ formatStmtExpr body
+  | .While cond invs _ body =>
+      "while " ++ formatStmtExpr cond ++
+      (if invs.isEmpty then Format.nil else " invariant " ++ Format.joinSep (invs.map formatStmtExpr) "; ") ++
+      " " ++ formatStmtExpr body
   | .Exit target => "exit " ++ Format.text target
   | .Return value =>
       "return" ++
@@ -135,11 +139,6 @@ end
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
 
-def formatDeterminism : Determinism → Format
-  | .deterministic none => "deterministic"
-  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
-  | .nondeterministic => "nondeterministic"
-
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque postconds impl modif =>
@@ -149,14 +148,13 @@ def formatBody : Body → Format
       match impl with
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
-  | .Abstract post => "abstract ensures " ++ formatStmtExpr post
+  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
 
 def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
-  "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++
-  formatDeterminism proc.determinism ++ Format.line ++
+  Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
   formatBody proc.body
 
 def formatField (f : Field) : Format :=
@@ -198,9 +196,6 @@ instance : Std.ToFormat StmtExpr where
 
 instance : Std.ToFormat Parameter where
   format := formatParameter
-
-instance : Std.ToFormat Determinism where
-  format := formatDeterminism
 
 instance : Std.ToFormat Body where
   format := formatBody

@@ -40,6 +40,7 @@ instance : ToExpr SepFormat where
     | .comma => mkConst ``SepFormat.comma
     | .space => mkConst ``SepFormat.space
     | .spacePrefix => mkConst ``SepFormat.spacePrefix
+    | .newline => mkConst ``SepFormat.newline
 
 end SepFormat
 
