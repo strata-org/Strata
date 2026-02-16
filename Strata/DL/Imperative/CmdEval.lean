@@ -22,14 +22,22 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
   | some _ => (c, σ)
   | none =>
     match c with
-    | .init x ty e md =>
+    | .init x ty eOpt md =>
       match EC.lookup σ x with
       | none =>
-        let (e, σ) := EC.preprocess σ c e
-        let e := EC.eval σ e
-        let σ := EC.update σ x ty e
-        let c' := .init x ty e md
-        (c', σ)
+        match eOpt with
+        | some e =>
+          let (e, σ) := EC.preprocess σ c e
+          let e := EC.eval σ e
+          let σ := EC.update σ x ty e
+          let c' := .init x ty (some e) md
+          (c', σ)
+        | none =>
+          -- Unconstrained initialization - generate a fresh value
+          let (e, σ) := EC.genFreeVar σ x ty
+          let σ := EC.update σ x ty e
+          let c' := .init x ty none md
+          (c', σ)
       | some (xv, xty) => (c, EC.updateError σ (.InitVarExists (x, xty) xv))
 
     | .set x e md =>

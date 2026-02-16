@@ -1012,7 +1012,7 @@ def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBinding
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Core.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))
+    let s := Core.Statement.init id tp (some (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))))
     let bindings := incrNum .var_def bindings
     let (stmts, bindings) ← initVarStmts rest bindings
     return ((s :: stmts), bindings)
