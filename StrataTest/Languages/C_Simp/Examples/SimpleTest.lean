@@ -54,16 +54,22 @@ int procedure simpleTest(x:int, y:int)//@prey>(0);
 
 /--
 info: function simpleTest {
-  pre: ((~Int.Gt y) #0)
+  pre: (~Int.Gt y #0)
   post: #true
   body:
-init (z : int) := init_z
-z := ((~Int.Add x) y)
-assert [test_assert] ((~Int.Gt z) x)
-if ((~Int.Gt z) #10) then {z := ((~Int.Sub z) #1)}
-else{z := ((~Int.Add z) #1)}
-assume [test_assume] ((~Int.Gt z) #0)
-return := #0
+{
+  init (z : int) := init_z
+  z := (~Int.Add x y)
+  assert [test_assert] (~Int.Gt z x)
+  if (~Int.Gt z #10) {
+    z := (~Int.Sub z #1)
+  }
+  else {
+    z := (~Int.Add z #1)
+  }
+  assume [test_assume] (~Int.Gt z #0)
+  return := #0
+}
 }
 Errors: #[]
 -/
@@ -79,16 +85,28 @@ VCs:
 Label: test_assert
 Property: assert
 Assumptions:
-(pre, ((~Int.Gt $__y1) #0))
+(pre, (~Int.Gt $__y1 #0))
 
 Proof Obligation:
-((~Int.Gt ((~Int.Add $__x0) $__y1)) $__x0)
+(~Int.Gt (~Int.Add $__x0 $__y1) $__x0)
 
 Label: post
 Property: assert
 Assumptions:
-(pre, ((~Int.Gt $__y1) #0))
-(<label_ite_cond_true: ((~Int.Gt z) #10)>, (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) else #true)) (<label_ite_cond_false: !((~Int.Gt z) #10)>, (if (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then #false else #true) then (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then #false else #true) else #true)) (test_assume, ((~Int.Gt (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then ((~Int.Sub ((~Int.Add $__x0) $__y1)) #1) else ((~Int.Add ((~Int.Add $__x0) $__y1)) #1))) #0))
+(pre, (~Int.Gt $__y1 #0))
+(<label_ite_cond_true: (~Int.Gt z #10)>, (if (~Int.Gt
+  (~Int.Add $__x0 $__y1)
+  #10) then (~Int.Gt
+  (~Int.Add $__x0 $__y1)
+  #10) else #true)) (<label_ite_cond_false: !(~Int.Gt z #10)>, (if (if (~Int.Gt
+   (~Int.Add $__x0 $__y1)
+   #10) then #false else #true) then (if (~Int.Gt
+   (~Int.Add $__x0 $__y1)
+   #10) then #false else #true) else #true)) (test_assume, (~Int.Gt
+ (if (~Int.Gt
+   (~Int.Add $__x0 $__y1)
+   #10) then (~Int.Sub (~Int.Add $__x0 $__y1) #1) else (~Int.Add (~Int.Add $__x0 $__y1) #1))
+ #0))
 
 Proof Obligation:
 #true

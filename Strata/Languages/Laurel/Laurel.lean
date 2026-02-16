@@ -53,7 +53,7 @@ inductive Operation : Type where
   /- Works on Bool -/
     /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
   | Eq | Neq
-  | And | Or | Not
+  | And | Or | Not | Implies
   /- Works on Int/Float64 -/
   | Neg | Add | Sub | Mul | Div | Mod
   | Lt | Leq | Gt | Geq
@@ -71,6 +71,7 @@ inductive HighType : Type where
   | TString /- String type for text data -/
   | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
   | TTypedField (valueType : WithMetadata HighType) /- Field constant with known value type. Not accessible via grammar. -/
+  | TSet (elementType : WithMetadata HighType) /- Set type, e.g. Set Composite. Used in modifies clauses. -/
   | UserDefined (name : Identifier)
   | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
   /- Pure represents a composite type that does not support reference equality -/
@@ -89,6 +90,7 @@ structure Procedure : Type where
   determinism : Determinism
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
   body : Body
+  md : Imperative.MetaData Core.Expression
 
 inductive Determinism where
   | deterministic (reads : Option (WithMetadata StmtExpr))
@@ -103,9 +105,9 @@ inductive Body where
   | Transparent (body : WithMetadata StmtExpr)
 /- Without an implementation, the postcondition is assumed -/
   | Opaque
-      (postcondition : WithMetadata StmtExpr)
+      (postcondition : List (WithMetadata StmtExpr))
       (implementation : Option (WithMetadata StmtExpr))
-      (modifies : Option (WithMetadata StmtExpr))
+      (modifies : List (WithMetadata StmtExpr))
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
   | Abstract (postcondition : WithMetadata StmtExpr)
@@ -207,8 +209,14 @@ theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : 
 instance : Inhabited StmtExpr where
   default := .Hole
 
+instance : Inhabited StmtExprMd where
+  default := ⟨ .Hole, .empty ⟩
+
 instance : Inhabited HighTypeMd where
   default := { val := HighType.TVoid, md := default }
+
+instance : Inhabited StmtExprMd where
+  default := { val := default, md := default }
 
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true
@@ -218,6 +226,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TString, HighType.TString => true
   | HighType.THeap, HighType.THeap => true
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
+  | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -288,3 +297,4 @@ structure Program where
   staticFields : List Field
   types : List TypeDefinition
   constants : List Constant := []
+  deriving Inhabited
