@@ -131,12 +131,7 @@ instance : Inhabited Procedure where
     name := ""
     inputs := []
     outputs := []
-<<<<<<< HEAD
     preconditions := []
-=======
-    precondition := mkStmtExprMdEmpty <| .LiteralBool true
-    determinism := .deterministic none
->>>>>>> origin/main
     decreases := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
     md := .empty
@@ -383,12 +378,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       name := name
       inputs := parameters
       outputs := returnParameters
-<<<<<<< HEAD
       preconditions := preconditions
-=======
-      precondition := precondition
-      determinism := .deterministic none
->>>>>>> origin/main
       decreases := none
       body := procBody
       md := nameMd
