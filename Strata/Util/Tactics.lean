@@ -69,8 +69,10 @@ TacticM Unit :=
             else none
         if let some lemmaName := lemmaName? then
           try
-            let hypTerm := mkIdent decl.userName
-            evalTactic (← `(tactic| have := $(mkIdent lemmaName) $hypTerm))
+            -- Use fvarId for unique name
+            let hypExpr := mkFVar decl.fvarId
+            let hypStx ← Term.exprToSyntax hypExpr
+            evalTactic (← `(tactic| have := $(mkIdent lemmaName) $hypStx))
           catch e => dbg_trace s!"add_mem_size_lemmas error: {← e.toMessageData.toString}"
 
 /-- Adds sizeOf lemmas for all `x ∈ xs` hypotheses in context -/

@@ -6,21 +6,24 @@
 
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
 
 /-
 Heap Parameterization Pass
 
-Transforms procedures that interact with the heap by adding explicit heap parameters:
+Transforms procedures that interact with the heap by adding explicit heap parameters.
+The heap is modeled as `Map Composite (Map Field Box)`, where Box is a sum type
+with constructors for each primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite).
 
 1. Procedures that write the heap get an inout heap parameter
    - Input: `heap : THeap`
    - Output: `heap : THeap`
-   - Field writes become: `heap := heapStore(heap, obj, field, value)`
+   - Field writes become: `heap := updateField(heap, obj, field, BoxT(value))`
 
 2. Procedures that only read the heap get an in heap parameter
    - Input: `heap : THeap`
-   - Field reads become: `heapRead(heap, obj, field)`
+   - Field reads become: `Box..tVal(readField(heap, obj, field))`
 
 3. Procedure calls are transformed:
    - Calls to heap-writing procedures in expressions:
@@ -89,14 +92,23 @@ end
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
     | .Transparent b => (collectExprMd b).run {} |>.2
-    | .Opaque postcond impl _ =>
-        let r1 := (collectExprMd postcond).run {} |>.2
-        let r2 := match impl with
-          | some e => (collectExprMd e).run {} |>.2
-          | none => {}
-        { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
-          writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
-          callees := r1.callees ++ r2.callees }
+    | .Opaque postconds impl modif =>
+        -- A non-empty modifies clause implies the procedure reads and writes the heap;
+        -- no need to inspect the body further in that case.
+        if !modif.isEmpty then
+          { readsHeapDirectly := true, writesHeapDirectly := true, callees := [] }
+        else
+          let r1 := postconds.foldl (fun (acc : AnalysisResult) pc =>
+            let r := (collectExprMd pc).run {} |>.2
+            { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly,
+              writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly,
+              callees := acc.callees ++ r.callees }) {}
+          let r2 := match impl with
+            | some e => (collectExprMd e).run {} |>.2
+            | none => {}
+          { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
+            writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
+            callees := r1.callees ++ r2.callees }
     | .Abstract postcond => (collectExprMd postcond).run {} |>.2
   -- Also analyze precondition
   let precondResult := (collectExprMd proc.precondition).run {} |>.2
@@ -148,6 +160,24 @@ def addFieldConstant (name : Identifier) (valueType : HighTypeMd) : TransformM U
 def lookupFieldType (name : Identifier) : TransformM (Option HighTypeMd) := do
   return (← get).fieldTypes.find? (·.1 == name) |>.map (·.2)
 
+/-- Get the Box destructor name for a given Laurel HighType -/
+def boxDestructorName (ty : HighType) : Identifier :=
+  match ty with
+  | .TInt => "Box..intVal"
+  | .TBool => "Box..boolVal"
+  | .TFloat64 => "Box..float64Val"
+  | .UserDefined _ => "Box..compositeVal"
+  | _ => "Box..intVal"  -- fallback
+
+/-- Get the Box constructor name for a given Laurel HighType -/
+def boxConstructorName (ty : HighType) : Identifier :=
+  match ty with
+  | .TInt => "BoxInt"
+  | .TBool => "BoxBool"
+  | .TFloat64 => "BoxFloat64"
+  | .UserDefined _ => "BoxComposite"
+  | _ => "BoxInt"  -- fallback
+
 def readsHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapReaders.contains name
 
@@ -160,7 +190,7 @@ def freshVarName : TransformM Identifier := do
   return s!"$tmp{s.freshCounter}"
 
 /-- Helper to wrap a StmtExpr into StmtExprMd with empty metadata -/
-def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -175,9 +205,11 @@ where
     match _h : expr.val with
     | .FieldSelect selectTarget fieldName =>
         let fieldType ← lookupFieldType fieldName
-        addFieldConstant fieldName fieldType.get!
-        let selectTarget' ← recurse selectTarget
-        return ⟨ .StaticCall "heapRead" [mkMd (.Identifier heapVar), selectTarget', mkMd (.Identifier fieldName)], md ⟩
+        let valTy := fieldType.getD (panic "could not find field type")
+        addFieldConstant fieldName valTy
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.Identifier fieldName)], md ⟩
+        -- Unwrap Box: apply the appropriate destructor
+        return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
     | .StaticCall callee args =>
         let args' ← args.mapM (recurse ·)
         let calleeReadsHeap ← readsHeap callee
@@ -231,12 +263,14 @@ where
           match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
             let fieldType ← lookupFieldType fieldName
-            match fieldType with
-            | some ty => addFieldConstant fieldName ty
-            | none => addFieldConstant fieldName ⟨.TInt, #[]⟩
+            let valTy := fieldType.getD (panic "could not find field type")
+            addFieldConstant fieldName valTy
             let target' ← recurse target
             let v' ← recurse v
-            let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)] (mkMd (.StaticCall "heapStore" [mkMd (.Identifier heapVar), target', mkMd (.Identifier fieldName), v'])), md ⟩
+            -- Wrap value in Box constructor
+            let boxedVal := mkMd <| .StaticCall (boxConstructorName valTy.val) [v']
+            let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
+              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.Identifier fieldName), boxedVal])), md ⟩
             if valueUsed then
               return ⟨ .Block [heapAssign, v'] none, md ⟩
             else
@@ -296,24 +330,24 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     -- Precondition uses heap_in (the input state)
     let precondition' ← heapTransformExpr heapInName proc.precondition
 
+    let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           -- First assign heap_in to heap_out, then transform body using heap_out
           let assignHeapOut := mkMd (.Assign [mkMd (.Identifier heapOutName)] (mkMd (.Identifier heapInName)))
-          let bodyExpr' ← heapTransformExpr heapOutName bodyExpr
+          let bodyExpr' ← heapTransformExpr heapOutName bodyExpr bodyValueIsUsed
           pure (.Transparent (mkMd (.Block [assignHeapOut, bodyExpr'] none)))
-      | .Opaque postcond impl modif =>
-          -- Postcondition uses heap_out (the output state)
-          let postcond' ← heapTransformExpr heapOutName postcond
+      | .Opaque postconds impl modif =>
+          -- Postconditions use heap_out (the output state)
+          let postconds' ← postconds.mapM (heapTransformExpr heapOutName)
           let impl' ← match impl with
             | some implExpr =>
                 let assignHeapOut := mkMd (.Assign [mkMd (.Identifier heapOutName)] (mkMd (.Identifier heapInName)))
-                let implExpr' ← heapTransformExpr heapOutName implExpr
+                let implExpr' ← heapTransformExpr heapOutName implExpr bodyValueIsUsed
                 pure (some (mkMd (.Block [assignHeapOut, implExpr'] none)))
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapOutName)
-          pure (.Opaque postcond' impl' modif')
-      | .Abstract postcond =>
+          pure (.Opaque postconds' impl' modif')      | .Abstract postcond =>
           let postcond' ← heapTransformExpr heapOutName postcond
           pure (.Abstract postcond')
 
@@ -334,11 +368,11 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformExpr heapInName bodyExpr
           pure (.Transparent bodyExpr')
-      | .Opaque postcond impl modif =>
-          let postcond' ← heapTransformExpr heapInName postcond
+      | .Opaque postconds impl modif =>
+          let postconds' ← postconds.mapM (heapTransformExpr heapInName)
           let impl' ← impl.mapM (heapTransformExpr heapInName)
           let modif' ← modif.mapM (heapTransformExpr heapInName)
-          pure (.Opaque postcond' impl' modif')
+          pure (.Opaque postconds' impl' modif')
       | .Abstract postcond =>
           let postcond' ← heapTransformExpr heapInName postcond
           pure (.Abstract postcond')
@@ -360,9 +394,6 @@ def heapParameterization (program : Program) : Program :=
     match typeDef with
     | .Composite ct => acc ++ ct.fields.map (fun f => (f.name, f.type))
     | .Constrained _ => acc) []
-  -- Debug: print heap readers and writers
-  dbg_trace s!"Heap readers: {heapReaders}"
-  dbg_trace s!"Heap writers: {heapWriters}"
   let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders, heapWriters, fieldTypes }
   { program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }
 

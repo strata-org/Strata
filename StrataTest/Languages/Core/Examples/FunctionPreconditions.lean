@@ -172,7 +172,7 @@ VCs:
 Label: foo_precond_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_foo_0, ((~Int.Gt $__y1) #0))
+(precond_foo_0, (~Int.Gt $__y1 #0))
 
 Proof Obligation:
 (~Bool.Not ($__y1 == #0))
@@ -180,8 +180,8 @@ Proof Obligation:
 Label: foo_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_foo_0, ((~Int.Gt $__y1) #0))
-(precond_foo_1, ((~Int.Gt ((~Int.Div $__x0) $__y1)) #0))
+(precond_foo_0, (~Int.Gt $__y1 #0))
+(precond_foo_1, (~Int.Gt (~Int.Div $__x0 $__y1) #0))
 
 Proof Obligation:
 (~Bool.Not ($__y1 == #0))
@@ -285,10 +285,12 @@ procedure badDiv$$wf :  ((x : int)) → ()
   preconditions: 
   postconditions: 
 {
-  assert [badDiv_body_calls_Int.Div_0] #false
+  {
+    assert [badDiv_body_calls_Int.Div_0] #false
+  }
 }
 func badDiv :  ((x : int)) → int :=
-  ((((~Int.Div : (arrow int (arrow int int))) (x : int)) #0))
+  (((~Int.Div : (arrow int (arrow int int))) (x : int) #0))
 ---
 info:
 Obligation: badDiv_body_calls_Int.Div_0
@@ -355,7 +357,7 @@ VCs:
 Label: set_z_calls_Int.Div_0
 Property: assert
 Assumptions:
-(<label_ite_cond_true: ((~Int.Gt a) #0)>, ((~Int.Gt $__a0) #0))
+(<label_ite_cond_true: (~Int.Gt a #0)>, (~Int.Gt $__a0 #0))
 
 
 Proof Obligation:
@@ -452,10 +454,10 @@ Proof Obligation:
 Label: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
 Assumptions:
-(precond_allPositiveDiv_0, ((~Int.Ge $__y2) #0))
+(precond_allPositiveDiv_0, (~Int.Ge $__y2 #0))
 
 Proof Obligation:
-(∀ ((~Bool.Implies ((~Int.Gt %0) #0)) (~Bool.Not (%0 == #0))))
+(∀ (~Bool.Implies (~Int.Gt %0 #0) (~Bool.Not (%0 == #0))))
 
 ---
 info: Obligation: safeDiv_body_calls_Int.Div_0

@@ -1178,22 +1178,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
       preconditions := preconds
     }
     let md ← getOpMetaData op
-    -- Create a Function for the freeVars
-    let func := { name := name,
-                  typeArgs := [],
-                  inputs := inputs,
-                  output := outputMono,
-                  body := body,
-                  attr := #[],
-                  preconditions := preconds }
-    let funcDecl := Core.Decl.func func md
     -- Add the function to boundVars for subsequent statements.
-    -- The DDM parser's declareFn adds the function at index 0 (most recent in scope),
-    -- so subsequent statements reference it via bvar index 0.
-    -- Note: funcBinding with proper type was already created above for bodyBindings.
     let newBoundVars := bindings.boundVars.push funcBinding
-    let newFreeVars := bindings.freeVars.push funcDecl
-    let updatedBindings := { bindings with boundVars := newBoundVars, freeVars := newFreeVars }
+    let updatedBindings := { bindings with boundVars := newBoundVars }
     return ([.funcDecl decl md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 

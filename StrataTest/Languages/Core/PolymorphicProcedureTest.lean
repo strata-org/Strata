@@ -35,7 +35,8 @@ procedure Test() returns () spec { ensures true; }
 };
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -75,21 +76,25 @@ Constructors:
 procedure Extract :  ((xs : (List $__ty0))) → ((h : $__ty5))
   modifies: []
   preconditions: (Extract_requires_0, ((~List..isCons : (arrow (List $__ty0) bool)) (xs : (List $__ty0))))
-  postconditions: 
+  postconditions: ⏎
 {
-  assume [Extract_requires_0] (~List..isCons $__xs0)
+  {
+    assume [Extract_requires_0] (~List..isCons $__xs0)
+  }
 }
 procedure Test :  () → ()
   modifies: []
-  preconditions: 
+  preconditions: ⏎
   postconditions: (Test_ensures_0, #true)
 {
-  init (xs : (List int)) := init_xs_0
-  xs := ((~Cons #1) ~Nil)
-  havoc xs
-  init (h : int) := init_h_1
-  call [h] := Extract(xs)
-  assert [Test_ensures_0] #true
+  {
+    init (xs : (List int)) := init_xs_0
+    xs := (~Cons #1 ~Nil)
+    havoc xs
+    init (h : int) := init_h_1
+    call [h] := Extract(xs)
+    assert [Test_ensures_0] #true
+  }
 }
 ---
 info:
@@ -101,7 +106,8 @@ Model:
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval verify "cvc5" polyProcPgm
 
@@ -168,6 +174,6 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify "cvc5" polyPostPgm 
+#eval verify "cvc5" polyPostPgm
 
 end Strata.PolymorphicPostconditionTest

@@ -46,13 +46,13 @@ private def factoryNoPrecond : Factory TestParams := #[noPrecondFunc]
   (.app () (.app () (.op () "add" .none) (.intConst () 1)) (.intConst () 2))
 
 -- safeDiv(a, y)
-/-- info: [WFObligation(safeDiv, ((~!= y) #0), ())] -/
+/-- info: [WFObligation(safeDiv, (~!= y #0), ())] -/
 #guard_msgs in
 #eval collectWFObligations testFactory
   (.app () (.app () (.op () "safeDiv" .none) (.fvar () "a" .none)) (.fvar () "y" .none))
 
 -- safeDiv(safeDiv(x, y), b)
-/-- info: [WFObligation(safeDiv, ((~!= b) #0), ()), WFObligation(safeDiv, ((~!= y) #0), ())] -/
+/-- info: [WFObligation(safeDiv, (~!= b #0), ()), WFObligation(safeDiv, (~!= y #0), ())] -/
 #guard_msgs in
 #eval collectWFObligations testFactory
   (.app () (.app () (.op () "safeDiv" .none)
@@ -66,7 +66,7 @@ private def addFunc : LFunc TestParams :=
 
 private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
 
-/-- info: [WFObligation(safeDiv, ((~!= ((~add x) y)) #0), ())] -/
+/-- info: [WFObligation(safeDiv, (~!= (~add x y) #0), ())] -/
 #guard_msgs in
 #eval collectWFObligations factoryWithAdd
   (.app () (.app () (.op () "safeDiv" .none) (.fvar () "z" .none))
@@ -75,7 +75,7 @@ private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
 -- Test: Function call inside a lambda abstraction
 -- Expression: \x : int. safeDiv(x, x)
 -- The obligation should be: forall x :: x != 0
-/-- info: [WFObligation(safeDiv, (∀ ((~!= %0) #0)), ())] -/
+/-- info: [WFObligation(safeDiv, (∀ (~!= %0 #0)), ())] -/
 #guard_msgs in
 #eval collectWFObligations testFactory
   (.abs () LMonoTy.int
@@ -93,7 +93,7 @@ private def factoryWithImplies : Factory TestParams :=
 
 -- forall x :: (x > 0) ==> (safeDiv(y, x) > 0)
 -- The WF obligation should be: forall x :: (x > 0) ==> (x != 0)
-/-- info: [WFObligation(safeDiv, (∀ (((~Bool.Implies : (arrow bool (arrow bool bool))) ((~Int.Gt %0) #0)) ((~!= %0) #0))), ())] -/
+/-- info: [WFObligation(safeDiv, (∀ ((~Bool.Implies : (arrow bool (arrow bool bool))) (~Int.Gt %0 #0) (~!= %0 #0))), ())] -/
 #guard_msgs in
 #eval collectWFObligations factoryWithImplies
   (.quant () .all LMonoTy.int (.true ())

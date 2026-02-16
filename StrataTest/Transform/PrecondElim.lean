@@ -43,7 +43,7 @@ def transformProgram (t : Strata.Program) : Core.Program :=
   -- Type check (but don't partial eval)
   match Core.typeCheck Options.default program with
   | .error e => panic! s!"Type check failed: {Std.format e}"
-  | .ok program => program.eraseTypes
+  | .ok program => program.eraseTypes.stripMetaData
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -67,8 +67,10 @@ info: procedure test :  ((a : int)) → ()
   preconditions: 
   postconditions: 
 {
-  assert [init_calls_Int.Div_0] (~Bool.Not (a == #0))
-  init (z : int) := ((~Int.Div #10) a)
+  {
+    assert [init_calls_Int.Div_0] (~Bool.Not (a == #0))
+    init (z : int) := (~Int.Div #10 a)
+  }
 }
 -/
 #guard_msgs in
@@ -99,21 +101,25 @@ info: procedure safeMod$$wf :  ((x : int) (y : int)) → ()
   preconditions: 
   postconditions: 
 {
-  assume [precond_safeMod_0] (~Bool.Not (y == #0))
-  assert [safeMod_body_calls_Int.Mod_0] (~Bool.Not (y == #0))
+  {
+    assume [precond_safeMod_0] (~Bool.Not (y == #0))
+    assert [safeMod_body_calls_Int.Mod_0] (~Bool.Not (y == #0))
+  }
 }
 func safeMod :  ((x : int) (y : int)) → int :=
-  (((~Int.Mod x) y))
+  ((~Int.Mod x y))
 procedure foo$$wf :  ((x : int) (y : int)) → ()
   modifies: []
   preconditions: 
   postconditions: 
 {
-  assert [foo_precond_calls_safeMod_0] (~Bool.Not (y == #0))
-  assume [precond_foo_0] ((~Int.Gt ((~safeMod x) y)) #0)
+  {
+    assert [foo_precond_calls_safeMod_0] (~Bool.Not (y == #0))
+    assume [precond_foo_0] (~Int.Gt (~safeMod x y) #0)
+  }
 }
 func foo :  ((x : int) (y : int)) → int :=
-  (((~Int.Add x) y))
+  ((~Int.Add x y))
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcWithPrecondPgm))
@@ -152,16 +158,21 @@ procedure test$$wf :  ((xs : List)) → ()
   preconditions: 
   postconditions: 
 {
-  assume [test_requires_0] (~List..isCons xs)
-  assert [test_pre_test_requires_1_calls_List..head_0] (~List..isCons xs)
-  assume [test_requires_1] ((~Int.Gt (~List..head xs)) #0)
+  {
+    assume [test_requires_0] (~List..isCons xs)
+    assert [test_pre_test_requires_1_calls_List..head_0] (~List..isCons xs)
+    assume [test_requires_1] (~Int.Gt (~List..head xs) #0)
+  }
 }
 procedure test :  ((xs : List)) → ()
   modifies: []
-  preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List))) (test_requires_1, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) (xs : List))) #0))
+  preconditions: (test_requires_0, ((~List..isCons : (arrow List bool))
+   (xs : List))) (test_requires_1, ((~Int.Gt : (arrow int (arrow int bool)))
+   ((~List..head : (arrow List int)) (xs : List))
+   #0))
   postconditions: 
 {
-  
+  {}
 }
 -/
 #guard_msgs in
@@ -202,19 +213,25 @@ procedure test$$wf :  ((xs : List)) → ()
   preconditions: 
   postconditions: 
 {
-  assume [test_requires_0] (~List..isCons xs)
-  assert [test_post_test_ensures_1_calls_List..head_0] (~List..isCons xs)
-  assume [test_ensures_1] ((~Int.Gt (~List..head xs)) #0)
-  assert [test_post_test_ensures_2_calls_List..head_0] (~List..isCons (~List..tail xs))
-  assert [test_post_test_ensures_2_calls_List..tail_1] (~List..isCons xs)
-  assume [test_ensures_2] ((~Int.Gt (~List..head (~List..tail xs))) #0)
+  {
+    assume [test_requires_0] (~List..isCons xs)
+    assert [test_post_test_ensures_1_calls_List..head_0] (~List..isCons xs)
+    assume [test_ensures_1] (~Int.Gt (~List..head xs) #0)
+    assert [test_post_test_ensures_2_calls_List..head_0] (~List..isCons (~List..tail xs))
+    assert [test_post_test_ensures_2_calls_List..tail_1] (~List..isCons xs)
+    assume [test_ensures_2] (~Int.Gt (~List..head (~List..tail xs)) #0)
+  }
 }
 procedure test :  ((xs : List)) → ()
   modifies: []
   preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List)))
-  postconditions: (test_ensures_1, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) (xs : List))) #0)) (test_ensures_2, (((~Int.Gt : (arrow int (arrow int bool))) ((~List..head : (arrow List int)) ((~List..tail : (arrow List List)) (xs : List)))) #0))
+  postconditions: (test_ensures_1, ((~Int.Gt : (arrow int (arrow int bool)))
+   ((~List..head : (arrow List int)) (xs : List))
+   #0)) (test_ensures_2, ((~Int.Gt : (arrow int (arrow int bool)))
+   ((~List..head : (arrow List int)) ((~List..tail : (arrow List List)) (xs : List)))
+   #0))
 {
-  
+  {}
 }
 -/
 #guard_msgs in
@@ -246,14 +263,19 @@ info: procedure test :  () → ()
   preconditions: 
   postconditions: 
 {
-  init (x : int) := #1
-  safeDiv$$wf : {init (y : int) := init_y
-   assert [safeDiv_precond_calls_Int.Div_0] (~Bool.Not (x == #0))
-   assume [precond_safeDiv_0] ((~Int.Gt ((~Int.Div y) x)) #0)
-   assert [safeDiv_body_calls_Int.Div_0] (~Bool.Not (x == #0))}
-  #[<[fileRange]: :6005-6078>] funcDecl <function>
-  assert [init_calls_safeDiv_0] ((~Int.Gt ((~Int.Div #5) x)) #0)
-  init (z : int) := (~safeDiv #5)
+  {
+    init (x : int) := #1
+    safeDiv$$wf :
+    {
+      init (y : int) := init_y
+      assert [safeDiv_precond_calls_Int.Div_0] (~Bool.Not (x == #0))
+      assume [precond_safeDiv_0] (~Int.Gt (~Int.Div y x) #0)
+      assert [safeDiv_body_calls_Int.Div_0] (~Bool.Not (x == #0))
+    }
+    funcDecl <function>
+    assert [init_calls_safeDiv_0] (~Int.Gt (~Int.Div #5 x) #0)
+    init (z : int) := (~safeDiv #5)
+  }
 }
 -/
 #guard_msgs in

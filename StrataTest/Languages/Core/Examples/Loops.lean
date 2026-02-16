@@ -41,7 +41,7 @@ VCs:
 Label: sum_post_sum_ensures_1_calls_Int.Div_0
 Property: assert
 Assumptions:
-(sum_requires_0, ((~Int.Ge $__n0) #0))
+(sum_requires_0, (~Int.Ge $__n0 #0))
 
 Proof Obligation:
 #true
@@ -49,7 +49,7 @@ Proof Obligation:
 Label: loop_invariant_calls_Int.Div_0
 Property: assert
 Assumptions:
-(sum_requires_0, ((~Int.Ge $__n2) #0))
+(sum_requires_0, (~Int.Ge $__n2 #0))
 
 Proof Obligation:
 #true
@@ -57,30 +57,65 @@ Proof Obligation:
 Label: entry_invariant_0
 Property: assert
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n2))
-(sum_requires_0, ((~Int.Ge $__n2) #0))
+(<label_ite_cond_true: (~Int.Lt i n)>, (~Int.Lt #0 $__n2))
+(sum_requires_0, (~Int.Ge $__n2 #0))
 
 Proof Obligation:
-((~Bool.And ((~Bool.And #true) ((~Int.Le #0) $__n2))) #true)
+(~Bool.And (~Bool.And #true (~Int.Le #0 $__n2)) #true)
 
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n2))
-(assume_guard_0, ((~Int.Lt $__i4) $__n2)) (assume_invariant_0, ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i4)) ((~Int.Le $__i4) $__n2))) ($__s5 == ((~Int.Div ((~Int.Mul $__i4) ((~Int.Add $__i4) #1))) #2))))
-(sum_requires_0, ((~Int.Ge $__n2) #0))
+(<label_ite_cond_true: (~Int.Lt i n)>, (~Int.Lt #0 $__n2))
+(assume_guard_0, (~Int.Lt
+ $__i4
+ $__n2)) (assume_invariant_0, (~Bool.And
+ (~Bool.And (~Int.Le #0 $__i4) (~Int.Le $__i4 $__n2))
+ ($__s5 == (~Int.Div (~Int.Mul $__i4 (~Int.Add $__i4 #1)) #2))))
+(sum_requires_0, (~Int.Ge $__n2 #0))
 
 Proof Obligation:
-((~Bool.And ((~Bool.And ((~Int.Le #0) ((~Int.Add $__i4) #1))) ((~Int.Le ((~Int.Add $__i4) #1)) $__n2))) (((~Int.Add $__s5) ((~Int.Add $__i4) #1)) == ((~Int.Div ((~Int.Mul ((~Int.Add $__i4) #1)) ((~Int.Add ((~Int.Add $__i4) #1)) #1))) #2)))
+(~Bool.And
+ (~Bool.And (~Int.Le #0 (~Int.Add $__i4 #1)) (~Int.Le (~Int.Add $__i4 #1) $__n2))
+ ((~Int.Add
+   $__s5
+   (~Int.Add $__i4 #1)) == (~Int.Div (~Int.Mul (~Int.Add $__i4 #1) (~Int.Add (~Int.Add $__i4 #1) #1)) #2)))
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
-(sum_requires_0, ((~Int.Ge $__n2) #0))
-(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n2) then ((~Int.Lt #0) $__n2) else #true)) (assume_guard_0, (if ((~Int.Lt #0) $__n2) then ((~Int.Lt $__i4) $__n2) else #true)) (assume_invariant_0, (if ((~Int.Lt #0) $__n2) then ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i4)) ((~Int.Le $__i4) $__n2))) ($__s5 == ((~Int.Div ((~Int.Mul $__i4) ((~Int.Add $__i4) #1))) #2))) else #true)) (not_guard_0, (if ((~Int.Lt #0) $__n2) then (~Bool.Not ((~Int.Lt $__i6) $__n2)) else #true)) (invariant_0, (if ((~Int.Lt #0) $__n2) then ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i6)) ((~Int.Le $__i6) $__n2))) ($__s7 == ((~Int.Div ((~Int.Mul $__i6) ((~Int.Add $__i6) #1))) #2))) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n2) then #false else #true) then (if ((~Int.Lt #0) $__n2) then #false else #true) else #true))
+(sum_requires_0, (~Int.Ge $__n2 #0))
+(<label_ite_cond_true: (~Int.Lt i n)>, (if (~Int.Lt
+  #0
+  $__n2) then (~Int.Lt
+  #0
+  $__n2) else #true)) (assume_guard_0, (if (~Int.Lt
+  #0
+  $__n2) then (~Int.Lt
+  $__i4
+  $__n2) else #true)) (assume_invariant_0, (if (~Int.Lt
+  #0
+  $__n2) then (~Bool.And
+  (~Bool.And (~Int.Le #0 $__i4) (~Int.Le $__i4 $__n2))
+  ($__s5 == (~Int.Div
+    (~Int.Mul $__i4 (~Int.Add $__i4 #1))
+    #2))) else #true)) (not_guard_0, (if (~Int.Lt
+  #0
+  $__n2) then (~Bool.Not
+  (~Int.Lt
+   $__i6
+   $__n2)) else #true)) (invariant_0, (if (~Int.Lt
+  #0
+  $__n2) then (~Bool.And
+  (~Bool.And (~Int.Le #0 $__i6) (~Int.Le $__i6 $__n2))
+  ($__s7 == (~Int.Div
+    (~Int.Mul $__i6 (~Int.Add $__i6 #1))
+    #2))) else #true)) (<label_ite_cond_false: !(~Int.Lt i n)>, (if (if (~Int.Lt
+   #0
+   $__n2) then #false else #true) then (if (~Int.Lt #0 $__n2) then #false else #true) else #true))
 
 Proof Obligation:
-((if ((~Int.Lt #0) $__n2) then $__s7 else #0) == ((~Int.Div ((~Int.Mul $__n2) ((~Int.Add $__n2) #1))) #2))
+((if (~Int.Lt #0 $__n2) then $__s7 else #0) == (~Int.Div (~Int.Mul $__n2 (~Int.Add $__n2 #1)) #2))
 
 ---
 info:
