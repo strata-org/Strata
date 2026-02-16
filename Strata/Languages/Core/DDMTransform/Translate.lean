@@ -1046,7 +1046,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
 
 mutual
 partial def translateFnPreconds (p : Program) (name : CoreIdent) (bindings : TransBindings) (arg : Arg) :
-  TransM (List Core.Expression.Expr) := do
+  TransM (List (Strata.DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata)) := do
   let .seq _ .none args := arg
     | TransM.error s!"translateFnPreconds expected seq {repr arg}"
   let preconds ← args.foldlM (init := ([], 0)) fun (acc, count) specElt => do
@@ -1057,7 +1057,7 @@ partial def translateFnPreconds (p : Program) (name : CoreIdent) (bindings : Tra
       let args ← checkOpArg specElt q`Core.requires_spec 3
       let _l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
       let e ← translateExpr p bindings args[2]!
-      return (acc ++ [e], count + 1)
+      return (acc ++ [⟨e, ()⟩], count + 1)
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 

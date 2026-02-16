@@ -43,12 +43,13 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 /--
 Given a Factory and an expression, collect all partial function call
 precondition obligations and return them as `assert` statements.
+The metadata from the original statement is attached to the generated assertions.
 -/
 def collectAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr) (labelPrefix : String)
-    : List Statement :=
+    (md : Imperative.MetaData Expression := .empty) : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
   wfObs.mapIdx fun idx ob =>
-    Statement.assert s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation
+    Statement.assert s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md
 
 /--
 Collect assertions for all expressions in a command.
@@ -56,20 +57,20 @@ Collect assertions for all expressions in a command.
 def collectCmdAsserts (F : @Lambda.Factory CoreLParams) (cmd : Imperative.Cmd Expression)
     : List Statement :=
   match cmd with
-  | .init _ _ e _ => collectAsserts F e "init"
-  | .set x e _ => collectAsserts F e s!"set_{x.name}"
-  | .assert l e _ => collectAsserts F e s!"assert_{l}"
-  | .assume l e _ => collectAsserts F e s!"assume_{l}"
-  | .cover l e _ => collectAsserts F e s!"cover_{l}"
+  | .init _ _ e md => collectAsserts F e "init" md
+  | .set x e md => collectAsserts F e s!"set_{x.name}" md
+  | .assert l e md => collectAsserts F e s!"assert_{l}" md
+  | .assume l e md => collectAsserts F e s!"assume_{l}" md
+  | .cover l e md => collectAsserts F e s!"cover_{l}" md
   | .havoc _ _ => []
 
 /--
 Collect assertions for call arguments.
 -/
 def collectCallAsserts (F : @Lambda.Factory CoreLParams) (pname : String) (args : List Expression.Expr)
-    : List Statement :=
+    (md : Imperative.MetaData Expression := .empty) : List Statement :=
   args.flatMap fun arg =>
-    collectAsserts F arg s!"call_{pname}_arg"
+    collectAsserts F arg s!"call_{pname}_arg" md
 
 /-! ## Contract well-formedness procedures -/
 
@@ -86,12 +87,12 @@ For each postcondition (in order):
 -/
 def mkContractWFProc (F : @Lambda.Factory CoreLParams) (proc : Procedure) : Option Decl :=
   let precondAsserts := proc.spec.preconditions.flatMap fun (label, check) =>
-    let asserts := collectAsserts F check.expr s!"{proc.header.name.name}_pre_{label}"
-    let assume := Statement.assume label check.expr
+    let asserts := collectAsserts F check.expr s!"{proc.header.name.name}_pre_{label}" check.md
+    let assume := Statement.assume label check.expr check.md
     asserts ++ [assume]
   let postcondAsserts := proc.spec.postconditions.flatMap fun (label, check) =>
-    let asserts := collectAsserts F check.expr s!"{proc.header.name.name}_post_{label}"
-    let assume := Statement.assume label check.expr
+    let asserts := collectAsserts F check.expr s!"{proc.header.name.name}_post_{label}" check.md
+    let assume := Statement.assume label check.expr check.md
     asserts ++ [assume]
   let body := precondAsserts ++ postcondAsserts
   if body.any (fun s => match s with | .assert _ _ _ => true | _ => false) then
@@ -119,8 +120,8 @@ For the body (if present):
 def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function) : Option Decl :=
   let funcName := func.name.name
   let (precondStmts, _) := func.preconditions.foldl (fun (stmts, idx) precond =>
-    let asserts := collectAsserts F precond s!"{funcName}_precond"
-    let assume := Statement.assume s!"precond_{funcName}_{idx}" precond
+    let asserts := collectAsserts F precond.expr s!"{funcName}_precond"
+    let assume := Statement.assume s!"precond_{funcName}_{idx}" precond.expr
     (stmts ++ asserts ++ [assume], idx + 1)) ([], 0)
   let bodyStmts := match func.body with
     | none => []
@@ -174,7 +175,7 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
   | .cmd (.cmd c) =>
     (collectCmdAsserts F c ++ [.cmd (.cmd c)], F)
   | .cmd (.call lhs pname args md) =>
-    (collectCallAsserts F pname args ++ [.call lhs pname args md], F)
+    (collectCallAsserts F pname args md ++ [.call lhs pname args md], F)
   | .block lbl b md =>
     let (b', F') := transformStmts F b
     ([.block lbl b' md], F')
@@ -184,9 +185,9 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
     ([.ite c thenb' elseb' md], F'')
   | .loop guard measure invariant body md =>
     let invAsserts := match invariant with
-      | some inv => collectAsserts F inv "loop_invariant"
+      | some inv => collectAsserts F inv "loop_invariant" md
       | none => []
-    let guardAsserts := collectAsserts F guard "loop_guard"
+    let guardAsserts := collectAsserts F guard "loop_guard" md
     let (body', F') := transformStmts F body
     (guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md], F')
   | .goto lbl md =>
@@ -197,8 +198,8 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
     let func := pureFuncToLFunc decl
     let F' := F.push func
     let (precondStmts, _) := decl.preconditions.foldl (fun (stmts, idx) precond =>
-      let asserts := collectAsserts F' precond s!"{funcName}_precond"
-      let assume := Statement.assume s!"precond_{funcName}_{idx}" precond
+      let asserts := collectAsserts F' precond.expr s!"{funcName}_precond"
+      let assume := Statement.assume s!"precond_{funcName}_{idx}" precond.expr
       (stmts ++ asserts ++ [assume], idx + 1)) ([], 0)
     let bodyStmts := match decl.body with
       | none => []

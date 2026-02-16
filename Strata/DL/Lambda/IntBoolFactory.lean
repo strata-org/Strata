@@ -138,7 +138,7 @@ def intDivFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
   let zero : LExpr T.mono := .intConst default 0
   let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
   { binaryOp "Int.Div" .int (some cevalIntDiv) with
-    preconditions := [yNeZero] }
+    preconditions := [⟨yNeZero, default⟩] }
 
 def intModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
   -- Precondition: y != 0
@@ -146,7 +146,7 @@ def intModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
   let zero : LExpr T.mono := .intConst default 0
   let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
   { binaryOp "Int.Mod" .int (some cevalIntMod) with
-    preconditions := [yNeZero] }
+    preconditions := [⟨yNeZero, default⟩] }
 
 def intNegFunc : LFunc T :=
   unaryOp "Int.Neg" .int

@@ -506,8 +506,8 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Met
       concreteEval := some (fun _ => destructorConcreteEval d c i),
       attr := #[eval_if_constr_attr],
       -- precondition: the tester holds (e.g. List..isCons(xs))
-      preconditions := [.app default (.op default c.testerName (some testerTy))
-        (.fvar default arg none)] })
+      preconditions := [⟨.app default (.op default c.testerName (some testerTy))
+        (.fvar default arg none), default⟩] })
 
 
 ---------------------------------------------------------------------

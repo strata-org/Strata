@@ -22,7 +22,7 @@ private def safeDivFunc : LFunc TestParams :=
   { name := "safeDiv"
     inputs := [("x", .int), ("y", .int)]
     output := .int
-    preconditions := [.app () (.app () (.op () "!=" .none) (.fvar () "y" .none)) (.intConst () 0)]
+    preconditions := [⟨.app () (.app () (.op () "!=" .none) (.fvar () "y" .none)) (.intConst () 0), ()⟩]
   }
 
 private def testFactory : Factory TestParams := #[safeDivFunc]

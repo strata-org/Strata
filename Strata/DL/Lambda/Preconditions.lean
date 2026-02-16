@@ -27,6 +27,8 @@ structure WFObligation (T : LExprParams) where
   obligation : LExpr T.mono
   /-- Metadata from the call site for error reporting -/
   callSiteMetadata : T.Metadata
+  /-- Metadata from the precondition definition -/
+  precondMetadata : T.Metadata
 
 instance [ToFormat T.Metadata] [ToFormat T.IDMeta] : ToFormat (WFObligation T) where
   format ob := f!"WFObligation({ob.funcName}, {ob.obligation}, {ob.callSiteMetadata})"
@@ -75,10 +77,11 @@ where
         else
           let md := e.metadata
           func.preconditions.map fun precond =>
-            let substedPrecond := substitutePrecondition precond func.inputs args
+            let substedPrecond := substitutePrecondition precond.expr func.inputs args
             { funcName := func.name.name
               obligation := wrapImplications implications substedPrecond
-              callSiteMetadata := md : WFObligation T }
+              callSiteMetadata := md
+              precondMetadata := precond.md : WFObligation T }
       | none => []
     let subObligations := match e with
       | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => []
