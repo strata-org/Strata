@@ -521,19 +521,8 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
     else
       let message := if isCover then "cover property could not be checked"
                      else "assertion could not be proved"
-      let .some fileRangeElem := vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-        | some {
-            fileRange := default
-            message := s!"Internal error: diagnostics without position! obligation label: {repr vcr.obligation.label}"
-          }
-      match fileRangeElem.value with
-      | .fileRange fileRange =>
-        some { fileRange := fileRange, message := message }
-      | _ =>
-        some {
-          fileRange := default
-          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
-        }
+      let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+      some { fileRange := fileRange, message := message }
   | result =>
     let message := match result with
       | .fail =>
@@ -542,24 +531,8 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
       | .implementationError msg => s!"verification error: {msg}"
       | _ => panic "impossible"
 
-    let .some fileRangeElem := vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-      | some {
-          fileRange := default
-          message := s!"Internal error: diagnostics without position! obligation label: {repr vcr.obligation.label}"
-        }
-
-    let result := match fileRangeElem.value with
-      | .fileRange fileRange =>
-        some {
-          fileRange := fileRange
-          message := message
-        }
-      | _ =>
-        some {
-          fileRange := default
-          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
-        }
-    result
+    let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+    some { fileRange := fileRange, message := message }
 
 structure Diagnostic where
   start : Lean.Position
