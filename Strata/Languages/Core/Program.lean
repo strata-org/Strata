@@ -131,6 +131,16 @@ def Decl.eraseTypes (d : Decl) : Decl :=
   | .func f md   => .func f.eraseTypes md
   | .var _ _ _ _ | .type _ _ | .distinct _ _ _ => d
 
+/-- Remove all metadata from a declaration. -/
+def Decl.stripMetaData (d : Decl) : Decl :=
+  match d with
+  | .var name ty e _ => .var name ty e
+  | .type t _ => .type t
+  | .ax a _ => .ax a
+  | .distinct n es _ => .distinct n es
+  | .proc p _ => .proc p.stripMetaData
+  | .func f _ => .func f
+
 -- Metadata not included.
 instance : ToFormat Decl where
   format d := match d with
@@ -161,6 +171,10 @@ instance : Inhabited Program where
 
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }
+
+/-- Remove all metadata from a program. -/
+def Program.stripMetaData (p : Program) : Program :=
+  { p with decls := p.decls.map Decl.stripMetaData }
 
 def Program.formatWithMetaData  (p : Program) : Format :=
   Std.Format.joinSep (List.map Decl.formatWithMetaData p.decls) Format.line
