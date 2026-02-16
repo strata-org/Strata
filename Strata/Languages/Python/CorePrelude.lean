@@ -4,10 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
-import Strata.Languages.Core.DDMTransform.Parse
-import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.DDMTransform.Translate
 
 namespace Strata
 namespace Python

@@ -5,6 +5,8 @@
 -/
 module
 
+public import Lean.Data.Position
+
 public section
 namespace Strata
 
@@ -33,6 +35,17 @@ def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
 
 instance : Std.ToFormat SourceRange where
  format fr := f!"{fr.start}-{fr.stop}"
+
+/-- Format a SourceRange as a string using a FileMap for line:column conversion.
+    Renders location information in a format VSCode understands.
+    Returns "path:line:col-col" if on same line, otherwise "path:line:col". -/
+def format (loc : SourceRange) (path : System.FilePath) (fm : Lean.FileMap) : String :=
+  let spos := fm.toPosition loc.start
+  let epos := fm.toPosition loc.stop
+  if spos.line == epos.line then
+    s!"{path}:{spos.line}:{spos.column+1}-{epos.column+1}"
+  else
+    s!"{path}:{spos.line}:{spos.column+1}"
 
 end Strata.SourceRange
 end

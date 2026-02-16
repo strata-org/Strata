@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DDM.AST
 import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
+public import Strata.DDM.Integration.Lean.OfAstM
 
 ---------------------------------------------------------------------
-
+public section
 namespace Strata
 
 ---------------------------------------------------------------------
@@ -361,10 +362,11 @@ op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
 
 namespace CoreDDM
 
---#strata_gen Boogie
+#strata_gen Core
 
 end CoreDDM
 
 ---------------------------------------------------------------------
 
 end Strata
+end

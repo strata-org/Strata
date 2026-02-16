@@ -6,15 +6,23 @@
 
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Integration.Java.Gen
+import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.ToCore
 import Strata.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
+
+/-- LoadedDialects with built-in dialects (Init, StrataHeader, StrataDDL) plus Core dialect. -/
+def builtinWithCore : Strata.Elab.LoadedDialects :=
+  Strata.Elab.LoadedDialects.builtin
+    |>.addDialect! Strata.Core
+    |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
 
 namespace Strata
 
@@ -51,7 +59,7 @@ def readStrataText (fm : Strata.DialectFileMap) (input : System.FilePath) (bytes
   match header with
   | .program _ dialect =>
     let dialects ←
-      match ← Strata.Elab.loadDialect fm .builtin dialect with
+      match ← Strata.Elab.loadDialect fm builtinWithCore dialect with
       | (dialects, .ok _) => pure dialects
       | (_, .error msg) => exitFailure msg
     let .isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
@@ -61,7 +69,7 @@ def readStrataText (fm : Strata.DialectFileMap) (input : System.FilePath) (bytes
     | .error errors => exitFailure (← Strata.mkErrorReport input errors)
   | .dialect stx dialect =>
     let (loaded, d, s) ←
-      Strata.Elab.elabDialectRest fm .builtin #[] inputContext stx dialect startPos
+      Strata.Elab.elabDialectRest fm builtinWithCore #[] inputContext stx dialect startPos
     if s.errors.size > 0 then
       exitFailure (← Strata.mkErrorReport input s.errors)
     pure (loaded.addDialect! d, .dialect d)
@@ -81,14 +89,14 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
       pure p
   match hdr with
   | .dialect dialect =>
-    match ← Strata.Elab.loadDialectFromIonFragment fm .builtin #[] dialect frag with
+    match ← Strata.Elab.loadDialectFromIonFragment fm builtinWithCore #[] dialect frag with
     | (_, .error msg) =>
       fileReadError path msg
     | (dialects, .ok d) =>
       pure (dialects, .dialect d)
   | .program dialect => do
     let dialects ←
-      match ← Strata.Elab.loadDialect fm .builtin dialect with
+      match ← Strata.Elab.loadDialect fm builtinWithCore dialect with
       | (loaded, .ok _) => pure loaded
       | (_, .error msg) => exitFailure msg
     let .isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
@@ -219,6 +227,39 @@ def pyTranslateCommand : Command where
     let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
+
+def pySpecToCoreCommand : Command where
+  name := "pySpecToCore"
+  args := [ "input", "output", "python_source" ]
+  help := "Convert a PySpec Ion file to Strata Core file."
+  callback := fun _ v => do
+    let inputPath : System.FilePath := v[0]
+    let outputPath : System.FilePath := v[1]
+    let pythonPath : System.FilePath := v[2]
+
+    -- Read PySpec file
+    let sigs ← match ← Strata.Python.Specs.readDDM inputPath |>.toBaseIO with
+      | .ok sigs => pure sigs
+      | .error msg => exitFailure s!"Failed to read PySpec file: {msg}"
+
+    -- Load the Python source file for line:column error reporting
+    let content ← IO.FS.readFile pythonPath
+    let fm := Lean.FileMap.ofString content
+
+    -- Translate PySpec signatures to Core program
+    let (pgm, errors) := Strata.Python.Specs.ToCore.signaturesToCore inputPath sigs
+
+    -- Report any translation errors
+    for err in errors do
+      if err.loc.isNone then
+        IO.eprintln s!"Warning: {err.message}"
+      else
+        let locStr := err.loc.format pythonPath fm
+        IO.eprintln s!"Warning at {locStr}: {err.message}"
+
+    -- Serialize and write the Strata program as Ion
+    IO.FS.writeBinFile outputPath pgm.toIon
+    IO.println s!"Converted {sigs.size} signatures from {inputPath} to {outputPath} ({errors.size} warnings)"
 
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
@@ -384,6 +425,7 @@ def commandList : List Command := [
       diffCommand,
       pyAnalyzeCommand,
       pyTranslateCommand,
+      pySpecToCoreCommand,
       pySpecsCommand,
       laurelAnalyzeCommand,
     ]
