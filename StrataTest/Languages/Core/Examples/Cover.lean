@@ -32,18 +32,6 @@ procedure Test() returns ()
 
 /--
 info:
-Obligation: reachable_cover
-Property: cover
-Result: ✅ pass
-
-Obligation: unsatisfiable_cover
-Property: cover
-Result: ❌ fail
-
-Obligation: reachable_assert
-Property: assert
-Result: ✅ pass
-
 Obligation: unreachable_cover1
 Property: cover
 Result: ❌ fail
@@ -53,6 +41,18 @@ Property: cover
 Result: ❌ fail
 
 Obligation: unreachable_assert
+Property: assert
+Result: ✅ pass
+
+Obligation: reachable_cover
+Property: cover
+Result: ✅ pass
+
+Obligation: unsatisfiable_cover
+Property: cover
+Result: ❌ fail
+
+Obligation: reachable_assert
 Property: assert
 Result: ✅ pass
 -/

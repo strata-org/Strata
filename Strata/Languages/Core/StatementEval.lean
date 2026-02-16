@@ -472,24 +472,24 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | .true _ | .false _ =>
               let (ss_t, ss_f) := if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
               -- Collect deferred obligations from the dead branch (covers fail,
-              -- asserts pass) so they can be folded into the live branch results
-              -- instead of producing a separate EnvWithNext.
-              let dead_deferred :=
+              -- asserts pass) and add them to the environment before processing
+              -- the live branch, so they appear first in the output.
+              let Ewn :=
                 if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
                   let ss_f_covers := Statements.collectCovers ss_f
                   let ss_f_asserts := Statements.collectAsserts ss_f
                   let deferred := createFailingCoverObligations ss_f_covers
-                  deferred ++ createPassingAssertObligations ss_f_asserts
+                  let deferred := deferred ++ createPassingAssertObligations ss_f_asserts
+                  { Ewn with env.deferred := Ewn.env.deferred ++ deferred }
                 else
-                  #[]
+                  Ewn
               -- Process the live branch `ss_t`.
               let Ewns := go' Ewn ss_t .none
               Ewns.map
                   (fun (ewn : EnvWithNext) =>
                        let ss' := ewn.stk.top
                        let s' := Imperative.Stmt.ite cond' ss' [] md
-                       { ewn with stk := orig_stk.appendToTop [s'],
-                                  env.deferred := ewn.env.deferred ++ dead_deferred })
+                       { ewn with stk := orig_stk.appendToTop [s'] })
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
