@@ -1138,8 +1138,8 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
     let funcBinding : LExpr CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-    -- Order: function first, then existing boundVars, then parameters
-    let bodyBindings := { bindings with boundVars := #[funcBinding] ++ bindings.boundVars ++ in_bindings }
+    -- Order: existing boundVars, then function, then parameters
+    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
 
     -- Translate body with function parameters in scope
     let body ← match bodya with
