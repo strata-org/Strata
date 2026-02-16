@@ -15,14 +15,17 @@ open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /--
-info: ok: ((procedure P :  ((x : int)) → ((y : int)))
- modifies: []
- preconditions: (0_lt_x, (((~Int.Lt : (arrow int (arrow int bool))) #0) (x : int)))
- postconditions: (ret_y_lt_0, (((~Int.Lt : (arrow int (arrow int bool))) (y : int)) #0))
- body: y := (((~Int.Sub : (arrow int (arrow int int))) #0) (x : int))
- ,
+info: ok: (procedure P :  ((x : int)) → ((y : int))
+   modifies: []
+   preconditions: (0_lt_x, ((~Int.Lt : (arrow int (arrow int bool))) #0 (x : int)))
+   postconditions: (ret_y_lt_0, ((~Int.Lt : (arrow int (arrow int bool))) (y : int) #0))
+ {
+   {
+     y := ((~Int.Sub : (arrow int (arrow int int))) #0 (x : int))
+   }
+ },
  context:
- types:   ⏎
+ types:   
  aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in
@@ -43,11 +46,17 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
          return format ans
 
 /--
-info: ok: (procedure P :  ((a : int)) → ())
-modifies: [g]
-preconditions: ⏎
-postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int))) ((~old : (arrow int int)) (g : int))) (a : int))))
-body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
+info: ok: procedure P :  ((a : int)) → ()
+  modifies: [g]
+  preconditions: 
+  postconditions: (P.g_eq_a, ((g : int) == ((~Int.Add : (arrow int (arrow int int)))
+    ((~old : (arrow int int)) (g : int))
+    (a : int))))
+{
+  {
+    g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
+  }
+}
 -/
 #guard_msgs in
 #eval do
@@ -71,11 +80,17 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
           return format ans.fst
 
 /--
-info: ok: (procedure P :  ((a : int)) → ())
-modifies: [g]
-preconditions: ⏎
-postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int))) ((~old : (arrow int int)) (a : int))) ((~old : (arrow int int)) (g : int)))))
-body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
+info: ok: procedure P :  ((a : int)) → ()
+  modifies: [g]
+  preconditions: 
+  postconditions: (P.g_eq_a, ((g : int) == ((~Int.Add : (arrow int (arrow int int)))
+    ((~old : (arrow int int)) (a : int))
+    ((~old : (arrow int int)) (g : int)))))
+{
+  {
+    g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
+  }
+}
 -/
 #guard_msgs in
 #eval do

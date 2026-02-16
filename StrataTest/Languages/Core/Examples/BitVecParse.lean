@@ -51,13 +51,16 @@ Result: ❌ fail
 
 
 Evaluated program:
-(procedure bitVecParseTest :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: assert [bitvec32_test] #true
-assert [bitvec64_test] #false
-
+procedure bitVecParseTest :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    assert [bitvec32_test] #true
+    assert [bitvec64_test] #false
+  }
+}
 ---
 info:
 Obligation: bitvec32_test
@@ -69,6 +72,6 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" pgm
+#eval verify pgm
 
 ---------------------------------------------------------------------

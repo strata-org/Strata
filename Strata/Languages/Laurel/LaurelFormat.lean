@@ -11,31 +11,41 @@ namespace Laurel
 
 open Std (Format)
 
-mutual
 def formatOperation : Operation → Format
   | .Eq => "=="
   | .Neq => "!="
   | .And => "&&"
   | .Or => "||"
   | .Not => "!"
+  | .Implies => "==>"
   | .Neg => "-"
   | .Add => "+"
   | .Sub => "-"
   | .Mul => "*"
   | .Div => "/"
   | .Mod => "%"
+  | .DivT => "/t"
+  | .ModT => "%t"
   | .Lt => "<"
   | .Leq => "<="
   | .Gt => ">"
   | .Geq => ">="
 
-def formatHighType : HighType → Format
+
+mutual
+def formatHighType (t : HighTypeMd) : Format := formatHighTypeVal t.val
+  termination_by sizeOf t
+  decreasing_by cases t; term_by_mem
+
+def formatHighTypeVal : HighType → Format
   | .TVoid => "void"
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
+  | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
@@ -43,8 +53,17 @@ def formatHighType : HighType → Format
   | .Pure base => "pure(" ++ formatHighType base ++ ")"
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
+  termination_by t => sizeOf t
+  decreasing_by all_goals term_by_mem
+end
 
-def formatStmtExpr (s:StmtExpr) : Format :=
+
+mutual
+def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
+  termination_by sizeOf s
+  decreasing_by cases s; term_by_mem
+
+def formatStmtExprVal (s : StmtExpr) : Format :=
   match s with
   | .IfThenElse cond thenBr elseBr =>
       "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
@@ -58,8 +77,10 @@ def formatStmtExpr (s:StmtExpr) : Format :=
       match init with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
-  | .While cond _ _ body =>
-      "while " ++ formatStmtExpr cond ++ " " ++ formatStmtExpr body
+  | .While cond invs _ body =>
+      "while " ++ formatStmtExpr cond ++
+      (if invs.isEmpty then Format.nil else " invariant " ++ Format.joinSep (invs.map formatStmtExpr) "; ") ++
+      " " ++ formatStmtExpr body
   | .Exit target => "exit " ++ Format.text target
   | .Return value =>
       "return" ++
@@ -68,10 +89,11 @@ def formatStmtExpr (s:StmtExpr) : Format :=
       | some v => " " ++ formatStmtExpr v
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
+  | .LiteralString s => "\"" ++ Format.text s ++ "\""
   | .Identifier name => Format.text name
-  | .Assign [single] value _ =>
+  | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value
-  | .Assign targets value _ =>
+  | .Assign targets value =>
       "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
       formatStmtExpr target ++ "#" ++ Format.text field
@@ -102,14 +124,17 @@ def formatStmtExpr (s:StmtExpr) : Format :=
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
-  | .Assert cond _ => "assert " ++ formatStmtExpr cond
-  | .Assume cond _ => "assume " ++ formatStmtExpr cond
+  | .Assert cond => "assert " ++ formatStmtExpr cond
+  | .Assume cond => "assume " ++ formatStmtExpr cond
   | .ProveBy value proof =>
       "proveBy(" ++ formatStmtExpr value ++ ", " ++ formatStmtExpr proof ++ ")"
   | .ContractOf _ fn => "contractOf(" ++ formatStmtExpr fn ++ ")"
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
+  termination_by sizeOf s
+  decreasing_by all_goals term_by_mem
+end
 
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
@@ -121,13 +146,12 @@ def formatDeterminism : Determinism → Format
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque post impl modif =>
-      (match modif with
-       | none => ""
-       | some m => " modifies " ++ formatStmtExpr m) ++
-      " ensures " ++ formatStmtExpr post ++
+  | .Opaque postconds impl modif =>
+      (if modif.isEmpty then Format.nil
+       else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
+      Format.joinSep (postconds.map (fun p => " ensures " ++ formatStmtExpr p)) "" ++
       match impl with
-      | none => ""
+      | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
   | .Abstract post => "abstract ensures " ++ formatStmtExpr post
 
@@ -161,16 +185,20 @@ def formatTypeDefinition : TypeDefinition → Format
 def formatProgram (prog : Program) : Format :=
   Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
 
-end
-
 instance : Std.ToFormat Operation where
   format := formatOperation
 
-instance : Std.ToFormat HighType where
+instance : Std.ToFormat HighTypeMd where
   format := formatHighType
 
-instance : Std.ToFormat StmtExpr where
+instance : Std.ToFormat HighType where
+  format := formatHighTypeVal
+
+instance : Std.ToFormat StmtExprMd where
   format := formatStmtExpr
+
+instance : Std.ToFormat StmtExpr where
+  format := formatStmtExprVal
 
 instance : Std.ToFormat Parameter where
   format := formatParameter

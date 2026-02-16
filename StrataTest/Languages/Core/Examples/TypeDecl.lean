@@ -47,7 +47,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm1
+#eval verify typeDeclPgm1
 
 --------------------------------------------------------------------
 
@@ -111,7 +111,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm3
+#eval verify typeDeclPgm3
 
 
 --------------------------------------------------------------------
@@ -130,6 +130,6 @@ KnownTypes' names:
 [arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm4
+#eval verify typeDeclPgm4
 
 --------------------------------------------------------------------

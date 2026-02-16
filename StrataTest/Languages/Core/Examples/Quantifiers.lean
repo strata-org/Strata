@@ -57,7 +57,7 @@ Assumptions:
 
 
 Proof Obligation:
-(∀ (~Bool.Not (%0 == ((~Int.Add %0) #1))))
+(∀ (~Bool.Not (%0 == (~Int.Add %0 #1))))
 
 Label: good
 Property: assert
@@ -65,7 +65,7 @@ Assumptions:
 
 
 Proof Obligation:
-(∀ (∃ (((~Int.Add ((~Int.Add $__x0) #1)) ((~Int.Add %0) %1)) == ((~Int.Add %1) ((~Int.Add %0) ((~Int.Add $__x0) #1))))))
+(∀ (∃ ((~Int.Add (~Int.Add $__x0 #1) (~Int.Add %0 %1)) == (~Int.Add %1 (~Int.Add %0 (~Int.Add $__x0 #1))))))
 
 Label: bad
 Property: assert
@@ -73,7 +73,7 @@ Assumptions:
 
 
 Proof Obligation:
-(∀ ((~Int.Lt %0) $__x0))
+(∀ (~Int.Lt %0 $__x0))
 
 
 
@@ -85,15 +85,28 @@ Model:
 
 
 Evaluated program:
-(procedure Test :  ((x : int)) → ((r : int)))
-modifies: []
-preconditions: ⏎
-postconditions: (good, (∀ (∃ ((((~Int.Add : (arrow int (arrow int int))) (r : int)) (((~Int.Add : (arrow int (arrow int int))) %0) %1)) == (((~Int.Add : (arrow int (arrow int int))) %1) (((~Int.Add : (arrow int (arrow int int))) %0) (r : int))))))) (bad, (∀ (((~Int.Lt : (arrow int (arrow int bool))) %0) (x : int))))
-body: assert [good_assert] (∀ (~Bool.Not (%0 == ((~Int.Add %0) #1))))
-r := ((~Int.Add $__x0) #1)
-assert [good] (∀ (∃ (((~Int.Add ((~Int.Add $__x0) #1)) ((~Int.Add %0) %1)) == ((~Int.Add %1) ((~Int.Add %0) ((~Int.Add $__x0) #1))))))
-assert [bad] (∀ ((~Int.Lt %0) $__x0))
-
+procedure Test :  ((x : int)) → ((r : int))
+  modifies: []
+  preconditions: 
+  postconditions: (good, (∀ (∃ (((~Int.Add : (arrow int (arrow int int)))
+      (r : int)
+      ((~Int.Add : (arrow int (arrow int int)))
+       %0
+       %1)) == ((~Int.Add : (arrow int (arrow int int)))
+      %1
+      ((~Int.Add : (arrow int (arrow int int)))
+       %0
+       (r : int))))))) (bad, (∀ ((~Int.Lt : (arrow int (arrow int bool))) %0 (x : int))))
+{
+  {
+    assert [good_assert] (∀ (~Bool.Not (%0 == (~Int.Add %0 #1))))
+    r := (~Int.Add $__x0 #1)
+    assert [good] (∀ (∃ ((~Int.Add
+        (~Int.Add $__x0 #1)
+        (~Int.Add %0 %1)) == (~Int.Add %1 (~Int.Add %0 (~Int.Add $__x0 #1))))))
+    assert [bad] (∀ (~Int.Lt %0 $__x0))
+  }
+}
 ---
 info:
 Obligation: good_assert
@@ -111,7 +124,7 @@ Model:
 ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantPgm (options := .default)
+#eval verify quantPgm (options := .default)
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -122,28 +135,40 @@ Label: trigger_assert
 Property: assert
 Assumptions:
 
-(f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
-(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0))))) (f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1))))) (f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
+(f_pos, (∀ (~Int.Gt (~f %0) #0)))
+(g_neg, (∀ (∀ (~Bool.Implies
+   (~Int.Gt %1 #0)
+   (~Int.Lt
+    (~g %1 %0)
+    #0))))) (f_and_g, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1))))) (f_and_g2, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1)))))
 Proof Obligation:
-((~Int.Gt (~f $__x0)) #0)
+(~Int.Gt (~f $__x0) #0)
 
 Label: multi_trigger_assert
 Property: assert
 Assumptions:
 
-(f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
-(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0))))) (f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1))))) (f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
+(f_pos, (∀ (~Int.Gt (~f %0) #0)))
+(g_neg, (∀ (∀ (~Bool.Implies
+   (~Int.Gt %1 #0)
+   (~Int.Lt
+    (~g %1 %0)
+    #0))))) (f_and_g, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1))))) (f_and_g2, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1)))))
 Proof Obligation:
-(∀ ((~Int.Lt ((~g $__x0) %0)) (~f $__x0)))
+(∀ (~Int.Lt (~g $__x0 %0) (~f $__x0)))
 
 Label: f_and_g
 Property: assert
 Assumptions:
 
-(f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
-(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0))))) (f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1))))) (f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
+(f_pos, (∀ (~Int.Gt (~f %0) #0)))
+(g_neg, (∀ (∀ (~Bool.Implies
+   (~Int.Gt %1 #0)
+   (~Int.Lt
+    (~g %1 %0)
+    #0))))) (f_and_g, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1))))) (f_and_g2, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1)))))
 Proof Obligation:
-((~Int.Lt ((~g (~f $__x0)) $__x0)) #0)
+(~Int.Lt (~g (~f $__x0) $__x0) #0)
 
 ---
 info:
@@ -160,4 +185,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" triggerPgm
+#eval verify triggerPgm

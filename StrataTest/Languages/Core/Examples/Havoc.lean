@@ -27,15 +27,18 @@ procedure S() returns ()
 #eval TransM.run Inhabited.default (translateProgram havocPgm) |>.snd |>.isEmpty
 
 /--
-info: (procedure S :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (x : int) := init_x_0
-x := #1
-havoc x
-assert [x_eq_1] ((x : int) == #1)
-
+info: procedure S :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    init (x : int) := init_x_0
+    x := #1
+    havoc x
+    assert [x_eq_1] ((x : int) == #1)
+  }
+}
 Errors: #[]
 -/
 #guard_msgs in
@@ -64,15 +67,18 @@ Model:
 
 
 Evaluated program:
-(procedure S :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (x : int) := init_x_0
-x := #1
-havoc x
-assert [x_eq_1] ($__x0 == #1)
-
+procedure S :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    init (x : int) := init_x_0
+    x := #1
+    havoc x
+    assert [x_eq_1] ($__x0 == #1)
+  }
+}
 ---
 info:
 Obligation: x_eq_1
@@ -82,6 +88,6 @@ Model:
 ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" havocPgm
+#eval verify havocPgm
 
 ---------------------------------------------------------------------

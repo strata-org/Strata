@@ -37,12 +37,15 @@ spec {
 /--
 info: type MapII := (Map int int)
 var (a : MapII) := init_a_0
-(procedure P :  () → ())
-modifies: [a]
-preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0))
-postconditions: ⏎
-body: assert [assert_0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #1)
-
+procedure P :  () → ()
+  modifies: [a]
+  preconditions: (P_requires_1, (((~select : (arrow (Map int int) (arrow int int))) (a : MapII) #0) == #0))
+  postconditions: 
+{
+  {
+    assert [assert_0] (((~select : (arrow (Map int int) (arrow int int))) (a : MapII) #0) == #1)
+  }
+}
 Errors: #[]
 -/
 #guard_msgs in
@@ -56,10 +59,10 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-(P_requires_1, (((~select $__a0) #0) == #0))
+(P_requires_1, ((~select $__a0 #0) == #0))
 
 Proof Obligation:
-(((~select $__a0) #0) == #1)
+((~select $__a0 #0) == #1)
 
 
 
@@ -71,13 +74,16 @@ Result: ❌ fail
 Evaluated program:
 type MapII := (Map int int)
 var (a : (Map int int)) := init_a_0
-(procedure P :  () → ())
-modifies: [a]
-preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) (a : (Map int int))) #0) == #0))
-postconditions: ⏎
-body: assume [P_requires_1] (((~select $__a0) #0) == #0)
-assert [assert_0] (((~select $__a0) #0) == #1)
-
+procedure P :  () → ()
+  modifies: [a]
+  preconditions: (P_requires_1, (((~select : (arrow (Map int int) (arrow int int))) (a : (Map int int)) #0) == #0))
+  postconditions: 
+{
+  {
+    assume [P_requires_1] ((~select $__a0 #0) == #0)
+    assert [assert_0] ((~select $__a0 #0) == #1)
+  }
+}
 ---
 info:
 Obligation: assert_0
@@ -85,7 +91,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" failing
+#eval verify failing
 
 ---------------------------------------------------------------------
 
@@ -109,20 +115,14 @@ info:
 Obligation: assert_0
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, (- 1))
 
 Obligation: assert_1
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, (- 1))
 
 Obligation: assert_2
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, 7)
 -/
 #guard_msgs in
-#eval verify "cvc5" failingThrice (options := .quiet)
+#eval verify failingThrice (options := .quiet)

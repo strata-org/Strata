@@ -33,12 +33,16 @@ spec {
 
 /--
 info: var (g : bool) := init_g_0
-(procedure Test :  ((x : bool)) → ((y : bool)))
-modifies: []
-preconditions: ⏎
-postconditions: (Test_ensures_0, ((y : bool) == (x : bool))) (Test_ensures_1, ((x : bool) == (y : bool))) (Test_ensures_2, ((g : bool) == ((~old : (arrow a a)) (g : bool))))
-body: y := (((~Bool.Or : (arrow bool (arrow bool bool))) (x : bool)) (x : bool))
-
+procedure Test :  ((x : bool)) → ((y : bool))
+  modifies: []
+  preconditions: 
+  postconditions: (Test_ensures_0, ((y : bool) == (x : bool))) (Test_ensures_1, ((x : bool) == (y : bool))) (Test_ensures_2, ((g : bool) == ((~old : (arrow a a))
+    (g : bool))))
+{
+  {
+    y := ((~Bool.Or : (arrow bool (arrow bool bool))) (x : bool) (x : bool))
+  }
+}
 Errors: #[]
 -/
 #guard_msgs in
@@ -55,7 +59,7 @@ Assumptions:
 
 
 Proof Obligation:
-(((~Bool.Or $__x0) $__x0) == $__x0)
+((~Bool.Or $__x0 $__x0) == $__x0)
 
 Label: Test_ensures_1
 Property: assert
@@ -63,7 +67,7 @@ Assumptions:
 
 
 Proof Obligation:
-($__x0 == ((~Bool.Or $__x0) $__x0))
+($__x0 == (~Bool.Or $__x0 $__x0))
 
 Label: Test_ensures_2
 Property: assert
@@ -88,6 +92,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" simpleProcPgm
+#eval verify simpleProcPgm
 
 ---------------------------------------------------------------------

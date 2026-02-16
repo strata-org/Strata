@@ -216,7 +216,7 @@ def pyTranslateCommand : Command where
   callback := fun _ v => do
     let pgm ← readPythonStrata v[0]
     let preludePgm := Strata.Python.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
 
@@ -258,26 +258,35 @@ def pyAnalyzeCommand : Command where
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm sourcePathForMetadata
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm sourcePathForMetadata
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    match Core.Transform.runProgram
-          (Core.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
+    match Core.Transform.runProgram (targetProcList := .none)
+          (Core.ProcedureInlining.inlineCallCmd
+            (doInline := λ name _ => name ≠ "main"))
           newPgm .emp with
     | ⟨.error e, _⟩ => panic! e
-    | ⟨.ok newPgm, _⟩ =>
+    | ⟨.ok (_changed, newPgm), _⟩ =>
       if verbose then
         IO.println "Inlined: "
         IO.print newPgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
       let verboseMode := VerboseMode.ofBool verbose
-      let vcResults ← IO.FS.withTempDir (fun tempDir =>
+      let options :=
+              { Options.default with
+                stopOnFirstError := false,
+                verbose := verboseMode,
+                removeIrrelevantAxioms := true,
+                solver := solverName }
+      let runVerification tempDir :=
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
-            (Core.verify solverName newPgm tempDir .none
-              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
-                                      (moreFns := Strata.Python.ReFactory)))
+            (Core.verify newPgm tempDir .none options
+                                      (moreFns := Strata.Python.ReFactory))
+      let vcResults ← match options.vcDirectory with
+                      | .none => IO.FS.withTempDir runVerification
+                      | .some tempDir => runVerification tempDir
       let mut s := ""
       for vcResult in vcResults do
         -- Build location string based on available metadata
@@ -361,7 +370,7 @@ def laurelAnalyzeCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels "z3" combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do

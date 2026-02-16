@@ -19,6 +19,7 @@ composite Container {
 }
 
 procedure foo(c: Container, d: Container) returns (r: int)
+//        ^^^ error: an opaque procedure that mutates the heap must have a modifies clause
   requires c != d && d#intValue == 1
   ensures d#intValue == 3
 {
@@ -40,12 +41,14 @@ procedure useBool(c: Container) returns (r: bool) {
 
 procedure caller(c: Container, d: Container) {
   assume d#intValue == 1;
+  assume c != d;
   var x: int := foo(c, d);
   assert d#intValue == 3;
 }
 
 procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
   assume d#intValue == 1;
+  assume c != d;
   var x: int := foo(c, d) + 1;
   assert d#intValue == 3;
 }
@@ -60,9 +63,7 @@ procedure implicitEquality(c: Container, d: Container) {
   c#intValue := 1;
   d#intValue := 2;
   if (c#intValue == d#intValue) {
-// ATM, the assertion in this test is proven not to hold even though it holds
     assert c == d;
-//  ^^^^^^^^^^^^^^ error: assertion does not hold
   } else {
     assert c != d;
   }

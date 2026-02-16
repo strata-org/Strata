@@ -7,7 +7,7 @@
 -- Minimal Laurel dialect for AssertFalse example
 import Strata.DDM.Integration.Lean
 
-namespace Strata
-namespace Laurel
+namespace Strata.Laurel
+
 
 #load_dialect "./LaurelGrammar.st"

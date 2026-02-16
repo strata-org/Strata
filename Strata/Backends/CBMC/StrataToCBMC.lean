@@ -9,6 +9,7 @@ import Strata.DL.Util.Map
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Backends.CBMC.Common
+import Strata.Util.Tactics
 
 open Lean
 open Strata.CBMC
@@ -302,7 +303,7 @@ def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Comm
     ("sub", Json.arr (b.map (stmtToJson · loc)).toArray)
   ]
   termination_by b.sizeOf
-  decreasing_by (apply Imperative.sizeOf_stmt_in_block; assumption)
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
  def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
   match e with

@@ -30,14 +30,19 @@ procedure P() returns ()
 
 /--
 info: func a :  () → (Map int bool);
-(procedure P :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: assume [a_zero_true_assumption] ((((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #0) == #true)
-assert [a_zero_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #0)
-assert [a_one_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #1)
-
+procedure P :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    assume [a_zero_true_assumption] (((~select : (arrow (Map int bool) (arrow int bool)))
+      (~a : (Map int bool))
+      #0) == #true)
+    assert [a_zero_true] ((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool)) #0)
+    assert [a_one_true] ((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool)) #1)
+  }
+}
 Errors: #[]
 -/
 #guard_msgs in
@@ -51,18 +56,18 @@ VCs:
 Label: a_zero_true
 Property: assert
 Assumptions:
-(a_zero_true_assumption, (((~select ~a) #0) == #true))
+(a_zero_true_assumption, ((~select ~a #0) == #true))
 
 Proof Obligation:
-((~select ~a) #0)
+(~select ~a #0)
 
 Label: a_one_true
 Property: assert
 Assumptions:
-(a_zero_true_assumption, (((~select ~a) #0) == #true))
+(a_zero_true_assumption, ((~select ~a #0) == #true))
 
 Proof Obligation:
-((~select ~a) #1)
+(~select ~a #1)
 
 
 
@@ -73,14 +78,17 @@ Result: ❌ fail
 
 Evaluated program:
 func a :  () → (Map int bool);
-(procedure P :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: assume [a_zero_true_assumption] (((~select ~a) #0) == #true)
-assert [a_zero_true] ((~select ~a) #0)
-assert [a_one_true] ((~select ~a) #1)
-
+procedure P :  () → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    assume [a_zero_true_assumption] ((~select ~a #0) == #true)
+    assert [a_zero_true] (~select ~a #0)
+    assert [a_one_true] (~select ~a #1)
+  }
+}
 ---
 info:
 Obligation: a_zero_true
@@ -92,6 +100,6 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" mapPgm
+#eval verify mapPgm
 
 ---------------------------------------------------------------------

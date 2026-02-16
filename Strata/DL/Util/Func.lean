@@ -51,6 +51,7 @@ an example of a `concreteEval` function for `Int.Add`:
 
 Note that if there is an arity mismatch or if the arguments are not
 concrete/constants, this fails and it returns .none.
+If LFunc already has body, it must not have concreteEval, and vice versa.
 
 (TODO) Use `.bvar`s in the body to correspond to the formals instead of using
 `.fvar`s.
@@ -96,11 +97,13 @@ Well-formedness properties of Func. These are split from Func because
 otherwise it becomes impossible to create a 'temporary' Func object whose
 wellformedness might not hold yet.
 
-The `getName` and `getVarNames` functions are used to extract names from
-identifiers and expressions, allowing this structure to work with different types.
+The `getName`, `getVarNames` and `getTyFreeVars` functions are used to extract
+names from identifiers, expressions and types, allowing this structure to work
+with different types.
 -/
 structure FuncWF {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String) (getVarNames : ExprT → List String)
+    (getTyFreeVars : TyT → List String)
     (f : Func IdentT ExprT TyT MetadataT) where
   -- No args have same name.
   arg_nodup:
@@ -114,9 +117,21 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
     ∀ fn md args res, f.concreteEval = .some fn
       → fn md args = .some res
       → args.length = f.inputs.length
+  -- body and concreteEval cannot exist at once
+  body_or_concreteEval:
+    ¬ (f.concreteEval.isSome ∧ f.body.isSome)
+  -- No typeArgs have same name
+  typeArgs_nodup:
+    List.Nodup f.typeArgs
+  -- All type vars in input and output are in typeArg
+  inputs_typevars_in_typeArgs:
+    ∀ ty, ty ∈ f.inputs.values →
+      getTyFreeVars ty ⊆ f.typeArgs
+  output_typevars_in_typeArgs:
+    getTyFreeVars f.output ⊆ f.typeArgs
 
 instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type}
-    (getName : IdentT → String) (_ : ExprT → List String)
+    (getName : IdentT → String)
     (f : Func IdentT ExprT TyT MetadataT):
     Decidable (List.Nodup (f.inputs.map (getName ·.1))) := by
   apply List.nodupDecidable
@@ -129,5 +144,33 @@ instance FuncWF.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
   by exact f.body.decidableForallMem
 
 -- FuncWF.concreteEval_argmatch is not decidable.
+
+instance FuncWF.body_or_concreteEval_decidable
+    {IdentT ExprT TyT MetadataT : Type}
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (¬ (f.concreteEval.isSome ∧ f.body.isSome)) := by
+  exact instDecidableNot
+
+instance FuncWF.typeArgs_decidable
+    {IdentT ExprT TyT MetadataT : Type}
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (List.Nodup f.typeArgs) := by
+  apply List.nodupDecidable
+
+instance FuncWF.inputs_typevars_in_typeArgs_decidable
+    {IdentT ExprT TyT MetadataT : Type}
+    (getTyFreeVars : TyT → List String)
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (∀ ty, ty ∈ f.inputs.values →
+      getTyFreeVars ty ⊆ f.typeArgs) := by
+  exact List.decidableBAll (fun x => getTyFreeVars x ⊆ f.typeArgs)
+    (ListMap.values f.inputs)
+
+instance FuncWF.output_typevars_in_typeArgs_decidable
+    {IdentT ExprT TyT MetadataT : Type}
+    (getTyFreeVars : TyT → List String)
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (getTyFreeVars f.output ⊆ f.typeArgs) := by
+  apply List.instDecidableRelSubsetOfDecidableEq
 
 end Strata.DL.Util

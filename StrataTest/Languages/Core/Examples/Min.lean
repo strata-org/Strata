@@ -35,7 +35,9 @@ Assumptions:
 
 
 Proof Obligation:
-((~Bool.And ((~Int.Le (if ((~Int.Lt $__n0) $__m1) then $__n0 else $__m1)) $__n0)) ((~Int.Le (if ((~Int.Lt $__n0) $__m1) then $__n0 else $__m1)) $__m1))
+(~Bool.And
+ (~Int.Le (if (~Int.Lt $__n0 $__m1) then $__n0 else $__m1) $__n0)
+ (~Int.Le (if (~Int.Lt $__n0 $__m1) then $__n0 else $__m1) $__m1))
 
 ---
 info:
@@ -44,6 +46,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" testPgm
+#eval verify testPgm
 
 ---------------------------------------------------------------------
