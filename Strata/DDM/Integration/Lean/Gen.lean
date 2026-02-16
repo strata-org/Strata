@@ -7,14 +7,16 @@ module
 
 public meta import Lean.Elab.Command
 public meta import Strata.DDM.AST
-public import      Strata.DDM.BuiltinDialects.Init  -- Generated code references Init dialect types
-public import      Strata.DDM.HNF  -- Generated ofAst code uses ExprF.hnf
+-- `public import` provides object-level access for generated code at call sites.
+-- `public meta import` provides meta-level access for #strata_gen elaboration.
+public import      Strata.DDM.BuiltinDialects.Init  -- Generated code uses Init types
+public import      Strata.DDM.HNF  -- Generated ofAst uses ExprF.hnf
 public meta import Strata.DDM.BuiltinDialects.Init
 meta import        Strata.DDM.BuiltinDialects.StrataDDL
 public meta import Strata.DDM.Integration.Categories
 public meta import Strata.DDM.Integration.Lean.Env
-public meta import Strata.DDM.Integration.Lean.GenTrace  -- trace.Strata.generator option
-public import      Strata.DDM.Integration.Lean.OfAstM  -- Generated ofAst code uses OfAstM combinators
+public meta import Strata.DDM.Integration.Lean.GenTrace  -- trace option
+public import      Strata.DDM.Integration.Lean.OfAstM  -- Generated ofAst combinators
 public meta import Strata.DDM.Integration.Lean.OfAstM
 public meta import Strata.DDM.Util.Graph.Tarjan
 meta import        Strata.Util.DecideProp
@@ -55,8 +57,9 @@ def mkScopedIdent (subName : Lean.Name) : CommandElabM Ident := do
       fullName
     else
       Lean.mkPrivateName env fullName
-  let nameStr := toString subName
-  return .mk (.ident .none nameStr.toRawSubstring subName [.decl resolvedName []])
+  let rawStr := (toString subName).toRawSubstring
+  let preresolution := [.decl resolvedName []]
+  return .mk (.ident .none rawStr subName preresolution)
 
 end Lean
 
@@ -818,11 +821,11 @@ def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
 
 /-- Returns the identifier for a category's toAst function. -/
 def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
+  getCategoryOpIdent cat `toAst
 
 /-- Returns the identifier for a category's ofAst function. -/
 def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
+  getCategoryOpIdent cat `ofAst
 
 /-- Wraps a value with an `Ann`-extracted annotation into an AST argument. -/
 def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
@@ -1312,7 +1315,7 @@ def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor)
     | none => map  -- Skip operators without a name
     | some name => map.insert name map.size  -- Assign the next available index
   let ofAstNameMap ←
-    mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.nameIndexMap
+    getCategoryOpIdent cat `ofAst.nameIndexMap
   let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat :=
     Std.HashMap.ofList $(quote nameIndexMap.toList))
   pure (nameIndexMap, ofAstNameMap, cmd)
