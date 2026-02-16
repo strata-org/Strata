@@ -100,6 +100,6 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" mapPgm
+#eval verify mapPgm
 
 ---------------------------------------------------------------------
