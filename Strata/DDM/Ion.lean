@@ -82,6 +82,29 @@ end Ion.Ion
 
 namespace Strata
 
+namespace SepFormat
+
+def toIonName : SepFormat → String
+  | .none => "seq"
+  | .comma => "commaSepList"
+  | .space => "spaceSepList"
+  | .spacePrefix => "spacePrefixedList"
+  | .newline => "newlineSepList"
+
+def fromIonName? : String → Option SepFormat
+  | "seq" => some .none
+  | "commaSepList" => some .comma
+  | "spaceSepList" => some .space
+  | "spacePrefixedList" => some .spacePrefix
+  | "newlineSepList" => some .newline
+  | _ => none
+
+theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
+  fromIonName? (toIonName sep) = some sep := by
+  cases sep <;> rfl
+
+end SepFormat
+
 /--
 Represents an Ion value that is either a symbol/string or a non-empty
 s-expression. The size proof ensures termination in recursive deserialization.

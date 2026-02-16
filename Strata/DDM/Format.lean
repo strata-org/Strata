@@ -318,7 +318,7 @@ private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFo
   match stx with
   | .ident lvl prec _ =>
     let ⟨r, innerPrec⟩ := args[lvl]!
-    if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
+    if prec > 0 ∧ (innerPrec < prec ∨ opts.alwaysParen) then
       f!"({r})"
     else
       r
@@ -334,6 +334,26 @@ private abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 
 private def pformat {α} [ToStrataFormat α] (a : α) : FormatM PrecFormat :=
   fun c s => (mformat a c s, s)
+
+private def formatJoin {m α} [Monad m] (f : α → m PrecFormat)
+    (entries : Array α) : m PrecFormat :=
+  .atom <$> entries.foldlM (init := .nil) fun p a =>
+    return (p ++ (← f a).format)
+
+private def formatSepBy {m α} [Monad m] (f : α → m PrecFormat)
+    (entries : Array α) (sep : Format) : m PrecFormat :=
+  if z : entries.size = 0 then
+    pure (.atom .nil)
+  else do
+    let a := (← f entries[0]).format
+    .atom <$> entries.size.foldlM
+      (fun i _ s => return s ++ sep ++ (← f entries[i]).format)
+      (start := 1) a
+
+private def formatPrefixBy {m α} [Monad m] (f : α → m PrecFormat)
+    (entries : Array α) (sep : Format) : m PrecFormat :=
+  .atom <$> entries.foldlM (init := .nil) fun p a =>
+    return (p ++ sep ++ (← f a).format)
 
 mutual
 
@@ -379,26 +399,11 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
   | some a => a.mformatM
 | .seq _ sep entries => do
   match sep with
-  | .none =>
-    .atom <$> entries.foldlM (init := .nil) fun p a =>
-      return (p ++ (← a.mformatM).format)
-  | .comma =>
-    if z : entries.size = 0 then
-      pure (.atom .nil)
-    else do
-      let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
-      let a := (← entries[0].mformatM).format
-      .atom <$> entries.size.foldlM f (start := 1) a
-  | .space =>
-    if z : entries.size = 0 then
-      pure (.atom .nil)
-    else do
-      let f i q s := return s ++ " " ++ (← entries[i].mformatM).format
-      let a := (← entries[0].mformatM).format
-      .atom <$> entries.size.foldlM f (start := 1) a
-  | .spacePrefix =>
-    .atom <$> entries.foldlM (init := .nil) fun p a =>
-      return (p ++ " " ++ (← a.mformatM).format)
+  | .none        => formatJoin ArgF.mformatM entries
+  | .comma       => formatSepBy ArgF.mformatM entries ", "
+  | .space       => formatSepBy ArgF.mformatM entries " "
+  | .newline     => formatSepBy ArgF.mformatM entries "\n"
+  | .spacePrefix => formatPrefixBy ArgF.mformatM entries " "
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then
