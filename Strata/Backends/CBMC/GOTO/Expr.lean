@@ -63,6 +63,8 @@ inductive Binary where
   | Div
   /-- `mod_exprt` -/
   | Mod
+  /-- `minus_exprt` -/
+  | Minus
   /-- `shl_exprt` -/
   | Shl
   /-- `ashr_exprt` -/
@@ -71,17 +73,21 @@ inductive Binary where
   | Lshr
   /-- `plus_overflow_exprt` -/
   | PlusOverflow
+  /-- `implies_exprt` -/
+  | Implies
   | Gt | Lt | Ge | Le | Equal | NotEqual
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Binary where
   format b := match b with
-    | .Div => "div"
+    | .Div => "/"
     | .Mod => "mod"
+    | .Minus => "-"
     | .Shl => "shl"
     | .Ashr => "ashr"
     | .Lshr => "lshr"
     | .PlusOverflow => "overflow-+"
+    | .Implies => "=>"
     | .Gt => ">"
     | .Lt => "<"
     | .Ge => ">="

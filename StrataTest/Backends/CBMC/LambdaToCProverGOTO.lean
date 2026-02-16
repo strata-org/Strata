@@ -22,6 +22,7 @@ def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   | .int => .ok .Integer
   | .bool => .ok .Boolean
   | .string => .ok .String
+  | .tcons name _ => .ok (CProverGOTO.Ty.StructTag name)
   | _ => .error f!"[toGotoType] Not yet implemented: {ty}"
 
 def LExprT.getGotoType {T : LExprParamsT} (e : LExprT T) :
@@ -31,8 +32,27 @@ def LExprT.getGotoType {T : LExprParamsT} (e : LExprT T) :
 
 def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
   match fn with
+  -- Bitvector operations
   | "Bv32.Add" => .ok (.multiary .Plus)
   | "Bv32.Lt" | "Bv32.ULt" => .ok (.binary .Lt)
+  -- Integer arithmetic
+  | "Int.Add" => .ok (.multiary .Plus)
+  | "Int.Sub" => .ok (.binary .Minus)
+  | "Int.Mul" => .ok (.multiary .Mult)
+  | "Int.Div" => .ok (.binary .Div)
+  | "Int.Mod" => .ok (.binary .Mod)
+  | "Int.Neg" => .ok (.unary .UnaryMinus)
+  -- Integer comparisons
+  | "Int.Lt" => .ok (.binary .Lt)
+  | "Int.Le" => .ok (.binary .Le)
+  | "Int.Gt" => .ok (.binary .Gt)
+  | "Int.Ge" => .ok (.binary .Ge)
+  -- Boolean operations
+  | "Bool.And" => .ok (.multiary .And)
+  | "Bool.Or" => .ok (.multiary .Or)
+  | "Bool.Not" => .ok (.unary .Not)
+  | "Bool.Implies" => .ok (.binary .Implies)
+  | "Bool.Equiv" => .ok (.binary .Equal)
   | _ => .error f!"[fnToGotoID] Not yet implemented: fn: {fn}"
 
 /--
