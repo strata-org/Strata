@@ -435,9 +435,8 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 /--
 Verify a Laurel program using an SMT solver
 -/
-def verifyToVcResults (smtsolver : String) (program : Program)
+def verifyToVcResults (program : Program)
     (options : Options := Options.default)
-    (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
   let (strataCoreProgram, translateDiags) ← match translate program with
     | .error translateErrorDiags => return .error translateErrorDiags
@@ -451,25 +450,25 @@ def verifyToVcResults (smtsolver : String) (program : Program)
   dbg_trace "================================="
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))
-        (Core.verify smtsolver strataCoreProgram tempDir .none options)
-  let ioResult ← match tempDir with
+        (Core.verify strataCoreProgram tempDir .none options)
+  let ioResult ← match options.vcDirectory with
     | .none => IO.FS.withTempDir runner
-    | .some p => IO.FS.createDirAll ⟨p⟩; runner ⟨p⟩
+    | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
   if translateDiags.isEmpty then
     return .ok ioResult
   else
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (smtsolver : String) (files: Map Strata.Uri Lean.FileMap) (program : Program): IO (Array Diagnostic) := do
-  let results <- verifyToVcResults smtsolver program
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program) (options : Options := Options.default): IO (Array Diagnostic) := do
+  let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (smtsolver : String) (program : Program): IO (Array DiagnosticModel) := do
-  let results <- verifyToVcResults smtsolver program
+def verifyToDiagnosticModels (program : Program) (options : Options := Options.default) : IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel

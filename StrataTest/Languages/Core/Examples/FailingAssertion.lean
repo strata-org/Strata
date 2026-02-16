@@ -91,7 +91,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" failing
+#eval verify failing
 
 ---------------------------------------------------------------------
 
@@ -125,4 +125,4 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" failingThrice (options := .quiet)
+#eval verify failingThrice (options := .quiet)
