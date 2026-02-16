@@ -73,7 +73,7 @@ structure LiftState where
   /-- Substitution map: variable name → name to use -/
   subst : SubstMap := []
   /-- Type environment -/
-  env : LaurelTypes.TypeEnv := []
+  env : TypeEnv := []
   /-- Type definitions from the program -/
   types : List TypeDefinition := []
   /-- Global counter for fresh conditional variables -/
@@ -127,7 +127,7 @@ private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit :=
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
-  return LaurelTypes.computeExprType s.env s.types expr
+  return computeExprType s.env s.types expr
 
 /-- Check if an expression contains any assignments (recursively). -/
 private def containsAssignment (expr : StmtExprMd) : Bool :=
@@ -394,7 +394,7 @@ def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
   | multiple => pure (bare (.Block multiple none))
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
-  let initEnv : LaurelTypes.TypeEnv :=
+  let initEnv : TypeEnv :=
     proc.inputs.map (fun p => (p.name, p.type)) ++
     proc.outputs.map (fun p => (p.name, p.type))
   modify fun s => { s with subst := [], prependedStmts := [], varCounters := [], env := initEnv }

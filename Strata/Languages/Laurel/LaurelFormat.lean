@@ -45,6 +45,7 @@ def formatHighTypeVal : HighType → Format
   | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
+  | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
@@ -140,14 +141,12 @@ def formatParameter (p : Parameter) : Format :=
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque posts impl modif =>
-      "opaque " ++
-      (match modif with
-       | none => ""
-       | some m => " modifies " ++ formatStmtExpr m) ++
-      Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p)) ++
+  | .Opaque postconds impl modif =>
+      (if modif.isEmpty then Format.nil
+       else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
+      Format.joinSep (postconds.map (fun p => " ensures " ++ formatStmtExpr p)) "" ++
       match impl with
-      | none => ""
+      | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
   | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
 

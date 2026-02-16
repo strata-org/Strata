@@ -71,9 +71,6 @@ def translateBool (arg : Arg) : TransM Bool := do
     | _ => TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr op.name}"
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
-instance : Inhabited HighType where
-  default := .TVoid
-
 instance : Inhabited Parameter where
   default := { name := "", type := ⟨.TVoid, #[]⟩ }
 
@@ -134,9 +131,15 @@ instance : Inhabited Procedure where
     name := ""
     inputs := []
     outputs := []
+<<<<<<< HEAD
     preconditions := []
+=======
+    precondition := mkStmtExprMdEmpty <| .LiteralBool true
+    determinism := .deterministic none
+>>>>>>> origin/main
     decreases := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
+    md := .empty
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -289,14 +292,51 @@ partial def translateCommand (arg : Arg) : TransM StmtExprMd := do
 
 end
 
+def translateModifiesExprs (arg : Arg) : TransM (List StmtExprMd) := do
+  match arg with
+  | .seq _ .comma args =>
+    args.toList.mapM translateStmtExpr
+  | _ => pure []
+
+def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
+  match arg with
+  | .seq _ _ args => do
+    let mut allModifies : List StmtExprMd := []
+    for clauseArg in args do
+      match clauseArg with
+      | .op clauseOp => match clauseOp.name, clauseOp.args with
+        | q`Laurel.modifiesClause, #[refsArg] =>
+          let refs ← translateModifiesExprs refsArg
+          allModifies := allModifies ++ refs
+        | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
+      | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
+    pure allModifies
+  | _ => pure []
+
+def translateEnsuresClauses (arg : Arg) : TransM (List StmtExprMd) := do
+  match arg with
+  | .seq _ _ args => do
+    let mut allEnsures : List StmtExprMd := []
+    for clauseArg in args do
+      match clauseArg with
+      | .op clauseOp => match clauseOp.name, clauseOp.args with
+        | q`Laurel.ensuresClause, #[exprArg] =>
+          let expr ← translateStmtExpr exprArg
+          allEnsures := allEnsures ++ [expr]
+        | _, _ => TransM.error s!"Expected ensuresClause operation, got {repr clauseOp.name}"
+      | _ => TransM.error s!"Expected ensuresClause operation in ensures sequence"
+    pure allEnsures
+  | _ => pure []
+
 def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, ensuresArg, bodyArg] =>
+      requiresArg, ensuresArg, modifiesArg, bodyArg] =>
     let name ← translateIdent nameArg
+    let nameMd ← getArgMetaData nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
     -- If returnTypeArg is set, create a single "result" parameter
@@ -323,29 +363,38 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
             | _, _ => TransM.error "Expected requiresClause"
           | _ => TransM.error "Expected operation"
       | _ => pure []
-    -- Parse postconditions (ensures clauses)
-    let postconditions ← match ensuresArg with
-      | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
-          | .op ensOp => match ensOp.name, ensOp.args with
-            | q`Laurel.ensuresClause, #[exprArg] => translateStmtExpr exprArg
-            | _, _ => TransM.error "Expected ensuresClause"
-          | _ => TransM.error "Expected operation"
-      | _ => pure []
-    let body ← translateCommand bodyArg
-    -- If there are postconditions, use Opaque body; otherwise use Transparent
-    let procBody := match postconditions with
-      | [] => Body.Transparent body
-      | posts => Body.Opaque posts (some body) none
+    -- Parse postconditions (ensures clauses - zero or more)
+    let postconditions ← translateEnsuresClauses ensuresArg
+    -- Parse modifies clauses (zero or more)
+    let modifies ← translateModifiesClauses modifiesArg
+    -- Parse optional body
+    let body ← match bodyArg with
+      | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
+        | q`Laurel.optionalBody, #[exprArg] => translateCommand exprArg >>= (pure ∘ some)
+        | _, _ => TransM.error s!"Expected optionalBody operation, got {repr bodyOp.name}"
+      | .option _ none => pure none
+      | _ => TransM.error s!"Expected optionalBody, got {repr bodyArg}"
+    -- Determine procedure body kind
+    let procBody := match postconditions, body with
+      | _ :: _, bodyOpt => Body.Opaque postconditions bodyOpt modifies
+      | [], some b => Body.Transparent b
+      | [], none => Body.Opaque [] none modifies
     return {
       name := name
       inputs := parameters
       outputs := returnParameters
+<<<<<<< HEAD
       preconditions := preconditions
+=======
+      precondition := precondition
+      determinism := .deterministic none
+>>>>>>> origin/main
       decreases := none
       body := procBody
+      md := nameMd
     }
   | q`Laurel.procedure, args =>
-    TransM.error s!"parseProcedure expects 7 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 

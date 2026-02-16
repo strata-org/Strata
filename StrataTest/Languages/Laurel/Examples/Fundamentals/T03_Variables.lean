@@ -44,7 +44,7 @@ procedure anotherConditionAssignmentInExpression(c: bool) {
   var b: bool := c;
   var z: bool := (if (b) { b := false; } else (b := true;)) || b;
     assert z;
-//  ^^^^^^^^^ error: assertion could not be proved
+//  ^^^^^^^^^ error: assertion does not hold
 }
 
 procedure blockWithTwoAssignmentsInExpression() {
