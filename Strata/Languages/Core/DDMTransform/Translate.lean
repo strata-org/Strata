@@ -1135,10 +1135,11 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     --
     -- We need to include both the function and parameters in boundVars.
     -- The function is represented as an op expression that can be called.
-    let funcBinding : LExpr CoreLParams.mono := .op () name (some outputMono)
+    let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
+    let funcBinding : LExpr CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-    -- Order: existing boundVars, then function, then parameters
-    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
+    -- Order: function first, then existing boundVars, then parameters
+    let bodyBindings := { bindings with boundVars := #[funcBinding] ++ bindings.boundVars ++ in_bindings }
 
     -- Translate body with function parameters in scope
     let body ← match bodya with
@@ -1158,17 +1159,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
       axioms := []
     }
     let md ← getOpMetaData op
-    -- Create a Function for the freeVars
-    let func := { name := name,
-                  typeArgs := [],
-                  inputs := inputs,
-                  output := outputMono,
-                  body := body,
-                  attr := #[] }
-    let funcDecl := Core.Decl.func func md
-    -- Add the function to the local scope for subsequent statements
-    let newFreeVars := bindings.freeVars.push funcDecl
-    let updatedBindings := { bindings with freeVars := newFreeVars }
+    -- Add the function to boundVars for subsequent statements.
+    let newBoundVars := bindings.boundVars.push funcBinding
+    let updatedBindings := { bindings with boundVars := newBoundVars }
     return ([.funcDecl decl md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
