@@ -74,7 +74,7 @@ procedure Test() returns ()
 #end
 
 /--
-info: #["assertion could not be proved"]
+info: #["assertion does not hold"]
 -/
 #guard_msgs in
 #eval do
