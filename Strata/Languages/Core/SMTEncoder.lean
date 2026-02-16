@@ -362,10 +362,11 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           let absB := Term.app Op.abs [b] retTy
           let q := Term.app Op.div [absA, absB] retTy
           let negQ := Term.app Op.neg [q] retTy
-          Term.app Op.ite [abGeZero, q, negQ] retTy
+          Factory.ite abGeZero q negQ
         | _ => Term.app Op.div args retTy
       .ok (divTApp, .int, ctx)
     -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
+    -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
     | "Int.ModT"     =>
       let modTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
