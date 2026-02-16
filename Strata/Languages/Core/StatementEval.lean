@@ -395,8 +395,8 @@ def processGoto : Statements → Option String → (Statements × Option String)
 
 /--
 Merge `EnvWithNext` results that originated from different branches of the same
-if-then-else and have reconverged to the same `nextLabel`. This prevents path
-multiplication across procedures when gotos cause branches to reconverge at
+if-then-else and have reconverged to the same `nextLabel`.
+This prevents a procedure from returning multiple paths when gotos cause branches to reconverge at
 different points than the original ite.
 
 Results are grouped by `nextLabel`. Within each group, if there is exactly one
