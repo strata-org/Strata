@@ -193,19 +193,19 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
                               | .TBool => .const () (.boolConst false)
                               | .TString => .const () (.strConst "")
                               | _ => .const () (.intConst 0)
-            let initStmt := Core.Statement.init ident boogieType defaultExpr
+            let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr constants env initExpr
-          (env', [Core.Statement.init ident boogieType boogieExpr])
+          (env', [Core.Statement.init ident boogieType (some boogieExpr)])
       | none =>
           let defaultExpr := match ty.val with
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
                             | .TString => .const () (.strConst "")
                             | _ => .const () (.intConst 0)
-          (env', [Core.Statement.init ident boogieType defaultExpr])
+          (env', [Core.Statement.init ident boogieType (some defaultExpr)])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>

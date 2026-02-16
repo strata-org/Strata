@@ -34,9 +34,8 @@ Commands don't create local control flow, and are typically used as a parameter
 to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
-  /-- Define a variable called `name` with type `ty` and initial value `e`.
-    Note: we may make the initial value optional. -/
-  | init     (name : P.Ident) (ty : P.Ty) (e : P.Expr) (md : (MetaData P) := .empty)
+  /-- Define a variable called `name` with type `ty` and optional initial value `e`. -/
+  | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P) := .empty)
   /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
   /-- Assigns an arbitrary value to an existing variable `name`. -/
@@ -73,7 +72,7 @@ instance : SizeOf String where
 @[simp]
 def Cmd.sizeOf (c : Imperative.Cmd P) : Nat :=
   match c with
-  | .init   n t e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf t + SizeOf.sizeOf e
+  | .init   n t eOpt _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf t + (match eOpt with | some e => SizeOf.sizeOf e | none => 0)
   | .set    n e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf e
   | .havoc  n _ => 1 + SizeOf.sizeOf n
   | .assert l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
@@ -104,7 +103,9 @@ mutual
 /-- Get all variables accessed by `c`. -/
 def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
   match c with
-  | .init _ _ e _ => HasVarsPure.getVars e
+  | .init _ _ eOpt _ => match eOpt with
+    | some e => HasVarsPure.getVars e
+    | none => []
   | .set _ e _ => HasVarsPure.getVars e
   | .havoc _ _ => []
   | .assert _ e _ => HasVarsPure.getVars e
