@@ -46,7 +46,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" testerEx
+#eval verify testerEx
 
 
 def destrEx :=
@@ -87,6 +87,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" destrEx
+#eval verify destrEx
 
 end Strata

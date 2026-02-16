@@ -25,7 +25,7 @@ def typedVarToSMT (v : String) (ty : Ty) : Except Format (String × Strata.SMT.T
   let ty' ← toSMTType ty
   return (v, ty')
 
-def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
+def verify (cmds : Commands) (verbose : Bool) :
   EIO Format (Imperative.VCResults Arith.PureExpr) := do
   match typeCheckAndPartialEval cmds with
   | .error err =>
@@ -55,7 +55,7 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
                encodeArithToSMTTerms typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
-                smtsolver filename.toString
+                "cvc5" filename.toString
                 terms)
         match ans with
         | .ok (result, estate) =>
@@ -82,12 +82,12 @@ end Arith
 namespace Strata
 namespace ArithPrograms
 
-def verify (smtsolver : String) (pgm : Program)
+def verify (pgm : Program)
     (verbose : Bool := false) : IO (Imperative.VCResults Arith.PureExpr) := do
   let (program, errors) := ArithPrograms.TransM.run (ArithPrograms.translateProgram pgm.commands)
   if errors.isEmpty then
     EIO.toIO (fun f => IO.Error.userError (toString f))
-                (Arith.verify smtsolver program verbose)
+                (Arith.verify program verbose)
   else
     let errors := Std.Format.joinSep errors.toList "{Format.line}"
     panic! s!"DDM Transform Error: {errors}"
