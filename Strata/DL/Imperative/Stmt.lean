@@ -185,6 +185,34 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### StripMetaData
+
+Functions to remove metadata from statements and blocks.
+Useful for cleaner formatting output in tests.
+-/
+
+mutual
+/-- Remove all metadata from a statement. -/
+def Stmt.stripMetaData (s : Stmt P C) : Stmt P C :=
+  match s with
+  | .cmd c => .cmd c
+  | .block label bss _ => .block label (Block.stripMetaData bss)
+  | .ite cond tss ess _ => .ite cond (Block.stripMetaData tss) (Block.stripMetaData ess)
+  | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss)
+  | .goto label _ => .goto label
+  | .funcDecl decl _ => .funcDecl decl
+  termination_by (Stmt.sizeOf s)
+
+/-- Remove all metadata from a block. -/
+def Block.stripMetaData (ss : Block P C) : Block P C :=
+  match ss with
+  | [] => []
+  | s :: srest => Stmt.stripMetaData s :: Block.stripMetaData srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### HasVars -/
 
 mutual
