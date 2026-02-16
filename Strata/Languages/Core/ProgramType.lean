@@ -42,9 +42,9 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
       match decl with
 
       | .var x ty val md =>
-        let (s', Env) ← Statement.typeCheck C Env program .none [Statement.init x ty val md]
+        let (s', Env) ← Statement.typeCheck C Env program .none [Statement.init x ty (some val) md]
         match s' with
-        | [Statement.init x' ty' val' _] => .ok (Decl.var x' ty' val', C, Env)
+        | [Statement.init x' ty' (some val') _] => .ok (Decl.var x' ty' val', C, Env)
         | _ => .error <| DiagnosticModel.withRange fileRange f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\

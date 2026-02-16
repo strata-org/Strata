@@ -61,7 +61,7 @@ subst:
                     .init "y" t[int] eb[#6],
                     .block "label_0"
 
-                      [Statement.init "z" t[bool] eb[zinit],
+                      [Statement.init "z" t[bool] (some eb[zinit]),
                        Statement.assume "z_false" eb[z == #false],
 
                       .ite eb[z == #false]
@@ -90,7 +90,7 @@ subst:
                     [
                     .init "x" t[bool] eb[#true],
                     .block "label_0"
-                      [ Statement.init "x" t[int] eb[#1] ]
+                      [ Statement.init "x" t[int] (some eb[#1]) ]
                     ]
           return format ans
 
@@ -114,7 +114,7 @@ subst: [($__ty0, int)]
                       Statement.init "y" t[∀α. %α] eb[x],
                       Statement.assert "local_y_eq_3" eb[y == #3]
                     ]
-                    [ Statement.init "z" t[bool] eb[#true] ]
+                    [ Statement.init "z" t[bool] (some eb[#true]) ]
                     ]
           return format ans.snd
 

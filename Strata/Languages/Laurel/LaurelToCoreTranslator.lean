@@ -148,7 +148,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
           if callee == "heapRead" || callee == "heapStore" then
             -- Translate as expression (function application)
             let boogieExpr := translateExpr constants env (.StaticCall callee args)
-            (env', [Core.Statement.init ident boogieType boogieExpr])
+            (env', [Core.Statement.init ident boogieType (some boogieExpr)])
           else
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr constants env)
@@ -156,18 +156,18 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
                               | .TInt => .const () (.intConst 0)
                               | .TBool => .const () (.boolConst false)
                               | _ => .const () (.intConst 0)
-            let initStmt := Core.Statement.init ident boogieType defaultExpr
+            let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr constants env initExpr
-          (env', [Core.Statement.init ident boogieType boogieExpr])
+          (env', [Core.Statement.init ident boogieType (some boogieExpr)])
       | none =>
           let defaultExpr := match ty with
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
                             | _ => .const () (.intConst 0)
-          (env', [Core.Statement.init ident boogieType defaultExpr])
+          (env', [Core.Statement.init ident boogieType (some defaultExpr)])
   | .Assign targets value _ =>
       match targets with
       | [.Identifier name] =>
