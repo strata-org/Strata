@@ -266,16 +266,16 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
-      let bguard := translateExpr constants env cond
-      -- Combine multiple invariants into a single expression using And
+      let condExpr := translateExpr constants env cond
+      -- Combine multiple invariants with && for Core (which expects single invariant)
       let translatedInvariants := invariants.map (translateExpr constants env)
-      let binvariant := match translatedInvariants with
+      let invExpr := match translatedInvariants with
         | [] => none
         | [single] => some single
         | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
-      let bmeasure := decreasesExpr.map (translateExpr constants env)
-      let (_, bbody) := translateStmt constants funcNames env outputParams body
-      (env, [Imperative.Stmt.loop bguard bmeasure binvariant bbody md])
+      let decreasingExprCore := decreasesExpr.map (translateExpr constants env)
+      let (_, bodyStmts) := translateStmt constants funcNames env outputParams body
+      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
   | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by
