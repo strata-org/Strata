@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder

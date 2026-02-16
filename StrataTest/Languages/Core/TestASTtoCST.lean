@@ -22,27 +22,7 @@ def ASTtoCST (program : Strata.Program) := do
   let (ast, errs) := TransM.run Inhabited.default (translateProgram program)
   if !errs.isEmpty then
     IO.println f!"CST to AST Error: {errs}"
-  -- Convert AST → CST
-  match (programToCST (M := SourceRange) ast).run
-        ToCSTContext.empty with
-  | .error errs =>
-    IO.println "AST to CST Error:"
-    for err in errs do
-      match err with
-      | .unsupportedConstruct fn desc ctx _md =>
-        IO.println s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
-  | .ok (cmds, _finalCtx) =>
-    -- Format with original global context
-    let ctx := FormatContext.ofDialects program.dialects
-      program.globalContext {}
-    let state : FormatState := {
-      openDialects := program.dialects.toList.foldl (init := {})
-        fun a (d : Dialect) => a.insert d.name
-    }
-    -- Display commands using mformat
-    IO.println "Rendered Program:\n"
-    for cmd in cmds do
-      IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
+  printProgram ast
 
 -------------------------------------------------------------------------------
 
@@ -75,9 +55,7 @@ datatype Tree (a : Type) {
 #end
 
 /--
-info: Rendered Program:
-
-type T0;
+info: type T0;
 type Byte := bv8;
 type IntMap := Map int int;
 type T1 (a0 : Type);
@@ -134,9 +112,7 @@ function f5<T1, T2>(x : T1, y : T2) : T1 {
 #end
 
 /--
-info: Rendered Program:
-
-function fooConst () : int;
+info: function fooConst () : int;
 axiom [fooConst_value]: fooConst == 5;
 function f1 (x : int) : int;
 axiom [f1_ax1]: forall x0 : int ::  { f1(x0) }
@@ -192,9 +168,7 @@ function boolId(x : bool): bool;
 #end
 
 /--
-info: Rendered Program:
-
-datatype IntList {(
+info: datatype IntList {(
   (Nil())),
   (Cons(head : int, tail : IntList))
 };
@@ -238,9 +212,7 @@ spec { requires List..isCons(xs); } {
 
 
 /--
-info: Rendered Program:
-
-datatype List (a : Type) {(
+info: datatype List (a : Type) {(
   (Nil())),
   (Cons(head : a, tail : (List a)))
 };
@@ -270,9 +242,7 @@ procedure TestDifferentInstantiations() returns ()
 #end
 
 /--
-info: Rendered Program:
-
-function identity<a> (x : a) : a;
+info: function identity<a> (x : a) : a;
 function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestDifferentInstantiations () returns ()
 {
@@ -304,9 +274,7 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 #end
 
 /--
-info: Rendered Program:
-
-procedure P (x : bv8, y : bv8, z : bv8) returns ()
+info: procedure P (x : bv8, y : bv8, z : bv8) returns ()
 {
   assert [add_comm]: x + y == y + x;
   assert [xor_cancel]: x ^ x == bv{8}(0);
@@ -354,9 +322,7 @@ spec {
 #end
 
 /--
-info: Rendered Program:
-
-forward type RoseTree (a : Type);
+info: forward type RoseTree (a : Type);
 forward type Forest (a : Type);
 mutual
    datatype Forest (a : Type) {(

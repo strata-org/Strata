@@ -361,11 +361,25 @@ op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
 
 #end
 
+---------------------------------------------------------------------
+
 namespace CoreDDM
 
 #strata_gen Core
 
 end CoreDDM
+
+---------------------------------------------------------------------
+
+-- HACK: Get the DDM dialect map for Core programs, mainly for formatting.
+-- This dialect map should be common to all Core DDM programs.
+private def dummyProgram :=
+#strata
+program Core;
+#end
+
+def CoreDDM.dialectMap : DialectMap :=
+  dummyProgram.dialects
 
 ---------------------------------------------------------------------
 

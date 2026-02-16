@@ -957,6 +957,38 @@ def programToCST {M} [Inhabited M] (prog : Core.Program) :
   let cmdLists ← prog.decls.mapM declToCST
   pure cmdLists.flatten
 
+-- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
+-- `programToCST`, purely for formatting. See `printProgram` below.
+private def recreateGlobalContext (ctx : ToCSTContext) : GlobalContext :=
+  let (nameMap, _) := ctx.freeVars.foldl
+    (init := (Std.HashMap.emptyWithCapacity, 0)) fun (map, i) name =>
+    (map.insert name i, i + 1)
+  let vars := ctx.freeVars.map fun name =>
+    (name, GlobalKind.expr (.tvar default "unknown"), DeclState.defined)
+  { nameMap, vars }
+
+/-- Print `Core.Program`. -/
+def printProgram (ast : Core.Program) : IO Unit := do
+  match (programToCST (M := SourceRange) ast).run ToCSTContext.empty with
+  | .error errs =>
+    IO.println "AST to CST Error:"
+    for err in errs do
+      match err with
+      | .unsupportedConstruct fn desc ctx _md =>
+        IO.println s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
+  | .ok (cmds, finalCtx) =>
+    let dialects := CoreDDM.dialectMap
+    let ddmCtx := recreateGlobalContext finalCtx
+    -- Format with original global context
+    let ctx := FormatContext.ofDialects dialects ddmCtx {}
+    let state : FormatState := {
+      openDialects := dialects.toList.foldl (init := {})
+        fun a (d : Dialect) => a.insert d.name
+    }
+    -- Display commands using mformat
+    for cmd in cmds do
+      IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
+
 end ToCST
 
 ---------------------------------------------------------------------
