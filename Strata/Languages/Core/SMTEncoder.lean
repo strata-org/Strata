@@ -350,7 +350,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Int.Mul"      => .ok (.app Op.mul,        .int ,   ctx)
     | "Int.Div"      => .ok (.app Op.div,        .int ,   ctx)
     | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
-    -- Truncating division: encode as ite(a*b >= 0, ediv(a,b), -ediv(-a,b))
+    -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
     | "Int.DivT"     =>
       let divTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
@@ -358,14 +358,14 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           let zero := Term.prim (.int 0)
           let ab := Term.app Op.mul [a, b] retTy
           let abGeZero := Term.app Op.ge [ab, zero] .bool
-          let edivAB := Term.app Op.div [a, b] retTy
-          let negA := Term.app Op.neg [a] retTy
-          let edivNegAB := Term.app Op.div [negA, b] retTy
-          let negEdivNegAB := Term.app Op.neg [edivNegAB] retTy
-          Term.app Op.ite [abGeZero, edivAB, negEdivNegAB] retTy
+          let absA := Term.app Op.abs [a] retTy
+          let absB := Term.app Op.abs [b] retTy
+          let q := Term.app Op.div [absA, absB] retTy
+          let negQ := Term.app Op.neg [q] retTy
+          Term.app Op.ite [abGeZero, q, negQ] retTy
         | _ => Term.app Op.div args retTy
       .ok (divTApp, .int, ctx)
-    -- Truncating modulo: encode as a - b * divT(a, b)
+    -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
     | "Int.ModT"     =>
       let modTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
@@ -373,11 +373,11 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           let zero := Term.prim (.int 0)
           let ab := Term.app Op.mul [a, b] retTy
           let abGeZero := Term.app Op.ge [ab, zero] .bool
-          let edivAB := Term.app Op.div [a, b] retTy
-          let negA := Term.app Op.neg [a] retTy
-          let edivNegAB := Term.app Op.div [negA, b] retTy
-          let negEdivNegAB := Term.app Op.neg [edivNegAB] retTy
-          let tdivAB := Term.app Op.ite [abGeZero, edivAB, negEdivNegAB] retTy
+          let absA := Term.app Op.abs [a] retTy
+          let absB := Term.app Op.abs [b] retTy
+          let q := Term.app Op.div [absA, absB] retTy
+          let negQ := Term.app Op.neg [q] retTy
+          let tdivAB := Term.app Op.ite [abGeZero, q, negQ] retTy
           let bTimesTdiv := Term.app Op.mul [b, tdivAB] retTy
           Term.app Op.sub [a, bTimesTdiv] retTy
         | _ => Term.app Op.mod args retTy
