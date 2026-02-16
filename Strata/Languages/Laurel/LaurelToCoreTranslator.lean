@@ -12,6 +12,9 @@ import Strata.Languages.Core.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.CorePrelude
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -19,7 +22,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
 
 namespace Strata.Laurel
 
@@ -36,14 +39,13 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
-  | .THeap => .tcons "Heap" []
-  | .TTypedField valueType => .tcons "Field" [translateType valueType]
+  | .THeap => Core.mapTy (.tcons "Composite" []) (Core.mapTy (.tcons "Field" []) (.tcons "Box" []))
+  | .TTypedField _ => .tcons "Field" []
+  | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by ty.val
-decreasing_by cases valueType; term_by_mem
-
-abbrev TypeEnv := List (Identifier × HighTypeMd)
+decreasing_by cases elementType; term_by_mem
 
 def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
@@ -53,39 +55,57 @@ def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
 def isConstant (constants : List Constant) (name : Identifier) : Bool :=
   constants.any (fun c => c.name == name)
 
+/-- Set of names that are translated to Core functions (not procedures) -/
+abbrev FunctionNames := List Identifier
+
+def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
+  -- readField, updateField, and Box constructors/destructors are always functions
+  name == "readField" || name == "updateField" ||
+  name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
+  name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
+  funcNames.contains name
+
 /--
-Translate Laurel StmtExpr to Core Expression
+Translate Laurel StmtExpr to Core Expression.
+
+`boundVars` tracks names bound by enclosing Forall/Exists quantifiers (innermost first).
+When an Identifier matches a bound name at index `i`, it becomes `bvar i` (de Bruijn index)
+instead of `fvar`.
 -/
-def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd) : Core.Expression.Expr :=
+def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd)
+    (boundVars : List Identifier := []) : Core.Expression.Expr :=
   match h: expr.val with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .LiteralString s => .const () (.strConst s)
   | .Identifier name =>
-      -- Check if this is a constant (field constant) or local variable
-      if isConstant constants name then
-        -- Constants are global identifiers (functions with no arguments)
-        let ident := Core.CoreIdent.glob name
-        -- Field constants are declared as functions () → Field T
-        -- We just reference them as operations without application
-        .op () ident none
-      else
-        -- Regular variables are local identifiers
-        let ident := Core.CoreIdent.locl name
-        .fvar () ident (some (lookupType env name))
+      -- First check if this name is bound by an enclosing quantifier
+      match boundVars.findIdx? (· == name) with
+      | some idx =>
+          -- Bound variable: use de Bruijn index
+          .bvar () idx
+      | none =>
+          -- Check if this is a constant (field constant) or local variable
+          if isConstant constants name then
+            let ident := Core.CoreIdent.glob name
+            .op () ident none
+          else
+            let ident := Core.CoreIdent.locl name
+            .fvar () ident (some (lookupType env name))
   | .PrimitiveOp op [e] =>
     match op with
-    | .Not => .app () boolNotOp (translateExpr constants env e)
-    | .Neg => .app () intNegOp (translateExpr constants env e)
+    | .Not => .app () boolNotOp (translateExpr constants env e boundVars)
+    | .Neg => .app () intNegOp (translateExpr constants env e boundVars)
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let binOp (bop : Core.Expression.Expr): Core.Expression.Expr :=
-      LExpr.mkApp () bop [translateExpr constants env e1, translateExpr constants env e2]
+      LExpr.mkApp () bop [translateExpr constants env e1 boundVars, translateExpr constants env e2 boundVars]
     match op with
-    | .Eq => .eq () (translateExpr constants env e1) (translateExpr constants env e2)
-    | .Neq => .app () boolNotOp (.eq () (translateExpr constants env e1) (translateExpr constants env e2))
+    | .Eq => .eq () (translateExpr constants env e1 boundVars) (translateExpr constants env e2 boundVars)
+    | .Neq => .app () boolNotOp (.eq () (translateExpr constants env e1 boundVars) (translateExpr constants env e2 boundVars))
     | .And => binOp boolAndOp
     | .Or => binOp boolOrOp
+    | .Implies => binOp boolImpliesOp
     | .Add => binOp intAddOp
     | .Sub => binOp intSubOp
     | .Mul => binOp intMulOp
@@ -99,35 +119,44 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
   | .PrimitiveOp op args =>
     panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
   | .IfThenElse cond thenBranch elseBranch =>
-      let bcond := translateExpr constants env cond
-      let bthen := translateExpr constants env thenBranch
+      let bcond := translateExpr constants env cond boundVars
+      let bthen := translateExpr constants env thenBranch boundVars
       let belse := match elseBranch with
-                  | some e => translateExpr constants env e
+                  | some e => translateExpr constants env e boundVars
                   | none => .const () (.intConst 0)
       .ite () bcond bthen belse
-  | .Assign _ value => translateExpr constants env value
+  | .Assign _ value => translateExpr constants env value boundVars
   | .StaticCall name args =>
-      let ident := Core.CoreIdent.glob name
+      let ident := Core.CoreIdent.unres name
       let fnOp := .op () ident none
-      args.foldl (fun acc arg => .app () acc (translateExpr constants env arg)) fnOp
-  | .Block [single] _ => translateExpr constants env single
+      args.foldl (fun acc arg => .app () acc (translateExpr constants env arg boundVars)) fnOp
+  | .Block [single] _ => translateExpr constants env single boundVars
+  | .Forall name ty body =>
+      let coreTy := translateType ty
+      let coreBody := translateExpr constants env body (name :: boundVars)
+      LExpr.all () (some coreTy) coreBody
+  | .Exists name ty body =>
+      let coreTy := translateType ty
+      let coreBody := translateExpr constants env body (name :: boundVars)
+      LExpr.exist () (some coreTy) coreBody
   | .FieldSelect target fieldName =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
+  termination_by expr
   decreasing_by
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  let fileRange := (Imperative.getFileRange md).get!
+  let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
   s!"({fileRange.range.start})"
 
 /--
 Translate Laurel StmtExpr to Core Statements
-Takes the constants list, type environment and output parameter names
+Takes the constants list, type environment, output parameter names, and set of function names
 -/
-def translateStmt (constants : List Constant) (env : TypeEnv)
+def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env : TypeEnv)
   (outputParams : List Parameter) (stmt : StmtExprMd) : TypeEnv × List Core.Statement :=
   let md := stmt.md
   match h : stmt.val with
@@ -139,7 +168,7 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
       (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md])
   | .Block stmts _ =>
       let (env', stmtsList) := stmts.attach.foldl (fun (e, acc) ⟨s, _hs⟩ =>
-        let (e', ss) := translateStmt constants e outputParams s
+        let (e', ss) := translateStmt constants funcNames e outputParams s
         (e', acc ++ ss)) (env, [])
       (env', stmtsList)
   | .LocalVariable name ty initializer =>
@@ -148,13 +177,12 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
       let boogieType := LTy.forAll [] boogieMonoType
       let ident := Core.CoreIdent.locl name
       match initializer with
-      | some (⟨ .StaticCall callee args, _⟩) =>
-          -- Check if this is a heap function (heapRead/heapStore) or a regular procedure call
-          -- Heap functions should be translated as expressions, not call statements
-          if callee == "heapRead" || callee == "heapStore" then
+      | some (⟨ .StaticCall callee args, callMd⟩) =>
+          -- Check if this is a function or a procedure call
+          if isCoreFunction funcNames callee then
             -- Translate as expression (function application)
-            let boogieExpr := translateExpr constants env (⟨ .StaticCall callee args, md ⟩)
-            (env', [Core.Statement.init ident boogieType boogieExpr])
+            let boogieExpr := translateExpr constants env (⟨ .StaticCall callee args, callMd ⟩)
+            (env', [Core.Statement.init ident boogieType boogieExpr md])
           else
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr constants env)
@@ -180,8 +208,20 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
           let ident := Core.CoreIdent.locl name
-          let boogieExpr := translateExpr constants env value
-          (env, [Core.Statement.set ident boogieExpr])
+          -- Check if RHS is a procedure call (not a function)
+          match value.val with
+          | .StaticCall callee args =>
+              if isCoreFunction funcNames callee then
+                -- Functions are translated as expressions
+                let boogieExpr := translateExpr constants env value
+                (env, [Core.Statement.set ident boogieExpr])
+              else
+                -- Procedure calls need to be translated as call statements
+                let boogieArgs := args.map (translateExpr constants env)
+                (env, [Core.Statement.call [ident] callee boogieArgs])
+          | _ =>
+              let boogieExpr := translateExpr constants env value
+              (env, [Core.Statement.set ident boogieExpr])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
@@ -197,16 +237,15 @@ def translateStmt (constants : List Constant) (env : TypeEnv)
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr constants env cond
-      let (_, bthen) := translateStmt constants env outputParams thenBranch
+      let (_, bthen) := translateStmt constants funcNames env outputParams thenBranch
       let belse := match elseBranch with
-                  | some e => (translateStmt constants env outputParams e).2
+                  | some e => (translateStmt constants funcNames env outputParams e).2
                   | none => []
       (env, [Imperative.Stmt.ite bcond bthen belse .empty])
   | .StaticCall name args =>
-      -- Heap functions (heapRead/heapStore) should not appear as standalone statements
-      -- Only translate actual procedure calls to call statements
-      if name == "heapRead" || name == "heapStore" then
-        -- This shouldn't happen in well-formed programs, but handle gracefully
+      -- Check if this is a function or procedure
+      if isCoreFunction funcNames name then
+        -- Functions as statements have no effect (shouldn't happen in well-formed programs)
         (env, [])
       else
         let boogieArgs := args.map (translateExpr constants env)
@@ -242,7 +281,7 @@ def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :
 /--
 Translate Laurel Procedure to Core Procedure
 -/
-def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Procedure :=
+def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (proc : Procedure) : Core.Procedure :=
   let inputPairs := proc.inputs.map translateParameterToCore
   let inputs := inputPairs
 
@@ -264,131 +303,45 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Core.Pro
     | precond =>
         let check : Core.Procedure.Check := { expr := translateExpr constants initEnv precond, md := precond.md }
         [("requires", check)]
-  -- Translate postcondition for Opaque bodies
+  -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
-    | .Opaque postcond _ _ =>
-        let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond, md := postcond.md }
-        [("ensures", check)]
+    | .Opaque postconds _ _ =>
+        let (_, result) := postconds.foldl (fun (i, acc) postcond =>
+          let label := if postconds.length == 1 then "postcondition" else s!"postcondition_{i}"
+          let check : Core.Procedure.Check := { expr := translateExpr constants initEnv postcond, md := postcond.md }
+          (i + 1, acc ++ [(label, check)])) (0, [])
+        result
     | _ => []
   let modifies : List Core.Expression.Ident := []
+  -- For bodyless opaque procedures (no implementation), we use `assume false`
+  -- so postcondition asserts are vacuously true. The postconditions are kept in
+  -- the spec so they are assumed at call sites via call elimination.
+  let body : List Core.Statement :=
+    match proc.body with
+    | .Transparent bodyExpr => (translateStmt constants funcNames initEnv proc.outputs bodyExpr).2
+    | .Opaque _postconds (some impl) _ => (translateStmt constants funcNames initEnv proc.outputs impl).2
+    -- because Core does not support procedures without a body, we add an assume false
+    | _ => [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
   let spec : Core.Procedure.Spec := {
     modifies,
     preconditions,
     postconditions,
   }
-  let body : List Core.Statement :=
-    match proc.body with
-    | .Transparent bodyExpr => (translateStmt constants initEnv proc.outputs bodyExpr).2
-    | .Opaque _postcond (some impl) _ => (translateStmt constants initEnv proc.outputs impl).2
-    | _ => []
   {
     header := header
     spec := spec
     body := body
   }
 
-def heapTypeDecl : Core.Decl := .type (.con { name := "Heap", numargs := 0 })
-def fieldTypeDecl : Core.Decl := .type (.con { name := "Field", numargs := 1 })
-def compositeTypeDecl : Core.Decl := .type (.con { name := "Composite", numargs := 0 })
-
-def readFunction : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let tVar := LMonoTy.ftvar "T"
-  let fieldTy := LMonoTy.tcons "Field" [tVar]
-  .func {
-    name := Core.CoreIdent.glob "heapRead"
-    typeArgs := ["T"]
-    inputs := [(Core.CoreIdent.locl "heap", heapTy),
-               (Core.CoreIdent.locl "obj", compTy),
-               (Core.CoreIdent.locl "field", fieldTy)]
-    output := tVar
-    body := none
-  }
-
-def updateFunction : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let tVar := LMonoTy.ftvar "T"
-  let fieldTy := LMonoTy.tcons "Field" [tVar]
-  .func {
-    name := Core.CoreIdent.glob "heapStore"
-    typeArgs := ["T"]
-    inputs := [(Core.CoreIdent.locl "heap", heapTy),
-               (Core.CoreIdent.locl "obj", compTy),
-               (Core.CoreIdent.locl "field", fieldTy),
-               (Core.CoreIdent.locl "val", tVar)]
-    output := heapTy
-    body := none
-  }
-
--- Axiom 1: read-over-write-same
--- forall h, r, f, v :: read(store(h, r, f, v), r, f) == v
-def readUpdateSameAxiom : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
-  -- Quantifier order (outer to inner): int (v), Field int (f), Composite (r), Heap (h)
-  -- So: h is bvar 0, r is bvar 1, f is bvar 2, v is bvar 3
-  let h := LExpr.bvar () 0
-  let r := LExpr.bvar () 1
-  let f := LExpr.bvar () 2
-  let v := LExpr.bvar () 3
-  let storeOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
-  let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
-  let storeExpr := LExpr.mkApp () storeOp [h, r, f, v]
-  let readExpr := LExpr.mkApp () readOp [storeExpr, r, f]
-  let eqBody := LExpr.eq () readExpr v
-  let body := LExpr.all () (some LMonoTy.int) <|
-              LExpr.all () (some fieldTy) <|
-              LExpr.all () (some compTy) <|
-              LExpr.all () (some heapTy) eqBody
-  .ax { name := "read_over_write_same", e := body }
-
--- Axiom 2: read-over-write-diff
--- forall h, r1, r2, f1, f2, v ::
---   (r1 != r2 || f1 != f2) ==> read(store(h, r1, f1, v), r2, f2) == read(h, r2, f2)
-def readUpdateDiffAxiom : Core.Decl :=
-  let heapTy := LMonoTy.tcons "Heap" []
-  let compTy := LMonoTy.tcons "Composite" []
-  let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
-  -- Quantifier order (outer to inner): int (v), Field (f2), Field (f1), Composite (r2), Composite (r1), Heap (h)
-  -- So: h is bvar 0, r1 is bvar 1, r2 is bvar 2, f1 is bvar 3, f2 is bvar 4, v is bvar 5
-  let h := LExpr.bvar () 0
-  let r1 := LExpr.bvar () 1
-  let r2 := LExpr.bvar () 2
-  let f1 := LExpr.bvar () 3
-  let f2 := LExpr.bvar () 4
-  let v := LExpr.bvar () 5
-  let storeOp := LExpr.op () (Core.CoreIdent.glob "heapStore") none
-  let readOp := LExpr.op () (Core.CoreIdent.glob "heapRead") none
-  let storeExpr := LExpr.mkApp () storeOp [h, r1, f1, v]
-  let readAfterStore := LExpr.mkApp () readOp [storeExpr, r2, f2]
-  let readOriginal := LExpr.mkApp () readOp [h, r2, f2]
-  let refsDiff := LExpr.app () boolNotOp (LExpr.eq () r1 r2)
-  let fieldsDiff := LExpr.app () boolNotOp (LExpr.eq () f1 f2)
-  let precond := LExpr.app () (LExpr.app () boolOrOp refsDiff) fieldsDiff
-  let conclusion := LExpr.eq () readAfterStore readOriginal
-  let implBody := LExpr.app () (LExpr.app () Core.boolImpliesOp precond) conclusion
-  let body := LExpr.all () (some LMonoTy.int) <|
-              LExpr.all () (some fieldTy) <|
-              LExpr.all () (some fieldTy) <|
-              LExpr.all () (some compTy) <|
-              LExpr.all () (some compTy) <|
-              LExpr.all () (some heapTy) implBody
-  .ax { name := "read_over_write_diff", e := body }
-
 def translateConstant (c : Constant) : Core.Decl :=
   match c.type.val with
-  | .TTypedField valueType =>
-      -- Field constants with known type: () → Field <valueType>
-      let valueTy := translateType valueType
+  | .TTypedField _ =>
       .func {
         name := Core.CoreIdent.glob c.name
         typeArgs := []
         inputs := []
-        output := .tcons "Field" [valueTy]
+        output := .tcons "Field" []
         body := none
       }
   | _ =>
@@ -451,7 +404,7 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
     | .Transparent bodyExpr => some (translateExpr constants initEnv bodyExpr)
     | _ => none
   .func {
-    name := Core.CoreIdent.glob proc.name
+    name := Core.CoreIdent.unres proc.name
     typeArgs := []
     inputs := inputs
     output := outputTy
@@ -461,22 +414,23 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
 /--
 Translate Laurel Program to Core Program
 -/
-def translate (program : Program) : Except (Array DiagnosticModel) Core.Program := do
+def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := heapParameterization program
+  let (program, modifiesDiags) := modifiesClausesTransform program
   let program := liftExpressionAssignments program
-  dbg_trace "===  Program after heapParameterization + liftExpressionAssignments ==="
+  dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
   -- Separate procedures that can be functions from those that must be procedures
   let (funcProcs, procProcs) := program.staticProcedures.partition canBeBoogieFunction
-  let procedures := procProcs.map (translateProcedure program.constants)
+  -- Build the set of function names for use during translation
+  let funcNames : FunctionNames := funcProcs.map (·.name)
+  let procedures := procProcs.map (translateProcedure program.constants funcNames)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
   let constDecls := program.constants.map translateConstant
-  let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
-  let funcDecls := [readFunction, updateFunction]
-  let axiomDecls := [readUpdateSameAxiom, readUpdateDiffAxiom]
-  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }
+  let preludeDecls := corePrelude.decls
+  pure ({ decls := preludeDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
@@ -485,27 +439,26 @@ def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default)
     (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let strataCoreProgramExcept := translate program
-    -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
+  let (strataCoreProgram, translateDiags) ← match translate program with
+    | .error translateErrorDiags => return .error translateErrorDiags
+    | .ok result => pure result
+
+  -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
   -- Debug: Print the generated Strata Core program
-  match strataCoreProgramExcept with
-    | .error e => return .error e
-    | .ok strataCoreProgram =>
-      dbg_trace "=== Generated Strata Core Program ==="
-      dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format strataCoreProgram)))
-      dbg_trace "================================="
-
-      let runner tempDir :=
-        EIO.toIO (fun f => IO.Error.userError (toString f))
-            (Core.verify smtsolver strataCoreProgram tempDir .none options)
-      let ioResult ← match tempDir with
-      | .none =>
-        IO.FS.withTempDir runner
-      | .some p =>
-        IO.FS.createDirAll ⟨p⟩
-        runner ⟨p⟩
-      return .ok ioResult
+  dbg_trace "=== Generated Strata Core Program ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format strataCoreProgram) 100))
+  dbg_trace "================================="
+  let runner tempDir :=
+    EIO.toIO (fun f => IO.Error.userError (toString f))
+        (Core.verify smtsolver strataCoreProgram tempDir .none options)
+  let ioResult ← match tempDir with
+    | .none => IO.FS.withTempDir runner
+    | .some p => IO.FS.createDirAll ⟨p⟩; runner ⟨p⟩
+  if translateDiags.isEmpty then
+    return .ok ioResult
+  else
+    return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
 def verifyToDiagnostics (smtsolver : String) (files: Map Strata.Uri Lean.FileMap) (program : Program): IO (Array Diagnostic) := do
