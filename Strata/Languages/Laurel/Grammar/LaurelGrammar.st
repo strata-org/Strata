@@ -1,3 +1,5 @@
+// Changes in this file are not automatically discovered by the build. 
+// Touch LaurelGrammar.lean to trigger the build
 dialect Laurel;
 
 // Types
@@ -36,16 +38,31 @@ op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
-op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " == " rhs;
-op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " != " rhs;
-op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " > " rhs;
-op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " < " rhs;
-op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " <= " rhs;
-op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40), leftassoc] lhs " >= " rhs;
-
-// Logical operators
+op sub (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " - " rhs;
+op mul (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs " * " rhs;
+op div (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs " / " rhs;
+op mod (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs " % " rhs;
+op divT (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs " /t " rhs;
+op modT (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs " %t " rhs;
+op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " == " rhs;
+op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " != " rhs;
+op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " > " rhs;
+op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " < " rhs;
+op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " <= " rhs;
+op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " >= " rhs;
 op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
-op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(25), leftassoc] lhs " || " rhs;
+op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " || " rhs;
+op implies (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(15), rightassoc] lhs " ==> " rhs;
+
+// Unary operators
+op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
+op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
+
+// Quantifiers
+op forallExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
+  => "forall(" name ": " ty ") => " body:0;
+op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
+  => "exists(" name ": " ty ") => " body:0;
 
 // If-else
 category OptionalElse;
@@ -58,6 +75,13 @@ op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
 op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";
 op return (value : StmtExpr) : StmtExpr => "return " value ";";
 op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
+
+// While loops
+category InvariantClause;
+op invariantClause (cond: StmtExpr): InvariantClause => "\n  invariant " cond:0;
+
+op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
+  => "while" "(" cond ")" invariants body:0;
 
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;

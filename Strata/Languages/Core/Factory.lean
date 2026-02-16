@@ -403,6 +403,8 @@ def Factory : @Factory CoreLParams := #[
   @intMulFunc CoreLParams _,
   @intDivFunc CoreLParams _,
   @intModFunc CoreLParams _,
+  @intDivTFunc CoreLParams _,
+  @intModTFunc CoreLParams _,
   @intNegFunc CoreLParams _,
 
   @intLtFunc CoreLParams _,
@@ -508,6 +510,8 @@ def intSubOp : Expression.Expr := (@intSubFunc CoreLParams _).opExpr
 def intMulOp : Expression.Expr := (@intMulFunc CoreLParams _).opExpr
 def intDivOp : Expression.Expr := (@intDivFunc CoreLParams _).opExpr
 def intModOp : Expression.Expr := (@intModFunc CoreLParams _).opExpr
+def intDivTOp : Expression.Expr := (@intDivTFunc CoreLParams _).opExpr
+def intModTOp : Expression.Expr := (@intModTFunc CoreLParams _).opExpr
 def intNegOp : Expression.Expr := (@intNegFunc CoreLParams _).opExpr
 def intLtOp : Expression.Expr := (@intLtFunc CoreLParams _).opExpr
 def intLeOp : Expression.Expr := (@intLeFunc CoreLParams _).opExpr

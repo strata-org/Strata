@@ -22,7 +22,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
 
 namespace Strata.Laurel
 
@@ -111,6 +111,8 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
     | .Mul => binOp intMulOp
     | .Div => binOp intDivOp
     | .Mod => binOp intModOp
+    | .DivT => binOp intDivTOp
+    | .ModT => binOp intModTOp
     | .Lt => binOp intLtOp
     | .Leq => binOp intLeOp
     | .Gt => binOp intGtOp
@@ -263,6 +265,17 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
           (env, [noFallThrough])
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
+  | .While cond invariants decreasesExpr body =>
+      let condExpr := translateExpr constants env cond
+      -- Combine multiple invariants with && for Core (which expects single invariant)
+      let translatedInvariants := invariants.map (translateExpr constants env)
+      let invExpr := match translatedInvariants with
+        | [] => none
+        | [single] => some single
+        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
+      let decreasingExprCore := decreasesExpr.map (translateExpr constants env)
+      let (_, bodyStmts) := translateStmt constants funcNames env outputParams body
+      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
   | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by
