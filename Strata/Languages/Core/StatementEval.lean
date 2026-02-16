@@ -471,36 +471,25 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             match cond' with
             | .true _ | .false _ =>
               let (ss_t, ss_f) := if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let Ewns_f :=
-                -- Check if `ss_f` contains covers and asserts whose
-                -- verification status needs to be reported.
-                -- All covers in `ss_f` will fail (unreachable). For now, we
-                -- don't distinguish between unreachable and unsatisfiable
-                -- covers.
-                -- All asserts in `ss_f` will succeed (unsatisfiable path
-                -- conditions).
+              -- Collect deferred obligations from the dead branch (covers fail,
+              -- asserts pass) so they can be folded into the live branch results
+              -- instead of producing a separate EnvWithNext.
+              let dead_deferred :=
                 if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
                   let ss_f_covers := Statements.collectCovers ss_f
                   let ss_f_asserts := Statements.collectAsserts ss_f
                   let deferred := createFailingCoverObligations ss_f_covers
-                  let deferred := deferred ++ createPassingAssertObligations ss_f_asserts
-                  [{ Ewn with env.deferred := Ewn.env.deferred ++ deferred }]
+                  deferred ++ createPassingAssertObligations ss_f_asserts
                 else
-                  []
-              let Ewns_t :=
-                -- Process `ss_t`.
-                let Ewns := go' Ewn ss_t .none
-                let Ewns := Ewns.map
-                                (fun (ewn : EnvWithNext) =>
-                                     let ss' := ewn.stk.top
-                                     let s' := Imperative.Stmt.ite cond' ss' [] md
-                                     { ewn with stk := orig_stk.appendToTop [s']})
-                Ewns
-              -- Keep the environment order corresponding to program order.
-              if cond'.isTrue then
-                Ewns_t ++ Ewns_f
-              else
-                Ewns_f ++ Ewns_t
+                  #[]
+              -- Process the live branch `ss_t`.
+              let Ewns := go' Ewn ss_t .none
+              Ewns.map
+                  (fun (ewn : EnvWithNext) =>
+                       let ss' := ewn.stk.top
+                       let s' := Imperative.Stmt.ite cond' ss' [] md
+                       { ewn with stk := orig_stk.appendToTop [s'],
+                                  env.deferred := ewn.env.deferred ++ dead_deferred })
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
