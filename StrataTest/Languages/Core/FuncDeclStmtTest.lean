@@ -38,9 +38,9 @@ ok: procedure test :  () → ()
 {
   {
     init (x : int) := #1
-    #[<[fileRange]: :407-447>] funcDecl <function>
+    funcDecl <function>
     init (z : int) := ((~addX : (arrow int int)) #5)
   }
 }-/
 #guard_msgs in
-#eval (Std.format (Core.typeCheck Options.default (translate simpleFuncDeclPgm)))
+#eval (Std.format ((Core.typeCheck Options.default (translate simpleFuncDeclPgm).stripMetaData)))

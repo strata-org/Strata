@@ -168,6 +168,10 @@ instance : HasVarsImp Expression Procedure where
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   { p with body := Statements.eraseTypes p.body, spec := p.spec }
 
+/-- Remove all metadata from procedure. -/
+def Procedure.stripMetaData (p : Procedure) : Procedure :=
+  { p with body := Imperative.Block.stripMetaData p.body }
+
 /-- Transitive variable lookup for procedures.
     This is a version that looks into the body,
     but does not transitively search all variables occuring in the body.
