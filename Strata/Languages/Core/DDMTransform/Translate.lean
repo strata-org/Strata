@@ -1011,7 +1011,19 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let ty := (.forAll [] mty)
     let newBinding: LExpr CoreLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
-    return ([.init lhs ty val], { bindings with boundVars := bbindings })
+    return ([.init lhs ty (some val)], { bindings with boundVars := bbindings })
+
+def translateInitStatementNoRhs (bindings : TransBindings) (args : Array Arg) :
+  TransM ((List Core.Statement) × TransBindings) := do
+  if args.size != 2 then
+    TransM.error "translateInitStatementNoRhs unexpected arg length"
+  else
+    let mty ← translateLMonoTy bindings args[0]!
+    let lhs ← translateIdent CoreIdent args[1]!
+    let ty := (.forAll [] mty)
+    let newBinding: LExpr CoreLParams.mono := LExpr.fvar () lhs mty
+    let bbindings := bindings.boundVars ++ [newBinding]
+    return ([.init lhs ty none], { bindings with boundVars := bbindings })
 
 mutual
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1024,6 +1036,8 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     translateVarStatement bindings declsa
   | q`Core.initStatement, args =>
     translateInitStatement p bindings args
+  | q`Core.initStatementNoRhs, args =>
+    translateInitStatementNoRhs bindings args
   | q`Core.assign, #[_tpa, lhsa, ea] =>
     let lhs ← translateLhs lhsa
     let val ← translateExpr p bindings ea
@@ -1573,7 +1587,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
   let md ← getOpMetaData op
-  let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))) md)
+  let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))) md)
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 
