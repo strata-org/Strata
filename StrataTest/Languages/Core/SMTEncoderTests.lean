@@ -101,4 +101,42 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
       }
    }})
 
+/-! ## Tests for multi-argument fvar application -/
+
+-- Two-argument fvar: g(a, b) where g : int → int → bool
+-- The fix ensures all argument types are collected via destructArrow,
+-- not just the first arrow layer.
+/--
+info: "; a\n(declare-const f0 Int)\n(define-fun t0 () Int f0)\n; b\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; g\n(declare-fun f2 (Int Int) Bool)\n(define-fun t2 () Bool (f2 t0 t1))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.app () (.app () (.fvar () "g" (.some (.arrow .int (.arrow .int .bool)))) (.fvar () "a" (.some .int))) (.fvar () "b" (.some .int)))
+
+-- Three-argument fvar: h(a, b, c) where h : int → int → int → int
+/--
+info: "; a\n(declare-const f0 Int)\n(define-fun t0 () Int f0)\n; b\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; c\n(declare-const f2 Int)\n(define-fun t2 () Int f2)\n; h\n(declare-fun f3 (Int Int Int) Int)\n(define-fun t3 () Int (f3 t0 t1 t2))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.app () (.app () (.app () (.fvar () "h" (.some (.arrow .int (.arrow .int (.arrow .int .int))))) (.fvar () "a" (.some .int))) (.fvar () "b" (.some .int))) (.fvar () "c" (.some .int)))
+
+/-! ## Tests for Map type SMT encoding -/
+
+-- Map int bool should encode as (Array Int Bool)
+/--
+info: "; m\n(declare-const f0 (Array Int Bool))\n(define-fun t0 () (Array Int Bool) f0)\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.fvar () "m" (.some (.tcons "Map" [.int, .bool])))
+
+-- Nested Map: Map int (Map int bool) → (Array Int (Array Int Bool))
+/--
+info: "; m\n(declare-const f0 (Array Int (Array Int Bool)))\n(define-fun t0 () (Array Int (Array Int Bool)) f0)\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.fvar () "m" (.some (.tcons "Map" [.int, .tcons "Map" [.int, .bool]])))
+
 end Core
