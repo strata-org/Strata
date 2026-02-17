@@ -471,4 +471,55 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify "cvc5" funcInQuantifierPgm
 
+-- Inline function declaration (funcDecl) with precondition
+def funcDeclPgm :=
+#strata
+program Core;
+
+procedure test() returns ()
+{
+  var x : int := 5;
+  function addPositive(y : int) : int
+    requires y > 0;
+    { x + y }
+  var z : int := addPositive(3);
+  assert (z == 8);
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: init_calls_addPositive_0
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+#true
+
+Label: assert_0
+Property: assert
+Assumptions:
+
+
+Proof Obligation:
+((~addPositive #3) == #8)
+
+---
+info:
+Obligation: init_calls_addPositive_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "cvc5" funcDeclPgm
+
 end Strata

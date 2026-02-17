@@ -58,6 +58,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" datatypeAliasPgm (options := .quiet) (tempDir := "/tmp/datatype_alias_test")
+#eval verify "cvc5" datatypeAliasPgm (options := .quiet)
 
 end Strata.DatatypeAliasTest

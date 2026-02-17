@@ -14,7 +14,13 @@ open Core
 open Core.PrecondElim
 open Strata
 
-/-! ## PrecondElim Tests -/
+/-! ## PrecondElim Tests
+
+These test the result of the `PrecondElim` transformation.
+For the full verification pipeline with function preconditions,
+see `StrataTest/Languages/Core/Examples/FunctionPreconditions.lean`.
+-/
+
 section PrecondElimTests
 
 def translate (t : Strata.Program) : Core.Program :=
@@ -267,10 +273,8 @@ info: procedure test :  () → ()
 
 /-! ### Test 6: Inline function declarations in both branches of if-then-else with different preconditions -/
 
--- NOTE: This test is disabled due to a bug in DDM translation where inline function
--- declarations in if-then-else branches get incorrect variable scoping.
--- See: StrataTest/Languages/Core/Examples/FunctionDeclIteScopingBug.lean
--- The second function's body incorrectly references variables from the first branch.
+-- NOTE: This test is disabled due to a bug in DDM translation 
+-- https://github.com/strata-org/Strata/issues/436
 
 -- def inlineFuncInIteSimplePgm :=
 -- #strata
