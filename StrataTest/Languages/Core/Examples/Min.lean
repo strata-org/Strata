@@ -31,13 +31,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: min_ensures_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.And
- (~Int.Le (if (~Int.Lt $__n0 $__m1) then $__n0 else $__m1) $__n0)
- (~Int.Le (if (~Int.Lt $__n0 $__m1) then $__n0 else $__m1) $__m1))
+Obligation:
+if $__n0 < $__m1 then $__n0 else $__m1 <= $__n0 && if $__n0 < $__m1 then $__n0 else $__m1 <= $__m1
 
 ---
 info:

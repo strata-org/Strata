@@ -53,20 +53,18 @@ VCs:
 Label: real_add_ge_good
 Property: assert
 Assumptions:
-
-(real_x_ge_1, (~Real.Ge ~x #1))
-(real_y_ge_2, (~Real.Ge ~y #2))
-Proof Obligation:
-(~Real.Ge (~Real.Add ~x ~y) #3)
+real_x_ge_1: x >= 1.0
+real_y_ge_2: y >= 2.0
+Obligation:
+x + y >= 3.0
 
 Label: real_add_ge_bad
 Property: assert
 Assumptions:
-
-(real_x_ge_1, (~Real.Ge ~x #1))
-(real_y_ge_2, (~Real.Ge ~y #2))
-Proof Obligation:
-(~Real.Ge (~Real.Add ~x ~y) #4)
+real_x_ge_1: x >= 1.0
+real_y_ge_2: y >= 2.0
+Obligation:
+x + y >= 4.0
 
 
 
@@ -156,20 +154,18 @@ VCs:
 Label: bv_add_ge
 Property: assert
 Assumptions:
-
-(bv_x_ge_1, (~Bv8.ULe #1 ~x))
-(bv_y_ge_2, (~Bv8.ULe #2 ~y))
-Proof Obligation:
-((~Bv8.Add ~x ~y) == (~Bv8.Add ~y ~x))
+bv_x_ge_1: bv{8}(1) <= x
+bv_y_ge_2: bv{8}(2) <= y
+Obligation:
+x + y == y + x
 
 Label: Q_ensures_0
 Property: assert
 Assumptions:
-
-(bv_x_ge_1, (~Bv8.ULe #1 ~x))
-(bv_y_ge_2, (~Bv8.ULe #2 ~y))
-Proof Obligation:
-((~Bv1.Add $__x0 $__x0) == (~Bv1.Sub $__x0 $__x0))
+bv_x_ge_1: bv{8}(1) <= x
+bv_y_ge_2: bv{8}(2) <= y
+Obligation:
+$__x0 + $__x0 == $__x0 - $__x0
 
 ---
 info:

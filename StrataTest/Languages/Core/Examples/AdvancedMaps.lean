@@ -92,74 +92,66 @@ VCs:
 Label: c_0_eq_a
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-((~select $__c2 #0) == $__a0)
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+$__c2[0] == $__a0
 
 Label: c_1_eq_a
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-((~select (~update $__c2 #1 $__a0) #1) == $__a0)
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+($__c2[1:=$__a0])[1] == $__a0
 
 Label: a0eq0
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-((~select $__a0 #0) == #0)
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+$__a0[0] == 0
 
 Label: a1eq1
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-((~select (~update $__a0 #1 #1) #1) == #1)
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+($__a0[1:=1])[1] == 1
 
 Label: a0eq1
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-((~select (~update (~update $__a0 #1 #1) #0 #1) #0) == #1)
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+(($__a0[1:=1])[0:=1])[0] == 1
 
 Label: a0neq2
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-(~Bool.Not ((~select (~update (~update $__a0 #1 #1) #0 #1) #0) == #2))
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+!((($__a0[1:=1])[0:=1])[0] == 2)
 
 Label: bTrueEqTrue
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-((~select (~update $__b1 #true #-1) #true) == #-1)
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+($__b1[true:=-(1)])[true] == -(1)
 
 Label: mix
 Property: assert
 Assumptions:
-(P_requires_3, ((~select $__a0 #0) == #0))
-(P_requires_4, ((~select $__c2 #0) == $__a0))
-
-Proof Obligation:
-((~select (~update (~update $__a0 #1 #1) #0 #1) #1) == (~Int.Neg (~select (~update $__b1 #true #-1) #true)))
+P_requires_3: $__a0[0] == 0
+P_requires_4: $__c2[0] == $__a0
+Obligation:
+(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-(1)])[true])
 
 ---
 info:
