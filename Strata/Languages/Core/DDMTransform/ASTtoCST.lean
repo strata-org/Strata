@@ -1086,7 +1086,7 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars (extraFreeVars ++ extractedNames)
   let (exprsCST, finalCtx) := (exprs.mapM (lexprToExpr · 0)).run initCtx
-  let dialects := CoreDDM.dialectMap
+  let dialects := Core_map
   let ddmCtx := recreateGlobalContext finalCtx
   let ctx := FormatContext.ofDialects dialects ddmCtx {}
   let state : FormatState := {
@@ -1112,7 +1112,7 @@ def Core.formatProgram (ast : Core.Program)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (finalCtx, cmds) := programToCST ast initCtx
-  let dialects := CoreDDM.dialectMap
+  let dialects := Core_map
   let ddmCtx := recreateGlobalContext finalCtx
   let ctx := FormatContext.ofDialects dialects ddmCtx {}
   let state : FormatState := {

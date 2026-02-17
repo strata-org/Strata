@@ -373,12 +373,5 @@ end CoreDDM
 
 ---------------------------------------------------------------------
 
-/-- Get the DDM dialect map for Core programs, mainly for formatting.
-This dialect map should be common to all Core DDM programs. -/
-def CoreDDM.dialectMap : DialectMap :=
-  DialectMap.ofList! [Strata.initDialect, Strata.Core]
-
----------------------------------------------------------------------
-
 end Strata
 end
