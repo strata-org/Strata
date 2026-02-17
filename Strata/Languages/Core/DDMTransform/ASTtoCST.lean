@@ -78,12 +78,6 @@ def mkParamName (i : Nat) : String := "a" ++ toString i
 /-- Generate quantifier variable names efficiently -/
 def mkQuantVarName (level : Nat) : String := "x" ++ toString level
 
-/-- Count the arity of a function type by counting arrows -/
-def countArity (ty : TypeExpr) : Nat :=
-  match ty with
-  | .arrow _ _ rest => 1 + countArity rest
-  | _ => 0
-
 structure Scope where
   /-- Track bound variables in this scope -/
   boundVars : Array String := #[]
