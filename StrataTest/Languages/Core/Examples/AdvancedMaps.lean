@@ -76,8 +76,8 @@ spec {
   a := a[0:=1];
   assert [a0eq1]: a[0] == 1;
   assert [a0neq2]: !(a[0] == 2);
-  b := b[true:=-(1)];
-  assert [bTrueEqTrue]: b[true] == -(1);
+  b := b[true:=-1];
+  assert [bTrueEqTrue]: b[true] == -1;
   assert [mix]: a[1] == -(b[true]);
   };
 -/
@@ -143,7 +143,7 @@ Assumptions:
 P_requires_3: $__a0[0] == 0
 P_requires_4: $__c2[0] == $__a0
 Obligation:
-($__b1[true:=-(1)])[true] == -(1)
+($__b1[true:=-1])[true] == -1
 
 Label: mix
 Property: assert
@@ -151,7 +151,7 @@ Assumptions:
 P_requires_3: $__a0[0] == 0
 P_requires_4: $__c2[0] == $__a0
 Obligation:
-(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-(1)])[true])
+(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-1])[true])
 
 ---
 info:
@@ -249,7 +249,7 @@ Assumptions:
 P_requires_3: $__a0[0] == 0
 P_requires_4: $__c2[0] == $__a0
 Obligation:
-($__b1[true:=-(1)])[true] == -(1)
+($__b1[true:=-1])[true] == -1
 
 Label: mix
 Property: assert
@@ -257,7 +257,7 @@ Assumptions:
 P_requires_3: $__a0[0] == 0
 P_requires_4: $__c2[0] == $__a0
 Obligation:
-(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-(1)])[true])
+(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-1])[true])
 
 ---
 info:
