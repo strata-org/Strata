@@ -3,13 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DDM.AST
+public import Strata.DDM.HNF
 import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Program
+public import Strata.DDM.Integration.Lean.OfAstM
 
 ---------------------------------------------------------------------
-
+public section
 namespace Strata
 
 ---------------------------------------------------------------------
@@ -384,3 +386,4 @@ def CoreDDM.dialectMap : DialectMap :=
 ---------------------------------------------------------------------
 
 end Strata
+end
