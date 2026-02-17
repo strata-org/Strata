@@ -359,7 +359,9 @@ def pyAnalyzeLaurelCommand : Command where
           IO.println "\n==== Verification Results ===="
           let mut s := ""
           for vcResult in vcResults do
-            s := s ++ s!"{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+            match vcResult.result with
+            | .pass => s := s ++ s!"Assertion: {Std.format vcResult.result}\n"
+            | _ => s := s ++ s!"Assertion: {Std.format vcResult.result} [{vcResult.obligation.label}]\n"
           IO.println s
 
 def javaGenCommand : Command where

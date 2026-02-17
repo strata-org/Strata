@@ -174,7 +174,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
   | .op op => match op.name, op.args with
     | q`Laurel.assert, #[arg0] =>
       let cond ← translateStmtExpr arg0
-      return mkStmtExprMd (.Assert cond) md
+      return mkStmtExprMd (.Assert cond none) md
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) md

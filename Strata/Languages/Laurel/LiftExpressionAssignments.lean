@@ -223,10 +223,10 @@ Returns a list of statements (the original one may be split into multiple).
 def transformStmt (stmt : StmtExprMd) : SequenceM (List StmtExprMd) := do
   let md := stmt.md
   match _h : stmt.val with
-  | .Assert cond =>
+  | .Assert cond label =>
       -- Process the condition, extracting any assignments
       let seqCond ← transformExpr cond
-      SequenceM.addPrependedStmt ⟨.Assert seqCond, md⟩
+      SequenceM.addPrependedStmt ⟨.Assert seqCond label, md⟩
       SequenceM.takePrependedStmts
 
   | .Assume cond =>

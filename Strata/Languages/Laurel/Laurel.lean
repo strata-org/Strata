@@ -171,7 +171,7 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExprMd)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExprMd)
+  | Assert (condition: StmtExprMd) (label: Option String)
   | Assume (condition: StmtExprMd)
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,

@@ -463,7 +463,7 @@ def collectConstrainedArrayAccesses (env : TypeEnv) (tcMap : TranslatedConstrain
   | .Assign ts v =>
     ts.attach.flatMap (fun ⟨a, _⟩ => collectConstrainedArrayAccesses env tcMap a) ++
     collectConstrainedArrayAccesses env tcMap v
-  | .Return (some v) | .Assert v | .Assume v => collectConstrainedArrayAccesses env tcMap v
+  | .Return (some v) | .Assert v _| .Assume v => collectConstrainedArrayAccesses env tcMap v
   | .LocalVariable _ _ (some init) => collectConstrainedArrayAccesses env tcMap init
   | _ => []
 termination_by sizeOf e
@@ -497,9 +497,10 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
     | none, _ => pure (env, arrayElemAssumes ++ postAsserts ++ [noFallThrough])
     | some _, none => throw "Return statement with value but procedure has no output parameters"
   match _h : stmt.val with
-  | .Assert cond => do
-      let coreExpr ← translateExpr ctMap tcMap env cond
-      pure (env, arrayElemAssumes ++ [Core.Statement.assert ("assert" ++ getNameFromMd stmt.md) coreExpr stmt.md])
+  | .Assert cond label => do
+    let coreExpr ← translateExpr ctMap tcMap env cond
+    let assertLabel := label.getD ("assert" ++ getNameFromMd stmt.md)
+    pure (env, arrayElemAssumes ++ [Core.Statement.assert assertLabel coreExpr stmt.md])
   | .Assume cond => do
       let coreExpr ← translateExpr ctMap tcMap env cond
       pure (env, arrayElemAssumes ++ [Core.Statement.assume ("assume" ++ getNameFromMd stmt.md) coreExpr stmt.md])
@@ -598,6 +599,14 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
         let coreArgs ← args.mapM (translateExpr ctMap tcMap env)
         let expandedArgs := expandArrayArgs env args coreArgs
         pure (env, arrayElemAssumes ++ [Core.Statement.call [] name expandedArgs])
+  | .InstanceCall target methodName args => do
+      -- Translate instance method call: target.methodName(args)
+      -- In Core, this becomes: call methodName(target, args)
+      let targetExpr ← translateExpr ctMap tcMap env target
+      let coreArgs ← args.mapM (translateExpr ctMap tcMap env)
+      let allArgs := targetExpr :: coreArgs
+      let expandedArgs := expandArrayArgs env (target :: args) allArgs
+      pure (env, arrayElemAssumes ++ [Core.Statement.call [] methodName expandedArgs])
   | .Return valueOpt => do
       match valueOpt with
       | some value => do

@@ -122,7 +122,7 @@ def formatStmtExprVal (s:StmtExpr) : Format :=
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
-  | .Assert cond => "assert " ++ formatStmtExpr cond
+  | .Assert cond _=> "assert " ++ formatStmtExpr cond
   | .Assume cond => "assume " ++ formatStmtExpr cond
   | .ProveBy value proof =>
       "proveBy(" ++ formatStmtExpr value ++ ", " ++ formatStmtExpr proof ++ ")"

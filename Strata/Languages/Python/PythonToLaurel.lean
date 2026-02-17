@@ -68,6 +68,10 @@ structure TranslationContext where
   preludeTypes : List String := []
   /-- Behavior for unmodeled functions -/
   unmodeledBehavior : UnmodeledFunctionBehavior := .havocOutputs
+  /-- List of defined composite types -/
+  compositeTypes : List CompositeType := []
+  /-- Track current class during method translation -/
+  currentClassName : Option String := none   -- Track current class during method translation
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -146,7 +150,8 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
       if ctx.preludeTypes.contains typeStr then
         .ok (mkCoreType typeStr)
       else
-        throw (.typeError s!"Unsupported type: {typeStr}")
+      -- check here
+        .ok (mkHighTypeMd (HighType.UserDefined typeStr))
 
 /-- Create a None value for a given OrNone type -/
 def mkNoneForType (typeName : String) : StmtExprMd :=
@@ -261,6 +266,24 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   | .Call _ f args _kwargs => translateCall ctx (pyExprToString f) args.val.toList
 
+  -- Field access: self.x or obj.field
+  | .Attribute _ obj attr _ => do
+    -- Check if this is self.field access
+    match obj with
+    | .Name _ name _ =>
+      if name.val == "self" && ctx.currentClassName.isSome then
+        -- self.field in a method - translate to field access
+        return mkStmtExprMd (StmtExpr.FieldSelect
+          (mkStmtExprMd (StmtExpr.Identifier "self"))
+          attr.val)
+      else
+        -- Regular object.field access
+        let objExpr ← translateExpr ctx obj
+        return mkStmtExprMd (StmtExpr.FieldSelect objExpr attr.val)
+    | _ =>
+      let objExpr ← translateExpr ctx obj
+      return mkStmtExprMd (StmtExpr.FieldSelect objExpr attr.val)
+
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
 
 /-- Translate function call, filling in optional arguments with None if needed -/
@@ -316,25 +339,70 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
     return (ctx, assignStmt)
 
-  -- Annotated assignment: x: int = expr
+  -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args) or self.field: int = expr
   | .AnnAssign _ target annotation value _ => do
-    let varName ← match target with
-      | .Name _ name _ => .ok name.val
-      | _ => throw (.unsupportedConstruct "Only simple variable annotation supported" (toString (repr s)))
-    let typeStr := pyExprToString annotation
-    let varType ← translateType ctx typeStr
-    -- Add to context
-    let newCtx := { ctx with variableTypes := ctx.variableTypes ++ [(varName, varType)] }
-    -- If there's an initializer, create declaration with init
-    match value.val with
-    | some initExpr => do
-      let initVal ← translateExpr newCtx initExpr
-      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
-      return (newCtx, declStmt)
-    | none =>
-      -- Declaration without initializer (not allowed in pure context, but OK in procedures)
-      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType none)
-      return (newCtx, declStmt)
+    -- Check if this is a field assignment (self.field)
+    match target with
+    | .Attribute _ obj attr _ =>
+      match obj with
+      | .Name _ name _ =>
+        if name.val == "self" && ctx.currentClassName.isSome then
+          -- This is self.field = value in a method
+          match value.val with
+          | some initExpr => do
+            let initVal ← translateExpr ctx initExpr
+            let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
+              (mkStmtExprMd StmtExpr.This)
+              attr.val)
+            let assignStmt := mkStmtExprMd (StmtExpr.Assign [fieldAccess] initVal)
+            return (ctx, assignStmt)
+          | none =>
+            throw (.unsupportedConstruct "Field declaration without initializer not supported" (toString (repr s)))
+        else
+          throw (.unsupportedConstruct "Only self.field assignments supported in methods" (toString (repr s)))
+      | _ => throw (.unsupportedConstruct "Only simple field access supported" (toString (repr s)))
+    | .Name _ name _ =>
+      -- Regular variable assignment
+      let varName := name.val
+      let typeStr := pyExprToString annotation
+      let varType ← translateType ctx typeStr
+      let newCtx := { ctx with variableTypes := ctx.variableTypes ++ [(varName, varType)] }
+
+      -- Check if this is a class constructor call
+      match value.val with
+      | some (.Call _ f args _) =>
+        let funcName := pyExprToString f
+        if ctx.compositeTypes.any (fun ct => ct.name == funcName) then
+          -- This is: var x: ClassName = ClassName(args)
+          -- Translate constructor arguments
+          let translatedArgs ← args.val.toList.mapM (translateExpr ctx)
+
+          -- Generate: var a: C; call a.__init__(args);
+          let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType none)
+
+          let initCall := mkStmtExprMd (StmtExpr.InstanceCall
+            (mkStmtExprMd (StmtExpr.Identifier varName))
+            "__init__"
+            translatedArgs)
+
+          let blockStmt := mkStmtExprMd (StmtExpr.Block [declStmt, initCall] none)
+
+          return (newCtx, blockStmt)
+        else
+          -- Regular annotated assignment with call initializer
+          let initVal ← translateCall ctx funcName args.val.toList
+          let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
+          return (newCtx, declStmt)
+      | some initExpr => do
+        -- Regular annotated assignment with initializer
+        let initVal ← translateExpr newCtx initExpr
+        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
+        return (newCtx, declStmt)
+      | none =>
+        -- Declaration without initializer
+        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType none)
+        return (newCtx, declStmt)
+    | _ => throw (.unsupportedConstruct "Only simple variable or field annotation supported" (toString (repr s)))
 
   -- If statement
   | .If _ test body orelse => do
@@ -371,9 +439,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (ctx, retStmt)
 
   -- Assert statement
-  | .Assert _ test _msg => do
+  | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
-    let assertStmt := mkStmtExprMd (StmtExpr.Assert condExpr)
+    let label := msg.val.bind fun expr =>
+    match expr with
+    | .Constant _ (.ConString _ s) _ => some s.val
+    | _ => none
+    let assertStmt := mkStmtExprMd (StmtExpr.Assert condExpr label)
     return (ctx, assertStmt)
 
   -- Expression statement (e.g., function call)
@@ -387,19 +459,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Try _ body handlers _ _ => do
     let tryLabel := "try_end"
     let handlerLabel := "exception_handlers"
-    
+
     -- Translate try body
     let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
-    
+
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
       -- Check if maybe_except is an exception and exit to handlers if so
-      let isException := mkStmtExprMd (StmtExpr.StaticCall "ExceptOrNone..isExceptOrNone_mk_code" 
+      let isException := mkStmtExprMd (StmtExpr.StaticCall "ExceptOrNone..isExceptOrNone_mk_code"
         [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
-      let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException 
+      let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException
         (mkStmtExprMd (StmtExpr.Exit handlerLabel)) none)
       [stmt, exitToHandler]
-    
+
     -- Translate exception handlers
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
@@ -407,10 +479,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .ExceptHandler _ _ _ handlerBody =>
         let (_, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
         handlerStmts := handlerStmts ++ hStmts
-    
+
     -- Create handler block
     let handlerBlock := mkStmtExprMd (StmtExpr.Block handlerStmts (some handlerLabel))
-    
+
     -- Wrap in try block
     let tryBlock := mkStmtExprMd (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel))
     return (bodyCtx, tryBlock)
@@ -515,6 +587,118 @@ def extractPreludeProcedures (prelude : Core.Program) : List (String × CoreProc
       some (proc.header.name.name, { inputs := inputs, outputs := outputs })
     | none => none
 
+/-- Extract field declarations from class body (annotated assignments at class level) -/
+def extractClassFields (ctx : TranslationContext) (classBody : Array (Python.stmt SourceRange))
+    : Except TranslationError (List Field) := do
+  let mut fields : List Field := []
+
+  for stmt in classBody do
+    match stmt with
+    | .AnnAssign _ target annotation _ _ =>
+      -- Class-level annotated assignment: x: int
+      let fieldName ← match target with
+        | .Name _ name _ => .ok name.val
+        | _ => throw (.unsupportedConstruct "Only simple field names supported" (toString (repr stmt)))
+
+      let fieldType ← translateType ctx (pyExprToString annotation)
+
+      fields := fields ++ [{
+        name := fieldName
+        type := fieldType
+        isMutable := true  -- Python fields are mutable by default
+      }]
+    | _ => pure ()  -- Ignore non-field statements
+
+  return fields
+
+/-- Translate a Python method to a Laurel instance procedure -/
+def translateMethod (ctx : TranslationContext) (className : String)
+    (methodStmt : Python.stmt SourceRange)
+    : Except TranslationError Procedure := do
+  match methodStmt with
+  | .FunctionDef _ name args body _ ret _ _ => do
+    let methodName := name.val
+
+    -- First parameter is self - type it as the class
+    let selfParam : Parameter := {
+      name := "self"
+      type := mkHighTypeMd (.UserDefined className)
+    }
+
+    -- Translate remaining parameters
+    let mut inputs : List Parameter := [selfParam]
+    match args with
+    | .mk_arguments _ _ argsList _ _ _ _ _ =>
+      -- Skip first arg (self), process rest
+      for arg in argsList.val.toList.tail! do
+        match arg with
+        | .mk_arg _ paramName paramAnnotation _ =>
+          let paramType ← match paramAnnotation.val with
+            | some annot => translateType ctx (pyExprToString annot)
+            | none => throw (TranslationError.typeError s!"Parameter {paramName.val} must have type annotation")
+          inputs := inputs ++ [{name := paramName.val, type := paramType}]
+
+    -- Translate return type
+    let outputs ← match ret.val with
+      | some retExpr => do
+        let retType ← translateType ctx (pyExprToString retExpr)
+        pure (match retType.val with
+          | HighType.TVoid => []
+          | _ => [{name := "result", type := retType}])
+      | none => pure []
+
+    -- Translate method body with class context
+    let ctxWithClass := {ctx with currentClassName := some className}
+    let (_, bodyStmts) ← translateStmtList ctxWithClass body.val.toList
+    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
+
+    return {
+      name := methodName
+      inputs := inputs
+      outputs := outputs
+      preconditions := []
+      decreases := none
+      body := .Transparent bodyBlock
+    }
+  | _ => throw (.internalError "Expected FunctionDef for method")
+
+/-- Translate a Python class to a Laurel CompositeType -/
+def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
+    : Except TranslationError CompositeType := do
+  match classStmt with
+  | .ClassDef _ className bases _ body _ _ =>
+    let className := className.val
+
+    -- Extract fields from class body
+    let fields ← extractClassFields ctx body.val
+
+    -- Extract methods from class body
+    let methodStmts := body.val.toList.filter fun stmt =>
+      match stmt with
+      | .FunctionDef _ _ _ _ _ _ _ _ => true
+      | _ => false
+
+    -- Translate each method
+    let mut instanceProcedures : List Procedure := []
+    for methodStmt in methodStmts do
+      let proc ← translateMethod ctx className methodStmt
+      instanceProcedures := instanceProcedures ++ [proc]
+
+    -- Handle inheritance (bases)
+    let extending : List Identifier := bases.val.toList.filterMap fun base =>
+      match base with
+      | .Name _ name _ => some name.val
+      | _ => none  -- Ignore complex base expressions for now
+
+    return {
+      name := className
+      extending := extending
+      fields := fields
+      instanceProcedures := instanceProcedures
+    }
+  | _ => throw (.internalError "Expected ClassDef")
+
+
 /-- Translate Python module to Laurel Program -/
 def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRange) : Except TranslationError Laurel.Program := do
   match pyModule with
@@ -528,13 +712,27 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       | .FunctionDef _ name _ _ _ _ _ _ => some name.val
       | _ => none
 
+
+    -- FIRST PASS: Collect all class definitions
+    let mut compositeTypes : List CompositeType := []
+    for stmt in body.val do
+      match stmt with
+      | .ClassDef _ _ _ _ _ _ _ =>
+        let composite ← translateClass {preludeProcedures := preludeProcedures, compositeTypes := compositeTypes} stmt
+        compositeTypes := compositeTypes ++ [composite]
+      | _ => pure ()
+
+    -- Create context with composite types
     let ctx : TranslationContext := {
+
       preludeProcedures := preludeProcedures,
       preludeTypes := preludeTypes,
       userFunctions := userFunctions
+   ,
+      compositeTypes := compositeTypes
     }
 
-    -- Separate functions from other statements
+    -- SECOND PASS: Translate functions and other statements
     let mut procedures : List Procedure := []
     let mut otherStmts : List (Python.stmt SourceRange) := []
 
@@ -543,6 +741,12 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       | .FunctionDef _ _ _ _ _ _ _ _ =>
         let proc ← translateFunction ctx stmt
         procedures := procedures ++ [proc]
+      | .ClassDef _ _ _ _ _ _ _ =>
+        pure ()  -- Already processed in first pass
+      | .Import _ _ | .ImportFrom _ _ _ _ =>
+        pure ()  -- Ignore imports
+      | .If _ _ _ _ =>
+        pure ()  -- Ignore top-level if statements
       | _ =>
         otherStmts := otherStmts ++ [stmt]
 
@@ -553,15 +757,15 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
 
     let mainProc : Procedure := {name := "__main__", inputs := [], outputs := [], preconditions := [], decreases := none, body := .Transparent bodyBlock}
 
+    let typeDefinitions := compositeTypes.map TypeDefinition.Composite
+
     let program : Laurel.Program := {
       staticProcedures := mainProc :: procedures
       staticFields := []
-      types := []
+      types := typeDefinitions
       constants := []
     }
 
     return program
 
-  | _ => throw (.internalError "Expected Module")
-
-end Strata.Python
+  | _ => throw (TranslationError.internalError "Expected Module")

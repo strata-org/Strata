@@ -311,14 +311,15 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.DynamicFieldUpdate _ _ _ => panic! "not implemented: DynamicFieldUpdate"
 
 -- Verification statements
-  | StmtExpr.Assert condExpr => do
+  | StmtExpr.Assert condExpr label => do
     let cond ← eval condExpr
     if cond.ty.isBool then
       withResult <| EvalResult.TypeError "Condition must be boolean"
     else if cond.val.asBool! then
       pure voidTv
     else
-      withResult <| EvalResult.VerficationError VerificationErrorType.PreconditionFailed "Assertion failed"
+      let msg := label.getD "Assertion failed"
+      withResult <| EvalResult.VerficationError VerificationErrorType.PreconditionFailed msg
   | StmtExpr.Assume _ => panic! "not implemented: Assume"
   | StmtExpr.ProveBy _ _ => panic! "not implemented: ProveBy"
   | StmtExpr.Assigned _ => panic! "not implemented: Assigned"

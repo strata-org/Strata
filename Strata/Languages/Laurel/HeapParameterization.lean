@@ -75,7 +75,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
-  | .Assert c => collectExprMd c
+  | .Assert c _=> collectExprMd c
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
@@ -282,7 +282,7 @@ def heapTransformExpr (heapVar : Identifier) (topExpr : StmtExprMd) (valueUsed :
     | .Assigned n => return ⟨ .Assigned (← heapTransformExpr heapVar n), md ⟩
     | .Old v => return ⟨ .Old (← heapTransformExpr heapVar v), md ⟩
     | .Fresh v => return ⟨ .Fresh (← heapTransformExpr heapVar v), md ⟩
-    | .Assert c => return ⟨ .Assert (← heapTransformExpr heapVar c), md ⟩
+    | .Assert c label => return ⟨ .Assert (← heapTransformExpr heapVar c) label, md ⟩
     | .Assume c => return ⟨ .Assume (← heapTransformExpr heapVar c), md ⟩
     | .ProveBy v p => return ⟨ .ProveBy (← heapTransformExpr heapVar v) (← heapTransformExpr heapVar p), md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← heapTransformExpr heapVar f), md ⟩
