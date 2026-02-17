@@ -1,32 +1,13 @@
 
+==== Verification Results ====
 datetime_now_ensures_0: ✅ pass (at byte 7129)
-
 datetime_utcnow_ensures_0: ✅ pass (at byte 7367)
-
 ensures_str_strp_reverse: ✅ pass (at byte 8761)
-
 assert_name_is_foo: ✅ pass (at byte 11075)
-
 assert_opt_name_none_or_str: ✅ pass (at byte 11125)
-
 assert_opt_name_none_or_bar: ✅ pass (at byte 11272)
-
 ensures_maybe_except_none: ✅ pass (at byte 10978)
-
-Assertion failed at byte 11075: test_helper_procedure_assert_name_is_foo_3: ❌ fail
-
-test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11125)
-
-test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11272)
-
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10641)
-
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 10641)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10690)
-
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10836)
 
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10641)
-
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10690)
-
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10836)

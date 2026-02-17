@@ -1,38 +1,22 @@
 
+==== Verification Results ====
 datetime_now_ensures_0: ✅ pass (at byte 7129)
-
 datetime_utcnow_ensures_0: ✅ pass (at byte 7367)
-
 ensures_str_strp_reverse: ✅ pass (at byte 8761)
-
 assert_name_is_foo: ✅ pass (at byte 11075)
-
 assert_opt_name_none_or_str: ✅ pass (at byte 11125)
-
 assert_opt_name_none_or_bar: ✅ pass (at byte 11272)
-
 ensures_maybe_except_none: ✅ pass (at byte 10978)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10641)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10690)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10836)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10641)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10690)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10836)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 10641)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10690)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10836)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10641)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10690)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10836)
 
-test_helper_procedure_assert_name_is_foo_27: ✅ pass (at byte 11075)
-
-test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass (at byte 11125)
-
-test_helper_procedure_assert_opt_name_none_or_bar_29: ✅ pass (at byte 11272)
-
-test_helper_procedure_assert_name_is_foo_19: ✅ pass (at byte 11075)
-
-test_helper_procedure_assert_opt_name_none_or_str_20: ✅ pass (at byte 11125)
-
-test_helper_procedure_assert_opt_name_none_or_bar_21: ✅ pass (at byte 11272)
-
-Assertion failed at byte 11075: test_helper_procedure_assert_name_is_foo_11: ❌ fail
-
-test_helper_procedure_assert_opt_name_none_or_str_12: ✅ pass (at byte 11125)
-
-test_helper_procedure_assert_opt_name_none_or_bar_13: ✅ pass (at byte 11272)
-
-test_helper_procedure_assert_name_is_foo_3: ✅ pass (at byte 11075)
-
-test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11125)
-
-Assertion failed at byte 11272: test_helper_procedure_assert_opt_name_none_or_bar_5: ❌ fail

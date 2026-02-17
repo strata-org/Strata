@@ -326,7 +326,9 @@ def pyAnalyzeLaurelCommand : Command where
   help := "Analyze a Strata Python Ion file through Laurel. Write results to stdout."
   callback := fun _ v => do
     let verbose := v[1] == "1"
-    let pgm ← readPythonStrata v[0]
+    let filePath := v[0]
+    let pgm ← readPythonStrata filePath
+    let pySourceOpt ← tryReadPythonSource filePath
     let cmds := Strata.toPyCommands pgm.commands
     if verbose then
       IO.println "==== Python AST ===="
@@ -335,7 +337,10 @@ def pyAnalyzeLaurelCommand : Command where
 
     let prelude := Strata.Python.Core.prelude
 
-    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
+    let sourcePathForMetadata := match pySourceOpt with
+      | some (pyPath, _) => pyPath
+      | none => filePath
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
@@ -367,7 +372,29 @@ def pyAnalyzeLaurelCommand : Command where
           IO.println "\n==== Verification Results ===="
           let mut s := ""
           for vcResult in vcResults do
-            s := s ++ s!"{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+            let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+              | some fr =>
+                if fr.range.isNone then ("", "")
+                else
+                  match pySourceOpt with
+                  | some (pyPath, fileMap) =>
+                    match fr.file with
+                    | .file path =>
+                      if path == pyPath then
+                        let pos := fileMap.toPosition fr.range.start
+                        match vcResult.result with
+                        | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                        | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                      else
+                        match vcResult.result with
+                        | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                        | _ => ("", s!" (at byte {fr.range.start})")
+                  | none =>
+                    match vcResult.result with
+                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                    | _ => ("", s!" (at byte {fr.range.start})")
+              | none => ("", "")
+            s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
           IO.println s
 
 def javaGenCommand : Command where
