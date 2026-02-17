@@ -27,20 +27,21 @@ procedure test() returns ()
 
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 ---
-info:
-ok: procedure test :  () → ()
+info: ok: procedure test :  () → ()
   modifies: []
   preconditions: 
   postconditions: 
 {
   {
-    init (x : int) := #1
+    init (x : int) := some #1
     funcDecl <function>
-    init (z : int) := ((~addX : (arrow int int)) #5)
+    init (z : int) := some ((~addX : (arrow int int)) #5)
   }
-}-/
+}
+-/
 #guard_msgs in
 #eval (Std.format ((Core.typeCheck Options.default (translate simpleFuncDeclPgm).stripMetaData)))
