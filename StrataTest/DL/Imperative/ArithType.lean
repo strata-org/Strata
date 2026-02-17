@@ -48,13 +48,16 @@ def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except DiagnosticModel 
     -- statements.
     let T ← match c with
       | .init _ _ init_e _ =>
-        let init_e_fvs := Expr.freeVars init_e
-        if init_e_fvs.any (fun (_, ty) => ty.isNone) then
-          .error (DiagnosticModel.fromFormat f!"Cannot infer the types of free variables in the initialization expression!\n\
-                    {e}")
-        else
-          let init_e_fvs := init_e_fvs.map (fun (x, ty) => (x, ty.get!))
-          .ok (List.foldl (fun T (x, ty) => Map.insert T x ty) T init_e_fvs)
+        match init_e with
+        | none => .ok T
+        | some e =>
+          let init_e_fvs := Expr.freeVars e
+          if init_e_fvs.any (fun (_, ty) => ty.isNone) then
+            .error (DiagnosticModel.fromFormat f!"Cannot infer the types of free variables in the initialization expression!\n\
+                      {e}")
+          else
+            let init_e_fvs := init_e_fvs.map (fun (x, ty) => (x, ty.get!))
+            .ok (List.foldl (fun T (x, ty) => Map.insert T x ty) T init_e_fvs)
       | _ => .ok T
     match T.find? x with
     | some ty =>
