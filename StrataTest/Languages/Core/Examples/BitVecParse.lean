@@ -50,17 +50,13 @@ Property: assert
 Result: ❌ fail
 
 
-Evaluated program:
-procedure bitVecParseTest :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+[DEBUG] Evaluated program:
+procedure bitVecParseTest () returns ()
 {
-  {
-    assert [bitvec32_test] #true
-    assert [bitvec64_test] #false
-  }
-}
+  assert [bitvec32_test]: true;
+  assert [bitvec64_test]: false;
+  };
+
 ---
 info:
 Obligation: bitvec32_test

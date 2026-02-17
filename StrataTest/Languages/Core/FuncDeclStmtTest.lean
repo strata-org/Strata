@@ -31,17 +31,22 @@ procedure test() returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: procedure test :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: ok: procedure test () returns ()
 {
-  {
-    init (x : int) := some #1
-    funcDecl <function>
-    init (z : int) := some ((~addX : (arrow int int)) #5)
-  }
-}
+  var x : int := 1;
+  function addX (y : int) : int { fvar!1 }
+  var z : int := fvar!0(5);
+  };
+
+
+-- Errors encountered during conversion:
+Unsupported construct in funcDeclToStatement: funcDecl without body not supported in statements: addX
+Context: Global scope:
+Scope 1:
+Scope 2:
+  boundVars: [x]
+Scope 3:
+  boundVars: [y]
 -/
 #guard_msgs in
 #eval (Std.format ((Core.typeCheck Options.default (translate simpleFuncDeclPgm).stripMetaData)))

@@ -82,19 +82,15 @@ Proof Obligation:
 (~fooAliasVal == ~fooVal)
 
 ---
-info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
-  type FooAlias a := (Foo int bool)
-  func fooAliasVal :  () → (Foo int bool);
-  func fooVal :  () → (Foo int bool);
-  procedure P :  () → ()
-    modifies: []
-    preconditions: ⏎
-    postconditions: ⏎
+info: ok: [(type Foo (a0 : Type, a1 : Type);
+  type FooAlias (a : Type) := Foo int bool;
+  function fooAliasVal () : Foo int bool;
+  function fooVal () : Foo int bool;
+  procedure P () returns ()
   {
-    {
-      assert [test] (~fooAliasVal == ~fooVal)
-    }
-  },
+    assert [test]: fooAliasVal == fooVal;
+    };
+  ,
   Error:
   none
   Subst Map:
@@ -325,10 +321,10 @@ def outOfScopeVarProg : Program := { decls := [
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)],
                 .ite eb[(x == #true)]
-                  [Statement.init "q" t[int] (some eb[#0]),
+                  [Statement.init "q" t[int] eb[#0],
                            Statement.set "q" eb[#1],
                            Statement.set "y" eb[#true]]
-                  [Statement.init "q" t[int] (some eb[#0]),
+                  [Statement.init "q" t[int] eb[#0],
                            Statement.set "q" eb[#2],
                            Statement.set "y" eb[#true]],
                 Statement.assert "y_check" eb[y == #true],
@@ -368,7 +364,7 @@ def polyFuncProg : Program := { decls := [
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
-            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) (some eb[init_m_0]),
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) eb[init_m_0],
             -- m := makePair(identity(42), identity(true));
             Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))]
           ]
@@ -379,20 +375,13 @@ def polyFuncProg : Program := { decls := [
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
-func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
-procedure Test :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0;
+function makePair<|$__ty1|, |$__ty2|> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+procedure Test () returns ()
 {
-  {
-    init (m : (Map int bool)) := some (init_m_0 : (Map int bool))
-    m := ((~makePair : (arrow int (arrow bool (Map int bool))))
-     ((~identity : (arrow int int)) #42)
-     ((~identity : (arrow bool bool)) #true))
-  }
-}
+  var m : (Map int bool);
+  m := makePair(identity(42), identity(true));
+  };
 -/
 #guard_msgs in
 #eval do

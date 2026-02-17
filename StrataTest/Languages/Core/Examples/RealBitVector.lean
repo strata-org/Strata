@@ -32,28 +32,18 @@ procedure P() returns ()
 #eval TransM.run Inhabited.default (translateProgram realPgm) |>.snd |>.isEmpty
 
 /--
-info: func x :  () → real;
-func y :  () → real;
-axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
-axiom real_y_ge_2: ((~Real.Ge : (arrow real (arrow real bool))) (~y : real) #2);
-procedure P :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+info: function x () : real;
+function y () : real;
+axiom [real_x_ge_1]: x >= 1.0;
+axiom [real_y_ge_2]: y >= 2.0;
+procedure P () returns ()
 {
-  {
-    assert [real_add_ge_good] ((~Real.Ge : (arrow real (arrow real bool)))
-     ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
-     #3)
-    assert [real_add_ge_bad] ((~Real.Ge : (arrow real (arrow real bool)))
-     ((~Real.Add : (arrow real (arrow real real))) (~x : real) (~y : real))
-     #4)
-  }
-}
-Errors: #[]
+  assert [real_add_ge_good]: x + y >= 3.0;
+  assert [real_add_ge_bad]: x + y >= 4.0;
+  };
 -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram realPgm)
+#eval TransM.run Inhabited.default (translateProgram realPgm) |>.fst
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -85,21 +75,17 @@ Property: assert
 Result: ❌ fail
 
 
-Evaluated program:
-func x :  () → real;
-func y :  () → real;
-axiom real_x_ge_1: ((~Real.Ge : (arrow real (arrow real bool))) (~x : real) #1);
-axiom real_y_ge_2: ((~Real.Ge : (arrow real (arrow real bool))) (~y : real) #2);
-procedure P :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+[DEBUG] Evaluated program:
+function x () : real;
+function y () : real;
+axiom [real_x_ge_1]: x >= 1.0;
+axiom [real_y_ge_2]: y >= 2.0;
+procedure P () returns ()
 {
-  {
-    assert [real_add_ge_good] (~Real.Ge (~Real.Add ~x ~y) #3)
-    assert [real_add_ge_bad] (~Real.Ge (~Real.Add ~x ~y) #4)
-  }
-}
+  assert [real_add_ge_good]: x + y >= 3.0;
+  assert [real_add_ge_bad]: x + y >= 4.0;
+  };
+
 ---
 info:
 Obligation: real_add_ge_good
@@ -144,34 +130,23 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram bvPgm) |>.snd |>.isEmpty
 
 /--
-info: func x :  () → bv8;
-func y :  () → bv8;
-axiom bv_x_ge_1: ((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #1 (~x : bv8));
-axiom bv_y_ge_2: ((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #2 (~y : bv8));
-procedure P :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+info: function x () : bv8;
+function y () : bv8;
+axiom [bv_x_ge_1]: bv{8}(1) <= x;
+axiom [bv_y_ge_2]: bv{8}(2) <= y;
+procedure P () returns ()
 {
-  {
-    assert [bv_add_ge] (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8)))
-      (~x : bv8)
-      (~y : bv8)) == ((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~y : bv8) (~x : bv8)))
-  }
-}
-procedure Q :  ((x : bv1)) → ((r : bv1))
-  modifies: []
-  preconditions: ⏎
-  postconditions: (Q_ensures_0, ((r : bv1) == ((~Bv1.Sub : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))))
-{
-  {
-    r := ((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1) (x : bv1))
-  }
-}
-Errors: #[]
+  assert [bv_add_ge]: x + y == y + x;
+  };
+procedure Q (x : bv1) returns (r : bv1)
+spec {
+  ensures [Q_ensures_0]: r == x - x;
+  } {
+  r := x + x;
+  };
 -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram bvPgm)
+#eval TransM.run Inhabited.default (translateProgram bvPgm) |>.fst
 
 /--
 info: [Strata.Core] Type checking succeeded.

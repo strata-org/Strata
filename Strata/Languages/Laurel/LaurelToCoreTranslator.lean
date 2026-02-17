@@ -459,7 +459,7 @@ def verifyToVcResults (program : Program)
   let options := { options with removeIrrelevantAxioms := true }
   -- Debug: Print the generated Strata Core program
   dbg_trace "=== Generated Strata Core Program ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format strataCoreProgram) 100))
+  dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram strataCoreProgram) 100))
   dbg_trace "================================="
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))

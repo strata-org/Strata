@@ -5,8 +5,8 @@
 -/
 
 import Strata.DDM.AST
+import Strata.Languages.Core.DDMTransform.Grammar
 import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Core.CoreGen
 import Strata.DDM.Util.DecimalRat
 
@@ -16,7 +16,8 @@ namespace Strata
 
 /- Translating concrete syntax into abstract syntax -/
 
-open Core Lambda Imperative Lean.Parser
+open Core
+open Lambda Imperative Lean.Parser
 open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
@@ -34,10 +35,6 @@ def TransM := StateM TransState
 def TransM.run (ictx : InputContext) (m : TransM α) (gctx : GlobalContext := {}) : (α × Array String) :=
   let (v, s) := StateT.run m { inputCtx := ictx, errors := #[], globalContext := gctx }
   (v, s.errors)
-
-instance : ToString (Core.Program × Array String) where
-  toString p := toString (Std.format p.fst) ++ "\n" ++
-                "Errors: " ++ (toString p.snd)
 
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
   fun s => ((), { s with errors := s.errors.push msg })
@@ -154,7 +151,7 @@ structure GenNum where
 
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
-  boundVars : Array (LExpr CoreLParams.mono) := #[]
+  boundVars : Array (LExpr Core.CoreLParams.mono) := #[]
   freeVars  : Array Core.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0 0)
 
@@ -184,7 +181,7 @@ instance : Inhabited (List Core.Statement × TransBindings) where
 instance : Inhabited Core.Decl where
   default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.false ())
 
-instance : Inhabited (Procedure.CheckAttr) where
+instance : Inhabited (Core.Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Core.Decl × TransBindings) where
@@ -193,7 +190,7 @@ instance : Inhabited (Core.Decl × TransBindings) where
 instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
 
-instance : Inhabited (List CoreIdent × TransBindings) where
+instance : Inhabited (List Core.CoreIdent × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (List TyIdentifier × TransBindings) where
@@ -255,9 +252,9 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                     -- Datatype Declaration (possibly mutual)
                     -- Look up the type name from the GlobalContext using the fvar index
                     let gctx := (← StateT.get).globalContext
-                    let ldatatype : LDatatype Visibility := match gctx.nameOf? i, block with
+                    let ldatatype : LDatatype Core.Visibility := match gctx.nameOf? i, block with
                       | some name, _ =>
-                        match block.find? (fun (d : LDatatype Visibility) => d.name == name) with
+                        match block.find? (fun (d : LDatatype Core.Visibility) => d.name == name) with
                         | some d => d
                         | none => panic! s!"Error: datatype {name} not found in block"
                       | none, d :: _ => d
@@ -380,21 +377,21 @@ def translateForwardTypeDecl (bindings : TransBindings) (op : Operation) :
 
 ---------------------------------------------------------------------
 
-def translateLhs (arg : Arg) : TransM CoreIdent := do
+def translateLhs (arg : Arg) : TransM Core.CoreIdent := do
   let .op op := arg
     | TransM.error s!"translateLhs expected op {repr arg}"
   match op.name, op.args with
-  | q`Core.lhsIdent, #[id] => translateIdent CoreIdent id
+  | q`Core.lhsIdent, #[id] => translateIdent Core.CoreIdent id
   -- (TODO) Implement lhsArray.
   | _, _ => TransM.error s!"translateLhs: unimplemented for {repr arg}"
 
 def translateBindMk (bindings : TransBindings) (arg : Arg) :
-   TransM (CoreIdent × List TyIdentifier × LMonoTy) := do
+   TransM (Core.CoreIdent × List TyIdentifier × LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateBindMk expected op {repr arg}"
   match op.name, op.args with
   | q`Core.bind_mk, #[ida, targsa, tpa] =>
-    let id ← translateIdent CoreIdent ida
+    let id ← translateIdent Core.CoreIdent ida
     let args ← translateTypeArgs targsa
     let tp ← translateLMonoTy bindings tpa
     return (id, args.toList, tp)
@@ -402,19 +399,19 @@ def translateBindMk (bindings : TransBindings) (arg : Arg) :
     TransM.error s!"translateBindMk unimplemented for {repr arg}"
 
 def translateMonoBindMk (bindings : TransBindings) (arg : Arg) :
-   TransM (CoreIdent × LMonoTy) := do
+   TransM (Core.CoreIdent × LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateMonoBindMk expected op {repr arg}"
   match op.name, op.args with
   | q`Core.mono_bind_mk, #[ida, tpa] =>
-    let id ← translateIdent CoreIdent ida
+    let id ← translateIdent Core.CoreIdent ida
     let tp ← translateLMonoTy bindings tpa
     return (id, tp)
   | _, _ =>
     TransM.error s!"translateMonoBindMk unimplemented for {repr arg}"
 
 partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (ListMap Expression.Ident LTy) := do
+  TransM (ListMap Core.Expression.Ident LTy) := do
   let .op op := arg
     | TransM.error s!"translateDeclList expects an op {repr arg}"
   match op.name with
@@ -432,7 +429,7 @@ partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
   | _ => TransM.error s!"translateDeclList unimplemented for {repr op}"
 
 partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (ListMap Expression.Ident LMonoTy) := do
+  TransM (ListMap Core.Expression.Ident LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateMonoDeclList expects an op {repr arg}"
   match op.name with
@@ -454,7 +451,7 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
         | TransM.error s!"Expected binding op {repr bindingArg}"
       if bindingOp.name == q`Core.mkBinding then
         let bindingArgs ← checkOpArg bindingArg q`Core.mkBinding 2
-        let id ← translateIdent CoreIdent bindingArgs[0]!
+        let id ← translateIdent Core.CoreIdent bindingArgs[0]!
         let mty ← translateLMonoTy bindings bindingArgs[1]!
         pure (id, mty)
       else
@@ -463,7 +460,7 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
 def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (ListMap Expression.Ident LMonoTy) :=
+  TransM (ListMap Core.Expression.Ident LMonoTy) :=
   translateOption
     (fun maybedecls => do match maybedecls with
         | none => return []
@@ -493,183 +490,183 @@ def isArithTy : LMonoTy → Bool
 
 def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expression.Expr :=
   match ty?, q with
-  | _, q`Core.equiv    => return boolEquivOp
-  | _, q`Core.implies  => return boolImpliesOp
-  | _, q`Core.and      => return boolAndOp
-  | _, q`Core.or       => return boolOrOp
-  | _, q`Core.not      => return boolNotOp
+  | _, q`Core.equiv    => return Core.boolEquivOp
+  | _, q`Core.implies  => return Core.boolImpliesOp
+  | _, q`Core.and      => return Core.boolAndOp
+  | _, q`Core.or       => return Core.boolOrOp
+  | _, q`Core.not      => return Core.boolNotOp
 
-  | .some .int, q`Core.le       => return intLeOp
-  | .some .int, q`Core.lt       => return intLtOp
-  | .some .int, q`Core.ge       => return intGeOp
-  | .some .int, q`Core.gt       => return intGtOp
-  | .some .int, q`Core.add_expr => return intAddOp
-  | .some .int, q`Core.sub_expr => return intSubOp
-  | .some .int, q`Core.mul_expr => return intMulOp
-  | .some .int, q`Core.div_expr => return intDivOp
-  | .some .int, q`Core.mod_expr => return intModOp
-  | .some .int, q`Core.neg_expr => return intNegOp
+  | .some .int, q`Core.le       => return Core.intLeOp
+  | .some .int, q`Core.lt       => return Core.intLtOp
+  | .some .int, q`Core.ge       => return Core.intGeOp
+  | .some .int, q`Core.gt       => return Core.intGtOp
+  | .some .int, q`Core.add_expr => return Core.intAddOp
+  | .some .int, q`Core.sub_expr => return Core.intSubOp
+  | .some .int, q`Core.mul_expr => return Core.intMulOp
+  | .some .int, q`Core.div_expr => return Core.intDivOp
+  | .some .int, q`Core.mod_expr => return Core.intModOp
+  | .some .int, q`Core.neg_expr => return Core.intNegOp
 
-  | .some .real, q`Core.le       => return realLeOp
-  | .some .real, q`Core.lt       => return realLtOp
-  | .some .real, q`Core.ge       => return realGeOp
-  | .some .real, q`Core.gt       => return realGtOp
-  | .some .real, q`Core.add_expr => return realAddOp
-  | .some .real, q`Core.sub_expr => return realSubOp
-  | .some .real, q`Core.mul_expr => return realMulOp
-  | .some .real, q`Core.div_expr => return realDivOp
-  | .some .real, q`Core.neg_expr => return realNegOp
+  | .some .real, q`Core.le       => return Core.realLeOp
+  | .some .real, q`Core.lt       => return Core.realLtOp
+  | .some .real, q`Core.ge       => return Core.realGeOp
+  | .some .real, q`Core.gt       => return Core.realGtOp
+  | .some .real, q`Core.add_expr => return Core.realAddOp
+  | .some .real, q`Core.sub_expr => return Core.realSubOp
+  | .some .real, q`Core.mul_expr => return Core.realMulOp
+  | .some .real, q`Core.div_expr => return Core.realDivOp
+  | .some .real, q`Core.neg_expr => return Core.realNegOp
 
-  | .some .bv1, q`Core.le       => return bv1ULeOp
-  | .some .bv1, q`Core.lt       => return bv1ULtOp
-  | .some .bv1, q`Core.ge       => return bv1UGeOp
-  | .some .bv1, q`Core.gt       => return bv1UGtOp
-  | .some .bv1, q`Core.bvsle    => return bv1SLeOp
-  | .some .bv1, q`Core.bvslt    => return bv1SLtOp
-  | .some .bv1, q`Core.bvsge    => return bv1SGeOp
-  | .some .bv1, q`Core.bvsgt    => return bv1SGtOp
-  | .some .bv1, q`Core.neg_expr => return bv1NegOp
-  | .some .bv1, q`Core.add_expr => return bv1AddOp
-  | .some .bv1, q`Core.sub_expr => return bv1SubOp
-  | .some .bv1, q`Core.mul_expr => return bv1MulOp
-  | .some .bv1, q`Core.div_expr => return bv1UDivOp
-  | .some .bv1, q`Core.mod_expr => return bv1UModOp
-  | .some .bv1, q`Core.bvsdiv   => return bv1SDivOp
-  | .some .bv1, q`Core.bvsmod   => return bv1SModOp
-  | .some .bv1, q`Core.bvnot    => return bv1NotOp
-  | .some .bv1, q`Core.bvand    => return bv1AndOp
-  | .some .bv1, q`Core.bvor     => return bv1OrOp
-  | .some .bv1, q`Core.bvxor    => return bv1XorOp
-  | .some .bv1, q`Core.bvshl    => return bv1ShlOp
-  | .some .bv1, q`Core.bvushr   => return bv1UShrOp
-  | .some .bv1, q`Core.bvsshr   => return bv1SShrOp
+  | .some .bv1, q`Core.le       => return Core.bv1ULeOp
+  | .some .bv1, q`Core.lt       => return Core.bv1ULtOp
+  | .some .bv1, q`Core.ge       => return Core.bv1UGeOp
+  | .some .bv1, q`Core.gt       => return Core.bv1UGtOp
+  | .some .bv1, q`Core.bvsle    => return Core.bv1SLeOp
+  | .some .bv1, q`Core.bvslt    => return Core.bv1SLtOp
+  | .some .bv1, q`Core.bvsge    => return Core.bv1SGeOp
+  | .some .bv1, q`Core.bvsgt    => return Core.bv1SGtOp
+  | .some .bv1, q`Core.neg_expr => return Core.bv1NegOp
+  | .some .bv1, q`Core.add_expr => return Core.bv1AddOp
+  | .some .bv1, q`Core.sub_expr => return Core.bv1SubOp
+  | .some .bv1, q`Core.mul_expr => return Core.bv1MulOp
+  | .some .bv1, q`Core.div_expr => return Core.bv1UDivOp
+  | .some .bv1, q`Core.mod_expr => return Core.bv1UModOp
+  | .some .bv1, q`Core.bvsdiv   => return Core.bv1SDivOp
+  | .some .bv1, q`Core.bvsmod   => return Core.bv1SModOp
+  | .some .bv1, q`Core.bvnot    => return Core.bv1NotOp
+  | .some .bv1, q`Core.bvand    => return Core.bv1AndOp
+  | .some .bv1, q`Core.bvor     => return Core.bv1OrOp
+  | .some .bv1, q`Core.bvxor    => return Core.bv1XorOp
+  | .some .bv1, q`Core.bvshl    => return Core.bv1ShlOp
+  | .some .bv1, q`Core.bvushr   => return Core.bv1UShrOp
+  | .some .bv1, q`Core.bvsshr   => return Core.bv1SShrOp
 
-  | .some .bv8, q`Core.le       => return bv8ULeOp
-  | .some .bv8, q`Core.lt       => return bv8ULtOp
-  | .some .bv8, q`Core.ge       => return bv8UGeOp
-  | .some .bv8, q`Core.gt       => return bv8UGtOp
-  | .some .bv8, q`Core.bvsle    => return bv8SLeOp
-  | .some .bv8, q`Core.bvslt    => return bv8SLtOp
-  | .some .bv8, q`Core.bvsge    => return bv8SGeOp
-  | .some .bv8, q`Core.bvsgt    => return bv8SGtOp
-  | .some .bv8, q`Core.neg_expr => return bv8NegOp
-  | .some .bv8, q`Core.add_expr => return bv8AddOp
-  | .some .bv8, q`Core.sub_expr => return bv8SubOp
-  | .some .bv8, q`Core.mul_expr => return bv8MulOp
-  | .some .bv8, q`Core.div_expr => return bv8UDivOp
-  | .some .bv8, q`Core.mod_expr => return bv8UModOp
-  | .some .bv8, q`Core.bvsdiv   => return bv8SDivOp
-  | .some .bv8, q`Core.bvsmod   => return bv8SModOp
-  | .some .bv8, q`Core.bvnot    => return bv8NotOp
-  | .some .bv8, q`Core.bvand    => return bv8AndOp
-  | .some .bv8, q`Core.bvor     => return bv8OrOp
-  | .some .bv8, q`Core.bvxor    => return bv8XorOp
-  | .some .bv8, q`Core.bvshl    => return bv8ShlOp
-  | .some .bv8, q`Core.bvushr   => return bv8UShrOp
-  | .some .bv8, q`Core.bvsshr   => return bv8SShrOp
+  | .some .bv8, q`Core.le       => return Core.bv8ULeOp
+  | .some .bv8, q`Core.lt       => return Core.bv8ULtOp
+  | .some .bv8, q`Core.ge       => return Core.bv8UGeOp
+  | .some .bv8, q`Core.gt       => return Core.bv8UGtOp
+  | .some .bv8, q`Core.bvsle    => return Core.bv8SLeOp
+  | .some .bv8, q`Core.bvslt    => return Core.bv8SLtOp
+  | .some .bv8, q`Core.bvsge    => return Core.bv8SGeOp
+  | .some .bv8, q`Core.bvsgt    => return Core.bv8SGtOp
+  | .some .bv8, q`Core.neg_expr => return Core.bv8NegOp
+  | .some .bv8, q`Core.add_expr => return Core.bv8AddOp
+  | .some .bv8, q`Core.sub_expr => return Core.bv8SubOp
+  | .some .bv8, q`Core.mul_expr => return Core.bv8MulOp
+  | .some .bv8, q`Core.div_expr => return Core.bv8UDivOp
+  | .some .bv8, q`Core.mod_expr => return Core.bv8UModOp
+  | .some .bv8, q`Core.bvsdiv   => return Core.bv8SDivOp
+  | .some .bv8, q`Core.bvsmod   => return Core.bv8SModOp
+  | .some .bv8, q`Core.bvnot    => return Core.bv8NotOp
+  | .some .bv8, q`Core.bvand    => return Core.bv8AndOp
+  | .some .bv8, q`Core.bvor     => return Core.bv8OrOp
+  | .some .bv8, q`Core.bvxor    => return Core.bv8XorOp
+  | .some .bv8, q`Core.bvshl    => return Core.bv8ShlOp
+  | .some .bv8, q`Core.bvushr   => return Core.bv8UShrOp
+  | .some .bv8, q`Core.bvsshr   => return Core.bv8SShrOp
 
-  | .some .bv16, q`Core.le       => return bv16ULeOp
-  | .some .bv16, q`Core.lt       => return bv16ULtOp
-  | .some .bv16, q`Core.ge       => return bv16UGeOp
-  | .some .bv16, q`Core.gt       => return bv16UGtOp
-  | .some .bv16, q`Core.bvsle    => return bv16SLeOp
-  | .some .bv16, q`Core.bvslt    => return bv16SLtOp
-  | .some .bv16, q`Core.bvsge    => return bv16SGeOp
-  | .some .bv16, q`Core.bvsgt    => return bv16SGtOp
-  | .some .bv16, q`Core.neg_expr => return bv16NegOp
-  | .some .bv16, q`Core.add_expr => return bv16AddOp
-  | .some .bv16, q`Core.sub_expr => return bv16SubOp
-  | .some .bv16, q`Core.mul_expr => return bv16MulOp
-  | .some .bv16, q`Core.div_expr => return bv16UDivOp
-  | .some .bv16, q`Core.mod_expr => return bv16UModOp
-  | .some .bv16, q`Core.bvsdiv   => return bv16SDivOp
-  | .some .bv16, q`Core.bvsmod   => return bv16SModOp
-  | .some .bv16, q`Core.bvnot    => return bv16NotOp
-  | .some .bv16, q`Core.bvand    => return bv16AndOp
-  | .some .bv16, q`Core.bvor     => return bv16OrOp
-  | .some .bv16, q`Core.bvxor    => return bv16XorOp
-  | .some .bv16, q`Core.bvshl    => return bv16ShlOp
-  | .some .bv16, q`Core.bvushr   => return bv16UShrOp
-  | .some .bv16, q`Core.bvsshr   => return bv16SShrOp
+  | .some .bv16, q`Core.le       => return Core.bv16ULeOp
+  | .some .bv16, q`Core.lt       => return Core.bv16ULtOp
+  | .some .bv16, q`Core.ge       => return Core.bv16UGeOp
+  | .some .bv16, q`Core.gt       => return Core.bv16UGtOp
+  | .some .bv16, q`Core.bvsle    => return Core.bv16SLeOp
+  | .some .bv16, q`Core.bvslt    => return Core.bv16SLtOp
+  | .some .bv16, q`Core.bvsge    => return Core.bv16SGeOp
+  | .some .bv16, q`Core.bvsgt    => return Core.bv16SGtOp
+  | .some .bv16, q`Core.neg_expr => return Core.bv16NegOp
+  | .some .bv16, q`Core.add_expr => return Core.bv16AddOp
+  | .some .bv16, q`Core.sub_expr => return Core.bv16SubOp
+  | .some .bv16, q`Core.mul_expr => return Core.bv16MulOp
+  | .some .bv16, q`Core.div_expr => return Core.bv16UDivOp
+  | .some .bv16, q`Core.mod_expr => return Core.bv16UModOp
+  | .some .bv16, q`Core.bvsdiv   => return Core.bv16SDivOp
+  | .some .bv16, q`Core.bvsmod   => return Core.bv16SModOp
+  | .some .bv16, q`Core.bvnot    => return Core.bv16NotOp
+  | .some .bv16, q`Core.bvand    => return Core.bv16AndOp
+  | .some .bv16, q`Core.bvor     => return Core.bv16OrOp
+  | .some .bv16, q`Core.bvxor    => return Core.bv16XorOp
+  | .some .bv16, q`Core.bvshl    => return Core.bv16ShlOp
+  | .some .bv16, q`Core.bvushr   => return Core.bv16UShrOp
+  | .some .bv16, q`Core.bvsshr   => return Core.bv16SShrOp
 
-  | .some .bv32, q`Core.le       => return bv32ULeOp
-  | .some .bv32, q`Core.lt       => return bv32ULtOp
-  | .some .bv32, q`Core.ge       => return bv32UGeOp
-  | .some .bv32, q`Core.gt       => return bv32UGtOp
-  | .some .bv32, q`Core.bvsle    => return bv32SLeOp
-  | .some .bv32, q`Core.bvslt    => return bv32SLtOp
-  | .some .bv32, q`Core.bvsge    => return bv32SGeOp
-  | .some .bv32, q`Core.bvsgt    => return bv32SGtOp
-  | .some .bv32, q`Core.neg_expr => return bv32NegOp
-  | .some .bv32, q`Core.add_expr => return bv32AddOp
-  | .some .bv32, q`Core.sub_expr => return bv32SubOp
-  | .some .bv32, q`Core.mul_expr => return bv32MulOp
-  | .some .bv32, q`Core.div_expr => return bv32UDivOp
-  | .some .bv32, q`Core.mod_expr => return bv32UModOp
-  | .some .bv32, q`Core.bvsdiv   => return bv32SDivOp
-  | .some .bv32, q`Core.bvsmod   => return bv32SModOp
-  | .some .bv32, q`Core.bvnot    => return bv32NotOp
-  | .some .bv32, q`Core.bvand    => return bv32AndOp
-  | .some .bv32, q`Core.bvor     => return bv32OrOp
-  | .some .bv32, q`Core.bvxor    => return bv32XorOp
-  | .some .bv32, q`Core.bvshl    => return bv32ShlOp
-  | .some .bv32, q`Core.bvushr   => return bv32UShrOp
-  | .some .bv32, q`Core.bvsshr   => return bv32SShrOp
+  | .some .bv32, q`Core.le       => return Core.bv32ULeOp
+  | .some .bv32, q`Core.lt       => return Core.bv32ULtOp
+  | .some .bv32, q`Core.ge       => return Core.bv32UGeOp
+  | .some .bv32, q`Core.gt       => return Core.bv32UGtOp
+  | .some .bv32, q`Core.bvsle    => return Core.bv32SLeOp
+  | .some .bv32, q`Core.bvslt    => return Core.bv32SLtOp
+  | .some .bv32, q`Core.bvsge    => return Core.bv32SGeOp
+  | .some .bv32, q`Core.bvsgt    => return Core.bv32SGtOp
+  | .some .bv32, q`Core.neg_expr => return Core.bv32NegOp
+  | .some .bv32, q`Core.add_expr => return Core.bv32AddOp
+  | .some .bv32, q`Core.sub_expr => return Core.bv32SubOp
+  | .some .bv32, q`Core.mul_expr => return Core.bv32MulOp
+  | .some .bv32, q`Core.div_expr => return Core.bv32UDivOp
+  | .some .bv32, q`Core.mod_expr => return Core.bv32UModOp
+  | .some .bv32, q`Core.bvsdiv   => return Core.bv32SDivOp
+  | .some .bv32, q`Core.bvsmod   => return Core.bv32SModOp
+  | .some .bv32, q`Core.bvnot    => return Core.bv32NotOp
+  | .some .bv32, q`Core.bvand    => return Core.bv32AndOp
+  | .some .bv32, q`Core.bvor     => return Core.bv32OrOp
+  | .some .bv32, q`Core.bvxor    => return Core.bv32XorOp
+  | .some .bv32, q`Core.bvshl    => return Core.bv32ShlOp
+  | .some .bv32, q`Core.bvushr   => return Core.bv32UShrOp
+  | .some .bv32, q`Core.bvsshr   => return Core.bv32SShrOp
 
-  | .some .bv64, q`Core.le       => return bv64ULeOp
-  | .some .bv64, q`Core.lt       => return bv64ULtOp
-  | .some .bv64, q`Core.ge       => return bv64UGeOp
-  | .some .bv64, q`Core.gt       => return bv64UGtOp
-  | .some .bv64, q`Core.bvsle    => return bv64SLeOp
-  | .some .bv64, q`Core.bvslt    => return bv64SLtOp
-  | .some .bv64, q`Core.bvsge    => return bv64SGeOp
-  | .some .bv64, q`Core.bvsgt    => return bv64SGtOp
-  | .some .bv64, q`Core.neg_expr => return bv64NegOp
-  | .some .bv64, q`Core.add_expr => return bv64AddOp
-  | .some .bv64, q`Core.sub_expr => return bv64SubOp
-  | .some .bv64, q`Core.mul_expr => return bv64MulOp
-  | .some .bv64, q`Core.div_expr => return bv64UDivOp
-  | .some .bv64, q`Core.mod_expr => return bv64UModOp
-  | .some .bv64, q`Core.bvsdiv   => return bv64SDivOp
-  | .some .bv64, q`Core.bvsmod   => return bv64SModOp
-  | .some .bv64, q`Core.bvnot    => return bv64NotOp
-  | .some .bv64, q`Core.bvand    => return bv64AndOp
-  | .some .bv64, q`Core.bvor     => return bv64OrOp
-  | .some .bv64, q`Core.bvxor    => return bv64XorOp
-  | .some .bv64, q`Core.bvshl    => return bv64ShlOp
-  | .some .bv64, q`Core.bvushr   => return bv64UShrOp
-  | .some .bv64, q`Core.bvsshr   => return bv64SShrOp
+  | .some .bv64, q`Core.le       => return Core.bv64ULeOp
+  | .some .bv64, q`Core.lt       => return Core.bv64ULtOp
+  | .some .bv64, q`Core.ge       => return Core.bv64UGeOp
+  | .some .bv64, q`Core.gt       => return Core.bv64UGtOp
+  | .some .bv64, q`Core.bvsle    => return Core.bv64SLeOp
+  | .some .bv64, q`Core.bvslt    => return Core.bv64SLtOp
+  | .some .bv64, q`Core.bvsge    => return Core.bv64SGeOp
+  | .some .bv64, q`Core.bvsgt    => return Core.bv64SGtOp
+  | .some .bv64, q`Core.neg_expr => return Core.bv64NegOp
+  | .some .bv64, q`Core.add_expr => return Core.bv64AddOp
+  | .some .bv64, q`Core.sub_expr => return Core.bv64SubOp
+  | .some .bv64, q`Core.mul_expr => return Core.bv64MulOp
+  | .some .bv64, q`Core.div_expr => return Core.bv64UDivOp
+  | .some .bv64, q`Core.mod_expr => return Core.bv64UModOp
+  | .some .bv64, q`Core.bvsdiv   => return Core.bv64SDivOp
+  | .some .bv64, q`Core.bvsmod   => return Core.bv64SModOp
+  | .some .bv64, q`Core.bvnot    => return Core.bv64NotOp
+  | .some .bv64, q`Core.bvand    => return Core.bv64AndOp
+  | .some .bv64, q`Core.bvor     => return Core.bv64OrOp
+  | .some .bv64, q`Core.bvxor    => return Core.bv64XorOp
+  | .some .bv64, q`Core.bvshl    => return Core.bv64ShlOp
+  | .some .bv64, q`Core.bvushr   => return Core.bv64UShrOp
+  | .some .bv64, q`Core.bvsshr   => return Core.bv64SShrOp
 
-  | _, q`Core.bvconcat8 => return bv8ConcatOp
-  | _, q`Core.bvconcat16 => return bv16ConcatOp
-  | _, q`Core.bvconcat32 => return bv32ConcatOp
-  | _, q`Core.bvextract_7_7     => return bv8Extract_7_7_Op
-  | _, q`Core.bvextract_15_15   => return bv16Extract_15_15_Op
-  | _, q`Core.bvextract_31_31   => return bv32Extract_31_31_Op
-  | _, q`Core.bvextract_7_0_16  => return bv16Extract_7_0_Op
-  | _, q`Core.bvextract_7_0_32  => return bv32Extract_7_0_Op
-  | _, q`Core.bvextract_15_0_32 => return bv32Extract_15_0_Op
-  | _, q`Core.bvextract_7_0_64  => return bv64Extract_7_0_Op
-  | _, q`Core.bvextract_15_0_64 => return bv64Extract_15_0_Op
-  | _, q`Core.bvextract_31_0_64 => return bv64Extract_31_0_Op
+  | _, q`Core.bvconcat8 => return Core.bv8ConcatOp
+  | _, q`Core.bvconcat16 => return Core.bv16ConcatOp
+  | _, q`Core.bvconcat32 => return Core.bv32ConcatOp
+  | _, q`Core.bvextract_7_7     => return Core.bv8Extract_7_7_Op
+  | _, q`Core.bvextract_15_15   => return Core.bv16Extract_15_15_Op
+  | _, q`Core.bvextract_31_31   => return Core.bv32Extract_31_31_Op
+  | _, q`Core.bvextract_7_0_16  => return Core.bv16Extract_7_0_Op
+  | _, q`Core.bvextract_7_0_32  => return Core.bv32Extract_7_0_Op
+  | _, q`Core.bvextract_15_0_32 => return Core.bv32Extract_15_0_Op
+  | _, q`Core.bvextract_7_0_64  => return Core.bv64Extract_7_0_Op
+  | _, q`Core.bvextract_15_0_64 => return Core.bv64Extract_15_0_Op
+  | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
 
-  | _, q`Core.old          => return polyOldOp
-  | _, q`Core.str_len      => return strLengthOp
-  | _, q`Core.str_concat   => return strConcatOp
-  | _, q`Core.str_substr   => return strSubstrOp
-  | _, q`Core.str_toregex  => return strToRegexOp
-  | _, q`Core.str_inregex  => return strInRegexOp
-  | _, q`Core.re_all       => return reAllOp
-  | _, q`Core.re_allchar   => return reAllCharOp
-  | _, q`Core.re_range     => return reRangeOp
-  | _, q`Core.re_concat    => return reConcatOp
-  | _, q`Core.re_star      => return reStarOp
-  | _, q`Core.re_plus      => return rePlusOp
-  | _, q`Core.re_loop      => return reLoopOp
-  | _, q`Core.re_union     => return reUnionOp
-  | _, q`Core.re_inter     => return reInterOp
-  | _, q`Core.re_comp      => return reCompOp
-  | _, q`Core.re_none      => return reNoneOp
+  | _, q`Core.old          => return Core.polyOldOp
+  | _, q`Core.str_len      => return Core.strLengthOp
+  | _, q`Core.str_concat   => return Core.strConcatOp
+  | _, q`Core.str_substr   => return Core.strSubstrOp
+  | _, q`Core.str_toregex  => return Core.strToRegexOp
+  | _, q`Core.str_inregex  => return Core.strInRegexOp
+  | _, q`Core.re_all       => return Core.reAllOp
+  | _, q`Core.re_allchar   => return Core.reAllCharOp
+  | _, q`Core.re_range     => return Core.reRangeOp
+  | _, q`Core.re_concat    => return Core.reConcatOp
+  | _, q`Core.re_star      => return Core.reStarOp
+  | _, q`Core.re_plus      => return Core.rePlusOp
+  | _, q`Core.re_loop      => return Core.reLoopOp
+  | _, q`Core.re_union     => return Core.reUnionOp
+  | _, q`Core.re_inter     => return Core.reInterOp
+  | _, q`Core.re_comp      => return Core.reCompOp
+  | _, q`Core.re_none      => return Core.reNoneOp
   | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
 mutual
@@ -714,7 +711,7 @@ def translateTriggerGroup (p: Program) (bindings : TransBindings) (arg : Arg) :
   match op.name, op.args with
   | q`Core.trigger, #[tsa] => do
    let ts  ← translateCommaSep (fun t => translateExpr p bindings t) tsa
-   return ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
+   return ts.foldl (fun g t => .app () (.app () Core.addTriggerOp t) g) Core.emptyTriggerGroupOp
   | _, _ => panic! s!"Unexpected operator in trigger group"
 
 partial
@@ -725,11 +722,11 @@ def translateTriggers (p: Program) (bindings : TransBindings) (arg : Arg) :
   match op.name, op.args with
   | q`Core.triggersAtom, #[group] =>
     let g ← translateTriggerGroup p bindings group
-    return .app () (.app () addTriggerGroupOp g) emptyTriggersOp
+    return .app () (.app () Core.addTriggerGroupOp g) Core.emptyTriggersOp
   | q`Core.triggersPush, #[triggers, group] => do
     let ts ← translateTriggers p bindings triggers
     let g ← translateTriggerGroup p bindings group
-    return .app () (.app () addTriggerGroupOp g) ts
+    return .app () (.app () Core.addTriggerGroupOp g) ts
   | _, _ => panic! s!"Unexpected operator in trigger"
 
 partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -779,7 +776,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.bvnot, [tpa, xa] =>
     let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let x ← translateExpr p bindings xa
-    let fn : LExpr CoreLParams.mono ←
+    let fn : LExpr Core.CoreLParams.mono ←
       translateFn (.some tp) q`Core.bvnot
     return (.app () fn x)
   -- If-then-else expression
@@ -844,7 +841,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapSelectOp, but specialized
-     let fn : LExpr CoreLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp () fn [m, i]
@@ -852,7 +849,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapUpdateOp, but specialized
-     let fn : LExpr CoreLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
@@ -978,7 +975,7 @@ end
 
 ---------------------------------------------------------------------
 
-def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (Option Expression.Expr) := do
+def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (Option Core.Expression.Expr) := do
   match arg with
   | .option _ (.some m) => do
     let args ← checkOpArg m q`Core.invariant 1
@@ -986,7 +983,7 @@ def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : Tr
   | _ => pure none
 
 partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
-  TransM (List Expression.Expr) := do
+  TransM (List Core.Expression.Expr) := do
   let .op op := arg
     | TransM.error s!"translateInvariants expects an op {repr arg}"
   match op.name with
@@ -1008,7 +1005,7 @@ private def invariantsToOption (invs : List Core.Expression.Expr) : Option Core.
       (fun acc j => .app () (.app () Core.boolAndOp acc) j)
       i
 
-def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBindings) :
+def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings) :
   TransM ((List Core.Statement) × TransBindings) := do
   match tpids with
   | [] => return ([], bindings)
@@ -1027,7 +1024,7 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let (stmts, bindings) ← initVarStmts tpids bindings
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
-                      return ((LExpr.fvar () id (ty.toMonoType h)): LExpr CoreLParams.mono)
+                      return ((LExpr.fvar () id (ty.toMonoType h)): LExpr Core.CoreLParams.mono)
                     else
                       TransM.error s!"translateVarStatement requires {id} to have a monomorphic type, but it has type {ty}")
     let bbindings := bindings.boundVars ++ newVars
@@ -1039,10 +1036,10 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
   else
     let mty ← translateLMonoTy bindings args[0]!
-    let lhs ← translateIdent CoreIdent args[1]!
+    let lhs ← translateIdent Core.CoreIdent args[1]!
     let val ← translateExpr p bindings args[2]!
     let ty := (.forAll [] mty)
-    let newBinding: LExpr CoreLParams.mono := LExpr.fvar () lhs mty
+    let newBinding: LExpr Core.CoreLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty val], { bindings with boundVars := bbindings })
 
@@ -1063,7 +1060,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.set lhs val md], bindings)
   | q`Core.havoc_statement, #[ida] =>
-    let id ← translateIdent CoreIdent ida
+    let id ← translateIdent Core.CoreIdent ida
     let md ← getOpMetaData op
     return ([.havoc id md], bindings)
   | q`Core.assert, #[la, ca] =>
@@ -1101,7 +1098,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.loop c .none inv? bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
-    let ls  ← translateCommaSep (translateIdent CoreIdent) lsa
+    let ls  ← translateCommaSep (translateIdent Core.CoreIdent) lsa
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
@@ -1121,11 +1118,11 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.goto l md], bindings)
   | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, _axiomsa, bodya] =>
-    let name ← translateIdent CoreIdent namea
+    let name ← translateIdent Core.CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa
     let outputMono ← translateLMonoTy bindings returna
-    let output : Expression.Ty := .forAll [] outputMono
-    let inputsConverted : ListMap Expression.Ident Expression.Ty :=
+    let output : Core.Expression.Ty := .forAll [] outputMono
+    let inputsConverted : ListMap Core.Expression.Ident Core.Expression.Ty :=
       inputs.map (fun (id, mty) => (id, .forAll [] mty))
 
     -- The DDM parser's declareFn annotation adds the function name to scope,
@@ -1137,7 +1134,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- We need to include both the function and parameters in boundVars.
     -- The function is represented as an op expression that can be called.
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
-    let funcBinding : LExpr CoreLParams.mono := .op () name (some funcType)
+    let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
     -- Order: existing boundVars, then function, then parameters
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
@@ -1152,7 +1149,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
         let expr ← translateExpr p bodyBindings bodya
         pure (some expr)
 
-    let decl : PureFunc Expression := {
+    let decl : PureFunc Core.Expression := {
       name := name,
       inputs := inputsConverted,
       output := output,
@@ -1194,19 +1191,19 @@ end
 ---------------------------------------------------------------------
 
 def translateInitMkBinding (bindings : TransBindings) (op : Arg) :
-  TransM (CoreIdent × LMonoTy) := do
+  TransM (Core.CoreIdent × LMonoTy) := do
   -- (FIXME) Account for metadata.
   let bargs ← checkOpArg op q`Core.mkBinding 2
-  let id ← translateIdent CoreIdent bargs[0]!
+  let id ← translateIdent Core.CoreIdent bargs[0]!
   let tp ← translateLMonoTy bindings bargs[1]!
   return (id, tp)
 
 def translateInitMkBindings (bindings : TransBindings) (ops : Array Arg) :
-  TransM (Array (CoreIdent × LMonoTy)) := do
+  TransM (Array (Core.CoreIdent × LMonoTy)) := do
   ops.mapM (fun op => translateInitMkBinding bindings op)
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
-  TransM (ListMap CoreIdent LMonoTy) := do
+  TransM (ListMap Core.CoreIdent LMonoTy) := do
   let bargs ← checkOpArg op q`Core.mkBindings 1
   match bargs[0]! with
   | .seq _ .comma args =>
@@ -1215,11 +1212,11 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
 
-def translateModifies (arg : Arg) : TransM CoreIdent := do
+def translateModifies (arg : Arg) : TransM Core.CoreIdent := do
   let args ← checkOpArg arg q`Core.modifies_spec 1
-  translateIdent CoreIdent args[0]!
+  translateIdent Core.CoreIdent args[0]!
 
-def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
+def translateOptionFree (arg : Arg) : TransM Core.Procedure.CheckAttr := do
   let .option _ free := arg
     | TransM.error s!"translateOptionFree unexpected {repr arg}"
   match free with
@@ -1228,8 +1225,8 @@ def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
     return .Free
   | none => return .Default
 
-def translateRequires (p : Program) (name : CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (ListMap CoreLabel Procedure.Check) := do
+def translateRequires (p : Program) (name : Core.CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
+  TransM (ListMap Core.CoreLabel Core.Procedure.Check) := do
   let args ← checkOpArg arg q`Core.requires_spec 3
   let l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
@@ -1237,8 +1234,8 @@ def translateRequires (p : Program) (name : CoreIdent) (count : Nat) (bindings :
   let md ← getArgMetaData arg
   return [(l, { expr := e, attr := free?, md := md })]
 
-def translateEnsures (p : Program) (name : CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (ListMap CoreLabel Procedure.Check) := do
+def translateEnsures (p : Program) (name : Core.CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
+  TransM (ListMap Core.CoreLabel Core.Procedure.Check) := do
   let args ← checkOpArg arg q`Core.ensures_spec 3
   let l ← translateOptionLabel s!"{name.name}_ensures_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
@@ -1246,8 +1243,8 @@ def translateEnsures (p : Program) (name : CoreIdent) (count : Nat) (bindings : 
   let md ← getArgMetaData arg
   return [(l, { expr := e, attr := free?, md := md })]
 
-def translateSpecElem (p : Program) (name : CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (List CoreIdent × ListMap CoreLabel Procedure.Check × ListMap CoreLabel Procedure.Check) := do
+def translateSpecElem (p : Program) (name : Core.CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
+  TransM (List Core.CoreIdent × ListMap Core.CoreLabel Core.Procedure.Check × ListMap Core.CoreLabel Core.Procedure.Check) := do
   let .op op := arg
     | TransM.error s!"translateSpecElem expects an op {repr arg}"
   match op.name with
@@ -1263,8 +1260,8 @@ def translateSpecElem (p : Program) (name : CoreIdent) (count : Nat) (bindings :
   | _ =>
     TransM.error s!"translateSpecElem unimplemented for {repr arg}"
 
-partial def translateSpec (p : Program) (name : CoreIdent) (bindings : TransBindings) (arg : Arg) :
-  TransM (List CoreIdent × ListMap CoreLabel Procedure.Check × ListMap CoreLabel Procedure.Check) := do
+partial def translateSpec (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
+  TransM (List Core.CoreIdent × ListMap Core.CoreLabel Core.Procedure.Check × ListMap Core.CoreLabel Core.Procedure.Check) := do
   let sargs ← checkOpArg arg q`Core.spec_mk 1
   let .seq _ .none args := sargs[0]!
     | TransM.error s!"Invalid specs {repr sargs[0]!}"
@@ -1281,7 +1278,7 @@ partial def translateSpec (p : Program) (name : CoreIdent) (bindings : TransBind
 def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 6
-  let pname ← translateIdent CoreIdent op.args[0]!
+  let pname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateOptionMonoDeclList bindings op.args[3]!
@@ -1338,7 +1335,7 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
 def translateConstant (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 3
-  let cname ← translateIdent CoreIdent op.args[0]!
+  let cname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let ret ← translateLMonoTy bindings op.args[2]!
   let md ← getOpMetaData op
@@ -1360,7 +1357,7 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   let l ← translateOptionLabel default_name op.args[0]!
   let e ← translateExpr p bindings op.args[1]!
   let md ← getOpMetaData op
-  return (.ax (Axiom.mk l e) md, bindings)
+  return (.ax (Core.Axiom.mk l e) md, bindings)
 
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
@@ -1399,7 +1396,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
     match status with
     | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  6
     | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
-  let fname ← translateIdent CoreIdent op.args[0]!
+  let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
@@ -1438,9 +1435,9 @@ with types translated from `TypeExpr` to `LMonoTy`.
 -/
 structure TransConstructorInfo where
   /-- Constructor name -/
-  name : CoreIdent
+  name : Core.CoreIdent
   /-- Fields as (fieldName, fieldType) pairs with translated types -/
-  fields : Array (CoreIdent × LMonoTy)
+  fields : Array (Core.CoreIdent × LMonoTy)
   deriving Repr
 
 /--
@@ -1490,7 +1487,7 @@ def translateDatatypeTypeArgs (bindings : TransBindings) (arg : Arg) (errorConte
 /--
 Create a placeholder LDatatype for recursive type references.
 -/
-def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDatatype Visibility :=
+def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDatatype Core.Visibility :=
   { name := name
     typeArgs := typeArgs
     constrs := [{ name := name, args := [], testerName := "" }]
@@ -1500,7 +1497,7 @@ def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDat
 Filter factory function declarations to extract constructor, tester, and field accessor decls
 for a single datatype.
 -/
-def filterDatatypeDecls (ldatatype : LDatatype Visibility) (funcDecls : List Core.Decl) :
+def filterDatatypeDecls (ldatatype : LDatatype Core.Visibility) (funcDecls : List Core.Decl) :
     List Core.Decl × List Core.Decl × List Core.Decl :=
   let constructorNames := ldatatype.constrs.map fun c => c.name.name
   let testerNames := ldatatype.constrs.map fun c => c.testerName
@@ -1528,7 +1525,7 @@ def filterDatatypeDecls (ldatatype : LDatatype Visibility) (funcDecls : List Cor
 Build LConstr list from TransConstructorInfo array.
 -/
 def buildLConstrs (datatypeName : String) (constructors : Array TransConstructorInfo) :
-    List (LConstr Visibility) :=
+    List (LConstr Core.Visibility) :=
   let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
   constructors.toList.map fun constr =>
     let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
@@ -1539,9 +1536,9 @@ def buildLConstrs (datatypeName : String) (constructors : Array TransConstructor
 /--
 Generate factory function declarations from a list of LDatatypes.
 -/
-def genDatatypeFactory (ldatatypes : List (LDatatype Visibility)) :
+def genDatatypeFactory (ldatatypes : List (LDatatype Core.Visibility)) :
     TransM (List Core.Decl) := do
-  let factory ← match genBlockFactory ldatatypes (T := CoreLParams) with
+  let factory ← match genBlockFactory ldatatypes (T := Core.CoreLParams) with
     | .ok f => pure f
     | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
   return factory.toList.map fun func => Core.Decl.func func
@@ -1591,7 +1588,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
       simp [lConstrs, buildLConstrs]
       intro heq; subst_vars; apply h; rfl
 
-    let ldatatype : LDatatype Visibility :=
+    let ldatatype : LDatatype Core.Visibility :=
       { name := datatypeName
         typeArgs := typeArgs
         constrs := lConstrs
