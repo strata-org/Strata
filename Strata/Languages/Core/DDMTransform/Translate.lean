@@ -1115,7 +1115,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateIdent String la
     let md ← getOpMetaData op
     return ([.goto l md], bindings)
-  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, _axiomsa, bodya] =>
+  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, bodya, _inlinea] =>
     let name ← translateIdent CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa
     let outputMono ← translateLMonoTy bindings returna
@@ -1138,20 +1138,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
 
     -- Translate body with function parameters in scope
-    let body ← match bodya with
-      | .option _ (.some bodyExpr) => do
-        let expr ← translateExpr p bodyBindings bodyExpr
-        pure (some expr)
-      | .option _ .none => pure none
-      | _ => do
-        let expr ← translateExpr p bodyBindings bodya
-        pure (some expr)
+    let body ← translateExpr p bodyBindings bodya
 
     let decl : PureFunc Expression := {
       name := name,
       inputs := inputsConverted,
       output := output,
-      body := body,
+      body := some body,
       axioms := []
     }
     let md ← getOpMetaData op
