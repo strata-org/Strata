@@ -7,6 +7,7 @@
 import Strata.DDM.Elab
 import Strata.DDM.AST
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.LaurelCheck
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PythonDialect
@@ -209,7 +210,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let rightExpr ← translateExpr ctx right
     let laurelOp ← match op with
       -- Arithmetic
-      | .Add _ => .ok Operation.Add
+      | .Add _ =>
+        let typeEnv : Laurel.TypeEnv := ctx.variableTypes
+        let tString : Laurel.HighTypeMd := { val := .TString, md := default }
+        if Laurel.check typeEnv leftExpr tString && Laurel.check typeEnv rightExpr tString then .ok Operation.StrConcat else .ok Operation.Add
       | .Sub _ => .ok Operation.Sub
       | .Mult _ => .ok Operation.Mul
       | .FloorDiv _ => .ok Operation.Div  -- Python // maps to Laurel Div
