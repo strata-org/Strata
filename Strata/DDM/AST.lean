@@ -620,6 +620,23 @@ def resultLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :
     else
       panic! s!"Scope index {idx} out of bounds (varCount = {varCount})"
 
+/-- Returns the argument index from @[preRegisterTypes] metadata, if present. -/
+def preRegisterTypesIndex (metadata : Metadata) : Option Nat :=
+  match metadata[q`StrataDDL.preRegisterTypes]? with
+  | none => none
+  | some #[.catbvar idx] => some idx
+  | some _ => panic! s!"Unexpected argument count to preRegisterTypes"
+
+/-- Returns the level for @[preRegisterTypes] metadata, if present. -/
+def preRegisterTypesLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :=
+  match metadata.preRegisterTypesIndex with
+  | none => none
+  | some idx =>
+    if _ : idx < varCount then
+      some ⟨varCount - (idx + 1), by omega⟩
+    else
+      panic! s!"preRegisterTypes index {idx} out of bounds (varCount = {varCount})"
+
 end Metadata
 
 abbrev Var := String
@@ -1070,7 +1087,6 @@ A spec for introducing a new binding into a type context.
 inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
-| typeForward (_ : TypeBindingSpec argDecls)  -- Forward declaration (no AST node)
 | datatype (_ : DatatypeBindingSpec argDecls)
 | tvar (_ : TvarBindingSpec argDecls)
 deriving Repr
@@ -1080,7 +1096,6 @@ namespace BindingSpec
 def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
-| .typeForward v => v.nameIndex
 | .datatype v => v.nameIndex
 | .tvar v => v.nameIndex
 
@@ -1165,22 +1180,6 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := none }
-        | q`StrataDDL.declareTypeForward => do
-          let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
-            | newBindingErr s!"declareTypeForward has bad arguments {repr attr.args}."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
-            | return panic! "Invalid name index"
-          let nameIndex := ⟨nameIndex, nameP⟩
-          checkNameIndexIsIdent argDecls nameIndex
-          let argsIndex ←
-                match mArgsArg with
-                | none => pure none
-                | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
-                    | return panic! "Invalid arg index"
-                  pure <| some ⟨idx, argsP⟩
-                | _ => newBindingErr "declareTypeForward args invalid."; return none
-          some <$> .typeForward <$> pure { nameIndex, argsIndex, defIndex := none }
         | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
@@ -1743,6 +1742,15 @@ This includes transitive imports.
 partial def importedDialects (dm : DialectMap) (dialect : DialectName) (p : dialect ∈ dm) : DialectMap :=
   importedDialectsAux dm.map dm.closed dialect p
 
+/--
+Look up an operation's metadata in the dialect.
+Returns the OpDecl if found, or none if the operation is not in the dialect.
+-/
+def lookupOpDecl (dialects : DialectMap) (opName : QualifiedIdent) : Option OpDecl :=
+  match dialects[opName.dialect]? with
+  | none => none
+  | some dialect => dialect.ops[opName.name]?
+
 end DialectMap
 
 mutual
@@ -1815,12 +1823,6 @@ inductive GlobalKind where
 | type (params : List String) (definition : Option TypeExpr)
 deriving BEq, Inhabited, Repr
 
-/-- State of a symbol in the GlobalContext -/
-inductive DeclState where
-  | forward   -- Symbol is forward-declared (no AST node will be generated)
-  | defined   -- Symbol has a complete definition
-deriving BEq, DecidableEq, Repr, Inhabited
-
 /-- Resolves a binding spec into a global kind. -/
 partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Option GlobalKind :=
   match b with
@@ -1846,7 +1848,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
         panic! s!"Expected new binding to be Type instead of {repr c}."
     | a =>
       panic! s!"Expected new binding to be bound to type instead of {repr a}."
-  | .type b | .typeForward b =>
+  | .type b =>
     let params : Array String :=
         match b.argsIndex with
         | none => #[]
@@ -1885,7 +1887,7 @@ Typing environment created from declarations in an environment.
 -/
 structure GlobalContext where
   nameMap : Std.HashMap Var FreeVarIndex
-  vars : Array (Var × GlobalKind × DeclState)
+  vars : Array (Var × GlobalKind)
 deriving Repr
 
 namespace GlobalContext
@@ -1905,41 +1907,26 @@ instance : Membership Var GlobalContext where
 def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
   inferInstanceAs (Decidable (v ∈ ctx.nameMap))
 
-/-- Add a forward declaration (must not exist). Used by @[declareTypeForward].
+/-- Pre-register a symbol (must not exist). Used by @[preRegisterTypes].
     This adds to GlobalContext for name resolution but will NOT generate an AST node. -/
-def declareForward (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
+def preRegister (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
   if v ∈ ctx then
     .error s!"Symbol '{v}' is already in scope"
   else
     let idx := ctx.vars.size
     .ok { nameMap := ctx.nameMap.insert v idx,
-          vars := ctx.vars.push (v, k, .forward) }
+          vars := ctx.vars.push (v, k) }
 
-/-- Define a symbol. Used by @[declareDatatype], @[declareFn] with body, etc.
-    Replaces forward declaration, or adds new as defined. -/
+/-- Define a symbol. Rejects if the name is already present. -/
 def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
-  match ctx.nameMap.get? v with
-  | none =>
-    -- Not declared, add as defined directly
+  if v ∈ ctx then
+    .error s!"Symbol '{v}' is already defined"
+  else
     let idx := ctx.vars.size
     .ok { nameMap := ctx.nameMap.insert v idx,
-          vars := ctx.vars.push (v, k, .defined) }
-  | some idx =>
-    let (name, _, state) := ctx.vars[idx]!
-    match state with
-    | .forward =>
-      -- Replace forward declaration with definition (update in place)
-      .ok { ctx with vars := ctx.vars.set! idx (name, k, .defined) }
-    | .defined =>
-      .error s!"Symbol '{v}' is already defined"
+          vars := ctx.vars.push (v, k) }
 
-/-- Check if a symbol is forward-declared (not yet defined). -/
-def isForward (ctx : GlobalContext) (idx : FreeVarIndex) : Bool :=
-  match ctx.vars[idx]? with
-  | some (_, _, .forward) => true
-  | _ => false
-
-/-- Add a symbol as defined. -/
+/-- Add a symbol. Panics if the name already exists. -/
 def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
   match ctx.define v k with
   | .ok ctx' => ctx'
@@ -1952,7 +1939,7 @@ def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.va
 
 def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   assert! idx < ctx.vars.size
-  ctx.vars[idx]!.2.1
+  ctx.vars[idx]!.2
 
 /-!
 ## Annotation-based Constructor Info Extraction
@@ -1965,15 +1952,6 @@ The annotation-based approach:
 2. Checks if the operation has the appropriate metadata annotation
 3. Uses the indices from the annotation to extract the relevant arguments
 -/
-
-/--
-Look up an operation's metadata in the dialect.
-Returns the OpDecl if found, or none if the operation is not in the dialect.
--/
-private def lookupOpDecl (dialects : DialectMap) (opName : QualifiedIdent) : Option OpDecl :=
-  match dialects[opName.dialect]? with
-  | none => none
-  | some dialect => dialect.ops[opName.name]?
 
 /--
 Check if an operation has the @[constructor(name, fields)] annotation.
@@ -2022,7 +2000,7 @@ Extract constructor information using the @[constructor] annotation.
 private def extractSingleConstructor (dialects : DialectMap) (arg : Arg) : Option ConstructorInfo :=
   match arg with
   | .op op =>
-    match lookupOpDecl dialects op.name with
+    match dialects.lookupOpDecl op.name with
     | none => none
     | some opDecl =>
       match getConstructorAnnotation opDecl with
@@ -2066,7 +2044,7 @@ dialect annotations `@[constructor]`, `@[constructorListAtom]`,
 def extractConstructorInfo (dialects : DialectMap) (arg : Arg) : Array ConstructorInfo :=
   match arg with
   | .op op =>
-    match lookupOpDecl dialects op.name with
+    match dialects.lookupOpDecl op.name with
     | none => #[]
     | some opDecl =>
       match getConstructorListAtomAnnotation opDecl with
@@ -2153,10 +2131,10 @@ private def addDatatypeBindings
 
   let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
 
-  -- Step 1: Add datatype type (or update forward declaration)
-  let gctx := match gctx.define datatypeName (GlobalKind.type typeParams.toList none) with
-    | .ok gctx' => gctx'
-    | .error msg => panic! s!"addDatatypeBindings: {msg}"
+  -- Step 1: Add datatype type (skip if already pre-registered)
+  let gctx :=
+    if datatypeName ∈ gctx then gctx
+    else gctx.push datatypeName (GlobalKind.type typeParams.toList none)
   let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
@@ -2175,31 +2153,50 @@ private def addDatatypeBindings
     result.functions.foldl (init := gctx) fun gctx (funcName, funcType) =>
       gctx.push funcName (.expr funcType)
 
+private def preRegisterTypeName (dialects : DialectMap) (gctx : GlobalContext) (l : SourceRange)
+    {argDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
+  match b with
+  | .datatype _ | .type _ =>
+    let name :=
+          match args[b.nameIndex.toLevel] with
+          | .ident _ e => e
+          | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+    match resolveBindingIndices dialects l b args with
+    | some kind =>
+      match gctx.preRegister name kind with
+      | .ok gctx' => gctx'
+      | .error _ => gctx  -- silently skip if already declared
+    | none => gctx
+  | _ => gctx
+
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
     let dialectName := op.name.dialect
+    -- Pre-register types if op has @[preRegisterTypes] metadata
+    let init :=
+      match dialects.decl! op.name with
+      | .op decl =>
+        if h : op.args.size = decl.argDecls.size then
+          match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
+          | some lvl =>
+            foldOverArgAtLevel dialects (preRegisterTypeName dialects) init decl.argDecls ⟨op.args, h⟩ lvl
+          | none => init
+        else init
+      | _ => init
+    -- Normal fold
     op.foldBindingSpecs dialects (addBinding dialectName) init
   where addBinding (dialectName : DialectName) (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
           match b with
           | .datatype datatypeSpec =>
             addDatatypeBindings dialects gctx l dialectName datatypeSpec args
-          | .typeForward typeSpec =>
-            let name :=
-                  match args[typeSpec.nameIndex.toLevel] with
-                  | .ident _ e => e
-                  | a => panic! s!"Expected ident at {typeSpec.nameIndex.toLevel} {repr a}"
-            match resolveBindingIndices dialects l b args with
-            | some kind =>
-              match gctx.declareForward name kind with
-              | .ok gctx' => gctx'
-              | .error msg => panic! msg
-            | none => gctx
           | _ =>
             let name :=
                   match args[b.nameIndex.toLevel] with
                   | .ident _ e => e
                   | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
             match resolveBindingIndices dialects l b args with
-            | some kind => gctx.push name kind
+            | some kind =>
+              if gctx.nameMap.contains name then gctx
+              else gctx.push name kind
             | none => gctx
 
 end GlobalContext

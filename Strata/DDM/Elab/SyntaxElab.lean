@@ -91,6 +91,8 @@ structure SyntaxElaborator where
   syntaxCount : Nat
   argElaborators : ArgElaboratorArray syntaxCount
   resultScope : Option Nat
+  /-- If set, pre-register type names from children at this arg level before elaboration. -/
+  preRegisterTypesScope : Option Nat := none
 deriving Inhabited, Repr
 
 /-- Build the syntax elaborator that maps parsed syntax positions to
@@ -114,6 +116,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       syntaxCount := 1
       argElaborators := #[⟨ae, Nat.zero_lt_one⟩]
       resultScope := opMd.resultLevel argDecls.size
+      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
     }
   | .std atoms _ =>
     let init : ArgElaborators := {
@@ -131,6 +134,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       syntaxCount := as.syntaxCount
       argElaborators := elabs
       resultScope := opMd.resultLevel argDecls.size
+      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
     }
 
 private def opDeclElaborator! (decl : OpDecl) : SyntaxElaborator :=
