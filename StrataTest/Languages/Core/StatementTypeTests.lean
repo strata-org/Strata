@@ -27,7 +27,7 @@ info: ok: {
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
                    Program.init
                    none
-                   [.init "x" t[int] (some eb[xinit],
+                   [.init "x" t[int] (some eb[xinit]),
                     .set "x" eb[xinit],
                     .init "y" t[∀α. %α] (some eb[xinit])]
          return format ans.fst
@@ -39,7 +39,7 @@ info: ok: {
                    Program.init
                    none
                    [
-                    .init "x" t[bool] (some eb[#true]
+                    .init "x" t[bool] (some eb[#true])
                    ]
          return format ans
 
@@ -59,7 +59,7 @@ subst:
                     Program.init
                     none
                     [
-                    .init "x" t[int] (some eb[#0],
+                    .init "x" t[int] (some eb[#0]),
                     .init "y" t[int] (some eb[#6]),
                     .block "label_0"
 
@@ -80,9 +80,9 @@ subst:
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
-                    .init "x" t[int] (some eb[#0],
+                    .init "x" t[int] (some eb[#0]),
                     .init "y" t[int] (some eb[#6]),
-                    .init "z" t[bool] (some eb[if (x == y) then #true else #2]
+                    .init "z" t[bool] (some eb[if (x == y) then #true else #2])
                     ]
           return format ans
 
@@ -110,7 +110,7 @@ subst: [($__ty0, int)]
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
-                    .init "x" t[int] (some eb[#0],
+                    .init "x" t[int] (some eb[#0]),
                     .ite eb[x == #3]
                     [
                       Statement.init "y" t[∀α. %α] (some eb[x]),
@@ -149,7 +149,7 @@ subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
                       Program.init none
               [
-              .init "m1" t[∀a. %a → int] (some eb[fn], -- var m : <a>[a]int
+              .init "m1" t[∀a. %a → int] (some eb[fn]), -- var m : <a>[a]int
               .init "m2" t[∀a. %a → int] (some eb[(λ (%0 (fn #true)))]),
               ]
           return (format ans.snd)
