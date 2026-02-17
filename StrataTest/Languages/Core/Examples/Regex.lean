@@ -163,7 +163,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" regexPgm1
+#eval verify regexPgm1
 
 ---------------------------------------------------------------------
 
@@ -276,7 +276,7 @@ Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected 
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 -/
 #guard_msgs in
-#eval verify "cvc5" regexPgm2
+#eval verify regexPgm2
 
 ---------------------------------------------------------------------
 
@@ -312,6 +312,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" regexPgm3
+#eval verify regexPgm3
 
 ---------------------------------------------------------------------
