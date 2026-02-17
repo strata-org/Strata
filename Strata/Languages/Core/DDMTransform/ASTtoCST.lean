@@ -901,15 +901,22 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
     let modSpec := SpecElt.modifies_spec default ⟨default, id.name⟩
     specElts := specElts.push modSpec
   -- Add requires
-  let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
   for (label, check) in proc.spec.preconditions.toList do
-    let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
+    let labelAnn : Ann (Option (Label M)) M :=
+      ⟨default, some (.label default ⟨default, label⟩)⟩
+    let freeAnn : Ann (Option (Free M)) M :=
+      if check.attr == .Free then ⟨default, some (.free default)⟩
+      else ⟨default, none⟩
     let exprCST ← lexprToExpr check.expr 0
     let reqSpec := SpecElt.requires_spec default labelAnn freeAnn exprCST
     specElts := specElts.push reqSpec
   -- Add ensures
   for (label, check) in proc.spec.postconditions.toList do
-    let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, label⟩)⟩
+    let labelAnn : Ann (Option (Label M)) M :=
+      ⟨default, some (.label default ⟨default, label⟩)⟩
+    let freeAnn : Ann (Option (Free M)) M :=
+      if check.attr == .Free then ⟨default, some (.free default)⟩
+      else ⟨default, none⟩
     let exprCST ← lexprToExpr check.expr 0
     let ensSpec := SpecElt.ensures_spec default labelAnn freeAnn exprCST
     specElts := specElts.push ensSpec
