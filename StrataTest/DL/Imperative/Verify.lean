@@ -51,11 +51,11 @@ def verify (cmds : Commands) (verbose : Bool) :
         let ans ←
             IO.toEIO
               (fun e => f!"{e}")
-              (@Imperative.SMT.dischargeObligation Arith.PureExpr _
+              (@Imperative.SMT.dischargeObligation Arith.PureExpr _ _
                (encodeArithToSMTTerms terms) typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
-                "cvc5" filename.toString
+                Imperative.MetaData.empty "cvc5" filename.toString
                 #["--produce-models"] false)
         match ans with
         | .ok (result, estate) =>

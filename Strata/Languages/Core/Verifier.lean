@@ -82,20 +82,6 @@ def getSolverFlags (options : Options) : Array String :=
     | _ => #[]
   produceModels ++ setTimeout
 
-def addLocationInfo
-  (solver : Solver)
-  (md : Imperative.MetaData Expression)
-  : IO Unit := do
-  match Imperative.getFileRange md with
-    | .some fileRange => do
-      solver.setInfo "file" s!"\"{format fileRange.file}\""
-      solver.setInfo "start" s!"{fileRange.range.start}"
-      solver.setInfo "stop" s!"{fileRange.range.stop}"
-      -- TODO: the following should probably be stored in metadata so it
-      -- can be set in an application-specific way.
-      solver.setInfo "unsat-message" s!"\"Assertion cannot be proven\""
-    | .none => pure ()
-
 def dischargeObligation
   (options : Options)
   (vars : List Expression.TypedIdent)
@@ -106,11 +92,13 @@ def dischargeObligation
   : IO (Except Format (SMT.Result × EncoderState)) := do
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
-    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude smtsolver) terms)
+    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver) terms)
     (typedVarToSMTFn ctx)
     vars
+    md
+    options.solver
     filename
-    (getSolverFlags options smtsolver) (options.verbose > .normal)
+    (getSolverFlags options) (options.verbose > .normal)
 
 end Core.SMT
 ---------------------------------------------------------------------
