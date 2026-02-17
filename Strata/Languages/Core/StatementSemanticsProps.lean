@@ -1724,6 +1724,9 @@ theorem EvalCmdTouch
   case eval_init x' δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     apply TouchVars.init_some Hup
     constructor
+  case eval_init_unconstrained x' δ σ x v σ' σ₀ Hup Hwf =>
+    apply TouchVars.init_some Hup
+    constructor
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
   case eval_havoc x v σ' σ₀ e Hsm Hup Hwf =>
