@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import StrataTest.DDM.Elab
 -- This tests that we can import a module and see dialects declared there.
