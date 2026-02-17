@@ -87,13 +87,13 @@ def countArity (ty : TypeExpr) : Nat :=
 structure Scope where
   /-- Track bound variables in this scope -/
   boundVars : Array String := #[]
+  /-- Track free variables in this scope -/
+  freeVars : Array String := #[]
   deriving Inhabited, Repr
 
 structure ToCSTContext (M : Type) where
   /-- Stack of scopes, with global scope at index 0 -/
   scopes : Array Scope := #[{}]
-  /-- Free variables added during conversion -/
-  freeVars : Array String := #[]
   /-- Collected errors during conversion -/
   errors : Array (ASTToCSTError M) := #[]
   deriving Inhabited, Repr
@@ -108,33 +108,46 @@ private def toErrorString {M} (ctx : ToCSTContext M) : String :=
     let header := if i = 0 then "Global scope:" else "Scope " ++ toString i ++ ":"
     let bv := if scope.boundVars.isEmpty then ""
               else "\n  boundVars: " ++ toString scope.boundVars.toList
-    header ++ bv
+    let fv := if scope.freeVars.isEmpty then ""
+              else "\n  freeVars: " ++ toString scope.freeVars.toList
+    header ++ bv ++ fv
   String.intercalate "\n" lines
 
 /-- Log an error without throwing -/
-def logError {M} [Inhabited M] (ctx : ToCSTContext M) (fn : String) (desc : String) (detail : String) : ToCSTContext M :=
+def logError {M} [Inhabited M] (ctx : ToCSTContext M)
+    (fn : String) (desc : String) (detail : String) : ToCSTContext M :=
   let msg := desc ++ ": " ++ detail
-  let err := ASTToCSTError.unsupportedConstruct fn msg ctx.toErrorString default
+  let err := ASTToCSTError.unsupportedConstruct fn msg
+                ctx.toErrorString default
   { ctx with errors := ctx.errors.push err }
 
 /-- Get all bound variables across all scopes -/
-def boundVars {M} (ctx : ToCSTContext M) : Array String :=
+def allBoundVars {M} (ctx : ToCSTContext M) : Array String :=
   ctx.scopes.foldl (fun acc s => acc ++ s.boundVars) #[]
 
 /-- Find index of bound variable in context -/
-def findBoundVarIndex? {M} (ctx : ToCSTContext M) (name : String) : Option Nat :=
-  ctx.boundVars.findIdx? (· == name)
+def findBoundVarIndex? {M} (ctx : ToCSTContext M) (name : String)
+    : Option Nat :=
+  ctx.allBoundVars.findIdx? (· == name)
 
-/-- Find index of free variable in freeVars -/
+/-- Get all free variables across all scopes -/
+def allFreeVars {M} (ctx : ToCSTContext M) : Array String :=
+  ctx.scopes.foldl (fun acc s => acc ++ s.freeVars) #[]
+
+/-- Find index of free variable across all scopes -/
 def freeVarIndex? {M} (ctx : ToCSTContext M) (name : String) : Option Nat :=
-  ctx.freeVars.findIdx? (· == name)
+  ctx.allFreeVars.findIdx? (· == name)
 
-/-- Add free variables to the context -/
-def addFreeVars {M} (ctx : ToCSTContext M) (names : Array String) : ToCSTContext M :=
-  { ctx with freeVars := ctx.freeVars ++ names }
+/-- Add free variables to the current scope -/
+def addScopedFreeVars {M} (ctx : ToCSTContext M) (names : Array String)
+    : ToCSTContext M :=
+  let idx := ctx.scopes.size - 1
+  let scope := ctx.scopes[idx]!
+  let newScope := { scope with freeVars := scope.freeVars ++ names }
+  { ctx with scopes := ctx.scopes.set! idx newScope }
 
 /-- Add bound variables to the current scope -/
-def addBoundVars {M} (ctx : ToCSTContext M) (names : Array String)
+def addScopedBoundVars {M} (ctx : ToCSTContext M) (names : Array String)
     (reverse? : Bool := true) : ToCSTContext M :=
   let idx := ctx.scopes.size - 1
   let scope := ctx.scopes[idx]!
@@ -142,8 +155,17 @@ def addBoundVars {M} (ctx : ToCSTContext M) (names : Array String)
   let newScope := { scope with boundVars := names ++ scope.boundVars }
   { ctx with scopes := ctx.scopes.set! idx newScope }
 
+/-- Add free variables to the global scope (scope 0) -/
+def addGlobalFreeVars {M} (ctx : ToCSTContext M) (names : Array String)
+    : ToCSTContext M :=
+  let globalScope := ctx.scopes[0]!
+  let newGlobalScope := { globalScope with freeVars :=
+                            globalScope.freeVars ++ names }
+  { ctx with scopes := ctx.scopes.set! 0 newGlobalScope }
+
 /-- Push bound variables to the current scope.
-Unlike `addBoundVars`, the variable is added to the end of the bound variables.
+  Unlike `addScopedBoundVars`, the variable is added to the end of the bound
+  variables.
 -/
 def pushBoundVar {M} (ctx : ToCSTContext M) (name : String)
     : ToCSTContext M :=
@@ -219,7 +241,7 @@ def lTyToCoreType {M} [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
 def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, tcons.name⟩
-  modify (·.addFreeVars #[name.val])
+  modify (·.addGlobalFreeVars #[name.val])
   let args : Ann (Option (Bindings M)) M :=
     if tcons.numargs = 0 then
       ⟨default, none⟩
@@ -241,7 +263,7 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
   for dtName in dtNames.reverse do
     let ctx ← get
     if ctx.freeVarIndex? dtName |>.isNone then
-      modify (·.addFreeVars #[dtName])
+      modify (·.addGlobalFreeVars #[dtName])
 
   -- Then register constructor, tester, and destructor names
   -- for each datatype.
@@ -252,7 +274,7 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
         dt.constrs.flatMap (fun c => c.args.map
                               (fun (id, _) =>
                                 Lambda.destructorFuncName dt id))
-    modify (·.addFreeVars (constrNames.toArray ++
+    modify (·.addGlobalFreeVars (constrNames.toArray ++
                            testerNames.toArray ++
                            destructorNames.toArray))
 
@@ -323,7 +345,7 @@ def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, syn.name⟩
-  modify (·.addFreeVars #[name.val])
+  modify (·.addGlobalFreeVars #[name.val])
   let args : Ann (Option (Bindings M)) M :=
     if syn.typeArgs.isEmpty then
       ⟨default, none⟩
@@ -570,7 +592,7 @@ partial def lexprToExpr {M} [Inhabited M]
   match e with
   | .const _ c => lconstToExpr c
   | .bvar _ idx =>
-    if idx < ctx.boundVars.size then
+    if idx < ctx.allBoundVars.size then
       pure (.bvar default idx)
     else
       ToCSTM.logError "lexprToExpr" "bvar index out of bounds" (toString idx)
@@ -582,15 +604,15 @@ partial def lexprToExpr {M} [Inhabited M]
     -- declaration (which are DDM .fvars). Note that Strata Core does not allow
     -- variable shadowing.
     match ctx.findBoundVarIndex? id.name with
-    | some idx => pure (.bvar default (ctx.boundVars.size - (idx + 1)))
+    | some idx => pure (.bvar default (ctx.allBoundVars.size - (idx + 1)))
     | none =>
       match ctx.freeVarIndex? id.name with
       | some idx => pure (.fvar default idx)
       | none => do
         -- Likely this .fvar is generated in an evaluated Core program (i.e.,
         -- after analysis). Add to the context.
-        modify (·.addFreeVars #[id.name])
-        pure (.fvar default (ctx.freeVars.size))
+        modify (·.addGlobalFreeVars #[id.name])
+        pure (.fvar default (ctx.allFreeVars.size))
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
@@ -639,7 +661,7 @@ partial def lquantToExpr {M} [Inhabited M]
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
   let name : Ann String M := ⟨default, mkQuantVarName (qLevel - 1)⟩
-  modify (·.addBoundVars #[name.val])
+  modify (·.addScopedBoundVars #[name.val])
   let tyExpr ← match ty with
     | some t => lmonoTyToCoreType t
     | none => pure (CoreType.tvar default unknownTypeVar)
@@ -699,6 +721,7 @@ end
 /-- Convert a function declaration to a statement -/
 def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression)
     : ToCSTM M (CoreDDM.Statement M) := do
+  modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, decl.name.name⟩
   let typeArgs : Ann (Option (TypeArgs M)) M :=
     if decl.typeArgs.isEmpty then
@@ -719,17 +742,19 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   let b : Bindings M := .mkBindings default ⟨default, bindings⟩
   let r ← lTyToCoreType decl.output
   let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
-  match decl.body with
+  -- Add formals to the context
+  modify (·.addScopedBoundVars (reverse? := false) paramNames)
+  let bodyExpr ← match decl.body with
   | none =>
-    dbg_trace f!"funcDeclToStatement: funcDecl without body not supported in statements"
-    -- Dummy expr for the body
-    let bodyExpr := .fvar default (←get).freeVars.size
-    pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
-  | some body => do
-    -- Add formals to the context
-    modify (·.addBoundVars (reverse? := false) paramNames)
-    let bodyExpr ← lexprToExpr body 0
-    pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
+    -- Dummy expr for the body.
+    let bodyExpr := Expr.fvar default (1 + (←get).allFreeVars.size)
+    ToCSTM.logError "funcDeclToStatement" "funcDecl without body not supported in statements" name.val
+    pure bodyExpr
+  | some body => lexprToExpr body 0
+  modify ToCSTContext.popScope
+  -- Register function name as a scoped free variable in the parent scope.
+  modify (·.addScopedFreeVars #[name.val])
+  pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
 
 mutual
 /-- Convert `Core.Statement` to `CoreDDM.Statement` -/
@@ -860,8 +885,8 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   let outputResults ← proc.header.outputs.toArray.mapM (fun (id, ty) => processOutput id ty)
   let outputBinds := outputResults.map (·.1)
   let outputNames := outputResults.map (·.2)
-  modify (ToCSTContext.addBoundVars (reverse? := false) · outputNames)
-  modify (ToCSTContext.addBoundVars (reverse? := false) · inputNames)
+  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · outputNames)
+  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · inputNames)
   let outputs : Ann (Option (MonoDeclList M)) M :=
     if outputBinds.isEmpty then
       ⟨default, none⟩
@@ -928,13 +953,13 @@ def funcToCST {M} [Inhabited M]
   | none => pure (.command_fndecl default name typeArgs b r)
   | some body => do
     -- Add formals to the context.
-    modify (·.addBoundVars (reverse? := false) paramNames)
+    modify (·.addScopedBoundVars (reverse? := false) paramNames)
     let bodyExpr ← lexprToExpr body 0
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r bodyExpr inline?)
   modify ToCSTContext.popScope
   -- Register function name as free variable.
-  modify (·.addFreeVars #[name.val])
+  modify (·.addGlobalFreeVars #[name.val])
   pure result
 
 /-- Convert an axiom to CST -/
@@ -958,7 +983,7 @@ def varToCST {M} [Inhabited M]
     (name : CoreIdent) (ty : Lambda.LTy) (_e : Lambda.LExpr CoreLParams.mono)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   -- Register name as free variable
-  modify (·.addFreeVars #[name.toPretty])
+  modify (·.addGlobalFreeVars #[name.toPretty])
   let nameAnn : Ann String M := ⟨default, name.toPretty⟩
   let tyCST ← lTyToCoreType ty
   let typeArgs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
@@ -1005,7 +1030,7 @@ def programToCST {M} [Inhabited M] (prog : Core.Program)
 -- `programToCST`, purely for formatting.
 private def recreateGlobalContext (ctx : ToCSTContext M)
     : GlobalContext :=
-  let allFreeVars := ctx.freeVars
+  let allFreeVars := ctx.allFreeVars
   let (nameMap, _) := allFreeVars.foldl
     (init := (Std.HashMap.emptyWithCapacity, 0)) fun (map, i) name =>
     (map.insert name i, i + 1)
@@ -1018,12 +1043,12 @@ private def recreateGlobalContext (ctx : ToCSTContext M)
 
 If the Core program is expected have about some constructs not defined in the
 Grammar (e.g., via a custom Factory), then use `extraFreeVars` to add
-their names to the translation and formatting context.
+their names globally to the translation and formatting context.
 -/
 def Core.formatProgram (ast : Core.Program)
     (extraFreeVars : Array String := #[]) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
-  let initCtx := initCtx.addFreeVars extraFreeVars
+  let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (finalCtx, cmds) := programToCST ast initCtx
   let dialects := CoreDDM.dialectMap
   let ddmCtx := recreateGlobalContext finalCtx

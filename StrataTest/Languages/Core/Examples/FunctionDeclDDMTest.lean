@@ -31,7 +31,8 @@ procedure testFuncDecl(c: int) returns () {
 info: program Core;
 procedure testFuncDecl (c : int) returns ()
 {
-  function double (x : int) : int { x + x + c }var y : int := 5;
+  function double (x : int) : int { x + x + c }
+  var y : int := 5;
   var result : int := double(y);
   assert result == 12;
 };
@@ -65,7 +66,8 @@ program Core;
 info: program Core;
 ({
   var c : int := 2;
-  function double (x : int) : int { x + x + c }var y : int := 5;
+  function double (x : int) : int { x + x + c }
+  var y : int := 5;
   var result : int := double(y);
   assert result == 12;
 });
