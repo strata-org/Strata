@@ -61,8 +61,8 @@ info: function loopSimple {
   post: #true
   body:
 {
-  init (sum : int) := init_sum
-  init (i : int) := init_i
+  init (sum : int) := some init_sum
+  init (i : int) := some init_i
   sum := #0
   i := #0
   while
@@ -88,8 +88,8 @@ info: procedure loopSimple :  ((n : int)) → ((return : int))
   postconditions: (post, #true)
 {
   {
-    init (sum : int) := init_sum
-    init (i : int) := init_i
+    init (sum : int) := some init_sum
+    init (i : int) := some init_i
     sum := #0
     i := #0
     if (~Int.Lt i n) {
@@ -111,7 +111,7 @@ info: procedure loopSimple :  ((n : int)) → ((return : int))
           assume [assume_invariant] (~Bool.And (~Int.Le i n) ((~Int.Div (~Int.Mul i (~Int.Sub i #1)) #2) == sum))
           assume [assume_measure_pos] (~Int.Ge (~Int.Sub n i) #0)
         }
-        init (special-name-for-old-measure-value : int) := (~Int.Sub n i)
+        init (special-name-for-old-measure-value : int) := some (~Int.Sub n i)
         sum := (~Int.Add sum i)
         i := (~Int.Add i #1)
         assert [measure_decreases] (~Int.Lt (~Int.Sub n i) special-name-for-old-measure-value)

@@ -76,7 +76,7 @@ Constructors:
 procedure Extract :  ((xs : (List $__ty0))) → ((h : $__ty5))
   modifies: []
   preconditions: (Extract_requires_0, ((~List..isCons : (arrow (List $__ty0) bool)) (xs : (List $__ty0))))
-  postconditions: ⏎
+  postconditions: 
 {
   {
     assume [Extract_requires_0] (~List..isCons $__xs0)
@@ -84,14 +84,14 @@ procedure Extract :  ((xs : (List $__ty0))) → ((h : $__ty5))
 }
 procedure Test :  () → ()
   modifies: []
-  preconditions: ⏎
+  preconditions: 
   postconditions: (Test_ensures_0, #true)
 {
   {
-    init (xs : (List int)) := init_xs_0
+    init (xs : (List int)) := some init_xs_0
     xs := (~Cons #1 ~Nil)
     havoc xs
-    init (h : int) := init_h_1
+    init (h : int) := some init_h_1
     call [h] := Extract(xs)
     assert [Test_ensures_0] #true
   }

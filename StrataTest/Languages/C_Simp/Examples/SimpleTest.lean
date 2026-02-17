@@ -58,7 +58,7 @@ info: function simpleTest {
   post: #true
   body:
 {
-  init (z : int) := init_z
+  init (z : int) := some init_z
   z := (~Int.Add x y)
   assert [test_assert] (~Int.Gt z x)
   if (~Int.Gt z #10) {

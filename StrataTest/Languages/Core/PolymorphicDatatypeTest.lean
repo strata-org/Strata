@@ -77,9 +77,9 @@ procedure TestOptionInt :  () → ()
   postconditions: (TestOptionInt_ensures_0, #true)
 {
   {
-    init (x : (Option int)) := (init_x_0 : (Option int))
-    init (y : (Option int)) := (init_y_1 : (Option int))
-    init (v : int) := (init_v_2 : int)
+    init (x : (Option int)) := some (init_x_0 : (Option int))
+    init (y : (Option int)) := some (init_y_1 : (Option int))
+    init (v : int) := some (init_v_2 : int)
     x := (~None : (Option int))
     y := ((~Some : (arrow int (Option int))) #42)
     v := ((~Option..value : (arrow (Option int) int)) (y : (Option int)))
@@ -128,8 +128,8 @@ procedure TestListInt :  () → ()
   postconditions: (TestListInt_ensures_0, #true)
 {
   {
-    init (xs : (List int)) := (init_xs_0 : (List int))
-    init (h : int) := (init_h_1 : int)
+    init (xs : (List int)) := some (init_xs_0 : (List int))
+    init (h : int) := some (init_h_1 : int)
     xs := ((~Cons : (arrow int (arrow (List int) (List int))))
      #1
      ((~Cons : (arrow int (arrow (List int) (List int)))) #2 (~Nil : (List int))))
@@ -182,8 +182,8 @@ procedure TestEither :  () → ()
   postconditions: (TestEither_ensures_0, #true)
 {
   {
-    init (x : (Either int bool)) := (init_x_0 : (Either int bool))
-    init (y : (Either int bool)) := (init_y_1 : (Either int bool))
+    init (x : (Either int bool)) := some (init_x_0 : (Either int bool))
+    init (y : (Either int bool)) := some (init_y_1 : (Either int bool))
     x := ((~Left : (arrow int (Either int bool))) #42)
     y := ((~Right : (arrow bool (Either int bool))) #true)
     assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Either int bool)))
@@ -239,7 +239,7 @@ procedure TestNestedPoly :  () → ()
   postconditions: (TestNestedPoly_ensures_0, #true)
 {
   {
-    init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
+    init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))
     x := ((~Some : (arrow (List int) (Option (List int))))
      ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))
     assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))

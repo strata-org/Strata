@@ -231,7 +231,7 @@ procedure main :  ((n : int)) → ()
   postconditions: 
 {
   {
-    init (n1 : int) := init_n1_0
+    init (n1 : int) := some init_n1_0
     n1 := #1
     assert [assert_0] (~Bool.Not (~Str.InRegEx #0123456789a (~bad_re_loop $__n0)))
     assert [assert_1] (~Str.InRegEx #a (~bad_re_loop #1))
@@ -257,7 +257,7 @@ procedure main :  ((n : int)) → ()
   postconditions: 
 {
   {
-    init (n1 : int) := init_n1_0
+    init (n1 : int) := some init_n1_0
     n1 := #1
     assert [assert_0] (~Bool.Not (~Str.InRegEx #0123456789a (~bad_re_loop $__n0)))
     assert [assert_1] (~Str.InRegEx #a (~bad_re_loop #1))
