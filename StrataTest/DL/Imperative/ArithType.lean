@@ -123,9 +123,13 @@ private def testProgram1 : Cmds Arith.PureExpr :=
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: ok: Commands:
+init (x : Num) := some 0
+x := x + 100
+assert [x_value_eq] x = 100
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+TEnv:
+(x, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram1
@@ -160,9 +164,12 @@ private def testProgram4 : Cmds Arith.PureExpr :=
    .set "x" (.Var "x" .none)]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: ok: Commands:
+init (x : Num) := some 5
+x := x
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+TEnv:
+(x, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram4
@@ -198,9 +205,11 @@ private def testProgram7 : Cmds Arith.PureExpr :=
   [.init "x" .Num (some (.Plus (.Var "y" (some .Num)) (.Var "z" (some .Num))))]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: ok: Commands:
+init (x : Num) := some (y : Num) + (z : Num)
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+TEnv:
+(y, Num) (z, Num) (x, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram7
