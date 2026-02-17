@@ -91,7 +91,7 @@ spec {
   ensures [bad]: forall x0 : int :: x0 < r;
   } {
   assert [good_assert]: forall x0 : ($__unknown_type) :: !(x0 == x0 + 1);
-  (r) := $__x0 + 1;
+  r := $__x0 + 1;
   assert [good]: forall x0 : ($__unknown_type) :: exists x1 : ($__unknown_type) :: $__x0 + 1 + (x1 + x0) == x0 + (x1 + ($__x0 + 1));
   assert [bad]: forall x0 : ($__unknown_type) :: x0 < $__x0;
   };

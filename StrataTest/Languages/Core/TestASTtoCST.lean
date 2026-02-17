@@ -174,7 +174,7 @@ info: datatype IntList {(
 };
 procedure Test1 (x : bool) returns (y : bool)
 {
-  (y) := x;
+  y := x;
   };
 function intId (x : int) : int;
 var g : bool;
@@ -187,7 +187,7 @@ spec {
   ensures [List_head_test]: IntList..isNil(Nil);
   } {
   var b0 : bool;
-  (y) := x || x;
+  y := x || x;
   call b0 := Test1(5);
   var b1 : bool;
   call b1 := Test1(6);
@@ -247,7 +247,7 @@ function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestDifferentInstantiations () returns ()
 {
   var m : (Map int bool);
-  (m) := makePair(identity(42), identity(true));
+  m := makePair(identity(42), identity(true));
   };
 -/
 #guard_msgs in

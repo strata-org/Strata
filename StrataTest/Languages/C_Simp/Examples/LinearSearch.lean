@@ -90,7 +90,7 @@ spec {
   ensures [post]: true;
   } {
   var idx : int;
-  (idx) := 0;
+  idx := 0;
   if(idx < Array.Len(arr)){
     first_iter_asserts: ({
       assert [entry_invariant]: true;
@@ -105,8 +105,8 @@ spec {
         assume [assume_measure_pos]: Array.Len(arr) - idx >= 0;
         })var |special-name-for-old-measure-value| : int := Array.Len(arr) - idx;
       if(e == Array.Get(arr, idx)){
-        (return) := true;
-        }()(idx) := idx + 1;
+        return := true;
+        }()idx := idx + 1;
       assert [measure_decreases]: Array.Len(arr) - idx < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if Array.Len(arr) - idx <= 0 then !(idx < Array.Len(arr))else true;
       assert [arbitrary_iter_maintain_invariant]: true;
@@ -115,7 +115,7 @@ spec {
       havoc idx;
       })assume [not_guard]: !(idx < Array.Len(arr));
     assume [invariant]: true;
-    }()(return) := false;
+    }()return := false;
   };
 -/
 #guard_msgs in

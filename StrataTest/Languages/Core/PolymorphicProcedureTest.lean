@@ -81,7 +81,7 @@ spec {
   ensures [Test_ensures_0]: true;
   } {
   var xs : (List int);
-  (xs) := Cons(1, Nil);
+  xs := Cons(1, Nil);
   havoc xs;
   var h : int;
   call h := Extract(xs);

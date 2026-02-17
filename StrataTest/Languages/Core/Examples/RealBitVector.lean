@@ -142,7 +142,7 @@ procedure Q (x : bv1) returns (r : bv1)
 spec {
   ensures [Q_ensures_0]: r == x - x;
   } {
-  (r) := x + x;
+  r := x + x;
   };
 -/
 #guard_msgs in

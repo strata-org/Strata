@@ -99,9 +99,9 @@ spec {
   ensures [post]: true;
   } {
   var i : int;
-  (i) := a;
+  i := a;
   if(b < a){
-    (i) := b;
+    i := b;
     }()if(i > 1){
     first_iter_asserts: ({
       assert [entry_invariant]: true;
@@ -116,8 +116,8 @@ spec {
         assume [assume_measure_pos]: i >= 0;
         })var |special-name-for-old-measure-value| : int;
       if(b mod i == 0 && a mod i == 0){
-        (return) := false;
-        }()(i) := i - 1;
+        return := false;
+        }()i := i - 1;
       assert [measure_decreases]: i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if i <= 0 then !(i > 1)else true;
       assert [arbitrary_iter_maintain_invariant]: true;
@@ -126,7 +126,7 @@ spec {
       havoc i;
       })assume [not_guard]: !(i > 1);
     assume [invariant]: true;
-    }()(return) := true;
+    }()return := true;
   };
 -/
 #guard_msgs in

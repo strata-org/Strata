@@ -89,8 +89,8 @@ spec {
   } {
   var sum : int;
   var i : int;
-  (sum) := 0;
-  (i) := 0;
+  sum := 0;
+  i := 0;
   if(i < n){
     first_iter_asserts: ({
       assert [entry_invariant]: i <= n && i * (i - 1) div 2 == sum;
@@ -104,8 +104,8 @@ spec {
         assume [assume_invariant]: i <= n && i * (i - 1) div 2 == sum;
         assume [assume_measure_pos]: n - i >= 0;
         })var |special-name-for-old-measure-value| : int := n - i;
-      (sum) := sum + i;
-      (i) := i + 1;
+      sum := sum + i;
+      i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n)else true;
       assert [arbitrary_iter_maintain_invariant]: i <= n && i * (i - 1) div 2 == sum;
@@ -115,7 +115,7 @@ spec {
       })assume [not_guard]: !(i < n);
     assume [invariant]: i <= n && i * (i - 1) div 2 == sum;
     }()assert [sum_assert]: n * (n - 1) div 2 == sum;
-  (return) := sum;
+  return := sum;
   };
 -/
 #guard_msgs in

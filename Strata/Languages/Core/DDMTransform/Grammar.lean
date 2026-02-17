@@ -191,7 +191,7 @@ op label (l : Ident) : Label => "[" l "]: ";
 op varStatement (dl : DeclList) : Statement => "var " dl ";\n";
 @[declare(v, tp)]
 op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";\n";
-op assign (tp : Type, v : Lhs, e : tp) : Statement => v " := " e ";\n";
+op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";\n";
 op assume (label : Option Label, c : bool) : Statement => "assume " label c ";\n";
 op assert (label : Option Label, c : bool) : Statement => "assert " label c ";\n";
 op cover (label : Option Label, c : bool) : Statement => "cover " label c ";\n";

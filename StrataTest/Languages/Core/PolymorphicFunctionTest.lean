@@ -61,8 +61,8 @@ spec {
   } {
   var x : int;
   var y : int;
-  (x) := 42;
-  (y) := identity(x);
+  x := 42;
+  y := identity(x);
   };
 -/
 #guard_msgs in
@@ -95,7 +95,7 @@ spec {
   ensures [TestMakePair_ensures_0]: true;
   } {
   var m : (Map int bool);
-  (m) := makePair(42, true);
+  m := makePair(42, true);
   };
 -/
 #guard_msgs in
@@ -130,7 +130,7 @@ spec {
   ensures [TestApply_ensures_0]: true;
   } {
   var result : bool;
-  (result) := apply(intToBool, 42);
+  result := apply(intToBool, 42);
   };
 -/
 #guard_msgs in
@@ -165,7 +165,7 @@ spec {
   ensures [TestDifferentInstantiations_ensures_0]: true;
   } {
   var m : (Map int bool);
-  (m) := makePair(identity(42), identity(true));
+  m := makePair(identity(42), identity(true));
   };
 -/
 #guard_msgs in
@@ -192,7 +192,7 @@ spec {
 #end
 
 /--
-info: error: (4724-4747) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
+info: error: (4714-4737) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
 First mismatch: int with bool.
 -/
 #guard_msgs in

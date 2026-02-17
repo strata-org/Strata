@@ -30,7 +30,7 @@ procedure S() returns ()
 info: (procedure S () returns ()
 {
   var x : int;
-  (x) := 1;
+  x := 1;
   havoc x;
   assert [x_eq_1]: x == 1;
   };
@@ -65,7 +65,7 @@ Model:
 procedure S () returns ()
 {
   var x : int;
-  (x) := 1;
+  x := 1;
   havoc x;
   assert [x_eq_1]: $__x0 == 1;
   };

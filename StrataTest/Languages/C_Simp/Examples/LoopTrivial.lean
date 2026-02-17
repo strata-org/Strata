@@ -83,7 +83,7 @@ spec {
   ensures [post]: true;
   } {
   var i : int;
-  (i) := 0;
+  i := 0;
   if(i < n){
     first_iter_asserts: ({
       assert [entry_invariant]: i <= n;
@@ -96,7 +96,7 @@ spec {
         assume [assume_invariant]: i <= n;
         assume [assume_measure_pos]: n - i >= 0;
         })var |special-name-for-old-measure-value| : int := n - i;
-      (i) := i + 1;
+      i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n)else true;
       assert [arbitrary_iter_maintain_invariant]: i <= n;
@@ -105,7 +105,7 @@ spec {
       })assume [not_guard]: !(i < n);
     assume [invariant]: i <= n;
     }()assert [i_eq_n]: i == n;
-  (return) := i;
+  return := i;
   };
 -/
 #guard_msgs in

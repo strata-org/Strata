@@ -75,9 +75,9 @@ spec {
   var x : (Option int);
   var y : (Option int);
   var v : int;
-  (x) := None;
-  (y) := Some(42);
-  (v) := Option..value(y);
+  x := None;
+  y := Some(42);
+  v := Option..value(y);
   assert [valIs42]: v == 42;
   };
 -/
@@ -119,8 +119,8 @@ spec {
   } {
   var xs : (List int);
   var h : int;
-  (xs) := Cons(1, Cons(2, Nil));
-  (h) := List..head(xs);
+  xs := Cons(1, Cons(2, Nil));
+  h := List..head(xs);
   assert [headIs1]: h == 1;
   };
 -/
@@ -165,8 +165,8 @@ spec {
   } {
   var x : (Either int bool);
   var y : (Either int bool);
-  (x) := Left(42);
-  (y) := Right(true);
+  x := Left(42);
+  y := Right(true);
   assert [xIsLeft]: Either..isLeft(x);
   assert [yIsRight]: Either..isRight(y);
   assert [lValue]: Either..l(x) == 42;
@@ -212,7 +212,7 @@ spec {
   ensures [TestNestedPoly_ensures_0]: true;
   } {
   var x : (Option (List int));
-  (x) := Some(Cons(1, Nil));
+  x := Some(Cons(1, Nil));
   assert [isSome]: Option..isSome(x);
   };
 -/

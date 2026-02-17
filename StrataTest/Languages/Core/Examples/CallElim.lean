@@ -62,7 +62,7 @@ procedure Double (n : int) returns (result : int)
 spec {
   ensures [double_correct]: result == n * 2;
   } {
-  (result) := n + n;
+  result := n + n;
   };
 procedure TestProc (x : int) returns (output : int)
 spec {

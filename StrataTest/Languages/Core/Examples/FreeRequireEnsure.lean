@@ -83,7 +83,7 @@ spec {
   } {
   assume [g_eq_15]: $__g0 == 15;
   assert [g_gt_10_internal]: $__g0 > 10;
-  (g) := $__g0 + 1;
+  g := $__g0 + 1;
   assert [g_lt_10]: true;
   };
 procedure ProcCaller () returns (x : int)
