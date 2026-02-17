@@ -349,18 +349,17 @@ def pyAnalyzeLaurelCommand : Command where
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok coreProgram =>
-          let coreProgram := {decls := prelude.decls ++ coreProgram.decls }
+          let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
           if verbose then
             IO.println "\n==== Core Program ===="
             IO.print coreProgram
 
           -- Verify using Core verifier
-          let solverName : String := "z3"
           let verboseMode := VerboseMode.ofBool verbose
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
               EIO.toIO
                 (fun f => IO.Error.userError (toString f))
-                (Core.verify solverName coreProgram tempDir .none
+                (Core.verify coreProgram tempDir .none
                   { Options.default with stopOnFirstError := false, verbose := verboseMode }))
 
           -- Print results

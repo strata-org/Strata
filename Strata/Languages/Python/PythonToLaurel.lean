@@ -477,9 +477,11 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
       name := funcName
       inputs := inputs
       outputs := outputs
-      preconditions := []
+      precondition := mkStmtExprMd (StmtExpr.LiteralBool true)
+      determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Transparent bodyBlock
+      md := default
     }
 
     return proc
@@ -548,7 +550,16 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
     let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" (mkHighTypeMd .TString) (some <| mkStmtExprMd (.LiteralString "__main__"))) :: bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
-    let mainProc : Procedure := {name := "__main__", inputs := [], outputs := [], preconditions := [], decreases := none, body := .Transparent bodyBlock}
+    let mainProc : Procedure := {
+      name := "__main__",
+      inputs := [],
+      outputs := [],
+      precondition := mkStmtExprMd (StmtExpr.LiteralBool true),
+      decreases := none,
+      determinism := .deterministic none --TODO: need to set reads
+      body := .Transparent bodyBlock
+      md := default
+      }
 
     let program : Laurel.Program := {
       staticProcedures := mainProc :: procedures

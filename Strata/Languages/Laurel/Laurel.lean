@@ -83,7 +83,6 @@ inductive HighType : Type where
     Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core.
   -/
   | TCore (s: String)
-  deriving Repr
 
 mutual
 
