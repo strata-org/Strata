@@ -122,10 +122,14 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
+inline function safeHead(xs : List) : int
+  requires List..isCons(xs);
+{ List..head(xs) }
+
 procedure test(xs : List) returns ()
 spec {
   requires List..isCons(xs);
-  requires List..head(xs) > 0;
+  requires safeHead(xs) > 0;
 }
 {
 };
@@ -143,6 +147,9 @@ Type Arguments:
 Constructors:
 [Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, int), (tail, List)] Tester: List..isCons ]
 
+@[#[inline]]
+func safeHead :  ((xs : List)) → int :=
+  ((~List..head xs))
 procedure test$$wf :  ((xs : List)) → ()
   modifies: []
   preconditions: 
@@ -150,15 +157,15 @@ procedure test$$wf :  ((xs : List)) → ()
 {
   {
     assume [test_requires_0] (~List..isCons xs)
-    assert [test_pre_test_requires_1_calls_List..head_0] (~List..isCons xs)
-    assume [test_requires_1] (~Int.Gt (~List..head xs) #0)
+    assert [test_pre_test_requires_1_calls_safeHead_0] (~List..isCons xs)
+    assume [test_requires_1] (~Int.Gt (~safeHead xs) #0)
   }
 }
 procedure test :  ((xs : List)) → ()
   modifies: []
   preconditions: (test_requires_0, ((~List..isCons : (arrow List bool))
    (xs : List))) (test_requires_1, ((~Int.Gt : (arrow int (arrow int bool)))
-   ((~List..head : (arrow List int)) (xs : List))
+   ((~safeHead : (arrow List int)) (xs : List))
    #0))
   postconditions: 
 {
@@ -176,11 +183,19 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
+inline function safeHead(xs : List) : int
+  requires List..isCons(xs);
+{ List..head(xs) }
+
+inline function safeTail(xs : List) : List
+  requires List..isCons(xs);
+{ List..tail(xs) }
+
 procedure test(xs : List) returns ()
 spec {
   requires List..isCons(xs);
-  ensures List..head(xs) > 0;
-  ensures List..head(List..tail(xs)) > 0;
+  ensures safeHead(xs) > 0;
+  ensures safeHead(safeTail(xs)) > 0;
 }
 {
 };
@@ -198,6 +213,12 @@ Type Arguments:
 Constructors:
 [Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, int), (tail, List)] Tester: List..isCons ]
 
+@[#[inline]]
+func safeHead :  ((xs : List)) → int :=
+  ((~List..head xs))
+@[#[inline]]
+func safeTail :  ((xs : List)) → List :=
+  ((~List..tail xs))
 procedure test$$wf :  ((xs : List)) → ()
   modifies: []
   preconditions: 
@@ -205,20 +226,20 @@ procedure test$$wf :  ((xs : List)) → ()
 {
   {
     assume [test_requires_0] (~List..isCons xs)
-    assert [test_post_test_ensures_1_calls_List..head_0] (~List..isCons xs)
-    assume [test_ensures_1] (~Int.Gt (~List..head xs) #0)
-    assert [test_post_test_ensures_2_calls_List..head_0] (~List..isCons (~List..tail xs))
-    assert [test_post_test_ensures_2_calls_List..tail_1] (~List..isCons xs)
-    assume [test_ensures_2] (~Int.Gt (~List..head (~List..tail xs)) #0)
+    assert [test_post_test_ensures_1_calls_safeHead_0] (~List..isCons xs)
+    assume [test_ensures_1] (~Int.Gt (~safeHead xs) #0)
+    assert [test_post_test_ensures_2_calls_safeHead_0] (~List..isCons (~safeTail xs))
+    assert [test_post_test_ensures_2_calls_safeTail_1] (~List..isCons xs)
+    assume [test_ensures_2] (~Int.Gt (~safeHead (~safeTail xs)) #0)
   }
 }
 procedure test :  ((xs : List)) → ()
   modifies: []
   preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List)))
   postconditions: (test_ensures_1, ((~Int.Gt : (arrow int (arrow int bool)))
-   ((~List..head : (arrow List int)) (xs : List))
+   ((~safeHead : (arrow List int)) (xs : List))
    #0)) (test_ensures_2, ((~Int.Gt : (arrow int (arrow int bool)))
-   ((~List..head : (arrow List int)) ((~List..tail : (arrow List List)) (xs : List)))
+   ((~safeHead : (arrow List int)) ((~safeTail : (arrow List List)) (xs : List)))
    #0))
 {
   {}

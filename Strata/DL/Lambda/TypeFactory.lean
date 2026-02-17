@@ -490,22 +490,17 @@ constructor components, e.g.
 `List..head (Cons h t) = h`
 `List..tail (Cons h t) = t`
 These functions are partial, `List..head Nil` is undefined.
-The precondition requires the tester for the constructor to be true.
 -/
-def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
-  let arg := genArgName
-  let argTy := dataDefault d
+def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
   c.args.mapIdx (fun i (name, ty) =>
+    let arg := genArgName
     {
       name := destructorFuncName d name,
       typeArgs := d.typeArgs,
-      inputs := [(arg, argTy)],
+      inputs := [(arg, dataDefault d)],
       output := ty,
       concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[eval_if_constr_attr],
-      -- precondition: the tester holds (e.g. List..isCons(xs))
-      preconditions := [⟨.app default (.op default c.testerName (some (.arrow argTy .bool)))
-        (.fvar default arg none), default⟩] })
+      attr := #[eval_if_constr_attr] })
 
 
 ---------------------------------------------------------------------
@@ -589,8 +584,7 @@ Constructs maps of generated functions for datatype `d`: map of
 constructors, testers, and destructors in order. Each maps names to
 the datatype and constructor AST.
 -/
-def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta]
-  [Inhabited T.Metadata] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
+def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) :=

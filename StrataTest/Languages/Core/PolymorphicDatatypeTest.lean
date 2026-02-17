@@ -284,10 +284,6 @@ spec {
 
 /--
 info:
-Obligation: set_h_calls_List..head_0
-Property: assert
-Result: ✅ pass
-
 Obligation: headIs100
 Property: assert
 Result: ✅ pass
@@ -390,10 +386,6 @@ Obligation: notRight
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_leftVal_calls_Either..l_0
-Property: assert
-Result: ✅ pass
-
 Obligation: leftVal
 Property: assert
 Result: ✅ pass
@@ -415,6 +407,11 @@ program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
+// Wrapper function with explicit precondition for safe access
+function safeValue<a>(x : Option a) : a
+  requires Option..isSome(x);
+{ Option..value(x) }
+
 procedure TestOptionHavoc() returns ()
 spec {
   ensures true;
@@ -425,7 +422,7 @@ spec {
   havoc x;
   assume Option..isSome(x);
   var v : int;
-  v := Option..value(x);
+  v := safeValue(x);
 };
 #end
 
@@ -435,7 +432,7 @@ spec {
 
 /--
 info:
-Obligation: set_v_calls_Option..value_0
+Obligation: set_v_calls_safeValue_0
 Property: assert
 Result: ✅ pass
 

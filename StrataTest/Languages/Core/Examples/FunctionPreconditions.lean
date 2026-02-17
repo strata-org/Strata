@@ -74,12 +74,17 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
+// Wrapper function with explicit precondition for safe access
+inline function safeHead(x : List) : int
+  requires List..isCons(x);
+{ List..head(x) }
+
 procedure testHead() returns ()
 {
   var x : int;
   havoc x;
   assume (x == 1);
-  var z : int := List..head(Cons(x, Nil));
+  var z : int := safeHead(Cons(x, Nil));
   assert (z == 1);
 };
 
@@ -90,7 +95,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: init_calls_List..head_0
+Label: init_calls_safeHead_0
 Property: assert
 Assumptions:
 (assume_0, ($__x0 == #1))
@@ -107,7 +112,7 @@ Proof Obligation:
 ($__x0 == #1)
 
 ---
-info: Obligation: init_calls_List..head_0
+info: Obligation: init_calls_safeHead_0
 Property: assert
 Result: ✅ pass
 
@@ -136,18 +141,9 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: get_body_calls_Option..value_0
-Property: assert
-Assumptions:
-(precond_get_0, (~Option..isSome $__x0))
-
-Proof Obligation:
-(~Option..isSome $__x0)
 
 ---
-info: Obligation: get_body_calls_Option..value_0
-Property: assert
-Result: ✅ pass
+info:
 -/
 #guard_msgs in
 #eval verify optionGetPgm

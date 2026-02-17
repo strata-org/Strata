@@ -375,15 +375,7 @@ spec {
 
 /--
 info:
-Obligation: set_v_calls_Tree..val_0
-Property: assert
-Result: ✅ pass
-
 Obligation: valIs42
-Property: assert
-Result: ✅ pass
-
-Obligation: set_l_calls_Tree..left_0
 Property: assert
 Result: ✅ pass
 
@@ -391,23 +383,11 @@ Obligation: leftIsLeaf
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_leftVal_calls_Tree..val_0
-Property: assert
-Result: ✅ pass
-
 Obligation: leftVal
 Property: assert
 Result: ✅ pass
 
-Obligation: set_r_calls_Tree..right_0
-Property: assert
-Result: ✅ pass
-
 Obligation: rightIsLeaf
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_rightVal_calls_Tree..val_0
 Property: assert
 Result: ✅ pass
 
@@ -469,19 +449,7 @@ spec {
 
 /--
 info:
-Obligation: set_leftLeft_calls_Tree..left_0
-Property: assert
-Result: ✅ pass
-
-Obligation: set_leftLeft_calls_Tree..left_1
-Property: assert
-Result: ✅ pass
-
 Obligation: leftLeftIsLeaf
-Property: assert
-Result: ✅ pass
-
-Obligation: set_v_calls_Tree..val_0
 Property: assert
 Result: ✅ pass
 
@@ -535,10 +503,6 @@ spec {
 
 /--
 info:
-Obligation: set_v_calls_Tree..val_0
-Property: assert
-Result: ✅ pass
-
 Obligation: valIs100
 Property: assert
 Result: ✅ pass

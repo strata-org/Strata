@@ -72,14 +72,6 @@ procedure test () returns ()
 
 
 VCs:
-Label: assert_constr_destr_cancel_calls_Any..as_bool_0
-Property: assert
-Assumptions:
-(assume_0, ($__b0 == #true))
-
-Proof Obligation:
-#true
-
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
@@ -90,10 +82,6 @@ $__b0
 
 ---
 info:
-Obligation: assert_constr_destr_cancel_calls_Any..as_bool_0
-Property: assert
-Result: ✅ pass
-
 Obligation: constr_destr_cancel
 Property: assert
 Result: ✅ pass

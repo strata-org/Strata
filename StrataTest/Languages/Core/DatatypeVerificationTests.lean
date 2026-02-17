@@ -579,13 +579,13 @@ info: "Test 2 - Tester Functions: PASSED\n  Verified 2 obligation(s)\n"
 #eval test2_testerFunctions
 
 /--
-info: "Test 3 - Destructor Functions: PASSED\n  Verified 4 obligation(s)\n"
+info: "Test 3 - Destructor Functions: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test3_destructorFunctions
 
 /--
-info: "Test 4 - Nested Datatypes: PASSED\n  Verified 4 obligation(s)\n"
+info: "Test 4 - Nested Datatypes: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test4_nestedDatatypes
@@ -597,7 +597,7 @@ info: "Test 5 - Tester with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 #eval test5_testerWithHavoc
 
 /--
-info: "Test 6 - Destructor with Havoc: PASSED\n  Verified 2 obligation(s)\n"
+info: "Test 6 - Destructor with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test6_destructorWithHavoc
@@ -609,7 +609,7 @@ info: "Test 7 - List with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 #eval test7_listWithHavoc
 
 /--
-info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 2 obligation(s)\n"
+info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test8_hiddenTypeRecursion
@@ -753,7 +753,7 @@ def test9_mutualRecursiveWithHavoc : IO String := do
     runVerificationTest "Test 9 - Mutual Recursive with Havoc" program
 
 /--
-info: "Test 9 - Mutual Recursive with Havoc: PASSED\n  Verified 3 obligation(s)\n"
+info: "Test 9 - Mutual Recursive with Havoc: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test9_mutualRecursiveWithHavoc
