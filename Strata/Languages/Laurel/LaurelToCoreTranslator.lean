@@ -22,7 +22,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
 
 namespace Strata.Laurel
 
@@ -111,6 +111,8 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
     | .Mul => binOp intMulOp
     | .Div => binOp intDivOp
     | .Mod => binOp intModOp
+    | .DivT => binOp intDivTOp
+    | .ModT => binOp intModTOp
     | .Lt => binOp intLtOp
     | .Leq => binOp intLeOp
     | .Gt => binOp intGtOp
@@ -263,6 +265,17 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
           (env, [noFallThrough])
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
+  | .While cond invariants decreasesExpr body =>
+      let condExpr := translateExpr constants env cond
+      -- Combine multiple invariants with && for Core (which expects single invariant)
+      let translatedInvariants := invariants.map (translateExpr constants env)
+      let invExpr := match translatedInvariants with
+        | [] => none
+        | [single] => some single
+        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
+      let decreasingExprCore := decreasesExpr.map (translateExpr constants env)
+      let (_, bodyStmts) := translateStmt constants funcNames env outputParams body
+      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
   | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by
@@ -435,9 +448,8 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 /--
 Verify a Laurel program using an SMT solver
 -/
-def verifyToVcResults (smtsolver : String) (program : Program)
+def verifyToVcResults (program : Program)
     (options : Options := Options.default)
-    (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
   let (strataCoreProgram, translateDiags) ← match translate program with
     | .error translateErrorDiags => return .error translateErrorDiags
@@ -451,25 +463,25 @@ def verifyToVcResults (smtsolver : String) (program : Program)
   dbg_trace "================================="
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))
-        (Core.verify smtsolver strataCoreProgram tempDir .none options)
-  let ioResult ← match tempDir with
+        (Core.verify strataCoreProgram tempDir .none options)
+  let ioResult ← match options.vcDirectory with
     | .none => IO.FS.withTempDir runner
-    | .some p => IO.FS.createDirAll ⟨p⟩; runner ⟨p⟩
+    | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
   if translateDiags.isEmpty then
     return .ok ioResult
   else
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (smtsolver : String) (files: Map Strata.Uri Lean.FileMap) (program : Program): IO (Array Diagnostic) := do
-  let results <- verifyToVcResults smtsolver program
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program) (options : Options := Options.default): IO (Array Diagnostic) := do
+  let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (smtsolver : String) (program : Program): IO (Array DiagnosticModel) := do
-  let results <- verifyToVcResults smtsolver program
+def verifyToDiagnosticModels (program : Program) (options : Options := Options.default) : IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel

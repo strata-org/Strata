@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Util.DecimalRat
+meta import Strata.DDM.Util.DecimalRat
 
 namespace Strata.Decimal.Tests
 

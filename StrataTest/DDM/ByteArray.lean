@@ -3,6 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
 import Strata.DDM.Integration.Lean
 
 -- Minimal dialect to test dialects can be declared.
@@ -27,7 +29,7 @@ eval b"ab\x12\r\\";
 #eval IO.print bvExample
 
 #guard
-  match Command.ofAst bvExample.commands[0] with
+  match Command.ofAst bvExample.commands[0]! with
   | .ok (Command.eval _ bv) => bv.val == .mk ("ab\x12\r\\".toList.toArray.map Char.toUInt8)
   | _ => false
 

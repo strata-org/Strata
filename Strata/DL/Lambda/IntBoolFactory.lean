@@ -96,6 +96,29 @@ def cevalIntMod (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mo
     | _, _ => .none
   | _ => .none
 
+-- Truncating division: rounds toward zero (unlike Euclidean division which floors)
+-- Int.tdiv in Lean4
+def cevalIntDivT (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
+  match args with
+  | [e1, e2] =>
+    let e1i := LExpr.denoteInt e1
+    let e2i := LExpr.denoteInt e2
+    match e1i, e2i with
+    | some x, some y =>
+      if y == 0 then .none else .some (.intConst m (x.tdiv y))
+    | _, _ => .none
+  | _ => .none
+
+def cevalIntModT (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
+  match args with
+  | [e1, e2] =>
+    let e1i := LExpr.denoteInt e1
+    let e2i := LExpr.denoteInt e2
+    match e1i, e2i with
+    | some x, some y =>
+      if y == 0 then .none else .some (.intConst m (x.tmod y))
+    | _, _ => .none
+  | _ => .none
 
 /- Boolean Operations -/
 def boolAndFunc : LFunc T :=
@@ -148,6 +171,14 @@ def intModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
   { binaryOp "Int.Mod" .int (some cevalIntMod) with
     preconditions := [⟨yNeZero, default⟩] }
 
+def intDivTFunc : LFunc T :=
+  binaryOp "Int.DivT" .int
+  (some cevalIntDivT)
+
+def intModTFunc : LFunc T :=
+  binaryOp "Int.ModT" .int
+  (some cevalIntModT)
+
 def intNegFunc : LFunc T :=
   unaryOp "Int.Neg" .int
   (some (unOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.neg))
@@ -176,6 +207,8 @@ def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T :=
     intMulFunc,
     intDivFunc,
     intModFunc,
+    intDivTFunc,
+    intModTFunc,
     intNegFunc,
     intLtFunc,
     intLeFunc,

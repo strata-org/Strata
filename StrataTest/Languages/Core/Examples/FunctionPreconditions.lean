@@ -40,7 +40,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" divPgm
+#eval verify divPgm
 
 -- Function with multiple preconditions
 def multiPrecondPgm :=
@@ -65,7 +65,7 @@ VCs:
 info:
 -/
 #guard_msgs in
-#eval verify "cvc5" multiPrecondPgm
+#eval verify multiPrecondPgm
 
 -- Datatype destructor with precondition
 def listHeadPgm :=
@@ -116,7 +116,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listHeadPgm
+#eval verify listHeadPgm
 
 -- Option type with precondition
 def optionGetPgm :=
@@ -150,7 +150,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" optionGetPgm
+#eval verify optionGetPgm
 
 -- Multiple preconditions where second depends on first (WF check)
 def dependentPrecondPgm :=
@@ -196,7 +196,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" dependentPrecondPgm
+#eval verify dependentPrecondPgm
 
 -- Function body calls another function with preconditions (Phase 3 test)
 -- Expression: safeDiv(safeDiv(x, y), z)
@@ -246,7 +246,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" funcCallsFuncPgm
+#eval verify funcCallsFuncPgm
 
 -- Function body calls another function but precondition does NOT hold (should fail)
 -- Expression: safeDiv(x, 0) - calling with literal 0
@@ -298,7 +298,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" funcCallsFuncFailPgm
+#eval verify funcCallsFuncFailPgm
 
 -- Call to function with precondition - unconditionally true
 def callUnconditionalPgm :=
@@ -331,7 +331,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" callUnconditionalPgm
+#eval verify callUnconditionalPgm
 
 -- Call to function with precondition - depends on path condition (if)
 def callWithIfPgm :=
@@ -369,7 +369,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" callWithIfPgm
+#eval verify callWithIfPgm
 
 -- Call to function with precondition - depends on path condition (assume)
 def callWithAssumePgm :=
@@ -419,7 +419,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" callWithAssumePgm
+#eval verify callWithAssumePgm
 
 -- Function call inside a quantifier with implication
 -- Expression: forall x : int :: x > 0 ==> safeDiv(y, x) > 0
@@ -469,7 +469,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" funcInQuantifierPgm
+#eval verify funcInQuantifierPgm
 
 -- Inline function declaration (funcDecl) with precondition
 def funcDeclPgm :=
@@ -520,6 +520,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" funcDeclPgm
+#eval verify funcDeclPgm
 
 end Strata

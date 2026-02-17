@@ -88,8 +88,8 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   func fooVal :  () → (Foo int bool);
   procedure P :  () → ()
     modifies: []
-    preconditions: 
-    postconditions: 
+    preconditions: ⏎
+    postconditions: ⏎
   {
     {
       assert [test] (~fooAliasVal == ~fooVal)
@@ -98,11 +98,11 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   Error:
   none
   Subst Map:
-  
+  ⏎
   Expression Env:
   State:
-  
-  
+  ⏎
+  ⏎
   Evaluation Config:
   Eval Depth: 200
   Variable Prefix: $__
@@ -115,6 +115,8 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
     requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.Mod :  ((x : int) (y : int)) → int
     requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
+  func Int.DivT :  ((x : int) (y : int)) → int;
+  func Int.ModT :  ((x : int) (y : int)) → int;
   func Int.Neg :  ((x : int)) → int;
   func Int.Lt :  ((x : int) (y : int)) → bool;
   func Int.Le :  ((x : int) (y : int)) → bool;
@@ -286,25 +288,25 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   func Bv64.SGe :  ((x : bv64) (y : bv64)) → bool;
   func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
-  
-  
+  ⏎
+  ⏎
   Datatypes:
-  
+  ⏎
   Path Conditions:
-  
-  
-  
+  ⏎
+  ⏎
+  ⏎
   Warnings:
   []
   Deferred Proof Obligations:
   Label: test
   Property: assert
   Assumptions:
-  
-  
+  ⏎
+  ⏎
   Proof Obligation:
   ((~fooAliasVal : (Foo int bool)) == (~fooVal : (Foo int bool)))
-  
+  ⏎
   )]
 -/
 #guard_msgs in
@@ -383,8 +385,8 @@ info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
 procedure Test :  () → ()
   modifies: []
-  preconditions: 
-  postconditions: 
+  preconditions: ⏎
+  postconditions: ⏎
 {
   {
     init (m : (Map int bool)) := (init_m_0 : (Map int bool))
