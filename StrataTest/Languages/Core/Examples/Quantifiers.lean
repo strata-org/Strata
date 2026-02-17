@@ -124,7 +124,7 @@ Model:
 ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantPgm (options := .default)
+#eval verify quantPgm (options := .default)
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -185,4 +185,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" triggerPgm
+#eval verify triggerPgm

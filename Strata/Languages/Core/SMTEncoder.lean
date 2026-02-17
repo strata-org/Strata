@@ -350,6 +350,39 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Int.Mul"      => .ok (.app Op.mul,        .int ,   ctx)
     | "Int.Div"      => .ok (.app Op.div,        .int ,   ctx)
     | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
+    -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
+    | "Int.DivT"     =>
+      let divTApp := fun (args : List Term) (retTy : TermType) =>
+        match args with
+        | [a, b] =>
+          let zero := Term.prim (.int 0)
+          let ab := Term.app Op.mul [a, b] retTy
+          let abGeZero := Term.app Op.ge [ab, zero] .bool
+          let absA := Term.app Op.abs [a] retTy
+          let absB := Term.app Op.abs [b] retTy
+          let q := Term.app Op.div [absA, absB] retTy
+          let negQ := Term.app Op.neg [q] retTy
+          Factory.ite abGeZero q negQ
+        | _ => Term.app Op.div args retTy
+      .ok (divTApp, .int, ctx)
+    -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
+    -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
+    | "Int.ModT"     =>
+      let modTApp := fun (args : List Term) (retTy : TermType) =>
+        match args with
+        | [a, b] =>
+          let zero := Term.prim (.int 0)
+          let ab := Term.app Op.mul [a, b] retTy
+          let abGeZero := Term.app Op.ge [ab, zero] .bool
+          let absA := Term.app Op.abs [a] retTy
+          let absB := Term.app Op.abs [b] retTy
+          let q := Term.app Op.div [absA, absB] retTy
+          let negQ := Term.app Op.neg [q] retTy
+          let tdivAB := Term.app Op.ite [abGeZero, q, negQ] retTy
+          let bTimesTdiv := Term.app Op.mul [b, tdivAB] retTy
+          Term.app Op.sub [a, bTimesTdiv] retTy
+        | _ => Term.app Op.mod args retTy
+      .ok (modTApp, .int, ctx)
     | "Int.Lt"       => .ok (.app Op.lt,         .bool,   ctx)
     | "Int.Le"       => .ok (.app Op.le,         .bool,   ctx)
     | "Int.Gt"       => .ok (.app Op.gt,         .bool,   ctx)

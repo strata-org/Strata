@@ -55,7 +55,7 @@ inductive Operation : Type where
   | Eq | Neq
   | And | Or | Not | Implies
   /- Works on Int/Float64 -/
-  | Neg | Add | Sub | Mul | Div | Mod
+  | Neg | Add | Sub | Mul | Div | Mod | DivT | ModT
   | Lt | Leq | Gt | Geq
   deriving Repr
 
@@ -130,9 +130,9 @@ inductive StmtExpr : Type where
   /- The initializer must be set if this StmtExpr is pure -/
   | LocalVariable (name : Identifier) (type : WithMetadata HighType) (initializer : Option (WithMetadata StmtExpr))
   /- While is only allowed in an impure context
-    The invariant and decreases are always pure
+    The invariants and decreases are always pure
   -/
-  | While (cond : WithMetadata StmtExpr) (invariant : Option (WithMetadata StmtExpr))
+  | While (cond : WithMetadata StmtExpr) (invariants : List (WithMetadata StmtExpr))
     (decreases : Option (WithMetadata StmtExpr))
     (body : WithMetadata StmtExpr)
   | Exit (target : Identifier)
