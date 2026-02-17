@@ -8,6 +8,7 @@
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.ProgramType
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 ---------------------------------------------------------------------
 
@@ -72,7 +73,10 @@ def typeCheckAndPartialEval (options : Options) (program : Program)
   return pEs
 
 instance : ToString (Program) where
-  toString p := toString (Std.format p)
+  toString p := toString (Core.formatProgram p)
+
+instance : Std.ToFormat Program where
+  format := Core.formatProgram
 
 end Core
 

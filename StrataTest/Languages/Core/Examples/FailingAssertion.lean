@@ -35,21 +35,18 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram failing) |>.snd |>.isEmpty
 
 /--
-info: type MapII := (Map int int)
-var (a : MapII) := init_a_0
-procedure P :  () → ()
-  modifies: [a]
-  preconditions: (P_requires_1, (((~select : (arrow (Map int int) (arrow int int))) (a : MapII) #0) == #0))
-  postconditions: 
-{
-  {
-    assert [assert_0] (((~select : (arrow (Map int int) (arrow int int))) (a : MapII) #0) == #1)
-  }
-}
-Errors: #[]
+info: type MapII := Map int int;
+var a : MapII;
+procedure P () returns ()
+spec {
+  modifies a;
+  requires [P_requires_1]: a[0] == 0;
+  } {
+  assert [assert_0]: a[0] == 1;
+  };
 -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram failing)
+#eval TransM.run Inhabited.default (translateProgram failing) |>.fst
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -71,19 +68,18 @@ Property: assert
 Result: ❌ fail
 
 
-Evaluated program:
-type MapII := (Map int int)
-var (a : (Map int int)) := init_a_0
-procedure P :  () → ()
-  modifies: [a]
-  preconditions: (P_requires_1, (((~select : (arrow (Map int int) (arrow int int))) (a : (Map int int)) #0) == #0))
-  postconditions: 
-{
-  {
-    assume [P_requires_1] ((~select $__a0 #0) == #0)
-    assert [assert_0] ((~select $__a0 #0) == #1)
-  }
-}
+[DEBUG] Evaluated program:
+type MapII := Map int int;
+var a : (Map int int);
+procedure P () returns ()
+spec {
+  modifies a;
+  requires [P_requires_1]: a[0] == 0;
+  } {
+  assume [P_requires_1]: $__a0[0] == 0;
+  assert [assert_0]: $__a0[0] == 1;
+  };
+
 ---
 info:
 Obligation: assert_0

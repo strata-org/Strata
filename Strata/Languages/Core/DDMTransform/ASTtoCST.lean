@@ -182,6 +182,10 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
     let kty ← lmonoTyToCoreType k
     let vty ← lmonoTyToCoreType v
     pure (.Map default kty vty)
+  | .tcons "arrow" [a, b] => do
+    let aty ← lmonoTyToCoreType a
+    let bty ← lmonoTyToCoreType b
+    pure (.arrow default aty bty)
   | .tcons name args =>
     let ctx ← get
     match ctx.freeVarIndex? name with
@@ -507,7 +511,7 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   -- Strings and regexes
   | "Str.Substr" => pure (.str_substr default arg1 arg2 arg3)
   | "Re.Loop" => pure (.re_loop default arg1 arg2 arg3)
-  | _ => ToCSTM.throwError "handleTernaryOps" "ternary op" name
+  | _ => ToCSTM.throwError "handleTernaryOps" "ternary op not found " name
 
 def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
@@ -552,7 +556,10 @@ partial def lexprToExpr {M} [Inhabited M]
       match ctx.freeVarIndex? id.name with
       | some idx => pure (.fvar default idx)
       | none => do
-        ToCSTM.throwError "lexprToExpr" "fvar not found in: " (toString ctx.freeVars)
+        -- Likely this .fvar is generated in an evaluated Core program (i.e.,
+        -- after analysis). Add to the context.
+        modify (·.addFreeVars #[id.name])
+        pure (.fvar default (ctx.freeVars.size))
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
@@ -603,8 +610,7 @@ partial def lquantToExpr {M} [Inhabited M]
   modify (·.addBoundVars #[name.val])
   let tyExpr ← match ty with
     | some t => lmonoTyToCoreType t
-    | none => ToCSTM.throwError "lquantToExpr"
-                "quantifier missing type annotation" ""
+    | none => pure (CoreType.tvar default unknownTypeVar)
   let bind := Bind.bind_mk default name ⟨default, none⟩ tyExpr
   let dl := DeclList.declAtom default bind
   let hasNoTrigger := trigger matches .bvar _ 0
@@ -679,15 +685,17 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   let paramNames := results.map (·.2)
   let b : Bindings M := .mkBindings default ⟨default, bindings⟩
   let r ← lTyToCoreType decl.output
+  let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
   match decl.body with
   | none =>
-    ToCSTM.throwError "funcDeclToStatement"
-            "funcDecl without body not supported in statements" ""
+    dbg_trace f!"funcDeclToStatement: funcDecl without body not supported in statements"
+    -- Dummy expr for the body
+    let bodyExpr := .fvar default (←get).freeVars.size
+    pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
   | some body => do
     -- Add formals to the context
     modify (·.addBoundVars (reverse? := false) paramNames)
     let bodyExpr ← lexprToExpr body 0
-    let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
 
 mutual
@@ -964,30 +972,27 @@ private def recreateGlobalContext (ctx : ToCSTContext) : GlobalContext :=
     (init := (Std.HashMap.emptyWithCapacity, 0)) fun (map, i) name =>
     (map.insert name i, i + 1)
   let vars := ctx.freeVars.map fun name =>
-    (name, GlobalKind.expr (.tvar default "unknown"), DeclState.defined)
+    -- .fvar below is really a dummy value.
+    (name, GlobalKind.expr (.fvar default 0 #[]), DeclState.defined)
   { nameMap, vars }
 
-/-- Print `Core.Program`. -/
-def printProgram (ast : Core.Program) : IO Unit := do
+/-- Render `Core.Program` to a format object. -/
+def Core.formatProgram (ast : Core.Program) : Std.Format :=
   match (programToCST (M := SourceRange) ast).run ToCSTContext.empty with
   | .error errs =>
-    IO.println "AST to CST Error:"
-    for err in errs do
-      match err with
-      | .unsupportedConstruct fn desc ctx _md =>
-        IO.println s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
+    Std.format "AST to CST Error:\n" ++
+    Std.Format.joinSep (errs.map (Std.format ∘ repr)) "\n"
   | .ok (cmds, finalCtx) =>
     let dialects := CoreDDM.dialectMap
+    -- Format with recreated global context
     let ddmCtx := recreateGlobalContext finalCtx
-    -- Format with original global context
     let ctx := FormatContext.ofDialects dialects ddmCtx {}
     let state : FormatState := {
       openDialects := dialects.toList.foldl (init := {})
         fun a (d : Dialect) => a.insert d.name
     }
-    -- Display commands using mformat
-    for cmd in cmds do
-      IO.print ((mformat (ArgF.op cmd.toAst) ctx state).format)
+    Std.Format.joinSep (cmds.map fun cmd =>
+                          (mformat (ArgF.op cmd.toAst) ctx state).format) ""
 
 end ToCST
 

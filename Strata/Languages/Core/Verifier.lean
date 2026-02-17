@@ -314,7 +314,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       -- that we go to the SMT solver if the path conditions aren't empty --
       -- after all, the path conditions could imply false, which the PE isn't
       -- capable enough to infer.
-      let prog := f!"\n\nEvaluated program:\n{p}"
+      let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
                    {if options.verbose >= .normal then prog else ""}"
@@ -341,7 +341,7 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
     (smtsolver : String) (options : Options) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) : EIO DiagnosticModel VCResult := do
-  let prog := f!"\n\nEvaluated program:\n{p}"
+  let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
@@ -374,7 +374,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | some err =>
     .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
               {format err}\n\n\
-              Evaluated program: {p}\n\n"
+              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
@@ -387,7 +387,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
           continue
         if (result.isFailure || result.isImplementationError) then
           if options.verbose >= .normal then
-            let prog := f!"\n\nEvaluated program:\n{p}"
+            let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break else continue
       -- For `unknown` results, we appeal to the SMT backend below.
@@ -399,7 +399,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                         result := .implementationError (toString err),
                         verbose := options.verbose }
         if options.verbose >= .normal then
-          let prog := f!"\n\nEvaluated program:\n{p}"
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
         if options.stopOnFirstError then break
@@ -409,7 +409,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         results := results.push result
         if result.isNotSuccess then
         if options.verbose >= .normal then
-          let prog := f!"\n\nEvaluated program:\n{p}"
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
     return results

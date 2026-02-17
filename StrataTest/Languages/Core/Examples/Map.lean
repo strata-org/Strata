@@ -29,24 +29,16 @@ procedure P() returns ()
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
 
 /--
-info: func a :  () → (Map int bool);
-procedure P :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: function a () : Map int bool;
+procedure P () returns ()
 {
-  {
-    assume [a_zero_true_assumption] (((~select : (arrow (Map int bool) (arrow int bool)))
-      (~a : (Map int bool))
-      #0) == #true)
-    assert [a_zero_true] ((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool)) #0)
-    assert [a_one_true] ((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool)) #1)
-  }
-}
-Errors: #[]
+  assume [a_zero_true_assumption]: a[0] == true;
+  assert [a_zero_true]: a[0];
+  assert [a_one_true]: a[1];
+  };
 -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram mapPgm)
+#eval TransM.run Inhabited.default (translateProgram mapPgm) |>.fst
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -76,19 +68,15 @@ Property: assert
 Result: ❌ fail
 
 
-Evaluated program:
-func a :  () → (Map int bool);
-procedure P :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+[DEBUG] Evaluated program:
+function a () : Map int bool;
+procedure P () returns ()
 {
-  {
-    assume [a_zero_true_assumption] ((~select ~a #0) == #true)
-    assert [a_zero_true] (~select ~a #0)
-    assert [a_one_true] (~select ~a #1)
-  }
-}
+  assume [a_zero_true_assumption]: a[0] == true;
+  assert [a_zero_true]: a[0];
+  assert [a_one_true]: a[1];
+  };
+
 ---
 info:
 Obligation: a_zero_true

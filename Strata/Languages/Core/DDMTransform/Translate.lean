@@ -34,10 +34,6 @@ def TransM.run (ictx : InputContext) (m : TransM α) (gctx : GlobalContext := {}
   let (v, s) := StateT.run m { inputCtx := ictx, errors := #[], globalContext := gctx }
   (v, s.errors)
 
-instance : ToString (Core.Program × Array String) where
-  toString p := toString (Std.format p.fst) ++ "\n" ++
-                "Errors: " ++ (toString p.snd)
-
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
   fun s => ((), { s with errors := s.errors.push msg })
   return panic msg

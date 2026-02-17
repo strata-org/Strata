@@ -22,7 +22,7 @@ def ASTtoCST (program : Strata.Program) := do
   let (ast, errs) := TransM.run Inhabited.default (translateProgram program)
   if !errs.isEmpty then
     IO.println f!"CST to AST Error: {errs}"
-  printProgram ast
+  IO.println f!"{Core.formatProgram ast}"
 
 -------------------------------------------------------------------------------
 
