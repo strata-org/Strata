@@ -78,8 +78,8 @@ var g : int;
 procedure Proc () returns ()
 spec {
   modifies g;
-  requires [g_eq_15]: g == 15;
-  ensures [g_lt_10]: g < 10;
+  free requires [g_eq_15]: g == 15;
+  free ensures [g_lt_10]: g < 10;
   } {
   assume [g_eq_15]: $__g0 == 15;
   assert [g_gt_10_internal]: $__g0 > 10;

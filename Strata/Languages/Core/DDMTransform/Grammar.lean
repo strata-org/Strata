@@ -225,9 +225,9 @@ category Free;
 op free () : Free => "free ";
 op modifies_spec (nm : Ident) : SpecElt => "modifies " nm ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
-  free? "ensures " label b ";\n";
+  free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
-  free? "requires " label b ";\n";
+  free?:0 "requires " label b ";\n";
 
 category Spec;
 op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
