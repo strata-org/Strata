@@ -33,8 +33,8 @@ procedure test() returns ()
 info:
 ok: procedure test :  () → ()
   modifies: []
-  preconditions: 
-  postconditions: 
+  preconditions:
+  postconditions:
 {
   {
     init (x : int) := #1
