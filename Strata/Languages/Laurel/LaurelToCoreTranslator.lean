@@ -156,6 +156,18 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
   s!"({fileRange.range.start})"
 
+def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
+  match ty.val with
+  | .TInt => .const () (.intConst 0)
+  | .TBool => .const () (.boolConst false)
+  | .TString => .const () (.strConst "")
+  | _ =>
+    -- For types without a natural default (arrays, composites, etc.),
+    -- use a fresh free variable. This is only used when the value is
+    -- immediately overwritten by a procedure call.
+    let coreTy := translateType ty
+    .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
+
 /--
 Translate Laurel StmtExpr to Core Statements
 Takes the constants list, type environment, output parameter names, and set of function names
@@ -190,11 +202,7 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
           else
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr constants env)
-            let defaultExpr := match ty.val with
-                              | .TInt => .const () (.intConst 0)
-                              | .TBool => .const () (.boolConst false)
-                              | .TString => .const () (.strConst "")
-                              | _ => .fvar () (Core.CoreIdent.locl s!"DUMMY_INIT_VAR_{env.length}") none
+            let defaultExpr := defaultExprForType ty
             let initStmt := Core.Statement.init ident boogieType defaultExpr
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
@@ -202,11 +210,7 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
           let boogieExpr := translateExpr constants env initExpr
           (env', [Core.Statement.init ident boogieType boogieExpr])
       | none =>
-          let defaultExpr := match ty.val with
-                            | .TInt => .const () (.intConst 0)
-                            | .TBool => .const () (.boolConst false)
-                            | .TString => .const () (.strConst "")
-                            | _ => .fvar () (Core.CoreIdent.locl s!"DUMMY_INIT_VAR_{env.length}") none
+          let defaultExpr := defaultExprForType ty
           (env', [Core.Statement.init ident boogieType defaultExpr])
   | .Assign targets value =>
       match targets with
