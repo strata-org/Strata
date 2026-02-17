@@ -172,7 +172,7 @@ Model:
 -/
 #guard_msgs in
 #eval do
-  let results ← verify "cvc5" irrelevantAxiomsTestPgm
+  let results ← verify irrelevantAxiomsTestPgm
         (options := {Options.models with removeIrrelevantAxioms := true})
   IO.println (normalizeModelValues (toString results))
 
@@ -229,7 +229,7 @@ Property: assert
 Result: 🟡 unknown
 -/
 #guard_msgs in
-#eval verify "cvc5" irrelevantAxiomsTestPgm
+#eval verify irrelevantAxiomsTestPgm
         (options := {Options.models with removeIrrelevantAxioms := false})
 
 ---------------------------------------------------------------------

@@ -116,7 +116,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" gaussPgm
+#eval verify gaussPgm
 
 def nestedPgm :=
 #strata
@@ -169,4 +169,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" nestedPgm (options := .quiet)
+#eval verify nestedPgm (options := .quiet)

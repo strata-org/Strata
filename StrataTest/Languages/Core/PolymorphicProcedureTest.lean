@@ -101,7 +101,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" polyProcPgm
+#eval verify polyProcPgm
 
 end Strata.PolymorphicProcedureTest
 
@@ -166,6 +166,6 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify "cvc5" polyPostPgm
+#eval verify polyPostPgm
 
 end Strata.PolymorphicPostconditionTest

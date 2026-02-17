@@ -122,4 +122,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" SimpleTestEnv
+#eval Strata.C_Simp.verify SimpleTestEnv

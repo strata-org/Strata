@@ -54,6 +54,8 @@ structure Options where
   outputSarif : Bool
   /-- SMT solver executable to use -/
   solver : String
+  /-- Directory to store VCs -/
+  vcDirectory : Option System.FilePath
 
 def Options.default : Options := {
   verbose := .normal,
@@ -65,6 +67,7 @@ def Options.default : Options := {
   solverTimeout := 10,
   outputSarif := false,
   solver := defaultSolver
+  vcDirectory := .none
 }
 
 instance : Inhabited Options where

@@ -97,7 +97,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" realPgm
+#eval verify realPgm
 
 ---------------------------------------------------------------------
 
@@ -182,7 +182,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" bvPgm
+#eval verify bvPgm
 
 def bvMoreOpsPgm : Program :=
 #strata
@@ -233,4 +233,4 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" bvMoreOpsPgm (options := .quiet)
+#eval verify bvMoreOpsPgm (options := .quiet)
