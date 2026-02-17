@@ -64,7 +64,7 @@ procedure test :  ((h : Heap) (ref : Ref) (field : Field)) → ()
   postconditions: 
 {
   {
-    init (newH : Heap) := ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))
+    init (newH : Heap) := some ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))
      (h : Heap)
      (ref : Ref)
      ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int)))))
@@ -115,11 +115,73 @@ Proof Obligation:
    $__ref1)
   $__field2) == (~Int.Add (~select (~select $__h0 $__ref1) $__field2) #1))
 
+
+
+Obligation assert_0: SMT Solver Invocation Error!
+
+Error: stderr:could not execute external process 'cvc5'
+ 
+Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
+solver stdout: lect : (arrow (Map Ref Struct) (arrow Ref Struct)))\n       ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct))))) %2 %1 %0)\n       %1) == %0))));\n  procedure test :  ((h : Heap) (ref : Ref) (field : Field)) → ()\n    modifies: []\n    preconditions: \n    postconditions: \n  {\n    {\n-     init (newH : Heap) := ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))\n+     init (newH : Heap) := some ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))\n       (h : Heap)\n       (ref : Ref)\n       ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int)))))\n        ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))\n        (field : Field)\n        ((~Int.Add : (arrow int (arrow int int)))\n         ((~select : (arrow (Map Field int) (arrow Field int)))\n          ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))\n          (field : Field))\n         #1)))\n      assert [assert_0] (((~select : (arrow (Map Field int) (arrow Field int)))\n        ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (newH : Heap) (ref : Ref))\n        (field : Field)) == ((~Int.Add : (arrow int (arrow int int)))\n        ((~select : (arrow (Map Field int) (arrow Field int)))\n         ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))\n         (field : Field))\n        #1))\n    }\n  }\n","endPos":{"column":11,"line":88},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/Examples/GeneratedLabels.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":88},"severity":"error"}
+
+
+
+Evaluated program:
+type Core.Boundedness.Infinite Ref []
+type Core.Boundedness.Infinite Field []
+type Struct := (Map Field int)
+type Heap := (Map Ref Struct)
+axiom axiom_0: (∀ (∀ (∀ (∀ ((~Bool.Implies : (arrow bool (arrow bool bool)))
+     ((~Bool.Not : (arrow bool bool)) (%2 == %1))
+     (((~select : (arrow (Map Field int) (arrow Field int)))
+       %3
+       %2) == ((~select : (arrow (Map Field int) (arrow Field int)))
+       ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) %3 %1 %0)
+       %2)))))));
+axiom axiom_1: (∀ (∀ (∀ (((~select : (arrow (Map Field int) (arrow Field int)))
+     ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) %2 %1 %0)
+     %1) == %0))));
+axiom axiom_2: (∀ (∀ (∀ (∀ ((~Bool.Implies : (arrow bool (arrow bool bool)))
+     ((~Bool.Not : (arrow bool bool)) (%2 == %1))
+     (((~select : (arrow (Map Ref (Map Field int)) (arrow Ref (Map Field int))))
+       %3
+       %2) == ((~select : (arrow (Map Ref (Map Field int)) (arrow Ref (Map Field int))))
+       ((~update : (arrow (Map Ref (Map Field int)) (arrow Ref (arrow (Map Field int) (Map Ref (Map Field int))))))
+        %3
+        %1
+        %0)
+       %2)))))));
+axiom axiom_3: (∀ (∀ (∀ (((~select : (arrow (Map Ref (Map Field int)) (arrow Ref (Map Field int))))
+     ((~update : (arrow (Map Ref (Map Field int)) (arrow Ref (arrow (Map Field int) (Map Ref (Map Field int))))))
+      %2
+      %1
+      %0)
+     %1) == %0))));
+procedure test :  ((h : (Map Ref (Map Field int))) (ref : Ref) (field : Field)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    init (newH : (Map Ref (Map Field int))) := some (~update
+     $__h0
+     $__ref1
+     (~update (~select $__h0 $__ref1) $__field2 (~Int.Add (~select (~select $__h0 $__ref1) $__field2) #1)))
+    assert [assert_0] ((~select
+      (~select
+       (~update
+        $__h0
+        $__ref1
+        (~update (~select $__h0 $__ref1) $__field2 (~Int.Add (~select (~select $__h0 $__ref1) $__field2) #1)))
+       $__ref1)
+      $__field2) == (~Int.Add (~select (~select $__h0 $__ref1) $__field2) #1))
+  }
+}
 ---
-info:
-Obligation: assert_0
-Property: assert
-Result: ✅ pass
+error: stderr:could not execute external process 'cvc5'
+ 
+Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
+solver stdout: lect : (arrow (Map Ref Struct) (arrow Ref Struct)))\n       ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct))))) %2 %1 %0)\n       %1) == %0))));\n  procedure test :  ((h : Heap) (ref : Ref) (field : Field)) → ()\n    modifies: []\n    preconditions: \n    postconditions: \n  {\n    {\n-     init (newH : Heap) := ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))\n+     init (newH : Heap) := some ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))\n       (h : Heap)\n       (ref : Ref)\n       ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int)))))\n        ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))\n        (field : Field)\n        ((~Int.Add : (arrow int (arrow int int)))\n         ((~select : (arrow (Map Field int) (arrow Field int)))\n          ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))\n          (field : Field))\n         #1)))\n      assert [assert_0] (((~select : (arrow (Map Field int) (arrow Field int)))\n        ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (newH : Heap) (ref : Ref))\n        (field : Field)) == ((~Int.Add : (arrow int (arrow int int)))\n        ((~select : (arrow (Map Field int) (arrow Field int)))\n         ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))\n         (field : Field))\n        #1))\n    }\n  }\n","endPos":{"column":11,"line":88},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/Examples/GeneratedLabels.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":88},"severity":"error"}
 -/
 #guard_msgs in
 #eval verify genLabelsPgm

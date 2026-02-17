@@ -579,37 +579,74 @@ info: "Test 2 - Tester Functions: PASSED\n  Verified 2 obligation(s)\n"
 #eval test2_testerFunctions
 
 /--
-info: "Test 3 - Destructor Functions: PASSED\n  Verified 2 obligation(s)\n"
+error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+
+To attempt to evaluate anyway despite the risks, use the '#eval!' command.
 -/
 #guard_msgs in
 #eval test3_destructorFunctions
 
 /--
-info: "Test 4 - Nested Datatypes: PASSED\n  Verified 2 obligation(s)\n"
+error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+
+To attempt to evaluate anyway despite the risks, use the '#eval!' command.
 -/
 #guard_msgs in
 #eval test4_nestedDatatypes
 
 /--
-info: "Test 5 - Tester with Havoc: PASSED\n  Verified 1 obligation(s)\n"
+info:
+
+Obligation x_not_none: SMT Solver Invocation Error!
+
+Error: stderr:could not execute external process 'cvc5'
+ 
+Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
+solver stdout: strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":7,"line":542},"severity":"error"}
+{"caption":"","data":"Application type mismatch: The argument\n  ()\nhas type\n  Unit\nbut is expected to have type\n  (LExprParamsT.base ?m.32).Metadata\nin the application\n  LExpr.app ()","endPos":{"column":25,"line":542},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":23,"line":542},"severity":"error"}
+{"caption":"","data":"aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\n\nTo attempt to evaluate anyway despite the risks, use the '#eval!' command.","endPos":{"column":5,"line":585},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":585},"severity":"error"}
+{"caption":"","data":"❌️ Docstring on `#guard_msgs` does not match generated message:\n\n- info: \"Test 3 - Destructor Functions: PASSED\\n  Verified 2 obligation(s)\\n\"\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\n+\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\n","endPos":{"column":11,"line":584},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":584},"severity":"error"}
+{"caption":"","data":"aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\n\nTo attempt to evaluate anyway despite the risks, use the '#eval!' command.","endPos":{"column":5,"line":591},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":591},"severity":"error"}
+{"caption":"","data":"❌️ Docstring on `#guard_msgs` does not match generated message:\n\n- info: \"Test 4 - Nested Datatypes: PASSED\\n  Verified 2 obligation(s)\\n\"\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\n+\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\n","endPos":{"column":11,"line":590},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":590},"severity":"error"}
+
+
+---
+info: "Test 5 - Tester with Havoc: FAILED\n  Error: stderr:could not execute external process 'cvc5'\n \nEnsure cvc5 is on your PATH or use --solver to specify another SMT solver.\nsolver stdout: strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":7,\"line\":542},\"severity\":\"error\"}\n{\"caption\":\"\",\"data\":\"Application type mismatch: The argument\\n  ()\\nhas type\\n  Unit\\nbut is expected to have type\\n  (LExprParamsT.base ?m.32).Metadata\\nin the application\\n  LExpr.app ()\",\"endPos\":{\"column\":25,\"line\":542},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":23,\"line\":542},\"severity\":\"error\"}\n{\"caption\":\"\",\"data\":\"aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\n\\nTo attempt to evaluate anyway despite the risks, use the '#eval!' command.\",\"endPos\":{\"column\":5,\"line\":585},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":585},\"severity\":\"error\"}\n{\"caption\":\"\",\"data\":\"❌️ Docstring on `#guard_msgs` does not match generated message:\\n\\n- info: \\\"Test 3 - Destructor Functions: PASSED\\\\n  Verified 2 obligation(s)\\\\n\\\"\\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\n+\\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\\n\",\"endPos\":{\"column\":11,\"line\":584},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":584},\"severity\":\"error\"}\n{\"caption\":\"\",\"data\":\"aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\n\\nTo attempt to evaluate anyway despite the risks, use the '#eval!' command.\",\"endPos\":{\"column\":5,\"line\":591},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":591},\"severity\":\"error\"}\n{\"caption\":\"\",\"data\":\"❌️ Docstring on `#guard_msgs` does not match generated message:\\n\\n- info: \\\"Test 4 - Nested Datatypes: PASSED\\\\n  Verified 2 obligation(s)\\\\n\\\"\\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\n+\\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\\n\",\"endPos\":{\"column\":11,\"line\":590},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":590},\"severity\":\"error\"}\n\n"
 -/
 #guard_msgs in
 #eval test5_testerWithHavoc
 
 /--
-info: "Test 6 - Destructor with Havoc: PASSED\n  Verified 1 obligation(s)\n"
+error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+
+To attempt to evaluate anyway despite the risks, use the '#eval!' command.
 -/
 #guard_msgs in
 #eval test6_destructorWithHavoc
 
 /--
-info: "Test 7 - List with Havoc: PASSED\n  Verified 1 obligation(s)\n"
+info:
+
+Obligation xs_not_nil: SMT Solver Invocation Error!
+
+Error: stderr:could not execute external process 'cvc5'
+ 
+Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
+solver stdout:  anyway despite the risks, use the '#eval!' command.\\\",\\\"endPos\\\":{\\\"column\\\":5,\\\"line\\\":591},\\\"fileName\\\":\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\\\",\\\"isSilent\\\":false,\\\"keepFullRange\\\":false,\\\"kind\\\":\\\"[anonymous]\\\",\\\"pos\\\":{\\\"column\\\":0,\\\"line\\\":591},\\\"severity\\\":\\\"error\\\"}\\n{\\\"caption\\\":\\\"\\\",\\\"data\\\":\\\"❌️ Docstring on `#guard_msgs` does not match generated message:\\\\n\\\\n- info: \\\\\\\"Test 4 - Nested Datatypes: PASSED\\\\\\\\n  Verified 2 obligation(s)\\\\\\\\n\\\\\\\"\\\\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\\\n+\\\\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\\\\n\\\",\\\"endPos\\\":{\\\"column\\\":11,\\\"line\\\":590},\\\"fileName\\\":\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\\\",\\\"isSilent\\\":false,\\\"keepFullRange\\\":false,\\\"kind\\\":\\\"[anonymous]\\\",\\\"pos\\\":{\\\"column\\\":0,\\\"line\\\":590},\\\"severity\\\":\\\"error\\\"}\\n\\n\"\n","endPos":{"column":11,"line":596},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":596},"severity":"error"}
+{"caption":"","data":"aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\n\nTo attempt to evaluate anyway despite the risks, use the '#eval!' command.","endPos":{"column":5,"line":603},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":603},"severity":"error"}
+{"caption":"","data":"❌️ Docstring on `#guard_msgs` does not match generated message:\n\n- info: \"Test 6 - Destructor with Havoc: PASSED\\n  Verified 1 obligation(s)\\n\"\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\n+\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\n","endPos":{"column":11,"line":602},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":602},"severity":"error"}
+
+
+---
+info: "Test 7 - List with Havoc: FAILED\n  Error: stderr:could not execute external process 'cvc5'\n \nEnsure cvc5 is on your PATH or use --solver to specify another SMT solver.\nsolver stdout:  anyway despite the risks, use the '#eval!' command.\\\\\\\",\\\\\\\"endPos\\\\\\\":{\\\\\\\"column\\\\\\\":5,\\\\\\\"line\\\\\\\":591},\\\\\\\"fileName\\\\\\\":\\\\\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\\\\\\\",\\\\\\\"isSilent\\\\\\\":false,\\\\\\\"keepFullRange\\\\\\\":false,\\\\\\\"kind\\\\\\\":\\\\\\\"[anonymous]\\\\\\\",\\\\\\\"pos\\\\\\\":{\\\\\\\"column\\\\\\\":0,\\\\\\\"line\\\\\\\":591},\\\\\\\"severity\\\\\\\":\\\\\\\"error\\\\\\\"}\\\\n{\\\\\\\"caption\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"data\\\\\\\":\\\\\\\"❌️ Docstring on `#guard_msgs` does not match generated message:\\\\\\\\n\\\\\\\\n- info: \\\\\\\\\\\\\\\"Test 4 - Nested Datatypes: PASSED\\\\\\\\\\\\\\\\n  Verified 2 obligation(s)\\\\\\\\\\\\\\\\n\\\\\\\\\\\\\\\"\\\\\\\\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\\\\\\\n+\\\\\\\\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\\\\\\\\n\\\\\\\",\\\\\\\"endPos\\\\\\\":{\\\\\\\"column\\\\\\\":11,\\\\\\\"line\\\\\\\":590},\\\\\\\"fileName\\\\\\\":\\\\\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\\\\\\\",\\\\\\\"isSilent\\\\\\\":false,\\\\\\\"keepFullRange\\\\\\\":false,\\\\\\\"kind\\\\\\\":\\\\\\\"[anonymous]\\\\\\\",\\\\\\\"pos\\\\\\\":{\\\\\\\"column\\\\\\\":0,\\\\\\\"line\\\\\\\":590},\\\\\\\"severity\\\\\\\":\\\\\\\"error\\\\\\\"}\\\\n\\\\n\\\"\\n\",\"endPos\":{\"column\":11,\"line\":596},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":596},\"severity\":\"error\"}\n{\"caption\":\"\",\"data\":\"aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\n\\nTo attempt to evaluate anyway despite the risks, use the '#eval!' command.\",\"endPos\":{\"column\":5,\"line\":603},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":603},\"severity\":\"error\"}\n{\"caption\":\"\",\"data\":\"❌️ Docstring on `#guard_msgs` does not match generated message:\\n\\n- info: \\\"Test 6 - Destructor with Havoc: PASSED\\\\n  Verified 1 obligation(s)\\\\n\\\"\\n+ error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.\\n+\\n+ To attempt to evaluate anyway despite the risks, use the '#eval!' command.\\n\",\"endPos\":{\"column\":11,\"line\":602},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/DatatypeVerificationTests.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":602},\"severity\":\"error\"}\n\n"
 -/
 #guard_msgs in
 #eval test7_listWithHavoc
 
 /--
-info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
+error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+
+To attempt to evaluate anyway despite the risks, use the '#eval!' command.
 -/
 #guard_msgs in
 #eval test8_hiddenTypeRecursion
@@ -753,7 +790,9 @@ def test9_mutualRecursiveWithHavoc : IO String := do
     runVerificationTest "Test 9 - Mutual Recursive with Havoc" program
 
 /--
-info: "Test 9 - Mutual Recursive with Havoc: PASSED\n  Verified 2 obligation(s)\n"
+error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+
+To attempt to evaluate anyway despite the risks, use the '#eval!' command.
 -/
 #guard_msgs in
 #eval test9_mutualRecursiveWithHavoc

@@ -57,7 +57,7 @@ info: function loopTrivial {
   post: #true
   body:
 {
-  init (i : int) := init_i
+  init (i : int) := some init_i
   i := #0
   while
     (~Int.Lt i n)
@@ -83,7 +83,7 @@ info: procedure loopTrivial :  ((n : int)) → ((return : int))
   postconditions: (post, #true)
 {
   {
-    init (i : int) := init_i
+    init (i : int) := some init_i
     i := #0
     if (~Int.Lt i n) {
       first_iter_asserts :
@@ -103,7 +103,7 @@ info: procedure loopTrivial :  ((n : int)) → ((return : int))
           assume [assume_invariant] (~Int.Le i n)
           assume [assume_measure_pos] (~Int.Ge (~Int.Sub n i) #0)
         }
-        init (special-name-for-old-measure-value : int) := (~Int.Sub n i)
+        init (special-name-for-old-measure-value : int) := some (~Int.Sub n i)
         i := (~Int.Add i #1)
         assert [measure_decreases] (~Int.Lt (~Int.Sub n i) special-name-for-old-measure-value)
         assert [measure_imp_not_guard] (if (~Int.Le (~Int.Sub n i) #0) then (~Bool.Not (~Int.Lt i n)) else #true)
@@ -256,35 +256,72 @@ Assumptions:
 Proof Obligation:
 #true
 
+
+
+Obligation entry_invariant: SMT Solver Invocation Error!
+
+Error: stderr:could not execute external process 'cvc5'
+ 
+Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
+solver stdout:  (~Int.Sub n i) #0) then (~Bool.Not (~Int.Lt i n)) else #true)\n          assert [arbitrary_iter_maintain_invariant] (~Int.Le i n)\n        }\n        loop havoc :\n        {\n          havoc i\n        }\n        assume [not_guard] (~Bool.Not (~Int.Lt i n))\n        assume [invariant] (~Int.Le i n)\n      }\n      else {}\n      assert [i_eq_n] (i == n)\n      return := i\n    }\n  }\n","endPos":{"column":11,"line":125},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/C_Simp/Examples/LoopTrivial.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":125},"severity":"error"}
+
+
+
+Evaluated program:
+procedure loopTrivial :  ((n : int)) → ((return : int))
+  modifies: []
+  preconditions: (pre, ((~Int.Ge : (arrow int (arrow int bool))) (n : int) #0))
+  postconditions: (post, #true)
+{
+  {
+    assume [pre] (~Int.Ge $__n0 #0)
+    init (i : int) := some init_i
+    i := #0
+    if ((~Int.Lt : (arrow int (arrow int bool))) #0 ($__n0 : int)) {
+      $_then :
+      {
+        first_iter_asserts :
+        {
+          assert [entry_invariant] (~Int.Le #0 $__n0)
+          assert [assert_measure_pos] (~Int.Ge (~Int.Sub $__n0 #0) #0)
+        }
+        arbitrary iter facts :
+        {
+          loop havoc :
+          {
+            havoc i
+          }
+          arbitrary_iter_assumes :
+          {
+            assume [assume_guard] (~Int.Lt $__i2 $__n0)
+            assume [assume_invariant] (~Int.Le $__i2 $__n0)
+            assume [assume_measure_pos] (~Int.Ge (~Int.Sub $__n0 $__i2) #0)
+          }
+          init (special-name-for-old-measure-value : int) := some (~Int.Sub $__n0 $__i2)
+          i := (~Int.Add $__i2 #1)
+          assert [measure_decreases] (~Int.Lt (~Int.Sub $__n0 (~Int.Add $__i2 #1)) (~Int.Sub $__n0 $__i2))
+          assert [measure_imp_not_guard] (if (~Int.Le
+            (~Int.Sub $__n0 (~Int.Add $__i2 #1))
+            #0) then (~Bool.Not (~Int.Lt (~Int.Add $__i2 #1) $__n0)) else #true)
+          assert [arbitrary_iter_maintain_invariant] (~Int.Le (~Int.Add $__i2 #1) $__n0)
+        }
+        loop havoc :
+        {
+          havoc i
+        }
+        assume [not_guard] (~Bool.Not (~Int.Lt $__i3 $__n0))
+        assume [invariant] (~Int.Le $__i3 $__n0)
+      }
+    }
+    else {
+      $_else : {}
+    }
+    assert [i_eq_n] ((if (~Int.Lt #0 $__n0) then $__i3 else #0) == $__n0)
+    return := (if (~Int.Lt #0 $__n0) then $__i3 else #0)
+    assert [post] #true
+  }
+}
 ---
-info:
-Obligation: entry_invariant
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_measure_pos
-Property: assert
-Result: ✅ pass
-
-Obligation: measure_decreases
-Property: assert
-Result: ✅ pass
-
-Obligation: measure_imp_not_guard
-Property: assert
-Result: ✅ pass
-
-Obligation: arbitrary_iter_maintain_invariant
-Property: assert
-Result: ✅ pass
-
-Obligation: i_eq_n
-Property: assert
-Result: ✅ pass
-
-Obligation: post
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify LoopTrivialPgm

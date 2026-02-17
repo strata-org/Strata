@@ -73,25 +73,30 @@ procedure TestProc :  ((x : int)) → ((output : int))
   postconditions: (testProc_result, ((output : int) == ((~Int.Mul : (arrow int (arrow int int))) (x : int) #4)))
 {
   {
-    init (tmp_arg_3 : int) := (x : int)
-    init (tmp_output_4 : int) := output
+    init (tmp_arg_3 : int) := some (x : int)
+    init (tmp_output_4 : int) := some output
     havoc output
     assume [callElimAssume_double_correct_5] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_3 #2))
-    init (tmp_arg_0 : int) := (output : int)
-    init (tmp_output_1 : int) := output
+    init (tmp_arg_0 : int) := some (output : int)
+    init (tmp_output_1 : int) := some output
     havoc output
     assume [callElimAssume_double_correct_2] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_0 #2))
   }
 }
----
-info:
-Obligation: double_correct
-Property: assert
-Result: ✅ pass
 
-Obligation: testProc_result
-Property: assert
-Result: ✅ pass
+
+Obligation double_correct: SMT Solver Invocation Error!
+
+Error: stderr:could not execute external process 'cvc5'
+ 
+Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
+solver stdout: 
+
+---
+error: stderr:could not execute external process 'cvc5'
+ 
+Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
+solver stdout:
 -/
 #guard_msgs in
 #eval testCallElim callElimBugExample
