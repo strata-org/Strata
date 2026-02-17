@@ -27,19 +27,14 @@ procedure S() returns ()
 #eval TransM.run Inhabited.default (translateProgram havocPgm) |>.snd |>.isEmpty
 
 /--
-info: procedure S :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: (procedure S () returns ()
 {
-  {
-    init (x : int) := init_x_0
-    x := #1
-    havoc x
-    assert [x_eq_1] ((x : int) == #1)
-  }
-}
-Errors: #[]
+  var x : int;
+  x := 1;
+  havoc x;
+  assert [x_eq_1]: x == 1;
+  };
+, #[])
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram havocPgm)
@@ -66,19 +61,15 @@ Model:
 ($__x0, 0)
 
 
-Evaluated program:
-procedure S :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+[DEBUG] Evaluated program:
+procedure S () returns ()
 {
-  {
-    init (x : int) := init_x_0
-    x := #1
-    havoc x
-    assert [x_eq_1] ($__x0 == #1)
-  }
-}
+  var x : int;
+  x := 1;
+  havoc x;
+  assert [x_eq_1]: $__x0 == 1;
+  };
+
 ---
 info:
 Obligation: x_eq_1

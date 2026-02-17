@@ -93,59 +93,41 @@ open Strata.C_Simp in
 #eval TransM.run (translateProgram (CoprimePgm.commands))
 
 /--
-info: procedure coprime :  ((a : int) (b : int)) → ((return : bool))
-  modifies: []
-  preconditions: (pre, (~Bool.And (~Int.Gt a #0) (~Int.Gt b #0)))
-  postconditions: (post, #true)
-{
-  {
-    init (i : int) := init_i
-    i := a
-    if (~Int.Lt b a) {
-      i := b
-    }
-    else {}
-    if (~Int.Gt i #1) {
-      first_iter_asserts :
-      {
-        assert [entry_invariant] #true
-        assert [assert_measure_pos] (~Int.Ge i #0)
-      }
-      arbitrary iter facts :
-      {
-        loop havoc :
-        {
-          havoc return
-          havoc i
-        }
-        arbitrary_iter_assumes :
-        {
-          assume [assume_guard] (~Int.Gt i #1)
-          assume [assume_invariant] #true
-          assume [assume_measure_pos] (~Int.Ge i #0)
-        }
-        init (special-name-for-old-measure-value : int) := i
-        if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
-          return := #false
-        }
-        else {}
-        i := (~Int.Sub i #1)
-        assert [measure_decreases] (~Int.Lt i special-name-for-old-measure-value)
-        assert [measure_imp_not_guard] (if (~Int.Le i #0) then (~Bool.Not (~Int.Gt i #1)) else #true)
-        assert [arbitrary_iter_maintain_invariant] #true
-      }
-      loop havoc :
-      {
-        havoc return
-        havoc i
-      }
-      assume [not_guard] (~Bool.Not (~Int.Gt i #1))
-      assume [invariant] #true
-    }
-    else {}
-    return := #true
-  }
-}
+info: procedure coprime (a : int, b : int) returns (return : bool)
+spec {
+  requires [pre]: a > 0 && b > 0;
+  ensures [post]: true;
+  } {
+  var i : int;
+  i := a;
+  if(b < a){
+    i := b;
+    }()if(i > 1){
+    first_iter_asserts: ({
+      assert [entry_invariant]: true;
+      assert [assert_measure_pos]: i >= 0;
+      })|arbitrary iter facts|: ({
+      |loop havoc|: ({
+        havoc return;
+        havoc i;
+        })arbitrary_iter_assumes: ({
+        assume [assume_guard]: i > 1;
+        assume [assume_invariant]: true;
+        assume [assume_measure_pos]: i >= 0;
+        })var |special-name-for-old-measure-value| : int;
+      if(b mod i == 0 && a mod i == 0){
+        return := false;
+        }()i := i - 1;
+      assert [measure_decreases]: i < special-name-for-old-measure-value;
+      assert [measure_imp_not_guard]: if i <= 0 then !(i > 1)else true;
+      assert [arbitrary_iter_maintain_invariant]: true;
+      })|loop havoc|: ({
+      havoc return;
+      havoc i;
+      })assume [not_guard]: !(i > 1);
+    assume [invariant]: true;
+    }()return := true;
+  };
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program CoprimePgm)

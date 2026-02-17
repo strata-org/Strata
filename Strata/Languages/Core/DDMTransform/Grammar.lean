@@ -6,6 +6,7 @@
 module
 
 public import Strata.DDM.AST
+public import Strata.DDM.HNF
 import Strata.DDM.Integration.Lean
 public import Strata.DDM.Integration.Lean.OfAstM
 
@@ -50,25 +51,25 @@ op type_args (args : CommaSepBy TypeVar) : TypeArgs => "<" args ">";
 category Bind;
 @[declare(v, tp)]
 op bind_mk (v : Ident, targs : Option TypeArgs, @[scope(targs)] tp : Type) : Bind =>
-  v ":" targs tp;
+  v " : " targs tp;
 
 category DeclList;
 @[scope(b)]
 op declAtom (b : Bind) : DeclList => b;
 @[scope(b)]
-op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl "," b;
+op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl ", " b;
 
 category MonoBind;
 @[declare(v, tp)]
 op mono_bind_mk (v : Ident, tp : Type) : MonoBind =>
-  v ":" tp;
+  v " : " tp;
 
 category MonoDeclList;
 @[scope(b)]
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl "," b;
+  dl ", " b;
 
 fn not (b : bool) : bool => "!" b;
 
@@ -91,60 +92,60 @@ fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
 
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";
-fn str_concat (a : string, b : string) : string => "str.concat" "(" a "," b ")";
-fn str_substr (a : string, i : int, n : int) : string => "str.substr" "(" a "," i "," n ")";
+fn str_concat (a : string, b : string) : string => "str.concat" "(" a ", " b ")";
+fn str_substr (a : string, i : int, n : int) : string => "str.substr" "(" a ", " i ", " n ")";
 fn str_toregex (a : string) : regex => "str.to.re" "(" a ")";
-fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s "," a ")";
+fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s ", " a ")";
 fn re_allchar () : regex => "re.allchar" "(" ")";
 fn re_all () : regex => "re.all" "(" ")";
-fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 "," s2 ")";
-fn re_concat (r1 : regex, r2 : regex) : regex => "re.concat" "(" r1 "," r2 ")";
+fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 ", " s2 ")";
+fn re_concat (r1 : regex, r2 : regex) : regex => "re.concat" "(" r1 ", " r2 ")";
 fn re_star (r : regex) : regex => "re.*" "(" r ")";
 fn re_plus (r : regex) : regex => "re.+" "(" r ")";
-fn re_loop (r : regex, i : int, j : int) : regex => "re.loop" "(" r "," i "," j")";
-fn re_union (r1 : regex, r2 : regex) : regex => "re.union" "(" r1 "," r2 ")";
-fn re_inter (r1 : regex, r2 : regex) : regex => "re.inter" "(" r1 "," r2 ")";
+fn re_loop (r : regex, i : int, j : int) : regex => "re.loop" "(" r ", " i ", " j")";
+fn re_union (r1 : regex, r2 : regex) : regex => "re.union" "(" r1 ", " r2 ")";
+fn re_inter (r1 : regex, r2 : regex) : regex => "re.inter" "(" r1 ", " r2 ")";
 fn re_comp (r : regex) : regex => "re.comp" "(" r ")";
 fn re_none () : regex => "re.none" "(" ")";
 
 fn btrue : bool => "true";
 fn bfalse : bool => "false";
-fn equiv (a : bool, b : bool) : bool => @[prec(4)] a "<==>" b;
-fn implies (a : bool, b : bool) : bool => @[prec(5), rightassoc] a "==>" b;
-fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a "&&" b;
-fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a "||" b;
+fn equiv (a : bool, b : bool) : bool => @[prec(4)] a " <==> " b;
+fn implies (a : bool, b : bool) : bool => @[prec(5), rightassoc] a " ==> " b;
+fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a " && " b;
+fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " || " b;
 
-fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "==" b;
-fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "!=" b;
-fn le (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "<=" b;
-fn lt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "<" b;
-fn ge (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a ">=" b;
-fn gt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a ">" b;
+fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " == " b;
+fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " != " b;
+fn le (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " <= " b;
+fn lt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " < "  b;
+fn ge (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " >= " b;
+fn gt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " > "  b;
 
 fn neg_expr (tp : Type, a : tp) : tp => "-" a;
-fn add_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a "+" b;
-fn sub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a "-" b;
-fn mul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "*" b;
-fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "div" b;
-fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "mod" b;
+fn add_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " + " b;
+fn sub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " - " b;
+fn mul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " * " b;
+fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " div " b;
+fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " mod " b;
 
 fn bvnot (tp : Type, a : tp) : tp => "~" a;
-fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "&" b;
-fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "|" b;
-fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "^" b;
-fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "<<" b;
-fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>" b;
-fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>s" b;
-fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "sdiv" b;
-fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "smod" b;
-fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a "<s" b;
-fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a "<=s" b;
-fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a ">s" b;
-fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a ">=s" b;
+fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " & " b;
+fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " | " b;
+fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " ^ " b;
+fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " << " b;
+fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
+fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >>s " b;
+fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
+fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
+fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b;
+fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
+fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
+fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
 
-fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a "," b ")";
-fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a "," b ")";
-fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a "," b ")";
+fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a ", " b ")";
+fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a ", " b ")";
+fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a ", " b ")";
 
 fn bvextract_7_7 (a : bv8) : bv1 => "bvextract{7}{7}{8}" "(" a ")";
 fn bvextract_15_15 (a : bv16) : bv1 => "bvextract{15}{15}{16}" "(" a ")";
@@ -159,7 +160,7 @@ fn bvextract_31_0_64 (a : bv64) : bv32 => "bvextract{31}{0}{64}" "(" a ")";
 category TriggerGroup;
 category Triggers;
 op trigger (exprs : CommaSepBy Expr) : TriggerGroup =>
-  "{" exprs "}";
+  " { " exprs " }\n  ";
 op triggersAtom (group : TriggerGroup) : Triggers =>
   group;
 op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
@@ -167,15 +168,15 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
 
 // Quantifiers without triggers
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>
-  "forall" d "::" b:3;
+  "forall " d " :: " b:3;
 fn exists (d : DeclList, @[scope(d)] b : bool) : bool =>
-  "exists" d "::" b:3;
+  "exists " d " :: " b:3;
 
 // Quantifiers with triggers
 fn forallT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "forall" d "::" triggers b:3;
+  "forall " d " :: " triggers indent(2, b:3);
 fn existsT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "exists" d "::" triggers b:3;
+  "exists " d " :: " triggers indent(2, b:3);
 
 category Lhs;
 op lhsIdent (v : Ident) : Lhs => v;
@@ -186,13 +187,13 @@ category Block;
 category Else;
 category Label;
 
-op label (l : Ident) : Label => "[" l "]:";
+op label (l : Ident) : Label => "[" l "]: ";
 
 @[scope(dl)]
 op varStatement (dl : DeclList) : Statement => "var " dl ";\n";
 @[declare(v, tp)]
 op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";\n";
-op assign (tp : Type, v : Lhs, e : tp) : Statement => v " := " e ";\n";
+op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";\n";
 op assume (label : Option Label, c : bool) : Statement => "assume " label c ";\n";
 op assert (label : Option Label, c : bool) : Statement => "assert " label c ";\n";
 op cover (label : Option Label, c : bool) : Statement => "cover " label c ";\n";
@@ -213,33 +214,33 @@ op while_statement (c : bool, is : Invariants, body : Block) : Statement =>
   "while" "(" c ")" is body;
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call" vs ":=" f "(" expr ")" ";\n";
+   "call " vs " := " f "(" expr ")" ";\n";
 op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call" f "(" expr ")" ";\n";
+   "call " f "(" expr ")" ";\n";
 
-op block (c : Seq Statement) : Block => " {\n" indent(2, c:40) "}\n";
+op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b;
 op goto_statement (label : Ident) : Statement => "goto " label ";\n";
 
 category SpecElt;
 category Free;
-op free () : Free => "free";
+op free () : Free => "free ";
 op modifies_spec (nm : Ident) : SpecElt => "modifies " nm ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
-  free? "ensures " label b ";\n";
+  free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
-  free? "requires " label b ";\n";
+  free?:0 "requires " label b ";\n";
 
 category Spec;
-op spec_mk (elts : Seq SpecElt) : Spec => "spec" "{\n" indent(2, elts) "}";
+op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 
 category Binding;
 @[declare(name, tp)]
-op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name ":" tp;
+op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp;
 
 category Bindings;
 @[scope(bindings)]
-op mkBindings (bindings : CommaSepBy Binding) : Bindings => "(" bindings ")";
+op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 
 op command_procedure (name : Ident,
                       typeArgs : Option TypeArgs,
@@ -248,8 +249,8 @@ op command_procedure (name : Ident,
                       @[scope(ret)] s: Option Spec,
                       @[scope(ret)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b "returns" "(" ret ")\n"
-              indent(2, s) body ";\n";
+  @[prec(10)] "procedure " name typeArgs b " returns " "(" ret ")\n"
+              s body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
 // type Array a;
@@ -269,7 +270,7 @@ op command_typesynonym (name : Ident,
                         args : Option Bindings,
                         targs : Option TypeArgs,
                         @[scope(args)] rhs : Type) : Command =>
-  "type " name args ":=" targs rhs ";\n";
+  "type " name args " := " targs rhs ";\n";
 
 @[declare(name, r)]
 op command_constdecl (name : Ident,
@@ -282,7 +283,7 @@ op command_fndecl (name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope(typeArgs)] r : Type) : Command =>
-  "function " name typeArgs b ":" r ";\n";
+  "function " name typeArgs b " : " r ";\n";
 
 category Inline;
 op inline () : Inline => "inline";
@@ -297,7 +298,7 @@ op command_fndef (name : Ident,
                   // that the order of the arguments in the fndecl and fndef
                   // agree.
                   inline? : Option Inline) : Command =>
-  inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
+  inline? "function " name typeArgs b " : " r " {\n  " indent(2, c) "\n}\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]
@@ -307,7 +308,7 @@ op funcDecl_statement (name : Ident,
                        @[scope(typeArgs)] r : Type,
                        @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
-  inline? "function " name typeArgs b " : " r " { " body " }";
+  inline? "function " name typeArgs b " : " r " { " body " }\n";
 
 @[scope(b)]
 op command_var (b : Bind) : Command =>
@@ -332,39 +333,55 @@ category Constructor;
 category ConstructorList;
 
 @[constructor(name, fields)]
-op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) : Constructor =>
-  name "(" fields ")";
+op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) :
+    Constructor => @[prec(50)] name "(" fields ")";
 
 @[constructorListAtom(c)]
-op constructorListAtom (c : Constructor) : ConstructorList => c;
+op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c;
 
 @[constructorListPush(cl, c)]
-op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
-  cl "," c;
+op constructorListPush (cl : ConstructorList, c : Constructor)
+    : ConstructorList => cl ",\n  " c;
 
 // @[scopeDatatype(name, typeParams)] brings datatype name and parameters into
 // scope when parsing constructors for recursive types
 @[declareDatatype(name, typeParams, constructors,
-    perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
+    perConstructor([.datatype, .literal "..is", .constructor],
+                   [.datatype], .builtin "bool"),
     perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
-                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>
-  "datatype " name typeParams " {" constructors "}" ";\n";
+                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
+      : Command =>
+      "datatype " name typeParams " {" constructors "\n}" ";\n";
 
 // Mutual block for defining mutually recursive types
 // Types should be forward-declared before the mutual block
 @[scope(commands)]
 op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
-  "mutual\n" indent(2, commands) "end;\n";
+  "mutual\n  " indent(2, commands) "end;\n";
 
 #end
 
+---------------------------------------------------------------------
+
 namespace CoreDDM
 
---#strata_gen Boogie
+#strata_gen Core
 
 end CoreDDM
+
+---------------------------------------------------------------------
+
+-- HACK: Get the DDM dialect map for Core programs, mainly for formatting.
+-- This dialect map should be common to all Core DDM programs.
+private def dummyProgram :=
+#strata
+program Core;
+#end
+
+def CoreDDM.dialectMap : DialectMap :=
+  dummyProgram.dialects
 
 ---------------------------------------------------------------------
 

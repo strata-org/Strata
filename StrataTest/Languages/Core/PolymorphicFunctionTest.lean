@@ -27,9 +27,7 @@ function identity<a>(x : a) : a;
 
 #end
 
-/--
-info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
--/
+/-- info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0; -/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamDeclPgm)).fst
 
@@ -56,19 +54,16 @@ spec {
 #end
 
 /--
-info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
-procedure TestIdentityInt :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: (TestIdentityInt_ensures_0, #true)
-{
-  {
-    init (x : int) := (init_x_0 : int)
-    init (y : int) := (init_y_1 : int)
-    x := #42
-    y := ((~identity : (arrow int int)) (x : int))
-  }
-}
+info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0;
+procedure TestIdentityInt () returns ()
+spec {
+  ensures [TestIdentityInt_ensures_0]: true;
+  } {
+  var x : int;
+  var y : int;
+  x := 42;
+  y := identity(x);
+  };
 -/
 #guard_msgs in
 #eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamIntPgm)).fst)
@@ -94,17 +89,14 @@ spec {
 #end
 
 /--
-info: ok: func makePair : ∀[$__ty0, $__ty1]. ((x : $__ty0) (y : $__ty1)) → (Map $__ty0 $__ty1);
-procedure TestMakePair :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: (TestMakePair_ensures_0, #true)
-{
-  {
-    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-    m := ((~makePair : (arrow int (arrow bool (Map int bool)))) #42 #true)
-  }
-}
+info: ok: function makePair<|$__ty0|, |$__ty1|> (x : $__ty0, y : $__ty1) : Map $__ty0 $__ty1;
+procedure TestMakePair () returns ()
+spec {
+  ensures [TestMakePair_ensures_0]: true;
+  } {
+  var m : (Map int bool);
+  m := makePair(42, true);
+  };
 -/
 #guard_msgs in
 #eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram multiTypeParamUsePgm)).fst)
@@ -131,18 +123,15 @@ spec {
 #end
 
 /--
-info: ok: func apply : ∀[$__ty0, $__ty1]. ((f : (arrow $__ty0 $__ty1)) (x : $__ty0)) → $__ty1;
-func intToBool :  ((x : int)) → bool;
-procedure TestApply :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: (TestApply_ensures_0, #true)
-{
-  {
-    init (result : bool) := (init_result_0 : bool)
-    result := ((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (arrow int bool)) #42)
-  }
-}
+info: ok: function apply<|$__ty0|, |$__ty1|> (f : $__ty0 -> $__ty1, x : $__ty0) : $__ty1;
+function intToBool (x : int) : bool;
+procedure TestApply () returns ()
+spec {
+  ensures [TestApply_ensures_0]: true;
+  } {
+  var result : bool;
+  result := apply(intToBool, 42);
+  };
 -/
 #guard_msgs in
 #eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram arrowTypeParamUsePgm)).fst)
@@ -169,20 +158,15 @@ spec {
 #end
 
 /--
-info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
-func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
-procedure TestDifferentInstantiations :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: (TestDifferentInstantiations_ensures_0, #true)
-{
-  {
-    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-    m := ((~makePair : (arrow int (arrow bool (Map int bool))))
-     ((~identity : (arrow int int)) #42)
-     ((~identity : (arrow bool bool)) #true))
-  }
-}
+info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0;
+function makePair<|$__ty1|, |$__ty2|> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+procedure TestDifferentInstantiations () returns ()
+spec {
+  ensures [TestDifferentInstantiations_ensures_0]: true;
+  } {
+  var m : (Map int bool);
+  m := makePair(identity(42), identity(true));
+  };
 -/
 #guard_msgs in
 #eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram differentInstantiationsPgm)).fst)
@@ -208,7 +192,7 @@ spec {
 #end
 
 /--
-info: error: (5305-5328) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
+info: error: (4714-4737) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
 First mismatch: int with bool.
 -/
 #guard_msgs in

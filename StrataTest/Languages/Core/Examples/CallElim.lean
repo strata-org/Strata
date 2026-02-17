@@ -58,31 +58,26 @@ private def testCallElim
 
 /--
 info: New Program:
-procedure Double :  ((n : int)) → ((result : int))
-  modifies: []
-  preconditions: 
-  postconditions: (double_correct, ((result : int) == ((~Int.Mul : (arrow int (arrow int int))) (n : int) #2)))
-{
-  {
-    result := ((~Int.Add : (arrow int (arrow int int))) (n : int) (n : int))
-  }
-}
-procedure TestProc :  ((x : int)) → ((output : int))
-  modifies: []
-  preconditions: 
-  postconditions: (testProc_result, ((output : int) == ((~Int.Mul : (arrow int (arrow int int))) (x : int) #4)))
-{
-  {
-    init (tmp_arg_3 : int) := (x : int)
-    init (tmp_output_4 : int) := output
-    havoc output
-    assume [callElimAssume_double_correct_5] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_3 #2))
-    init (tmp_arg_0 : int) := (output : int)
-    init (tmp_output_1 : int) := output
-    havoc output
-    assume [callElimAssume_double_correct_2] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_0 #2))
-  }
-}
+procedure Double (n : int) returns (result : int)
+spec {
+  ensures [double_correct]: result == n * 2;
+  } {
+  result := n + n;
+  };
+procedure TestProc (x : int) returns (output : int)
+spec {
+  ensures [testProc_result]: output == x * 4;
+  } {
+  var tmp_arg_3 : int;
+  var tmp_output_4 : int;
+  havoc output;
+  assume [callElimAssume_double_correct_5]: output == tmp_arg_3 * 2;
+  var tmp_arg_0 : int;
+  var tmp_output_1 : int;
+  havoc output;
+  assume [callElimAssume_double_correct_2]: output == tmp_arg_0 * 2;
+  };
+
 ---
 info:
 Obligation: double_correct
