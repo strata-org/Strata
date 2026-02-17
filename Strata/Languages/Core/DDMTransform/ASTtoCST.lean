@@ -359,7 +359,12 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
   match c with
   | .boolConst true => pure (.btrue default)
   | .boolConst false => pure (.bfalse default)
-  | .intConst n => pure (.natToInt default ⟨default, n.toNat⟩)
+  | .intConst n =>
+    if n >= 0 then
+      pure (.natToInt default ⟨default, n.toNat⟩)
+    else
+      let ty := CoreType.tvar default unknownTypeVar
+      pure (.neg_expr default ty (.natToInt default ⟨default, n.natAbs⟩))
   | .realConst r =>
     match Strata.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
