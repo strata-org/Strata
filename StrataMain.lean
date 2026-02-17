@@ -361,7 +361,7 @@ def pyAnalyzeLaurelCommand : Command where
               EIO.toIO
                 (fun f => IO.Error.userError (toString f))
                 (Core.verify coreProgram tempDir .none
-                  { Options.default with stopOnFirstError := false, verbose := verboseMode }))
+                  { Options.default with stopOnFirstError := false, verbose := verboseMode, solver := "z3" }))
 
           -- Print results
           IO.println "\n==== Verification Results ===="
