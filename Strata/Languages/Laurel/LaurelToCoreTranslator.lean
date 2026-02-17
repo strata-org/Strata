@@ -146,6 +146,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
+  | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none -- TODO: don't do this
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
   decreasing_by
@@ -193,7 +194,7 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
                               | .TInt => .const () (.intConst 0)
                               | .TBool => .const () (.boolConst false)
                               | .TString => .const () (.strConst "")
-                              | _ => .const () (.intConst 0)
+                              | _ => .fvar () (Core.CoreIdent.locl s!"DUMMY_INIT_VAR_{env.length}") none
             let initStmt := Core.Statement.init ident boogieType defaultExpr
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
@@ -205,7 +206,7 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
                             | .TString => .const () (.strConst "")
-                            | _ => .const () (.intConst 0)
+                            | _ => .fvar () (Core.CoreIdent.locl s!"DUMMY_INIT_VAR_{env.length}") none
           (env', [Core.Statement.init ident boogieType defaultExpr])
   | .Assign targets value =>
       match targets with
