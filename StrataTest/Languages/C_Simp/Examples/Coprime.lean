@@ -66,7 +66,7 @@ info: function coprime {
   post: #true
   body:
 {
-  init (i : int) := some init_i
+  init (i : int) := init_i
   i := a
   if (~Int.Lt b a) {
     i := b
@@ -99,7 +99,7 @@ info: procedure coprime :  ((a : int) (b : int)) → ((return : bool))
   postconditions: (post, #true)
 {
   {
-    init (i : int) := some init_i
+    init (i : int) := init_i
     i := a
     if (~Int.Lt b a) {
       i := b
@@ -124,7 +124,7 @@ info: procedure coprime :  ((a : int) (b : int)) → ((return : bool))
           assume [assume_invariant] #true
           assume [assume_measure_pos] (~Int.Ge i #0)
         }
-        init (special-name-for-old-measure-value : int) := some i
+        init (special-name-for-old-measure-value : int) := i
         if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
           return := #false
         }

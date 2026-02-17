@@ -58,12 +58,11 @@ Proof Obligation:
 
 
 
-Obligation (Origin_Extract_Requires)Extract_requires_0: SMT Solver Invocation Error!
-
-Error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: 
+Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
+Property: assert
+Result: ❌ fail
+Model:
+($__xs2, (as Nil (List Int))
 
 
 Evaluated program:
@@ -77,7 +76,7 @@ Constructors:
 procedure Extract :  ((xs : (List $__ty0))) → ((h : $__ty5))
   modifies: []
   preconditions: (Extract_requires_0, ((~List..isCons : (arrow (List $__ty0) bool)) (xs : (List $__ty0))))
-  postconditions: 
+  postconditions: ⏎
 {
   {
     assume [Extract_requires_0] (~List..isCons $__xs0)
@@ -85,19 +84,29 @@ procedure Extract :  ((xs : (List $__ty0))) → ((h : $__ty5))
 }
 procedure Test :  () → ()
   modifies: []
-  preconditions: 
+  preconditions: ⏎
   postconditions: (Test_ensures_0, #true)
 {
   {
-    init (xs : (List int)) := some init_xs_0
+    init (xs : (List int)) := init_xs_0
     xs := (~Cons #1 ~Nil)
     havoc xs
-    init (h : int) := some init_h_1
+    init (h : int) := init_h_1
     call [h] := Extract(xs)
     assert [Test_ensures_0] #true
   }
 }
 ---
+info:
+Obligation: (Origin_Extract_Requires)Extract_requires_0
+Property: assert
+Result: ❌ fail
+Model:
+($__xs2, (as Nil (List Int))
+
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify polyProcPgm
@@ -124,8 +133,7 @@ procedure Test() returns () spec { ensures true; }
 };
 #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
+/-- info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -153,49 +161,18 @@ Assumptions:
 Proof Obligation:
 #true
 
-
-
-Obligation assert_0: SMT Solver Invocation Error!
-
-Error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: ,"endPos":{"column":11,"line":111},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicProcedureTest.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":111},"severity":"error"}
-
-
-
-Evaluated program:
-type:
-List
-Type Arguments:
-[a]
-Constructors:
-[Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]
-
-procedure MkCons :  ((x : $__ty0)) → ((r : (List $__ty1)))
-  modifies: []
-  preconditions: 
-  postconditions: (MkCons_ensures_0, ((~List..isCons : (arrow (List $__ty1) bool))
-   (r : (List $__ty1))) (Attribute: Core.Procedure.CheckAttr.Free))
-{
-  {
-    assert [MkCons_ensures_0] #true
-  }
-}
-procedure Test :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: (Test_ensures_0, #true)
-{
-  {
-    init (r : (List int)) := some init_r_0
-    call [r] := MkCons(#1)
-    assert [assert_0] (~List..isCons $__r2)
-    assert [Test_ensures_0] #true
-  }
-}
 ---
--/
+info: Obligation: MkCons_ensures_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_0
+Property: assert
+Result: ✅ pass
+
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass-/
 #guard_msgs in
 #eval verify polyPostPgm
 

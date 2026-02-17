@@ -77,9 +77,9 @@ procedure TestOptionInt :  () → ()
   postconditions: (TestOptionInt_ensures_0, #true)
 {
   {
-    init (x : (Option int)) := some (init_x_0 : (Option int))
-    init (y : (Option int)) := some (init_y_1 : (Option int))
-    init (v : int) := some (init_v_2 : int)
+    init (x : (Option int)) := (init_x_0 : (Option int))
+    init (y : (Option int)) := (init_y_1 : (Option int))
+    init (v : int) := (init_v_2 : int)
     x := (~None : (Option int))
     y := ((~Some : (arrow int (Option int))) #42)
     v := ((~Option..value : (arrow (Option int) int)) (y : (Option int)))
@@ -128,8 +128,8 @@ procedure TestListInt :  () → ()
   postconditions: (TestListInt_ensures_0, #true)
 {
   {
-    init (xs : (List int)) := some (init_xs_0 : (List int))
-    init (h : int) := some (init_h_1 : int)
+    init (xs : (List int)) := (init_xs_0 : (List int))
+    init (h : int) := (init_h_1 : int)
     xs := ((~Cons : (arrow int (arrow (List int) (List int))))
      #1
      ((~Cons : (arrow int (arrow (List int) (List int)))) #2 (~Nil : (List int))))
@@ -182,8 +182,8 @@ procedure TestEither :  () → ()
   postconditions: (TestEither_ensures_0, #true)
 {
   {
-    init (x : (Either int bool)) := some (init_x_0 : (Either int bool))
-    init (y : (Either int bool)) := some (init_y_1 : (Either int bool))
+    init (x : (Either int bool)) := (init_x_0 : (Either int bool))
+    init (y : (Either int bool)) := (init_y_1 : (Either int bool))
     x := ((~Left : (arrow int (Either int bool))) #42)
     y := ((~Right : (arrow bool (Either int bool))) #true)
     assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Either int bool)))
@@ -239,7 +239,7 @@ procedure TestNestedPoly :  () → ()
   postconditions: (TestNestedPoly_ensures_0, #true)
 {
   {
-    init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))
+    init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
     x := ((~Some : (arrow (List int) (Option (List int))))
      ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))
     assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))
@@ -284,20 +284,13 @@ spec {
 
 /--
 info:
+Obligation: headIs100
+Property: assert
+Result: ✅ pass
 
-Obligation headIs100: SMT Solver Invocation Error!
-
-Error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\n \n  procedure TestNestedPoly :  () → ()\n    modifies: []\n    preconditions: \n    postconditions: (TestNestedPoly_ensures_0, #true)\n  {\n    {\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\n      x := ((~Some : (arrow (List int) (Option (List int))))\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\n    }\n  }\n","endPos":{"column":11,"line":249},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":249},"severity":"error"}
-
-
----
-error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\n \n  procedure TestNestedPoly :  () → ()\n    modifies: []\n    preconditions: \n    postconditions: (TestNestedPoly_ensures_0, #true)\n  {\n    {\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\n      x := ((~Some : (arrow (List int) (Option (List int))))\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\n    }\n  }\n","endPos":{"column":11,"line":249},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":249},"severity":"error"}
+Obligation: TestPolyListHavoc_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify polyListHavocPgm (options := .quiet)
@@ -339,20 +332,13 @@ spec {
 
 /--
 info:
+Obligation: bothCons
+Property: assert
+Result: ✅ pass
 
-Obligation bothCons: SMT Solver Invocation Error!
-
-Error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: re cvc5 is on your PATH or use --solver to specify another SMT solver.\n+ solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\\n \\n  procedure TestNestedPoly :  () → ()\\n    modifies: []\\n    preconditions: \\n    postconditions: (TestNestedPoly_ensures_0, #true)\\n  {\\n    {\\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\n    }\\n  }\\n\",\"endPos\":{\"column\":11,\"line\":249},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":249},\"severity\":\"error\"}\n+\n+\n+ ---\n+ error: stderr:could not execute external process 'cvc5'\n+  \n+ Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.\n+ solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\\n \\n  procedure TestNestedPoly :  () → ()\\n    modifies: []\\n    preconditions: \\n    postconditions: (TestNestedPoly_ensures_0, #true)\\n  {\\n    {\\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\n    }\\n  }\\n\",\"endPos\":{\"column\":11,\"line\":249},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":249},\"severity\":\"error\"}\n","endPos":{"column":11,"line":295},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":295},"severity":"error"}
-
-
----
-error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: re cvc5 is on your PATH or use --solver to specify another SMT solver.\n+ solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\\n \\n  procedure TestNestedPoly :  () → ()\\n    modifies: []\\n    preconditions: \\n    postconditions: (TestNestedPoly_ensures_0, #true)\\n  {\\n    {\\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\n    }\\n  }\\n\",\"endPos\":{\"column\":11,\"line\":249},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":249},\"severity\":\"error\"}\n+\n+\n+ ---\n+ error: stderr:could not execute external process 'cvc5'\n+  \n+ Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.\n+ solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\\n \\n  procedure TestNestedPoly :  () → ()\\n    modifies: []\\n    preconditions: \\n    postconditions: (TestNestedPoly_ensures_0, #true)\\n  {\\n    {\\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\n    }\\n  }\\n\",\"endPos\":{\"column\":11,\"line\":249},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":249},\"severity\":\"error\"}\n","endPos":{"column":11,"line":295},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":295},"severity":"error"}
+Obligation: TestMultiInstSMT_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify multiInstSMTPgm (options := .quiet)
@@ -392,20 +378,21 @@ spec {
 
 /--
 info:
+Obligation: isLeft
+Property: assert
+Result: ✅ pass
 
-Obligation isLeft: SMT Solver Invocation Error!
+Obligation: notRight
+Property: assert
+Result: ✅ pass
 
-Error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: nit (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\\\n    }\\\\n  }\\\\n\\\",\\\"endPos\\\":{\\\"column\\\":11,\\\"line\\\":249},\\\"fileName\\\":\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\\\",\\\"isSilent\\\":false,\\\"keepFullRange\\\":false,\\\"kind\\\":\\\"[anonymous]\\\",\\\"pos\\\":{\\\"column\\\":0,\\\"line\\\":249},\\\"severity\\\":\\\"error\\\"}\\n+\\n+\\n+ ---\\n+ error: stderr:could not execute external process 'cvc5'\\n+  \\n+ Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.\\n+ solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\\\\n \\\\n  procedure TestNestedPoly :  () → ()\\\\n    modifies: []\\\\n    preconditions: \\\\n    postconditions: (TestNestedPoly_ensures_0, #true)\\\\n  {\\\\n    {\\\\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\\\\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\\\n    }\\\\n  }\\\\n\\\",\\\"endPos\\\":{\\\"column\\\":11,\\\"line\\\":249},\\\"fileName\\\":\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\\\",\\\"isSilent\\\":false,\\\"keepFullRange\\\":false,\\\"kind\\\":\\\"[anonymous]\\\",\\\"pos\\\":{\\\"column\\\":0,\\\"line\\\":249},\\\"severity\\\":\\\"error\\\"}\\n\",\"endPos\":{\"column\":11,\"line\":295},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":295},\"severity\":\"error\"}\n","endPos":{"column":11,"line":343},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":343},"severity":"error"}
+Obligation: leftVal
+Property: assert
+Result: ✅ pass
 
-
----
-error: stderr:could not execute external process 'cvc5'
- 
-Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.
-solver stdout: nit (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\\\n    }\\\\n  }\\\\n\\\",\\\"endPos\\\":{\\\"column\\\":11,\\\"line\\\":249},\\\"fileName\\\":\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\\\",\\\"isSilent\\\":false,\\\"keepFullRange\\\":false,\\\"kind\\\":\\\"[anonymous]\\\",\\\"pos\\\":{\\\"column\\\":0,\\\"line\\\":249},\\\"severity\\\":\\\"error\\\"}\\n+\\n+\\n+ ---\\n+ error: stderr:could not execute external process 'cvc5'\\n+  \\n+ Ensure cvc5 is on your PATH or use --solver to specify another SMT solver.\\n+ solver stdout: rgs: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]\\\\n \\\\n  procedure TestNestedPoly :  () → ()\\\\n    modifies: []\\\\n    preconditions: \\\\n    postconditions: (TestNestedPoly_ensures_0, #true)\\\\n  {\\\\n    {\\\\n-     init (x : (Option (List int))) := (init_x_0 : (Option (List int)))\\\\n+     init (x : (Option (List int))) := some (init_x_0 : (Option (List int)))\\\\n      x := ((~Some : (arrow (List int) (Option (List int))))\\\\n       ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))\\\\n      assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))\\\\n    }\\\\n  }\\\\n\\\",\\\"endPos\\\":{\\\"column\\\":11,\\\"line\\\":249},\\\"fileName\\\":\\\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\\\",\\\"isSilent\\\":false,\\\"keepFullRange\\\":false,\\\"kind\\\":\\\"[anonymous]\\\",\\\"pos\\\":{\\\"column\\\":0,\\\"line\\\":249},\\\"severity\\\":\\\"error\\\"}\\n\",\"endPos\":{\"column\":11,\"line\":295},\"fileName\":\"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean\",\"isSilent\":false,\"keepFullRange\":false,\"kind\":\"[anonymous]\",\"pos\":{\"column\":0,\"line\":295},\"severity\":\"error\"}\n","endPos":{"column":11,"line":343},"fileName":"/local/home/mimayere/strata2/StrataTest/Languages/Core/PolymorphicDatatypeTest.lean","isSilent":false,"keepFullRange":false,"kind":"[anonymous]","pos":{"column":0,"line":343},"severity":"error"}
+Obligation: TestEitherHavoc_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify eitherHavocPgm (options := .quiet)

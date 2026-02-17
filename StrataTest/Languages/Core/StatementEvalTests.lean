@@ -133,10 +133,7 @@ Subst Map:
 Expression Env:
 State:
 [(minit : (arrow int int)) → (_minit : (arrow int int))
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else ((_minit : (arrow int int))
-         %0)))
-      %0)))
-   %0)))
+(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else ((_minit : (arrow int int)) %0))) %0))) %0)))
 (m0 : int) → ((_minit : (arrow int int)) #0)]
 
 Evaluation Config:
@@ -196,10 +193,7 @@ Subst Map:
 Expression Env:
 State:
 [minit → _minit
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else (_minit
-         %0)))
-      %0)))
-   %0)))]
+(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else (_minit %0))) %0))) %0)))]
 
 Evaluation Config:
 Eval Depth: 200
@@ -340,14 +334,12 @@ private def prog2 : Statements := [
 ]
 
 /--
-info: {
-  init (x : int) := some #0
-  x := #1
-  havoc x
-  assert [x_eq_1] ($__x0 == #1)
-  havoc x
-  x := #8
-}
+info: init (x : int) := some #0
+x := #1
+havoc x
+assert [x_eq_1] ($__x0 == #1)
+havoc x
+x := #8
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |>.fst |> format
@@ -422,7 +414,7 @@ Variable Prefix: $__
 Variable gen count: 0
 Factory Functions:
 func double :  ((x : int)) → int :=
-  ((~Int.Add x x))
+  (((~Int.Add x) x))
 
 
 Datatypes:
@@ -482,7 +474,7 @@ Variable Prefix: $__
 Variable gen count: 0
 Factory Functions:
 func addN :  ((x : int)) → int :=
-  ((~Int.Add x #10))
+  (((~Int.Add x) #10))
 
 
 Datatypes:

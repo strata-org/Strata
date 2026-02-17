@@ -59,12 +59,12 @@ spec {
 info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 procedure TestIdentityInt :  () → ()
   modifies: []
-  preconditions: 
+  preconditions: ⏎
   postconditions: (TestIdentityInt_ensures_0, #true)
 {
   {
-    init (x : int) := some (init_x_0 : int)
-    init (y : int) := some (init_y_1 : int)
+    init (x : int) := (init_x_0 : int)
+    init (y : int) := (init_y_1 : int)
     x := #42
     y := ((~identity : (arrow int int)) (x : int))
   }
@@ -97,11 +97,11 @@ spec {
 info: ok: func makePair : ∀[$__ty0, $__ty1]. ((x : $__ty0) (y : $__ty1)) → (Map $__ty0 $__ty1);
 procedure TestMakePair :  () → ()
   modifies: []
-  preconditions: 
+  preconditions: ⏎
   postconditions: (TestMakePair_ensures_0, #true)
 {
   {
-    init (m : (Map int bool)) := some (init_m_0 : (Map int bool))
+    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
     m := ((~makePair : (arrow int (arrow bool (Map int bool)))) #42 #true)
   }
 }
@@ -135,11 +135,11 @@ info: ok: func apply : ∀[$__ty0, $__ty1]. ((f : (arrow $__ty0 $__ty1)) (x : $_
 func intToBool :  ((x : int)) → bool;
 procedure TestApply :  () → ()
   modifies: []
-  preconditions: 
+  preconditions: ⏎
   postconditions: (TestApply_ensures_0, #true)
 {
   {
-    init (result : bool) := some (init_result_0 : bool)
+    init (result : bool) := (init_result_0 : bool)
     result := ((~apply : (arrow (arrow int bool) (arrow int bool))) (~intToBool : (arrow int bool)) #42)
   }
 }
@@ -173,11 +173,11 @@ info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
 procedure TestDifferentInstantiations :  () → ()
   modifies: []
-  preconditions: 
+  preconditions: ⏎
   postconditions: (TestDifferentInstantiations_ensures_0, #true)
 {
   {
-    init (m : (Map int bool)) := some (init_m_0 : (Map int bool))
+    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
     m := ((~makePair : (arrow int (arrow bool (Map int bool))))
      ((~identity : (arrow int int)) #42)
      ((~identity : (arrow bool bool)) #true))
