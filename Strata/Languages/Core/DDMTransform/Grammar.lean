@@ -373,15 +373,10 @@ end CoreDDM
 
 ---------------------------------------------------------------------
 
--- HACK: Get the DDM dialect map for Core programs, mainly for formatting.
--- This dialect map should be common to all Core DDM programs.
-private def dummyProgram :=
-#strata
-program Core;
-#end
-
+/-- Get the DDM dialect map for Core programs, mainly for formatting.
+This dialect map should be common to all Core DDM programs. -/
 def CoreDDM.dialectMap : DialectMap :=
-  dummyProgram.dialects
+  DialectMap.ofList! [Strata.initDialect, Strata.Core]
 
 ---------------------------------------------------------------------
 
