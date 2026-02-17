@@ -48,7 +48,7 @@ def eval (E : Env) : List (Program × Env) :=
                       let xdecls := ss.map initStmtToGlobalVarDecl
                       let declsE := { declsE with xdecls := declsE.xdecls ++ xdecls,
                                                   env := E }
-                    go rest declsE)
+                      go rest declsE)
 
     | .type _ _ =>
       go rest { declsE with xdecls := declsE.xdecls ++ [decl] }
@@ -86,7 +86,7 @@ def eval (E : Env) : List (Program × Env) :=
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
-        go rest declsE
+      go rest declsE
 
 
 --------------------------------------------------------------------

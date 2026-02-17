@@ -22,28 +22,12 @@ def translate (t : Strata.Program) : Core.Program :=
 
 def transformProgram (t : Strata.Program) : Core.Program :=
   let program := translate t
-  -- Build PrecondElim factory from pre-typecheck datatypes + program function decls
-  -- (mirrors typeCheckAndPartialEval logic)
-  let factory := Core.Factory
-  let preDataTypes := program.decls.filterMap fun decl =>
-    match decl with
-    | .type (.data d) _ => some d
-    | _ => none
-  let precondFactory := match preDataTypes.foldlM (fun F block => do
-    let bf ← Lambda.genBlockFactory (T := CoreLParams) block
-    F.addFactory bf) factory with
-    | .ok f => f
-    | .error e => panic! s!"genBlockFactory failed: {Std.format e}"
-  let precondFactory := program.decls.foldl (fun F decl =>
-    match decl with
-    | .func func _ => F.push func
-    | _ => F) precondFactory
-  -- Run PrecondElim before typechecking
-  let (program, _) := PrecondElim.precondElim program precondFactory
-  -- Type check (but don't partial eval)
-  match Core.typeCheck Options.default program with
-  | .error e => panic! s!"Type check failed: {Std.format e}"
-  | .ok program => program.eraseTypes.stripMetaData
+  match PrecondElim.precondElim program Core.Factory with
+  | .error e => panic! s!"PrecondElim failed: {Std.format e}"
+  | .ok program =>
+    match Core.typeCheck Options.default program with
+    | .error e => panic! s!"Type check failed: {Std.format e}"
+    | .ok program => program.eraseTypes.stripMetaData
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -280,5 +264,101 @@ info: procedure test :  () → ()
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcDeclPrecondPgm))
+
+/-! ### Test 6: Inline function declarations in both branches of if-then-else with different preconditions -/
+
+-- NOTE: This test is disabled due to a bug in DDM translation where inline function
+-- declarations in if-then-else branches get incorrect variable scoping.
+-- See: StrataTest/Languages/Core/Examples/FunctionDeclIteScopingBug.lean
+-- The second function's body incorrectly references variables from the first branch.
+
+-- def inlineFuncInIteSimplePgm :=
+-- #strata
+-- program Core;
+
+-- procedure test(cond : bool, x : int, y : int) returns ()
+-- {
+--   if (cond) {
+--     function f(a : int) : int
+--       requires x != 0;
+--       { a div x }
+--     var r1 : int := f(10);
+--   } else {
+--     function f(a : int) : int
+--       requires y != 0;
+--       { a div y }
+--     var r2 : int := f(20);
+--   }
+-- };
+
+-- #end
+
+-- #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
+
+/-! ### Test 7: Same function name in multiple procedures with different preconditions -/
+
+def funcInMultipleProcsPgm :=
+#strata
+program Core;
+
+procedure proc1(x : int) returns ()
+{
+  function f(a : int) : int
+    requires x != 0;
+    { a div x }
+  var r : int := f(10);
+};
+
+procedure proc2(y : int) returns ()
+{
+  function f(a : int) : int
+    requires y != 0;
+    { a div y }
+  var r : int := f(20);
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: procedure proc1 :  ((x : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    f$$wf :
+    {
+      init (a : int) := init_a
+      assume [precond_f_0] (~Bool.Not (x == #0))
+      assert [f_body_calls_Int.Div_0] (~Bool.Not (x == #0))
+    }
+    funcDecl <function>
+    assert [init_calls_f_0] (~Bool.Not (x == #0))
+    init (r : int) := (~f #10)
+  }
+}
+procedure proc2 :  ((y : int)) → ()
+  modifies: []
+  preconditions: 
+  postconditions: 
+{
+  {
+    f$$wf :
+    {
+      init (a : int) := init_a
+      assume [precond_f_0] (~Bool.Not (y == #0))
+      assert [f_body_calls_Int.Div_0] (~Bool.Not (y == #0))
+    }
+    funcDecl <function>
+    assert [init_calls_f_0] (~Bool.Not (y == #0))
+    init (r : int) := (~f #20)
+  }
+}
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram funcInMultipleProcsPgm))
 
 end PrecondElimTests

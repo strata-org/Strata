@@ -54,24 +54,9 @@ def typeCheck (options : Options) (program : Program)
 def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
-  -- Build environment with builtins + datatypes
   let factory ← Core.Factory.addFactory moreFns
-  -- Build PrecondElim factory from pre-typecheck datatypes + program function decls
-  let preDataTypes := program.decls.filterMap fun decl =>
-    match decl with
-    | .type (.data d) _ => some d
-    | _ => none
-  let precondFactory ← preDataTypes.foldlM (fun F block => do
-    let bf ← Lambda.genBlockFactory (T := CoreLParams) block
-    F.addFactory bf) factory
-  let precondFactory := program.decls.foldl (fun F decl =>
-    match decl with
-    | .func func _ => F.push func
-    | _ => F) precondFactory
-  -- Run PrecondElim before typechecking so generated assertions get typechecked
-  let (program, _) := PrecondElim.precondElim program precondFactory
+  let program ← PrecondElim.precondElim program factory
   let program ← typeCheck options program moreFns
-  -- Build evaluation environment from post-typecheck program (aliases resolved)
   let datatypes := program.decls.filterMap fun decl =>
     match decl with
     | .type (.data d) _ => some d

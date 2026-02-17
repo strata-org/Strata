@@ -495,8 +495,6 @@ The precondition requires the tester for the constructor to be true.
 def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
   let arg := genArgName
   let argTy := dataDefault d
-  -- Type of tester: argTy → bool
-  let testerTy : LMonoTy := .arrow argTy .bool
   c.args.mapIdx (fun i (name, ty) =>
     {
       name := destructorFuncName d name,
@@ -506,7 +504,7 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Met
       concreteEval := some (fun _ => destructorConcreteEval d c i),
       attr := #[eval_if_constr_attr],
       -- precondition: the tester holds (e.g. List..isCons(xs))
-      preconditions := [⟨.app default (.op default c.testerName (some testerTy))
+      preconditions := [⟨.app default (.op default c.testerName (some (.arrow argTy .bool)))
         (.fvar default arg none), default⟩] })
 
 

@@ -71,6 +71,8 @@ where
 
   go (F : Factory T) (e : LExpr T.mono)
       (implications : List (T.Metadata × LExpr T.mono)) : List (WFObligation T) :=
+    -- A function call generates an obligation that the precondition is
+    -- satisfied under the current assumptions
     let callObligations := match Factory.callOfLFunc F e with
       | some (_op, args, func) =>
         if func.preconditions.isEmpty then []
@@ -85,6 +87,8 @@ where
       | none => []
     let subObligations := match e with
       | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => []
+      -- Need to quantify over bound variable
+      -- e.g. λ x => 2 / x gives precondition ∀ x, x != 0
       | .abs md ty body =>
         (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all ty (.bvar md 0) ob.obligation }
@@ -93,6 +97,9 @@ where
         let bodyObs := (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all ty trigger ob.obligation }
         triggerObs ++ bodyObs
+      /- If we are on the RHS of an implication, add assumption
+        E.g. y > 0 ==> x / y = 1 should produce
+        y > 0 ==> y != 0 -/
       | .app md (.app _ (.op _ opName _) lhs) rhs =>
         if opName == (@boolImpliesFunc T).name then
           let lhsObs := go F lhs implications
@@ -102,6 +109,9 @@ where
           go F lhs implications ++ go F rhs implications
       | .app _ fn arg => go F fn implications ++ go F arg implications
       | .ite md c t f =>
+        /- Similarly, if-then-else adds assumption in each branch
+        E.g. if y > 0 then x / y else 0 produces
+        y > 0 ==> y != 0-/
         let cObs := go F c implications
         let tObs := go F t ((md, c) :: implications)
         let fObs := go F f ((md, .app md (@boolNotFunc T).opExpr c) :: implications)

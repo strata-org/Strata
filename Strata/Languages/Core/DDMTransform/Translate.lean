@@ -1148,7 +1148,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- Index 1: function name (from declareFn)
     -- Index 2+: outer scope variables
     --
-    -- We include both the function and parameters in boundVars.
+    -- We need to include both the function and parameters in boundVars.
     -- The function is represented as an op expression that can be called.
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
     let funcBinding : LExpr CoreLParams.mono := .op () name (some funcType)
