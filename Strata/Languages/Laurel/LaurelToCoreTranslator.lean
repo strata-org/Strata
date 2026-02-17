@@ -465,8 +465,8 @@ def verifyToVcResults (program : Program)
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (smtsolver : String) (files: Map Strata.Uri Lean.FileMap) (program : Program)
-    (tempDir : Option String := .none): IO (Array Diagnostic) := do
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
+    (options : Options := Options.default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
