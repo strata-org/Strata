@@ -1035,7 +1035,7 @@ private def recreateGlobalContext (ctx : ToCSTContext M)
 
 /-- Render `Core.Program` to a format object.
 
-If the Core program is expected have about some constructs not defined in the
+If the Core program is expected to have some constructs not defined in the
 Grammar (e.g., via a custom Factory), then use `extraFreeVars` to add
 their names globally to the translation and formatting context.
 -/
