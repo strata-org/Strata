@@ -510,33 +510,29 @@ def verify
     panic! s!"DDM Transform Error: {repr errors}"
 
 def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
+  let isCover := vcr.obligation.property == .cover
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic
+  | .unknown =>
+    -- For unknown results on cover statements, only report in debug/verbose mode
+    -- (it's informational, not an error). For asserts, unknown is always a problem.
+    if isCover && vcr.verbose ≤ .normal then
+      none
+    else
+      let message := if isCover then "cover property could not be checked"
+                     else "assertion could not be proved"
+      let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+      some { fileRange := fileRange, message := message }
   | result =>
     let message := match result with
-      | .fail => "assertion does not hold"
-      | .unknown => "assertion could not be proved"
+      | .fail =>
+        if isCover then "cover property is not satisfiable"
+        else "assertion does not hold"
       | .implementationError msg => s!"verification error: {msg}"
       | _ => panic "impossible"
 
-    let .some fileRangeElem := vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-      | some {
-          fileRange := default
-          message := s!"Internal error: diagnostics without position! obligation label: {repr vcr.obligation.label}"
-        }
-
-    let result := match fileRangeElem.value with
-      | .fileRange fileRange =>
-        some {
-          fileRange := fileRange
-          message := message
-        }
-      | _ =>
-        some {
-          fileRange := default
-          message := s!"Internal error: diagnostics without position! Metadata value for fileRange key was not a fileRange. obligation label: {repr vcr.obligation.label}"
-        }
-    result
+    let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+    some { fileRange := fileRange, message := message }
 
 structure Diagnostic where
   start : Lean.Position
