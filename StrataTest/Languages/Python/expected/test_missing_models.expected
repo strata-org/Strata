@@ -12,3 +12,33 @@ assert_opt_name_none_or_str: ✅ pass (at byte 11125)
 assert_opt_name_none_or_bar: ✅ pass (at byte 11272)
 
 ensures_maybe_except_none: ✅ pass (at byte 10978)
+
+Assertion failed at byte 11075: test_helper_procedure_assert_name_is_foo_23: ❌ fail
+
+test_helper_procedure_assert_opt_name_none_or_str_24: ✅ pass (at byte 11125)
+
+test_helper_procedure_assert_opt_name_none_or_bar_25: ✅ pass (at byte 11272)
+
+test_helper_procedure_assert_name_is_foo_13: ✅ pass (at byte 11075)
+
+test_helper_procedure_assert_opt_name_none_or_str_14: ✅ pass (at byte 11125)
+
+test_helper_procedure_assert_opt_name_none_or_bar_15: ✅ pass (at byte 11272)
+
+test_helper_procedure_assert_name_is_foo_3: ✅ pass (at byte 11075)
+
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11125)
+
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11272)
+
+Assertion failed at byte 11075: test_helper_procedure_assert_name_is_foo_13: ❌ fail
+
+test_helper_procedure_assert_opt_name_none_or_str_14: ✅ pass (at byte 11125)
+
+test_helper_procedure_assert_opt_name_none_or_bar_15: ✅ pass (at byte 11272)
+
+Assertion failed at byte 11075: test_helper_procedure_assert_name_is_foo_3: ❌ fail
+
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11125)
+
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11272)
