@@ -61,7 +61,7 @@ function identity<a>(x : a) : a;
 
 /--
 info: program TestDeclareTVar;
-function identity<a>(x:tvar!a) : tvar!a;
+function identity<a>(x:a) : a;
 -/
 #guard_msgs in
 #eval IO.println singleTypeParamPgm
@@ -95,7 +95,7 @@ function lookup<k, v>(m : Map k v, key : k) : v;
 
 /--
 info: program TestDeclareTVar;
-function lookup<k, v>(m:(Map tvar!v tvar!k), key:tvar!k) : tvar!v;
+function lookup<k, v>(m:(Map v k), key:k) : v;
 -/
 #guard_msgs in
 #eval IO.println typeParamInMapPgm
