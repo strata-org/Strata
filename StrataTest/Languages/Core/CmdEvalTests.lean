@@ -20,7 +20,7 @@ private def testProgram1 : Cmds Expression :=
 
 /--
 info: Commands:
-init (x : int) := #0
+init (x : int) := some #0
 x := #10
 assert [x_value_eq] #true
 
@@ -64,7 +64,7 @@ private def testProgram2 : Cmds Expression :=
 
 /--
 info: Commands:
-init (x : int) := (y : int)
+init (x : int) := some (y : int)
 assert [x_eq_12] ((y : int) == #12)
 
 State:
