@@ -57,7 +57,7 @@ info: function loopTrivial {
   post: #true
   body:
 {
-  init (i : int) := some init_i
+  init (i : int) := init_i
   i := #0
   while
     (~Int.Lt i n)
@@ -83,7 +83,7 @@ info: procedure loopTrivial :  ((n : int)) → ((return : int))
   postconditions: (post, #true)
 {
   {
-    init (i : int) := some init_i
+    init (i : int) := init_i
     i := #0
     if (~Int.Lt i n) {
       first_iter_asserts :
@@ -103,7 +103,7 @@ info: procedure loopTrivial :  ((n : int)) → ((return : int))
           assume [assume_invariant] (~Int.Le i n)
           assume [assume_measure_pos] (~Int.Ge (~Int.Sub n i) #0)
         }
-        init (special-name-for-old-measure-value : int) := some (~Int.Sub n i)
+        init (special-name-for-old-measure-value : int) := (~Int.Sub n i)
         i := (~Int.Add i #1)
         assert [measure_decreases] (~Int.Lt (~Int.Sub n i) special-name-for-old-measure-value)
         assert [measure_imp_not_guard] (if (~Int.Le (~Int.Sub n i) #0) then (~Bool.Not (~Int.Lt i n)) else #true)

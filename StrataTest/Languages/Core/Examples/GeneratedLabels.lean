@@ -64,7 +64,7 @@ procedure test :  ((h : Heap) (ref : Ref) (field : Field)) → ()
   postconditions: 
 {
   {
-    init (newH : Heap) := some ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))
+    init (newH : Heap) := ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))
      (h : Heap)
      (ref : Ref)
      ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int)))))

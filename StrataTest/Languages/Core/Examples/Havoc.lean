@@ -33,7 +33,7 @@ info: procedure S :  () → ()
   postconditions: 
 {
   {
-    init (x : int) := some init_x_0
+    init (x : int) := init_x_0
     x := #1
     havoc x
     assert [x_eq_1] ((x : int) == #1)
@@ -73,7 +73,7 @@ procedure S :  () → ()
   postconditions: 
 {
   {
-    init (x : int) := some init_x_0
+    init (x : int) := init_x_0
     x := #1
     havoc x
     assert [x_eq_1] ($__x0 == #1)

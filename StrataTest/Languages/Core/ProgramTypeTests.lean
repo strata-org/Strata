@@ -376,9 +376,23 @@ def polyFuncProg : Program := { decls := [
 ]}
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: [Strata.Core] Type checking succeeded.
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+---
+info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
+func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
+procedure Test :  () → ()
+  modifies: []
+  preconditions: ⏎
+  postconditions: ⏎
+{
+  {
+    init (m : (Map int bool)) := (init_m_0 : (Map int bool))
+    m := ((~makePair : (arrow int (arrow bool (Map int bool))))
+     ((~identity : (arrow int int)) #42)
+     ((~identity : (arrow bool bool)) #true))
+  }
+}
 -/
 #guard_msgs in
 #eval do

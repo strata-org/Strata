@@ -17,29 +17,11 @@ open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 open Imperative (PureFunc)
 
 /--
-error: Application type mismatch: The argument
-  LExpr.fvar () (CoreIdent.unres "xinit") none
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "x";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "int" [])) (LExpr.fvar () (CoreIdent.unres "xinit") none)
----
-error: Application type mismatch: The argument
-  LExpr.fvar () (CoreIdent.unres "xinit") none
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "y";
-    CoreIdent.unres s)
-    (LTy.forAll ["α"] (LMonoTy.ftvar "α")) (LExpr.fvar () (CoreIdent.unres "xinit") none)
+info: ok: {
+  init (x : int) := (xinit : int)
+  x := (xinit : int)
+  init (y : int) := (xinit : int)
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
@@ -51,19 +33,7 @@ in the application
          return format ans.fst
 
 
-/--
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.boolConst true)
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "x";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "bool" [])) (LExpr.const () (LConst.boolConst true))
--/
+/-- info: error: Variable x of type bool already in context. -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("x", t[bool])]] })
                    Program.init
@@ -74,29 +44,15 @@ in the application
          return format ans
 
 /--
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.intConst (Int.ofNat 0))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "x";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "int" [])) (LExpr.const () (LConst.intConst (Int.ofNat 0)))
----
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.intConst (Int.ofNat 6))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "y";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "int" [])) (LExpr.const () (LConst.intConst (Int.ofNat 6)))
+info: ok: context:
+types:   [(zinit, bool) (x, int) (y, int)]
+aliases: []
+state:
+tyGen: 1
+tyPrefix: $__ty
+exprGen: 0
+exprPrefix: $__var
+subst:
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("zinit", t[bool])]] })
@@ -120,46 +76,7 @@ in the application
                     ]
           return format ans.snd
 
-/--
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.intConst (Int.ofNat 0))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "x";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "int" [])) (LExpr.const () (LConst.intConst (Int.ofNat 0)))
----
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.intConst (Int.ofNat 6))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "y";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "int" [])) (LExpr.const () (LConst.intConst (Int.ofNat 6)))
----
-error: Application type mismatch: The argument
-  LExpr.ite () (LExpr.eq () (LExpr.fvar () (CoreIdent.unres "x") none) (LExpr.fvar () (CoreIdent.unres "y") none))
-    (LExpr.const () (LConst.boolConst true)) (LExpr.const () (LConst.intConst (Int.ofNat 2)))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "z";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "bool" []))
-    (LExpr.ite () (LExpr.eq () (LExpr.fvar () (CoreIdent.unres "x") none) (LExpr.fvar () (CoreIdent.unres "y") none))
-      (LExpr.const () (LConst.boolConst true)) (LExpr.const () (LConst.intConst (Int.ofNat 2))))
--/
+/-- info: error: Impossible to unify bool with int. -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
@@ -169,19 +86,7 @@ in the application
                     ]
           return format ans
 
-/--
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.boolConst true)
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "x";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "bool" [])) (LExpr.const () (LConst.boolConst true))
--/
+/-- info: error: Variable x of type bool already in context. -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
@@ -192,29 +97,15 @@ in the application
           return format ans
 
 /--
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.intConst (Int.ofNat 0))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "x";
-    CoreIdent.unres s)
-    (LTy.forAll [] (LMonoTy.tcons "int" [])) (LExpr.const () (LConst.intConst (Int.ofNat 0)))
----
-error: Application type mismatch: The argument
-  LExpr.fvar () (CoreIdent.unres "x") none
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "y";
-    CoreIdent.unres s)
-    (LTy.forAll ["α"] (LMonoTy.ftvar "α")) (LExpr.fvar () (CoreIdent.unres "x") none)
+info: ok: context:
+types:   [(x, int)]
+aliases: []
+state:
+tyGen: 2
+tyPrefix: $__ty
+exprGen: 0
+exprPrefix: $__var
+subst: [($__ty0, int)]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
@@ -230,17 +121,10 @@ in the application
           return format ans.snd
 
 /--
-error: Application type mismatch: The argument
-  LExpr.const () (LConst.intConst (Int.ofNat 1))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "x";
-    CoreIdent.unres s)
-    (LTy.forAll ["a"] (LMonoTy.ftvar "a")) (LExpr.const () (LConst.intConst (Int.ofNat 1)))
+info: ok: {
+  init (x : int) := #1
+  x := #2
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
@@ -251,35 +135,15 @@ in the application
           return (format ans.fst)
 
 /--
-error: Application type mismatch: The argument
-  LExpr.fvar () (CoreIdent.unres "fn") none
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "m1";
-    CoreIdent.unres s)
-    (LTy.forAll ["a"] (LMonoTy.tcons "arrow" [LMonoTy.ftvar "a", LMonoTy.tcons "int" []]))
-    (LExpr.fvar () (CoreIdent.unres "fn") none)
----
-error: Application type mismatch: The argument
-  LExpr.absUntyped ()
-    (LExpr.app () (LExpr.bvar () 0)
-      (LExpr.app () (LExpr.fvar () (CoreIdent.unres "fn") none) (LExpr.const () (LConst.boolConst true))))
-has type
-  LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
-but is expected to have type
-  Option Expression.Expr
-in the application
-  @init
-    (have s := "m2";
-    CoreIdent.unres s)
-    (LTy.forAll ["a"] (LMonoTy.tcons "arrow" [LMonoTy.ftvar "a", LMonoTy.tcons "int" []]))
-    (LExpr.absUntyped ()
-      (LExpr.app () (LExpr.bvar () 0)
-        (LExpr.app () (LExpr.fvar () (CoreIdent.unres "fn") none) (LExpr.const () (LConst.boolConst true)))))
+info: ok: context:
+types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
+aliases: []
+state:
+tyGen: 10
+tyPrefix: $__ty
+exprGen: 1
+exprPrefix: $__var
+subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($__ty5, (arrow bool int)) ($__ty3, (arrow bool int)) ($__ty9, int)]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
@@ -323,9 +187,11 @@ def testFuncDeclTypeCheck : List Statement :=
   ]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
-
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+info: ok: {
+  funcDecl <function>
+  init (y : int) := ((~identity : (arrow int int)) #5)
+  assert [y_eq_5] ((y : int) == #5)
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclTypeCheck

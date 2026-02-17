@@ -175,9 +175,23 @@ private def testProgram1 : Cmds PureExpr :=
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: Commands:
+init (x : Num) := 0
+x := 100
+assert [x_value_eq] true
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+State:
+error: none
+warnings: []
+deferred: #[Label: x_value_eq
+ Property : assert
+ Assumptions: ⏎
+ Obligation: true
+ Metadata: ⏎
+ ]
+pathConditions: ⏎
+env: (x, (Num, 100))
+genNum: 0
 -/
 #guard_msgs in
 #eval format $ Cmds.eval State.init testProgram1
@@ -189,9 +203,23 @@ private def testProgram2 : Cmds PureExpr :=
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: Commands:
+init (x : Num) := y
+havoc x
+assert [x_value_eq] ($__x0 : Num) = 100
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+State:
+error: none
+warnings: []
+deferred: #[Label: x_value_eq
+ Property : assert
+ Assumptions: ⏎
+ Obligation: ($__x0 : Num) = 100
+ Metadata: ⏎
+ ]
+pathConditions: ⏎
+env: (y, (Num, y)) (x, (Num, ($__x0 : Num)))
+genNum: 1
 -/
 #guard_msgs in
 #eval format $ Cmds.eval State.init testProgram2

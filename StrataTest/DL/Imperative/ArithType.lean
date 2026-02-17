@@ -120,9 +120,13 @@ private def testProgram1 : Cmds Arith.PureExpr :=
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: ok: Commands:
+init (x : Num) := 0
+x := x + 100
+assert [x_value_eq] x = 100
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+TEnv:
+(x, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram1
@@ -131,11 +135,7 @@ To attempt to evaluate anyway despite the risks, use the '#eval!' command.
 private def testProgram2 : Cmds Arith.PureExpr :=
   [.init "x" .Bool (.Num 0)]
 
-/--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
-
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
--/
+/-- info: error: Types .Bool and Num cannot be unified! -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram2
           return format (cs, τ)
@@ -143,11 +143,7 @@ To attempt to evaluate anyway despite the risks, use the '#eval!' command.
 private def testProgram3 : Cmds Arith.PureExpr :=
   [.init "x" .Bool (.Var "x" .none)]
 
-/--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
-
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
--/
+/-- info: error: Variable x cannot appear in its own initialization expression! -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram3
           return format (cs, τ)
@@ -157,9 +153,12 @@ private def testProgram4 : Cmds Arith.PureExpr :=
    .set "x" (.Var "x" .none)]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: ok: Commands:
+init (x : Num) := 5
+x := x
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+TEnv:
+(x, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram4
@@ -170,11 +169,7 @@ private def testProgram5 : Cmds Arith.PureExpr :=
   [.init "x" .Num (.Num 5),
    .init "x" .Bool (.Eq (.Num 1) (.Num 2))]
 
-/--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
-
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
--/
+/-- info: error: Variable x of type Num already in context. -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram5
           return format (cs, τ)
@@ -183,9 +178,8 @@ private def testProgram6 : Cmds Arith.PureExpr :=
   [.init "x" .Num (.Var "y" .none)]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
-
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+info: error: Cannot infer the types of free variables in the initialization expression!
+y
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram6
@@ -195,9 +189,11 @@ private def testProgram7 : Cmds Arith.PureExpr :=
   [.init "x" .Num (.Plus (.Var "y" (some .Num)) (.Var "z" (some .Num)))]
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info: ok: Commands:
+init (x : Num) := (y : Num) + (z : Num)
 
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+TEnv:
+(y, Num) (z, Num) (x, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram7
@@ -207,11 +203,7 @@ private def testProgram8 : Cmds Arith.PureExpr :=
   [.init "x" .Num (.Num 1),
    .set "x" (.Var "y" (some .Num))]
 
-/--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
-
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
--/
+/-- info: error: Variable y not found in type context! -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram8
           return format (cs, τ)

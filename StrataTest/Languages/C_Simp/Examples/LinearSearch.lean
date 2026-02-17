@@ -61,7 +61,7 @@ info: function linearSearch {
   post: #true
   body:
 {
-  init (idx : int) := some init_idx
+  init (idx : int) := init_idx
   idx := #0
   while
     (~Int.Lt idx (~Array.Len arr))
@@ -90,7 +90,7 @@ info: procedure linearSearch :  ((arr : intArr) (e : int)) → ((return : bool))
   postconditions: (post, #true)
 {
   {
-    init (idx : int) := some init_idx
+    init (idx : int) := init_idx
     idx := #0
     if (~Int.Lt idx (~Array.Len arr)) {
       first_iter_asserts :
@@ -111,7 +111,7 @@ info: procedure linearSearch :  ((arr : intArr) (e : int)) → ((return : bool))
           assume [assume_invariant] #true
           assume [assume_measure_pos] (~Int.Ge (~Int.Sub (~Array.Len arr) idx) #0)
         }
-        init (special-name-for-old-measure-value : int) := some (~Int.Sub (~Array.Len arr) idx)
+        init (special-name-for-old-measure-value : int) := (~Int.Sub (~Array.Len arr) idx)
         if (e == (~Array.Get arr idx)) {
           return := #true
         }
