@@ -75,7 +75,9 @@ def unknownTypeVar : String := "$__unknown_type"
 /-- Generate parameter names efficiently -/
 def mkParamName (i : Nat) : String := "a" ++ toString i
 
-/-- Generate quantifier variable names efficiently -/
+/-- Generate quantifier variable names with a `__` prefix to indicate that they
+    are generated names. In the future, we will look for variables names in the
+    metadata of the quantifier expressions. -/
 def mkQuantVarName (level : Nat) : String := "__q" ++ toString level
 
 structure Scope where
