@@ -299,7 +299,7 @@ def test4_nestedDatatypes : IO String := do
     -- Create a List of Option: Cons(Some(42), Nil)
     Statement.init (CoreIdent.unres "listOfOpt")
       (.forAll [] (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))
-      (LExpr.app ()
+      (some (LExpr.app ()
         (LExpr.app ()
           (LExpr.op () (CoreIdent.unres "Cons")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int])
@@ -310,7 +310,7 @@ def test4_nestedDatatypes : IO String := do
               (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
             (LExpr.intConst () 42)))
         (LExpr.op () (CoreIdent.unres "Nil")
-          (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
+          (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))))),
 
     -- Assert that the list is Cons
     Statement.assert "list_is_cons"
@@ -522,7 +522,7 @@ def test8_hiddenTypeRecursion : IO String := do
     -- Initialize with Empty Container - note we NEVER use Hidden directly
     Statement.init (CoreIdent.unres "container")
       (.forAll [] (LMonoTy.tcons "Container" [.int]))
-      (LExpr.op () (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int]))),
+      (some (LExpr.op () (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int])))),
 
     -- Havoc the container to make it non-deterministic
     Statement.havoc (CoreIdent.unres "container"),
