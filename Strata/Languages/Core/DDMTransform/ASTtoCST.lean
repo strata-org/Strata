@@ -20,10 +20,11 @@ Known issues:
 - Unsupported constructs (coming soon):
   -- Sub-functions (functions defined inside procedures)
 
-- We generate some bound variables' names during translation because the
-  semantic AST currently does not preserve them (e.g., bvars in quantifiers).
-  We can log the identifier names during CST -> AST translation in the latter's
-  metadata field and recover them in the future.
+- We do not copy over any metadata in the semantic AST to the CST, including
+  source locations. Also, we generate some bound variables' names during
+  translation because the semantic AST currently does not preserve them (e.g.,
+  bvars in quantifiers). We can log the identifier names during CST -> AST
+  translation in the latter's metadata field and recover them in the future.
 
 - Misc. formatting issues
   -- Remove extra parentheses around constructors in datatypes, assignments,
@@ -1013,7 +1014,12 @@ private def recreateGlobalContext (ctx : ToCSTContext M)
     (name, GlobalKind.expr (.fvar default 0 #[]), DeclState.defined)
   { nameMap, vars }
 
-/-- Render `Core.Program` to a format object. -/
+/-- Render `Core.Program` to a format object.
+
+If the Core program is expected have about some constructs not defined in the
+Grammar (e.g., via a custom Factory), then use `extraFreeVars` to add
+their names to the translation and formatting context.
+-/
 def Core.formatProgram (ast : Core.Program)
     (extraFreeVars : Array String := #[]) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
