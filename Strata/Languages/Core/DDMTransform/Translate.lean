@@ -5,6 +5,7 @@
 -/
 
 import Strata.DDM.AST
+import Strata.Languages.Core.Core
 import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Core.CoreGen
 import Strata.DDM.Util.DecimalRat
