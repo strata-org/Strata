@@ -55,6 +55,8 @@ inductive Operation: Type where
   /- Works on Int/Float64 -/
   | Neg | Add | Sub | Mul | Div | Mod | DivT | ModT
   | Lt | Leq | Gt | Geq
+  /- Works on String -/
+  | StrConcat
   deriving Repr
 
 -- Explicit instance needed for deriving Repr in the mutual block

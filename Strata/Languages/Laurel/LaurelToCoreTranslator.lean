@@ -18,7 +18,7 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
 
@@ -153,6 +153,7 @@ def translateBinOp (op : Operation) (e1 e2 : Core.Expression.Expr) : Except Stri
   | .Div => pure (binOp intDivOp) | .Mod => pure (binOp intModOp)
   | .DivT => pure (binOp intDivTOp) | .ModT => pure (binOp intModTOp)
   | .Lt => pure (binOp intLtOp) | .Leq => pure (binOp intLeOp) | .Gt => pure (binOp intGtOp) | .Geq => pure (binOp intGeOp)
+  | .StrConcat => pure (binOp strConcatOp)
   | _ => throw s!"translateBinOp: unsupported {repr op}"
 
 /-- Translate a unary operation to Core -/

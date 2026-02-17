@@ -30,6 +30,7 @@ def formatOperation : Operation → Format
   | .Leq => "<="
   | .Gt => ">"
   | .Geq => ">="
+  | .StrConcat => "++"
 
 mutual
 def formatHighType (t : HighTypeMd) : Format :=
