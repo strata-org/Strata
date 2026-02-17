@@ -367,13 +367,13 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         | none => pure none
       return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, md⟩]
 
-  | .While cond inv dec body =>
+  | .While cond invs dec body =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
       let seqBody ← do
         let stmts ← transformStmt body
         pure (bare (.Block stmts none))
-      return condPrepends ++ [⟨.While seqCond inv dec seqBody, md⟩]
+      return condPrepends ++ [⟨.While seqCond invs dec seqBody, md⟩]
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
