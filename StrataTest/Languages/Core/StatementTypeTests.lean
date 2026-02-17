@@ -18,9 +18,9 @@ open Imperative (PureFunc)
 
 /--
 info: ok: {
-  init (x : int) := (xinit : int)
+  init (x : int) := some (xinit : int)
   x := (xinit : int)
-  init (y : int) := (xinit : int)
+  init (y : int) := some (xinit : int)
 }
 -/
 #guard_msgs in

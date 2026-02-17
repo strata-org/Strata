@@ -73,12 +73,12 @@ procedure TestProc :  ((x : int)) → ((output : int))
   postconditions: (testProc_result, ((output : int) == ((~Int.Mul : (arrow int (arrow int int))) (x : int) #4)))
 {
   {
-    init (tmp_arg_3 : int) := (x : int)
-    init (tmp_output_4 : int) := output
+    init (tmp_arg_3 : int) := some (x : int)
+    init (tmp_output_4 : int) := some output
     havoc output
     assume [callElimAssume_double_correct_5] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_3 #2))
-    init (tmp_arg_0 : int) := (output : int)
-    init (tmp_output_1 : int) := output
+    init (tmp_arg_0 : int) := some (output : int)
+    init (tmp_output_1 : int) := some output
     havoc output
     assume [callElimAssume_double_correct_2] (output == ((~Int.Mul : (arrow int (arrow int int))) tmp_arg_0 #2))
   }
