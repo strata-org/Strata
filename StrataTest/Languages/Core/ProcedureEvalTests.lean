@@ -33,6 +33,8 @@ func Int.Sub :  ((x : int) (y : int)) → int;
 func Int.Mul :  ((x : int) (y : int)) → int;
 func Int.Div :  ((x : int) (y : int)) → int;
 func Int.Mod :  ((x : int) (y : int)) → int;
+func Int.DivT :  ((x : int) (y : int)) → int;
+func Int.ModT :  ((x : int) (y : int)) → int;
 func Int.Neg :  ((x : int)) → int;
 func Int.Lt :  ((x : int) (y : int)) → bool;
 func Int.Le :  ((x : int) (y : int)) → bool;
