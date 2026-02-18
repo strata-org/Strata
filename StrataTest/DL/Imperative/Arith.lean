@@ -25,7 +25,7 @@ private def testProgram1 : Commands :=
 
 /--
 info: ok: Commands:
-init (x : Num) := (y : Num)
+init (x : Num) := some (y : Num)
 havoc x
 assert [x_value_eq] ($__x0 : Num) = (y : Num)
 
@@ -54,7 +54,7 @@ private def testProgram2 : Commands :=
 
 /--
 info: ok: Commands:
-init (x : Num) := 0
+init (x : Num) := some 0
 x := 100
 assert [x_value_eq] true
 
