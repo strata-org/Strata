@@ -35,7 +35,7 @@ def run(test_file: str) -> bool:
     # Generate Ion file
     subprocess.run(
         [
-            "python", "-m", "strata.gen", "py_to_strata",
+            sys.executable, "-m", "strata.gen", "py_to_strata",
             "--dialect", "dialects/Python.dialect.st.ion",
             str(test_path),
             str(ion_abs),

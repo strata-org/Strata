@@ -5,7 +5,7 @@ import json
 import sys
 
 
-def validate(sarif_path: str, base_name: str) -> str:
+def validate(sarif_path: str, base_name: str, *, laurel: bool = False) -> str:
     with open(sarif_path) as f:
         d = json.load(f)
 
@@ -33,11 +33,20 @@ def validate(sarif_path: str, base_name: str) -> str:
     error_results = [r for r in results if r.get("level") == "error"]
     located_results = [r for r in results if r.get("locations")]
 
+    warning_results = [r for r in results if r.get("level") == "warning"]
+
     if base_name == "test_precondition_verification":
-        if len(error_results) < 1:
-            errors.append(
-                f"expected failures, got {len(error_results)} error-level results"
-            )
+        if laurel:
+            # Laurel path produces "unknown" (warning) instead of "fail" (error)
+            if len(warning_results) < 1:
+                errors.append(
+                    f"expected warnings, got {len(warning_results)} warning-level results"
+                )
+        else:
+            if len(error_results) < 1:
+                errors.append(
+                    f"expected failures, got {len(error_results)} error-level results"
+                )
 
     if base_name == "test_arithmetic":
         if len(error_results) != 0:
