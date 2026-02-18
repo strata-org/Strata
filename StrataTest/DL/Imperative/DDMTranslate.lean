@@ -206,9 +206,9 @@ var y : num;
 #check TransM.run (translateProgram (testEnv.commands))
 
 /--
-info: init (x : Num) := some (init_x_0 : Num)
+info: init (x : Num) := (init_x_0 : Num)
 assert [test] 1 = 2
-init (y : Num) := some (init_y_1 : Num)
+init (y : Num) := (init_y_1 : Num)
 -/
 #guard_msgs in
 #eval let (cmds, errors) := TransM.run (translateProgram (testEnv.commands))

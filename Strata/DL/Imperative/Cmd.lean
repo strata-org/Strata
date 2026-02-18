@@ -175,7 +175,8 @@ open Std (ToFormat Format format)
 def formatCmd (P : PureExpr) (c : Cmd P)
     [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=
   match c with
-  | .init name ty e _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty (some e) _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty none _md => f!"init ({name} : {ty})"
   | .set name e _md => f!"{name} := {e}"
   | .havoc name _md => f!"havoc {name}"
   | .assert label b _md => f!"assert [{label}] {b}"
