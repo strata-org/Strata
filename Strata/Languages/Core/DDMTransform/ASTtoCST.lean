@@ -133,14 +133,6 @@ def allFreeVars {M} (ctx : ToCSTContext M) : Array String :=
 def freeVarIndex? {M} (ctx : ToCSTContext M) (name : String) : Option Nat :=
   ctx.allFreeVars.findIdx? (· == name)
 
-/-- Add free variables to the current scope -/
-def addScopedFreeVars {M} (ctx : ToCSTContext M) (names : Array String)
-    : ToCSTContext M :=
-  let idx := ctx.scopes.size - 1
-  let scope := ctx.scopes[idx]!
-  let newScope := { scope with freeVars := scope.freeVars ++ names }
-  { ctx with scopes := ctx.scopes.set! idx newScope }
-
 /-- Add bound variables to the current scope -/
 def addScopedBoundVars {M} (ctx : ToCSTContext M) (names : Array String)
     (reverse? : Bool := true) : ToCSTContext M :=
