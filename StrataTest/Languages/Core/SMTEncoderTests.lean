@@ -187,7 +187,7 @@ spec {
 };
 #end
 
--- Test verification with axiomatized maps (default) - currently fails
+-- Test verification with axiomatized maps (default)
 /--
 info:
 Obligation: UpdateAndRead_ensures_1
@@ -197,7 +197,7 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
 
--- Test verification with Array theory - passes!
+-- Test verification with Array theory
 /--
 info:
 Obligation: UpdateAndRead_ensures_1
