@@ -49,38 +49,38 @@ VCs:
 Label: use_a1_a2
 Property: assert
 Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
-Proof Obligation:
-(~Int.Gt ~x ~y)
+a1: x == 5
+a2: y == 2
+f1: forall __q0 : int :: f(__q0) > __q0
+Obligation:
+x > y
 
 Label: use_f1
 Property: assert
 Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
-Proof Obligation:
-(~Int.Gt (~f (~Int.Add ~x ~y)) #7)
+a1: x == 5
+a2: y == 2
+f1: forall __q0 : int :: f(__q0) > __q0
+Obligation:
+f(x + y) > 7
 
 Label: use_a1_again
 Property: assert
 Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
-Proof Obligation:
-(~y == #2)
+a1: x == 5
+a2: y == 2
+f1: forall __q0 : int :: f(__q0) > __q0
+Obligation:
+y == 2
 
 Label: use_a2_again
 Property: assert
 Assumptions:
-
-(a1, (~x == #5))
-(a2, (~y == #2)) (f1, (∀ (~Int.Gt (~f %0) %0)))
-Proof Obligation:
-(~Int.Gt (~f ~y) ~y)
+a1: x == 5
+a2: y == 2
+f1: forall __q0 : int :: f(__q0) > __q0
+Obligation:
+f(y) > y
 
 ---
 info:
@@ -136,11 +136,12 @@ VCs:
 Label: axiomPgm2_main_assert
 Property: assert
 Assumptions:
-
-(f_g_ax, (∀ ((~f %0) == (~Int.Add (~g %0) #1))))
-(g_ax, (∀ ((~g %0) == (~Int.Mul %0 #2))))
-Proof Obligation:
-(~Bool.Implies (~Int.Ge $__x0 #0) (~Int.Gt (~f $__x0) $__x0))
+f_g_ax: forall __q0 : int ::  { f(__q0) }
+  f(__q0) == g(__q0) + 1
+g_ax: forall __q0 : int ::  { g(__q0), f(__q0) }
+  g(__q0) == __q0 * 2
+Obligation:
+$__x0 >= 0 ==> f($__x0) > $__x0
 
 ---
 info:

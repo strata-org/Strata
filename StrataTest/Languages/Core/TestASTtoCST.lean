@@ -115,17 +115,17 @@ function f5<T1, T2>(x : T1, y : T2) : T1 {
 info: function fooConst () : int;
 axiom [fooConst_value]: fooConst == 5;
 function f1 (x : int) : int;
-axiom [f1_ax1]: forall x0 : int ::  { f1(x0) }
-  f1(x0) > x0;
-axiom [f1_ax2_no_trigger]: forall x0 : int :: f1(x0) > x0;
+axiom [f1_ax1]: forall __q0 : int ::  { f1(__q0) }
+  f1(__q0) > __q0;
+axiom [f1_ax2_no_trigger]: forall __q0 : int :: f1(__q0) > __q0;
 function f2 (x : int, y : bool) : bool;
-axiom [f2_ax]: forall x0 : int :: forall x1 : bool ::  { f2(x0, true), f2(x0, false) }
-  f2(x0, true) == true;
+axiom [f2_ax]: forall __q0 : int :: forall __q1 : bool ::  { f2(__q0, true), f2(__q0, false) }
+  f2(__q0, true) == true;
 function f3 (x : int, y : bool, z : regex) : bool;
-axiom [f3_ax]: forall x0 : int :: forall x1 : bool :: forall x2 : regex ::  { f3(x0, x1, x2), f2(x0, x1) }
-  f3(x0, x1, x2) == f2(x0, x1);
+axiom [f3_ax]: forall __q0 : int :: forall __q1 : bool :: forall __q2 : regex ::  { f3(__q0, __q1, __q2), f2(__q0, __q1) }
+  f3(__q0, __q1, __q2) == f2(__q0, __q1);
 function f4<T1, T2> (x : T1) : Map T1 T2;
-axiom [foo_ax]: forall x0 : int :: (f4(x0))[1] == true;
+axiom [foo_ax]: forall __q0 : int :: (f4(__q0))[1] == true;
 function f5<T1, T2> (x : T1, y : T2) : T1 {
   x
 }

@@ -53,27 +53,18 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: good_assert
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(∀ (~Bool.Not (%0 == (~Int.Add %0 #1))))
+Obligation:
+forall __q0 : int :: !(__q0 == __q0 + 1)
 
 Label: good
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(∀ (∃ ((~Int.Add (~Int.Add $__x0 #1) (~Int.Add %0 %1)) == (~Int.Add %1 (~Int.Add %0 (~Int.Add $__x0 #1))))))
+Obligation:
+forall __q0 : int :: exists __q1 : int :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1))
 
 Label: bad
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(∀ (~Int.Lt %0 $__x0))
+Obligation:
+forall __q0 : int :: __q0 < $__x0
 
 
 
@@ -87,13 +78,13 @@ Model:
 [DEBUG] Evaluated program:
 procedure Test (x : int) returns (r : int)
 spec {
-  ensures [good]: forall x0 : int :: exists x1 : int :: x1 + (x1 + x0) == x0 + (x1 + x1);
-  ensures [bad]: forall x0 : int :: x0 < r;
+  ensures [good]: forall __q0 : int :: exists __q1 : int :: __q1 + (__q1 + __q0) == __q0 + (__q1 + __q1);
+  ensures [bad]: forall __q0 : int :: __q0 < r;
   } {
-  assert [good_assert]: forall x0 : ($__unknown_type) :: !(x0 == x0 + 1);
+  assert [good_assert]: forall __q0 : ($__unknown_type) :: !(__q0 == __q0 + 1);
   r := $__x0 + 1;
-  assert [good]: forall x0 : ($__unknown_type) :: exists x1 : ($__unknown_type) :: $__x0 + 1 + (x1 + x0) == x0 + (x1 + ($__x0 + 1));
-  assert [bad]: forall x0 : ($__unknown_type) :: x0 < $__x0;
+  assert [good]: forall __q0 : ($__unknown_type) :: exists __q1 : ($__unknown_type) :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1));
+  assert [bad]: forall __q0 : ($__unknown_type) :: __q0 < $__x0;
   };
 
 ---
@@ -123,41 +114,44 @@ VCs:
 Label: trigger_assert
 Property: assert
 Assumptions:
-
-(f_pos, (∀ (~Int.Gt (~f %0) #0)))
-(g_neg, (∀ (∀ (~Bool.Implies
-   (~Int.Gt %1 #0)
-   (~Int.Lt
-    (~g %1 %0)
-    #0))))) (f_and_g, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1))))) (f_and_g2, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1)))))
-Proof Obligation:
-(~Int.Gt (~f $__x0) #0)
+f_pos: forall __q0 : int ::  { f(__q0) }
+  f(__q0) > 0
+g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
+  __q0 > 0 ==> g(__q0, __q1) < 0
+f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
+  g(__q0, __q1) < f(__q0)
+f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
+  g(__q0, __q1) < f(__q0)
+Obligation:
+f($__x0) > 0
 
 Label: multi_trigger_assert
 Property: assert
 Assumptions:
-
-(f_pos, (∀ (~Int.Gt (~f %0) #0)))
-(g_neg, (∀ (∀ (~Bool.Implies
-   (~Int.Gt %1 #0)
-   (~Int.Lt
-    (~g %1 %0)
-    #0))))) (f_and_g, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1))))) (f_and_g2, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1)))))
-Proof Obligation:
-(∀ (~Int.Lt (~g $__x0 %0) (~f $__x0)))
+f_pos: forall __q0 : int ::  { f(__q0) }
+  f(__q0) > 0
+g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
+  __q0 > 0 ==> g(__q0, __q1) < 0
+f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
+  g(__q0, __q1) < f(__q0)
+f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
+  g(__q0, __q1) < f(__q0)
+Obligation:
+forall __q0 : int :: g($__x0, __q0) < f($__x0)
 
 Label: f_and_g
 Property: assert
 Assumptions:
-
-(f_pos, (∀ (~Int.Gt (~f %0) #0)))
-(g_neg, (∀ (∀ (~Bool.Implies
-   (~Int.Gt %1 #0)
-   (~Int.Lt
-    (~g %1 %0)
-    #0))))) (f_and_g, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1))))) (f_and_g2, (∀ (∀ (~Int.Lt (~g %1 %0) (~f %1)))))
-Proof Obligation:
-(~Int.Lt (~g (~f $__x0) $__x0) #0)
+f_pos: forall __q0 : int ::  { f(__q0) }
+  f(__q0) > 0
+g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
+  __q0 > 0 ==> g(__q0, __q1) < 0
+f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
+  g(__q0, __q1) < f(__q0)
+f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
+  g(__q0, __q1) < f(__q0)
+Obligation:
+g(f($__x0), $__x0) < 0
 
 ---
 info:
