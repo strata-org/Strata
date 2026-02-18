@@ -108,7 +108,7 @@ This follows the semantics described in Section 8.1 of "This is Boogie 2".
 ### Labels
 
 Preconditions and postconditions may carry an optional label (e.g.,
-`requires [myLabel] P`). Labels are used to identify individual proof obligations
+`requires [myLabel]: P`). Labels are used to identify individual proof obligations
 in verification output and diagnostics.
 
 ## The `old` expression
