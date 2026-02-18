@@ -56,87 +56,73 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: T1_z_eq_g
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: T1_z_eq_old_g2
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: T1_g_unchanged
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: T1_g2_eq_old_g
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: T1_y_eq_old_g2
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: T1_z_eq_y
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: T2_g2_eq_g
 Property: assert
 Assumptions:
-((Origin_T1_Ensures)T1_g_unchanged, (#true == #true))
-((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
-
-Proof Obligation:
-($__g27 == #true)
+(Origin_T1_Ensures)T1_g_unchanged: true == true
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g27 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a5 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b6 == $__a5
+Obligation:
+$__g27 == true
 
 Label: T2_g_true
 Property: assert
 Assumptions:
-((Origin_T1_Ensures)T1_g_unchanged, (#true == #true))
-((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
-
-Proof Obligation:
-#true
+(Origin_T1_Ensures)T1_g_unchanged: true == true
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g27 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a5 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b6 == $__a5
+Obligation:
+true
 
 Label: T2_a_eq_false
 Property: assert
 Assumptions:
-((Origin_T1_Ensures)T1_g_unchanged, (#true == #true))
-((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
-
-Proof Obligation:
-($__a5 == #false)
+(Origin_T1_Ensures)T1_g_unchanged: true == true
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g27 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a5 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b6 == $__a5
+Obligation:
+$__a5 == false
 
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
-((Origin_T1_Ensures)T1_g_unchanged, (#true == #true))
-((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
-
-Proof Obligation:
-($__b6 == #false)
+(Origin_T1_Ensures)T1_g_unchanged: true == true
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g27 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a5 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b6 == $__a5
+Obligation:
+$__b6 == false
 
 ---
 info:

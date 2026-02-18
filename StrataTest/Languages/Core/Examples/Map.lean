@@ -48,18 +48,16 @@ VCs:
 Label: a_zero_true
 Property: assert
 Assumptions:
-(a_zero_true_assumption, ((~select ~a #0) == #true))
-
-Proof Obligation:
-(~select ~a #0)
+a_zero_true_assumption: a[0] == true
+Obligation:
+a[0]
 
 Label: a_one_true
 Property: assert
 Assumptions:
-(a_zero_true_assumption, ((~select ~a #0) == #true))
-
-Proof Obligation:
-(~select ~a #1)
+a_zero_true_assumption: a[0] == true
+Obligation:
+a[1]
 
 
 
