@@ -1,17 +1,17 @@
 
-datetime_now_ensures_0: ✅ pass (at byte 7129)
+datetime_now_ensures_0: ✅ pass (at byte 7131)
 
-datetime_utcnow_ensures_0: ✅ pass (at byte 7367)
+datetime_utcnow_ensures_0: ✅ pass (at byte 7369)
 
-ensures_str_strp_reverse: ✅ pass (at byte 8761)
+ensures_str_strp_reverse: ✅ pass (at byte 8763)
 
-assert_name_is_foo: ✅ pass (at byte 11075)
+assert_name_is_foo: ✅ pass (at byte 11077)
 
-assert_opt_name_none_or_str: ✅ pass (at byte 11125)
+assert_opt_name_none_or_str: ✅ pass (at byte 11127)
 
-assert_opt_name_none_or_bar: ✅ pass (at byte 11272)
+assert_opt_name_none_or_bar: ✅ pass (at byte 11274)
 
-ensures_maybe_except_none: ✅ pass (at byte 10978)
+ensures_maybe_except_none: ✅ pass (at byte 10980)
 
 py_assertion: ✅ pass (at line 21, col 0)
 
