@@ -151,12 +151,12 @@ def translateCommand (bindings : TransBindings) (c : ArithPrograms.Command α) :
     let bindings := { bindings with freeVars := bindings.freeVars ++ [name.val] }
     let tp := translateType tp
     let (init_var_name, bindings) := genInitVar bindings name.val
-    return ((.init name.val tp (.Var init_var_name tp)), bindings)
+    return ((.init name.val tp (some (.Var init_var_name tp))), bindings)
   | .init _ name tp expr =>
     let tp := translateType tp
     let expr ← translateExpr bindings expr
     let bindings := { bindings with freeVars := bindings.freeVars ++ [name.val] }
-    return ((.init name.val tp expr), bindings)
+    return ((.init name.val tp (some expr)), bindings)
   | .assign _ label expr =>
     let expr ← translateExpr bindings expr
     return ((.set label.val expr), bindings)
@@ -206,9 +206,9 @@ var y : num;
 #check TransM.run (translateProgram (testEnv.commands))
 
 /--
-info: init (x : Num) := (init_x_0 : Num)
+info: init (x : Num) := some (init_x_0 : Num)
 assert [test] 1 = 2
-init (y : Num) := (init_y_1 : Num)
+init (y : Num) := some (init_y_1 : Num)
 -/
 #guard_msgs in
 #eval let (cmds, errors) := TransM.run (translateProgram (testEnv.commands))
