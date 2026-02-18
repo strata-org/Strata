@@ -46,7 +46,7 @@ Here are some Laurel language features that are shared between the source langua
 - Reading and writing of fields of references
 - Object oriented concepts such as inheritance, type checking, up and down casting and dynamic dispatch
 - Error handling via exceptions
-- Higher order procedures and procedure types
+- Higher-order procedures and procedure types
 - Parameteric polymorphism
 
 On top of the above features, Laurel adds features that are useful specifically for verification:
