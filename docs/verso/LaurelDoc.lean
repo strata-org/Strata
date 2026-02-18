@@ -32,7 +32,7 @@ shortTitle := "Laurel"
 
 # Introduction
 
-Laurel is an intermediate verification language designed to serve as a target for popular garbage collected languages that include imperative features, such as Java, Python, and JavaScript. Laurel tries to include any features that are common between those three languages.
+Laurel is an intermediate verification language designed to serve as a target for popular garbage-collected languages that include imperative features, such as Java, Python, and JavaScript. Laurel tries to include any features that are common to those three languages.
 
 Laurel enables doing various forms of verification:
 - Deductive verification
