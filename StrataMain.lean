@@ -361,12 +361,11 @@ def pyAnalyzeLaurelCommand : Command where
           let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
 
           -- Verify using Core verifier
-          let verboseMode := VerboseMode.ofBool verbose
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
               EIO.toIO
                 (fun f => IO.Error.userError (toString f))
                 (Core.verify coreProgram tempDir .none
-                  { Options.default with stopOnFirstError := false, verbose := verboseMode, solver := "z3" }))
+                  { Options.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
 
           -- Print results
           IO.println "\n==== Verification Results ===="
