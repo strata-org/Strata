@@ -79,6 +79,10 @@ inductive HighType : Type where
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List (WithMetadata HighType))
+  /-
+    Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core.
+  -/
+  | TCore (s: String)
 
 mutual
 

@@ -63,45 +63,32 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: a1
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: a3
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: a4
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: a6
 Property: assert
 Assumptions:
-(<label_ite_cond_true: (~Int.Gt x #0)>, (~Int.Gt $__x2 #0))
-
-
-Proof Obligation:
-(~Int.Gt (~Int.Mul $__x2 #2) $__x2)
+<label_ite_cond_true: (~Int.Gt x #0)>: $__x2 > 0
+Obligation:
+$__x2 * 2 > $__x2
 
 Label: a7
 Property: assert
 Assumptions:
-(<label_ite_cond_false: !(~Int.Gt x #0)>, (if (~Int.Gt $__x2 #0) then #false else #true))
-
-
-Proof Obligation:
-(~Int.Le $__x2 #0)
+<label_ite_cond_false: !(~Int.Gt x #0)>: if $__x2 > 0 then false else true
+Obligation:
+$__x2 <= 0
 
 ---
 info:

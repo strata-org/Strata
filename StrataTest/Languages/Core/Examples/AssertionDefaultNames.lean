@@ -47,10 +47,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-(Test_requires_0, ($__x0 == #1))
-
-Proof Obligation:
-($__x0 == #1)
+Test_requires_0: $__x0 == 1
+Obligation:
+$__x0 == 1
 
 ---
 info:

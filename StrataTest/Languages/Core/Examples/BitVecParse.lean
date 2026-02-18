@@ -29,19 +29,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: bitvec32_test
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: bitvec64_test
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#false
+Obligation:
+false
 
 
 
