@@ -11,7 +11,7 @@ public meta import Strata.DDM.Integration.Java
 public meta import Strata.DDM.Integration.Lean.Env
 meta import Strata.DDM.Integration.Lean.HashCommands  -- For #load_dialect
 public meta import Strata.DDM.Ion
-import Strata.Languages.Core.DDMTransform.Parse  -- Loads Strata Core dialect into env
+import Strata.Languages.Core.DDMTransform.Grammar  -- Loads Strata Core dialect into env
 
 namespace Strata.Java.Test
 

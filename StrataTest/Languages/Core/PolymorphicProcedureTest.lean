@@ -65,37 +65,29 @@ Model:
 ($__xs2, (as Nil (List Int))
 
 
-Evaluated program:
-type:
-List
-Type Arguments:
-[a]
-Constructors:
-[Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]
+[DEBUG] Evaluated program:
+datatype List (a : Type) {(
+  (Nil())),
+  (Cons(head : a, tail : (List a)))
+};
+procedure Extract (xs : (List $__ty0)) returns (h : ($__ty5))
+spec {
+  requires [Extract_requires_0]: List..isCons(xs);
+  } {
+  assume [Extract_requires_0]: List..isCons($__xs0);
+  };
+procedure Test () returns ()
+spec {
+  ensures [Test_ensures_0]: true;
+  } {
+  var xs : (List int);
+  xs := Cons(1, Nil);
+  havoc xs;
+  var h : int;
+  call h := Extract(xs);
+  assert [Test_ensures_0]: true;
+  };
 
-procedure Extract :  ((xs : (List $__ty0))) → ((h : $__ty5))
-  modifies: []
-  preconditions: (Extract_requires_0, ((~List..isCons : (arrow (List $__ty0) bool)) (xs : (List $__ty0))))
-  postconditions: ⏎
-{
-  {
-    assume [Extract_requires_0] (~List..isCons $__xs0)
-  }
-}
-procedure Test :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: (Test_ensures_0, #true)
-{
-  {
-    init (xs : (List int)) := init_xs_0
-    xs := (~Cons #1 ~Nil)
-    havoc xs
-    init (h : int) := init_h_1
-    call [h] := Extract(xs)
-    assert [Test_ensures_0] #true
-  }
-}
 ---
 info:
 Obligation: (Origin_Extract_Requires)Extract_requires_0
