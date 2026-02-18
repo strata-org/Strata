@@ -193,19 +193,19 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
                               | .TBool => .const () (.boolConst false)
                               | .TString => .const () (.strConst "")
                               | _ => .const () (.intConst 0)
-            let initStmt := Core.Statement.init ident boogieType defaultExpr md
-            let callStmt := Core.Statement.call [ident] callee boogieArgs md
+            let initStmt := Core.Statement.init ident boogieType defaultExpr
+            let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr constants env initExpr
-          (env', [Core.Statement.init ident boogieType boogieExpr md])
+          (env', [Core.Statement.init ident boogieType boogieExpr])
       | none =>
           let defaultExpr := match ty.val with
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
                             | .TString => .const () (.strConst "")
                             | _ => .const () (.intConst 0)
-          (env', [Core.Statement.init ident boogieType defaultExpr md])
+          (env', [Core.Statement.init ident boogieType defaultExpr])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -216,14 +216,14 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
               if isCoreFunction funcNames callee then
                 -- Functions are translated as expressions
                 let boogieExpr := translateExpr constants env value
-                (env, [Core.Statement.set ident boogieExpr md])
+                (env, [Core.Statement.set ident boogieExpr])
               else
                 -- Procedure calls need to be translated as call statements
                 let boogieArgs := args.map (translateExpr constants env)
-                (env, [Core.Statement.call [ident] callee boogieArgs md])
+                (env, [Core.Statement.call [ident] callee boogieArgs])
           | _ =>
               let boogieExpr := translateExpr constants env value
-              (env, [Core.Statement.set ident boogieExpr md])
+              (env, [Core.Statement.set ident boogieExpr])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
@@ -251,17 +251,17 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
         (env, [])
       else
         let boogieArgs := args.map (translateExpr constants env)
-        (env, [Core.Statement.call [] name boogieArgs md])
+        (env, [Core.Statement.call [] name boogieArgs])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           let ident := Core.CoreIdent.locl outParam.name
           let boogieExpr := translateExpr constants env value
-          let assignStmt := Core.Statement.set ident boogieExpr md
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) md
+          let assignStmt := Core.Statement.set ident boogieExpr
+          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           (env, [assignStmt, noFallThrough])
       | none, _ =>
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) md
+          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           (env, [noFallThrough])
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
