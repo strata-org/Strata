@@ -19,8 +19,7 @@ open Strata.Laurel
 -- This gets access to most of the manual genre
 open Verso.Genre Manual
 
--- This gets access to Lean code that's in code blocks, elaborated in
--- the same process and environment as Verso
+-- This gets access to Lean code that's in code blocks, elaborated in the same process and environment as Verso
 open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
@@ -59,27 +58,21 @@ On top of the above features, Laurel adds features that are useful specifically 
 - Type invariants
 - Forall and exists expressions
 - Old and fresh expressions
-- Various constructs for writing proofs
 - Unbounded integer and real types
+- To be designed constructs for supporting proof writing
 
-## Design Choices
+## Implementation Choices
 
-Laurel makes several design choices:
+Here are some design choices that are more on the implementation than on the user facing level:
 
-- Procedures: instead of separate (functional) functions and (imperative) procedures, Laurel has a single
-  general concept called a *procedure*.
-- Determinism: procedures can be marked as deterministic or nondeterministic.
-  For deterministic procedures with a non-empty reads clause, the result can be
-  assumed unchanged if the read references are the same.
-- Opacity: procedures can have a body that is transparent or opaque. Only an
-  opaque body may declare a postcondition.
-- Unified StmtExpr: statements and expressions share a single type, reducing
-  duplication for constructs like conditionals and variable declarations.
+- Procedures: instead of separate (functional) functions and (imperative) procedures, Laurel has a single general concept called a *procedure*.
+- Unified statements and expressions: statements and expressions share a single implementation type, the StmtExpr, reducing duplication for constructs like conditionals and variable declarations. Each StmtExpr has a user facing type, which for statement-like constructs could be void.
+- Determinism: procedures can be marked as deterministic or nondeterministic. For a non-deterministic procedure we can not assume that two invocations with the same inputs return the same result. For a deterministic procedure, if we invoke it twice with the same arguments, and the references specified in the reads clause have not changed between those two invocations, then we can assume both invocations return the same result.
+- Opacity: a procedure is either transparent or opaque. Only an opaque procedure may declare a postcondition. During symbolic verification, when calling a transparent procedure, the callee's body can be used for verification. When calling an opaque procedure, only the postcondition can be used for verification.
 
 # Types
 
-Laurel's type system includes primitive types, collection types, and
-user-defined types.
+Laurel's type system includes primitive types, collection types, and user-defined types.
 
 ## Primitive Types
 
@@ -87,18 +80,15 @@ user-defined types.
 
 ## User-Defined Types
 
-User-defined types come in two categories: composite types and constrained
-types.
+User-defined types come in two categories: composite types and constrained types.
 
-Composite types have fields and procedures, and may extend other composite
-types. Fields declare whether they are mutable and specify their type.
+Composite types have fields and procedures, and may extend other composite types. Fields declare whether they are mutable and specify their type.
 
 {docstring Strata.Laurel.CompositeType}
 
 {docstring Strata.Laurel.Field}
 
-Constrained types are defined by a base type and a constraint over the values of the base type.
-Algebraic datatypes can be encoded using composite and constrained types.
+Constrained types are defined by a base type and a constraint over the values of the base type. Algebraic datatypes can be encoded using composite and constrained types.
 
 {docstring Strata.Laurel.ConstrainedType}
 
@@ -106,9 +96,7 @@ Algebraic datatypes can be encoded using composite and constrained types.
 
 # Expressions and Statements
 
-Laurel uses a unified `StmtExpr` type that contains both expression-like and
-statement-like constructs. This avoids duplication of shared concepts such as
-conditionals and variable declarations.
+Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like constructs. This avoids duplication of shared concepts such as conditionals and variable declarations.
 
 ## Operations
 
@@ -138,50 +126,34 @@ Procedures are the main unit of specification and verification in Laurel.
 
 # Programs
 
-A Laurel program consists of static procedures, static fields, type
-definitions, and constants.
+A Laurel program consists of procedures, global variables, type definitions, and constants.
 
 {docstring Strata.Laurel.Program}
 
 # Translation Pipeline
 
-Laurel programs are verified by translating them to Strata Core and then
-invoking the Core verification pipeline. The translation involves several
-passes, each transforming the Laurel program before the final conversion to
-Core.
+Laurel programs are verified by translating them to Strata Core and then invoking the Core verification pipeline. The translation involves several passes, each transforming the Laurel program before the final conversion to Core.
 
 ## Heap Parameterization
 
-The heap parameterization pass transforms procedures that interact with the
-heap by adding explicit heap parameters. The heap is modeled as
-`Map Composite (Map Field Box)`, where `Box` is a tagged union with
-constructors for each primitive type.
+The heap parameterization pass transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`, where `Box` is a tagged union with constructors for each primitive type.
 
-Procedures that write the heap receive both an input and output heap parameter.
-Procedures that only read the heap receive an input heap parameter. Field reads
-and writes are rewritten to use `readField` and `updateField` functions.
+Procedures that write the heap receive both an input and output heap parameter. Procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions.
 
 ## Modifies Clauses
 
-The modifies clause transformation generates frame conditions for procedures
-with modifies clauses. For each field constant, it generates a universally
-quantified assertion that objects not mentioned in the modifies clause have
-their field values preserved between the input and output heaps.
+The modifies clause transformation translates modifies clauses into additional ensures clauses. The modifies clause of a procedure is translated into a quantified assertion that states that objects not mentioned in the modifies clause have their field values preserved between the input and output heap.
 
 ## Lifting Expression Assignments
 
-The expression assignment lifting pass transforms assignments that appear in
-expression contexts into preceding statements. This is necessary because Strata
-Core does not support assignments within expressions.
+The expression assignment lifting pass transforms assignments that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions.
 
 ## Translation to Core
 
-The final translation converts Laurel types, expressions, statements, and
-procedures into their Strata Core equivalents. Procedures with expression bodies are translated as Core functions, while other procedures become Core procedures.
+The final translation converts Laurel types, expressions, statements, and procedures into their Strata Core equivalents. Procedures with bodies that only have constructs supported by Core expressions are translated to a Core function, while other procedures become Core procedures.
 
 ## Core Prelude
 
-The Laurel translator prepends a Core prelude that defines the heap model types
-and operations: `Composite`, `Field`, `Box`, `readField`, and `updateField`.
+The Laurel translator prepends a Core prelude that defines the heap model types and operations: `Composite`, `Field`, `Box`, `readField`, and `updateField`.
 
 {docstring Strata.Laurel.corePreludeDDM}
