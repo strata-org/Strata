@@ -210,7 +210,9 @@ Attribute controlling whether a specification clause is checked or free.
 See Section 8.1 of "This is Boogie 2" for motivation.
 -/
 inductive Procedure.CheckAttr where
+  /-- The clause is free: assumed but not checked. -/
   | Free
+  /-- The clause is checked (default behavior). -/
   | Default
   deriving Repr, DecidableEq
 
