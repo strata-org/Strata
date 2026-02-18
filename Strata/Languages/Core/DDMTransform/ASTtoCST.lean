@@ -764,7 +764,12 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let nameAnn : Ann String M := ⟨default, name.toPretty⟩
     let tyCST ← lTyToCoreType ty
     let result ← match expr with
-    | .fvar _ f _ =>
+    | none => do
+      let bind := Bind.bind_mk default nameAnn
+                  ⟨default, none⟩ tyCST
+      let dl := DeclList.declAtom default bind
+      pure (.varStatement default dl)
+    | some (.fvar _ f _) =>
       let ctx ← get
       match ctx.freeVarIndex? f.name with
       | some idx =>
@@ -777,8 +782,8 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
                     ⟨default, none⟩ tyCST
         let dl := DeclList.declAtom default bind
         pure (.varStatement default dl)
-    | _ => -- not an .fvar
-      let exprCST ← lexprToExpr expr 0
+    | some e =>
+      let exprCST ← lexprToExpr e 0
       pure (.initStatement default tyCST nameAnn exprCST)
     -- Push the newly declared variable to the *end of the bound variables
     -- context* so that the most recently declared variable has the lowest
