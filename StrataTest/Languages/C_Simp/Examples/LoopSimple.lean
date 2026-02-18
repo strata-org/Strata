@@ -61,8 +61,8 @@ info: function loopSimple {
   post: #true
   body:
 {
-  init (sum : int) := init_sum
-  init (i : int) := init_i
+  init (sum : int) := some init_sum
+  init (i : int) := some init_i
   sum := #0
   i := #0
   while

@@ -61,7 +61,7 @@ info: function linearSearch {
   post: #true
   body:
 {
-  init (idx : int) := init_idx
+  init (idx : int) := some init_idx
   idx := #0
   while
     (~Int.Lt idx (~Array.Len arr))

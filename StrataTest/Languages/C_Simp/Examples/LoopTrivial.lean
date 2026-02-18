@@ -57,7 +57,7 @@ info: function loopTrivial {
   post: #true
   body:
 {
-  init (i : int) := init_i
+  init (i : int) := some init_i
   i := #0
   while
     (~Int.Lt i n)

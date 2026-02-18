@@ -66,7 +66,7 @@ info: function coprime {
   post: #true
   body:
 {
-  init (i : int) := init_i
+  init (i : int) := some init_i
   i := a
   if (~Int.Lt b a) {
     i := b
