@@ -43,14 +43,14 @@ info: [Strata.Core] Type checking succeeded.
 info: ok: procedure test (cond : bool, x : int, y : int) returns ()
 {
   if(cond){
-    |$_then|: ({
+    |$_then|: {
       function f (a : int) : int { a + x }
       var r1 : int := f(10);
-      })}(else({
-    |$_else|: ({
+      }}else{
+    |$_else|: {
       function f (a : int) : int { a + y }
       var r2 : int := f(20);
-      })}))};
+      }}};
 
 -/
 #guard_msgs in

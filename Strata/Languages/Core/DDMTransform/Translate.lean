@@ -1133,7 +1133,6 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
 
-    -- Translate body (arg[4], not the inline flag)
     let body ← match bodya with
       | .option _ (.some bodyExpr) => do
         let expr ← translateExpr p bodyBindings bodyExpr
