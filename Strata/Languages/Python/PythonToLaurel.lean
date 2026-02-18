@@ -100,8 +100,7 @@ def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.Me
 
 /-- Create default metadata for Laurel AST nodes -/
 def defaultMetadata : Imperative.MetaData Core.Expression :=
-  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ ⟨"foo"⟩ , 0, 0 ⟩ ⟩
-  #[fileRangeElt]
+  #[]
 
 /-- Create a HighTypeMd with default metadata -/
 def mkHighTypeMd (ty : HighType) : HighTypeMd :=
@@ -297,9 +296,14 @@ partial def translateCall (ctx : TranslationContext) (funcName : String) (args :
         let paramType := sig.inputs[i]!
         translatedArgs := translatedArgs ++ [mkNoneForType paramType]
 
-    if sig.outputs.length > 0 then
+    -- Check if function returns maybe_except (by convention, last output if present)
+    if sig.outputs.length > 0 && sig.outputs.getLast! == "ExceptOrNone" then
       let call := mkStmtExprMd (StmtExpr.StaticCall funcName translatedArgs)
-      return mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier "maybe_except")] call)
+      let mut targets := []
+      for i in [:sig.outputs.length - 1] do
+        targets := targets ++ [mkStmtExprMd (.Identifier s!"result{i}")]
+      targets := targets ++ [mkStmtExprMd (.Identifier "maybe_except")]
+      return mkStmtExprMd (.Assign targets call)
 
   return mkStmtExprMd (StmtExpr.StaticCall funcName translatedArgs)
 
