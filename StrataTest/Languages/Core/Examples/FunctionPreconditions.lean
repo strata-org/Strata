@@ -29,10 +29,9 @@ VCs:
 Label: safeDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_safeDiv_0, (~Bool.Not ($__y1 == #0)))
-
-Proof Obligation:
-(~Bool.Not ($__y1 == #0))
+precond_safeDiv_0: !($__y1 == 0)
+Obligation:
+!($__y1 == 0)
 
 ---
 info: Obligation: safeDiv_body_calls_Int.Div_0
@@ -98,18 +97,16 @@ VCs:
 Label: init_calls_safeHead_0
 Property: assert
 Assumptions:
-(assume_0, ($__x0 == #1))
-
-Proof Obligation:
-#true
+assume_0: $__x0 == 1
+Obligation:
+true
 
 Label: assert_0
 Property: assert
 Assumptions:
-(assume_0, ($__x0 == #1))
-
-Proof Obligation:
-($__x0 == #1)
+assume_0: $__x0 == 1
+Obligation:
+$__x0 == 1
 
 ---
 info: Obligation: init_calls_safeHead_0
@@ -168,19 +165,17 @@ VCs:
 Label: foo_precond_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_foo_0, (~Int.Gt $__y1 #0))
-
-Proof Obligation:
-(~Bool.Not ($__y1 == #0))
+precond_foo_0: $__y1 > 0
+Obligation:
+!($__y1 == 0)
 
 Label: foo_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_foo_0, (~Int.Gt $__y1 #0))
-(precond_foo_1, (~Int.Gt (~Int.Div $__x0 $__y1) #0))
-
-Proof Obligation:
-(~Bool.Not ($__y1 == #0))
+precond_foo_0: $__y1 > 0
+precond_foo_1: $__x0 div $__y1 > 0
+Obligation:
+!($__y1 == 0)
 
 ---
 info: Obligation: foo_precond_calls_Int.Div_0
@@ -216,20 +211,18 @@ VCs:
 Label: doubleDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_doubleDiv_0, (~Bool.Not ($__y1 == #0)))
-(precond_doubleDiv_1, (~Bool.Not ($__z2 == #0)))
-
-Proof Obligation:
-(~Bool.Not ($__z2 == #0))
+precond_doubleDiv_0: !($__y1 == 0)
+precond_doubleDiv_1: !($__z2 == 0)
+Obligation:
+!($__z2 == 0)
 
 Label: doubleDiv_body_calls_Int.Div_1
 Property: assert
 Assumptions:
-(precond_doubleDiv_0, (~Bool.Not ($__y1 == #0)))
-(precond_doubleDiv_1, (~Bool.Not ($__z2 == #0)))
-
-Proof Obligation:
-(~Bool.Not ($__y1 == #0))
+precond_doubleDiv_0: !($__y1 == 0)
+precond_doubleDiv_1: !($__z2 == 0)
+Obligation:
+!($__y1 == 0)
 
 ---
 info:
@@ -262,11 +255,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: badDiv_body_calls_Int.Div_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#false
+Obligation:
+false
 
 
 
@@ -312,11 +302,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: init_calls_Int.Div_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info: Obligation: init_calls_Int.Div_0
@@ -350,11 +337,9 @@ VCs:
 Label: set_z_calls_Int.Div_0
 Property: assert
 Assumptions:
-(<label_ite_cond_true: (~Int.Gt a #0)>, (~Int.Gt $__a0 #0))
-
-
-Proof Obligation:
-(~Bool.Not ($__a0 == #0))
+<label_ite_cond_true: (~Int.Gt a #0)>: $__a0 > 0
+Obligation:
+!($__a0 == 0)
 
 ---
 info: Obligation: set_z_calls_Int.Div_0
@@ -389,18 +374,16 @@ VCs:
 Label: safeDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_safeDiv_0, (~Bool.Not ($__y1 == #0)))
-
-Proof Obligation:
-(~Bool.Not ($__y1 == #0))
+precond_safeDiv_0: !($__y1 == 0)
+Obligation:
+!($__y1 == 0)
 
 Label: init_calls_safeDiv_0
 Property: assert
 Assumptions:
-(assume_0, (~Bool.Not ($__a2 == #0)))
-
-Proof Obligation:
-(~Bool.Not ($__a2 == #0))
+assume_0: !($__a2 == 0)
+Obligation:
+!($__a2 == 0)
 
 ---
 info: Obligation: safeDiv_body_calls_Int.Div_0
@@ -439,18 +422,16 @@ VCs:
 Label: safeDiv_body_calls_Int.Div_0
 Property: assert
 Assumptions:
-(precond_safeDiv_0, (~Bool.Not ($__y1 == #0)))
-
-Proof Obligation:
-(~Bool.Not ($__y1 == #0))
+precond_safeDiv_0: !($__y1 == 0)
+Obligation:
+!($__y1 == 0)
 
 Label: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
 Assumptions:
-(precond_allPositiveDiv_0, (~Int.Ge $__y2 #0))
-
-Proof Obligation:
-(∀ (~Bool.Implies (~Int.Gt %0 #0) (~Bool.Not (%0 == #0))))
+precond_allPositiveDiv_0: $__y2 >= 0
+Obligation:
+forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
 
 ---
 info: Obligation: safeDiv_body_calls_Int.Div_0
@@ -488,19 +469,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: init_calls_addPositive_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 Label: assert_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-((~addPositive #3) == #8)
+Obligation:
+addPositive(3) == 8
 
 ---
 info:

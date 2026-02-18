@@ -225,10 +225,10 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     /- Infer the type of an operation `.op o oty`, where an operation is defined in
       the factory. -/
     let (ty, Env) ← do
-      match C.functions.find? (fun fn => fn.name == o) with
+      match C.functions.find? (fun fn => fn.name.name == o.name) with
       | none =>
         .error f!"{toString $ C.functions.getFunctionNames} Cannot infer the type of this operation: \
-                  {o}"
+                  `{o}`"
       | some func => do
           -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
           -- where there are duplicates in the formals, etc.).
