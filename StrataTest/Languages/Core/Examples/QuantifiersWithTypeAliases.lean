@@ -36,60 +36,22 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 #guard TransM.run Inhabited.default (translateProgram QuantTypeAliases) |>.snd |>.isEmpty
 
 /--
-info: type Core.Boundedness.Infinite Ref []
-type Core.Boundedness.Infinite Field []
-type Struct := (Map Field int)
-type Heap := (Map Ref Struct)
-axiom axiom_0: (∀ (∀ (∀ (∀ ((~Bool.Implies : (arrow bool (arrow bool bool)))
-     ((~Bool.Not : (arrow bool bool)) (%2 == %1))
-     (((~select : (arrow (Map Field int) (arrow Field int)))
-       %3
-       %2) == ((~select : (arrow (Map Field int) (arrow Field int)))
-       ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) %3 %1 %0)
-       %2)))))));
-axiom axiom_1: (∀ (∀ (∀ (((~select : (arrow (Map Field int) (arrow Field int)))
-     ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) %2 %1 %0)
-     %1) == %0))));
-axiom axiom_2: (∀ (∀ (∀ (∀ ((~Bool.Implies : (arrow bool (arrow bool bool)))
-     ((~Bool.Not : (arrow bool bool)) (%2 == %1))
-     (((~select : (arrow (Map Ref Struct) (arrow Ref Struct)))
-       %3
-       %2) == ((~select : (arrow (Map Ref Struct) (arrow Ref Struct)))
-       ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct))))) %3 %1 %0)
-       %2)))))));
-axiom axiom_3: (∀ (∀ (∀ (((~select : (arrow (Map Ref Struct) (arrow Ref Struct)))
-     ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct))))) %2 %1 %0)
-     %1) == %0))));
-procedure test :  ((h : Heap) (ref : Ref) (field : Field)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: type Ref;
+type Field;
+type Struct := Map Field int;
+type Heap := Map Ref Struct;
+axiom [axiom_0]: forall x0 : Struct :: forall x1 : Field :: forall x2 : Field :: forall x3 : int :: !(x1 == x2) ==> x0[x1] == (x0[x2:=x3])[x1];
+axiom [axiom_1]: forall x0 : Struct :: forall x1 : Field :: forall x2 : int :: (x0[x1:=x2])[x1] == x2;
+axiom [axiom_2]: forall x0 : Heap :: forall x1 : Ref :: forall x2 : Ref :: forall x3 : Struct :: !(x1 == x2) ==> x0[x1] == (x0[x2:=x3])[x1];
+axiom [axiom_3]: forall x0 : Heap :: forall x1 : Ref :: forall x2 : Struct :: (x0[x1:=x2])[x1] == x2;
+procedure test (h : Heap, ref : Ref, field : Field) returns ()
 {
-  {
-    init (newH : Heap) := ((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct)))))
-     (h : Heap)
-     (ref : Ref)
-     ((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int)))))
-      ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))
-      (field : Field)
-      ((~Int.Add : (arrow int (arrow int int)))
-       ((~select : (arrow (Map Field int) (arrow Field int)))
-        ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))
-        (field : Field))
-       #1)))
-    assert [assert0] (((~select : (arrow (Map Field int) (arrow Field int)))
-      ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (newH : Heap) (ref : Ref))
-      (field : Field)) == ((~Int.Add : (arrow int (arrow int int)))
-      ((~select : (arrow (Map Field int) (arrow Field int)))
-       ((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap) (ref : Ref))
-       (field : Field))
-      #1))
-  }
-}
-Errors: #[]
+  var newH : Heap := h[ref:=(h[ref])[field:=(h[ref])[field] + 1]];
+  assert [assert0]: (newH[ref])[field] == (h[ref])[field] + 1;
+  };
 -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram QuantTypeAliases)
+#eval TransM.run Inhabited.default (translateProgram QuantTypeAliases) |>.fst
 
 
 /--

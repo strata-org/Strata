@@ -7,7 +7,7 @@
 import Strata.DDM.Elab
 import Strata.DDM.AST
 
-import Strata.Languages.Core.DDMTransform.Parse
+import Strata.Languages.Core.DDMTransform.Grammar
 
 import Strata.Languages.Core.Core
 import Strata.Languages.Python.PythonDialect

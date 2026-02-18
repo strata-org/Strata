@@ -77,50 +77,36 @@ open Strata.C_Simp in
 #eval TransM.run (translateProgram (LoopTrivialPgm.commands))
 
 /--
-info: procedure loopTrivial :  ((n : int)) → ((return : int))
-  modifies: []
-  preconditions: (pre, (~Int.Ge n #0))
-  postconditions: (post, #true)
-{
-  {
-    init (i : int) := init_i
-    i := #0
-    if (~Int.Lt i n) {
-      first_iter_asserts :
-      {
-        assert [entry_invariant] (~Int.Le i n)
-        assert [assert_measure_pos] (~Int.Ge (~Int.Sub n i) #0)
-      }
-      arbitrary iter facts :
-      {
-        loop havoc :
-        {
-          havoc i
-        }
-        arbitrary_iter_assumes :
-        {
-          assume [assume_guard] (~Int.Lt i n)
-          assume [assume_invariant] (~Int.Le i n)
-          assume [assume_measure_pos] (~Int.Ge (~Int.Sub n i) #0)
-        }
-        init (special-name-for-old-measure-value : int) := (~Int.Sub n i)
-        i := (~Int.Add i #1)
-        assert [measure_decreases] (~Int.Lt (~Int.Sub n i) special-name-for-old-measure-value)
-        assert [measure_imp_not_guard] (if (~Int.Le (~Int.Sub n i) #0) then (~Bool.Not (~Int.Lt i n)) else #true)
-        assert [arbitrary_iter_maintain_invariant] (~Int.Le i n)
-      }
-      loop havoc :
-      {
-        havoc i
-      }
-      assume [not_guard] (~Bool.Not (~Int.Lt i n))
-      assume [invariant] (~Int.Le i n)
-    }
-    else {}
-    assert [i_eq_n] (i == n)
-    return := i
-  }
-}
+info: procedure loopTrivial (n : int) returns (return : int)
+spec {
+  requires [pre]: n >= 0;
+  ensures [post]: true;
+  } {
+  var i : int;
+  i := 0;
+  if(i < n){
+    first_iter_asserts: ({
+      assert [entry_invariant]: i <= n;
+      assert [assert_measure_pos]: n - i >= 0;
+      })|arbitrary iter facts|: ({
+      |loop havoc|: ({
+        havoc i;
+        })arbitrary_iter_assumes: ({
+        assume [assume_guard]: i < n;
+        assume [assume_invariant]: i <= n;
+        assume [assume_measure_pos]: n - i >= 0;
+        })var |special-name-for-old-measure-value| : int := n - i;
+      i := i + 1;
+      assert [measure_decreases]: n - i < special-name-for-old-measure-value;
+      assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n)else true;
+      assert [arbitrary_iter_maintain_invariant]: i <= n;
+      })|loop havoc|: ({
+      havoc i;
+      })assume [not_guard]: !(i < n);
+    assume [invariant]: i <= n;
+    }()assert [i_eq_n]: i == n;
+  return := i;
+  };
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program LoopTrivialPgm)

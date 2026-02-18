@@ -6,7 +6,7 @@
 
 import Lean.Data.Json
 import Strata.Languages.Core.Env
-import Strata.Languages.Core.DDMTransform.Parse
+import Strata.Languages.Core.DDMTransform.Grammar
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.DL.Util.Map
 import Strata.Languages.Core.Core

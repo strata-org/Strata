@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Ion
+import all Strata.DDM.Ion
 import Strata.DDM.BuiltinDialects.StrataDDL
 import Strata.DDM.Integration.Lean
 import StrataTest.DDM.DeclareFn
+meta import StrataTest.DDM.DeclareFn
 
 namespace Strata
 
