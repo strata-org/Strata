@@ -108,7 +108,7 @@ spec {
         return := true;
         }()idx := idx + 1;
       assert [measure_decreases]: Array.Len(arr) - idx < special-name-for-old-measure-value;
-      assert [measure_imp_not_guard]: if Array.Len(arr) - idx <= 0 then !(idx < Array.Len(arr))else true;
+      assert [measure_imp_not_guard]: if Array.Len(arr) - idx <= 0 then !(idx < Array.Len(arr)) else true;
       assert [arbitrary_iter_maintain_invariant]: true;
       })|loop havoc|: ({
       havoc return;
