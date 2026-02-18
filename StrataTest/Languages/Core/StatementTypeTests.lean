@@ -17,9 +17,11 @@ open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 open Imperative (PureFunc)
 
 /--
-info: ok: init (x : int) := (xinit : int)
-x := (xinit : int)
-init (y : int) := (xinit : int)
+info: ok: {
+  init (x : int) := (xinit : int)
+  x := (xinit : int)
+  init (y : int) := (xinit : int)
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
@@ -119,8 +121,10 @@ subst: [($__ty0, int)]
           return format ans.snd
 
 /--
-info: ok: init (x : int) := #1
-x := #2
+info: ok: {
+  init (x : int) := #1
+  x := #2
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
@@ -183,9 +187,11 @@ def testFuncDeclTypeCheck : List Statement :=
   ]
 
 /--
-info: ok: funcDecl <function>
-init (y : int) := ((~identity : (arrow int int)) #5)
-assert [y_eq_5] ((y : int) == #5)
+info: ok: {
+  funcDecl <function>
+  init (y : int) := ((~identity : (arrow int int)) #5)
+  assert [y_eq_5] ((y : int) == #5)
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclTypeCheck

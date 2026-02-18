@@ -92,7 +92,7 @@ def normalizeModelValues (s : String) : String :=
       -- Extract the value after the comma
       match line.splitOn ", " with
       | [var, rest] =>
-        match rest.dropRight 1 |>.trim.toInt? with  -- Remove trailing ")" and parse
+        match rest.dropEnd 1 |>.trimAscii.toInt? with  -- Remove trailing ")" and parse
         | some val =>
           if val == 2 then
             s!"{var}, VALUE_WAS_2)"
@@ -172,7 +172,7 @@ Model:
 -/
 #guard_msgs in
 #eval do
-  let results ← verify "cvc5" irrelevantAxiomsTestPgm
+  let results ← verify irrelevantAxiomsTestPgm
         (options := {Options.models with removeIrrelevantAxioms := true})
   IO.println (normalizeModelValues (toString results))
 
@@ -229,7 +229,7 @@ Property: assert
 Result: 🟡 unknown
 -/
 #guard_msgs in
-#eval verify "cvc5" irrelevantAxiomsTestPgm
+#eval verify irrelevantAxiomsTestPgm
         (options := {Options.models with removeIrrelevantAxioms := false})
 
 ---------------------------------------------------------------------

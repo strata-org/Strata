@@ -3,17 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Java
-import Strata.DDM.Integration.Lean.Env  -- For dialectExt
-import Strata.DDM.Integration.Lean.HashCommands  -- For #load_dialect
-import Strata.Languages.Core.DDMTransform.Parse  -- Loads Strata Core dialect into env
+public import Lean.Elab.Command
+public meta import Strata.DDM.BuiltinDialects.Init
+public meta import Strata.DDM.Integration.Java
+public meta import Strata.DDM.Integration.Lean.Env
+meta import Strata.DDM.Integration.Lean.HashCommands  -- For #load_dialect
+public meta import Strata.DDM.Ion
+import Strata.Languages.Core.DDMTransform.Grammar  -- Loads Strata Core dialect into env
 
 namespace Strata.Java.Test
 
 open Strata.Java
 
-def check (s sub : String) : Bool := (s.splitOn sub).length > 1
+meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 1: Basic dialect with 2 operators
 #eval do

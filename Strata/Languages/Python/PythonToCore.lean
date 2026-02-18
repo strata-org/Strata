@@ -7,7 +7,7 @@
 import Strata.DDM.Elab
 import Strata.DDM.AST
 
-import Strata.Languages.Core.DDMTransform.Parse
+import Strata.Languages.Core.DDMTransform.Grammar
 
 import Strata.Languages.Core.Core
 import Strata.Languages.Python.PythonDialect
@@ -624,7 +624,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
     | .none =>
       [.set "exception_ty_matches" (.boolConst () false)]
     let cond := .fvar () "exception_ty_matches" none
-    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets translation_ctx s).fst) ++ [.goto jmp_targets[1]!]
+    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.goto jmp_targets[1]!]
     set_ex_ty_matches ++ [.ite cond body_if_matches []]
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)

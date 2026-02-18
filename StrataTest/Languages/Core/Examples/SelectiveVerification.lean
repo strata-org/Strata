@@ -71,7 +71,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm
+#eval verify selectiveVerificationPgm
         (options := Options.quiet)
         (proceduresToVerify := (some ["MainProc"]))
 
@@ -104,7 +104,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm (options := Options.quiet)
+#eval verify selectiveVerificationPgm (options := Options.quiet)
 
 ---------- Verify only IndependentProc
 
@@ -115,7 +115,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm
+#eval verify selectiveVerificationPgm
         (options := Options.quiet)
         (proceduresToVerify := ["IndependentProc"])
 
@@ -132,7 +132,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm
+#eval verify selectiveVerificationPgm
           (options := Options.quiet)
           (proceduresToVerify := (some ["IndependentProc", "UnusedProc"]))
 

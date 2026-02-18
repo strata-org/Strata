@@ -57,21 +57,18 @@ procedure P () returns () {
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.snd
 
 /--
-info: type Core.Boundedness.Infinite Foo [_, _]
-type FooAlias a := (Foo int bool)
-type FooAlias2 a := (FooAlias (FooAlias bool))
-func fooVal :  () → (FooAlias2 (Foo int int));
-func fooConst1 :  () → (Foo int bool);
-func fooConst2 :  () → (Foo int bool);
-procedure P :  () → ()
-  modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
+info: type Foo (a0 : Type, a1 : Type);
+type FooAlias (a : Type) := Foo int bool;
+type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
+function fooVal () : FooAlias2 (Foo int int);
+function fooConst1 () : Foo int bool;
+function fooConst2 () : Foo int bool;
+procedure P () returns ()
 {
-  assume [fooConst1_value] ((~fooConst1 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
-  assume [fooConst2_value] ((~fooConst2 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
-  assert [fooAssertion] ((~fooConst1 : (Foo int bool)) == (~fooConst2 : (Foo int bool)))
-}
+  assume [fooConst1_value]: fooConst1 == fooVal;
+  assume [fooConst2_value]: fooConst2 == fooVal;
+  assert [fooAssertion]: fooConst1 == fooConst2;
+  };
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.fst
@@ -84,11 +81,10 @@ VCs:
 Label: fooAssertion
 Property: assert
 Assumptions:
-(fooConst1_value, (~fooConst1 == ~fooVal))
-(fooConst2_value, (~fooConst2 == ~fooVal))
-
-Proof Obligation:
-(~fooConst1 == ~fooConst2)
+fooConst1_value: fooConst1 == fooVal
+fooConst2_value: fooConst2 == fooVal
+Obligation:
+fooConst1 == fooConst2
 
 ---
 info:
@@ -97,7 +93,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" goodTypeAlias
+#eval verify goodTypeAlias
 
 --------------------------------------------------------------------
 
@@ -128,10 +124,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-(assume_0, (init_v_2 == #0))
-
-Proof Obligation:
-((((~MapGetEq init_d_0) init_k_1) init_v_2) == (((~MapGetEq init_d_0) init_k_1) #0))
+assume_0: init_v_2 == 0
+Obligation:
+MapGetEq(init_d_0, init_k_1, init_v_2) == MapGetEq(init_d_0, init_k_1, 0)
 
 ---
 info:
@@ -140,6 +135,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" funcAndTypeAliasesPgm
+#eval verify funcAndTypeAliasesPgm
 
 --------------------------------------------------------------------

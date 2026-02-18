@@ -81,7 +81,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" roseTreeTesterPgm Inhabited.default
+#eval verify roseTreeTesterPgm Inhabited.default
   (options := Options.quiet)
 
 ---------------------------------------------------------------------
@@ -159,7 +159,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" roseTreeDestructorPgm Inhabited.default
+#eval verify roseTreeDestructorPgm Inhabited.default
   (options := Options.quiet)
 
 ---------------------------------------------------------------------
@@ -224,7 +224,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" roseTreeEqualityPgm Inhabited.default
+#eval verify roseTreeEqualityPgm Inhabited.default
   (options := Options.quiet)
 
 ---------------------------------------------------------------------
@@ -285,7 +285,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" polyRoseTreeHavocPgm Inhabited.default
+#eval verify polyRoseTreeHavocPgm Inhabited.default
   (options := Options.quiet)
 
 ---------------------------------------------------------------------
@@ -359,7 +359,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" stmtListHavocPgm Inhabited.default
+#eval verify stmtListHavocPgm Inhabited.default
   (options := Options.quiet)
 
 end Strata.MutualDatatypeTest

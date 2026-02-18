@@ -27,17 +27,15 @@ procedure test () returns ()
 
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
 Label: constr_tester_cancel
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:
@@ -46,7 +44,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" testerEx
+#eval verify testerEx
 
 
 def destrEx :=
@@ -68,16 +66,16 @@ procedure test () returns ()
 
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
-(assume_0, ($__b0 == #true))
-
-Proof Obligation:
+assume_0: $__b0 == true
+Obligation:
 $__b0
 
 ---
@@ -87,6 +85,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" destrEx
+#eval verify destrEx
 
 end Strata

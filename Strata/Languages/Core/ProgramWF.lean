@@ -91,9 +91,6 @@ instance : Inhabited WFProgram where
     prop := Program.init.wf
   }
 
-instance : ToFormat WFProgram where
-  format wfp := format wfp.self
-
 /-
 /--
 Auxiliary lemma for Program.typeCheck.goWF

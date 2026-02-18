@@ -34,11 +34,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: f_test
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:
@@ -47,7 +44,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm1
+#eval verify typeDeclPgm1
 
 --------------------------------------------------------------------
 
@@ -98,11 +95,10 @@ VCs:
 Label: fooAssertion
 Property: assert
 Assumptions:
-(fooConst1_value, (~fooConst1 == ~fooVal))
-(fooConst2_value, (~fooConst2 == ~fooVal))
-
-Proof Obligation:
-(~fooConst1 == ~fooConst2)
+fooConst1_value: fooConst1 == fooVal
+fooConst2_value: fooConst2 == fooVal
+Obligation:
+fooConst1 == fooConst2
 
 ---
 info:
@@ -111,7 +107,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm3
+#eval verify typeDeclPgm3
 
 
 --------------------------------------------------------------------
@@ -130,6 +126,6 @@ KnownTypes' names:
 [arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm4
+#eval verify typeDeclPgm4
 
 --------------------------------------------------------------------
