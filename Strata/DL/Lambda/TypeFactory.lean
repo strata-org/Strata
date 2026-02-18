@@ -491,7 +491,7 @@ constructor components, e.g.
 `List..tail (Cons h t) = t`
 These functions are partial, `List..head Nil` is undefined.
 -/
-def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
+def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
   c.args.mapIdx (fun i (name, ty) =>
     let arg := genArgName
     {
@@ -500,7 +500,7 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] (d: LDatatype T.
       inputs := [(arg, dataDefault d)],
       output := ty,
       concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[eval_if_constr_attr] })
+      attr := #[eval_if_constr_attr]})
 
 
 ---------------------------------------------------------------------

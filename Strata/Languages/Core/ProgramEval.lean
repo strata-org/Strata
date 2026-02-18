@@ -86,6 +86,7 @@ def eval (E : Env) : List (Program × Env) :=
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
+
       go rest declsE
 
 

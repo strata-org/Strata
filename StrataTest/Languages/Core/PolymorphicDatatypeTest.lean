@@ -377,7 +377,6 @@ program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
-// Wrapper function with explicit precondition for safe access
 function safeValue<a>(x : Option a) : a
   requires Option..isSome(x);
 { Option..value(x) }
