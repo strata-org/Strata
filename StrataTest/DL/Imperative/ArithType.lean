@@ -124,7 +124,7 @@ private def testProgram1 : Cmds Arith.PureExpr :=
 
 /--
 info: ok: Commands:
-init (x : Num) := some 0
+init (x : Num) := 0
 x := x + 100
 assert [x_value_eq] x = 100
 
@@ -157,7 +157,7 @@ private def testProgram4 : Cmds Arith.PureExpr :=
 
 /--
 info: ok: Commands:
-init (x : Num) := some 5
+init (x : Num) := 5
 x := x
 
 TEnv:
@@ -193,7 +193,7 @@ private def testProgram7 : Cmds Arith.PureExpr :=
 
 /--
 info: ok: Commands:
-init (x : Num) := some (y : Num) + (z : Num)
+init (x : Num) := (y : Num) + (z : Num)
 
 TEnv:
 (y, Num) (z, Num) (x, Num)

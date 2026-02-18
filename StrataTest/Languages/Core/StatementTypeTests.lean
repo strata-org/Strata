@@ -18,9 +18,9 @@ open Imperative (PureFunc)
 
 /--
 info: ok: {
-  init (x : int) := some (xinit : int)
+  init (x : int) := (xinit : int)
   x := (xinit : int)
-  init (y : int) := some (xinit : int)
+  init (y : int) := (xinit : int)
 }
 -/
 #guard_msgs in
@@ -122,7 +122,7 @@ subst: [($__ty0, int)]
 
 /--
 info: ok: {
-  init (x : int) := some #1
+  init (x : int) := #1
   x := #2
 }
 -/
@@ -189,7 +189,7 @@ def testFuncDeclTypeCheck : List Statement :=
 /--
 info: ok: {
   funcDecl <function>
-  init (y : int) := some ((~identity : (arrow int int)) #5)
+  init (y : int) := ((~identity : (arrow int int)) #5)
   assert [y_eq_5] ((y : int) == #5)
 }
 -/

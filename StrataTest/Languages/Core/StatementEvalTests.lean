@@ -341,7 +341,7 @@ private def prog2 : Statements := [
 
 /--
 info: {
-  init (x : int) := some #0
+  init (x : int) := #0
   x := #1
   havoc x
   assert [x_eq_1] ($__x0 == #1)
