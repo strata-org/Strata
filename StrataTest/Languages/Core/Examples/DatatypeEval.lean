@@ -72,9 +72,9 @@ VCs:
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
-assume_0: init_b_0 == true
+assume_0: $__b0 == true
 Obligation:
-init_b_0
+$__b0
 
 ---
 info:
