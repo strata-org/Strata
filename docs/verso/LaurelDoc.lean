@@ -50,9 +50,10 @@ Here are some Laurel language features that are shared between the source langua
 
 On top of the above features, Laurel adds features that are useful specifically for verification:
 - Assert and assume statements
+- Loop invariants
 - Pre and postconditions for procedures
 - Modifies and reads clauses for procedures
-- Decreases clauses for procedures
+- Decreases clauses for procedures and loops
 - Immutable fields and constructors that support assigning to them
 - Constrained types
 - Type invariants
