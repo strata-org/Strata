@@ -5,5 +5,3 @@
 vcs/*.smt2
 
 Strata.code-workspace
-
-ci_failures.md
