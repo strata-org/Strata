@@ -40,12 +40,9 @@ procedure testmap () returns ()
 };
 #end
 
-/--
-info:
-Obligation: something
+/-- info: Obligation: something
 Property: assert
-Result: ✅ pass
--/
+Result: ✅ pass-/
 #guard_msgs in
 #eval verify mapBranch (options := Options.quiet)
 
