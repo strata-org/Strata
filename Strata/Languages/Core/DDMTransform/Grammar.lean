@@ -218,6 +218,7 @@ op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : S
 op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " f "(" expr ")" ";\n";
 
+@[scope(c)]
 op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b;
 op goto_statement (label : Ident) : Statement => "goto " label ";\n";
