@@ -10,30 +10,7 @@ import Strata.Languages.Core.Procedure
 import Strata.Util.Tactics
 
 /-
-Laurel is an intermediate verification language designed to serve as a target for popular garbage collected languages that include imperative features, such as Java, Python, and JavaScript. Laurel tries to include any features that are common between those three languages.
-
-Laurel enables doing various forms of verification:
-- Deductive verification
-- Model checking
-- Property based testing
-- Data-flow analysis
-
-Features currently not present:
-- Type inference. The source program needs to specify enough types so that no inference is needed.
-- Type checking. We assume types have already been checked before.
-- Namespaces. All definition and reference names consist of a single Identifier
-
-Design choices:
-- Procedures: instead of separate (functional) functions and (imperative) procedures, Laurel has a single
-  general concept called a *procedure*.
-- Determinism: procedures can be marked as deterministic or nondeterministic.
-  For deterministic procedures with a non-empty reads clause, the result can be
-  assumed unchanged if the read references are the same.
-- Opacity: procedures can have a body that is transparent or opaque. Only an
-  opaque body may declare a postcondition.
-- Unified StmtExpr: statements and expressions share a single type, reducing
-  duplication for constructs like conditionals and variable declarations.
-
+Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
 -/
 namespace Strata
 namespace Laurel
