@@ -275,18 +275,15 @@ Property: assert
 Result: ❌ fail
 
 
-Evaluated program:
-procedure badDiv$$wf :  ((x : int)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+[DEBUG] Evaluated program:
+procedure |badDiv$$wf| (x : int) returns ()
 {
-  {
-    assert [badDiv_body_calls_Int.Div_0] #false
-  }
+  assert [badDiv_body_calls_Int.Div_0]: false;
+  };
+function badDiv (x : int) : int {
+  x div 0
 }
-func badDiv :  ((x : int)) → int :=
-  (((~Int.Div : (arrow int (arrow int int))) (x : int) #0))
+
 ---
 info:
 Obligation: badDiv_body_calls_Int.Div_0

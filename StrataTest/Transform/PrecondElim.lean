@@ -52,16 +52,11 @@ procedure test(a : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test :  ((a : int)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: procedure test (a : int) returns ()
 {
-  {
-    assert [init_calls_Int.Div_0] (~Bool.Not (a == #0))
-    init (z : int) := (~Int.Div #10 a)
-  }
-}
+  assert [init_calls_Int.Div_0]: !(a == 0);
+  var z : int := 10 div a;
+  };
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram divInBodyPgm))
@@ -86,30 +81,22 @@ function foo(x : int, y : int) : int
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure safeMod$$wf :  ((x : int) (y : int)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: procedure |safeMod$$wf| (x : int, y : int) returns ()
 {
-  {
-    assume [precond_safeMod_0] (~Bool.Not (y == #0))
-    assert [safeMod_body_calls_Int.Mod_0] (~Bool.Not (y == #0))
-  }
+  assume [precond_safeMod_0]: !(y == 0);
+  assert [safeMod_body_calls_Int.Mod_0]: !(y == 0);
+  };
+function safeMod (x : int, y : int) : int {
+  x mod y
 }
-func safeMod :  ((x : int) (y : int)) → int :=
-  ((~Int.Mod x y))
-procedure foo$$wf :  ((x : int) (y : int)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+procedure |foo$$wf| (x : int, y : int) returns ()
 {
-  {
-    assert [foo_precond_calls_safeMod_0] (~Bool.Not (y == #0))
-    assume [precond_foo_0] (~Int.Gt (~safeMod x y) #0)
-  }
+  assert [foo_precond_calls_safeMod_0]: !(y == 0);
+  assume [precond_foo_0]: safeMod(x, y) > 0;
+  };
+function foo (x : int, y : int) : int {
+  x + y
 }
-func foo :  ((x : int) (y : int)) → int :=
-  ((~Int.Add x y))
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcWithPrecondPgm))
@@ -140,37 +127,25 @@ spec {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: type:
-List
-Type Arguments:
-[]
-Constructors:
-[Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, int), (tail, List)] Tester: List..isCons ]
-
-@[#[inline]]
-func safeHead :  ((xs : List)) → int :=
-  ((~List..head xs))
-procedure test$$wf :  ((xs : List)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
-{
-  {
-    assume [test_requires_0] (~List..isCons xs)
-    assert [test_pre_test_requires_1_calls_safeHead_0] (~List..isCons xs)
-    assume [test_requires_1] (~Int.Gt (~safeHead xs) #0)
-  }
+info: datatype List {(
+  (Nil())),
+  (Cons(head : int, tail : List))
+};
+function safeHead (xs : List) : int {
+  List..head(xs)
 }
-procedure test :  ((xs : List)) → ()
-  modifies: []
-  preconditions: (test_requires_0, ((~List..isCons : (arrow List bool))
-   (xs : List))) (test_requires_1, ((~Int.Gt : (arrow int (arrow int bool)))
-   ((~safeHead : (arrow List int)) (xs : List))
-   #0))
-  postconditions: 
+procedure |test$$wf| (xs : List) returns ()
 {
-  {}
-}
+  assume [test_requires_0]: List..isCons(xs);
+  assert [test_pre_test_requires_1_calls_safeHead_0]: List..isCons(xs);
+  assume [test_requires_1]: safeHead(xs) > 0;
+  };
+procedure test (xs : List) returns ()
+spec {
+  requires [test_requires_0]: List..isCons(xs);
+  requires [test_requires_1]: safeHead(xs) > 0;
+  } {
+  };
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram procContractADTPgm))
@@ -206,44 +181,32 @@ spec {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: type:
-List
-Type Arguments:
-[]
-Constructors:
-[Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, int), (tail, List)] Tester: List..isCons ]
-
-@[#[inline]]
-func safeHead :  ((xs : List)) → int :=
-  ((~List..head xs))
-@[#[inline]]
-func safeTail :  ((xs : List)) → List :=
-  ((~List..tail xs))
-procedure test$$wf :  ((xs : List)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
-{
-  {
-    assume [test_requires_0] (~List..isCons xs)
-    assert [test_post_test_ensures_1_calls_safeHead_0] (~List..isCons xs)
-    assume [test_ensures_1] (~Int.Gt (~safeHead xs) #0)
-    assert [test_post_test_ensures_2_calls_safeHead_0] (~List..isCons (~safeTail xs))
-    assert [test_post_test_ensures_2_calls_safeTail_1] (~List..isCons xs)
-    assume [test_ensures_2] (~Int.Gt (~safeHead (~safeTail xs)) #0)
-  }
+info: datatype List {(
+  (Nil())),
+  (Cons(head : int, tail : List))
+};
+function safeHead (xs : List) : int {
+  List..head(xs)
 }
-procedure test :  ((xs : List)) → ()
-  modifies: []
-  preconditions: (test_requires_0, ((~List..isCons : (arrow List bool)) (xs : List)))
-  postconditions: (test_ensures_1, ((~Int.Gt : (arrow int (arrow int bool)))
-   ((~safeHead : (arrow List int)) (xs : List))
-   #0)) (test_ensures_2, ((~Int.Gt : (arrow int (arrow int bool)))
-   ((~safeHead : (arrow List int)) ((~safeTail : (arrow List List)) (xs : List)))
-   #0))
-{
-  {}
+function safeTail (xs : List) : List {
+  List..tail(xs)
 }
+procedure |test$$wf| (xs : List) returns ()
+{
+  assume [test_requires_0]: List..isCons(xs);
+  assert [test_post_test_ensures_1_calls_safeHead_0]: List..isCons(xs);
+  assume [test_ensures_1]: safeHead(xs) > 0;
+  assert [test_post_test_ensures_2_calls_safeHead_0]: List..isCons(safeTail(xs));
+  assert [test_post_test_ensures_2_calls_safeTail_1]: List..isCons(xs);
+  assume [test_ensures_2]: safeHead(safeTail(xs)) > 0;
+  };
+procedure test (xs : List) returns ()
+spec {
+  requires [test_requires_0]: List..isCons(xs);
+  ensures [test_ensures_1]: safeHead(xs) > 0;
+  ensures [test_ensures_2]: safeHead(safeTail(xs)) > 0;
+  } {
+  };
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))
@@ -269,25 +232,18 @@ procedure test() returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: procedure test () returns ()
 {
-  {
-    init (x : int) := #1
-    safeDiv$$wf :
-    {
-      init (y : int) := init_y
-      assert [safeDiv_precond_calls_Int.Div_0] (~Bool.Not (x == #0))
-      assume [precond_safeDiv_0] (~Int.Gt (~Int.Div y x) #0)
-      assert [safeDiv_body_calls_Int.Div_0] (~Bool.Not (x == #0))
-    }
-    funcDecl <function>
-    assert [init_calls_safeDiv_0] (~Int.Gt (~Int.Div #5 x) #0)
-    init (z : int) := (~safeDiv #5)
-  }
-}
+  var x : int := 1;
+  |safeDiv$$wf|: ({
+    var y : int;
+    assert [safeDiv_precond_calls_Int.Div_0]: !(x == 0);
+    assume [precond_safeDiv_0]: y div x > 0;
+    assert [safeDiv_body_calls_Int.Div_0]: !(x == 0);
+    })function safeDiv (y : int) : int { y div x }
+  assert [init_calls_safeDiv_0]: 5 div safeDiv > 0;
+  var z : int := fvar!0(5);
+  };
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcDeclPrecondPgm))
@@ -348,40 +304,26 @@ procedure proc2(y : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure proc1 :  ((x : int)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+info: procedure proc1 (x : int) returns ()
 {
-  {
-    f$$wf :
-    {
-      init (a : int) := init_a
-      assume [precond_f_0] (~Bool.Not (x == #0))
-      assert [f_body_calls_Int.Div_0] (~Bool.Not (x == #0))
-    }
-    funcDecl <function>
-    assert [init_calls_f_0] (~Bool.Not (x == #0))
-    init (r : int) := (~f #10)
-  }
-}
-procedure proc2 :  ((y : int)) → ()
-  modifies: []
-  preconditions: 
-  postconditions: 
+  |f$$wf|: ({
+    var a : int;
+    assume [precond_f_0]: !(x == 0);
+    assert [f_body_calls_Int.Div_0]: !(x == 0);
+    })function f (a : int) : int { a div x }
+  assert [init_calls_f_0]: !(f == 0);
+  var r : int := fvar!0(10);
+  };
+procedure proc2 (y : int) returns ()
 {
-  {
-    f$$wf :
-    {
-      init (a : int) := init_a
-      assume [precond_f_0] (~Bool.Not (y == #0))
-      assert [f_body_calls_Int.Div_0] (~Bool.Not (y == #0))
-    }
-    funcDecl <function>
-    assert [init_calls_f_0] (~Bool.Not (y == #0))
-    init (r : int) := (~f #20)
-  }
-}
+  |f$$wf|: ({
+    var a : int;
+    assume [precond_f_0]: !(y == 0);
+    assert [f_body_calls_Int.Div_0]: !(y == 0);
+    })function f (a : int) : int { a div y }
+  assert [init_calls_f_0]: !(f == 0);
+  var r : int := fvar!0(20);
+  };
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcInMultipleProcsPgm))

@@ -28,12 +28,12 @@ datatype Option (a : Type) { None(), Some(value: a) };
 
 #end
 
-/-- info: ok: type:
-Option
-Type Arguments:
-[a]
-Constructors:
-[Name: None Args: [] Tester: Option..isNone , Name: Some Args: [(value, a)] Tester: Option..isSome ]-/
+/--
+info: ok: datatype Option (a : Type) {(
+  (None())),
+  (Some(value : a))
+};
+-/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionDeclPgm)).fst
 
@@ -64,28 +64,22 @@ spec {
 #end
 
 /--
-info: ok: type:
-Option
-Type Arguments:
-[a]
-Constructors:
-[Name: None Args: [] Tester: Option..isNone , Name: Some Args: [(value, a)] Tester: Option..isSome ]
-
-procedure TestOptionInt :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: (TestOptionInt_ensures_0, #true)
-{
-  {
-    init (x : (Option int)) := (init_x_0 : (Option int))
-    init (y : (Option int)) := (init_y_1 : (Option int))
-    init (v : int) := (init_v_2 : int)
-    x := (~None : (Option int))
-    y := ((~Some : (arrow int (Option int))) #42)
-    v := ((~Option..value : (arrow (Option int) int)) (y : (Option int)))
-    assert [valIs42] ((v : int) == #42)
-  }
-}
+info: ok: datatype Option (a : Type) {(
+  (None())),
+  (Some(value : a))
+};
+procedure TestOptionInt () returns ()
+spec {
+  ensures [TestOptionInt_ensures_0]: true;
+  } {
+  var x : (Option int);
+  var y : (Option int);
+  var v : int;
+  x := None;
+  y := Some(42);
+  v := Option..value(y);
+  assert [valIs42]: v == 42;
+  };
 -/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
@@ -115,28 +109,20 @@ spec {
 #end
 
 /--
-info: ok: type:
-List
-Type Arguments:
-[a]
-Constructors:
-[Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]
-
-procedure TestListInt :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: (TestListInt_ensures_0, #true)
-{
-  {
-    init (xs : (List int)) := (init_xs_0 : (List int))
-    init (h : int) := (init_h_1 : int)
-    xs := ((~Cons : (arrow int (arrow (List int) (List int))))
-     #1
-     ((~Cons : (arrow int (arrow (List int) (List int)))) #2 (~Nil : (List int))))
-    h := ((~List..head : (arrow (List int) int)) (xs : (List int)))
-    assert [headIs1] ((h : int) == #1)
-  }
-}
+info: ok: datatype List (a : Type) {(
+  (Nil())),
+  (Cons(head : a, tail : (List a)))
+};
+procedure TestListInt () returns ()
+spec {
+  ensures [TestListInt_ensures_0]: true;
+  } {
+  var xs : (List int);
+  var h : int;
+  xs := Cons(1, Cons(2, Nil));
+  h := List..head(xs);
+  assert [headIs1]: h == 1;
+  };
 -/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
@@ -169,28 +155,22 @@ spec {
 #end
 
 /--
-info: ok: type:
-Either
-Type Arguments:
-[a, b]
-Constructors:
-[Name: Left Args: [(l, a)] Tester: Either..isLeft , Name: Right Args: [(r, b)] Tester: Either..isRight ]
-
-procedure TestEither :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: (TestEither_ensures_0, #true)
-{
-  {
-    init (x : (Either int bool)) := (init_x_0 : (Either int bool))
-    init (y : (Either int bool)) := (init_y_1 : (Either int bool))
-    x := ((~Left : (arrow int (Either int bool))) #42)
-    y := ((~Right : (arrow bool (Either int bool))) #true)
-    assert [xIsLeft] ((~Either..isLeft : (arrow (Either int bool) bool)) (x : (Either int bool)))
-    assert [yIsRight] ((~Either..isRight : (arrow (Either int bool) bool)) (y : (Either int bool)))
-    assert [lValue] (((~Either..l : (arrow (Either int bool) int)) (x : (Either int bool))) == #42)
-  }
-}
+info: ok: datatype Either (a : Type, b : Type) {(
+  (Left(l : a))),
+  (Right(r : b))
+};
+procedure TestEither () returns ()
+spec {
+  ensures [TestEither_ensures_0]: true;
+  } {
+  var x : (Either int bool);
+  var y : (Either int bool);
+  x := Left(42);
+  y := Right(true);
+  assert [xIsLeft]: Either..isLeft(x);
+  assert [yIsRight]: Either..isRight(y);
+  assert [lValue]: Either..l(x) == 42;
+  };
 -/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
@@ -219,32 +199,22 @@ spec {
 #end
 
 /--
-info: ok: type:
-Option
-Type Arguments:
-[a]
-Constructors:
-[Name: None Args: [] Tester: Option..isNone , Name: Some Args: [(value, a)] Tester: Option..isSome ]
-
-type:
-List
-Type Arguments:
-[a]
-Constructors:
-[Name: Nil Args: [] Tester: List..isNil , Name: Cons Args: [(head, a), (tail, (List a))] Tester: List..isCons ]
-
-procedure TestNestedPoly :  () → ()
-  modifies: []
-  preconditions: 
-  postconditions: (TestNestedPoly_ensures_0, #true)
-{
-  {
-    init (x : (Option (List int))) := (init_x_0 : (Option (List int)))
-    x := ((~Some : (arrow (List int) (Option (List int))))
-     ((~Cons : (arrow int (arrow (List int) (List int)))) #1 (~Nil : (List int))))
-    assert [isSome] ((~Option..isSome : (arrow (Option (List int)) bool)) (x : (Option (List int))))
-  }
-}
+info: ok: datatype Option (a : Type) {(
+  (None())),
+  (Some(value : a))
+};
+datatype List (a : Type) {(
+  (Nil())),
+  (Cons(head : a, tail : (List a)))
+};
+procedure TestNestedPoly () returns ()
+spec {
+  ensures [TestNestedPoly_ensures_0]: true;
+  } {
+  var x : (Option (List int));
+  x := Some(Cons(1, Nil));
+  assert [isSome]: Option..isSome(x);
+  };
 -/
 #guard_msgs in
 #eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
