@@ -29,17 +29,15 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram assertionNames) |>.snd |>.isEmpty
 
 /--
-info: procedure Test :  ((x : int)) → ()
-  modifies: []
-  preconditions: (Test_requires_0, ((x : int) == #1))
-  postconditions: ⏎
-{
-  assert [assert_0] ((x : int) == #1)
-}
-Errors: #[]
+info: procedure Test (x : int) returns ()
+spec {
+  requires [Test_requires_0]: x == 1;
+  } {
+  assert [assert_0]: x == 1;
+  };
 -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram assertionNames)
+#eval TransM.run Inhabited.default (translateProgram assertionNames) |>.fst
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -49,10 +47,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-(Test_requires_0, ($__x0 == #1))
-
-Proof Obligation:
-($__x0 == #1)
+Test_requires_0: $__x0 == 1
+Obligation:
+$__x0 == 1
 
 ---
 info:
@@ -61,6 +58,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" assertionNames
+#eval verify assertionNames
 
 ---------------------------------------------------------------------

@@ -33,6 +33,8 @@ func Int.Sub :  ((x : int) (y : int)) → int;
 func Int.Mul :  ((x : int) (y : int)) → int;
 func Int.Div :  ((x : int) (y : int)) → int;
 func Int.Mod :  ((x : int) (y : int)) → int;
+func Int.DivT :  ((x : int) (y : int)) → int;
+func Int.ModT :  ((x : int) (y : int)) → int;
 func Int.Neg :  ((x : int)) → int;
 func Int.Lt :  ((x : int) (y : int)) → bool;
 func Int.Le :  ((x : int) (y : int)) → bool;
@@ -215,9 +217,9 @@ Deferred Proof Obligations:
 Label: ret_y_lt_0
 Property: assert
 Assumptions:
-(0_lt_x, ((~Int.Lt #0) $__x0))
+(0_lt_x, (~Int.Lt #0 $__x0))
 Proof Obligation:
-((~Int.Lt (~Int.Neg ($__x0 : int))) #0)
+(~Int.Lt (~Int.Neg ($__x0 : int)) #0)
 -/
 #guard_msgs in
 #eval do let E := Env.init

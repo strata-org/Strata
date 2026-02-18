@@ -50,6 +50,9 @@ structure LConstr (IDMeta : Type) where
   testerName : String := "is" ++ name.name
 deriving Repr, DecidableEq
 
+instance [Inhabited IDMeta] : Inhabited (LConstr IDMeta) where
+  default := { name := default, args := [] }
+
 instance: ToFormat (LConstr IDMeta) where
   format c := f!"Name:{Format.line}{c.name}{Format.line}\
                  Args:{Format.line}{c.args}{Format.line}\
@@ -65,6 +68,9 @@ structure LDatatype (IDMeta : Type) where
   constrs: List (@LConstr IDMeta)
   constrs_ne : constrs.length != 0
 deriving Repr, DecidableEq
+
+instance [Inhabited IDMeta] : Inhabited (LDatatype IDMeta) where
+  default := { name := "", typeArgs := [], constrs := [default], constrs_ne := rfl }
 
 instance : ToFormat (LDatatype IDMeta) where
   format d := f!"type:{Format.line}{d.name}{Format.line}\

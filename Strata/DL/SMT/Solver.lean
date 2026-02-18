@@ -102,6 +102,9 @@ def setLogic (logic : String) : SolverM Unit :=
 def setOption (name value : String) : SolverM Unit :=
   emitln s!"(set-option :{name} {value})"
 
+def setInfo (name value : String) : SolverM Unit :=
+  emitln s!"(set-info :{name} {value})"
+
 def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "
   emitln s!"; {inline}"

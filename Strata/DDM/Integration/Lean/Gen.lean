@@ -7,13 +7,19 @@ module
 
 public meta import Lean.Elab.Command
 public meta import Strata.DDM.AST
+-- `public import` provides object-level access for generated code at call sites.
+-- `public meta import` provides meta-level access for #strata_gen elaboration.
+public import      Strata.DDM.BuiltinDialects.Init  -- Generated code uses Init types
+public import      Strata.DDM.HNF  -- Generated ofAst uses ExprF.hnf
 public meta import Strata.DDM.BuiltinDialects.Init
 meta import        Strata.DDM.BuiltinDialects.StrataDDL
 public meta import Strata.DDM.Integration.Categories
 public meta import Strata.DDM.Integration.Lean.Env
-import             Strata.DDM.Integration.Lean.GenTrace
+public meta import Strata.DDM.Integration.Lean.GenTrace  -- trace option
+public import      Strata.DDM.Integration.Lean.OfAstM  -- Generated ofAst combinators
 public meta import Strata.DDM.Integration.Lean.OfAstM
 public meta import Strata.DDM.Util.Graph.Tarjan
+meta import        Strata.Util.DecideProp
 
 /-!
 Implements the `#strata_gen` command, which reads a dialect definition and
@@ -24,7 +30,7 @@ category used by the dialect.
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote
   withTraceNode mkIdentFrom)
 open Lean.Elab (throwUnsupportedSyntax)
-open Lean.Elab.Command (CommandElab CommandElabM elabCommand)
+open Lean.Elab.Command (CommandElab CommandElabM elabCommand getScope)
 open Lean.MonadOptions (getOptions)
 open Lean.MonadResolveName (getCurrNamespace)
 open Lean.Parser.Command (ctor)
@@ -39,22 +45,25 @@ namespace Lean
 
 /--
 Prepend the current namespace to the Lean name and convert to an identifier.
+When in a module file and not in a `public section`, uses `mkPrivateName` to
+resolve the `.decl` pre-resolution hint to the private-mangled name.
 -/
-def mkScopedIdent (scope : Name) (subName : Lean.Name) : Ident :=
-  let fullName := scope ++ subName
-  let nameStr := toString subName
-  .mk (.ident .none nameStr.toRawSubstring subName [.decl fullName []])
-
-/--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def currScopedIdent {m} [Monad m] [Lean.MonadResolveName m]
-    (subName : Lean.Name) : m Ident := do
-  (mkScopedIdent · subName) <$> getCurrNamespace
+def mkScopedIdent (subName : Lean.Name) : CommandElabM Ident := do
+  let env ← getEnv
+  let scope ← getScope
+  let fullName := scope.currNamespace ++ subName
+  let resolvedName :=
+    if !env.header.isModule || scope.isPublic then
+      fullName
+    else
+      Lean.mkPrivateName env fullName
+  let rawStr := (toString subName).toRawSubstring
+  let preresolution := [.decl resolvedName []]
+  return .mk (.ident .none rawStr subName preresolution)
 
 end Lean
 
-open Lean (currScopedIdent)
+open Lean (mkScopedIdent)
 
 def arrayLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
   ``( (#[ $as:term,* ] : Array _) )
@@ -73,7 +82,8 @@ abbrev GenM := ReaderT GenContext CommandElabM
 
 def runCmd {α} (act : CommandElabM α) : GenM α := fun _ => act
 
-/-- Creates a fresh, unique Lean name for use in generated code. -/
+/-- Creates a fresh, unique Lean name using macro scopes to prevent
+name capture in generated code. -/
 def genFreshLeanName (s : String) : GenM Name := do
   let fresh ← modifyGet fun s =>
     (s.nextMacroScope, { s with nextMacroScope := s.nextMacroScope + 1 })
@@ -97,7 +107,31 @@ def mkCanIdent (src : Lean.Syntax) (val : Name) : Ident :=
 def genIdentFrom (name : Name) (canonical : Bool := false) : GenM Ident := do
   return mkIdentFrom (←read).src name canonical
 
-def reservedCats : Std.HashSet String := { "Type" }
+/-!
+## Category Classification
+
+The generator classifies Init categories into several sets that control how
+code is generated:
+
+- `declaredCategories` — Primitive Init categories (e.g., `Init.Num`, `Init.Ident`)
+  that map directly to existing Lean types (e.g., `Nat`, `String`).  No inductive
+  type is generated for these; they appear as-is in constructor fields.
+
+- `forbiddenCategories` — Internal machinery categories (e.g., `Init.BindingType`,
+  `StrataDDL.Binding`) that dialects must not reference in generated code.  An
+  error is reported if a dialect operation uses one.
+
+- `abstractCategories` — The abstract extension points `Init.Expr`, `Init.Type`,
+  and `Init.TypeP`.  Init-defined operators for these are ignored; instead they
+  are populated via `fn`/`type` declarations and augmented with builtin
+  constructors (see `makeBuiltinCtors`).  Non-Init dialects are prevented from
+  adding operators to these categories by the check in `addDecl`.
+
+- `reservedCategories` — Category names that would shadow Lean keywords (currently
+  just `"Type"`).  These are prefixed with the dialect name in generated identifiers.
+-/
+
+def reservedCategories : Std.HashSet String := { "Type" }
 
 structure OrderedSet (α : Type _) [BEq α] [Hashable α] where
   set : Std.HashSet α
@@ -114,15 +148,19 @@ partial def addAtom {α} [BEq α] [Hashable α] (s : OrderedSet α) (a : α)
   else
     { set := s.set.insert a, values := s.values.push a }
 
+/--
+Add element `e` and its transitive closure under `next` in post-order
+(dependencies before dependents).
+-/
 partial def addPostTC {α} [BEq α] [Hashable α] (next : α → Array α)
-    (s : OrderedSet α) (a : α) : OrderedSet α :=
-  if a ∈ s.set then
+    (s : OrderedSet α) (e : α) : OrderedSet α :=
+  if e ∈ s.set then
     s
   else
-    let as := next a
-    let s := { s with set := s.set.insert a }
-    let s := as.foldl (init := s) (addPostTC next)
-    { s with values := s.values.push a }
+    let succs := next e
+    let s := { s with set := s.set.insert e }
+    let s := succs.foldl (init := s) (addPostTC next)
+    { s with values := s.values.push e }
 
 end OrderedSet
 
@@ -163,11 +201,9 @@ def forbiddenWellDefined : Bool :=
 #guard "Binding" ∈ StrataDDL.cache
 #guard forbiddenWellDefined
 
-/--
-Special categories ignore operations introduced in Init, but are populated
-with operators via functions/types.
--/
-def specialCategories : Std.HashSet CategoryName :=
+/-- Abstract categories (`Init.Expr`, `Init.Type`, `Init.TypeP`)
+extended via `fn`/`type` rather than `op`. -/
+def abstractCategories : Std.HashSet CategoryName :=
   DDM.Integration.abstractCategories
 
 /--
@@ -281,24 +317,14 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
 #guard declaredCategories.keys.all
   (DDM.Integration.primitiveCategories.contains ·)
 
-def ignoredCategories : Std.HashSet CategoryName :=
-  .ofList declaredCategories.keys ∪ forbiddenCategories
-
 namespace CatOpMap
 
-def addCat (m : CatOpMap) (cat : CategoryName) : CatOpMap :=
-  -- Allow Init.Bool even though it's in ignoredCategories
-  if cat ∈ ignoredCategories && cat ≠ q`Init.Bool then
-    m
-  else
-    m.insert cat #[]
+def alterMap (f : CatOpMap → CatOpMap) : CatOpM Unit := do
+  modify fun s => { s with map := f s.map }
 
 def addOp (m : CatOpMap) (cat : CategoryName) (op : CatOp) : CatOpMap :=
   assert! cat ∈ m
   m.modify cat (fun a => a.push op)
-
-def addCatM (cat : CategoryName) : CatOpM Unit := do
-  modify fun s => { s with map := s.map.addCat cat }
 
 def addOpM (cat : CategoryName) (op : CatOp) : CatOpM Unit := do
   modify fun s => { s with map := s.map.addOp cat op }
@@ -311,19 +337,30 @@ def addDecl (d : DialectName) (decl : Decl) : CatOpM Unit :=
     | .error msg => do
       .addError msg
   match decl with
-  | .syncat decl =>
-    addCatM ⟨d, decl.name⟩
+  | .syncat decl => do
+    let cat := ⟨d, decl.name⟩
+    -- Note: Init.Bool is pre-seeded in `CatOpMap.init` so it won't reach
+    -- here from Init; non-Init dialects produce a different qualified name.
+    if cat ∉ declaredCategories ∧ cat ∉ forbiddenCategories then
+      alterMap <| fun m => m.insert ⟨d, decl.name⟩ #[]
   | .op decl => do
-    -- Allow Init.Bool operators even though Bool is in declaredCategories
-    let isBoolOp := decl.category == q`Init.Bool &&
+    -- Bool is in `declaredCategories` (mapped to Lean's Bool), so its category
+    -- is normally ignored.  However, we still need boolTrue/boolFalse operators
+    -- in the CatOpMap so that `toAst`/`ofAst` can convert between `Ann Bool α`
+    -- and `OperationF` representations.
+    let cat := decl.category
+    -- Bool operators (boolTrue/boolFalse) are allowed through even though
+    -- Init.Bool is in declaredCategories, because toAst/ofAst need them.
+    let isBoolOp := cat == q`Init.Bool &&
       (decl.name == "boolTrue" || decl.name == "boolFalse")
-    if (decl.category ∈ ignoredCategories ∨
-        decl.category ∈ specialCategories) && !isBoolOp then
+    let extendsFixedCategory :=
+      cat ∈ declaredCategories ∨ cat ∈ forbiddenCategories ∨ cat ∈ abstractCategories
+    if extendsFixedCategory && !isBoolOp then
       if d ≠ "Init" then
         .addError s!"Skipping operation {decl.name} in {d}: \
-          {decl.category.fullName} cannot be extended."
+          {cat.fullName} cannot be extended."
     else
-      addCatOp decl.category (CatOp.ofOpDecl d decl)
+      addCatOp cat (CatOp.ofOpDecl d decl)
   | .type decl =>
     addOpM q`Init.Type (.ofTypeDecl d decl)
   | .function decl =>
@@ -338,7 +375,7 @@ def addDialect (d : Dialect) : CatOpM Unit :=
 protected def init : CatOpMap :=
   let act := do
         addDialect initDialect
-  let ((), s) := act { map := {}, errors := #[] }
+  let ((), s) := act { map := .ofArray #[(q`Init.Bool, #[])], errors := #[] }
   if s.errors.size > 0 then
     panic! s!"Error in Init dialect {s.errors}"
   else
@@ -416,6 +453,8 @@ partial def findUsedCategories.aux (m : CatOpMap)
   | some (s, c) =>
     match c with
     | q`Init.TypeP =>
+      -- TypeP is a tagged union of Type and Expr, so using TypeP
+      -- implicitly requires the Type category as well.
       findUsedCategories.aux m (s.add q`Init.Type)
     | _ =>
       let ops := m.getD c #[]
@@ -450,7 +489,7 @@ def findUsedCategories (m : CatOpMap) (d : Dialect) : CategorySet :=
   findUsedCategories.aux m (.ofSet cats)
 
 /--
-Returns builtin constructors for special categories like `Init.Expr` and
+Returns builtin constructors for abstract categories like `Init.Expr` and
 `Init.Type`. These constructors are hardcoded and correspond to the AST types
 `ExprF` and `TypeExprF` respectively.
 -/
@@ -463,6 +502,10 @@ def makeBuiltinCtors (cat : QualifiedIdent) : Array DefaultCtor :=
       ],
       .mk "bvar" none #[
         { name := "idx", cat := .atom .none q`Init.Num, addAnn := false }
+      ],
+      .mk "app" none #[
+        { name := "fn", cat := .atom .none q`Init.Expr, addAnn := false },
+        { name := "arg", cat := .atom .none q`Init.Expr, addAnn := false }
       ]
     ]
   | q`Init.Type =>
@@ -585,6 +628,15 @@ def orderedSyncatGroups (categories : Array (QualifiedIdent × Array DefaultCtor
   let indices := OutGraph.tarjan g
   indices.map (·.map (categories[·]))
 
+/--
+Produce an identifier for `name` that is relative to `scope`.
+
+Walks the fully-qualified `name` from the leaf toward the root, collecting
+components.  When the remaining prefix matches `scope`, the collected
+components form a relative identifier that resolves correctly inside the
+current namespace.  If `scope` is never found, falls back to a `_root_`-
+prefixed absolute identifier.
+-/
 def mkCategoryIdent (scope : Name) (name : Name) : Ident :=
   let mkDeclName (comp : List Name) : Ident :=
     let subName := comp.foldl (init := .anonymous) fun r nm => r ++ nm
@@ -606,21 +658,6 @@ def mkCategoryIdent (scope : Name) (name : Name) : Ident :=
   aux name []
 
 /--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def scopedIdent (scope subName : Lean.Name) : Ident :=
-  let name := scope ++ subName
-  let nameStr := toString subName
-  .mk (.ident .none nameStr.toRawSubstring subName [.decl name []])
-
-/--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def mkScopedIdent {m} [Monad m] [Lean.MonadResolveName m]
-    (subName : Lean.Name) : m Ident :=
-  (scopedIdent · subName) <$> getCurrNamespace
-
-/--
 Returns the Lean name for a category, looking it up in the context's
 category name map which handles naming conflicts.
 -/
@@ -638,7 +675,7 @@ or a generated category name.
 def getCategoryIdent (cat : QualifiedIdent) : GenM Ident := do
   if let some nm := declaredCategories[cat]? then
     return mkRootIdent nm
-  currScopedIdent (← getCategoryScopedName cat)
+  mkScopedIdent (← getCategoryScopedName cat)
 
 /-- Returns a Lean term for a category type applied to the annotation type. -/
 def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
@@ -647,7 +684,7 @@ def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
 
 /-- Returns a scoped identifier for a constructor in a category. -/
 def getCategoryOpIdent (cat : QualifiedIdent) (name : Name) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ name
+  mkScopedIdent <| (← getCategoryScopedName cat) ++ name
 
 /--
 Generates a Lean type term for a `SyntaxCat`, recursing into parameterized
@@ -675,9 +712,11 @@ partial def genCatTypeTerm (annType : Ident) (c : SyntaxCat)
   | cat, 0 =>
     match declaredCategories[cat]? with
     | some nm =>
-      -- Check if addAnn is specified
-      if !addAnn && cat ∈ declaredCategories then
-        pure <| mkRootIdent nm  -- Return unwrapped type
+      -- When `addAnn` is false (the argument has `@[unwrap]` metadata), use the
+      -- bare Lean type (e.g., `Nat`).  Otherwise wrap in `Ann` to carry source
+      -- annotations (e.g., `Ann Nat α`).
+      if addAnn = false then
+        pure <| mkRootIdent nm
       else
         pure <| mkCApp ``Ann #[mkRootIdent nm, annType]
     | none => do
@@ -693,6 +732,8 @@ Elaborates an array of commands, wrapping them in a mutual block if there
 are multiple commands (for mutual recursion).
 -/
 def elabCommands (commands : Array Command) : CommandElabM Unit := do
+  -- Record the message count before elaboration so we can detect whether
+  -- elaboration produced any new non-trace diagnostics (errors/warnings).
   let messageCount := (← get).messages.unreported.size
   match p : commands.size with
   | 0 =>
@@ -780,11 +821,11 @@ def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
 
 /-- Returns the identifier for a category's toAst function. -/
 def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
+  getCategoryOpIdent cat `toAst
 
 /-- Returns the identifier for a category's ofAst function. -/
 def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
+  getCategoryOpIdent cat `ofAst
 
 /-- Wraps a value with an `Ann`-extracted annotation into an AST argument. -/
 def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
@@ -916,9 +957,21 @@ def toAstBuiltinMatches (cat : QualifiedIdent) : GenM (Array MatchAlt) := do
 
 /--
 Generates a pattern match case for converting a constructor to AST.
-Handles Init.Expr (converts to ExprF), Init.Type (converts to TypeExprF
-with special handling for builtin vs dialect constructors), and general
-operations (converts to OperationF).
+
+For `Init.Expr`, dialect-defined constructors are encoded as a chain of
+`ExprF.fn` (the function head) followed by `ExprF.app` for each argument.
+For example, `Expr.add ann x y` becomes
+`ExprF.app ann (ExprF.app ann (ExprF.fn ann "add") x) y`.
+The inverse `ofAst` function normalizes via HNF to recover the flat argument list.
+
+For `Init.Type`, dialect-defined constructors are encoded as `TypeExprF.ident`
+with an array of type arguments.
+
+For general categories, constructors are encoded as `OperationF.mk` with an
+array of `ArgF` values.
+
+All three cases also handle builtin constructors (fvar, bvar, etc.) which map
+directly to their corresponding AST node.
 -/
 def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
   match cat with
@@ -927,29 +980,45 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
     let argDecls := op.argDecls
     let (annC, annI) ← genFreshIdentPair "ann"
     let ctor : Ident ← getCategoryOpIdent cat op.leanName
-    let args ← argDecls.mapM fun arg => do
-      return (← genFreshLeanName arg.name, arg.cat, arg.addAnn)
-    let argTerms : Array Term := args.map fun p => mkCanIdent src p.fst
+    -- Fresh Lean names for each constructor argument, used in generated code.
+    let argLeanNames : Vector Lean.Name argDecls.size ← Vector.ofFnM fun i => do
+          genFreshLeanName (argDecls[i]).name
+    -- Canonical identifiers for pattern matching on the constructor arguments.
+    let argTerms : Array Term :=
+      argLeanNames.toArray.map fun nm => (mkCanIdent src nm : Term)
     let pat : Term ← ``($ctor $annC $argTerms:term*)
     let rhs ← match op.strataName with
     | some nm =>
       -- Dialect-defined expression constructor
       let init := mkCApp ``ExprF.fn #[annI, quote nm]
-      args.foldlM (init := init) fun a (nm, tp, addAnn) => do
-        let e ← toAstApplyArg nm tp addAnn
+      Fin.foldlM argDecls.size (init := init) fun a ⟨i, ilt⟩ => do
+        have h : i < argLeanNames.size := by omega
+        let e ← toAstApplyArg argLeanNames[i] argDecls[i].cat argDecls[i].addAnn
         return Lean.Syntax.mkCApp ``ExprF.app #[annI, a, e]
     | none =>
-      -- Builtin expression constructor (fvar, bvar)
+      -- Builtin expression constructor (fvar, bvar, app)
       -- All builtin constructors defined in makeBuiltinCtors have addAnn := false
       match op.leanNameStr with
+      -- Free variable reference: Expr.fvar ann idx → ExprF.fvar ann idx
       | "fvar" =>
-        assert! args.size == 1
-        let (idxV, _, _) := args[0]!
-        pure <| mkCApp ``ExprF.fvar #[annI, mkIdentFrom src idxV]
+        let isTrue _ := decideProp (argDecls.size = 1)
+          | panic! "fvar expects 1 argument"
+        pure <| mkCApp ``ExprF.fvar #[annI, mkIdentFrom src argLeanNames[0]]
+      -- Bound variable reference: Expr.bvar ann idx → ExprF.bvar ann idx
       | "bvar" =>
-        assert! args.size == 1
-        let (idxV, _, _) := args[0]!
-        pure <| mkCApp ``ExprF.bvar #[annI, mkIdentFrom src idxV]
+        let isTrue _ := decideProp (argDecls.size = 1)
+          | panic! "bvar expects 1 argument"
+        pure <| mkCApp ``ExprF.bvar #[annI, mkIdentFrom src argLeanNames[0]]
+      -- Function application: Expr.app ann fn arg →
+      --   ExprF.app ann (toAst fn) (ArgF.expr (toAst arg))
+      | "app" =>
+        let isTrue _ := decideProp (argDecls.size = 2)
+          | panic! "app expects 2 arguments"
+        let toAst ← toAstIdentM q`Init.Expr
+        let fnTerm := mkApp toAst #[mkIdentFrom src argLeanNames[0]]
+        let argTerm :=
+          mkCApp ``ArgF.expr #[mkApp toAst #[mkIdentFrom src argLeanNames[1]]]
+        pure <| mkCApp ``ExprF.app #[annI, fnTerm, argTerm]
       | lname =>
         return panic! s!"Unknown builtin expression constructor: {lname}"
     `(matchAltExpr| | $pat => $rhs)
@@ -1246,7 +1315,7 @@ def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor)
     | none => map  -- Skip operators without a name
     | some name => map.insert name map.size  -- Assign the next available index
   let ofAstNameMap ←
-    currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.nameIndexMap
+    getCategoryOpIdent cat `ofAst.nameIndexMap
   let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat :=
     Std.HashMap.ofList $(quote nameIndexMap.toList))
   pure (nameIndexMap, ofAstNameMap, cmd)
@@ -1278,23 +1347,43 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
   match cat with
   | q`Init.Expr =>
     let v ← genFreshLeanName "v"
-    let argsVar ← genFreshLeanName "args"
     let (annC, annI) ← genFreshIdentPair "ann"
+    -- `argsVar` is the Name used in pattern position (canonical) to bind the
+    -- HNF argument array (`vnf.args.val`).  `argsIdent` is the corresponding
+    -- term-side Ident used to reference those arguments in match RHS code.
+    let argsVar ← genFreshLeanName "args"
+    let argsIdent := mkIdentFrom src argsVar
     -- Filter to only dialect-defined expressions (with strataName)
     let dialectOps := ops.filter (·.strataName.isSome)
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat dialectOps
     let bvarCtor ← getCategoryOpIdent cat `bvar
     let fvarCtor ← getCategoryOpIdent cat `fvar
-    let argsIdent := mkIdentFrom src argsVar
+    let appCtor ← getCategoryOpIdent cat `app
     let cases : Array MatchAlt ←
       dialectOps.mapM (ofAstExprMatch nameIndexMap cat annI argsIdent)
-    -- Builtin constructors defined in makeBuiltinCtors all have addAnn := false
+    -- `toAst` encodes expressions as nested ExprF.app chains.  Here we
+    -- normalize the input to head-normal form (HNF): a head (fn/bvar/fvar)
+    -- plus a flat argument array.  For dialect-defined functions we look up
+    -- the head name in a precomputed index map.  For builtin heads
+    -- (bvar/fvar) we reconstruct the generated constructor, then fold any
+    -- remaining HNF arguments back into Expr.app chains (this handles
+    -- partial application of builtins).
+    let foldArgs ← `(fun init =>
+      ($argsIdent).foldlM (init := init) fun acc arg =>
+        match arg with
+        | .expr e => do
+          let e' ← $ofAst:ident e
+          pure ($appCtor default acc e')
+        | _ => OfAstM.throwExpectedExpr arg)
     let rhs ←
       `(let vnf := ($(mkIdentFrom src v)).hnf
         let $(mkCanIdent src argsVar) := vnf.args.val
+        let foldArgs := $foldArgs
         match (vnf.fn) with
-        | Strata.ExprF.bvar ann idx => pure ($bvarCtor ann idx)
-        | Strata.ExprF.fvar ann i => pure ($fvarCtor ann i)
+        | Strata.ExprF.bvar ann idx => do
+          foldArgs ($bvarCtor ann idx)
+        | Strata.ExprF.fvar ann i => do
+          foldArgs ($fvarCtor ann i)
         | Strata.ExprF.fn $annC fnId =>
           (match ($ofAstNameMap[fnId]?) with
           $cases:matchAlt*
@@ -1455,16 +1544,16 @@ def generateCategoryCode
     let s ←
       withTraceNode `Strata.generator (fun _ =>
         return m!"Declarations group: {allCtors.map (·.fst)}") do
-        -- Check if the toAst/ofAst definitions will be recursive by looking for
-        -- categories that are not already in inhabited set.
-        -- N.B. This is not used as we use partial functions, but
-        -- kept as we want to eventually switch back
+        -- TODO: Currently all toAst/ofAst functions are declared `partial`.
+        -- The commented-out code below detects whether a group is actually
+        -- recursive, which would allow non-recursive groups to use
+        -- non-partial definitions (enabling the Lean kernel to reduce them).
         -- let newCats := Std.HashSet.ofArray <| allCtors.map (·.fst)
-        --let _isRecursive := allCtors.any fun (_, ops) =>
-        --      ops.any fun op =>
-        --        op.argDecls.any fun (_, c) =>
-        --          c.foldOverAtomicCategories (init := false)
-        --            fun b qid => b || qid ∈ newCats
+        -- let _isRecursive := allCtors.any fun (_, ops) =>
+        --       ops.any fun op =>
+        --         op.argDecls.any fun (_, c) =>
+        --           c.foldOverAtomicCategories (init := false)
+        --             fun b qid => b || qid ∈ newCats
         let cats := allCtors.map (·.fst)
         profileitM Lean.Exception s!"Generating inductives {cats}" (← getOptions) do
           let inductives ← allCtors.mapM fun (cat, ctors) => do
@@ -1503,7 +1592,7 @@ def runGenerator {α} (src : Lean.Syntax) (pref : String)
     let name :=
           if catNameCounts.getD i.name 0 > 1 then
             s!"{i.dialect}_{i.name}"
-          else if i.name ∈ reservedCats then
+          else if i.name ∈ reservedCategories then
             s!"{pref}{i.name}"
           else
             i.name

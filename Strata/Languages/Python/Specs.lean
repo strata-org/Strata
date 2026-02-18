@@ -12,6 +12,7 @@ import all    Strata.DDM.Util.Fin
 public import Strata.DDM.Util.SourceRange
 import        Strata.Languages.Python.ReadPython
 import        Strata.Languages.Python.Specs.DDM
+import        Strata.Languages.Python.Specs.PySpecM
 public import Strata.Languages.Python.Specs.Decls
 import        Strata.Util.DecideProp
 
@@ -61,11 +62,6 @@ added.
 -/
 inductive Iterable where
 | list
-
-public structure SpecError where
-  file : System.FilePath
-  loc : Strata.SourceRange
-  message : String
 
 /--
 A Python module name split into its dot-separated components.
@@ -177,7 +173,8 @@ def insert (sig : TypeSignature) (name : String) (m : Option (Std.HashMap String
 
 end TypeSignature
 
-def typeIdent (tp : PythonIdent) : SpecValue := .typeValue  (.ident tp)
+/-- Create a type value for prelude types that have no source location. -/
+def typeIdent (tp : PythonIdent) : SpecValue := .typeValue  (.ident default tp)
 
 def preludeSig :=
   TypeSignature.ofList [
@@ -222,15 +219,15 @@ structure PySpecContext where
   /-- Callback that takes a module name and provides filepath to module  -/
   moduleReader : ModuleReader
 
-def preludeAtoms : List (String × SpecType) := [
-  ("bool", .ident .builtinsBool),
-  ("bytearray", .ident .builtinsBytearray),
-  ("bytes", .ident .builtinsBytes),
-  ("complex", .ident .builtinsComplex),
-  ("dict", .ident .builtinsDict),
-  ("float", .ident .builtinsFloat),
-  ("int", .ident .builtinsInt),
-  ("str", .ident .builtinsStr),
+def preludeAtoms : List (String × PythonIdent) := [
+  ("bool", .builtinsBool),
+  ("bytearray", .builtinsBytearray),
+  ("bytes", .builtinsBytes),
+  ("complex", .builtinsComplex),
+  ("dict", .builtinsDict),
+  ("float", .builtinsFloat),
+  ("int", .builtinsInt),
+  ("str", .builtinsStr),
 ]
 
 structure PySpecState where
@@ -240,20 +237,13 @@ structure PySpecState where
   This maps global identifiers to their value.
   -/
   nameMap : Std.HashMap String SpecValue :=
-    preludeAtoms.foldl (init := {}) fun m (nm, tp) =>
-      m.insert nm (.typeValue tp)
+    preludeAtoms.foldl (init := {}) fun m (nm, pyIdent) =>
+      m.insert nm (.typeValue (.ident default pyIdent))
   typeReferences : Std.HashMap String ClassRef := {}
   /--
   Signatures being generated (declarations, functions, classes, etc).
   -/
   elements : Array Signature := #[]
-
-class PySpecMClass (m : Type → Type) where
-  specError (loc : SourceRange) (message : String) : m Unit
-  runChecked {α} (act : m α) : m (Bool × α)
-
-abbrev specError := @PySpecMClass.specError
-abbrev runChecked := @PySpecMClass.runChecked
 
 abbrev PySpecM := ReaderT PySpecContext (StateT PySpecState BaseIO)
 
@@ -316,7 +306,7 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
   | .typeValue itp =>
     pure itp
   | .noneConst =>
-    return .ofAtom .noneType
+    return .ofAtom loc .noneType
   | .stringConst loc val =>
     -- Check if this is a known built-in type first
     match ← getNameValue? val with
@@ -324,7 +314,7 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
       return tp
     | _ =>
       recordTypeRef loc val
-      return .ofAtom (.pyClass val #[])
+      return .ofAtom loc (.pyClass val #[])
   | _ =>
     specError loc s!"Expected type instead of {repr v}."
     return default
@@ -333,14 +323,14 @@ def fixedTranslator (t : PythonIdent) (arity : Nat) : TypeTranslator where
   callback := fun loc arg => do
     if arity = 1 then
       let tp ← valueAsType loc arg
-      return .ident t #[tp]
+      return .ident loc t #[tp]
     else
       let .tuple args := arg
         | specError loc s!"Expected multiple args instead of {repr arg}."; return default
       let some ⟨_⟩ ← checkEq loc (toString t) args arity
           | return default
       let args ← args.mapM (valueAsType loc)
-      return .ident t args
+      return .ident loc t args
 
 def unionTranslator : TypeTranslator where
   callback := fun loc arg => do
@@ -350,7 +340,7 @@ def unionTranslator : TypeTranslator where
       | specError loc s!"Union expects at least one argument."; return default
     let tp ← valueAsType loc args[0]
     args.foldlM (start := 1) (init := tp) fun tp v => do
-      return tp ||| (← valueAsType loc v)
+      return SpecType.union loc tp (← valueAsType loc v)
 
 def literalTranslator : TypeTranslator where
   callback := fun loc arg => do
@@ -369,7 +359,7 @@ def literalTranslator : TypeTranslator where
           | _ =>
             specError loc s!"Unsupported literal value {repr v}."
             pure default
-    return .ofArray (← args.mapM trans)
+    return .ofArray loc (← args.mapM trans)
 
 def metadataProcessor : MetadataType → TypeTranslator
 | .typingDict => fixedTranslator .typingDict 2
@@ -400,7 +390,7 @@ def translateCall (loc : SourceRange) (func : SpecValue)
     let fields := fieldsPairs |>.map (·.fst)
     let values ← fieldsPairs |>.mapM fun (_name, v) => do
       valueAsType loc v
-    return .typeValue <| .ofAtom <| .typedDict fields values total
+    return .typeValue <| .ofAtom loc <| .typedDict fields values total
   | _ =>
     specError loc s!"Unknown call {repr func}."
     return default
@@ -469,15 +459,14 @@ def pyKeywordValue (k : keyword SourceRange) : PySpecM (Option String × SpecVal
 termination_by 2 * sizeOf k
 decreasing_by
   cases k
-  simp [keyword.value]
-  decreasing_tactic
+  simp +arith [keyword.value]
 
 def pySpecValue (expr : expr SourceRange) : PySpecM SpecValue := do
   match h : expr with
   | .BinOp loc x op y => do
     match op with
     | .BitOr _ =>
-      return .typeValue <| (← pySpecType x) ||| (← pySpecType y)
+      return .typeValue <| .union loc (← pySpecType x) (← pySpecType y)
     | _ =>
       specError loc s!"Unsupported binary operator {repr op}"
       return default
@@ -571,7 +560,7 @@ def pySpecArg (usedNames : Std.HashSet String)
     | some cl =>
       if type.isSome then
         specError loc s!"Unexpected argument to {name.val}"
-      pure <| .pyClass cl #[]
+      pure <| .pyClass loc cl #[]
   assert! comment.val.isNone
   let hasDefault ←
     match de with
@@ -744,7 +733,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
   let argDecls : ArgDecls := { args := specArgs, kwonly := kwSpecArgs }
   let returnType : SpecType ←
         match returns with
-        | none => pure <| .ident .typingAny
+        | none => pure <| .ident fnLoc .typingAny
         | some tp => pySpecType tp
   let as ← collectAssertions argDecls returnType <| body.forM blockStmt
 
@@ -826,7 +815,7 @@ def signatureValueMap (mod : String) (sigs : Array Signature) :
             pythonModule := mod
             name := d.name
           }
-          m.insert d.name (.typeValue (.ident pyIdent))
+          m.insert d.name (.typeValue (.ident d.loc pyIdent))
         | .functionDecl .. | .typeDef .. | .externTypeDecl .. => m
   sigs.foldl (init := {}) addType
 
@@ -982,7 +971,7 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
       assert! typeParams.val.size = 0
       let (success, _) ← runChecked <| recordTypeDef loc className
       -- Add the class to nameMap so it can be used in forward references
-      setNameValue className (.typeValue (.pyClass className #[]))
+      setNameValue className (.typeValue (.pyClass loc className #[]))
       let d ← pySpecClassBody loc className stmts.val
       if success then
         pushSignature (.classDef d)
@@ -1007,13 +996,7 @@ def FileMaps.ppSourceRange (fmm : Strata.Python.Specs.FileMaps) (path : System.F
   | none =>
     panic! "Invalid path {file}"
   | some fm =>
-    let spos := fm.toPosition loc.start
-    let epos := fm.toPosition loc.stop
-    -- Render error location information in a format VSCode understands.
-    if spos.line == spos.line then
-      s!"{path}:{spos.line}:{spos.column+1}-{epos.column+1}"
-    else
-      s!"{path}:{spos.line}:{spos.column+1}"
+    loc.format path fm
 
 /-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
 def translateModule

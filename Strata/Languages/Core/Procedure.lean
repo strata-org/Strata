@@ -80,11 +80,11 @@ instance : Std.ToFormat Procedure.CheckAttr where
 structure Procedure.Check where
   expr : Expression.Expr
   attr : CheckAttr := .Default
-  md : Imperative.MetaData Expression
+  md : Imperative.MetaData Expression := #[]
   deriving Repr, DecidableEq
 
 instance : Inhabited Procedure.Check where
-  default := { expr := Inhabited.default, md := #[] }
+  default := { expr := Inhabited.default }
 
 instance : ToFormat Procedure.Check where
   format c := f!"{c.expr}{c.attr}"
@@ -167,6 +167,10 @@ instance : HasVarsImp Expression Procedure where
 
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   { p with body := Statements.eraseTypes p.body, spec := p.spec }
+
+/-- Remove all metadata from procedure. -/
+def Procedure.stripMetaData (p : Procedure) : Procedure :=
+  { p with body := Imperative.Block.stripMetaData p.body }
 
 /-- Transitive variable lookup for procedures.
     This is a version that looks into the body,
