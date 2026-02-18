@@ -52,27 +52,18 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: Test_ensures_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-((~Bool.Or $__x0 $__x0) == $__x0)
+Obligation:
+($__x0 || $__x0) == $__x0
 
 Label: Test_ensures_1
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-($__x0 == (~Bool.Or $__x0 $__x0))
+Obligation:
+$__x0 == ($__x0 || $__x0)
 
 Label: Test_ensures_2
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:

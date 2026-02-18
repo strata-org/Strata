@@ -107,7 +107,7 @@ spec {
       sum := sum + i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
-      assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n)else true;
+      assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
       assert [arbitrary_iter_maintain_invariant]: i <= n && i * (i - 1) div 2 == sum;
       })|loop havoc|: ({
       havoc sum;
@@ -129,150 +129,79 @@ VCs:
 Label: entry_invariant
 Property: assert
 Assumptions:
-(<label_ite_cond_true: (~Int.Lt i n)>, (~Int.Lt #0 $__n0))
-(pre, (~Int.Ge $__n0 #0))
-
-Proof Obligation:
-(~Bool.And (~Int.Le #0 $__n0) #true)
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+pre: $__n0 >= 0
+Obligation:
+0 <= $__n0 && true
 
 Label: assert_measure_pos
 Property: assert
 Assumptions:
-(<label_ite_cond_true: (~Int.Lt i n)>, (~Int.Lt #0 $__n0))
-(pre, (~Int.Ge $__n0 #0))
-
-Proof Obligation:
-(~Int.Ge (~Int.Sub $__n0 #0) #0)
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+pre: $__n0 >= 0
+Obligation:
+$__n0 - 0 >= 0
 
 Label: measure_decreases
 Property: assert
 Assumptions:
-(<label_ite_cond_true: (~Int.Lt i n)>, (~Int.Lt #0 $__n0))
-(assume_guard, (~Int.Lt
- $__i3
- $__n0)) (assume_invariant, (~Bool.And
- (~Int.Le $__i3 $__n0)
- ((~Int.Div
-   (~Int.Mul $__i3 (~Int.Sub $__i3 #1))
-   #2) == $__sum2))) (assume_measure_pos, (~Int.Ge (~Int.Sub $__n0 $__i3) #0))
-(pre, (~Int.Ge $__n0 #0))
-
-Proof Obligation:
-(~Int.Lt (~Int.Sub $__n0 (~Int.Add $__i3 #1)) (~Int.Sub $__n0 $__i3))
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i3 < $__n0
+assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
+assume_measure_pos: $__n0 - $__i3 >= 0
+pre: $__n0 >= 0
+Obligation:
+$__n0 - ($__i3 + 1) < $__n0 - $__i3
 
 Label: measure_imp_not_guard
 Property: assert
 Assumptions:
-(<label_ite_cond_true: (~Int.Lt i n)>, (~Int.Lt #0 $__n0))
-(assume_guard, (~Int.Lt
- $__i3
- $__n0)) (assume_invariant, (~Bool.And
- (~Int.Le $__i3 $__n0)
- ((~Int.Div
-   (~Int.Mul $__i3 (~Int.Sub $__i3 #1))
-   #2) == $__sum2))) (assume_measure_pos, (~Int.Ge (~Int.Sub $__n0 $__i3) #0))
-(pre, (~Int.Ge $__n0 #0))
-
-Proof Obligation:
-(if (~Int.Le (~Int.Sub $__n0 (~Int.Add $__i3 #1)) #0) then (~Bool.Not (~Int.Lt (~Int.Add $__i3 #1) $__n0)) else #true)
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i3 < $__n0
+assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
+assume_measure_pos: $__n0 - $__i3 >= 0
+pre: $__n0 >= 0
+Obligation:
+if $__n0 - ($__i3 + 1) <= 0 then !($__i3 + 1 < $__n0) else true
 
 Label: arbitrary_iter_maintain_invariant
 Property: assert
 Assumptions:
-(<label_ite_cond_true: (~Int.Lt i n)>, (~Int.Lt #0 $__n0))
-(assume_guard, (~Int.Lt
- $__i3
- $__n0)) (assume_invariant, (~Bool.And
- (~Int.Le $__i3 $__n0)
- ((~Int.Div
-   (~Int.Mul $__i3 (~Int.Sub $__i3 #1))
-   #2) == $__sum2))) (assume_measure_pos, (~Int.Ge (~Int.Sub $__n0 $__i3) #0))
-(pre, (~Int.Ge $__n0 #0))
-
-Proof Obligation:
-(~Bool.And
- (~Int.Le (~Int.Add $__i3 #1) $__n0)
- ((~Int.Div (~Int.Mul (~Int.Add $__i3 #1) (~Int.Sub (~Int.Add $__i3 #1) #1)) #2) == (~Int.Add $__sum2 $__i3)))
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i3 < $__n0
+assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
+assume_measure_pos: $__n0 - $__i3 >= 0
+pre: $__n0 >= 0
+Obligation:
+$__i3 + 1 <= $__n0 && ($__i3 + 1) * ($__i3 + 1 - 1) div 2 == $__sum2 + $__i3
 
 Label: sum_assert
 Property: assert
 Assumptions:
-(pre, (~Int.Ge $__n0 #0))
-(<label_ite_cond_true: (~Int.Lt i n)>, (if (~Int.Lt
-  #0
-  $__n0) then (~Int.Lt
-  #0
-  $__n0) else #true)) (assume_guard, (if (~Int.Lt
-  #0
-  $__n0) then (~Int.Lt
-  $__i3
-  $__n0) else #true)) (assume_invariant, (if (~Int.Lt
-  #0
-  $__n0) then (~Bool.And
-  (~Int.Le $__i3 $__n0)
-  ((~Int.Div
-    (~Int.Mul $__i3 (~Int.Sub $__i3 #1))
-    #2) == $__sum2)) else #true)) (assume_measure_pos, (if (~Int.Lt
-  #0
-  $__n0) then (~Int.Ge
-  (~Int.Sub $__n0 $__i3)
-  #0) else #true)) (not_guard, (if (~Int.Lt
-  #0
-  $__n0) then (~Bool.Not
-  (~Int.Lt
-   $__i5
-   $__n0)) else #true)) (invariant, (if (~Int.Lt
-  #0
-  $__n0) then (~Bool.And
-  (~Int.Le $__i5 $__n0)
-  ((~Int.Div
-    (~Int.Mul $__i5 (~Int.Sub $__i5 #1))
-    #2) == $__sum4)) else #true)) (<label_ite_cond_false: !(~Int.Lt i n)>, (if (if (~Int.Lt
-   #0
-   $__n0) then #false else #true) then (if (~Int.Lt #0 $__n0) then #false else #true) else #true))
-
-Proof Obligation:
-((~Int.Div (~Int.Mul $__n0 (~Int.Sub $__n0 #1)) #2) == (if (~Int.Lt #0 $__n0) then $__sum4 else #0))
+pre: $__n0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
+assume_guard: if 0 < $__n0 then ($__i3 < $__n0) else true
+assume_invariant: if 0 < $__n0 then ($__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2) else true
+assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i3 >= 0) else true
+not_guard: if 0 < $__n0 then !($__i5 < $__n0) else true
+invariant: if 0 < $__n0 then ($__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4) else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+Obligation:
+$__n0 * ($__n0 - 1) div 2 == if 0 < $__n0 then $__sum4 else 0
 
 Label: post
 Property: assert
 Assumptions:
-(pre, (~Int.Ge $__n0 #0))
-(<label_ite_cond_true: (~Int.Lt i n)>, (if (~Int.Lt
-  #0
-  $__n0) then (~Int.Lt
-  #0
-  $__n0) else #true)) (assume_guard, (if (~Int.Lt
-  #0
-  $__n0) then (~Int.Lt
-  $__i3
-  $__n0) else #true)) (assume_invariant, (if (~Int.Lt
-  #0
-  $__n0) then (~Bool.And
-  (~Int.Le $__i3 $__n0)
-  ((~Int.Div
-    (~Int.Mul $__i3 (~Int.Sub $__i3 #1))
-    #2) == $__sum2)) else #true)) (assume_measure_pos, (if (~Int.Lt
-  #0
-  $__n0) then (~Int.Ge
-  (~Int.Sub $__n0 $__i3)
-  #0) else #true)) (not_guard, (if (~Int.Lt
-  #0
-  $__n0) then (~Bool.Not
-  (~Int.Lt
-   $__i5
-   $__n0)) else #true)) (invariant, (if (~Int.Lt
-  #0
-  $__n0) then (~Bool.And
-  (~Int.Le $__i5 $__n0)
-  ((~Int.Div
-    (~Int.Mul $__i5 (~Int.Sub $__i5 #1))
-    #2) == $__sum4)) else #true)) (<label_ite_cond_false: !(~Int.Lt i n)>, (if (if (~Int.Lt
-   #0
-   $__n0) then #false else #true) then (if (~Int.Lt #0 $__n0) then #false else #true) else #true))
-
-Proof Obligation:
-#true
+pre: $__n0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
+assume_guard: if 0 < $__n0 then ($__i3 < $__n0) else true
+assume_invariant: if 0 < $__n0 then ($__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2) else true
+assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i3 >= 0) else true
+not_guard: if 0 < $__n0 then !($__i5 < $__n0) else true
+invariant: if 0 < $__n0 then ($__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4) else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+Obligation:
+true
 
 ---
 info:

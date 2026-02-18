@@ -46,11 +46,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: x_eq_1
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-($__x0 == #1)
+Obligation:
+$__x0 == 1
 
 
 
