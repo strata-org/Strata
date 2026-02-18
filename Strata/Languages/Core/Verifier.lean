@@ -410,7 +410,7 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break else continue
       -- For `unknown` results, we appeal to the SMT backend below.
-      let maybeTerms := ProofObligation.toSMTTerms E obligation
+      let maybeTerms := ProofObligation.toSMTTerms E obligation SMT.Context.default options.useArrayTheory
       match maybeTerms with
       | .error err =>
         let err := f!"SMT Encoding Error! " ++ err
