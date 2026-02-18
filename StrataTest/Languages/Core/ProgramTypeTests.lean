@@ -361,7 +361,7 @@ def polyFuncProg : Program := { decls := [
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
-            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) (some eb[init_m_0]),
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) none,
             -- m := makePair(identity(42), identity(true));
             Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))]
           ]

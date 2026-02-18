@@ -22,9 +22,6 @@ open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
 
-def initVarValue (id : String) : LExpr CSimpLParams.mono :=
-  .fvar () ("init_" ++ id) none
-
 ---------------------------------------------------------------------
 
 /- Translation Monad -/
@@ -368,7 +365,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty (initVarValue id)))], newBindings)
+    return ([(.cmd (.init id ty none))], newBindings)
   | q`C_Simp.init_def, #[ida, tpa, ea] =>
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
