@@ -27,6 +27,17 @@ procedure testFuncDecl(c: int) returns () {
 #end
 
 -- Verify the program parses and type checks correctly
+/--
+info: program Core;
+procedure testFuncDecl (c : int) returns ()
+{
+  function double (x : int) : int { x + x + c }
+  var y : int := 5;
+  var result : int := double(y);
+  assert result == 12;
+};
+-/
+#guard_msgs in
 #eval IO.println funcDeclStmtPgm
 
 -- SMT verification is not yet supported for locally declared functions
@@ -51,6 +62,17 @@ program Core;
 #end
 
 -- Verify the block program parses and type checks correctly
+/--
+info: program Core;
+({
+  var c : int := 2;
+  function double (x : int) : int { x + x + c }
+  var y : int := 5;
+  var result : int := double(y);
+  assert result == 12;
+});
+-/
+#guard_msgs in
 #eval IO.println funcDeclBlockPgm
 
 ---------------------------------------------------------------------
