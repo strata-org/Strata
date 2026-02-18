@@ -49,122 +49,15 @@ end Strata.SMT.Encoder
 namespace Core.SMT
 open Std (ToFormat Format format)
 open Lambda Strata.SMT
--- (TODO) Use DL.Imperative.SMTUtils.
 
-abbrev SMTModel := Map (IdentT LMonoTy Visibility) String
+private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
+  (ty : Core.Expression.Ty) := do
+    -- Type of identifier has to be monotye
+    let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
+    let (ty', _) ← LMonoTy.toSMTType Env.init mty ctx
+    return (id.name, ty')
 
-def SMTModel.format (model : SMTModel) : Format :=
-  match model with
-  | [] => ""
-  | [((k, _), v)] => f!"({k}, {v})"
-  | ((k, _), v) :: rest =>
-    (f!"({k}, {v}) ") ++ SMTModel.format rest
-
-instance : ToFormat SMTModel where
-  format := SMTModel.format
-
-/--
-Find the Id for the SMT encoding of `x`.
--/
-def getSMTId (x : (IdentT LMonoTy Visibility)) (ctx : SMT.Context) (E : EncoderState)
-    : Except Format String := do
-  match x with
-  | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
-  | (var, some ty) => do
-    -- NOTE: OK to use Env.init here because ctx should already contain datatypes
-    let (ty', _) ← LMonoTy.toSMTType Env.init ty ctx
-    let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
-    .ok (E.ufs[key]!)
-
-def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
-  let cex ← Strata.SMT.CExParser.parseCEx m
-  return cex.pairs
-
-def processModel
-  (vars : List (IdentT LMonoTy Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
-  (ctx : SMT.Context) (E : EncoderState) :
-  Except Format SMTModel := do
-  match vars with
-  | [] => return []
-  | var :: vrest =>
-    let id ← getSMTId var ctx E
-    let value ← findModelValue id cexs
-    let pair := (var, value)
-    let rest ← processModel vrest cexs ctx E
-    .ok (pair :: rest)
-  where findModelValue id cexs : Except Format String :=
-    match cexs.find? (fun p => p.key == id) with
-    | none => .error f!"Cannot find model for id: {id}"
-    | some p => .ok p.value
-
-inductive Result where
-  -- Also see Strata.SMT.Decision.
-  | sat (m : SMTModel)
-  | unsat
-  | unknown
-  | err (msg : String)
-deriving DecidableEq, Repr
-
-def Result.isSat (r : Result) : Bool :=
-  match r with | .sat _ => true | _ => false
-
-def Result.formatWithVerbose (r : Result) (verbose : Bool) : Format :=
-  match r with
-  | .sat m  =>
-    if (not verbose) || m.isEmpty then
-      f!"sat"
-    else f!"sat\nModel: {m}"
-  | .unsat => f!"unsat"
-  | .unknown => f!"unknown"
-  | .err msg => f!"err {msg}"
-
-instance : ToFormat Result where
-  format r := r.formatWithVerbose true
-
-def Result.formatModelIfSat (r : Result) (verbose : Bool) : Format :=
-  match r with
-  | .sat m =>
-    if (not verbose) || m.isEmpty then
-      f!""
-    else
-      f!"\nModel:\n{m}"
-  | _ => f!""
-
-def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
-  let output ← IO.Process.output {
-    cmd := solver
-    args := args
-  }
-  -- dbg_trace f!"runSolver: exitcode: {repr output.exitCode}\n\
-  --                         stderr: {repr output.stderr}\n\
-  --                         stdout: {repr output.stdout}"
-  return output
-
-def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.Output)
-    (ctx : SMT.Context) (E : EncoderState) (smtsolver : String) :
-  Except Format Result := do
-  let stdout := output.stdout
-  let pos := stdout.find (· == '\n')
-  let verdict := stdout.extract stdout.startPos pos |>.trimAscii
-  let rest := stdout.extract pos stdout.endPos
-  match verdict with
-  | "sat"     =>
-    let rawModel ← getModel rest
-    -- We suppress any model processing errors.
-    -- Likely, these would be because of the suboptimal implementation
-    -- of the model parser, which shouldn't hold back useful
-    -- feedback (i.e., problem was `sat`) from the user.
-    match (processModel vars rawModel ctx E) with
-    | .ok model => .ok (.sat model)
-    | .error _model_err => (.ok (.sat []))
-  | "unsat"   =>  .ok .unsat
-  | "unknown" =>  .ok .unknown
-  | _     =>
-    let stderr := output.stderr
-    let hasExecError := (stderr.splitOn "could not execute external process").length > 1
-    let hasFileError := (stderr.splitOn "No such file or directory").length > 1
-    let suggestion := if (hasExecError || hasFileError) && smtsolver == defaultSolver then s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
-    .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
+abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
 
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
@@ -190,40 +83,23 @@ def getSolverFlags (options : Options) : Array String :=
     | _ => #[]
   produceModels ++ setTimeout
 
-def addLocationInfo
-  (solver : Solver)
-  (md : Imperative.MetaData Expression)
-  : IO Unit := do
-  match Imperative.getFileRange md with
-    | .some fileRange => do
-      solver.setInfo "file" s!"\"{format fileRange.file}\""
-      solver.setInfo "start" s!"{fileRange.range.start}"
-      solver.setInfo "stop" s!"{fileRange.range.stop}"
-      -- TODO: the following should probably be stored in metadata so it
-      -- can be set in an application-specific way.
-      solver.setInfo "unsat-message" s!"\"Assertion cannot be proven\""
-    | .none => pure ()
-
 def dischargeObligation
   (options : Options)
-  (vars : List (IdentT LMonoTy Visibility))
+  (vars : List Expression.TypedIdent)
   (md : Imperative.MetaData Expression)
   (filename : String)
   (terms : List Term)
   (ctx : SMT.Context)
   : IO (Except Format (SMT.Result × EncoderState)) := do
-  let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
-  let solver ← Solver.fileWriter handle
-  let prelude := getSolverPrelude options.solver
-  let (ids, estate) ← Strata.SMT.Encoder.encodeCore ctx prelude terms solver
-  addLocationInfo solver md
-  let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
-  if options.verbose > .normal then IO.println s!"Wrote problem to {filename}."
-  let flags := getSolverFlags options
-  let output ← runSolver options.solver (#[filename] ++ flags)
-  match SMT.solverResult vars output ctx estate options.solver with
-  | .error e => return .error e
-  | .ok result => return .ok (result, estate)
+  Imperative.SMT.dischargeObligation
+    (P := Core.Expression)
+    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver) terms)
+    (typedVarToSMTFn ctx)
+    vars
+    md
+    options.solver
+    filename
+    (getSolverFlags options) (options.verbose > .normal)
 
 end Core.SMT
 ---------------------------------------------------------------------
@@ -363,13 +239,20 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
   let counterVal ← counter.get
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
+  let varsInObligation := ProofObligation.getVars obligation
+  -- All variables in ProofObligation must have been typed.
+  let typedVarsInObligation ← varsInObligation.mapM
+    (fun (v,ty) => do
+      match ty with
+      | .some ty => return (v,LTy.forAll [] ty)
+      | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
         (SMT.dischargeObligation options
-          (ProofObligation.getVars obligation)
-          obligation.metadata
-          filename.toString
+            typedVarsInObligation
+            obligation.metadata
+            filename.toString
           terms ctx)
   match ans with
   | .error e =>

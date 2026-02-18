@@ -61,6 +61,11 @@ Returns false if e did not reduce to a constant.
 def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
   let tenv := TEnv.default
   let init_state := LState.init
+  let e_fvs := LExpr.freeVars e
+  let e_fvs_typed ← e_fvs.mapM (fun (v,ty) => do
+    match ty with
+    | .none => throw (IO.userError s!"error: {v} is untyped!")
+    | .some ty => return (v,LTy.forAll [] ty))
   match encode e tenv init_state with
   | .error msg => throw (IO.userError s!"error: {msg}")
   | .ok (.none) => return false
@@ -69,7 +74,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let filename := tempDir / s!"exprEvalTest.smt2"
       let ans ← Core.SMT.dischargeObligation
         { Options.default with verbose := .quiet }
-        (LExpr.freeVars e) Imperative.MetaData.empty filename.toString
+        e_fvs_typed Imperative.MetaData.empty filename.toString
         [smt_term] ctx
       match ans with
       | .ok (.sat _,_) => return true

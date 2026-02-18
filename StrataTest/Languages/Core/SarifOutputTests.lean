@@ -23,7 +23,7 @@ namespace Core.Sarif.Tests
 open Lean (Json)
 open Imperative
 open Strata.Sarif (Level Message)
-open Core.SMT (SMTModel Result)
+open Core.SMT (Result)
 
 /-! ## Test Helpers -/
 
@@ -54,7 +54,8 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
     metadata := md }
 
 /-- Create a VCResult for testing -/
-def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .unknown) (md : MetaData Expression := #[]) : VCResult :=
+def makeVCResult (label : String) (outcome : Outcome)
+  (smtResult : Result := .unknown) (md : MetaData Expression := #[]) : VCResult :=
   { obligation := makeObligation label md
     smtResult := smtResult
     result := outcome
@@ -240,7 +241,8 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
 
 -- Test SARIF output with counter-example
 #guard
-  let cex : SMTModel := [(({ name := "x", metadata := Visibility.unres }, some .int), "42")]
+  let cex : List (Core.Expression.Ident × String) :=
+    [({ name := "x", metadata := Visibility.unres }, "42")]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
   let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md

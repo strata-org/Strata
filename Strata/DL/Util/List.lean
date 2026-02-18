@@ -433,4 +433,13 @@ theorem occurrences_len_eq_dedup {α} [DecidableEq α]:
   unfold occurrences
   grind
 
+theorem occurrences_find {α} [DecidableEq α] (l : List α) (x : α)
+  (hx : x ∈ l)
+  : l.occurrences.find? (fun ⟨k, _⟩ => k == x) = .some (x, l.count x) := by
+  simp only [occurrences, find?_map, Option.map_eq_some_iff, Prod.mk.injEq]
+  have : x ∈ l.dedup := by induction l <;> grind [dedup]
+  generalize l.dedup = ld at *
+  induction ld <;> simp [List.find?, Function.comp_apply] <;>
+    (first | grind | split <;> grind)
+
 end List
