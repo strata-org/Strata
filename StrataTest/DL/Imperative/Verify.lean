@@ -63,7 +63,7 @@ def verify (cmds : Commands) (verbose : Bool) :
            results := results.push vcres
            if result ≠ .unsat then
             let prog := f!"\n\nEvaluated program:\n{format cmds}"
-            dbg_trace f!"\n\nCould not be proved!\
+            dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
                          \n\nResult: {vcres}\
                          {if verbose then prog else ""}"
             break

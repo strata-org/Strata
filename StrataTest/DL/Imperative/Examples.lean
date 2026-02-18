@@ -28,7 +28,7 @@ Metadata: ⏎
 
 
 
-Could not be proved!
+Obligation x_eq_1: could not be proved!
 
 Result: Obligation: x_eq_1
 Result: failed

@@ -140,8 +140,8 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
   | "unknown" =>  .ok .unknown
   | _     =>
     let stderr := output.stderr
-    let hasExecError := (stderr.splitOn "could not execute external process").length > 1
-    let hasFileError := (stderr.splitOn "No such file or directory").length > 1
+    let hasExecError := stderr.contains "could not execute external process"
+    let hasFileError := stderr.contains "No such file or directory"
     let suggestion :=
       if (hasExecError || hasFileError) && smtsolver == defaultSolver then
         s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver."
