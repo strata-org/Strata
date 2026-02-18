@@ -237,14 +237,14 @@ info: [Strata.Core] Type checking succeeded.
 info: procedure test () returns ()
 {
   var x : int := 1;
-  |safeDiv$$wf|: ({
+  |safeDiv$$wf|: {
     var y : int;
     assert [safeDiv_precond_calls_Int.Div_0]: !(x == 0);
     assume [precond_safeDiv_0]: y div x > 0;
     assert [safeDiv_body_calls_Int.Div_0]: !(x == 0);
-    })function safeDiv (y : int) : int { y div x }
-  assert [init_calls_safeDiv_0]: 5 div safeDiv > 0;
-  var z : int := fvar!0(5);
+    }function safeDiv (y : int) : int { y div x }
+  assert [init_calls_safeDiv_0]: 5 div x > 0;
+  var z : int := safeDiv(5);
   };
 -/
 #guard_msgs in
@@ -252,35 +252,55 @@ info: procedure test () returns ()
 
 /-! ### Test 6: Inline function declarations in both branches of if-then-else with different preconditions -/
 
--- NOTE: This test is currently disabled due to a bug in DDM translation
--- https://github.com/strata-org/Strata/issues/436
+def inlineFuncInIteSimplePgm :=
+#strata
+program Core;
 
--- def inlineFuncInIteSimplePgm :=
--- #strata
--- program Core;
+procedure test(cond : bool, x : int, y : int) returns ()
+{
+  if (cond) {
+    function f(a : int) : int
+      requires x != 0;
+      { a div x }
+    var r1 : int := f(10);
+  } else {
+    function f(a : int) : int
+      requires y != 0;
+      { a div y }
+    var r2 : int := f(20);
+  }
+};
 
--- procedure test(cond : bool, x : int, y : int) returns ()
--- {
---   if (cond) {
---     function f(a : int) : int
---       requires x != 0;
---       { a div x }
---     var r1 : int := f(10);
---   } else {
---     function f(a : int) : int
---       requires y != 0;
---       { a div y }
---     var r2 : int := f(20);
---   }
--- };
+#end
 
--- #end
+/-- info: [Strata.Core] Type checking succeeded.
 
--- #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
+---
+info: procedure test (cond : bool, x : int, y : int) returns ()
+{
+  if(cond){
+    |$_then|: {
+      |f$$wf|: {
+        var a : int;
+        assume [precond_f_0]: !(x == 0);
+        assert [f_body_calls_Int.Div_0]: !(x == 0);
+        }function f (a : int) : int { a div x }
+      assert [init_calls_f_0]: !(x == 0);
+      var r1 : int := f(10);
+      }}else{
+    |$_else|: {
+      |f$$wf|: {
+        var a : int;
+        assume [precond_f_0]: !(y == 0);
+        assert [f_body_calls_Int.Div_0]: !(y == 0);
+        }function f (a : int) : int { a div y }
+      assert [init_calls_f_0]: !(y == 0);
+      var r2 : int := f(20);
+      }}};-/
+#guard_msgs in
+#eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
 
 /-! ### Test 7: Same function name in multiple procedures with different preconditions -/
-
--- NOTE: this test output is currently incorrect due to https://github.com/strata-org/Strata/issues/445
 
 def funcInMultipleProcsPgm :=
 #strata
@@ -310,23 +330,23 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: procedure proc1 (x : int) returns ()
 {
-  |f$$wf|: ({
+  |f$$wf|: {
     var a : int;
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.Div_0]: !(x == 0);
-    })function f (a : int) : int { a div x }
-  assert [init_calls_f_0]: !(f == 0);
-  var r : int := fvar!0(10);
+    }function f (a : int) : int { a div x }
+  assert [init_calls_f_0]: !(x == 0);
+  var r : int := f(10);
   };
 procedure proc2 (y : int) returns ()
 {
-  |f$$wf|: ({
+  |f$$wf|: {
     var a : int;
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.Div_0]: !(y == 0);
-    })function f (a : int) : int { a div y }
-  assert [init_calls_f_0]: !(f == 0);
-  var r : int := fvar!0(20);
+    }function f (a : int) : int { a div y }
+  assert [init_calls_f_0]: !(y == 0);
+  var r : int := f(20);
   };
 -/
 #guard_msgs in
