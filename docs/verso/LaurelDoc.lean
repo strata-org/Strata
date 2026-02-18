@@ -97,7 +97,7 @@ types. Fields declare whether they are mutable and specify their type.
 
 {docstring Strata.Laurel.Field}
 
-Constrained types are defined by a base type and a constraint over that type.
+Constrained types are defined by a base type and a constraint over the values of the base type.
 Algebraic datatypes can be encoded using composite and constrained types.
 
 {docstring Strata.Laurel.ConstrainedType}
