@@ -5,7 +5,6 @@ Runs pyAnalyze --sarif on selected test files and validates the SARIF output.
 Run from StrataTest/Languages/Python/ (same as run_py_analyze.sh).
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,10 +13,10 @@ from validate_sarif import validate
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 TEST_DIR = Path(__file__).resolve().parent
-TEST_FILES = [
-    "tests/test_arithmetic.py",
-    "tests/test_precondition_verification.py",
-]
+TEST_FILES = sorted(
+    f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
+)
+SKIP_TESTS = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
 
 
 def run(test_file: str) -> bool:
@@ -26,6 +25,10 @@ def run(test_file: str) -> bool:
         return True
 
     base_name = Path(test_file).stem
+    if base_name in SKIP_TESTS:
+        print(f"Skipping: {base_name}")
+        return True
+
     ion_rel = f"StrataTest/Languages/Python/tests/{base_name}.python.st.ion"
     ion_abs = REPO_ROOT / ion_rel
     sarif_abs = REPO_ROOT / f"{ion_rel}.sarif"
