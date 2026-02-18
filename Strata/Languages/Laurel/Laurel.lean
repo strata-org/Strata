@@ -10,10 +10,11 @@ import Strata.Languages.Core.Procedure
 import Strata.Util.Tactics
 
 /-
-The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
+Laurel is an intermediate verification language designed to serve as a target for popular garbage collected languages that include imperative features, such as Java, Python, and JavaScript. Laurel tries to include any features that are common between those three languages.
 
-It enables doing various forms of verification:
+Laurel enables doing various forms of verification:
 - Deductive verification
+- Model checking
 - Property based testing
 - Data-flow analysis
 
@@ -23,25 +24,15 @@ Features currently not present:
 - Namespaces. All definition and reference names consist of a single Identifier
 
 Design choices:
-- Pure contracts: contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
-- Procedures: instead of functions and methods we have a single more general concept called a 'procedure'.
-- Determinism: procedures can be marked as deterministic or not. For deterministic procedures with a non-empty reads clause, we can assume the result is unchanged if the read references are the same.
-- Opacity: procedures can have a body that's transparant or opaque. Only an opaque body may declare a postcondition.
-- StmtExpr: Statements and expressions are part of the same type. This reduces duplication since the same concepts are needed in both, such as conditions and variable declarations.
-- Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
-- Jumps: Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.
-  This can be used to model break statements and continue statements for both while and for loops.
-
-- User defined types consist of two categories: composite types and constrained types.
-- Composite types have fields and procedures, and may extend other composite types.
-  - Fields state whether they are mutable, which impacts what permissions are needed to access them
-  - Fields state their type, which is needed to know the resulting type when reading a field.
-- Constrained types are defined by a base type and a constraint over that type.
-  - Algebraic datatypes do not exist directly but can be encoded using composite and constrained types.
-
-- For now there is no type polymorphism
-
-- Construction of composite types is WIP. It needs a design first.
+- Procedures: instead of separate (functional) functions and (imperative) procedures, Laurel has a single
+  general concept called a *procedure*.
+- Determinism: procedures can be marked as deterministic or nondeterministic.
+  For deterministic procedures with a non-empty reads clause, the result can be
+  assumed unchanged if the read references are the same.
+- Opacity: procedures can have a body that is transparent or opaque. Only an
+  opaque body may declare a postcondition.
+- Unified StmtExpr: statements and expressions share a single type, reducing
+  duplication for constructs like conditionals and variable declarations.
 
 -/
 namespace Strata

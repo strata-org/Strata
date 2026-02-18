@@ -32,26 +32,40 @@ shortTitle := "Laurel"
 
 # Introduction
 
-Laurel is an intermediate verification language designed to serve as a common
-representation for front-end languages such as Java, Python, and JavaScript.
-Rather than translating each source language directly to Strata Core, Laurel
-provides a higher-level abstraction that captures the shared concepts of these
-languages — object-oriented types, mutable heap state, and structured control
-flow — and then translates uniformly to Core for verification.
+Laurel is an intermediate verification language designed to serve as a target for popular garbage collected languages that include imperative features, such as Java, Python, and JavaScript. Laurel tries to include any features that are common between those three languages.
 
-Laurel supports several forms of analysis:
-
-- Deductive verification (via translation to Strata Core and SMT solving)
-- Property-based testing
+Laurel enables doing various forms of verification:
+- Deductive verification
+- Model checking
+- Property based testing
 - Data-flow analysis
 
-## Key Design Choices
+Here are some Laurel language features that are shared between the source languages:
+- Statements such as loops and return statements
+- Mutation of variables, including in expressions
+- Reading and writing of fields of references
+- Object oriented concepts such as inheritance, type checking, up and down casting and dynamic dispatch
+- Higher order procedures and procedure types
+- Error handling
+- Parameteric polymorphism
 
-Laurel makes several deliberate design choices:
+On top of the above features, Laurel adds features that are useful specifically for verification:
+- Assert and assume statements
+- Pre and postconditions for procedures
+- Modifies and reads clauses for procedures
+- Decreases clauses for procedures
+- Immutable fields and constructors that support assigning to them
+- Constrained types
+- Type invariants
+- Forall and exists expressions
+- Old and fresh expressions
+- Various constructs for writing proofs
 
-- Pure contracts: contracts may only contain pure code that does not modify the
-  heap.
-- Procedures: instead of separate functions and methods, Laurel has a single
+## Design Choices
+
+Laurel makes several design choices:
+
+- Procedures: instead of separate (functional) functions and (imperative) procedures, Laurel has a single
   general concept called a *procedure*.
 - Determinism: procedures can be marked as deterministic or nondeterministic.
   For deterministic procedures with a non-empty reads clause, the result can be
@@ -60,10 +74,6 @@ Laurel makes several deliberate design choices:
   opaque body may declare a postcondition.
 - Unified StmtExpr: statements and expressions share a single type, reducing
   duplication for constructs like conditionals and variable declarations.
-- Loops: the only loop construct is `while`, which can encode `do-while` and
-  `for` loops.
-- Labelled exits: instead of `break` and `continue`, Laurel provides labelled
-  blocks with an `exit` statement, which can model both.
 
 # Types
 
@@ -166,9 +176,7 @@ Core does not support assignments within expressions.
 ## Translation to Core
 
 The final translation converts Laurel types, expressions, statements, and
-procedures into their Strata Core equivalents. Pure procedures with transparent
-bodies are translated as Core functions, while other procedures become Core
-procedures with specifications.
+procedures into their Strata Core equivalents. Procedures with expression bodies are translated as Core functions, while other procedures become Core procedures.
 
 ## Core Prelude
 
