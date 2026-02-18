@@ -349,6 +349,14 @@ def LTy.toMonoType (ty : LTy) (h : LTy.isMonoType ty) : LMonoTy :=
   | .forAll _ lty => lty
 
 /--
+Optionally obtain a mono-type from a type scheme `ty`.
+-/
+def LTy.toMonoType? (ty : LTy) : Option LMonoTy :=
+  match ty with
+  | .forAll [] lty => .some lty
+  | _ => .none
+
+/--
 Unsafe coerce from a type scheme to a mono-type.
 -/
 def LTy.toMonoTypeUnsafe (ty : LTy) : LMonoTy :=
