@@ -213,6 +213,8 @@ spec {
 
 /-! ### Test 5: Function decl statement with precondition referencing local variable -/
 
+-- NOTE: this test output is currently incorrect due to https://github.com/strata-org/Strata/issues/445
+
 def funcDeclPrecondPgm :=
 #strata
 program Core;
@@ -250,7 +252,7 @@ info: procedure test () returns ()
 
 /-! ### Test 6: Inline function declarations in both branches of if-then-else with different preconditions -/
 
--- NOTE: This test is disabled due to a bug in DDM translation 
+-- NOTE: This test is currently disabled due to a bug in DDM translation
 -- https://github.com/strata-org/Strata/issues/436
 
 -- def inlineFuncInIteSimplePgm :=
@@ -277,6 +279,8 @@ info: procedure test () returns ()
 -- #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
 
 /-! ### Test 7: Same function name in multiple procedures with different preconditions -/
+
+-- NOTE: this test output is currently incorrect due to https://github.com/strata-org/Strata/issues/445
 
 def funcInMultipleProcsPgm :=
 #strata

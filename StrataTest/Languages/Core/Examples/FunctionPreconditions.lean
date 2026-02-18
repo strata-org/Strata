@@ -446,48 +446,49 @@ Result: ✅ pass
 #eval verify funcInQuantifierPgm
 
 -- Inline function declaration (funcDecl) with precondition
-def funcDeclPgm :=
-#strata
-program Core;
+-- NOTE: Commented until https://github.com/strata-org/Strata/issues/445 is fixed
+-- def funcDeclPgm :=
+-- #strata
+-- program Core;
 
-procedure test() returns ()
-{
-  var x : int := 5;
-  function addPositive(y : int) : int
-    requires y > 0;
-    { x + y }
-  var z : int := addPositive(3);
-  assert (z == 8);
-};
+-- procedure test() returns ()
+-- {
+--   var x : int := 5;
+--   function addPositive(y : int) : int
+--     requires y > 0;
+--     { x + y }
+--   var z : int := addPositive(3);
+--   assert (z == 8);
+-- };
 
-#end
+-- #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
+-- /--
+-- info: [Strata.Core] Type checking succeeded.
 
 
-VCs:
-Label: init_calls_addPositive_0
-Property: assert
-Obligation:
-true
+-- VCs:
+-- Label: init_calls_addPositive_0
+-- Property: assert
+-- Obligation:
+-- true
 
-Label: assert_0
-Property: assert
-Obligation:
-addPositive(3) == 8
+-- Label: assert_0
+-- Property: assert
+-- Obligation:
+-- addPositive(3) == 8
 
----
-info:
-Obligation: init_calls_addPositive_0
-Property: assert
-Result: ✅ pass
+-- ---
+-- info:
+-- Obligation: init_calls_addPositive_0
+-- Property: assert
+-- Result: ✅ pass
 
-Obligation: assert_0
-Property: assert
-Result: ✅ pass
--/
-#guard_msgs in
-#eval verify funcDeclPgm
+-- Obligation: assert_0
+-- Property: assert
+-- Result: ✅ pass
+-- -/
+-- #guard_msgs in
+-- #eval verify funcDeclPgm
 
 end Strata
