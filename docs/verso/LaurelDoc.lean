@@ -45,8 +45,8 @@ Here are some Laurel language features that are shared between the source langua
 - Mutation of variables, including in expressions
 - Reading and writing of fields of references
 - Object oriented concepts such as inheritance, type checking, up and down casting and dynamic dispatch
-- Higher order procedures and procedure types
 - Error handling
+- Higher order procedures and procedure types
 - Parameteric polymorphism
 
 On top of the above features, Laurel adds features that are useful specifically for verification:
@@ -60,6 +60,7 @@ On top of the above features, Laurel adds features that are useful specifically 
 - Forall and exists expressions
 - Old and fresh expressions
 - Various constructs for writing proofs
+- Unbounded integer and real types
 
 ## Design Choices
 
