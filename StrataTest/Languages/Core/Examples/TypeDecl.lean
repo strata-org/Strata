@@ -34,11 +34,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: f_test
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:
@@ -98,11 +95,10 @@ VCs:
 Label: fooAssertion
 Property: assert
 Assumptions:
-(fooConst1_value, (~fooConst1 == ~fooVal))
-(fooConst2_value, (~fooConst2 == ~fooVal))
-
-Proof Obligation:
-(~fooConst1 == ~fooConst2)
+fooConst1_value: fooConst1 == fooVal
+fooConst2_value: fooConst2 == fooVal
+Obligation:
+fooConst1 == fooConst2
 
 ---
 info:

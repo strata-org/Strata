@@ -119,7 +119,7 @@ spec {
         return := false;
         }()i := i - 1;
       assert [measure_decreases]: i < special-name-for-old-measure-value;
-      assert [measure_imp_not_guard]: if i <= 0 then !(i > 1)else true;
+      assert [measure_imp_not_guard]: if i <= 0 then !(i > 1) else true;
       assert [arbitrary_iter_maintain_invariant]: true;
       })|loop havoc|: ({
       havoc return;

@@ -56,10 +56,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-(P_requires_1, ((~select $__a0 #0) == #0))
-
-Proof Obligation:
-((~select $__a0 #0) == #1)
+P_requires_1: $__a0[0] == 0
+Obligation:
+$__a0[0] == 1
 
 
 

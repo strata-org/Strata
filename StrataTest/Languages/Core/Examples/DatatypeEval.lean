@@ -27,17 +27,15 @@ procedure test () returns ()
 
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
 Label: constr_tester_cancel
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:
@@ -68,16 +66,16 @@ procedure test () returns ()
 
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
-(assume_0, ($__b0 == #true))
-
-Proof Obligation:
+assume_0: $__b0 == true
+Obligation:
 $__b0
 
 ---

@@ -82,7 +82,7 @@ fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
-fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:50 "else " f:50;
+fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:50 " else " f:50;
 
 fn old (tp : Type, v : tp) : tp => "old" "(" v ")";
 
@@ -370,18 +370,6 @@ namespace CoreDDM
 #strata_gen Core
 
 end CoreDDM
-
----------------------------------------------------------------------
-
--- HACK: Get the DDM dialect map for Core programs, mainly for formatting.
--- This dialect map should be common to all Core DDM programs.
-private def dummyProgram :=
-#strata
-program Core;
-#end
-
-def CoreDDM.dialectMap : DialectMap :=
-  dummyProgram.dialects
 
 ---------------------------------------------------------------------
 
