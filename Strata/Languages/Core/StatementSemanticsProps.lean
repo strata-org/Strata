@@ -2027,21 +2027,21 @@ theorem EvalCallBodyRefinesContract :
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
 
-theorem EvalCommandRefinesContract :
+theorem EvalCommandRefinesContract
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
 EvalCommand π φ δ σ c σ' →
 EvalCommandContract π δ σ c σ' := by
   intros H
   cases H with
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
-  | call_sem _ =>
-    apply EvalCallBodyRefinesContract <;> try assumption
-    -- need to connect `modifies` with `modifiedVarsTrans`
-    sorry
+  | call_sem hlkup =>
+    apply EvalCallBodyRefinesContract hlkup (hmod _ _ hlkup)
     constructor <;> assumption
 
 /-- Combined proof of `EvalStmtRefinesContract` and `EvalBlockRefinesContract`
   using strong induction on size to handle the mutual recursion. -/
-private theorem RefinesContract_aux :
+private theorem RefinesContract_aux
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
   (∀ s σ σ' δ δ',
     Stmt.sizeOf s ≤ m →
     EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
@@ -2051,7 +2051,6 @@ private theorem RefinesContract_aux :
     EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
     EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ') := by
   apply Nat.strongRecOn (motive := fun m =>
-    ∀ π φ,
     (∀ s σ σ' δ δ',
       Stmt.sizeOf s ≤ m →
       EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
@@ -2060,22 +2059,22 @@ private theorem RefinesContract_aux :
       Block.sizeOf ss ≤ m →
       EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
       EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ'))
-  intro n ih π φ
+  intro n ih
   refine ⟨?_, ?_⟩
   -- Stmt case
   · intro s σ σ' δ δ' Hsz H
     cases H with
     | cmd_sem Hdef Heval =>
-      exact EvalStmt.cmd_sem (EvalCommandRefinesContract Hdef) Heval
+      exact EvalStmt.cmd_sem (EvalCommandRefinesContract hmod Hdef) Heval
     | block_sem Heval =>
       constructor
-      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval
     | ite_true_sem Hdef Hwf Heval =>
       apply EvalStmt.ite_true_sem Hdef Hwf
-      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval
     | ite_false_sem Hdef Hwf Heval =>
       apply EvalStmt.ite_false_sem Hdef Hwf
-      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval
     | funcDecl_sem =>
       exact EvalStmt.funcDecl_sem
   -- Block case
@@ -2088,18 +2087,20 @@ private theorem RefinesContract_aux :
       cases Heval with
       | stmts_some_sem Heval Hevals =>
       constructor
-      · exact (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega) π φ).1 _ _ _ _ _ (Nat.le_refl _) Heval
-      · exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Hevals
+      · exact (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega)).1 _ _ _ _ _ (Nat.le_refl _) Heval
+      · exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Hevals
 
-theorem EvalBlockRefinesContract :
+theorem EvalBlockRefinesContract
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
   EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
   EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
-  RefinesContract_aux.2 _ _ _ _ _ (Nat.le_refl _)
+  (RefinesContract_aux hmod).2 _ _ _ _ _ (Nat.le_refl _)
 
-theorem EvalStmtRefinesContract :
+theorem EvalStmtRefinesContract
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
   EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
   EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
-  RefinesContract_aux.1 _ _ _ _ _ (Nat.le_refl _)
+  (RefinesContract_aux hmod).1 _ _ _ _ _ (Nat.le_refl _)
 
 /-- Currently we cannot prove this theorem,
     since the WellFormedSemanticEval definition does not assert

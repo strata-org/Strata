@@ -847,12 +847,13 @@ theorem createFvarsSubstStores :
             apply Hsubst <;> simp_all
 
 theorem EvalStatementsContractHavocVars :
+  (∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) →
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.isDefined σ vs →
   HavocVars σ vs σ' →
   EvalStatementsContract π φ δ σ
     (createHavocs vs) σ' δ := by
-  intros Hwfv Hdef Hhav
+  intros Hmod Hwfv Hdef Hhav
   simp [createHavocs]
   induction vs generalizing σ
   case nil =>
@@ -864,7 +865,7 @@ theorem EvalStatementsContractHavocVars :
     cases Hhav with
     | update_some Hup Hhav =>
     apply Imperative.EvalBlock.stmts_some_sem
-    apply EvalStmtRefinesContract
+    apply EvalStmtRefinesContract Hmod
     apply Imperative.EvalStmt.cmd_sem
     apply EvalCommand.cmd_sem
     apply Imperative.EvalCmd.eval_havoc <;> try assumption
