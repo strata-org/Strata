@@ -290,20 +290,27 @@ where
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
-    | .New _name =>
-        -- Allocate a new object: get the current counter, increment it, return the old value
+    | .New name =>
+        -- Allocate a new object: get the current counter, increment it, return MkComposite(oldCounter, TypeName_UserType)
         -- 1. Save the current counter: $freshVar := Heap..counter(heapVar)
         -- 2. Update the heap with incremented counter: heapVar := MkHeap(Heap..data(heapVar), Heap..counter(heapVar) + 1)
-        -- 3. Result is $freshVar (the old counter value, which is the new Composite reference)
+        -- 3. Result is MkComposite($freshVar, TypeName_UserType)
         let freshVar ← freshVarName
         let getCounter := mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)])
         let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
         let newCounter := mkMd (.PrimitiveOp .Add [mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)]), mkMd (.LiteralInt 1)])
         let newHeap := mkMd (.StaticCall "MkHeap" [mkMd (.StaticCall "Heap..data" [mkMd (.Identifier heapVar)]), newCounter])
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-        return ⟨ .Block [saveCounter, updateHeap, mkMd (.Identifier freshVar)] none, md ⟩
+        -- Create the Composite value with the type tag
+        let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.Identifier (name ++ "_UserType"))])
+        return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
-    | .AsType t ty => return ⟨ .AsType (← recurse t) ty, md ⟩
+    | .AsType t ty =>
+        -- Translate `target as Type` into a block: { assert target is Type; target }
+        let t' ← recurse t valueUsed
+        let isCheck := ⟨ .IsType t' ty, md ⟩
+        let assertStmt := ⟨ .Assert isCheck, md ⟩
+        return ⟨ .Block [assertStmt, t'] none, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
     | .Forall n ty b => return ⟨ .Forall n ty (← recurse b), md ⟩
     | .Exists n ty b => return ⟨ .Exists n ty (← recurse b), md ⟩

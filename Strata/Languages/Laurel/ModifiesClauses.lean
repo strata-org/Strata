@@ -93,9 +93,10 @@ def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
   let fld := mkMd <| .Identifier fldName
   let heapIn := mkMd <| .Identifier heapInName
   let heapOut := mkMd <| .Identifier heapOutName
-  -- Build the "obj is allocated" condition: $obj < $heap_in.counter
+  -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.counter
   let heapCounter := mkMd <| .StaticCall "Heap..counter" [heapIn]
-  let objAllocated := mkMd <| .PrimitiveOp .Lt [obj, heapCounter]
+  let objRef := mkMd <| .StaticCall "Composite..ref" [obj]
+  let objAllocated := mkMd <| .PrimitiveOp .Lt [objRef, heapCounter]
   let antecedent := if entries.isEmpty
     then objAllocated
     else

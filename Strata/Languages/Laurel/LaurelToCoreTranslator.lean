@@ -62,6 +62,7 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" ||
   name == "MkHeap" || name == "Heap..data" || name == "Heap..counter" ||
+  name == "MkComposite" || name == "Composite..ref" || name == "Composite..userType" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
@@ -146,6 +147,24 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
+  | .IsType target typeMd =>
+      -- Translate `target is TypeName` to: ancestorsPerType[Composite..userType(target)][TypeName_UserType]
+      let coreTarget := translateExpr constants env target boundVars
+      let getUserType := LExpr.mkApp () (.op () (Core.CoreIdent.unres "Composite..userType") none) [coreTarget]
+      let typeName := match typeMd.val with
+        | .UserDefined name => name
+        | _ => panic! "IsType expects UserDefined type"
+      let typeConst := LExpr.op () (Core.CoreIdent.glob (typeName ++ "_UserType")) none
+      -- ancestorsPerType[getUserType][typeConst]
+      let userTypeTy := LMonoTy.tcons "UserType" []
+      let ancestorsMapTy := Core.mapTy userTypeTy (Core.mapTy userTypeTy .bool)
+      let ancestorsMap := LExpr.op () (Core.CoreIdent.unres "ancestorsPerType") (some ancestorsMapTy)
+      let outerSelect := LExpr.mkApp () Core.mapSelectOp [ancestorsMap, getUserType]
+      LExpr.mkApp () Core.mapSelectOp [outerSelect, typeConst]
+  | .AsType _ _typeMd => panic "AsType should have already been translate away "
+      -- Translate `target as TypeName` to just the target expression
+      -- The assert is generated in translateStmt
+      -- translateExpr constants env target boundVars
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
   decreasing_by
@@ -427,9 +446,94 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
   }
 
 /--
+Compute the flattened set of ancestors for a composite type, including itself.
+Traverses the `extending` list transitively.
+-/
+def computeAncestors (types : List TypeDefinition) (name : Identifier) : List Identifier :=
+  let rec go (fuel : Nat) (current : Identifier) : List Identifier :=
+    match fuel with
+    | 0 => [current]
+    | fuel' + 1 =>
+      current :: (types.foldl (fun acc td =>
+        match td with
+        | .Composite ct =>
+          if ct.name == current then
+            ct.extending.foldl (fun acc2 parent => acc2 ++ go fuel' parent) acc
+          else acc
+        | _ => acc) [])
+  (go types.length name).eraseDups
+
+/--
+Collect all fields for a composite type, including inherited fields from parents.
+-/
+def collectAllFields (types : List TypeDefinition) (name : Identifier) : List Field :=
+  let ancestors := computeAncestors types name
+  -- Collect fields from all ancestors (parent fields first, then own fields)
+  ancestors.reverse.foldl (fun acc ancestorName =>
+    match types.findSome? (fun td => match td with
+      | .Composite ct => if ct.name == ancestorName then some ct.fields else none
+      | _ => none) with
+    | some fields => acc ++ fields
+    | none => acc) []
+
+/--
+Generate Core declarations for the type hierarchy:
+- A UserType constant for each composite type
+- A distinct declaration to ensure all UserType constants are different
+- Axioms constraining ancestorsPerType for each composite type
+-/
+def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
+  let composites := types.filterMap fun td => match td with
+    | .Composite ct => some ct
+    | _ => none
+  if composites.isEmpty then [] else
+  -- Generate a constant for each composite type
+  let typeConstDecls := composites.map fun ct =>
+    Core.Decl.func {
+      name := Core.CoreIdent.glob (ct.name ++ "_UserType")
+      typeArgs := []
+      inputs := []
+      output := .tcons "UserType" []
+      body := none
+    }
+  -- Generate distinct declaration for all UserType constants
+  let distinctExprs := composites.map fun ct =>
+    LExpr.op () (Core.CoreIdent.glob (ct.name ++ "_UserType")) none
+  -- Generate distinct declaration for all UserType constants (only if 2+ types)
+  let distinctDecls := if distinctExprs.length >= 2 then
+    [Core.Decl.distinct (Core.CoreIdent.unres "UserType_distinct") distinctExprs]
+  else []
+  -- Generate axioms for ancestorsPerType
+  -- For each composite type T and each composite type U:
+  --   axiom: ancestorsPerType[T_UserType][U_UserType] == (U is in T's ancestors)
+  let userTypeTy := LMonoTy.tcons "UserType" []
+  let ancestorsMapTy := Core.mapTy userTypeTy (Core.mapTy userTypeTy .bool)
+  let ancestorsMap := LExpr.op () (Core.CoreIdent.unres "ancestorsPerType") (some ancestorsMapTy)
+  let axiomDecls := composites.foldl (fun acc ct =>
+    let ancestors := computeAncestors types ct.name
+    let typeConst := LExpr.op () (Core.CoreIdent.glob (ct.name ++ "_UserType")) none
+    let outerSelect := LExpr.mkApp () Core.mapSelectOp [ancestorsMap, typeConst]
+    acc ++ composites.map fun otherCt =>
+      let otherConst := LExpr.op () (Core.CoreIdent.glob (otherCt.name ++ "_UserType")) none
+      let lookupExpr := LExpr.mkApp () Core.mapSelectOp [outerSelect, otherConst]
+      let isAncestor := ancestors.contains otherCt.name
+      let boolVal := LExpr.const () (.boolConst isAncestor)
+      let axiomExpr := LExpr.eq () lookupExpr boolVal
+      Core.Decl.ax {
+        name := s!"ancestors_{ct.name}_{otherCt.name}"
+        e := axiomExpr
+      }) []
+  typeConstDecls ++ distinctDecls ++ axiomDecls
+
+/--
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+  -- Add UserType constants for each composite type to the program's constants
+  let userTypeConstants := program.types.filterMap fun td => match td with
+    | .Composite ct => some { name := ct.name ++ "_UserType", type := ⟨.UserDefined "UserType", #[]⟩ : Constant }
+    | _ => none
+  let program := { program with constants := program.constants ++ userTypeConstants }
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
@@ -446,9 +550,11 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procedures := procProcs.map (translateProcedure program.constants funcNames)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
-  let constDecls := program.constants.map translateConstant
+  let constDecls := program.constants.filter (fun c => !c.name.endsWith "_UserType") |>.map translateConstant
   let preludeDecls := corePrelude.decls
-  pure ({ decls := preludeDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  -- Generate type hierarchy declarations (UserType constants, distinct, axioms)
+  let typeHierarchyDecls := generateTypeHierarchyDecls program.types
+  pure ({ decls := preludeDecls ++ typeHierarchyDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver

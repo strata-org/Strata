@@ -25,8 +25,8 @@ procedure typeCheckingAndCasting() {
   var a: Base := new Base;
   assert a is Base;
   assert !(a is Extender);
-  var b: Extender := new
-  assert b is Base; Extender;
+  var b: Extender := new Extender;
+  assert b is Base;
   assert b is Extender;
 
   var c: Base := b;

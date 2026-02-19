@@ -206,6 +206,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.new, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkStmtExprMd (.New name) md
+    | q`Laurel.isType, #[targetArg, typeNameArg] =>
+      let target ← translateStmtExpr targetArg
+      let typeName ← translateIdent typeNameArg
+      return mkStmtExprMd (.IsType target (mkHighTypeMd (.UserDefined typeName) md)) md
+    | q`Laurel.asType, #[targetArg, typeNameArg] =>
+      let target ← translateStmtExpr targetArg
+      let typeName ← translateIdent typeNameArg
+      return mkStmtExprMd (.AsType target (mkHighTypeMd (.UserDefined typeName) md)) md
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
@@ -400,12 +408,20 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseComposite expects operation"
   match op.name, op.args with
-  | q`Laurel.composite, #[nameArg, fieldsArg] =>
+  | q`Laurel.composite, #[nameArg, extendsArg, fieldsArg] =>
     let name ← translateIdent nameArg
+    let extending ← match extendsArg with
+      | .option _ (some (.op extendsOp)) => match extendsOp.name, extendsOp.args with
+        | q`Laurel.optionalExtends, #[parentArg] =>
+          let parent ← translateIdent parentArg
+          pure [parent]
+        | _, _ => TransM.error s!"Expected optionalExtends operation, got {repr extendsOp.name}"
+      | .option _ none => pure []
+      | _ => TransM.error s!"Expected optionalExtends, got {repr extendsArg}"
     let fields ← match fieldsArg with
       | .seq _ _ args => args.toList.mapM parseField
       | _ => pure []
-    return .Composite { name := name, extending := [], fields := fields, instanceProcedures := [] }
+    return .Composite { name := name, extending := extending, fields := fields, instanceProcedures := [] }
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 
