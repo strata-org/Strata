@@ -1,0 +1,17 @@
+program B3CST;
+
+function abs(x : int) : int {
+  if x >= 0 then x else -x
+}
+
+axiom forall x : int pattern abs(x) abs(x) >= 0
+
+procedure test_abs() {
+  check abs(5) == 5
+  check abs(-3) == 3
+  assert abs(10) >= 0
+}
+
+procedure test_fail() {
+  check abs(5) == 10
+}

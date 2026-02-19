@@ -31,19 +31,19 @@ int procedure simpleTest (x: int, y: int)
 
 /--
 info: program C_Simp;
-int procedure simpleTest(x:int, y:int)//@prey>(0);
-//@posttrue;
+int procedure simpleTest(x:int, y:int)//@pre y>0;
+//@post true;
   ({
   varz:int;
   z=x+y;
   //@assert [test_assert]z>x;
-  if(z>(10)){
-  z=z-(1);
+  if(z>10){
+  z=z-1;
   }
   (else({
-  z=z+(1);
+  z=z+1;
   }
-  ))//@assume [test_assume]z>(0);
+  ))//@assume [test_assume]z>0;
   return0;
   }
   )
@@ -85,31 +85,19 @@ VCs:
 Label: test_assert
 Property: assert
 Assumptions:
-(pre, (~Int.Gt $__y1 #0))
-
-Proof Obligation:
-(~Int.Gt (~Int.Add $__x0 $__y1) $__x0)
+pre: $__y1 > 0
+Obligation:
+$__x0 + $__y1 > $__x0
 
 Label: post
 Property: assert
 Assumptions:
-(pre, (~Int.Gt $__y1 #0))
-(<label_ite_cond_true: (~Int.Gt z #10)>, (if (~Int.Gt
-  (~Int.Add $__x0 $__y1)
-  #10) then (~Int.Gt
-  (~Int.Add $__x0 $__y1)
-  #10) else #true)) (<label_ite_cond_false: !(~Int.Gt z #10)>, (if (if (~Int.Gt
-   (~Int.Add $__x0 $__y1)
-   #10) then #false else #true) then (if (~Int.Gt
-   (~Int.Add $__x0 $__y1)
-   #10) then #false else #true) else #true)) (test_assume, (~Int.Gt
- (if (~Int.Gt
-   (~Int.Add $__x0 $__y1)
-   #10) then (~Int.Sub (~Int.Add $__x0 $__y1) #1) else (~Int.Add (~Int.Add $__x0 $__y1) #1))
- #0))
-
-Proof Obligation:
-#true
+pre: $__y1 > 0
+<label_ite_cond_true: (~Int.Gt z #10)>: if $__x0 + $__y1 > 10 then ($__x0 + $__y1 > 10) else true
+<label_ite_cond_false: !(~Int.Gt z #10)>: if if $__x0 + $__y1 > 10 then false else true then if $__x0 + $__y1 > 10 then false else true else true
+test_assume: if $__x0 + $__y1 > 10 then ($__x0 + $__y1 - 1) else ($__x0 + $__y1 + 1) > 0
+Obligation:
+true
 
 ---
 info:

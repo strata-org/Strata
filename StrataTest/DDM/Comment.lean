@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
+import Strata.DDM.Integration.Lean
 
 /-
 This is a small example showing syntax overriding a comment.
 -/
-import Strata.DDM.Integration.Lean
 
 #dialect
 dialect Comment;

@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Integration.Lean
 
@@ -119,42 +120,43 @@ namespace TestDialect
 #strata_gen TestDialect
 
 /--
-info: inductive TestDialect.test : Type → Type
+info: private inductive TestDialect.test : Type → Type
 number of parameters: 1
 constructors:
-TestDialect.test.foo : {α : Type} → α → Expr α → test α
-TestDialect.test.identTest : {α : Type} → α → Strata.Ann String α → test α
-TestDialect.test.numTest : {α : Type} → α → Strata.Ann Nat α → test α
-TestDialect.test.strTest : {α : Type} → α → Strata.Ann String α → test α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.test.foo : {α : Type} → α → Expr α → test α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.test.identTest : {α : Type} →
+  α → Strata.Ann String α → test α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.test.numTest : {α : Type} → α → Strata.Ann Nat α → test α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.test.strTest : {α : Type} → α → Strata.Ann String α → test α
 
 -/
 #guard_msgs in
 #print test
 
 /--
-info: inductive TestDialect.MutA : Type → Type
+info: private inductive TestDialect.MutA : Type → Type
 number of parameters: 1
 constructors:
-TestDialect.MutA.opA : {α : Type} → α → MutB α → MutA α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.MutA.opA : {α : Type} → α → MutB α → MutA α
 -/
 #guard_msgs in
 #print MutA
 
 /--
-info: inductive TestDialect.MutB : Type → Type
+info: private inductive TestDialect.MutB : Type → Type
 number of parameters: 1
 constructors:
-TestDialect.MutB.opB : {α : Type} → α → MutA α → MutB α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.MutB.opB : {α : Type} → α → MutA α → MutB α
 -/
 #guard_msgs in
 #print MutB
 
 /--
-info: inductive TestDialect.TypeP : Type → Type
+info: private inductive TestDialect.TypeP : Type → Type
 number of parameters: 1
 constructors:
-TestDialect.TypeP.expr : {α : Type} → TestDialectType α → TypeP α
-TestDialect.TypeP.type : {α : Type} → α → TypeP α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TypeP.expr : {α : Type} → TestDialectType α → TypeP α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TypeP.type : {α : Type} → α → TypeP α
 -/
 #guard_msgs in
 #print TypeP
@@ -166,35 +168,41 @@ info: Strata.ExprF.fvar () 1
 #eval Expr.fvar () 1 |>.toAst
 
 /--
-info: opaque TestDialect.Expr.toAst : {α : Type} → [Inhabited α] → Expr α → Strata.ExprF α
+info: private opaque TestDialect.Expr.toAst : {α : Type} → [Inhabited α] → Expr α → Strata.ExprF α
 -/
 #guard_msgs in
 #print Expr.toAst
 
 /--
-info: inductive TestDialect.Expr : Type → Type
+info: private inductive TestDialect.Expr : Type → Type
 number of parameters: 1
 constructors:
-TestDialect.Expr.fvar : {α : Type} → α → Nat → Expr α
-TestDialect.Expr.bvar : {α : Type} → α → Nat → Expr α
-TestDialect.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
-TestDialect.Expr.trueExpr : {α : Type} → α → Expr α
-TestDialect.Expr.and : {α : Type} → α → Expr α → Expr α → Expr α
-TestDialect.Expr.lambda : {α : Type} → α → TestDialectType α → Bindings α → Expr α → Expr α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.Expr.fvar : {α : Type} → α → Nat → Expr α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.Expr.bvar : {α : Type} → α → Nat → Expr α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.Expr.trueExpr : {α : Type} → α → Expr α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.Expr.and : {α : Type} → α → Expr α → Expr α → Expr α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.Expr.lambda : {α : Type} →
+  α → TestDialectType α → Bindings α → Expr α → Expr α
 -/
 #guard_msgs in
 #print Expr
 
 /--
-info: inductive TestDialect.TestDialectType : Type → Type
+info: private inductive TestDialect.TestDialectType : Type → Type
 number of parameters: 1
 constructors:
-TestDialect.TestDialectType.bvar : {α : Type} → α → Nat → TestDialectType α
-TestDialect.TestDialectType.tvar : {α : Type} → α → String → TestDialectType α
-TestDialect.TestDialectType.fvar : {α : Type} → α → Nat → Array (TestDialectType α) → TestDialectType α
-TestDialect.TestDialectType.arrow : {α : Type} → α → TestDialectType α → TestDialectType α → TestDialectType α
-TestDialect.TestDialectType.bool : {α : Type} → α → TestDialectType α
-TestDialect.TestDialectType.set : {α : Type} → α → TestDialectType α → TestDialectType α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TestDialectType.bvar : {α : Type} →
+  α → Nat → TestDialectType α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TestDialectType.tvar : {α : Type} →
+  α → String → TestDialectType α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TestDialectType.fvar : {α : Type} →
+  α → Nat → Array (TestDialectType α) → TestDialectType α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TestDialectType.arrow : {α : Type} →
+  α → TestDialectType α → TestDialectType α → TestDialectType α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TestDialectType.bool : {α : Type} → α → TestDialectType α
+_private.StrataTest.DDM.Integration.Lean.Gen.0.TestDialect.TestDialectType.set : {α : Type} →
+  α → TestDialectType α → TestDialectType α
 -/
 #guard_msgs in
 #print TestDialectType

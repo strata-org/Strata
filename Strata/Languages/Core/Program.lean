@@ -163,9 +163,6 @@ structure Program where
 def Program.init : Program :=
   { decls := [] }
 
-instance : ToFormat Program where
-  format p := Std.Format.joinSep (List.map format p.decls) Format.line
-
 instance : Inhabited Program where
   default := .init
 

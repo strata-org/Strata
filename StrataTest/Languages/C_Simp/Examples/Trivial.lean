@@ -22,8 +22,8 @@ bool procedure trivial ()
 
 /--
 info: program C_Simp;
-bool procedure trivial()//@pretrue;
-//@posttrue;
+bool procedure trivial()//@pre true;
+//@post true;
   ({
   returntrue;
   }
@@ -53,11 +53,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: post
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:

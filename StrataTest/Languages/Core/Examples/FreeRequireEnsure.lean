@@ -43,26 +43,23 @@ VCs:
 Label: g_gt_10_internal
 Property: assert
 Assumptions:
-(g_eq_15, ($__g0 == #15))
-
-Proof Obligation:
-(~Int.Gt $__g0 #10)
+g_eq_15: $__g0 == 15
+Obligation:
+$__g0 > 10
 
 Label: g_lt_10
 Property: assert
 Assumptions:
-(g_eq_15, ($__g0 == #15))
-
-Proof Obligation:
-#true
+g_eq_15: $__g0 == 15
+Obligation:
+true
 
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-((Origin_Proc_Ensures)g_lt_10, (~Int.Lt $__g2 #10))
-
-Proof Obligation:
-($__g2 == #15)
+(Origin_Proc_Ensures)g_lt_10: $__g2 < 10
+Obligation:
+$__g2 == 15
 
 
 
@@ -73,32 +70,25 @@ Model:
 ($__g2, 0)
 
 
-Evaluated program:
-var (g : int) := init_g_0
-procedure Proc :  () → ()
-  modifies: [g]
-  preconditions: (g_eq_15, ((g : int) == #15) (Attribute: Core.Procedure.CheckAttr.Free))
-  postconditions: (g_lt_10, ((~Int.Lt : (arrow int (arrow int bool)))
-   (g : int)
-   #10) (Attribute: Core.Procedure.CheckAttr.Free))
+[DEBUG] Evaluated program:
+var g : int;
+procedure Proc () returns ()
+spec {
+  modifies g;
+  free requires [g_eq_15]: g == 15;
+  free ensures [g_lt_10]: g < 10;
+  } {
+  assume [g_eq_15]: $__g0 == 15;
+  assert [g_gt_10_internal]: $__g0 > 10;
+  g := $__g0 + 1;
+  assert [g_lt_10]: true;
+  };
+procedure ProcCaller () returns (x : int)
 {
-  {
-    assume [g_eq_15] ($__g0 == #15)
-    assert [g_gt_10_internal] (~Int.Gt $__g0 #10)
-    g := (~Int.Add $__g0 #1)
-    assert [g_lt_10] #true
-  }
-}
-procedure ProcCaller :  () → ((x : int))
-  modifies: []
-  preconditions: 
-  postconditions: 
-{
-  {
-    call Proc()
-    assert [g_eq_15_internal] ($__g2 == #15)
-  }
-}
+  call  := Proc();
+  assert [g_eq_15_internal]: $__g2 == 15;
+  };
+
 ---
 info:
 Obligation: g_gt_10_internal
