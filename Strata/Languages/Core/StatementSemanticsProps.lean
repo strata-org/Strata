@@ -2350,6 +2350,21 @@ theorem EvalBlockFrameCondition
   fun Heval hmod k Hmod Hdef =>
     (FrameCondition_aux hmod).2 _ _ _ _ _ (Nat.le_refl _) Heval k Hmod Hdef
 
+/-
+  ReadValues congruence: if two stores agree on the read keys, ReadValues transfers.
+-/
+theorem ReadValuesCongr :
+  ReadValues σ ks vs →
+  (∀ k, k ∈ ks → σ' k = σ k) →
+  ReadValues σ' ks vs := by
+  intros Hrd Hagree
+  induction Hrd with
+  | read_none => exact ReadValues.read_none
+  | read_some Hsome _ ih =>
+    apply ReadValues.read_some
+    · rw [Hagree _ (by simp)]; exact Hsome
+    · exact ih (fun k hk => Hagree k (by simp; right; exact hk))
+
 theorem EvalCallBodyRefinesContract :
   ∀ {π φ δ σ lhs n args σ' p},
   π n = .some p →
@@ -2394,6 +2409,10 @@ theorem EvalCallBodyRefinesContract :
           change k ∉ HasVarsTrans.modifiedVarsTrans π p'.body
           rw [← modValid]; exact hkm
         simp [Option.isSome] at hk; split at hk <;> simp_all
+    -- Key fact: outputs ++ modifies are all defined in σAO'
+    -- (outputs from InitStates, modifies from isDefinedOver + InitStates monotonicity)
+    have HdefAllAO : isDefined σAO' (ListMap.keys p'.header.outputs ++ p'.spec.modifies) := by
+      sorry
     -- Use σAO' as σO and σC as the contract's final store
     refine EvalCommandContract.call_sem (σO := σAO') (σR := σC)
       lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st
@@ -2402,8 +2421,8 @@ theorem EvalCallBodyRefinesContract :
     · exact HavocVarsId HdefOutAO
     -- HavocVars σAO' modifies σC
     · apply HavocVarsFromAgree
-      · -- isDefined σAO' modifies: modifies vars are defined in σAO'
-        sorry
+      · -- isDefined σAO' modifies
+        intro k hk; exact HdefAllAO k (List.mem_append_right _ hk)
       · -- isDefined σC modifies
         intro k hk
         change ((if k ∈ modifies then σR' k else σAO' k) : Option _).isSome = true
@@ -2421,7 +2440,9 @@ theorem EvalCallBodyRefinesContract :
       -- Hdefpost says post's variables are defined in σAO'
       sorry
     -- ReadValues σC (outputs ++ modifies) modvals'
-    · sorry
+    · apply ReadValuesCongr HrdOutMod
+      intro k hk
+      exact HσC_eq_σR k (HdefAllAO k hk)
 
 theorem EvalCommandRefinesContract
   (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
