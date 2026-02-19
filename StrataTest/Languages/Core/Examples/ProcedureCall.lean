@@ -181,7 +181,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" globalCounterPgm
+#eval verify globalCounterPgm
 
 ---------------------------------------------------------------------
 

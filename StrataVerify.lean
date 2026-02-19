@@ -25,6 +25,8 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
       | opts, "--stop-on-first-error" :: rest, procs => go {opts with stopOnFirstError := true} rest procs
       | opts, "--sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
       | opts, "--output-format=sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
+      | opts, "--vc-directory" :: dir :: rest, procs =>
+        go { opts with vcDirectory := .some dir } rest procs
       | opts, "--procedures" :: procList :: rest, _ =>
          let procs := procList.splitToList (· == ',')
          go opts rest (some procs)
@@ -52,6 +54,7 @@ def usageMessage : Std.Format :=
   --procedures <proc1,proc2>  Verify only the specified procedures (comma-separated).{Std.Format.line}  \
   --sarif                     Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
+  --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver})"
 
 def main (args : List String) : IO UInt32 := do
@@ -86,7 +89,7 @@ def main (args : List String) : IO UInt32 := do
       else -- !typeCheckOnly
         let vcResults ← try
           if file.endsWith ".csimp.st" then
-            C_Simp.verify opts.solver pgm opts
+            C_Simp.verify pgm opts
           else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
             -- B3 verification (different model, handle inline)
             let ast ← match B3.Verifier.programToB3AST pgm with
@@ -109,7 +112,7 @@ def main (args : List String) : IO UInt32 := do
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
           else
-            verify opts.solver pgm inputCtx proceduresToVerify opts
+            verify pgm inputCtx proceduresToVerify opts
         catch e =>
           println! f!"{e}"
           return (1 : UInt32)

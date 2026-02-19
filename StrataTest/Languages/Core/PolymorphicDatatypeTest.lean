@@ -293,7 +293,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" polyListHavocPgm (options := .quiet)
+#eval verify polyListHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: Multiple Instantiations with SMT Verification
@@ -341,7 +341,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" multiInstSMTPgm (options := .quiet)
+#eval verify multiInstSMTPgm (options := .quiet)
 
 
 ---------------------------------------------------------------------
@@ -395,6 +395,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" eitherHavocPgm (options := .quiet)
+#eval verify eitherHavocPgm (options := .quiet)
 
 end Strata.PolymorphicDatatypeTest

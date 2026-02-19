@@ -175,34 +175,52 @@ def getSolverPrelude : String → SolverM Unit
 | "cvc5" => return ()
 | _ => return ()
 
-def getSolverFlags (options : Options) (solver : String) : Array String :=
+def getSolverFlags (options : Options) : Array String :=
   let produceModels :=
-    match solver with
+    match options.solver with
     | "cvc5" => #["--produce-models"]
     -- No need to specify -model for Z3 because we already have `get-value`
     -- in the generated SMT file.
     | _ => #[]
   let setTimeout :=
-    match solver with
+    match options.solver with
     | "cvc5" => #[s!"--tlimit={options.solverTimeout*1000}"]
     | "z3" => #[s!"-T:{options.solverTimeout}"]
     | _ => #[]
   produceModels ++ setTimeout
 
+def addLocationInfo
+  (solver : Solver)
+  (md : Imperative.MetaData Expression)
+  : IO Unit := do
+  match Imperative.getFileRange md with
+    | .some fileRange => do
+      solver.setInfo "file" s!"\"{format fileRange.file}\""
+      solver.setInfo "start" s!"{fileRange.range.start}"
+      solver.setInfo "stop" s!"{fileRange.range.stop}"
+      -- TODO: the following should probably be stored in metadata so it
+      -- can be set in an application-specific way.
+      solver.setInfo "unsat-message" s!"\"Assertion cannot be proven\""
+    | .none => pure ()
+
 def dischargeObligation
   (options : Options)
-  (vars : List (IdentT LMonoTy Visibility)) (smtsolver filename : String)
-  (terms : List Term) (ctx : SMT.Context)
+  (vars : List (IdentT LMonoTy Visibility))
+  (md : Imperative.MetaData Expression)
+  (filename : String)
+  (terms : List Term)
+  (ctx : SMT.Context)
   : IO (Except Format (SMT.Result × EncoderState)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Solver.fileWriter handle
-  let prelude := getSolverPrelude smtsolver
+  let prelude := getSolverPrelude options.solver
   let (ids, estate) ← Strata.SMT.Encoder.encodeCore ctx prelude terms solver
+  addLocationInfo solver md
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
   if options.verbose > .normal then IO.println s!"Wrote problem to {filename}."
-  let flags := getSolverFlags options smtsolver
-  let output ← runSolver smtsolver (#[filename] ++ flags)
-  match SMT.solverResult vars output ctx estate smtsolver with
+  let flags := getSolverFlags options
+  let output ← runSolver options.solver (#[filename] ++ flags)
+  match SMT.solverResult vars output ctx estate options.solver with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
@@ -338,7 +356,7 @@ given proof obligation.
 -/
 def getObligationResult (terms : List Term) (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
-    (smtsolver : String) (options : Options) (counter : IO.Ref Nat)
+    (options : Options) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\nEvaluated program:\n{p}"
   let counterVal ← counter.get
@@ -348,8 +366,9 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
         (SMT.dischargeObligation options
-          (ProofObligation.getVars obligation) smtsolver
-            filename.toString
+          (ProofObligation.getVars obligation)
+          obligation.metadata
+          filename.toString
           terms ctx)
   match ans with
   | .error e =>
@@ -365,7 +384,7 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
                      verbose := options.verbose }
     return result
 
-def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options)
+def verifySingleEnv (pE : Program × Env) (options : Options)
     (counter : IO.Ref Nat) (tempDir : System.FilePath) :
     EIO DiagnosticModel VCResults := do
   let (p, E) := pE
@@ -403,7 +422,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (terms, ctx) =>
-        let result ← getObligationResult terms ctx obligation p smtsolver options
+        let result ← getObligationResult terms ctx obligation p options
                       counter tempDir
         results := results.push result
         if result.isNotSuccess then
@@ -413,7 +432,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
           if options.stopOnFirstError then break
     return results
 
-def verify (smtsolver : String) (program : Program)
+def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
     (options : Options := Options.default)
@@ -443,7 +462,7 @@ def verify (smtsolver : String) (program : Program)
     let VCss ← if options.checkOnly then
                  pure []
                else
-                 (List.mapM (fun pE => verifySingleEnv smtsolver pE options counter tempDir) pEs)
+                 (List.mapM (fun pE => verifySingleEnv pE options counter tempDir) pEs)
     .ok VCss.toArray.flatten
 
 end Core
@@ -470,24 +489,23 @@ def Core.getProgram
   TransM.run ictx (translateProgram p)
 
 def verify
-    (smtsolver : String) (env : Program)
+    (env : Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
     (options : Options := Options.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (tempDir : Option String := .none)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
     let runner tempDir :=
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-                  (Core.verify smtsolver program tempDir proceduresToVerify options moreFns)
-    match tempDir with
+                  (Core.verify program tempDir proceduresToVerify options moreFns)
+    match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner
     | .some p =>
-      IO.FS.createDirAll ⟨p⟩
-      runner ⟨p⟩
+      IO.FS.createDirAll ⟨p.toString⟩
+      runner ⟨p.toString⟩
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
