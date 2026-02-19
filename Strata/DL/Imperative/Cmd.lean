@@ -35,7 +35,7 @@ to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
   /-- Define a variable called `name` with type `ty` and optional initial value `e`.
-      When `e` is `none`, the variable is unconstrained (equivalent to `init` + `havoc`). -/
+      When `e` is `none`, the variable is initialized with an arbitrary value. -/
   | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P) := .empty)
   /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)

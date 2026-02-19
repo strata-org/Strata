@@ -978,7 +978,7 @@ def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr 
 
 /-- Convert a variable declaration to CST -/
 def varToCST {M} [Inhabited M]
-    (name : CoreIdent) (ty : Lambda.LTy) (_e : Lambda.LExpr CoreLParams.mono)
+    (name : CoreIdent) (ty : Lambda.LTy) (_e : Option (Lambda.LExpr CoreLParams.mono))
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   -- Register name as free variable
   modify (·.addGlobalFreeVars #[name.toPretty])
