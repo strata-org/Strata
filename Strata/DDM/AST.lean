@@ -13,6 +13,7 @@ public import Strata.DDM.Util.SourceRange
 
 import Std.Data.HashMap
 import all Strata.DDM.Util.Array
+import Strata.Util.DecideProp
 import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
@@ -1907,30 +1908,18 @@ instance : Membership Var GlobalContext where
 def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
   inferInstanceAs (Decidable (v ∈ ctx.nameMap))
 
-/-- Pre-register a symbol (must not exist). Used by @[preRegisterTypes].
-    This adds to GlobalContext for name resolution but will NOT generate an AST node. -/
-def preRegister (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
-  if v ∈ ctx then
-    .error s!"Symbol '{v}' is already in scope"
-  else
-    let idx := ctx.vars.size
-    .ok { nameMap := ctx.nameMap.insert v idx,
-          vars := ctx.vars.push (v, k) }
+/-- Define a symbol. Caller must prove `v ∉ ctx`. -/
+def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) (_ : v ∉ ctx) : GlobalContext :=
+  let idx := ctx.vars.size
+  { nameMap := ctx.nameMap.insert v idx,
+    vars := ctx.vars.push (v, k) }
 
-/-- Define a symbol. Rejects if the name is already present. -/
-def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
-  if v ∈ ctx then
-    .error s!"Symbol '{v}' is already defined"
+/-- Define a symbol if not already present. No-op if already defined. -/
+def ensureDefined (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
+  if h : v ∈ ctx then
+    ctx
   else
-    let idx := ctx.vars.size
-    .ok { nameMap := ctx.nameMap.insert v idx,
-          vars := ctx.vars.push (v, k) }
-
-/-- Add a symbol. Panics if the name already exists. -/
-def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
-  match ctx.define v k with
-  | .ok ctx' => ctx'
-  | .error msg => panic! msg
+    ctx.define v k h
 
 /-- Return the index of the variable with the given name. -/
 def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
@@ -2131,17 +2120,19 @@ private def addDatatypeBindings
 
   let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
 
-  -- Step 1: Add datatype type (skip if already pre-registered)
-  let gctx :=
-    if datatypeName ∈ gctx then gctx
-    else gctx.push datatypeName (GlobalKind.type typeParams.toList none)
+  -- Step 1: Add datatype type, or skip if already pre-registered by addCommand.
+  -- In mutual blocks, preRegisterTypeName adds types first to maintain index
+  -- consistency with the elaboration-time context.
+  let gctx := gctx.ensureDefined datatypeName (GlobalKind.type typeParams.toList none)
   let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
   -- Step 2: Add constructor signatures
   let gctx := constructorInfo.foldl (init := gctx) fun gctx constr =>
     let constrType := mkConstructorType src datatypeType constr.fields
-    gctx.push constr.name (.expr constrType)
+    match decideProp (constr.name ∈ gctx) with
+    | .isFalse h => gctx.define constr.name (.expr constrType) h
+    | .isTrue _ => panic! s!"Constructor '{constr.name}' is already defined in datatype '{datatypeName}'"
 
   -- Step 3: Expand and add function templates
   let existingNames : Std.HashSet String := gctx.nameMap.fold (init := {}) fun s name _ => s.insert name
@@ -2151,7 +2142,9 @@ private def addDatatypeBindings
     panic! s!"Datatype template expansion errors: {result.errors}"
   else
     result.functions.foldl (init := gctx) fun gctx (funcName, funcType) =>
-      gctx.push funcName (.expr funcType)
+      match decideProp (funcName ∈ gctx) with
+      | .isFalse h => gctx.define funcName (.expr funcType) h
+      | .isTrue _ => panic! s!"Template function '{funcName}' is already defined for datatype '{datatypeName}'"
 
 private def preRegisterTypeName (dialects : DialectMap) (gctx : GlobalContext) (l : SourceRange)
     {argDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
@@ -2162,41 +2155,40 @@ private def preRegisterTypeName (dialects : DialectMap) (gctx : GlobalContext) (
           | .ident _ e => e
           | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
     match resolveBindingIndices dialects l b args with
-    | some kind =>
-      match gctx.preRegister name kind with
-      | .ok gctx' => gctx'
-      | .error _ => gctx  -- silently skip if already declared
+    -- Silently skip if already declared: this runs post-elaboration where
+    -- types from mutual blocks were already defined during elaboration.
+    | some kind => gctx.ensureDefined name kind
     | none => gctx
   | _ => gctx
 
-def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
+def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) : GlobalContext :=
     let dialectName := op.name.dialect
     -- Pre-register types if op has @[preRegisterTypes] metadata
-    let init :=
-      match dialects.decl! op.name with
-      | .op decl =>
-        if h : op.args.size = decl.argDecls.size then
-          match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
-          | some lvl =>
-            foldOverArgAtLevel dialects (preRegisterTypeName dialects) init decl.argDecls ⟨op.args, h⟩ lvl
-          | none => init
-        else init
-      | _ => init
+    let gctx := Id.run do
+      let .op decl := dialects.decl! op.name
+        | return panic! "Expected operator declaration"
+      let .isTrue h := decideProp (op.args.size = decl.argDecls.size)
+        | return panic! "Expected arguments to match"
+      match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
+      | some lvl =>
+        foldOverArgAtLevel dialects (preRegisterTypeName dialects) gctx decl.argDecls ⟨op.args, h⟩ lvl
+      | none => gctx
     -- Normal fold
-    op.foldBindingSpecs dialects (addBinding dialectName) init
+    op.foldBindingSpecs dialects (addBinding dialectName) gctx
   where addBinding (dialectName : DialectName) (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
           match b with
           | .datatype datatypeSpec =>
             addDatatypeBindings dialects gctx l dialectName datatypeSpec args
           | _ =>
-            let name :=
+            let name : Var :=
                   match args[b.nameIndex.toLevel] with
                   | .ident _ e => e
                   | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
             match resolveBindingIndices dialects l b args with
-            | some kind =>
-              if gctx.nameMap.contains name then gctx
-              else gctx.push name kind
+            -- Skip if already present: in mutual blocks, preRegisterTypeName
+            -- may have already added .type specs. Outside mutual blocks, names
+            -- should always be fresh.
+            | some kind => gctx.ensureDefined name kind
             | none => gctx
 
 end GlobalContext

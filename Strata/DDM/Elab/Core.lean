@@ -12,6 +12,7 @@ import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
 import all Strata.DDM.Util.Lean
 import Strata.DDM.HNF
+import Strata.Util.DecideProp
 
 open Lean (
     Message
@@ -973,13 +974,6 @@ def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : Ela
       return default
   return ⟨stxArgs, stxArgP⟩
 
-/--
-Look up the syntax level for a given arg level in a SyntaxElaborator.
--/
-private def argLevelToSyntaxLevel (childSe : SyntaxElaborator) (argLevel : Nat) : Option Nat :=
-  childSe.argElaborators.findSome? fun ⟨ae, _⟩ =>
-    if ae.argLevel == argLevel then some ae.syntaxLevel else none
-
 /-- Map a sequence category name to its separator format and child extraction function. -/
 private def scopeSepFormat (name : QualifiedIdent)
     : Option (SepFormat × (Syntax → Array Syntax)) :=
@@ -1007,13 +1001,13 @@ private def extractParamNames (inheritedCount : Nat) (tpTree : Tree) : List Stri
 
 /--
 Pre-register a batch of types in the global context.
-Silently skips types that are already declared.
+Panics if a duplicate type name is found — this indicates two children in a
+mutual block declared the same type, which is a user error.
 -/
 private def preRegisterTypes (gctx : GlobalContext)
     (registrations : Array (String × List String)) : GlobalContext :=
   registrations.foldl (init := gctx) fun gctx (name, params) =>
-    if name ∈ gctx then gctx
-    else gctx.push name (.type params none)
+    gctx.ensureDefined name (.type params none)
 
 mutual
 
@@ -1098,9 +1092,7 @@ partial def runSyntaxElaborator
           -- Add the datatype name to the GlobalContext as a type
           -- Use tctx0.globalContext so pre-registered types are visible
           let gctx := tctx0.globalContext
-          let gctx :=
-            if datatypeName ∈ gctx then gctx
-            else gctx.push datatypeName (GlobalKind.type typeParamNames.toList none)
+          let gctx := gctx.ensureDefined datatypeName (GlobalKind.type typeParamNames.toList none)
           -- Add .tvar bindings for type parameters
           let loc := typeParamsT.info.loc
           -- Start with empty local bindings - don't inherit from baseCtx
@@ -1177,21 +1169,35 @@ partial def elaborateWithPreRegistration
     (tctx0 : TypingContext)
     (stxArgs : Vector Syntax se.syntaxCount)
     (scopeArgLevel : Nat) : ElabM (Vector Tree argc × TypingContext) := do
+  -- Compute a fallback location from the first syntax arg for error reporting
+  let fallbackLoc :=
+    match stxArgs.toArray[0]? with
+    | some stx0 => (mkSourceRange? stx0).getD SourceRange.none
+    | none => SourceRange.none
   -- Resolve scope: find the scope arg's syntax, category, and children
-  let some scopeSyntaxLevel := argLevelToSyntaxLevel se scopeArgLevel
-    | return panic! "elaborateWithPreRegistration: no syntax level for scope arg"
+  let some scopeSyntaxLevel := se.argElabIndex[scopeArgLevel]?.join.bind fun idx => (se.argElaborators[idx]?).map (·.val.syntaxLevel)
+    | logInternalError fallbackLoc "elaborateWithPreRegistration: no syntax level for scope arg"
+      return default
   let .isTrue scopeSLBound := inferInstanceAs (Decidable (scopeSyntaxLevel < se.syntaxCount))
-    | return panic! "elaborateWithPreRegistration: scope syntax level out of bounds"
+    | logInternalError fallbackLoc "elaborateWithPreRegistration: scope syntax level out of bounds"
+      return default
   let scopeStx := stxArgs[scopeSyntaxLevel]
   let .isTrue scopeALBound := inferInstanceAs (Decidable (scopeArgLevel < argc))
-    | return panic! "elaborateWithPreRegistration: scope arg level out of bounds"
+    | logInternalError fallbackLoc "elaborateWithPreRegistration: scope arg level out of bounds"
+      return default
   let scopeArgDecl := argDecls[scopeArgLevel]
-  let scopeCat := match scopeArgDecl.kind with
-    | .cat c => c
-    | _ => panic! "elaborateWithPreRegistration: expected category for scope arg"
-  assert! scopeCat.args.size = 1
+  let scopeCat ← do
+    match scopeArgDecl.kind with
+    | .cat c => pure c
+    | _ =>
+      logInternalError fallbackLoc "elaborateWithPreRegistration: expected category for scope arg"
+      return default
+  if scopeCat.args.size ≠ 1 then
+    logInternalError fallbackLoc s!"elaborateWithPreRegistration: expected 1 scope cat arg, got {scopeCat.args.size}"
+    return default
   let some (sep, getChildren) := scopeSepFormat scopeCat.name
-    | return panic! s!"elaborateWithPreRegistration: unsupported scope category {scopeCat.name}"
+    | logInternalError fallbackLoc s!"elaborateWithPreRegistration: unsupported scope category {scopeCat.name}"
+      return default
   let children := getChildren scopeStx
   -- Phase 1: Partially elaborate each child to extract type names and params
   let mut allRegistrations : Array (String × List String) := #[]
@@ -1204,8 +1210,7 @@ partial def elaborateWithPreRegistration
   let gctx := preRegisterTypes tctx0.globalContext allRegistrations
   let updatedTctx := tctx0.withGlobalContext gctx
   -- Phase 2: Fully elaborate children sequentially, threading context
-  let some scopeLoc := mkSourceRange? scopeStx
-    | panic! "elaborateWithPreRegistration: scope missing source location"
+  let scopeLoc := (mkSourceRange? scopeStx).getD SourceRange.none
   let mut childTrees : Array Tree := #[]
   let mut currentCtx := updatedTctx
   for i in [:children.size] do
@@ -1241,10 +1246,13 @@ partial def extractChildTypeInfo (tctx0 : TypingContext) (child : Syntax)
   let mut registrations : Array (String × List String) := #[]
   let mut preElabMap : Array (Nat × Tree) := #[]
   if let some childIdent := qualIdentKind child then
+    let childLoc := (mkSourceRange? child).getD SourceRange.none
     let some childDecl := dialects.lookupOpDecl childIdent
-      | return panic! "Unknown identifier {childIdent}"
+      | logInternalError childLoc s!"extractChildTypeInfo: unknown op declaration {childIdent}"
+        return default
     let some childSe := syntaxElabs[childIdent]?
-      | return panic! "Unknown identifier {childIdent}"
+      | logInternalError childLoc s!"extractChildTypeInfo: no syntax elaborator for {childIdent}"
+        return default
     let childStxArgs := child.getArgs
     let childArgDecls := childDecl.argDecls.toArray
     for spec in childDecl.newBindings do
@@ -1254,10 +1262,15 @@ partial def extractChildTypeInfo (tctx0 : TypingContext) (child : Syntax)
         | .type b => pure (b.nameIndex.toLevel, b.argsIndex.map (·.toLevel))
         | _ => continue
       -- Elaborate name arg
-      let some nameSL := argLevelToSyntaxLevel childSe nameArgLevel
-        | return panic "Arg level to syntax level failed"
-      assert! nameSL < childStxArgs.size
-      assert! nameArgLevel < childArgDecls.size
+      let some nameSL := childSe.argElabIndex[nameArgLevel]?.join.bind fun idx => (childSe.argElaborators[idx]?).map (·.val.syntaxLevel)
+        | logInternalError childLoc "extractChildTypeInfo: argLevelToSyntaxLevel failed for name"
+          continue
+      if nameSL ≥ childStxArgs.size then
+        logInternalError childLoc s!"extractChildTypeInfo: nameSL {nameSL} out of bounds ({childStxArgs.size})"
+        continue
+      if nameArgLevel ≥ childArgDecls.size then
+        logInternalError childLoc s!"extractChildTypeInfo: nameArgLevel {nameArgLevel} out of bounds ({childArgDecls.size})"
+        continue
       let nameCat := childArgDecls[nameArgLevel]!.kind.categoryOf
       let (nameTree, nameSuccess) ← runChecked <|
         catElaborator nameCat tctx0 childStxArgs[nameSL]!
@@ -1265,16 +1278,25 @@ partial def extractChildTypeInfo (tctx0 : TypingContext) (child : Syntax)
       let name ←
         match nameTree.info with
         | .ofIdentInfo info => pure info.val
-        | _ => return panic! "Expected ident for type name"
+        | _ =>
+          logInternalError childLoc "extractChildTypeInfo: expected ident for type name"
+          continue
       preElabMap := preElabMap.push (nameArgLevel, nameTree)
       -- Elaborate typeParams to extract real param names
       -- (not added to preElabMap — Phase 2 re-elaborates with correct context)
       let some tpArgLevel := typeParamsArgLevel?
-        | return panic! "missing typeParamsArgLevel"
-      let some tpSL := argLevelToSyntaxLevel childSe tpArgLevel
-        | return panic! "argLevel failed"
-      assert! tpSL < childStxArgs.size
-      assert! tpArgLevel < childArgDecls.size
+        | -- .type spec with no argsIndex: register with empty params
+          registrations := registrations.push (name, [])
+          continue
+      let some tpSL := childSe.argElabIndex[tpArgLevel]?.join.bind fun idx => (childSe.argElaborators[idx]?).map (·.val.syntaxLevel)
+        | logInternalError childLoc "extractChildTypeInfo: argLevelToSyntaxLevel failed for typeParams"
+          continue
+      if tpSL ≥ childStxArgs.size then
+        logInternalError childLoc s!"extractChildTypeInfo: tpSL {tpSL} out of bounds ({childStxArgs.size})"
+        continue
+      if tpArgLevel ≥ childArgDecls.size then
+        logInternalError childLoc s!"extractChildTypeInfo: tpArgLevel {tpArgLevel} out of bounds ({childArgDecls.size})"
+        continue
       let tpCat := childArgDecls[tpArgLevel]!.kind.categoryOf
       let (tpTree, tpSuccess) ← runChecked <|
         catElaborator tpCat tctx0 childStxArgs[tpSL]!
