@@ -27,7 +27,7 @@ spec {
   requires [x_positive]:    (x > 0);
 }
 {
-  var z : int;
+  var z : int := 0;
   z := x;
   //assume [foo]: z < 10;
   z := z + 1;
