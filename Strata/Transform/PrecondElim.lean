@@ -78,6 +78,23 @@ def collectCallAsserts (F : @Lambda.Factory CoreLParams) (pname : String)
   : List Statement :=
   args.flatMap fun arg => collectAsserts F arg s!"call_{pname}_arg" md
 
+/-! ## Processing contract conditions -/
+
+/--
+Process a single contract condition: assert WF of partial function calls,
+then assume the condition. Returns the generated statements.
+-/
+def processCondition (F : @Lambda.Factory CoreLParams)
+    (expr : Expression.Expr) (assertLabel : String) (assumeLabel : String)
+    (md : Imperative.MetaData Expression := .empty) : List Statement :=
+  let asserts := collectAsserts F expr assertLabel md
+  let assume := Statement.assume assumeLabel expr md
+  asserts ++ [assume]
+
+/-- Returns true if any statement in the list is an assert. -/
+private def hasAssert (stmts : List Statement) : Bool :=
+  stmts.any (fun s => match s with | .assert _ _ _ => true | _ => false)
+
 /-! ## Contract well-formedness procedures -/
 
 /--
@@ -89,20 +106,15 @@ For each precondition+postcondition (in order):
 -/
 def mkContractWFProc (F : @Lambda.Factory CoreLParams) (proc : Procedure)
 : Option Decl :=
-  let precondAsserts := proc.spec.preconditions.flatMap fun (label, check) =>
-    let asserts := collectAsserts F check.expr
-      s!"{proc.header.name.name}_pre_{label}" check.md
-    let assume := Statement.assume label check.expr check.md
-    asserts ++ [assume]
-  let postcondAsserts := proc.spec.postconditions.flatMap fun (label, check) =>
-    let asserts := collectAsserts F check.expr
-      s!"{proc.header.name.name}_post_{label}" check.md
-    let assume := Statement.assume label check.expr check.md
-    asserts ++ [assume]
-  let body := precondAsserts ++ postcondAsserts
-  if body.any (fun s => match s with | .assert _ _ _ => true | _ => false) then
+  let name := proc.header.name.name
+  let precondStmts := proc.spec.preconditions.flatMap fun (label, check) =>
+    processCondition F check.expr s!"{name}_pre_{label}" label check.md
+  let postcondStmts := proc.spec.postconditions.flatMap fun (label, check) =>
+    processCondition F check.expr s!"{name}_post_{label}" label check.md
+  let body := precondStmts ++ postcondStmts
+  if hasAssert body then
     some <| .proc {
-      header := { proc.header with name := CoreIdent.unres (wfProcName proc.header.name.name) }
+      header := { proc.header with name := CoreIdent.unres (wfProcName name) }
       spec := { modifies := [], preconditions := [], postconditions := [] }
       body := body
     }
@@ -129,14 +141,14 @@ def mkFuncWFStmts (F : @Lambda.Factory CoreLParams) (funcName : String)
     (preconditions : List (Strata.DL.Util.FuncPrecondition Expression.Expr Expression.ExprMetadata))
     (body : Option Expression.Expr) : Option (List Statement) :=
   let (precondStmts, _) := preconditions.foldl (fun (stmts, idx) precond =>
-    let asserts := collectAsserts F precond.expr s!"{funcName}_precond"
-    let assume := Statement.assume s!"precond_{funcName}_{idx}" precond.expr
-    (stmts ++ asserts ++ [assume], idx + 1)) ([], 0)
+    let stmts' := processCondition F precond.expr
+      s!"{funcName}_precond" s!"precond_{funcName}_{idx}"
+    (stmts ++ stmts', idx + 1)) ([], 0)
   let bodyStmts := match body with
     | none => []
     | some b => collectAsserts F b s!"{funcName}_body"
   let allStmts := precondStmts ++ bodyStmts
-  if allStmts.any (fun s => match s with | .assert _ _ _ => true | _ => false) then
+  if hasAssert allStmts then
     some allStmts
   else
     none

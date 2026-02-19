@@ -213,8 +213,6 @@ spec {
 
 /-! ### Test 5: Function decl statement with precondition referencing local variable -/
 
--- NOTE: this test output is currently incorrect due to https://github.com/strata-org/Strata/issues/445
-
 def funcDeclPrecondPgm :=
 #strata
 program Core;
