@@ -2083,7 +2083,8 @@ theorem EvalStmtRefinesContract :
     exact EvalStmt.funcDecl_sem
 
 /-- If an expression is defined, all its free variables are defined in the store.
-    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`. -/
+    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
+    together with the variable-evaluation condition in `WellFormedSemanticEvalVar`. -/
 theorem EvalExpressionIsDefined :
   WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
