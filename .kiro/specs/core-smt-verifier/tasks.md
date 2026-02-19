@@ -55,14 +55,14 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 23: Push/pop preserves solver correctness**
     - **Validates: Requirements 7.6**
 
-- [ ] 4. isCoreSMT Predicate Implementation
-  - [ ] 4.1 Create `Strata/Languages/Core/CoreSMT/IsCoreSMT.lean`
+- [x] 4. isCoreSMT Predicate Implementation
+  - [x] 4.1 Create `Strata/Languages/Core/CoreSMT/IsCoreSMT.lean`
     - Define `Statement.isCoreSMT : Statement → Bool` predicate
     - Include: assume, assert, cover, init, havoc, block (recursive), funcDecl
     - Exclude: ite, loop, goto, call, set
     - _Requirements: 2.1, 2.2, 2.3_
   
-  - [ ] 4.2 Define `Expression.isCoreSMT : Expression.Expr → Bool` predicate
+  - [x] 4.2 Define `Expression.isCoreSMT : Expression.Expr → Bool` predicate
     - Include: const, fvar, bvar, app (including immediately applied abstractions), ite (expression), quant
     - Exclude: standalone abstractions (not immediately applied)
     - _Requirements: 2.1, 2.2_
@@ -71,15 +71,15 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 10: Non-CoreSMT input returns error**
     - **Validates: Requirements 1.10, 2.3**
 
-- [ ] 5. CoreSMT State and Context Management
-  - [ ] 5.1 Create `Strata/Languages/Core/CoreSMT/State.lean`
+- [x] 5. CoreSMT State and Context Management
+  - [x] 5.1 Create `Strata/Languages/Core/CoreSMT/State.lean`
     - Define `ContextItem` inductive (assumption, sortDecl, funcDecl, funcDef, varDecl, varDef)
     - Define `ContextScope` and `ContextStack` types
     - Define `CoreSMTConfig` structure (diagnosisEnabled, accumulateErrors, verbose)
     - Define `CoreSMTState` structure (solver, config, contextStack, results)
     - _Requirements: 1.11, 1.12, 1.13, 6.1, 6.2, 6.3_
   
-  - [ ] 5.2 Implement state management functions
+  - [x] 5.2 Implement state management functions
     - `CoreSMTState.init : SMTSolverInterface → CoreSMTConfig → CoreSMTState`
     - `CoreSMTState.push : CoreSMTState → IO CoreSMTState`
     - `CoreSMTState.pop : CoreSMTState → IO CoreSMTState`
@@ -91,13 +91,13 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 21: State reuse preserves correctness**
     - **Validates: Requirements 6.2, 6.3**
 
-- [ ] 6. Expression Translator
-  - [ ] 6.1 Create `Strata/Languages/Core/CoreSMT/ExprTranslator.lean`
+- [x] 6. Expression Translator
+  - [x] 6.1 Create `Strata/Languages/Core/CoreSMT/ExprTranslator.lean`
     - Implement `translateType : Expression.Ty → SMT.TermType`
     - Implement `translateConst : Expression.Const → Except String SMT.Term`
     - _Requirements: 1.9_
   
-  - [ ] 6.2 Implement `translateExpr : Expression.Expr → IO (Except String SMT.Term)`
+  - [x] 6.2 Implement `translateExpr : Expression.Expr → IO (Except String SMT.Term)`
     - Handle const, fvar, bvar cases
     - Handle app case including immediately applied abstractions → SMT let
     - Handle ite (expression) case
@@ -105,7 +105,7 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - Return error for standalone abstractions
     - _Requirements: 1.9, 1.10_
   
-  - [ ] 6.3 Implement `translateApp` for function applications
+  - [x] 6.3 Implement `translateApp` for function applications
     - Translate operator and arguments
     - Handle Core operators → SMT operators mapping
     - _Requirements: 1.9_
@@ -114,49 +114,49 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 9: Function calls translate to SMT applications**
     - **Validates: Requirements 1.9**
 
-- [ ] 7. Checkpoint - Ensure expression translator compiles and tests pass
+- [x] 7. Checkpoint - Ensure expression translator compiles and tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Statement Processor
-  - [ ] 8.1 Create `Strata/Languages/Core/CoreSMT/StmtProcessor.lean`
+- [x] 8. Statement Processor
+  - [x] 8.1 Create `Strata/Languages/Core/CoreSMT/StmtProcessor.lean`
     - Implement `processAssume : CoreSMTState → String → Expression.Expr → IO CoreSMTState`
     - Add expression to solver state via `solver.assert`
     - Track in context as `ContextItem.assumption`
     - _Requirements: 1.1_
   
-  - [ ] 8.2 Implement `processInit` for init statements
+  - [x] 8.2 Implement `processInit` for init statements
     - With expression: emit `define-fun`, track as `varDef`
     - Without expression: emit `declare-fun`, track as `varDecl`
     - _Requirements: 1.2, 1.3_
   
-  - [ ] 8.3 Implement `processAssert` for assert statements
+  - [x] 8.3 Implement `processAssert` for assert statements
     - Perform proof check using push/pop (check-sat of negation)
     - Do NOT modify solver state after check
     - Return VCResult with outcome
     - _Requirements: 1.4_
   
-  - [ ] 8.4 Implement `processCover` for cover statements
+  - [x] 8.4 Implement `processCover` for cover statements
     - Perform reachability check (check-sat of expression)
     - sat → reachable, unsat → unreachable
     - Return VCResult with outcome
     - _Requirements: 1.5_
   
-  - [ ] 8.5 Implement `processBlock` for block statements
+  - [x] 8.5 Implement `processBlock` for block statements
     - Call `state.push` before processing inner statements
     - Process each inner statement sequentially
     - Call `state.pop` after processing
     - _Requirements: 1.6_
   
-  - [ ] 8.6 Implement `processFuncDecl` for function declarations
+  - [x] 8.6 Implement `processFuncDecl` for function declarations
     - Without body: emit `declare-fun`
     - With body: emit `define-fun` or equivalent axiom
     - _Requirements: 1.7, 1.8_
   
-  - [ ] 8.7 Implement `processHavoc` for havoc statements
+  - [x] 8.7 Implement `processHavoc` for havoc statements
     - Declare fresh unconstrained variable via `declare-fun`
     - _Requirements: 1.3_
   
-  - [ ] 8.8 Implement main `processStatement : CoreSMTState → Statement → IO (CoreSMTState × Option VCResult)`
+  - [x] 8.8 Implement main `processStatement : CoreSMTState → Statement → IO (CoreSMTState × Option VCResult)`
     - Check `stmt.isCoreSMT`, return error if false
     - Dispatch to appropriate handler based on statement type
     - _Requirements: 1.10, 1.11_
@@ -187,7 +187,7 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 19: Refuted outcome in VCResult**
     - **Validates: Requirements 1.12, 3.2**
 
-- [ ] 10. Checkpoint - Ensure statement processor compiles and tests pass
+- [x] 10. Checkpoint - Ensure statement processor compiles and tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. Diagnosis Engine
@@ -222,20 +222,20 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 18: Diagnosed failures include context**
     - **Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6, 4.7**
 
-- [ ] 12. Public Interface
-  - [ ] 12.1 Create `Strata/Languages/Core/CoreSMT/Verifier.lean`
+- [x] 12. Public Interface
+  - [x] 12.1 Create `Strata/Languages/Core/CoreSMT/Verifier.lean`
     - Implement `verify : CoreSMTState → List Statement → IO (CoreSMTState × Array VCResult)`
     - Process statements sequentially
     - Accumulate results based on config
     - Return updated state for reuse
     - _Requirements: 6.1, 6.2, 6.3_
   
-  - [ ] 12.2 Implement `processPrelude : CoreSMTState → List Statement → IO CoreSMTState`
+  - [x] 12.2 Implement `processPrelude : CoreSMTState → List Statement → IO CoreSMTState`
     - Process prelude statements to initialize state
     - Return state ready for subsequent verification calls
     - _Requirements: 6.5_
   
-  - [ ] 12.3 Create main module `Strata/Languages/Core/CoreSMT.lean`
+  - [x] 12.3 Create main module `Strata/Languages/Core/CoreSMT.lean`
     - Export all CoreSMT components
     - Provide convenience functions for common use cases
     - _Requirements: 6.1_
@@ -245,7 +245,7 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 22: Prelude state reuse**
     - **Validates: Requirements 3.3, 6.5**
 
-- [ ] 13. Checkpoint - Ensure public interface compiles and tests pass
+- [x] 13. Checkpoint - Ensure public interface compiles and tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 14. B3 to Core Converter for Test Migration
