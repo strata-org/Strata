@@ -8,42 +8,42 @@ The implementation follows a phased approach, starting with prerequisites and fo
 
 ## Tasks
 
-- [ ] 1. Prerequisites: Extend Cmd.init for Optional RHS
-  - [ ] 1.1 Modify `Cmd.init` in `Strata/DL/Imperative/Cmd.lean` to support optional expression
+- [x] 1. Prerequisites: Extend Cmd.init for Optional RHS
+  - [x] 1.1 Modify `Cmd.init` in `Strata/DL/Imperative/Cmd.lean` to support optional expression
     - Change `| init (name : P.Ident) (ty : P.Ty) (e : P.Expr)` to `| init (name : P.Ident) (ty : P.Ty) (e : Option P.Expr)`
     - _Requirements: 1.3_
   
-  - [ ] 1.2 Update `Statement.init` pattern in `Strata/Languages/Core/Statement.lean`
+  - [x] 1.2 Update `Statement.init` pattern in `Strata/Languages/Core/Statement.lean`
     - Update the `@match_pattern` abbreviation to handle `Option Expression.Expr`
     - _Requirements: 1.3_
   
-  - [ ] 1.3 Update all call sites that construct `Cmd.init` or `Statement.init`
+  - [x] 1.3 Update all call sites that construct `Cmd.init` or `Statement.init`
     - Search for `Cmd.init` and `Statement.init` usages and wrap expressions in `some`
     - Update DDM parsing in `Strata/Languages/Core/DDMTransform/Parse.lean`
     - _Requirements: 1.3_
   
-  - [ ] 1.4 Update type checking in `Strata/Languages/Core/CmdType.lean`
+  - [x] 1.4 Update type checking in `Strata/Languages/Core/CmdType.lean`
     - Handle `none` case for init without expression
     - _Requirements: 1.3_
   
-  - [ ] 1.5 Update evaluation in `Strata/Languages/Core/CmdEval.lean`
+  - [x] 1.5 Update evaluation in `Strata/Languages/Core/CmdEval.lean`
     - Handle `none` case as equivalent to `havoc` (unconstrained variable)
     - _Requirements: 1.3_
   
-  - [ ] 1.6 Update semantics in `Strata/DL/Imperative/CmdSemantics.lean`
+  - [x] 1.6 Update semantics in `Strata/DL/Imperative/CmdSemantics.lean`
     - Define semantics for `init x : T` without RHS as declaring unconstrained variable
     - _Requirements: 1.3_
 
-- [ ] 2. Checkpoint - Ensure Cmd.init extension compiles and tests pass
+- [x] 2. Checkpoint - Ensure Cmd.init extension compiles and tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 3. SMT Solver Interface Implementation
-  - [ ] 3.1 Create `Strata/Languages/Core/CoreSMT/SMTSolverInterface.lean`
+- [x] 3. SMT Solver Interface Implementation
+  - [x] 3.1 Create `Strata/Languages/Core/CoreSMT/SMTSolverInterface.lean`
     - Define `SMTSolverInterface` structure with push, pop, declareSort, declareFun, defineFun, assert, checkSat, checkSatAssuming, getModel, reset methods
     - Use existing `Strata.SMT.Term` and `Strata.SMT.TermType` types
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8_
   
-  - [ ] 3.2 Implement default solver instance using cvc5
+  - [x] 3.2 Implement default solver instance using cvc5
     - Create `mkCvc5Solver : IO SMTSolverInterface` that wraps the existing `SMT.Solver`
     - Use `SMTDDM.toString` for converting `SMT.Term` to SMT-LIB strings
     - _Requirements: 7.9_
