@@ -293,13 +293,12 @@ where
     | .New _name =>
         -- Allocate a new object: get the current counter, increment it, return the old value
         -- 1. Save the current counter: $freshVar := Heap..counter(heapVar)
-        -- 2. Update the heap with incremented counter: heapVar := MkHeap(Heap..data(heapVar), Heap..counter(heapVar) + 1)
+        -- 2. Update the heap with incremented counter: heapVar := increment(heapVar)
         -- 3. Result is $freshVar (the old counter value, which is the new Composite reference)
         let freshVar ← freshVarName
         let getCounter := mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)])
         let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
-        let newCounter := mkMd (.PrimitiveOp .Add [mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)]), mkMd (.LiteralInt 1)])
-        let newHeap := mkMd (.StaticCall "MkHeap" [mkMd (.StaticCall "Heap..data" [mkMd (.Identifier heapVar)]), newCounter])
+        let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
         return ⟨ .Block [saveCounter, updateHeap, mkMd (.Identifier freshVar)] none, md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩

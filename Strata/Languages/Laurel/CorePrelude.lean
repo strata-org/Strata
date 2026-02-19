@@ -55,6 +55,11 @@ function updateField(heap: Heap, obj: Composite, field: Field, val: Box) : Heap 
   MkHeap(Heap..data(heap)[obj := Heap..data(heap)[obj][field := val]], Heap..counter(heap))
 }
 
+// Increment the heap allocation counter, returning a new heap
+function increment(heap: Heap) : Heap {
+  MkHeap(Heap..data(heap), Heap..counter(heap) + 1)
+}
+
 #end
 
 def corePrelude : Core.Program :=
