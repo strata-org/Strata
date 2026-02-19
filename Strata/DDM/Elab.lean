@@ -71,7 +71,7 @@ private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Op
     return commands
   let (some tree, true) ← runChecked <| elabCommand leanEnv
     | return commands
-  -- Prevent infinite loop if parser makes no progressCollapse commentComment on line R74keyboardDrummer commented on Feb 16, 2026 keyboardDrummeron Feb 16, 2026ContributorMore actionsThis is great!!ReactWrite a replyResolve comment
+  -- Prevent infinite loop if parser makes no progress
   let newPos := (←get).pos
   if newPos <= iniPos then
     logError { start := iniPos, stop := iniPos } "Syntax error: unrecognized syntax or unexpected token"

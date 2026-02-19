@@ -32,19 +32,6 @@ def computeAncestors (types : List TypeDefinition) (name : Identifier) : List Id
   (go types.length name).eraseDups
 
 /--
-Collect all fields for a composite type, including inherited fields from parents.
--/
-def collectAllFields (types : List TypeDefinition) (name : Identifier) : List Field :=
-  let ancestors := computeAncestors types name
-  -- Collect fields from all ancestors (parent fields first, then own fields)
-  ancestors.reverse.foldl (fun acc ancestorName =>
-    match types.findSome? (fun td => match td with
-      | .Composite ct => if ct.name == ancestorName then some ct.fields else none
-      | _ => none) with
-    | some fields => acc ++ fields
-    | none => acc) []
-
-/--
 Generate Core declarations for the type hierarchy:
 - A UserType constant for each composite type
 - A distinct declaration to ensure all UserType constants are different
