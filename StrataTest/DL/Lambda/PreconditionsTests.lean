@@ -87,4 +87,20 @@ private def factoryWithImplies : Factory TestParams :=
     ((~Bool.Implies ((~Int.Gt %0) #0))
       ((~Int.Gt ((~safeDiv y) %0)) #0))]
 
+-- Test: let x := a in safeDiv(2, x)
+-- Encoded as (λ (int): ((~safeDiv #2) %0)) a
+-- The obligation should be: let x := a in (x != 0)
+/-- info: [WFObligation(safeDiv, ((λ (~!= %0 #0)) a), ())] -/
+#guard_msgs in
+#eval collectWFObligations testFactory
+  esM[((λ (int): ((~safeDiv #2) %0)) a)]
+
+-- Test: let x := safeDiv(a, b) in x
+-- Encoded as (λ (int): %0) (safeDiv(a, b))
+-- The obligation comes from the arg: b != 0
+/-- info: [WFObligation(safeDiv, (~!= b #0), ())] -/
+#guard_msgs in
+#eval collectWFObligations testFactory
+  esM[((λ (int): %0) ((~safeDiv a) b))]
+
 end Lambda

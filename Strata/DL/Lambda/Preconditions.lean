@@ -107,6 +107,14 @@ where
           lhsObs ++ rhsObs
         else
           go F lhs implications ++ go F rhs implications
+      /- Let-binding encoded as (λ x. body) arg:
+         obligations from body are wrapped as let x := arg in ob,
+         obligations from arg are collected directly -/
+      | .app md (.abs amd ty body) arg =>
+        let argObs := go F arg implications
+        let bodyObs := (go F body implications).map fun ob =>
+          { ob with obligation := .app md (.abs amd ty ob.obligation) arg }
+        argObs ++ bodyObs
       | .app _ fn arg => go F fn implications ++ go F arg implications
       | .ite md c t f =>
         /- Similarly, if-then-else adds assumption in each branch
