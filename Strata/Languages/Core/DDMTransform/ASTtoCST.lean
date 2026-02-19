@@ -75,8 +75,9 @@ def unknownTypeVar : String := "$__unknown_type"
 /-- Generate parameter names efficiently -/
 def mkParamName (i : Nat) : String := "a" ++ toString i
 
-/-- Generate quantifier variable names efficiently -/
-def mkQuantVarName (level : Nat) : String := "x" ++ toString level
+/-- Generate quantifier variable names with a `__` prefix to indicate that they
+    are generated names. In the future, we will store existing variable names in an extra field of quantifier expressions. -/
+def mkQuantVarName (level : Nat) : String := "__q" ++ toString level
 
 structure Scope where
   /-- Track bound variables in this scope -/
@@ -131,14 +132,6 @@ def allFreeVars {M} (ctx : ToCSTContext M) : Array String :=
 /-- Find index of free variable across all scopes -/
 def freeVarIndex? {M} (ctx : ToCSTContext M) (name : String) : Option Nat :=
   ctx.allFreeVars.findIdx? (· == name)
-
-/-- Add free variables to the current scope -/
-def addScopedFreeVars {M} (ctx : ToCSTContext M) (names : Array String)
-    : ToCSTContext M :=
-  let idx := ctx.scopes.size - 1
-  let scope := ctx.scopes[idx]!
-  let newScope := { scope with freeVars := scope.freeVars ++ names }
-  { ctx with scopes := ctx.scopes.set! idx newScope }
 
 /-- Add bound variables to the current scope -/
 def addScopedBoundVars {M} (ctx : ToCSTContext M) (names : Array String)
@@ -566,7 +559,13 @@ def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
     : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
-  -- User-defined functions.
+  -- User-defined functions: check bound vars first (local funcDecl via
+  -- @[declareFn]), then free vars (global declarations).
+  match ctx.findBoundVarIndex? name with
+  | some idx =>
+    let fnExpr := CoreDDM.Expr.bvar default (ctx.allBoundVars.size - (idx + 1))
+    pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
+  | none =>
   match ctx.freeVarIndex? name with
   | some idx =>
     let fnExpr := CoreDDM.Expr.fvar default idx
@@ -751,8 +750,9 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
     pure bodyExpr
   | some body => lexprToExpr body 0
   modify ToCSTContext.popScope
-  -- Register function name as a scoped free variable in the parent scope.
-  modify (·.addScopedFreeVars #[name.val])
+  -- Register function name as a scoped bound variable in the parent scope,
+  -- matching DDM's @[declareFn] which makes the name a bvar.
+  modify (·.pushBoundVar name.val)
   pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
 
 mutual
@@ -1045,6 +1045,60 @@ private def recreateGlobalContext (ctx : ToCSTContext M)
     (name, GlobalKind.expr (.fvar default 0 #[]), DeclState.defined)
   { nameMap, vars }
 
+-- Extract types not in `Core.KnownTypes`.
+private def extractFromType (ty : Lambda.LMonoTy) : Array String :=
+  match ty with
+  | .tcons name args =>
+    let nameArr := if name ∈ Core.KnownTypes.keys then #[] else #[name]
+    nameArr ++ args.foldl (fun acc arg => acc ++ extractFromType arg) #[]
+  | .ftvar name => #[name]
+  | .bitvec _ => #[]
+
+-- Extract operation and free variable names from expressions.
+-- Ignore built-in operations since they are already tackled by `lexprToExpr`.
+private def extractNames (exprs : List Core.Expression.Expr) :
+    Array String :=
+  let rec extractFromExpr (e : Core.Expression.Expr) :=
+    match e with
+    | .op _ name ty =>
+      let opNames := if name.name ∈ builtinFunctions then #[] else #[name.name]
+      let tyNames := match ty with | some ty => extractFromType ty | none => #[]
+      opNames ++ tyNames
+    | .fvar _ id ty =>
+      #[id.name] ++ (match ty with | some ty => extractFromType ty | none => #[])
+    | .app _ f arg => extractFromExpr f ++ extractFromExpr arg
+    | .ite _ c t f => extractFromExpr c ++ extractFromExpr t ++ extractFromExpr f
+    | .eq _ e1 e2 => extractFromExpr e1 ++ extractFromExpr e2
+    | .quant _ _ _ trigger body => extractFromExpr trigger ++ extractFromExpr body
+    | _ => #[]
+  exprs.foldl (fun acc expr => acc ++ extractFromExpr expr) #[]
+
+/-- Render a list of `Core.Expression.Expr` to a format object.
+
+If the expression references constructs not defined in the Grammar,
+use `extraFreeVars` to add their names to the formatting context.
+-/
+def Core.formatExprs (exprs : List Core.Expression.Expr)
+    (extraFreeVars : Array String := #[]) : Std.Format :=
+  let extractedNames := extractNames exprs
+  let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := initCtx.addGlobalFreeVars (extraFreeVars ++ extractedNames)
+  let (exprsCST, finalCtx) := (exprs.mapM (lexprToExpr · 0)).run initCtx
+  let dialects := Core_map
+  let ddmCtx := recreateGlobalContext finalCtx
+  let ctx := FormatContext.ofDialects dialects ddmCtx {}
+  let state : FormatState := {
+    openDialects := dialects.toList.foldl (init := {})
+      fun a (d : Dialect) => a.insert d.name
+  }
+  let formatted := Std.Format.joinSep (exprsCST.map fun exprCST =>
+    (mformat (ArgF.expr exprCST.toAst) ctx state).format) ", "
+  if finalCtx.errors.isEmpty then
+    formatted
+  else
+    formatted ++ " -- Errors: " ++
+    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "; "
+
 /-- Render `Core.Program` to a format object.
 
 If the Core program is expected to have some constructs not defined in the
@@ -1056,7 +1110,7 @@ def Core.formatProgram (ast : Core.Program)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (finalCtx, cmds) := programToCST ast initCtx
-  let dialects := CoreDDM.dialectMap
+  let dialects := Core_map
   let ddmCtx := recreateGlobalContext finalCtx
   let ctx := FormatContext.ofDialects dialects ddmCtx {}
   let state : FormatState := {

@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
 import Strata.Transform.ProcedureInlining
+import Strata.Languages.Python.CorePrelude
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
@@ -319,6 +320,82 @@ def pyAnalyzeCommand : Command where
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
       IO.println s
 
+def pyAnalyzeLaurelCommand : Command where
+  name := "pyAnalyzeLaurel"
+  args := [ "file", "verbose" ]
+  help := "Analyze a Strata Python Ion file through Laurel. Write results to stdout."
+  callback := fun _ v => do
+    let verbose := v[1] == "1"
+    let filePath := v[0]
+    let pgm ← readPythonStrata filePath
+    let pySourceOpt ← tryReadPythonSource filePath
+    let cmds := Strata.toPyCommands pgm.commands
+    if verbose then
+      IO.println "==== Python AST ===="
+      IO.print pgm
+    assert! cmds.size == 1
+
+    let prelude := Strata.Python.Core.prelude
+
+    let sourcePathForMetadata := match pySourceOpt with
+      | some (pyPath, _) => pyPath
+      | none => filePath
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
+    match laurelPgm with
+      | .error e =>
+        exitFailure s!"Python to Laurel translation failed: {e}"
+      | .ok laurelProgram =>
+        if verbose then
+          IO.println "\n==== Laurel Program ===="
+          IO.println f!"{laurelProgram}"
+
+        -- Translate Laurel to Core
+        match Strata.Laurel.translate laurelProgram with
+        | .error diagnostics =>
+          exitFailure s!"Laurel to Core translation failed: {diagnostics}"
+        | .ok coreProgram =>
+          if verbose then
+            IO.println "\n==== Core Program ===="
+            IO.print coreProgram
+
+          let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
+
+          -- Verify using Core verifier
+          let vcResults ← IO.FS.withTempDir (fun tempDir =>
+              EIO.toIO
+                (fun f => IO.Error.userError (toString f))
+                (Core.verify coreProgram tempDir .none
+                  { Options.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
+
+          -- Print results
+          IO.println "\n==== Verification Results ===="
+          let mut s := ""
+          for vcResult in vcResults do
+            let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+              | some fr =>
+                if fr.range.isNone then ("", "")
+                else
+                  match pySourceOpt with
+                  | some (pyPath, fileMap) =>
+                    match fr.file with
+                    | .file path =>
+                      if path == pyPath then
+                        let pos := fileMap.toPosition fr.range.start
+                        match vcResult.result with
+                        | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                        | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                      else
+                        match vcResult.result with
+                        | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                        | _ => ("", s!" (at byte {fr.range.start})")
+                  | none =>
+                    match vcResult.result with
+                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                    | _ => ("", s!" (at byte {fr.range.start})")
+              | none => ("", "")
+            s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
+          IO.println s
+
 def javaGenCommand : Command where
   name := "javaGen"
   args := [ "dialect-file", "package", "output-dir" ]
@@ -383,6 +460,7 @@ def commandList : List Command := [
       printCommand,
       diffCommand,
       pyAnalyzeCommand,
+      pyAnalyzeLaurelCommand,
       pyTranslateCommand,
       pySpecsCommand,
       laurelAnalyzeCommand,

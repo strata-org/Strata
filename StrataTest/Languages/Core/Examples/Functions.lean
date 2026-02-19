@@ -51,19 +51,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: barEq
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-((~barTest1 $__a0) == $__a0)
+Obligation:
+barTest1($__a0) == $__a0
 
 Label: fooEq
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:

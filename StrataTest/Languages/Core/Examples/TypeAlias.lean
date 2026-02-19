@@ -81,11 +81,10 @@ VCs:
 Label: fooAssertion
 Property: assert
 Assumptions:
-(fooConst1_value, (~fooConst1 == ~fooVal))
-(fooConst2_value, (~fooConst2 == ~fooVal))
-
-Proof Obligation:
-(~fooConst1 == ~fooConst2)
+fooConst1_value: fooConst1 == fooVal
+fooConst2_value: fooConst2 == fooVal
+Obligation:
+fooConst1 == fooConst2
 
 ---
 info:
@@ -125,10 +124,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-(assume_0, (init_v_2 == #0))
-
-Proof Obligation:
-((~MapGetEq init_d_0 init_k_1 init_v_2) == (~MapGetEq init_d_0 init_k_1 #0))
+assume_0: init_v_2 == 0
+Obligation:
+MapGetEq(init_d_0, init_k_1, init_v_2) == MapGetEq(init_d_0, init_k_1, 0)
 
 ---
 info:

@@ -54,75 +54,48 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: hello_dot_ends_with_period
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx #hello. ~cannot_end_with_period))
+Obligation:
+!(str.in.re("hello.", cannot_end_with_period))
 
 Label: dot_ends_with_period
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx #. ~cannot_end_with_period))
+Obligation:
+!(str.in.re(".", cannot_end_with_period))
 
 Label: bye_exclaim_no_end_with_period
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Str.InRegEx #bye! ~cannot_end_with_period)
+Obligation:
+str.in.re("bye!", cannot_end_with_period)
 
 Label: ok_chars_str
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Str.InRegEx #test-str-1 ~ok_chars_regex)
+Obligation:
+str.in.re("test-str-1", ok_chars_regex)
 
 Label: cannot_contain_exclaim
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx #test-str! ~ok_chars_regex))
+Obligation:
+!(str.in.re("test-str!", ok_chars_regex))
 
 Label: has_to_be_at_least_1_char
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx # ~ok_chars_regex))
+Obligation:
+!(str.in.re("", ok_chars_regex))
 
 Label: cannot_exceed_10_chars
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx #0123456789a ~ok_chars_regex))
+Obligation:
+!(str.in.re("0123456789a", ok_chars_regex))
 
 Label: optionally_a_check1
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Str.InRegEx #a ~optionally_a)
+Obligation:
+str.in.re("a", optionally_a)
 
 Label: optionally_a_check2
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx #b ~optionally_a))
+Obligation:
+!(str.in.re("b", optionally_a))
 
 ---
 info:
@@ -197,19 +170,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: assert_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx #0123456789a (~bad_re_loop $__n0)))
+Obligation:
+!(str.in.re("0123456789a", bad_re_loop($__n0)))
 
 Label: assert_1
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Str.InRegEx #a (~bad_re_loop #1))
+Obligation:
+str.in.re("a", bad_re_loop(1))
 
 
 
@@ -287,11 +254,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: assert_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~Str.InRegEx init_s_0 ~Re.None))
+Obligation:
+!(str.in.re(init_s_0, re.none()))
 
 ---
 info:

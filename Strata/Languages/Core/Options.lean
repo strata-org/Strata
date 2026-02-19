@@ -48,6 +48,8 @@ structure Options where
   checkOnly : Bool
   stopOnFirstError : Bool
   removeIrrelevantAxioms : Bool
+  /-- Use SMT-LIB Array theory instead of axiomatized maps -/
+  useArrayTheory : Bool
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
   /-- Output results in SARIF format -/
@@ -64,6 +66,7 @@ def Options.default : Options := {
   checkOnly := false,
   stopOnFirstError := false,
   removeIrrelevantAxioms := false,
+  useArrayTheory := false,
   solverTimeout := 10,
   outputSarif := false,
   solver := defaultSolver

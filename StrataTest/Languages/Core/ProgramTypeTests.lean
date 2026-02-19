@@ -75,11 +75,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: test
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~fooAliasVal == ~fooVal)
+Obligation:
+fooAliasVal == fooVal
 
 ---
 info: ok: [(type Foo (a0 : Type, a1 : Type);
