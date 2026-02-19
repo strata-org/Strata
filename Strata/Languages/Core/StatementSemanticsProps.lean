@@ -2370,9 +2370,10 @@ theorem EvalCallBodyRefinesContract :
   π n = .some p →
   p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
   (∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) →
+  WellFormedSemanticEvalExprCongr (P:=Expression) δ →
   EvalCommand π φ δ σ (CmdExt.call lhs n args) σ' →
   EvalCommandContract π δ σ (CmdExt.call lhs n args) σ' := by
-  intros π φ δ σ lhs n args σ' p pFound modValid modValidAll H
+  intros π φ δ σ lhs n args σ' p pFound modValid modValidAll Hwfcongr H
   cases H with
   | call_sem lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st Hdefover HinitIn HinitOut Hpre HevalBody Hpost HrdOutMod Hup2 =>
     /-
@@ -2412,7 +2413,21 @@ theorem EvalCallBodyRefinesContract :
     -- Key fact: outputs ++ modifies are all defined in σAO'
     -- (outputs from InitStates, modifies from isDefinedOver + InitStates monotonicity)
     have HdefAllAO : isDefined σAO' (ListMap.keys p'.header.outputs ++ p'.spec.modifies) := by
-      sorry
+      apply isDefinedApp HdefOutAO
+      have Hdefσ : isDefined σ p'.spec.modifies := by
+        intro k hk
+        apply Hdefover k
+        simp only [Statement.call, HasVarsTrans.allVarsTrans, Statement.allVarsTrans,
+          Statement.getVarsTrans, Statement.touchedVarsTrans,
+          Command.getVarsTrans, Command.definedVarsTrans, Command.modifiedVarsTrans,
+          lkup, List.mem_append]
+        right; right; right
+        show k ∈ HasVarsTrans.modifiedVarsTrans π p'
+        simp only [HasVarsTrans.modifiedVarsTrans,
+          Procedure.modifiedVarsTrans, HasVarsImp.modifiedVars, Procedure.modifiedVars,
+          List.mem_append]
+        left; exact hk
+      exact InitStatesDefMonotone (InitStatesDefMonotone Hdefσ HinitIn) HinitOut
     -- Use σAO' as σO and σC as the contract's final store
     refine EvalCommandContract.call_sem (σO := σAO') (σR := σC)
       lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st
@@ -2438,27 +2453,33 @@ theorem EvalCallBodyRefinesContract :
       -- Need: δ σC post = δ σR' post (then use Hpostval)
       -- σC and σR' agree on all variables defined in σAO', and
       -- Hdefpost says post's variables are defined in σAO'
-      sorry
+      have Hagree : ∀ x ∈ HasVarsPure.getVars post, σC x = σR' x := by
+        intro x hx
+        exact HσC_eq_σR x (Hdefpost x hx)
+      rw [Hwfcongr post σC σR' Hagree]
+      exact Hpostval
     -- ReadValues σC (outputs ++ modifies) modvals'
     · apply ReadValuesCongr HrdOutMod
       intro k hk
       exact HσC_eq_σR k (HdefAllAO k hk)
 
 theorem EvalCommandRefinesContract
-  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
 EvalCommand π φ δ σ c σ' →
 EvalCommandContract π δ σ c σ' := by
   intros H
   cases H with
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
   | call_sem hlkup =>
-    apply EvalCallBodyRefinesContract hlkup (hmod _ _ hlkup) hmod
+    apply EvalCallBodyRefinesContract hlkup (hmod _ _ hlkup) hmod hwfcongr
     constructor <;> assumption
 
 /-- Combined proof of `EvalStmtRefinesContract` and `EvalBlockRefinesContract`
   using strong induction on size to handle the mutual recursion. -/
 private theorem RefinesContract_aux
-  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : ∀ δ : CoreEval, WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
   (∀ s σ σ' δ δ',
     Stmt.sizeOf s ≤ m →
     EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
@@ -2482,7 +2503,7 @@ private theorem RefinesContract_aux
   · intro s σ σ' δ δ' Hsz H
     cases H with
     | cmd_sem Hdef Heval =>
-      exact EvalStmt.cmd_sem (EvalCommandRefinesContract hmod Hdef) Heval
+      exact EvalStmt.cmd_sem (EvalCommandRefinesContract hmod (hwfcongr _) Hdef) Heval
     | block_sem Heval =>
       constructor
       exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval
@@ -2508,16 +2529,18 @@ private theorem RefinesContract_aux
       · exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Hevals
 
 theorem EvalBlockRefinesContract
-  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : ∀ δ : CoreEval, WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
   EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
   EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
-  (RefinesContract_aux hmod).2 _ _ _ _ _ (Nat.le_refl _)
+  (RefinesContract_aux hmod hwfcongr).2 _ _ _ _ _ (Nat.le_refl _)
 
 theorem EvalStmtRefinesContract
-  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : ∀ δ : CoreEval, WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
   EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
   EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
-  (RefinesContract_aux hmod).1 _ _ _ _ _ (Nat.le_refl _)
+  (RefinesContract_aux hmod hwfcongr).1 _ _ _ _ _ (Nat.le_refl _)
 
 /-- If an expression is defined, all its free variables are defined in the store.
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`. -/
