@@ -55,32 +55,20 @@ private theorem checkVariableScoping_ok {proc : Procedure} {sl : Strata.FileRang
   simp [List.any_eq_true] at h_inp_out
   exact List.Disjoint.symm (fun _ ha hb => h_inp_out _ hb ha)
 
-private lemma Except.bind_eq_ok_of_ok
-    {ε α β} {x : Except ε α} {f : α → Except ε β} {b : β} :
-    Except.bind x f = Except.ok b →
-    ∃ a, x = Except.ok a ∧ f a = Except.ok b := by
-  cases x <;> simp [Except.bind]
-
+set_option maxHeartbeats 1600000 in
+set_option maxRecDepth 1024 in
 theorem Procedure.typeCheckWF :
     Procedure.typeCheck C T p pp md = Except.ok (pp', T') →
     WFProcedureProp p pp := by
   intro H
   unfold Procedure.typeCheck at H
   simp only [bind, Except.bind] at H
-  -- peel off the first bind: checkNoDuplicates
-  have h₁ := Except.bind_eq_ok_of_ok H
-  rcases h₁ with ⟨u₁, h_noDup, H₁⟩
-  have hnd := checkNoDuplicates_ok (by simpa using h_noDup)
-  -- peel off the second bind: checkVariableScoping
-  have h₂ := Except.bind_eq_ok_of_ok H₁
-  rcases h₂ with ⟨u₂, h_varScope, H₂⟩
-  have hvs := checkVariableScoping_ok (by simpa using h_varScope)
-  -- peel off the third bind: Statement.typeCheck
-  have h₃ := Except.bind_eq_ok_of_ok H₂
-  rcases h₃ with ⟨u₃, h_stmtTC, _Hrest⟩
+  repeat (split at H <;> try contradiction)
+  have hnd := checkNoDuplicates_ok (by assumption)
+  have hvs := checkVariableScoping_ok (by assumption)
   constructor
   -- wfstmts: body type-checks successfully
-  · exact Statement.typeCheckWF (by simpa using h_stmtTC)
+  · exact Statement.typeCheckWF (by assumption)
   -- wfloclnd: local variable declarations have no duplicates
   --   (not currently checked by the type checker)
   · sorry
