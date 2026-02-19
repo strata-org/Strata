@@ -14,7 +14,7 @@ Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
 The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
-and a `counter: int` for allocating new objects. Box is a sum type with constructors for each
+and a `nextReference: int` for allocating new objects. Box is a sum type with constructors for each
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
@@ -291,12 +291,12 @@ where
       let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
     | .New _name =>
-        -- Allocate a new object: get the current counter, increment it, return the old value
-        -- 1. Save the current counter: $freshVar := Heap..counter(heapVar)
-        -- 2. Update the heap with incremented counter: heapVar := increment(heapVar)
-        -- 3. Result is $freshVar (the old counter value, which is the new Composite reference)
+        -- Allocate a new object: get the current nextReference, increment it, return the old value
+        -- 1. Save the current nextReference: $freshVar := Heap..nextReference(heapVar)
+        -- 2. Update the heap with incremented nextReference: heapVar := increment(heapVar)
+        -- 3. Result is $freshVar (the old nextReference value, which is the new Composite reference)
         let freshVar ← freshVarName
-        let getCounter := mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)])
+        let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
         let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
         let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)

@@ -21,7 +21,7 @@ The heap model uses:
 - `Composite` - type synonym for int (object references are integers)
 - `Field` - abstract type for field names
 - `Box` - tagged union for field values (int, bool, real, Composite)
-- `Heap` - datatype with a `data` map and a `counter` for allocation
+- `Heap` - datatype with a `data` map and a `nextReference` for allocation
 - `readField` / `updateField` - heap access functions using nested maps
 -/
 def corePreludeDDM :=
@@ -40,9 +40,9 @@ datatype Box () {
   BoxComposite(compositeVal: Composite)
 };
 
-// Heap datatype: contains the data map and an allocation counter
+// Heap datatype: contains the data map and a nextReference for allocation
 datatype Heap () {
-  MkHeap(data: Map Composite (Map Field Box), counter: int)
+  MkHeap(data: Map Composite (Map Field Box), nextReference: int)
 };
 
 // Read a field from the heap: readField(heap, obj, field) = Heap..data(heap)[obj][field]
@@ -52,12 +52,12 @@ function readField(heap: Heap, obj: Composite, field: Field) : Box {
 
 // Update a field in the heap
 function updateField(heap: Heap, obj: Composite, field: Field, val: Box) : Heap {
-  MkHeap(Heap..data(heap)[obj := Heap..data(heap)[obj][field := val]], Heap..counter(heap))
+  MkHeap(Heap..data(heap)[obj := Heap..data(heap)[obj][field := val]], Heap..nextReference(heap))
 }
 
-// Increment the heap allocation counter, returning a new heap
+// Increment the heap allocation nextReference, returning a new heap
 function increment(heap: Heap) : Heap {
-  MkHeap(Heap..data(heap), Heap..counter(heap) + 1)
+  MkHeap(Heap..data(heap), Heap..nextReference(heap) + 1)
 }
 
 #end
