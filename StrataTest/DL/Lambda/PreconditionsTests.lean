@@ -17,6 +17,8 @@ private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
+open LExpr.SyntaxMono LTy.Syntax
+
 -- A function with a precondition: safeDiv(x, y) requires y != 0
 private def safeDivFunc : LFunc TestParams :=
   { name := "safeDiv"
@@ -34,34 +36,29 @@ private def noPrecondFunc : LFunc TestParams :=
 -- Expression: add(1, 2)
 /-- info: [] -/
 #guard_msgs in
-#eval collectWFObligations #[noPrecondFunc]
-  (.app () (.app () (.op () "add" .none) (.intConst () 1)) (.intConst () 2))
+#eval collectWFObligations #[noPrecondFunc] esM[((~add #1) #2)]
 
 -- safeDiv(a, y) produces y != 0
 /-- info: [WFObligation(safeDiv, (~!= y #0), ())] -/
 #guard_msgs in
-#eval collectWFObligations testFactory
-  (.app () (.app () (.op () "safeDiv" .none) (.fvar () "a" .none)) (.fvar () "y" .none))
+#eval collectWFObligations testFactory esM[((~safeDiv a) y)]
 
 -- safeDiv(safeDiv(x, y), b) produces b != 0, y != 0
 /-- info: [WFObligation(safeDiv, (~!= b #0), ()), WFObligation(safeDiv, (~!= y #0), ())] -/
 #guard_msgs in
 #eval collectWFObligations testFactory
-  (.app () (.app () (.op () "safeDiv" .none)
-    (.app () (.app () (.op () "safeDiv" .none) (.fvar () "x" .none)) (.fvar () "y" .none)))
-    (.fvar () "b" .none))
+  esM[((~safeDiv ((~safeDiv x) y)) b)]
 
 private def addFunc : LFunc TestParams :=
   { name := "add", inputs := [("x", .int), ("y", .int)], output := .int }
 
 private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
 
--- safeDiv(z, add(x, y)) produces x + y != 0
+-- safeDiv(z, add(x, y)) produces add(x, y) != 0
 /-- info: [WFObligation(safeDiv, (~!= (~add x y) #0), ())] -/
 #guard_msgs in
 #eval collectWFObligations factoryWithAdd
-  (.app () (.app () (.op () "safeDiv" .none) (.fvar () "z" .none))
-    (.app () (.app () (.op () "add" .none) (.fvar () "x" .none)) (.fvar () "y" .none)))
+  esM[((~safeDiv z) ((~add x) y))]
 
 -- Test: Function call inside a lambda abstraction
 -- Expression: \x : int. safeDiv(x, x)
@@ -69,8 +66,7 @@ private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
 /-- info: [WFObligation(safeDiv, (∀ (~!= %0 #0)), ())] -/
 #guard_msgs in
 #eval collectWFObligations testFactory
-  (.abs () LMonoTy.int
-    (.app () (.app () (.op () "safeDiv" .none) (.bvar () 0)) (.bvar () 0)))
+  esM[λ (int): ((~safeDiv %0) %0)]
 
 -- Test: Function call inside a quantifier with implication guard
 -- Expression: forall x :: x > 0 ==> safeDiv(y, x) > 0
@@ -87,11 +83,8 @@ private def factoryWithImplies : Factory TestParams :=
 /-- info: [WFObligation(safeDiv, (∀ ((~Bool.Implies : (arrow bool (arrow bool bool))) (~Int.Gt %0 #0) (~!= %0 #0))), ())] -/
 #guard_msgs in
 #eval collectWFObligations factoryWithImplies
-  (.quant () .all LMonoTy.int (.true ())
-    (.app () (.app () (.op () "Bool.Implies" .none)
-      (.app () (.app () (.op () "Int.Gt" .none) (.bvar () 0)) (.intConst () 0)))
-      (.app () (.app () (.op () "Int.Gt" .none)
-        (.app () (.app () (.op () "safeDiv" .none) (.fvar () "y" .none)) (.bvar () 0)))
-        (.intConst () 0))))
+  esM[∀ (int):{#true}
+    ((~Bool.Implies ((~Int.Gt %0) #0))
+      ((~Int.Gt ((~safeDiv y) %0)) #0))]
 
 end Lambda
