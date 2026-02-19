@@ -172,7 +172,6 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
   | none =>
     ctx.addSort { name := id, arity := args.length }
 
-
 mutual
 def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
   Except Format (TermType × SMT.Context) := do

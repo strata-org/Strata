@@ -39,8 +39,9 @@ procedure modifyContainerTransparant(c: Container)
   c#value := c#value + 1;
 }
 
-procedure caller(c: Container, d: Container) {
-  assume c != d;
+procedure caller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
   var x: int := d#value;
   modifyContainerOpaque(c)
   assert x == d#value; // pass
@@ -56,26 +57,27 @@ procedure caller(c: Container, d: Container) {
 //}
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: an opaque procedure that mutates the heap must have a modifies clause
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
    ensures true
 {
     modifyContainerTransparant(c)
 }
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+// the above error is because the body does not satisfy the modifies clause. error needs to be improved
   ensures true
   modifies d
-//         ^ error: assertion could not be proved
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
 {
     c#value := 2;
 }
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// the above error is because the body does not satisfy the modifies clause. error needs to be improved
   ensures true
   modifies d
-//         ^ error: assertion does not hold
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
 {
     modifyContainerTransparant(c)
 }
@@ -84,13 +86,20 @@ procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
   modifies c
   modifies d
 
-procedure multipleModifiesClausesCaller(c: Container, d: Container, e: Container) {
-  assume c != d;
-  assume d != e;
-  assume c != e;
+procedure multipleModifiesClausesCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var e: Container := new Container;
   var x: int := e#value;
   multipleModifiesClauses(c, d, e)
   assert x == e#value; // pass
+}
+
+procedure newObjectDoNotCountForModifies()
+  ensures true
+{
+  var c: Container := new Container;
+  c#value := 1;
 }
 "
 

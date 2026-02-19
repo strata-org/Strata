@@ -203,6 +203,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let target ← translateStmtExpr arg0
       let value ← translateStmtExpr arg1
       return mkStmtExprMd (.Assign [target] value) md
+    | q`Laurel.new, #[nameArg] =>
+      let name ← translateIdent nameArg
+      return mkStmtExprMd (.New name) md
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
