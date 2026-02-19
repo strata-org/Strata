@@ -2102,12 +2102,8 @@ theorem EvalStmtRefinesContract
   EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
   (RefinesContract_aux hmod).1 _ _ _ _ _ (Nat.le_refl _)
 
-/-- Currently we cannot prove this theorem,
-    since the WellFormedSemanticEval definition does not assert
-    a congruence relation for definedness on store
-    that is, if f(a) is defined, then a must be defined.
-    We work around this by requiring this condition at `EvalExpressions`.
-  -/
+/-- If an expression is defined, all its free variables are defined in the store.
+    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`. -/
 theorem EvalExpressionIsDefined :
   WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
@@ -2122,8 +2118,26 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case abs => sorry
-  case quant => sorry
-  case app => sorry
-  case ite => sorry
-  case eq => sorry
+  case abs m ty e ih =>
+    exact ih (Hwfc.absdef σ m ty e Hsome) v Hin
+  case quant m k ty tr e trih eih =>
+    have ⟨htr, he⟩ := Hwfc.quantdef σ m k ty tr e Hsome
+    rcases Hin with Hin | Hin
+    · exact trih htr v Hin
+    · exact eih he v Hin
+  case app m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.appdef σ m e₁ e₂ Hsome
+    rcases Hin with Hin | Hin
+    · exact ih₁ h₁ v Hin
+    · exact ih₂ h₂ v Hin
+  case ite m c t e cih tih eih =>
+    have ⟨hc, ht, he⟩ := Hwfc.itedef σ m c t e Hsome
+    rcases Hin with Hin | Hin | Hin
+    · exact cih hc v Hin
+    · exact tih ht v Hin
+    · exact eih he v Hin
+  case eq m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.eqdef σ m e₁ e₂ Hsome
+    rcases Hin with Hin | Hin
+    · exact ih₁ h₁ v Hin
+    · exact ih₂ h₂ v Hin
