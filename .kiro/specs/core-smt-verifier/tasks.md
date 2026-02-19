@@ -248,13 +248,13 @@ The implementation follows a phased approach, starting with prerequisites and fo
 - [x] 13. Checkpoint - Ensure public interface compiles and tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 14. B3 to Core Converter for Test Migration
-  - [ ] 14.1 Create `Strata/Languages/B3/ToCore.lean`
+- [x] 14. B3 to Core Converter for Test Migration
+  - [x] 14.1 Create `Strata/Languages/B3/ToCore.lean`
     - Implement `convertExpr : B3AST.Expression M → Core.Expression.Expr`
     - Handle literals, identifiers, binary/unary ops, ite, function calls, quantifiers, let expressions
     - _Requirements: 5.1, 5.2_
   
-  - [ ] 14.2 Implement `convertStmt : B3AST.Statement M → Core.Statement`
+  - [x] 14.2 Implement `convertStmt : B3AST.Statement M → Core.Statement`
     - B3 check → Core assert
     - B3 assert → Core assert
     - B3 assume → Core assume
@@ -262,12 +262,12 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - B3 blockStmt → Core block
     - _Requirements: 5.3_
   
-  - [ ] 14.3 Implement `convertFuncDecl : B3AST.FunctionDecl M → Core.Statement`
+  - [x] 14.3 Implement `convertFuncDecl : B3AST.FunctionDecl M → Core.Statement`
     - Convert function parameters and return type
     - Convert optional body
     - _Requirements: 5.4_
   
-  - [ ] 14.4 Implement `convertProgram : B3AST.Program M → List Core.Statement`
+  - [x] 14.4 Implement `convertProgram : B3AST.Program M → List Core.Statement`
     - Convert all function declarations and statements
     - _Requirements: 5.1_
   
