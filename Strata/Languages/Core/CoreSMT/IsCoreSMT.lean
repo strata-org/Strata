@@ -15,7 +15,7 @@ require alternative verification approaches (e.g., symbolic execution, loop
 elimination).
 -/
 
-namespace Core.CoreSMT
+namespace Strata.Core.CoreSMT
 
 open Imperative
 open Lambda
@@ -62,4 +62,4 @@ def isCoreSMTStmts : Core.Statements → Bool
   | s :: ss => isCoreSMTStmt s && isCoreSMTStmts ss
 end
 
-end Core.CoreSMT
+end Strata.Core.CoreSMT
