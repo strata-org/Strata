@@ -32,12 +32,12 @@ procedure typeCheckingAndCasting() {
   var c: Base := b;
   var d: Extender := c as Extender;
   var e: Extender := a as Extender;
-//                   ^^^^^^^^^^^^^ error: assertion does not hold
+//                   ^^^^^^^^^^^^^ error: assertion could not be proved
 
   b#xValue := 1;
   b#yValue := 2;
 }
 "
 
-#guard_msgs(drop info, error) in
+#guard_msgs (drop info) in
 #eval testInputWithOffset "Inheritance" program 14 processLaurelFile
