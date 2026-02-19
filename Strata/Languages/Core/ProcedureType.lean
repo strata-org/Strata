@@ -21,7 +21,7 @@ open Strata (DiagnosticModel FileRange)
 
 namespace Procedure
 
-def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
+private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if !proc.header.inputs.keys.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
@@ -30,7 +30,7 @@ def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
   if !proc.spec.modifies.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the modifies clause!"
 
-def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
+private def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if proc.spec.modifies.any (fun v => v ∈ proc.header.inputs.keys) then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \
@@ -47,6 +47,32 @@ def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
               not appear in the return values.\n\
               Formals: {proc.header.inputs.keys}\n\
               Returns: {proc.header.outputs.keys}"
+
+theorem checkNoDuplicates_ok {proc : Procedure} {sl : FileRange} {u : Unit} :
+    proc.checkNoDuplicates sl = Except.ok u →
+    proc.header.inputs.keys.Nodup ∧
+    proc.header.outputs.keys.Nodup ∧
+    proc.spec.modifies.Nodup := by
+  unfold checkNoDuplicates
+  simp only [bind, Except.bind, pure, Except.pure]
+  intro h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  simp_all
+
+theorem checkVariableScoping_ok {proc : Procedure} {sl : FileRange} {u : Unit} :
+    proc.checkVariableScoping sl = Except.ok u →
+    (ListMap.keys proc.header.inputs).Disjoint (ListMap.keys proc.header.outputs) := by
+  unfold checkVariableScoping
+  simp only [bind, Except.bind, pure, Except.pure]
+  intro h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  rename_i _ _ h_inp_out
+  simp [List.any_eq_true] at h_inp_out
+  exact List.Disjoint.symm (fun _ ha hb => h_inp_out _ hb ha)
 
 private def checkModifiesClause (proc : Procedure) (Env : Core.Expression.TyEnv)
     (sourceLoc : FileRange) : Except DiagnosticModel Unit := do
