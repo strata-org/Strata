@@ -72,13 +72,21 @@ structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
       δ σ e₂ = δ σ' e₂' →
       δ σ e₃ = δ σ' e₃' →
       (δ σ (.ite m e₃ e₁ e₂) = δ σ' (.ite m e₃' e₁' e₂')))
-    /-- If a compound expression is defined, its subexpressions are defined. -/
-    absdef:   (∀ σ m ty e, (δ σ (.abs m ty e)).isSome → (δ σ e).isSome)
-    appdef:   (∀ σ m e₁ e₂, (δ σ (.app m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
-    eqdef:    (∀ σ m e₁ e₂, (δ σ (.eq m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
-    quantdef: (∀ σ m k ty tr e, (δ σ (.quant m k ty tr e)).isSome → (δ σ tr).isSome ∧ (δ σ e).isSome)
-    itedef:   (∀ σ m c t e, (δ σ (.ite m c t e)).isSome → (δ σ c).isSome ∧ (δ σ t).isSome ∧ (δ σ e).isSome)
+    /-- Definedness-propagation properties for compound expressions. -/
+    definedness : WellFormedCoreEvalDefinedness δ
 
+/-- If a compound expression is defined, its subexpressions are defined. -/
+structure WellFormedCoreEvalDefinedness (δ : CoreEval) : Prop where
+  absdef:   (∀ σ m ty e, (δ σ (.abs m ty e)).isSome → (δ σ e).isSome)
+  appdef:   (∀ σ m e₁ e₂, (δ σ (.app m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
+  eqdef:    (∀ σ m e₁ e₂, (δ σ (.eq m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
+  quantdef: (∀ σ m k ty tr e, (δ σ (.quant m k ty tr e)).isSome → (δ σ tr).isSome ∧ (δ σ e).isSome)
+  itedef:   (∀ σ m c t e, (δ σ (.ite m c t e)).isSome → (δ σ c).isSome ∧ (δ σ t).isSome ∧ (δ σ e).isSome)
+
+/-- Bundle both congruence and definedness properties for a core evaluator. -/
+structure WellFormedCoreEval (δ : CoreEval) : Prop where
+  cong        : WellFormedCoreEvalCong δ
+  definedness : WellFormedCoreEvalDefinedness δ
 inductive EvalExpressions {P} [HasVarsPure P P.Expr] : SemanticEval P → SemanticStore P → List P.Expr → List P.Expr → Prop where
   | eval_none :
     EvalExpressions δ σ [] []
