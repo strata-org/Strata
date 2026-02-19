@@ -54,10 +54,6 @@ structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : Str
           proc.header.inputs.length = args.length
   outlen : (Program.Procedure.find? p (.unres procName) = some proc) →
           proc.header.outputs.length = lhs.length
-  lhsDisj : (Program.Procedure.find? p (.unres procName) = some proc) →
-          lhs.Disjoint (proc.spec.modifies ++ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
-  lhsWF : lhs.Nodup ∧ Forall (CoreIdent.isLocl ·) lhs
-  wfargs : Forall (WFargProp p) args
 
 def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
@@ -156,9 +152,6 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   modNodup : d.spec.modifies.Nodup
-  inputsLocl : Forall (CoreIdent.isLocl ·) (ListMap.keys d.header.inputs)
-  outputsLocl : Forall (CoreIdent.isLocl ·) (ListMap.keys d.header.outputs)
-  wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 @[simp]
