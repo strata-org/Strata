@@ -102,7 +102,7 @@ inductive HighType : Type where
   | THeap
   /-- Internal type for a field constant with a known value type. Introduced by the heap parameterization pass; not accessible via grammar. -/
   | TTypedField (valueType : WithMetadata HighType)
-  /-- Set type, e.g. `Set Composite`. Used in modifies clauses. -/
+  /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : WithMetadata HighType)
   /-- A reference to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
@@ -147,7 +147,7 @@ assumed unchanged if the read references are the same.
 inductive Determinism where
   /-- A deterministic procedure. The optional reads clause lists the heap locations the procedure may read. -/
   | deterministic (reads : Option (WithMetadata StmtExpr))
-  /-- A nondeterministic procedure. -/
+  /-- A nondeterministic procedure. They can read from the heap but there is no benefit from specifying a reads clause. -/
   | nondeterministic
 
 /--
@@ -318,7 +318,7 @@ structure Field where
   type : HighTypeMd
 
 /--
-A composite (class-like) type with fields and instance procedures.
+A composite defines a type with fields and instance procedures.
 
 Composite types may extend other composite types, forming a type hierarchy
 that affects the results of `IsType` and `AsType` operations.

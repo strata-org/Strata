@@ -62,14 +62,21 @@ On top of the above features, Laurel adds features that are useful specifically 
 - Unbounded integer and real types
 - To be designed constructs for supporting proof writing
 
+A peculiar choice of Laurel is that it does not require imperative code to be encapsulated using a functional specification. A reason for this is that sometimes the imperative code is as readable as the functional specification. For example:
+```
+procedure increment(counter: Counter)
+  // In Laurel, this ensures clause can be left out
+  ensures x.value == old(x.value) + 1
+{
+  x.value := x.value + 1;
+}
+```
+
+Another Laurel choice is that a procedure may only specify a postcondition when its body is opaque.
+
 ## Implementation Choices
 
-Here are some design choices that are more on the implementation than on the user facing level:
-
-- Procedures: instead of separate (functional) functions and (imperative) procedures, Laurel has a single general concept called a *procedure*.
-- Unified statements and expressions: statements and expressions share a single implementation type, the StmtExpr, reducing duplication for constructs like conditionals and variable declarations. Each StmtExpr has a user facing type, which for statement-like constructs could be void.
-- Determinism: procedures can be marked as deterministic or nondeterministic. For a non-deterministic procedure we can not assume that two invocations with the same inputs return the same result. For a deterministic procedure, if we invoke it twice with the same arguments, and the references specified in the reads clause have not changed between those two invocations, then we can assume both invocations return the same result.
-- Opacity: a procedure is either transparent or opaque. Only an opaque procedure may declare a postcondition. During symbolic verification, when calling a transparent procedure, the callee's body can be used for verification. When calling an opaque procedure, only the postcondition can be used for verification.
+A design choice that impacts the implementation of Laurel is that statements and expressions share a single implementation type, the StmtExpr. This reduces duplication for constructs like conditionals and variable declarations. Each StmtExpr has a user facing type, which for statement-like constructs could be void.
 
 # Types
 
