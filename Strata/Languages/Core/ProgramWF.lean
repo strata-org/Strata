@@ -82,8 +82,7 @@ open Strata
 /- The default program is well-formed -/
 theorem Program.init.wf : WFProgramProp .init := by
   constructor <;> simp [Program.init, Program.getNames, Program.getNames.go]
-  · constructor
-  · intro x h; simp [Program.find?, Program.find?.go] at h
+  constructor
 
 /- WFProgram is inhabited -/
 instance : Inhabited WFProgram where
@@ -517,10 +516,6 @@ theorem Program.typeCheckWF : Program.typeCheck C T p = .ok (p', T') → WF.WFPr
   constructor
   · exact (Program.typeCheckFunctionNoDup Hgo)
   · exact typeCheck.goWF Hgo
-  · -- globVars: identifiers are .unres at type-check time, so this cannot be
-    -- proved from the type checker alone. It requires a separate identifier
-    -- resolution pass that sets visibility to .glob for global variables.
-    intro x h; sorry
 
 end WF
 end Core

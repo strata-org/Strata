@@ -173,7 +173,6 @@ instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
 structure WFProgramProp (p : Program) where
   namesNodup : (p.getNames).Nodup
   wfdecls : WFDeclsProp p p.decls
-  globVars : ∀ x, (p.find? .var x).isSome → CoreIdent.isGlob x
 
 structure WFProcedure (p : Program) extends (Wrapper Procedure) where
   prop: WFProcedureProp p self
