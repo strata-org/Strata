@@ -36,17 +36,17 @@ bool procedure linearSearch (arr: intArr, e: int)
 
 /--
 info: program C_Simp;
-bool procedure linearSearch(arr:intArr, e:int)//@pretrue;
-//@posttrue;
+bool procedure linearSearch(arr:intArr, e:int)//@pre true;
+//@post true;
   ({
   varidx:int;
   idx=0;
   while(idx<(len(arr)))
-  //@decreases((len(arr))-idx)//@invariant(true)({
+  //@decreases ((len(arr))-idx)//@invariant true({
   if(e==(get(arr,idx))){
   returntrue;
   }
-  ()idx=idx+(1);
+  ()idx=idx+1;
   }
   )returnfalse;
   }

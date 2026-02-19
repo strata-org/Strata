@@ -535,21 +535,46 @@ def elabSyntaxDefAtom {argc} (argDecls : ArgDeclsMap argc) (defaultPrec : Nat) (
   | nm, _ =>
     return panic! s!"Syntax {nm.fullName} {children.size} {eformat info.op}"
 
+/-- Classify a single-token syntax for precedence handling.
+- `.ident`: single identifier reference (e.g., `=> v;`) — use passthrough
+- `.string`: single string literal (e.g., `=> "true";`) — use `maxPrec + 1`
+- `.standard`: anything else — use standard precedence -/
+private inductive SingleAtomKind | ident | string | standard
+
+private def classifySyntaxArgs (args : Array Tree) : SingleAtomKind :=
+  if h : args.size = 1 then
+    match args[0] with
+    | .node (.ofOperationInfo info) _ =>
+      match info.op.name with
+      | q`Init.syntaxAtomIdent => .ident
+      | q`Init.syntaxAtomString => .string
+      | _ => .standard
+    | _ => .standard
+  else .standard
+
 def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree) : ElabM SyntaxDef := do
   let (syntaxMetadata, success) ← runChecked <| translateOptMetadata! argDecls mdTree
   if !success then
     return default
 
-  let prec : Nat :=
-      match syntaxMetadata[q`StrataDDL.prec]? with
-      | some #[.num l] => l
-      | some _ => panic! "Unexpected precedence" -- FIXME
-      | none => maxPrec
   let op := tree.info.asOp!.op
 
   assert! tree.children.size = 1
   let .node (.ofSeqInfo _) args := tree[0]!
     | panic! s!"Expected many args"
+
+  -- Classify syntax before elaboration for precedence and passthrough decisions.
+  let singleAtomKind := classifySyntaxArgs args
+  let hasExplicitPrec := syntaxMetadata[q`StrataDDL.prec]?.isSome
+
+  let prec : Nat :=
+      match syntaxMetadata[q`StrataDDL.prec]? with
+      | some #[.num l] => l
+      | some _ => panic! "Unexpected precedence" -- FIXME
+      | none =>
+        match singleAtomKind with
+        | .string => maxPrec + 1
+        | _ => maxPrec
 
   let isLeftAssoc := q`StrataDDL.leftassoc ∈ syntaxMetadata
   let isRightAssoc := q`StrataDDL.rightassoc ∈ syntaxMetadata
@@ -583,13 +608,19 @@ def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree)
   if !success then
     return default
 
-  -- Check every argument is used.
+  -- Check every argument is used (including implicitly inferred type params).
   for i in Fin.range argDecls.decls.size do
     if i.val ∉ usedArgs then
       logError argDecls.decls[i].nameLoc s!"Argument is not elaborated."
       return default
 
-  return { atoms, prec }
+  -- Use passthrough for single-ident syntax without explicit precedence.
+  -- This runs after the argument-usage check so that polymorphic operators
+  -- with inferred type parameters are validated before simplification.
+  if !hasExplicitPrec && singleAtomKind matches .ident then
+    return .passthrough
+
+  return .std atoms prec
 
 structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/

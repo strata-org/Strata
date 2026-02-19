@@ -765,7 +765,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     checkLeftRec thisCatName argDecls (as.toList ++ bs)
   | .str _ :: _ =>
     .isLeading as
-  | .ident v argPrec _ :: rest => Id.run do
+  | .ident v argPrec :: rest => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
@@ -919,7 +919,7 @@ the first symbol.
 -/
 private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDecls) (o : SyntaxDefAtom) (r : Parser) : Parser :=
   match o with
-  | .ident v prec _ => Id.run do
+  | .ident v prec => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! s!"Invalid ident index {v} in bindings {eformat argDecls}"
     let addParser (p : Parser) :=
@@ -948,39 +948,54 @@ def opSyntaxParser (ctx : ParsingContext)
                    (argDecls : ArgDecls)
                    (opStx : SyntaxDef) : Except StrataFormat DeclParser := do
   let n := identName ident
-  let prec := opStx.prec
-  match checkLeftRec category argDecls opStx.atoms.toList with
-  | .invalid mf => throw mf
-  | .isTrailing minLeftPrec args =>
-    if args.isEmpty then
-      throw mf!"invalid atomic left recursive syntax"
-    let p := liftToKind ctx args argDecls
-    -- Run parsers so far and append parser for next op.
-    -- Parser for creating top level node
+  match opStx with
+  | .passthrough =>
+    -- Passthrough has a single `.ident 0 0` atom. Inline the
+    -- `checkLeftRec` logic: if the argument's category matches the
+    -- op's own category it would be trailing (left-recursive), but a
+    -- single-argument trailing op is degenerate, so we reject it.
+    let .isTrue lt := inferInstanceAs (Decidable (0 < argDecls.size))
+      | throw mf!"Passthrough syntax requires at least one argument"
+    let cat := argDecls[0].kind.categoryOf
+    if cat.name == category then
+      throw mf!"Passthrough syntax cannot be left-recursive"
+    let p := liftToKind ctx [.ident 0 0] argDecls
     pure {
       category,
-      outerPrec := prec,
-      isLeading := false,
-      parser := trailingNode n prec minLeftPrec p
-    }
-  | .isLeading [] =>
-    let fn (c : ParserContext) (s : ParserState) : ParserState :=
-      s.pushSyntax (.atom (emptySourceInfo c s.pos) "")
-    pure {
-      category,
-      outerPrec := prec,
+      outerPrec := maxPrec,
       isLeading := true,
-      parser := node n { fn := fn } >> setLhsPrec prec
+      parser := node n p >> setLhsPrec maxPrec
     }
-  | .isLeading args =>
-    let p := liftToKind ctx args argDecls
-    -- Parser for creating top level node
-    pure {
-      category,
-      outerPrec := prec,
-      isLeading := true,
-      parser := node n p >> setLhsPrec prec
-    }
+  | .std atoms prec =>
+    match checkLeftRec category argDecls atoms.toList with
+    | .invalid mf => throw mf
+    | .isTrailing minLeftPrec args =>
+      if args.isEmpty then
+        throw mf!"invalid atomic left recursive syntax"
+      let p := liftToKind ctx args argDecls
+      pure {
+        category,
+        outerPrec := prec,
+        isLeading := false,
+        parser := trailingNode n prec minLeftPrec p
+      }
+    | .isLeading [] =>
+      let fn (c : ParserContext) (s : ParserState) : ParserState :=
+        s.pushSyntax (.atom (emptySourceInfo c s.pos) "")
+      pure {
+        category,
+        outerPrec := prec,
+        isLeading := true,
+        parser := node n { fn := fn } >> setLhsPrec prec
+      }
+    | .isLeading args =>
+      let p := liftToKind ctx args argDecls
+      pure {
+        category,
+        outerPrec := prec,
+        isLeading := true,
+        parser := node n p >> setLhsPrec prec
+      }
 
 def fnDeclParser (ctx : ParsingContext) (dialect : DialectName) (decl : FunctionDecl) : Except StrataFormat DeclParser := do
   let ident := { dialect, name := decl.name }

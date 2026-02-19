@@ -21,7 +21,7 @@ fi
 for test_file in tests/test_*.py; do
     if [ -f "$test_file" ]; then
         base_name=$(basename "$test_file" .py)
-        
+
         # Skip tests if specified
         skip=0
         for skip_test in $skip_tests; do
@@ -32,14 +32,14 @@ for test_file in tests/test_*.py; do
             fi
         done
         [ $skip -eq 1 ] && continue
-        
+
         ion_file="tests/${base_name}.python.st.ion"
         expected_file="${expected_dir}/${base_name}.expected"
 
         if [ -f "$expected_file" ]; then
             (cd ../../../Tools/Python && python -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
 
-            output=$(cd ../../.. && ./.lake/build/bin/strata $command "StrataTest/Languages/Python/${ion_file}" 0)
+            output=$(cd ../../.. && ./.lake/build/bin/strata $command "StrataTest/Languages/Python/${ion_file}")
 
             if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
                 echo "ERROR: Analysis output for $base_name does not match expected result"

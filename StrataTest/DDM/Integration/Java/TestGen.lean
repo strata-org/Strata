@@ -32,7 +32,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
           { ident := "value", kind := .cat (.atom .none ⟨"Init", "Num"⟩) }
         ]
         category := ⟨"Test", "Expr"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       },
       .op {
         name := "add"
@@ -41,7 +41,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
           { ident := "rhs", kind := .cat (.atom .none ⟨"Test", "Expr"⟩) }
         ]
         category := ⟨"Test", "Expr"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }
@@ -65,7 +65,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
           { ident := "public", kind := .cat (.atom .none ⟨"Init", "Ident"⟩) }
         ]
         category := ⟨"Reserved", "Stmt"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }
@@ -85,7 +85,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
         name := "Expr"
         argDecls := .ofArray #[]
         category := ⟨"Collision", "expr"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }
@@ -102,10 +102,10 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     declarations := #[
       .syncat { name := "A", argNames := #[] },
       .syncat { name := "B", argNames := #[] },
-      .op { name := "foo", argDecls := .ofArray #[], category := ⟨"Dup", "A"⟩, syntaxDef := { atoms := #[], prec := 0 } },
-      .op { name := "foo", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := { atoms := #[], prec := 0 } },  -- Duplicate
-      .op { name := "class", argDecls := .ofArray #[], category := ⟨"Dup", "A"⟩, syntaxDef := { atoms := #[], prec := 0 } },
-      .op { name := "class_", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := { atoms := #[], prec := 0 } }  -- Would clash after escaping
+      .op { name := "foo", argDecls := .ofArray #[], category := ⟨"Dup", "A"⟩, syntaxDef := .std #[] 0 },
+      .op { name := "foo", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := .std #[] 0 },  -- Duplicate
+      .op { name := "class", argDecls := .ofArray #[], category := ⟨"Dup", "A"⟩, syntaxDef := .std #[] 0 },
+      .op { name := "class_", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := .std #[] 0 }  -- Would clash after escaping
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
@@ -120,7 +120,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     imports := #[]
     declarations := #[
       .syncat { name := "Node", argNames := #[] },  -- Collides with base class
-      .op { name := "leaf", argDecls := .ofArray #[], category := ⟨"Base", "Node"⟩, syntaxDef := { atoms := #[], prec := 0 } }
+      .op { name := "leaf", argDecls := .ofArray #[], category := ⟨"Base", "Node"⟩, syntaxDef := .std #[] 0 }
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
@@ -139,7 +139,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
         name := "my_operator"
         argDecls := .ofArray #[]
         category := ⟨"Snake", "my_category"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }
@@ -168,7 +168,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
           { ident := "seq", kind := .cat ⟨.none, ⟨"Init", "Seq"⟩, #[.atom .none ⟨"Init", "Ident"⟩]⟩ }
         ]
         category := ⟨"Types", "Node"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }
@@ -195,7 +195,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
         name := "test"
         argDecls := .ofArray #[]
         category := ⟨"FQN", "Node"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }
@@ -218,7 +218,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
           { ident := "e", kind := .cat (.atom .none ⟨"Init", "Expr"⟩) }  -- References Init.Expr
         ]
         category := ⟨"Stub", "Stmt"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }
@@ -255,7 +255,7 @@ elab "#testCoreError" : command => do
           { ident := "b", kind := .cat (.atom .none ⟨"B", "Num"⟩) }
         ]
         category := ⟨"A", "Num"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
+        syntaxDef := .std #[] 0
       }
     ]
   }

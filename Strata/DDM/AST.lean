@@ -695,22 +695,26 @@ def appPrec := 20
 def arrowPrec :=  17
 
 /--
-This describes how to format an operator.
+A token in a syntax definition.
 -/
 inductive SyntaxDefAtom
--- Format the argument with the given name.
--- Surround with parenthesis if the precedence of the argument is less than `prec`.
--- Note. If `prec` is zero, then parenthesis will never be added (even with pp.parens is true).
--- This is to avoid parens in categories that do not support them.
--- The unwrap parameter specifies if the value should be unwrapped to a raw type.
-| ident (level : Nat) (prec : Nat) (unwrap : Bool := false)
+/-- Argument reference. Parenthesizes when the argument's precedence is
+≤ `prec`; `prec = 0` disables parenthesization. -/
+| ident (level : Nat) (prec : Nat)
+/-- Literal string token. -/
 | str (lit : String)
+/-- Indented block of tokens. -/
 | indent (n : Nat) (args : Array SyntaxDefAtom)
 deriving BEq, Inhabited, Repr
 
-structure SyntaxDef where
-  atoms : Array SyntaxDefAtom
-  prec : Nat
+/--
+Syntax definition for an operator or function.
+-/
+inductive SyntaxDef
+/-- Standard syntax with explicit atoms and precedence. -/
+| std (atoms : Array SyntaxDefAtom) (prec : Nat)
+/-- Single-argument syntax that inherits the argument's precedence. -/
+| passthrough
 deriving BEq, Repr, Inhabited
 
 namespace SyntaxDef
@@ -729,14 +733,10 @@ def mkFunApp (name : String) (n : Nat) : SyntaxDef :=
       let atoms := (n-1).fold (init := atoms) fun i _ a =>
         a |>.push (.str ", ") |>.push (.ident (i+1) 0)
       atoms.push (.str ")")
-  {
-    atoms := atoms
-    prec := appPrec
-  }
+  .std atoms appPrec
 
-def ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec) : SyntaxDef where
-  atoms := atoms.toArray
-  prec := prec
+def ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec) : SyntaxDef :=
+  .std atoms.toArray prec
 
 end SyntaxDef
 
