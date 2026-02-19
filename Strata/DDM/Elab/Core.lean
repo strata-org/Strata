@@ -973,21 +973,6 @@ def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : Ela
       return default
   return ⟨stxArgs, stxArgP⟩
 
-/--
-Unwrap a tree to a raw Arg based on the unwrap specification.
--/
-def unwrapTree (tree : Tree) (unwrap : Bool) : Arg :=
-  if !unwrap then
-    tree.arg
-  else
-    match tree.info with
-    | .ofNumInfo info => .num info.loc info.val
-    | .ofIdentInfo info => .ident info.loc info.val
-    | .ofStrlitInfo info => .strlit info.loc info.val
-    | .ofDecimalInfo info => .decimal info.loc info.val
-    | .ofBytesInfo info => .bytes info.loc info.val
-    | _ => tree.arg  -- Fallback for non-unwrappable types
-
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -1014,11 +999,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
     ctx.push <$> evalBindingSpec loc initSize spec args
-  -- Apply unwrapping based on unwrapSpecs
-  let unwrappedArgs := args.toArray.mapIdx fun idx tree =>
-    let unwrap := se.unwrapSpecs.getD idx false
-    unwrapTree tree unwrap
-  let op : Operation := { ann := loc, name := i, args := unwrappedArgs }
+  let op : Operation := { ann := loc, name := i, args := args.toArray.map (·.arg) }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."
   let info : OperationInfo := { loc := loc, inputCtx := tctx, op, resultCtx }
