@@ -2024,7 +2024,25 @@ theorem EvalCallBodyRefinesContract :
   EvalCommandContract π δ σ (CmdExt.call lhs n args) σ' := by
   intros π φ δ σ lhs n args σ' p pFound modValid H
   cases H with
-  | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
+  | call_sem lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st Hdefover HinitIn HinitOut Hpre HevalBody Hpost HrdOutMod Hup2 =>
+    /-
+    Proof strategy (not yet completed):
+      The concrete semantics evaluates the body (σAO → σR), reads outputs ++
+      modifies from σR, and updates the caller store. The contract semantics
+      havocs outputs and modifies, checks postconditions, reads, and updates.
+
+      All premises except the two HavocVars are shared between concrete and
+      contract. Using the body result store σR as both σO and the final store
+      in the contract:
+        - HavocVars σR modifies σR holds by HavocVarsId (modifies are defined
+          in σR, witnessed by ReadValues).
+        - HavocVars σAO outputs σR requires a frame condition: the body only
+          modifies variables in outputs ++ modifies. The premise modValid
+          (p.spec.modifies = modifiedVarsTrans π p.body) provides this, but
+          connecting it to the operational semantics requires a separate
+          frame-condition theorem showing that EvalBlock only modifies
+          variables in modifiedVarsTrans.
+    -/
     sorry
 
 theorem EvalCommandRefinesContract
