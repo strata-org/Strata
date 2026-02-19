@@ -218,7 +218,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
               GOTO at a time!"
 
 open Strata in
-def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := do
+def getGotoJson (env : Program) : IO CProverGOTO.Json := do
   let (program, errors) := TransM.run Inhabited.default (translateProgram env)
   if errors.isEmpty then
     (match (CoreToGOTO.transformToGoto program) with
@@ -226,13 +226,16 @@ def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := 
         dbg_trace s!"{e}"
         return {}
       | .ok ctx =>
-        return (CProverGOTO.Context.toJson programName ctx))
+        -- Use the procedure name from the GOTO context so symbol table
+        -- entries match the variable names emitted by transformToGoto.
+        let procName := ctx.program.name
+        return (CProverGOTO.Context.toJson procName ctx))
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
 open Strata in
-def writeToGotoJson (programName symTabFileName gotoFileName : String) (env : Program) : IO Unit := do
-  let json ← getGotoJson programName env
+def writeToGotoJson (symTabFileName gotoFileName : String) (env : Program) : IO Unit := do
+  let json ← getGotoJson env
   IO.FS.writeFile symTabFileName json.symtab.pretty
   IO.FS.writeFile gotoFileName json.goto.pretty
 

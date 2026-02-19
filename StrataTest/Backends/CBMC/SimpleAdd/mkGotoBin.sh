@@ -6,7 +6,7 @@ rm -f *.gb
 
 echo "Writing out JSON files from a Strata Core program SimpleAdd"
 pushd ../../../../
-lake exe StrataCoreToGoto writeFiles
+lake exe StrataCoreToGoto --output-dir StrataTest/Backends/CBMC/SimpleAdd StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.core.st
 popd
 
 # Merge generated file ../simpleAdd.symtab.json with
