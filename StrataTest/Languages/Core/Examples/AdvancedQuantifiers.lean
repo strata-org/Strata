@@ -32,18 +32,16 @@ VCs:
 Label: a
 Property: assert
 Assumptions:
-
-(mapAllValues0, (∀ (∀ ((~select %1 %0) == #0))))
-Proof Obligation:
-((~select $__mArg0 $__kArg1) == #0)
+mapAllValues0: forall __q0 : (Map int int) :: forall __q1 : int :: __q0[__q1] == 0
+Obligation:
+$__mArg0[$__kArg1] == 0
 
 Label: Update_ensures_0
 Property: assert
 Assumptions:
-
-(mapAllValues0, (∀ (∀ ((~select %1 %0) == #0))))
-Proof Obligation:
-((~select $__mArg0 $__kArg1) == #0)
+mapAllValues0: forall __q0 : (Map int int) :: forall __q1 : int :: __q0[__q1] == 0
+Obligation:
+$__mArg0[$__kArg1] == 0
 
 ---
 info:

@@ -8,6 +8,7 @@
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.ProgramType
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 ---------------------------------------------------------------------
 
@@ -50,6 +51,21 @@ def typeCheck (options : Options) (program : Program)
     if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
     return program
 
+def formatProofObligation (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  let assumptionPairs := ob.assumptions.flatMap (·.toList)
+  let assumptionFmt := assumptionPairs.map fun (label, expr) =>
+    f!"{label}: {Core.formatExprs [expr]}"
+  let assumptionLine := if assumptionPairs.isEmpty then f!""
+                        else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
+  f!"Label: {ob.label}\n\
+     Property: {ob.property}{assumptionLine}\n\
+     Obligation:\n{Core.formatExprs [ob.obligation]}\n"
+
+def formatProofObligations (obs : Array (Imperative.ProofObligation Expression)) :
+    Std.Format :=
+  Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
+
 def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
@@ -68,11 +84,14 @@ def typeCheckAndPartialEval (options : Options) (program : Program)
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for (_p, E) in pEs do
-      dbg_trace f!"{ProofObligations.eraseTypes E.deferred}"
+      dbg_trace f!"{formatProofObligations E.deferred}"
   return pEs
 
 instance : ToString (Program) where
-  toString p := toString (Std.format p)
+  toString p := toString (Core.formatProgram p)
+
+instance : Std.ToFormat Program where
+  format := Core.formatProgram
 
 end Core
 

@@ -38,7 +38,6 @@ op typeClass (x : Ident, y : CommaSepBy SpecType) : SpecType => "class" "(" x ",
 op typeIntLiteral (x : Int) : SpecType => x;
 op typeStringLiteral (x : Str) : SpecType => x;
 op typeUnion (args : CommaSepBy SpecType) : SpecType => "union" "(" args ")";
-op typeNoneType : SpecType => "NoneType";
 op typeTypedDict (fields : CommaSepBy FieldDecl, isTotal : Bool): SpecType =>
   "dict" "(" fields ")" "[" "isTotal" "=" isTotal "]";
 
@@ -97,35 +96,34 @@ private def DDM.Int.ofDDM : DDM.Int α → _root_.Int
 
 mutual
 
-private def SpecAtomType.toDDM (d : SpecAtomType) : DDM.SpecType SourceRange :=
+private def SpecAtomType.toDDM (d : SpecAtomType) (loc : SourceRange := .none) : DDM.SpecType SourceRange :=
   match d with
   | .ident nm args =>
     if args.isEmpty then
-      .typeIdentNoArgs .none nm.toDDM
+      .typeIdentNoArgs loc nm.toDDM
     else
-      .typeIdent .none nm.toDDM ⟨.none, args.map (·.toDDM)⟩
+      .typeIdent loc nm.toDDM ⟨.none, args.map (·.toDDM)⟩
   | .pyClass name args =>
     if args.isEmpty then
-      .typeClassNoArgs .none ⟨.none, name⟩
+      .typeClassNoArgs loc ⟨.none, name⟩
     else
-      .typeClass .none ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
-  | .intLiteral i => .typeIntLiteral .none (toDDMInt .none i)
-  | .stringLiteral v => .typeStringLiteral .none ⟨.none, v⟩
-  | .noneType => .typeNoneType .none
+      .typeClass loc ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
+  | .intLiteral i => .typeIntLiteral loc (toDDMInt .none i)
+  | .stringLiteral v => .typeStringLiteral loc ⟨.none, v⟩
   | .typedDict fields types isTotal =>
     assert! fields.size = types.size
     let argc := types.size
     let a := Array.ofFn fun (⟨i, ilt⟩ : Fin argc) =>
       .mkFieldDecl .none ⟨.none, fields[i]!⟩ types[i].toDDM
-    .typeTypedDict .none ⟨.none, a⟩ ⟨.none, isTotal⟩
+    .typeTypedDict loc ⟨.none, a⟩ ⟨.none, isTotal⟩
 termination_by sizeOf d
 
 private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
   assert! d.atoms.size > 0
   if p : d.atoms.size = 1 then
-    d.atoms[0].toDDM
+    d.atoms[0].toDDM (loc := d.loc)
   else
-    .typeUnion .none ⟨.none, d.atoms.map (·.toDDM)⟩
+    .typeUnion d.loc ⟨.none, d.atoms.map (·.toDDM)⟩
 termination_by sizeOf d
 decreasing_by
   all_goals {
@@ -160,40 +158,41 @@ private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
 
 private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
-  | .typeClassNoArgs _ ⟨_, cl⟩ =>
-    .ofAtom <| .pyClass cl #[]
-  | .typeClass _ ⟨_, cl⟩ ⟨_, args⟩ =>
+  | .typeClassNoArgs loc ⟨_, cl⟩ =>
+    .ofAtom loc <| .pyClass cl #[]
+  | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
-    .ofAtom <| .pyClass cl a
-  | .typeIdentNoArgs _ ⟨_, ident⟩ =>
+    .ofAtom loc <| .pyClass cl a
+  | .typeIdentNoArgs loc ⟨_, ident⟩ =>
     if let some pyIdent := PythonIdent.ofString ident then
-      .ident pyIdent #[]
+      .ident loc pyIdent #[]
     else
       panic! "Bad identifier"
-  | .typeIdent _ ⟨_, ident⟩ ⟨_, args⟩ =>
+  | .typeIdent loc ⟨_, ident⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
     if let some pyIdent := PythonIdent.ofString ident then
-      .ident pyIdent a
+      .ident loc pyIdent a
     else
       panic! "Bad identifier"
-  | .typeIntLiteral _ i => .ofAtom <| .intLiteral i.ofDDM
-  | .typeNoneType _ => .ident .noneType
-  | .typeStringLiteral _ ⟨_, s⟩ => .ofAtom <| .stringLiteral s
-  | .typeTypedDict _ ⟨_, fields⟩ ⟨_, isTotal⟩ =>
+  | .typeIntLiteral loc i => .ofAtom loc <| .intLiteral i.ofDDM
+  | .typeStringLiteral loc ⟨_, s⟩ => .ofAtom loc <| .stringLiteral s
+  | .typeTypedDict loc ⟨_, fields⟩ ⟨_, isTotal⟩ =>
     let names := fields.map fun (.mkFieldDecl _ ⟨_, name⟩ _) => name
     let types := fields.attach.map fun ⟨.mkFieldDecl _ _ tp, mem⟩ => tp.fromDDM
-    .ofAtom <| .typedDict names types isTotal
-  | .typeUnion _ ⟨_, args⟩ =>
+    .ofAtom loc <| .typedDict names types isTotal
+  | .typeUnion loc ⟨_, args⟩ =>
     if p : args.size > 0 then
-      args.foldl (init := args[0].fromDDM) fun a b => a ||| b.fromDDM
+      args.attach.foldl (init := args[0].fromDDM) (start := 1)
+        fun a ⟨b, mem⟩ => SpecType.union loc a b.fromDDM
     else
       panic! "Expected non-empty union"
 termination_by sizeOf d
 decreasing_by
   · decreasing_tactic
   · decreasing_tactic
-  · have szp := Array.sizeOf_lt_of_mem mem
-    simp_all
+  · rename_i _ ann nm
+    have szp : 1 + sizeOf ann + sizeOf nm + sizeOf tp < sizeOf fields :=
+       Array.sizeOf_lt_of_mem mem
     decreasing_tactic
   · decreasing_tactic
   · decreasing_tactic

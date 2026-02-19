@@ -6,7 +6,7 @@
 
 import Strata.DDM.Elab
 import Strata.DDM.AST
-import Strata.Languages.Core.DDMTransform.Parse
+import Strata.Languages.Core.DDMTransform.Grammar
 import Strata.Languages.Core.Verifier
 
 namespace Strata
@@ -329,6 +329,10 @@ spec {
   assert [assert_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
   assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
   assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
+};
+
+datatype PyAnyType () {
+  PyAnyType_Inhabitant()
 };
 
 #end

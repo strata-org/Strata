@@ -14,7 +14,7 @@ Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
 The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
-and a `counter: int` for allocating new objects. Box is a sum type with constructors for each
+and a `nextReference: int` for allocating new objects. Box is a sum type with constructors for each
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
@@ -291,15 +291,14 @@ where
       let args' ← args.mapM (recurse ·)
       return ⟨ .PrimitiveOp op args', md ⟩
     | .New name =>
-        -- Allocate a new object: get the current counter, increment it, return MkComposite(oldCounter, TypeName_UserType)
-        -- 1. Save the current counter: $freshVar := Heap..counter(heapVar)
-        -- 2. Update the heap with incremented counter: heapVar := MkHeap(Heap..data(heapVar), Heap..counter(heapVar) + 1)
-        -- 3. Result is MkComposite($freshVar, TypeName_UserType)
+        -- Allocate a new object: get the current nextReference, increment it, return MkComposite(oldCounter, TypeName_UserType)
+        -- 1. Save the current nextReference: $freshVar := Heap..nextReference(heapVar)
+        -- 2. Update the heap with incremented nextReference: heapVar := increment(heapVar)
+        -- 3. MkComposite($freshVar, TypeName_UserType)
         let freshVar ← freshVarName
-        let getCounter := mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)])
+        let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
         let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
-        let newCounter := mkMd (.PrimitiveOp .Add [mkMd (.StaticCall "Heap..counter" [mkMd (.Identifier heapVar)]), mkMd (.LiteralInt 1)])
-        let newHeap := mkMd (.StaticCall "MkHeap" [mkMd (.StaticCall "Heap..data" [mkMd (.Identifier heapVar)]), newCounter])
+        let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
         -- Create the Composite value with the type tag
         let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.Identifier (name ++ "_UserType"))])

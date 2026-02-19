@@ -134,6 +134,11 @@ jobs:
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
+      - name: Check for broken links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress --exclude-path '.*/find/.*' docs/verso/_out/
+          fail: true
 
   build_python:
     name: Build and test Python
