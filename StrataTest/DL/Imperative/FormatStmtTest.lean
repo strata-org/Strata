@@ -28,8 +28,8 @@ private def xEq5 : E := .eq () x (.intConst () 5)
 private def xEq1 : E := .eq () x int1
 
 -- 1. cmd: init
-/-- info: init (x : int) := #0 -/
-#guard_msgs in #eval! format (Statement.init "x" intTy int0 : S)
+/-- info: init (x : int) := some #0 -/
+#guard_msgs in #eval! format (Statement.init "x" intTy (some int0) : S)
 
 -- 2. cmd: set
 /-- info: x := #42 -/

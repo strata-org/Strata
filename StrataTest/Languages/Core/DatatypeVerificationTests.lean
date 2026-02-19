@@ -237,10 +237,10 @@ def test3_destructorFunctions : IO String := do
 
     -- Extract value from Some
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ())
+      (some (LExpr.app ()
         (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert that val == 42
     Statement.assert "val_is_42"
@@ -259,10 +259,10 @@ def test3_destructorFunctions : IO String := do
 
     -- Extract head
     Statement.init (CoreIdent.unres "head") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ())
+      (some (LExpr.app ()
         (LExpr.op () (CoreIdent.unres "List..hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int]))))),
 
     -- Assert head == 1
     Statement.assert "head_is_1"
@@ -299,7 +299,7 @@ def test4_nestedDatatypes : IO String := do
     -- Create a List of Option: Cons(Some(42), Nil)
     Statement.init (CoreIdent.unres "listOfOpt")
       (.forAll [] (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))
-      (LExpr.app ()
+      (some (LExpr.app ()
         (LExpr.app ()
           (LExpr.op () (CoreIdent.unres "Cons")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int])
@@ -310,7 +310,7 @@ def test4_nestedDatatypes : IO String := do
               (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
             (LExpr.intConst () 42)))
         (LExpr.op () (CoreIdent.unres "Nil")
-          (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
+          (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))))),
 
     -- Assert that the list is Cons
     Statement.assert "list_is_cons"
@@ -330,11 +330,11 @@ def test4_nestedDatatypes : IO String := do
 
     -- Extract the value from the Option
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ())
+      (some (LExpr.app ()
         (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
         (LExpr.fvar () (CoreIdent.unres "headOpt")
-          (.some (LMonoTy.tcons "Option" [.int])))),
+          (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert that the extracted value is 42
     Statement.assert "value_is_42"
@@ -433,10 +433,10 @@ def test6_destructorWithHavoc : IO String := do
 
     -- Extract value
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ())
+      (some (LExpr.app ()
         (LExpr.op () (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert val == 42
     Statement.assert "val_is_42"
@@ -522,7 +522,7 @@ def test8_hiddenTypeRecursion : IO String := do
     -- Initialize with Empty Container - note we NEVER use Hidden directly
     Statement.init (CoreIdent.unres "container")
       (.forAll [] (LMonoTy.tcons "Container" [.int]))
-      (LExpr.op () (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int]))),
+      (some (LExpr.op () (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int])))),
 
     -- Havoc the container to make it non-deterministic
     Statement.havoc (CoreIdent.unres "container"),
@@ -539,10 +539,10 @@ def test8_hiddenTypeRecursion : IO String := do
 
     -- Extract the visible part
     Statement.init (CoreIdent.unres "Container..visiblePart") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ())
+      (some (LExpr.app ()
         (LExpr.op () (CoreIdent.unres "Container..visiblePart")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Assume the visible part has a specific value
     Statement.assume "visible_part_is_42"
@@ -703,10 +703,10 @@ def test9_mutualRecursiveWithHavoc : IO String := do
 
     -- Extract nodeVal
     Statement.init (CoreIdent.unres "val") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ())
+      (some (LExpr.app ()
         (LExpr.op () (CoreIdent.unres "RoseTree..nodeVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int]))))),
 
     -- Assume val == 42
     Statement.assume "val_is_42"
