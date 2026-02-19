@@ -121,10 +121,10 @@ Assumptions:
 counter_ge_zero: $__counter4 >= 0
 (Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
 (Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
-(Origin_Inc_Ensures)new_g_value: $__counter8 == $__counter7 + 8
-(Origin_Inc_Ensures)old_g_property: $__b7 - 8 == $__counter7
+(Origin_Inc_Ensures)new_g_value: $__counter9 == $__counter7 + 8
+(Origin_Inc_Ensures)old_g_property: $__b8 - 8 == $__counter7
 Obligation:
-$__b7 == $__counter4 + 16
+$__b8 == $__counter4 + 16
 
 Label: assert_0
 Property: assert
