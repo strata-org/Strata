@@ -2242,32 +2242,59 @@ theorem EvalCallBodyRefinesContract :
     rename_i σ₀' vals' oVals' σA' σAO' σR' p' modvals' δ''
     have Hpeq : p' = p := by rw [lkup] at pFound; exact Option.some.inj pFound
     subst Hpeq
-    -- Use σAO' as σO (identity havoc) and σR' as the contract's final store
-    refine EvalCommandContract.call_sem (σO := σAO') (σR := σR')
+    -- Frame condition: body preserves non-modified, non-defined variables
+    have Hframe := EvalBlockFrameCondition HevalBody modValidAll
+    -- Construct contract store: agrees with σR' on modifies, σAO' elsewhere
+    -- This avoids the issue with init'd locals (which are in σR' but not σAO')
+    let modifies := p'.spec.modifies
+    let σC : CoreStore := fun k =>
+      if k ∈ modifies then σR' k else σAO' k
+    -- Key property: σC agrees with σR' on all variables defined in σAO'
+    -- (because for k defined in σAO' and k ∉ modifies, frame condition gives σR' k = σAO' k)
+    have HσC_eq_σR : ∀ k, (σAO' k).isSome → σC k = σR' k := by
+      intro k hk
+      change (if k ∈ modifies then σR' k else σAO' k) = σR' k
+      split
+      · rfl
+      · rename_i hkm
+        -- k is defined in σAO' and k ∉ modifies
+        -- By frame condition: σR' k = σAO' k (if also k ∉ definedVarsTrans)
+        -- But k is defined in σAO', so it wasn't created by init (init requires none → some)
+        -- Therefore k ∉ definedVarsTrans
+        have hkm' : k ∉ Statements.modifiedVarsTrans π p'.body := by
+          change k ∉ HasVarsTrans.modifiedVarsTrans π p'.body
+          rw [← modValid]; exact hkm
+        symm; apply Hframe k hkm'
+        -- Need: k ∉ definedVarsTrans — because k is already defined in σAO'
+        sorry
+    -- Use σAO' as σO and σC as the contract's final store
+    refine EvalCommandContract.call_sem (σO := σAO') (σR := σC)
       lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st
-      Hdefover HinitIn HinitOut Hpre ?_ ?_ Hpost HrdOutMod Hup2
+      Hdefover HinitIn HinitOut Hpre ?_ ?_ ?_ ?_ Hup2
     -- HavocVars σAO' outputs σAO' (identity havoc)
     · exact HavocVarsId HdefOutAO
-    -- HavocVars σAO' modifies σR'
-    · /-
-      This requires showing σR' is reachable from σAO' by updating only
-      the modifies variables. Two obstacles remain:
-        a) The body may create local variables via `init`, so σR' may have
-           variables that σAO' doesn't. HavocVars uses UpdateState which
-           preserves non-target variables, so HavocVars σAO' modifies σR'
-           requires σR' k = σAO' k for k ∉ modifies — which fails for
-           init'd locals. Solution: use a custom store σC that agrees with
-           σR' on modifies and σAO' elsewhere, then prove postconditions
-           and ReadValues hold on σC (needs WellFormedSemanticEvalExprCongr
-           or a proof that postconditions don't reference body-local vars).
-        b) Need isDefined σAO' modifies — modifies variables must be defined
-           in σAO' before the body runs. This should follow from
-           isDefinedOver + InitStates but needs a connecting lemma.
-      The frame condition EvalBlockFrameCondition (stated above) provides
-      the core semantic property, but the full proof also needs evaluator
-      congruence to transfer postconditions to the custom store.
-      -/
+    -- HavocVars σAO' modifies σC
+    · apply HavocVarsFromAgree
+      · -- isDefined σAO' modifies: modifies vars are defined in σAO'
+        sorry
+      · -- isDefined σC modifies
+        intro k hk
+        change ((if k ∈ modifies then σR' k else σAO' k) : Option _).isSome = true
+        rw [if_pos hk]; exact HdefMod k hk
+      · -- σC agrees with σAO' outside modifies
+        intro k hk
+        change (if k ∈ modifies then σR' k else σAO' k) = σAO' k
+        rw [if_neg hk]
+    -- Postconditions hold on σC
+    · intro post Hcontains
+      have ⟨Hdefpost, Hpostval⟩ := Hpost post Hcontains
+      refine ⟨Hdefpost, ?_⟩
+      -- Need: δ σC post = δ σR' post (then use Hpostval)
+      -- σC and σR' agree on all variables defined in σAO', and
+      -- Hdefpost says post's variables are defined in σAO'
       sorry
+    -- ReadValues σC (outputs ++ modifies) modvals'
+    · sorry
 
 theorem EvalCommandRefinesContract
   (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
