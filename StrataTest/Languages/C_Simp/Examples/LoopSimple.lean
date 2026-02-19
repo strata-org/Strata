@@ -126,14 +126,6 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: assert_entry_invariant_calls_Int.Div_0
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-pre: $__n0 >= 0
-Obligation:
-true
-
 Label: entry_invariant
 Property: assert
 Assumptions:
@@ -149,15 +141,6 @@ Assumptions:
 pre: $__n0 >= 0
 Obligation:
 $__n0 - 0 >= 0
-
-Label: assume_assume_invariant_calls_Int.Div_0
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-pre: $__n0 >= 0
-Obligation:
-true
 
 Label: measure_decreases
 Property: assert
@@ -181,17 +164,6 @@ pre: $__n0 >= 0
 Obligation:
 if $__n0 - ($__i3 + 1) <= 0 then !($__i3 + 1 < $__n0) else true
 
-Label: assert_arbitrary_iter_maintain_invariant_calls_Int.Div_0
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: $__n0 - $__i3 >= 0
-pre: $__n0 >= 0
-Obligation:
-true
-
 Label: arbitrary_iter_maintain_invariant
 Property: assert
 Assumptions:
@@ -202,32 +174,6 @@ assume_measure_pos: $__n0 - $__i3 >= 0
 pre: $__n0 >= 0
 Obligation:
 $__i3 + 1 <= $__n0 && ($__i3 + 1) * ($__i3 + 1 - 1) div 2 == $__sum2 + $__i3
-
-Label: assume_invariant_calls_Int.Div_0
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: $__n0 - $__i3 >= 0
-not_guard: !($__i5 < $__n0)
-pre: $__n0 >= 0
-Obligation:
-true
-
-Label: assert_sum_assert_calls_Int.Div_0
-Property: assert
-Assumptions:
-pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
-assume_guard: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant: if 0 < $__n0 then ($__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2) else true
-assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i3 >= 0) else true
-not_guard: if 0 < $__n0 then !($__i5 < $__n0) else true
-invariant: if 0 < $__n0 then ($__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4) else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
-Obligation:
-true
 
 Label: sum_assert
 Property: assert
@@ -259,19 +205,11 @@ true
 
 ---
 info:
-Obligation: assert_entry_invariant_calls_Int.Div_0
-Property: assert
-Result: ✅ pass
-
 Obligation: entry_invariant
 Property: assert
 Result: ✅ pass
 
 Obligation: assert_measure_pos
-Property: assert
-Result: ✅ pass
-
-Obligation: assume_assume_invariant_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 
@@ -283,19 +221,7 @@ Obligation: measure_imp_not_guard
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_arbitrary_iter_maintain_invariant_calls_Int.Div_0
-Property: assert
-Result: ✅ pass
-
 Obligation: arbitrary_iter_maintain_invariant
-Property: assert
-Result: ✅ pass
-
-Obligation: assume_invariant_calls_Int.Div_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_sum_assert_calls_Int.Div_0
 Property: assert
 Result: ✅ pass
 

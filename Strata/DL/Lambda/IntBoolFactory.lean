@@ -155,20 +155,24 @@ def intMulFunc : LFunc T :=
   binaryOp "Int.Mul" .int
   (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.mul))
 
-def intDivFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
-  -- Precondition: y != 0
+def intDivFunc : LFunc T :=
+  binaryOp "Int.Div" .int (some cevalIntDiv)
+
+def intSafeDivFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
   let yVar : LExpr T.mono := .fvar default "y" (some .int)
   let zero : LExpr T.mono := .intConst default 0
   let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
-  { binaryOp "Int.Div" .int (some cevalIntDiv) with
+  { binaryOp "Int.SafeDiv" .int (some cevalIntDiv) with
     preconditions := [⟨yNeZero, default⟩] }
 
-def intModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
-  -- Precondition: y != 0
+def intModFunc : LFunc T :=
+  binaryOp "Int.Mod" .int (some cevalIntMod)
+
+def intSafeModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
   let yVar : LExpr T.mono := .fvar default "y" (some .int)
   let zero : LExpr T.mono := .intConst default 0
   let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
-  { binaryOp "Int.Mod" .int (some cevalIntMod) with
+  { binaryOp "Int.SafeMod" .int (some cevalIntMod) with
     preconditions := [⟨yNeZero, default⟩] }
 
 def intDivTFunc : LFunc T :=
@@ -206,7 +210,9 @@ def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T :=
     intSubFunc,
     intMulFunc,
     intDivFunc,
+    intSafeDivFunc,
     intModFunc,
+    intSafeModFunc,
     intDivTFunc,
     intModTFunc,
     intNegFunc,

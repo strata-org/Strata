@@ -16,7 +16,7 @@ program Core;
 procedure sum(n : int) returns (s : int)
 spec {
   requires (n >= 0);
-  ensures (s == ((n * (n + 1)) div 2));
+  ensures (s == ((n * (n + 1)) / 2));
 }
 {
   var i : int;
@@ -25,7 +25,7 @@ spec {
   while (i < n)
     invariant 0 <= i
     invariant i <= n
-    invariant s == (i * (i + 1)) div 2
+    invariant s == (i * (i + 1)) / 2
   {
     i := (i + 1);
     s := (s + i);
@@ -38,14 +38,14 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: sum_post_sum_ensures_1_calls_Int.Div_0
+Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 sum_requires_0: $__n0 >= 0
 Obligation:
 true
 
-Label: loop_invariant_calls_Int.Div_0
+Label: loop_invariant_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 sum_requires_0: $__n2 >= 0
@@ -65,10 +65,10 @@ Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
 assume_guard_0: $__i4 < $__n2
-assume_invariant_0: 0 <= $__i4 && $__i4 <= $__n2 && $__s5 == $__i4 * ($__i4 + 1) div 2
+assume_invariant_0: 0 <= $__i4 && $__i4 <= $__n2 && $__s5 == $__i4 * ($__i4 + 1) / 2
 sum_requires_0: $__n2 >= 0
 Obligation:
-0 <= $__i4 + 1 && $__i4 + 1 <= $__n2 && $__s5 + ($__i4 + 1) == ($__i4 + 1) * ($__i4 + 1 + 1) div 2
+0 <= $__i4 + 1 && $__i4 + 1 <= $__n2 && $__s5 + ($__i4 + 1) == ($__i4 + 1) * ($__i4 + 1 + 1) / 2
 
 Label: sum_ensures_1
 Property: assert
@@ -76,20 +76,20 @@ Assumptions:
 sum_requires_0: $__n2 >= 0
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then (0 < $__n2) else true
 assume_guard_0: if 0 < $__n2 then ($__i4 < $__n2) else true
-assume_invariant_0: if 0 < $__n2 then (0 <= $__i4 && $__i4 <= $__n2 && $__s5 == $__i4 * ($__i4 + 1) div 2) else true
+assume_invariant_0: if 0 < $__n2 then (0 <= $__i4 && $__i4 <= $__n2 && $__s5 == $__i4 * ($__i4 + 1) / 2) else true
 not_guard_0: if 0 < $__n2 then !($__i6 < $__n2) else true
-invariant_0: if 0 < $__n2 then (0 <= $__i6 && $__i6 <= $__n2 && $__s7 == $__i6 * ($__i6 + 1) div 2) else true
+invariant_0: if 0 < $__n2 then (0 <= $__i6 && $__i6 <= $__n2 && $__s7 == $__i6 * ($__i6 + 1) / 2) else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
 Obligation:
-if 0 < $__n2 then $__s7 else 0 == $__n2 * ($__n2 + 1) div 2
+if 0 < $__n2 then $__s7 else 0 == $__n2 * ($__n2 + 1) / 2
 
 ---
 info:
-Obligation: sum_post_sum_ensures_1_calls_Int.Div_0
+Obligation: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 
-Obligation: loop_invariant_calls_Int.Div_0
+Obligation: loop_invariant_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 

@@ -358,7 +358,9 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Int.Sub"      => .ok (.app Op.sub,        .int ,   ctx)
     | "Int.Mul"      => .ok (.app Op.mul,        .int ,   ctx)
     | "Int.Div"      => .ok (.app Op.div,        .int ,   ctx)
+    | "Int.SafeDiv"  => .ok (.app Op.div,        .int ,   ctx)
     | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
+    | "Int.SafeMod"  => .ok (.app Op.mod,        .int ,   ctx)
     -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
     | "Int.DivT"     =>
       let divTApp := fun (args : List Term) (retTy : TermType) =>

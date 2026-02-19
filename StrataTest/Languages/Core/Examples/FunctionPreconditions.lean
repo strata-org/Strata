@@ -17,7 +17,7 @@ program Core;
 
 function safeDiv(x : int, y : int) : int
   requires y != 0;
-{ x div y }
+{ x / y }
 
 #end
 
@@ -26,7 +26,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: safeDiv_body_calls_Int.Div_0
+Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 precond_safeDiv_0: !($__y1 == 0)
@@ -34,7 +34,7 @@ Obligation:
 !($__y1 == 0)
 
 ---
-info: Obligation: safeDiv_body_calls_Int.Div_0
+info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 -/
@@ -152,8 +152,8 @@ program Core;
 
 function foo(x : int, y : int) : int
   requires y > 0;
-  requires (x div y) > 0;
-{ x div y }
+  requires (x / y) > 0;
+{ x / y }
 
 #end
 
@@ -162,27 +162,27 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: foo_precond_calls_Int.Div_0
+Label: foo_precond_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 precond_foo_0: $__y1 > 0
 Obligation:
 !($__y1 == 0)
 
-Label: foo_body_calls_Int.Div_0
+Label: foo_body_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 precond_foo_0: $__y1 > 0
-precond_foo_1: $__x0 div $__y1 > 0
+precond_foo_1: $__x0 / $__y1 > 0
 Obligation:
 !($__y1 == 0)
 
 ---
-info: Obligation: foo_precond_calls_Int.Div_0
+info: Obligation: foo_precond_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 
-Obligation: foo_body_calls_Int.Div_0
+Obligation: foo_body_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 -/
@@ -199,7 +199,7 @@ program Core;
 function doubleDiv(x : int, y : int, z : int) : int
   requires y != 0;
   requires z != 0;
-{ (x div y) div z }
+{ (x / y) / z }
 
 #end
 
@@ -208,7 +208,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: doubleDiv_body_calls_Int.Div_0
+Label: doubleDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 precond_doubleDiv_0: !($__y1 == 0)
@@ -216,7 +216,7 @@ precond_doubleDiv_1: !($__z2 == 0)
 Obligation:
 !($__z2 == 0)
 
-Label: doubleDiv_body_calls_Int.Div_1
+Label: doubleDiv_body_calls_Int.SafeDiv_1
 Property: assert
 Assumptions:
 precond_doubleDiv_0: !($__y1 == 0)
@@ -226,11 +226,11 @@ Obligation:
 
 ---
 info:
-Obligation: doubleDiv_body_calls_Int.Div_0
+Obligation: doubleDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 
-Obligation: doubleDiv_body_calls_Int.Div_1
+Obligation: doubleDiv_body_calls_Int.SafeDiv_1
 Property: assert
 Result: ✅ pass
 -/
@@ -244,7 +244,7 @@ def funcCallsFuncFailPgm :=
 program Core;
 
 function badDiv(x : int) : int
-{ x div 0 }
+{ x / 0 }
 
 #end
 
@@ -253,14 +253,14 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: badDiv_body_calls_Int.Div_0
+Label: badDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Obligation:
 false
 
 
 
-Result: Obligation: badDiv_body_calls_Int.Div_0
+Result: Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Result: ❌ fail
 
@@ -268,15 +268,15 @@ Result: ❌ fail
 [DEBUG] Evaluated program:
 procedure |badDiv$$wf| (x : int) returns ()
 {
-  assert [badDiv_body_calls_Int.Div_0]: false;
+  assert [badDiv_body_calls_Int.SafeDiv_0]: false;
   };
 function badDiv (x : int) : int {
-  x div 0
+  x / 0
 }
 
 ---
 info:
-Obligation: badDiv_body_calls_Int.Div_0
+Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Result: ❌ fail
 -/
@@ -290,7 +290,7 @@ program Core;
 
 procedure test() returns ()
 {
-  var z : int := 10 div 2;
+  var z : int := 10 / 2;
 };
 
 #end
@@ -300,13 +300,13 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: init_calls_Int.Div_0
+Label: init_calls_Int.SafeDiv_0
 Property: assert
 Obligation:
 true
 
 ---
-info: Obligation: init_calls_Int.Div_0
+info: Obligation: init_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 -/
@@ -322,7 +322,7 @@ procedure test(a : int) returns ()
 {
   var z : int;
   if (a > 0) {
-    z := 10 div a;
+    z := 10 / a;
   } else {
   }
 };
@@ -334,7 +334,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: set_z_calls_Int.Div_0
+Label: set_z_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Gt a #0)>: $__a0 > 0
@@ -342,7 +342,7 @@ Obligation:
 !($__a0 == 0)
 
 ---
-info: Obligation: set_z_calls_Int.Div_0
+info: Obligation: set_z_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 -/
@@ -356,7 +356,7 @@ program Core;
 
 function safeDiv(x : int, y : int) : int
   requires y != 0;
-{ x div y }
+{ x / y }
 
 procedure test(a : int) returns ()
 {
@@ -371,7 +371,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: safeDiv_body_calls_Int.Div_0
+Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 precond_safeDiv_0: !($__y1 == 0)
@@ -386,7 +386,7 @@ Obligation:
 !($__a2 == 0)
 
 ---
-info: Obligation: safeDiv_body_calls_Int.Div_0
+info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 
@@ -406,7 +406,7 @@ program Core;
 
 function safeDiv(x : int, y : int) : int
   requires y != 0;
-{ x div y }
+{ x / y }
 
 function allPositiveDiv(y : int) : bool
   requires y >= 0;
@@ -419,7 +419,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: safeDiv_body_calls_Int.Div_0
+Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
 precond_safeDiv_0: !($__y1 == 0)
@@ -434,7 +434,7 @@ Obligation:
 forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
 
 ---
-info: Obligation: safeDiv_body_calls_Int.Div_0
+info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 

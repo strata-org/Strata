@@ -505,6 +505,8 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .int, q`Core.mul_expr => return Core.intMulOp
   | .some .int, q`Core.div_expr => return Core.intDivOp
   | .some .int, q`Core.mod_expr => return Core.intModOp
+  | .some .int, q`Core.safediv_expr => return Core.intSafeDivOp
+  | .some .int, q`Core.safemod_expr => return Core.intSafeModOp
   | .some .int, q`Core.neg_expr => return Core.intNegOp
 
   | .some .real, q`Core.le       => return Core.realLeOp
@@ -882,7 +884,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.sub_expr
     | q`Core.mul_expr
     | q`Core.div_expr
+    | q`Core.safediv_expr
     | q`Core.mod_expr
+    | q`Core.safemod_expr
     | q`Core.bvand
     | q`Core.bvor
     | q`Core.bvxor
