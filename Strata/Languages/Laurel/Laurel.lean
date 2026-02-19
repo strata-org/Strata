@@ -219,6 +219,8 @@ inductive StmtExpr : Type where
   | StaticCall (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
   /-- Apply a primitive operation to the given arguments. -/
   | PrimitiveOp (operator : Operation) (arguments : List (WithMetadata StmtExpr))
+  /-- Create new object (`new`). -/
+  | New (name: Identifier)
   /-- Reference to the current object (`this`/`self`). -/
   | This
   /-- Reference equality test between two expressions. -/
