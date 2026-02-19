@@ -18,39 +18,34 @@ composite Container {
   var boolValue: bool
 }
 
-procedure foo(c: Container, d: Container) returns (r: int)
-//        ^^^ error: an opaque procedure that mutates the heap must have a modifies clause
-  requires c != d && d#intValue == 1
-  ensures d#intValue == 3
+procedure newsAreNotEqual() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  assert c != d;
+}
+
+procedure simpleAssign() {
+  var c: Container := new Container;
+  c#intValue := 2;
+  assert c#intValue == 2;
+}
+
+procedure updatesAndAliasing()
 {
-  var x: int := c#intValue;
+  var c: Container := new Container;
+  var d: Container := new Container;
+
+  var initialCValue: int := c#intValue;
   var initialDValue: int := d#intValue;
   d#intValue := d#intValue + 1;
+  assert initialCValue == c#intValue;
   c#intValue := c#intValue + 1;
-  assert x + 1 == c#intValue; // pass
+  assert initialCValue + 1 == c#intValue;
   assert initialDValue + 1 == d#intValue;
 
-  var e: Container := d;
-  e#intValue := e#intValue + 1;
-  assert e#intValue == d#intValue;
-}
-
-procedure useBool(c: Container) returns (r: bool) {
-  r := c#boolValue;
-}
-
-procedure caller(c: Container, d: Container) {
-  assume d#intValue == 1;
-  assume c != d;
-  var x: int := foo(c, d);
-  assert d#intValue == 3;
-}
-
-procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
-  assume d#intValue == 1;
-  assume c != d;
-  var x: int := foo(c, d) + 1;
-  assert d#intValue == 3;
+  var dAlias: Container := d;
+  dAlias#intValue := dAlias#intValue + 1;
+  assert dAlias#intValue == d#intValue;
 }
 
 procedure subsequentHeapMutations(c: Container) {
@@ -68,6 +63,33 @@ procedure implicitEquality(c: Container, d: Container) {
     assert c != d;
   }
 }
+
+procedure useBool(c: Container) returns (r: bool) {
+  r := c#boolValue;
+}
+
+// Following test-cases can't be run because Core procedures are not transparent.
+// procedure modifiesFirst(c: Container, d: Container) returns (x: int) {
+//  c#intValue := 3;
+//  3
+// }
+
+// procedure caller() {
+//   var c: Container := new Container;
+//   var d: Container := new Container;
+//   assume d#intValue == 1;
+//   var x: int := modifiesFirst(c, d);
+//   assert d#intValue == 1;
+// }
+
+// procedure allowHeapMutatingCallerInExpression() {
+//   var c: Container := new Container;
+//   var d: Container := new Container;
+//   assume d#intValue == 1;
+//   var x: int := modifiesFirst(c, d) + 1;
+//   assert d#intValue == 1;
+//   assert x == 4;
+// }
 "
 
 #guard_msgs(drop info, error) in
