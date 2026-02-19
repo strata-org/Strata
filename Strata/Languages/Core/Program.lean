@@ -43,6 +43,8 @@ A Strata Core declaration.
 Note: constants are 0-ary functions.
  -/
 inductive Decl where
+  /-- Global variable declaration. The optional RHS is not currently used in verification
+      but could serve as a starting value for future execution-based analyses. -/
   | var (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) (md : MetaData Core.Expression := .empty)
   | type (t : TypeDecl) (md : MetaData Core.Expression := .empty)
   | ax   (a : Axiom) (md : MetaData Core.Expression := .empty)
