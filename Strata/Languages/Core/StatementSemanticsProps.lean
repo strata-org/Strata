@@ -2087,9 +2087,10 @@ private theorem RefinesContract_aux :
     | cons h t =>
       cases Heval with
       | stmts_some_sem Heval Hevals =>
+      next σ₁ δ₁ =>
       constructor
-      · exact (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega) π φ).1 _ _ _ _ _ (Nat.le_refl _) Heval
-      · exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Hevals
+      · exact (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega) π φ).1 h σ σ₁ δ δ₁ (Nat.le_refl _) Heval
+      · exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega) π φ).2 t σ₁ σ' δ₁ δ' (Nat.le_refl _) Hevals
 
 theorem EvalBlockRefinesContract :
   EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
