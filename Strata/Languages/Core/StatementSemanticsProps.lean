@@ -2016,34 +2016,114 @@ NOTE:
   variables are irrelevant, and can be approximated by updating the relevant
   variables (that is, lhs ++ modifies)
 -/
+/-
+  Helper: Given that variables `vs` are defined in both σ and σ', and σ and σ'
+  agree on all variables NOT in `vs`, we can construct HavocVars σ vs σ'.
+  Each variable in vs is updated from its value in σ to its value in σ'.
+-/
+theorem HavocVarsFromAgree :
+  isDefined σ vs →
+  isDefined σ' vs →
+  (∀ k, k ∉ vs → σ' k = σ k) →
+  HavocVars σ vs σ' := by
+  intros Hdef Hdef' Hagree
+  induction vs generalizing σ
+  case nil =>
+    have : σ' = σ := funext (fun k => Hagree k (by simp))
+    subst this; exact HavocVars.update_none
+  case cons h t ih =>
+    -- h is defined in σ
+    have Hh := Hdef h (by simp)
+    simp [Option.isSome] at Hh; split at Hh <;> simp_all
+    rename_i v_old heq_old
+    -- h is defined in σ'
+    have Hh' := Hdef' h (by simp)
+    simp [Option.isSome] at Hh'; split at Hh' <;> simp_all
+    rename_i v_new heq_new
+    -- Construct intermediate store: update h in σ to its value in σ'
+    apply HavocVars.update_some (σ' := updatedState σ h v_new) (v := v_new)
+    · exact updatedStateUpdate heq_old
+    · apply ih
+      · intro k hk
+        simp [isDefined, updatedState]
+        split
+        · simp [Option.isSome]
+        · exact Hdef k (by simp; right; exact hk)
+      · intro k hk; exact Hdef' k (by simp; right; exact hk)
+      · intro k hk
+        simp [updatedState]
+        split
+        · rename_i heq; simp_all
+        · rename_i hne
+          have hne' : k ≠ h := by intro heq; simp [heq] at hne
+          exact Hagree k hne' hk
+
+/-
+  Frame condition: evaluating a block preserves variables not in
+  modifiedVarsTrans or definedVarsTrans. This is the key semantic property
+  connecting syntactic variable analysis to operational semantics.
+-/
+theorem EvalBlockFrameCondition
+  {π : String → Option Procedure}
+  {φ : CoreEval → PureFunc Expression → CoreEval}
+  {δ δ' : CoreEval} {σ σ' : CoreStore} {body : List Statement} :
+  @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _ δ σ body σ' δ' →
+  (∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) →
+  ∀ k, k ∉ Statements.modifiedVarsTrans π body →
+       k ∉ Statements.definedVarsTrans π body →
+       σ' k = σ k := by
+  sorry
+
 theorem EvalCallBodyRefinesContract :
   ∀ {π φ δ σ lhs n args σ' p},
   π n = .some p →
   p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
+  (∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) →
   EvalCommand π φ δ σ (CmdExt.call lhs n args) σ' →
   EvalCommandContract π δ σ (CmdExt.call lhs n args) σ' := by
-  intros π φ δ σ lhs n args σ' p pFound modValid H
+  intros π φ δ σ lhs n args σ' p pFound modValid modValidAll H
   cases H with
   | call_sem lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st Hdefover HinitIn HinitOut Hpre HevalBody Hpost HrdOutMod Hup2 =>
     /-
-    Proof strategy (not yet completed):
-      The concrete semantics evaluates the body (σAO → σR), reads outputs ++
-      modifies from σR, and updates the caller store. The contract semantics
-      havocs outputs and modifies, checks postconditions, reads, and updates.
-
-      All premises except the two HavocVars are shared between concrete and
-      contract. Using the body result store σR as both σO and the final store
-      in the contract:
-        - HavocVars σR modifies σR holds by HavocVarsId (modifies are defined
-          in σR, witnessed by ReadValues).
-        - HavocVars σAO outputs σR requires a frame condition: the body only
-          modifies variables in outputs ++ modifies. The premise modValid
-          (p.spec.modifies = modifiedVarsTrans π p.body) provides this, but
-          connecting it to the operational semantics requires a separate
-          frame-condition theorem showing that EvalBlock only modifies
-          variables in modifiedVarsTrans.
+    Proof strategy:
+      Use σAO' as the intermediate store σO (identity havoc on outputs),
+      and σR' as the contract's final store. The key obligations are:
+        1. HavocVars σAO' outputs σAO' — by HavocVarsId (outputs defined in σAO')
+        2. HavocVars σAO' modifies σR' — by HavocVarsFromAgree + frame condition
     -/
-    sorry
+    have HrdSplit := ReadValuesAppKeys' HrdOutMod
+    obtain ⟨outVals, modVals', HvApp, HrdOut, HrdMod⟩ := HrdSplit
+    have HdefMod := ReadValuesIsDefined HrdMod
+    have HdefOutAO := InitStatesDefined HinitOut
+    rename_i σ₀' vals' oVals' σA' σAO' σR' p' modvals' δ''
+    have Hpeq : p' = p := by rw [lkup] at pFound; exact Option.some.inj pFound
+    subst Hpeq
+    -- Use σAO' as σO (identity havoc) and σR' as the contract's final store
+    refine EvalCommandContract.call_sem (σO := σAO') (σR := σR')
+      lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st
+      Hdefover HinitIn HinitOut Hpre ?_ ?_ Hpost HrdOutMod Hup2
+    -- HavocVars σAO' outputs σAO' (identity havoc)
+    · exact HavocVarsId HdefOutAO
+    -- HavocVars σAO' modifies σR'
+    · /-
+      This requires showing σR' is reachable from σAO' by updating only
+      the modifies variables. Two obstacles remain:
+        a) The body may create local variables via `init`, so σR' may have
+           variables that σAO' doesn't. HavocVars uses UpdateState which
+           preserves non-target variables, so HavocVars σAO' modifies σR'
+           requires σR' k = σAO' k for k ∉ modifies — which fails for
+           init'd locals. Solution: use a custom store σC that agrees with
+           σR' on modifies and σAO' elsewhere, then prove postconditions
+           and ReadValues hold on σC (needs WellFormedSemanticEvalExprCongr
+           or a proof that postconditions don't reference body-local vars).
+        b) Need isDefined σAO' modifies — modifies variables must be defined
+           in σAO' before the body runs. This should follow from
+           isDefinedOver + InitStates but needs a connecting lemma.
+      The frame condition EvalBlockFrameCondition (stated above) provides
+      the core semantic property, but the full proof also needs evaluator
+      congruence to transfer postconditions to the custom store.
+      -/
+      sorry
 
 theorem EvalCommandRefinesContract
   (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
@@ -2053,7 +2133,7 @@ EvalCommandContract π δ σ c σ' := by
   cases H with
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
   | call_sem hlkup =>
-    apply EvalCallBodyRefinesContract hlkup (hmod _ _ hlkup)
+    apply EvalCallBodyRefinesContract hlkup (hmod _ _ hlkup) hmod
     constructor <;> assumption
 
 /-- Combined proof of `EvalStmtRefinesContract` and `EvalBlockRefinesContract`
