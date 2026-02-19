@@ -29,7 +29,64 @@ theorem snd_values_mem {ps : ListMap CoreLabel Procedure.Check} :
     case inr mem => right ; exact (ih mem)
   case nil => cases Hin
 
-theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
+private theorem checkNoDuplicates_ok {proc : Procedure} {sl : Strata.FileRange} {u : Unit} :
+    proc.checkNoDuplicates sl = Except.ok u →
+    proc.header.inputs.keys.Nodup ∧
+    proc.header.outputs.keys.Nodup ∧
+    proc.spec.modifies.Nodup := by
+  unfold Procedure.checkNoDuplicates
+  simp only [bind, Except.bind, pure, Except.pure]
+  intro h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  simp_all
+
+private theorem checkVariableScoping_ok {proc : Procedure} {sl : Strata.FileRange} {u : Unit} :
+    proc.checkVariableScoping sl = Except.ok u →
+    (ListMap.keys proc.header.inputs).Disjoint (ListMap.keys proc.header.outputs) := by
+  unfold Procedure.checkVariableScoping
+  simp only [bind, Except.bind, pure, Except.pure]
+  intro h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  rename_i _ _ h_inp_out
+  simp [List.any_eq_true] at h_inp_out
+  exact List.Disjoint.symm (fun _ ha hb => h_inp_out _ hb ha)
+
+set_option maxHeartbeats 1600000 in
+set_option maxRecDepth 1024 in
+theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by
+  intro H
+  unfold Procedure.typeCheck at H
+  simp only [bind, Except.bind] at H
+  repeat (split at H <;> try contradiction)
+  have hnd := checkNoDuplicates_ok (by assumption)
+  have hvs := checkVariableScoping_ok (by assumption)
+  constructor
+  -- wfstmts: body type-checks successfully
+  · exact Statement.typeCheckWF (by assumption)
+  -- wfloclnd: local variable declarations have no duplicates
+  --   (not currently checked by the type checker)
+  · sorry
+  -- ioDisjoint: inputs ∩ outputs = ∅
+  · exact hvs
+  -- inputsNodup
+  · exact hnd.1
+  -- outputsNodup
+  · exact hnd.2.1
+  -- modNodup
+  · exact hnd.2.2
+  -- inputsLocl: inputs are all CoreIdent.locl
+  --   (not currently checked by the type checker)
+  · sorry
+  -- outputsLocl: outputs are all CoreIdent.locl
+  --   (not currently checked by the type checker)
+  · sorry
+  -- wfspec: spec well-formedness
+  --   (partially checked, but full proof requires additional type checker support)
+  · sorry
 
 
 /-
