@@ -546,13 +546,13 @@ def commandGroups : List CommandGroup := [
   { name := "Core"
     commands := [checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
+  { name := "Code Generation"
+    commands := [javaGenCommand] },
   { name := "Python"
     commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand, pyTranslateCommand,
                  pySpecsCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand] },
-  { name := "Java"
-    commands := [javaGenCommand] },
 ]
 
 def commandList : List Command :=

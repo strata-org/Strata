@@ -48,6 +48,8 @@ expect_output() {
 }
 
 # --- Error message and help output tests ---
+# Disable set -e so we can test commands that intentionally fail.
+set +e
 
 # Error cases
 expect_error "no args"            "Expected subcommand"              $strata
@@ -65,6 +67,8 @@ expect_error "hint for diff"      "strata diff --help"               $strata dif
 expect_output "global help"            "Command-line utilities"      $strata --help
 expect_output "per-command help"       "Usage: strata check"         $strata check --help
 expect_output "help with other flags"  "Usage: strata check"         $strata check --include foo --help
+
+set -e
 
 # --- Ion round-trip tests ---
 
