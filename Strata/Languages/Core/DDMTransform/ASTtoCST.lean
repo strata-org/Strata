@@ -133,14 +133,6 @@ def allFreeVars {M} (ctx : ToCSTContext M) : Array String :=
 def freeVarIndex? {M} (ctx : ToCSTContext M) (name : String) : Option Nat :=
   ctx.allFreeVars.findIdx? (· == name)
 
-/-- Add free variables to the current scope -/
-def addScopedFreeVars {M} (ctx : ToCSTContext M) (names : Array String)
-    : ToCSTContext M :=
-  let idx := ctx.scopes.size - 1
-  let scope := ctx.scopes[idx]!
-  let newScope := { scope with freeVars := scope.freeVars ++ names }
-  { ctx with scopes := ctx.scopes.set! idx newScope }
-
 /-- Add bound variables to the current scope -/
 def addScopedBoundVars {M} (ctx : ToCSTContext M) (names : Array String)
     (reverse? : Bool := true) : ToCSTContext M :=
@@ -567,7 +559,13 @@ def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
     : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
-  -- User-defined functions.
+  -- User-defined functions: check bound vars first (local funcDecl via
+  -- @[declareFn]), then free vars (global declarations).
+  match ctx.findBoundVarIndex? name with
+  | some idx =>
+    let fnExpr := CoreDDM.Expr.bvar default (ctx.allBoundVars.size - (idx + 1))
+    pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
+  | none =>
   match ctx.freeVarIndex? name with
   | some idx =>
     let fnExpr := CoreDDM.Expr.fvar default idx
@@ -752,8 +750,9 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
     pure bodyExpr
   | some body => lexprToExpr body 0
   modify ToCSTContext.popScope
-  -- Register function name as a scoped free variable in the parent scope.
-  modify (·.addScopedFreeVars #[name.val])
+  -- Register function name as a scoped bound variable in the parent scope,
+  -- matching DDM's @[declareFn] which makes the name a bvar.
+  modify (·.pushBoundVar name.val)
   pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
 
 mutual
