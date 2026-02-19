@@ -49,7 +49,7 @@ def run(test_file: str) -> bool:
 
     # Run pyAnalyze with --sarif
     subprocess.run(
-        ["lake", "exe", "strata", "pyAnalyze", "--sarif", ion_rel, "0"],
+        ["lake", "exe", "strata", "pyAnalyze", "--sarif", ion_rel],
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

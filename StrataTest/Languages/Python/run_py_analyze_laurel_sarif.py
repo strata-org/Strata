@@ -50,7 +50,7 @@ def run(test_file: str) -> bool:
 
     # Run pyAnalyzeLaurel with --sarif
     subprocess.run(
-        ["lake", "exe", "strata", "pyAnalyzeLaurel", "--sarif", ion_rel, "0"],
+        ["lake", "exe", "strata", "pyAnalyzeLaurel", "--sarif", ion_rel],
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
