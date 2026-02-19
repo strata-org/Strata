@@ -157,6 +157,7 @@ inductive StmtExpr : Type where
   | StaticCall (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
   | PrimitiveOp (operator : Operation) (arguments : List (WithMetadata StmtExpr))
 /- Instance related -/
+  | New (name: Identifier)
   | This
   | ReferenceEquals (lhs : WithMetadata StmtExpr) (rhs : WithMetadata StmtExpr)
   | AsType (target : WithMetadata StmtExpr) (targetType : WithMetadata HighType)
