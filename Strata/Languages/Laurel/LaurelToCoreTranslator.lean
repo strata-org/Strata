@@ -162,9 +162,6 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       let outerSelect := LExpr.mkApp () Core.mapSelectOp [ancestorsMap, getUserType]
       LExpr.mkApp () Core.mapSelectOp [outerSelect, typeConst]
   | .AsType _ _typeMd => panic "AsType should have already been translate away "
-      -- Translate `target as TypeName` to just the target expression
-      -- The assert is generated in translateStmt
-      -- translateExpr constants env target boundVars
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
   decreasing_by
