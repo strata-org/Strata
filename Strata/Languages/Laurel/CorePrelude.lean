@@ -39,10 +39,6 @@ datatype Composite () {
   MkComposite(ref: int, userType: UserType)
 };
 
-// ancestorsPerType maps each UserType to the set of types it is an instance of
-// (including itself and all transitive parents)
-const ancestorsPerType: Map UserType (Map UserType bool);
-
 // Tagged union for field values
 datatype Box () {
   BoxInt(intVal: int),

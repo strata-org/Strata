@@ -477,7 +477,8 @@ def collectAllFields (types : List TypeDefinition) (name : Identifier) : List Fi
 Generate Core declarations for the type hierarchy:
 - A UserType constant for each composite type
 - A distinct declaration to ensure all UserType constants are different
-- Axioms constraining ancestorsPerType for each composite type
+- A `ancestorsFor<Type>` constant per composite type with the inner ancestor map
+- A `ancestorsPerType` constant combining the per-type constants
 -/
 def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
   let composites := types.filterMap fun td => match td with
@@ -500,27 +501,49 @@ def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
   let distinctDecls := if distinctExprs.length >= 2 then
     [Core.Decl.distinct (Core.CoreIdent.unres "UserType_distinct") distinctExprs]
   else []
-  -- Generate axioms for ancestorsPerType
-  -- For each composite type T and each composite type U:
-  --   axiom: ancestorsPerType[T_UserType][U_UserType] == (U is in T's ancestors)
+  -- Build a separate ancestorsFor<Type> constant for each composite type
   let userTypeTy := LMonoTy.tcons "UserType" []
-  let ancestorsMapTy := Core.mapTy userTypeTy (Core.mapTy userTypeTy .bool)
-  let ancestorsMap := LExpr.op () (Core.CoreIdent.unres "ancestorsPerType") (some ancestorsMapTy)
-  let axiomDecls := composites.foldl (fun acc ct =>
+  let innerMapTy := Core.mapTy userTypeTy .bool
+  let outerMapTy := Core.mapTy userTypeTy innerMapTy
+  -- Helper: build an inner map (Map UserType bool) for a given composite type
+  -- Start with Map.empty(false), then update each composite type's entry
+  let mkInnerMap (ct : CompositeType) : Core.Expression.Expr :=
     let ancestors := computeAncestors types ct.name
-    let typeConst := LExpr.op () (Core.CoreIdent.glob (ct.name ++ "_UserType")) none
-    let outerSelect := LExpr.mkApp () Core.mapSelectOp [ancestorsMap, typeConst]
-    acc ++ composites.map fun otherCt =>
+    let falseConst := LExpr.const () (.boolConst false)
+    let emptyInner := LExpr.mkApp () Core.mapEmptyOp [falseConst]
+    composites.foldl (fun acc otherCt =>
       let otherConst := LExpr.op () (Core.CoreIdent.glob (otherCt.name ++ "_UserType")) none
-      let lookupExpr := LExpr.mkApp () Core.mapSelectOp [outerSelect, otherConst]
       let isAncestor := ancestors.contains otherCt.name
       let boolVal := LExpr.const () (.boolConst isAncestor)
-      let axiomExpr := LExpr.eq () lookupExpr boolVal
-      Core.Decl.ax {
-        name := s!"ancestors_{ct.name}_{otherCt.name}"
-        e := axiomExpr
-      }) []
-  typeConstDecls ++ distinctDecls ++ axiomDecls
+      LExpr.mkApp () Core.mapUpdateOp [acc, otherConst, boolVal]
+    ) emptyInner
+  -- Generate a separate constant `ancestorsFor<Type>` for each composite type
+  let ancestorsForDecls := composites.map fun ct =>
+    Core.Decl.func {
+      name := Core.CoreIdent.unres (s!"ancestorsFor{ct.name}")
+      typeArgs := []
+      inputs := []
+      output := innerMapTy
+      body := some (mkInnerMap ct)
+    }
+  -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
+  let falseConst := LExpr.const () (.boolConst false)
+  let emptyInner := LExpr.mkApp () Core.mapEmptyOp [falseConst]
+  let emptyOuter := LExpr.mkApp () Core.mapEmptyOp [emptyInner]
+  let outerMapExpr := composites.foldl (fun acc ct =>
+    let typeConst := LExpr.op () (Core.CoreIdent.glob (ct.name ++ "_UserType")) none
+    let innerMapRef := LExpr.op () (Core.CoreIdent.unres (s!"ancestorsFor{ct.name}")) (some innerMapTy)
+    LExpr.mkApp () Core.mapUpdateOp [acc, typeConst, innerMapRef]
+  ) emptyOuter
+  -- Generate ancestorsPerType as a 0-ary function (constant) combining the per-type constants
+  let ancestorsDecl := Core.Decl.func {
+    name := Core.CoreIdent.unres "ancestorsPerType"
+    typeArgs := []
+    inputs := []
+    output := outerMapTy
+    body := some outerMapExpr
+  }
+  typeConstDecls ++ distinctDecls ++ ancestorsForDecls ++ [ancestorsDecl]
 
 /--
 Translate Laurel Program to Core Program
