@@ -2039,48 +2039,67 @@ EvalCommandContract π δ σ c σ' := by
     sorry
     constructor <;> assumption
 
-/-- NOTE: should follow the same approach as `DetToNondetCorrect` to prove this
-  mutually recursive theorem due to meta variable bug -/
+/-- Combined proof of `EvalStmtRefinesContract` and `EvalBlockRefinesContract`
+  using strong induction on size to handle the mutual recursion. -/
+private theorem RefinesContract_aux :
+  (∀ s σ σ' δ δ',
+    Stmt.sizeOf s ≤ m →
+    EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+    EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ') ∧
+  (∀ ss σ σ' δ δ',
+    Block.sizeOf ss ≤ m →
+    EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+    EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ') := by
+  apply Nat.strongRecOn (motive := fun m =>
+    ∀ π φ,
+    (∀ s σ σ' δ δ',
+      Stmt.sizeOf s ≤ m →
+      EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+      EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ') ∧
+    (∀ ss σ σ' δ δ',
+      Block.sizeOf ss ≤ m →
+      EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+      EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ'))
+  intro n ih π φ
+  refine ⟨?_, ?_⟩
+  -- Stmt case
+  · intro s σ σ' δ δ' Hsz H
+    cases H with
+    | cmd_sem Hdef Heval =>
+      exact EvalStmt.cmd_sem (EvalCommandRefinesContract Hdef) Heval
+    | block_sem Heval =>
+      constructor
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | ite_true_sem Hdef Hwf Heval =>
+      apply EvalStmt.ite_true_sem Hdef Hwf
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | ite_false_sem Hdef Hwf Heval =>
+      apply EvalStmt.ite_false_sem Hdef Hwf
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | funcDecl_sem =>
+      exact EvalStmt.funcDecl_sem
+  -- Block case
+  · intro ss σ σ' δ δ' Hsz Heval
+    cases ss with
+    | nil =>
+      have ⟨Hσ, Hδ⟩ := Imperative.EvalBlockEmpty Heval
+      simp [Hσ, Hδ]; constructor
+    | cons h t =>
+      cases Heval with
+      | stmts_some_sem Heval Hevals =>
+      constructor
+      · exact (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega) π φ).1 _ _ _ _ _ (Nat.le_refl _) Heval
+      · exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Hevals
+
 theorem EvalBlockRefinesContract :
   EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' := by
-  intros Heval
-  cases ss
-  case nil =>
-    have ⟨Hσ, Hδ⟩ := Imperative.EvalBlockEmpty Heval
-    simp [Hσ, Hδ]
-    constructor
-  case cons h t =>
-    cases Heval with
-    | stmts_some_sem Heval Hevals =>
-    constructor
-    . sorry
-      -- apply EvalStmtRefinesContract
-      -- apply Heval
-    . apply EvalBlockRefinesContract
-      apply Hevals
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals term_by_mem
+  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
+  RefinesContract_aux.2 _ _ _ _ _ (Nat.le_refl _)
 
 theorem EvalStmtRefinesContract :
   EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' := by
-  intros H
-  cases H with
-  | cmd_sem Hdef Heval =>
-    refine EvalStmt.cmd_sem ?_ Heval
-    exact EvalCommandRefinesContract Hdef
-  | block_sem Heval =>
-    constructor
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_true_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_true_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_false_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_false_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | funcDecl_sem =>
-    exact EvalStmt.funcDecl_sem
+  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
+  RefinesContract_aux.1 _ _ _ _ _ (Nat.le_refl _)
 
 /-- Currently we cannot prove this theorem,
     since the WellFormedSemanticEval definition does not assert
