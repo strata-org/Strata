@@ -82,7 +82,8 @@ open Strata
 /- The default program is well-formed -/
 theorem Program.init.wf : WFProgramProp .init := by
   constructor <;> simp [Program.init, Program.getNames, Program.getNames.go]
-  constructor
+  · constructor
+  · intro x h; simp [Program.find?, Program.find?.go] at h
 
 /- WFProgram is inhabited -/
 instance : Inhabited WFProgram where
@@ -259,10 +260,6 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok (ds', T'
     any_goals (split at tcok <;> try contradiction)
     simp
     any_goals simp [t_ih $ Program.typeCheckAux_elim_singleton tcok]
-    have := Statement.typeCheckWF (by assumption)
-    constructor
-    simp [WFCmdExtProp] at this
-    sorry
     any_goals (apply Procedure.typeCheckWF (by assumption))
     any_goals constructor
 
@@ -517,8 +514,13 @@ theorem Program.typeCheckWF : Program.typeCheck C T p = .ok (p', T') → WF.WFPr
   simp[bind, Except.bind] at tcok
   split at tcok; contradiction
   rename_i x v Hgo
-  constructor; exact (Program.typeCheckFunctionNoDup Hgo)
-  exact typeCheck.goWF Hgo
+  constructor
+  · exact (Program.typeCheckFunctionNoDup Hgo)
+  · exact typeCheck.goWF Hgo
+  · -- globVars: identifiers are .unres at type-check time, so this cannot be
+    -- proved from the type checker alone. It requires a separate identifier
+    -- resolution pass that sets visibility to .glob for global variables.
+    intro x h; sorry
 
 end WF
 end Core

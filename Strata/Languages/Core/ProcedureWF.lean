@@ -67,9 +67,6 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp'
   constructor
   -- wfstmts: body type-checks successfully
   · exact Statement.typeCheckWF (by assumption)
-  -- wfloclnd: local variable declarations have no duplicates
-  --   (not currently checked by the type checker)
-  · sorry
   -- ioDisjoint: inputs ∩ outputs = ∅
   · exact hvs
   -- inputsNodup
@@ -79,10 +76,10 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp'
   -- modNodup
   · exact hnd.2.2
   -- inputsLocl: inputs are all CoreIdent.locl
-  --   (not currently checked by the type checker)
+  --   (not currently checked by the type checker — identifiers are .unres)
   · sorry
   -- outputsLocl: outputs are all CoreIdent.locl
-  --   (not currently checked by the type checker)
+  --   (not currently checked by the type checker — identifiers are .unres)
   · sorry
   -- wfspec: spec well-formedness
   --   (partially checked, but full proof requires additional type checker support)

@@ -143,7 +143,6 @@ structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop
 /- Procedure Wellformedness -/
 
 structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) : Prop where
-  glob : CoreIdent.isGlob name
 
 structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
@@ -153,7 +152,6 @@ structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : L
 
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
-  wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
   ioDisjoint : (ListMap.keys d.header.inputs).Disjoint (ListMap.keys d.header.outputs)
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
@@ -182,6 +180,7 @@ instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
 structure WFProgramProp (p : Program) where
   namesNodup : (p.getNames).Nodup
   wfdecls : WFDeclsProp p p.decls
+  globVars : ∀ x, (p.find? .var x).isSome → CoreIdent.isGlob x
 
 structure WFProcedure (p : Program) extends (Wrapper Procedure) where
   prop: WFProcedureProp p self

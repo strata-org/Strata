@@ -2423,19 +2423,10 @@ theorem Program.find.var_in_decls :
     simp [Decl.kind] at HH
 
 theorem WFProgGlob :
-  WF.WFDeclsProp p p.decls →
+  WF.WFProgramProp p →
   PredImplies (isGlobalVar p ·) (CoreIdent.isGlob ·) := by
   intros Hwf x HH
-  simp [isGlobalVar, Option.isSome] at HH
-  split at HH <;> simp at HH
-  next x val heq =>
-  have Hdecl := Program.find.var_in_decls heq
-  cases Hdecl with
-  | intro ty Hdecl => cases Hdecl with
-  | intro e Hdecl => cases Hdecl with
-  | intro md Hdecl =>
-  have Hwfv := (List.Forall_mem_iff.mp Hwf) _ Hdecl.1
-  exact Hwfv.1
+  exact Hwf.globVars x HH
 
 theorem genOldExprIdentsEmpty :
   genOldExprIdentsTrip p [] s = (Except.ok trips, cs') → trips = [] := by
@@ -3395,7 +3386,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
       | intro md HH =>
       specialize Hdecl (.proc proc md) HH
       cases Hdecl with
-      | mk wfstmts wfloclnd Hiodisj Hinnd Houtnd Hmodsnd Hinlc Houtlc wfspec =>
+      | mk wfstmts Hiodisj Hinnd Houtnd Hmodsnd Hinlc Houtlc wfspec =>
       cases wfspec with
       | mk wfpre wfpost wfmod =>
       have HoldDef : Imperative.isDefined σ oldTrips.unzip.snd := by
