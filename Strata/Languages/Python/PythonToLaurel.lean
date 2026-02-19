@@ -310,6 +310,22 @@ partial def translateCall (ctx : TranslationContext) (funcName : String) (args :
     if sig.outputs.length > 0 then
       let call := mkStmtExprMd (StmtExpr.StaticCall funcName translatedArgs)
       return mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier "maybe_except")] call)
+  -- Check if this is a user function and fill in optional args
+  else if let some proc := ctx.functionSignatures.lookup funcName then
+    let numProvided := translatedArgs.length
+    let numExpected := proc.inputs.length
+
+    if numProvided < numExpected then
+      -- Fill remaining args with None - extract type name from HighTypeMd
+      for i in [numProvided:numExpected] do
+        if h : i < proc.inputs.length then
+          let paramType := proc.inputs[i].type
+          -- Extract the base type name for mkNoneForType
+          let typeName := match paramType.val with
+            | HighType.TCore name => name
+            | HighType.UserDefined name => name
+            | _ => "Unknown"  -- Fallback, shouldn't happen for optional params
+          translatedArgs := translatedArgs ++ [mkNoneForType typeName]
 
   return mkStmtExprMd (StmtExpr.StaticCall funcName translatedArgs)
 
@@ -722,17 +738,25 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
         compositeTypes := compositeTypes ++ [composite]
       | _ => pure ()
 
-    -- Create context with composite types
-    let ctx : TranslationContext := {
+    -- SECOND PASS: Collect user function signatures
+    let mut functionSignatures : List (String × Procedure) := []
+    for stmt in body.val do
+      match stmt with
+      | .FunctionDef _ _ _ _ _ _ _ _ =>
+        let proc ← translateFunction {preludeProcedures := preludeProcedures, preludeTypes := preludeTypes, userFunctions := userFunctions, compositeTypes := compositeTypes} stmt
+        functionSignatures := functionSignatures ++ [(proc.name, proc)]
+      | _ => pure ()
 
+    -- Create context with composite types and function signatures
+    let ctx : TranslationContext := {
       preludeProcedures := preludeProcedures,
       preludeTypes := preludeTypes,
-      userFunctions := userFunctions
-   ,
-      compositeTypes := compositeTypes
+      userFunctions := userFunctions,
+      compositeTypes := compositeTypes,
+      functionSignatures := functionSignatures
     }
 
-    -- SECOND PASS: Translate functions and other statements
+    -- THIRD PASS: Translate functions and other statements
     let mut procedures : List Procedure := []
     let mut otherStmts : List (Python.stmt SourceRange) := []
 

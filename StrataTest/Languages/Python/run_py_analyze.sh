@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Usage: ./run_py_analyze.sh [--print-only]
+# Default: Compare outputs with expected files
+# --print-only: Just run tests and print results without comparing
+
+print_only=false
+if [ "$1" = "--print-only" ]; then
+    print_only=true
+fi
+
 failed=0
 
 for test_file in tests/test_*.py; do
@@ -8,17 +17,23 @@ for test_file in tests/test_*.py; do
         ion_file="tests/${base_name}.python.st.ion"
         expected_file="expected/${base_name}.expected"
 
-        if [ -f "$expected_file" ]; then
+        if [ -f "$expected_file" ] || [ "$print_only" = true ]; then
             (cd ../../../Tools/Python && python -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
 
             output=$(cd ../../.. && lake exe strata pyAnalyzeLaurel "StrataTest/Languages/Python/${ion_file}" 0)
 
-            if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
-                echo "ERROR: Analysis output for $base_name does not match expected result"
-                echo "$output" | diff "$expected_file" -
-                failed=1
+            if [ "$print_only" = true ]; then
+                echo "=== $base_name ==="
+                echo "$output"
+                echo ""
             else
-                echo "Test passed: " $base_name
+                if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
+                    echo "ERROR: Analysis output for $base_name does not match expected result"
+                    echo "$output" | diff "$expected_file" -
+                    failed=1
+                else
+                    echo "Test passed: " $base_name
+                fi
             fi
         fi
     fi
