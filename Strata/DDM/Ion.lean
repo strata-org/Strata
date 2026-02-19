@@ -718,8 +718,8 @@ namespace SyntaxDefAtom
 private protected def toIon (refs : SymbolIdCache) (a : SyntaxDefAtom) : InternM (Ion SymbolId) :=
   ionScope! SyntaxDefAtom refs :
     match a with
-    | .ident idx prec unwrap =>
-      return .sexp #[ .symbol ionSymbol! "ident", .int idx, .int prec, .bool unwrap ]
+    | .ident idx prec =>
+      return .sexp #[ .symbol ionSymbol! "ident", .int idx, .int prec ]
     | .str v =>
       return .string v
     | .indent n args =>
@@ -736,19 +736,10 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
   | .sexp args argsp =>
     match ← .asSymbolString "SyntaxDefAtom kind" args[0] with
     | "ident" => do
-      -- Support both formats: 3 args (without unwrap) and 4 args (with unwrap spec)
-      if args.size = 3 then
-        let level ← .asNat "SyntaxDef ident level" args[1]!
-        let prec ← .asNat "SyntaxDef ident prec" args[2]!
-        return .ident level prec false
-      else
-        let ⟨p⟩ ← .checkArgCount "ident" args 4
-        let level ← .asNat "SyntaxDef ident level" args[1]!
-        let prec ← .asNat "SyntaxDef ident prec" args[2]!
-        let unwrap ← match args[3]! with
-          | .bool b => pure b
-          | _ => throw "Expected boolean for unwrap"
-        return .ident level prec unwrap
+      let ⟨p⟩ ← .checkArgCount "ident" args 3
+      let level ← .asNat "SyntaxDef ident level" args[1]!
+      let prec ← .asNat "SyntaxDef ident prec" args[2]!
+      return .ident level prec
     | "indent" => do
       .indent <$> .asNat "SyntaxDef indent value" args[1]!
               <*> args.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
@@ -766,19 +757,30 @@ namespace SyntaxDef
 
 private instance : CachedToIon SyntaxDef where
   cachedToIon refs d := ionScope! SyntaxDef refs :
-    return .struct #[
-      (ionSymbol! "atoms", .list (←d.atoms.mapM (fun (a : SyntaxDefAtom) => ionRef! a))),
-      (ionSymbol! "prec", .int d.prec)
-    ]
+    match d with
+    | .std atoms prec =>
+      return .struct #[
+        (ionSymbol! "atoms", .list (←atoms.mapM (fun (a : SyntaxDefAtom) => ionRef! a))),
+        (ionSymbol! "prec", .int prec)
+      ]
+    | .passthrough =>
+      return .symbol ionSymbol! "passthrough"
 
 private instance : FromIon SyntaxDef where
   fromIon v := do
-    let m := .fromList! ["atoms", "prec"]
-    let ⟨args, p⟩ ← .asFieldStruct (size := 2) v "SyntaxDef" m
-    pure {
-        atoms := ← .asListOf "SyntaxDef atoms" args[0] fromIon,
-        prec := ← .asNat "SyntaxDef prec" args[1],
-    }
+    match v with
+    | .symbol s =>
+      if (← .lookupSymbol s) == "passthrough" then
+        return .passthrough
+      else
+        throw s!"Unexpected SyntaxDef symbol"
+    | _ =>
+      -- Backwards compatible: struct with atoms and prec
+      let m := .fromList! ["atoms", "prec"]
+      let ⟨args, p⟩ ← .asFieldStruct (size := 2) v "SyntaxDef" m
+      pure (.std
+        (← .asListOf "SyntaxDef atoms" args[0] fromIon)
+        (← .asNat "SyntaxDef prec" args[1]))
 
 end SyntaxDef
 

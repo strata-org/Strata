@@ -22,8 +22,8 @@ bool procedure trivial ()
 
 /--
 info: program C_Simp;
-bool procedure trivial()//@pretrue;
-//@posttrue;
+bool procedure trivial()//@pre true;
+//@post true;
   ({
   returntrue;
   }

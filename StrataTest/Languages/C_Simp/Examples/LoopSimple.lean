@@ -35,19 +35,19 @@ int procedure loopSimple (n: int)
 
 /--
 info: program C_Simp;
-int procedure loopSimple(n:int)//@pren>=(0);
-//@posttrue;
+int procedure loopSimple(n:int)//@pre n>=0;
+//@post true;
   ({
   varsum:int;
   vari:int;
   sum=0;
   i=0;
   while(i<n)
-  //@decreases(n-i)//@invariant((i<=n)&&(((i*(i-(1)))/(2))==sum))({
+  //@decreases (n-i)//@invariant ((i<=n)&&(((i*(i-1))/2)==sum))({
   sum=sum+i;
-  i=i+(1);
+  i=i+1;
   }
-  )//@assert [sum_assert]((n*(n-(1)))/(2))==sum;
+  )//@assert [sum_assert]((n*(n-1))/2)==sum;
   returnsum;
   }
   )
@@ -92,29 +92,29 @@ spec {
   sum := 0;
   i := 0;
   if(i < n){
-    first_iter_asserts: ({
+    first_iter_asserts: {
       assert [entry_invariant]: i <= n && i * (i - 1) div 2 == sum;
       assert [assert_measure_pos]: n - i >= 0;
-      })|arbitrary iter facts|: ({
-      |loop havoc|: ({
+      }|arbitrary iter facts|: {
+      |loop havoc|: {
         havoc sum;
         havoc i;
-        })arbitrary_iter_assumes: ({
+        }arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
         assume [assume_invariant]: i <= n && i * (i - 1) div 2 == sum;
         assume [assume_measure_pos]: n - i >= 0;
-        })var |special-name-for-old-measure-value| : int := n - i;
+        }var |special-name-for-old-measure-value| : int := n - i;
       sum := sum + i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
       assert [arbitrary_iter_maintain_invariant]: i <= n && i * (i - 1) div 2 == sum;
-      })|loop havoc|: ({
+      }|loop havoc|: {
       havoc sum;
       havoc i;
-      })assume [not_guard]: !(i < n);
+      }assume [not_guard]: !(i < n);
     assume [invariant]: i <= n && i * (i - 1) div 2 == sum;
-    }()assert [sum_assert]: n * (n - 1) div 2 == sum;
+    }assert [sum_assert]: n * (n - 1) div 2 == sum;
   return := sum;
   };
 -/

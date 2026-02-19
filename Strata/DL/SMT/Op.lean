@@ -158,6 +158,12 @@ inductive Op.Strings : Type where
   | re_index : Nat → Op.Strings
 deriving Repr, DecidableEq, Inhabited, Hashable
 
+inductive Op.Arrays : Type where
+  ---------- SMTLib theory of arrays (`ArraysEx`) ----------
+  | select
+  | store
+deriving Repr, DecidableEq, Inhabited, Hashable
+
 inductive Op.DatatypeFuncs : Type where
   | constructor : Op.DatatypeFuncs
   | tester : Op.DatatypeFuncs
@@ -173,6 +179,8 @@ inductive Op : Type where
   | bv : Op.BV → Op
   -- SMTLib theory of unicode strings and regular expressions (`Strings`)
   | str : Op.Strings → Op
+  -- SMTLib theory of arrays (`ArraysEx`)
+  | arr : Op.Arrays → Op
   -- An operator to group triggers together
   | triggers
   -- Core ADT operators with a trusted mapping to SMT
@@ -231,13 +239,20 @@ elab "#genOpAbbrevs" : command => do
         let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.str $(mkIdent ctor))
         abbrevs := abbrevs.push (name, abbrevCmd)
 
+  if let some (.inductInfo arrInfo) := env.find? `Strata.SMT.Op.Arrays then
+    for ctor in arrInfo.ctors do
+      let ctorName := ctor.toString.splitToList (· == '.') |>.getLast!
+      let name := Lean.Name.mkStr2 "Op" ctorName
+      let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.arr $(mkIdent ctor))
+      abbrevs := abbrevs.push (name, abbrevCmd)
+
   for a in abbrevs do
     elabCommand a.snd
   logInfo s!"Generated abbrevs: {abbrevs.map (fun a => a.fst)}"
 
 
 /--
-info: Generated abbrevs: #[Op.not, Op.and, Op.or, Op.eq, Op.ite, Op.implies, Op.distinct, Op.uf, Op.neg, Op.sub, Op.add, Op.mul, Op.div, Op.mod, Op.abs, Op.le, Op.lt, Op.ge, Op.gt, Op.bvneg, Op.bvadd, Op.bvsub, Op.bvmul, Op.bvnot, Op.bvand, Op.bvor, Op.bvxor, Op.bvshl, Op.bvlshr, Op.bvashr, Op.bvslt, Op.bvsle, Op.bvult, Op.bvsge, Op.bvsgt, Op.bvule, Op.bvugt, Op.bvuge, Op.bvudiv, Op.bvurem, Op.bvsdiv, Op.bvsrem, Op.bvnego, Op.bvsaddo, Op.bvssubo, Op.bvsmulo, Op.bvconcat, Op.zero_extend, Op.str_length, Op.str_concat, Op.str_lt, Op.str_le, Op.str_at, Op.str_substr, Op.str_prefixof, Op.str_suffixof, Op.str_contains, Op.str_indexof, Op.str_replace, Op.str_replace_all, Op.str_to_re, Op.str_in_re, Op.re_none, Op.re_all, Op.re_allchar, Op.re_concat, Op.re_union, Op.re_inter, Op.re_star, Op.str_replace_re, Op.str_replace_re_all, Op.re_comp, Op.re_diff, Op.re_plus, Op.re_opt, Op.re_range, Op.re_loop, Op.re_index]
+info: Generated abbrevs: #[Op.not, Op.and, Op.or, Op.eq, Op.ite, Op.implies, Op.distinct, Op.uf, Op.neg, Op.sub, Op.add, Op.mul, Op.div, Op.mod, Op.abs, Op.le, Op.lt, Op.ge, Op.gt, Op.bvneg, Op.bvadd, Op.bvsub, Op.bvmul, Op.bvnot, Op.bvand, Op.bvor, Op.bvxor, Op.bvshl, Op.bvlshr, Op.bvashr, Op.bvslt, Op.bvsle, Op.bvult, Op.bvsge, Op.bvsgt, Op.bvule, Op.bvugt, Op.bvuge, Op.bvudiv, Op.bvurem, Op.bvsdiv, Op.bvsrem, Op.bvnego, Op.bvsaddo, Op.bvssubo, Op.bvsmulo, Op.bvconcat, Op.zero_extend, Op.str_length, Op.str_concat, Op.str_lt, Op.str_le, Op.str_at, Op.str_substr, Op.str_prefixof, Op.str_suffixof, Op.str_contains, Op.str_indexof, Op.str_replace, Op.str_replace_all, Op.str_to_re, Op.str_in_re, Op.re_none, Op.re_all, Op.re_allchar, Op.re_concat, Op.re_union, Op.re_inter, Op.re_star, Op.str_replace_re, Op.str_replace_re_all, Op.re_comp, Op.re_diff, Op.re_plus, Op.re_opt, Op.re_range, Op.re_loop, Op.re_index, Op.select, Op.store]
 -/
 #guard_msgs in
 #genOpAbbrevs
@@ -325,6 +340,8 @@ def Op.mkName : Op → String
   | .re_range      => "re.range"
   | .re_index _    => "re.^"
   | .re_loop _ _   => "re.loop"
+  | .select        => "select"
+  | .store         => "store"
 
 def Op.LT : Op → Op → Bool
   | .uf f₁, .uf f₂                    => f₁ < f₂

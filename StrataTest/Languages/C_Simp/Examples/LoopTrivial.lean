@@ -34,14 +34,14 @@ int procedure loopTrivial (n: int)
 
 /--
 info: program C_Simp;
-int procedure loopTrivial(n:int)//@pren>=(0);
-//@posttrue;
+int procedure loopTrivial(n:int)//@pre n>=0;
+//@post true;
   ({
   vari:int;
   i=0;
   while(i<n)
-  //@decreases(n-i)//@invariant(i<=n)({
-  i=i+(1);
+  //@decreases (n-i)//@invariant (i<=n)({
+  i=i+1;
   }
   )//@assert [i_eq_n]i==n;
   returni;
@@ -85,26 +85,26 @@ spec {
   var i : int;
   i := 0;
   if(i < n){
-    first_iter_asserts: ({
+    first_iter_asserts: {
       assert [entry_invariant]: i <= n;
       assert [assert_measure_pos]: n - i >= 0;
-      })|arbitrary iter facts|: ({
-      |loop havoc|: ({
+      }|arbitrary iter facts|: {
+      |loop havoc|: {
         havoc i;
-        })arbitrary_iter_assumes: ({
+        }arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
         assume [assume_invariant]: i <= n;
         assume [assume_measure_pos]: n - i >= 0;
-        })var |special-name-for-old-measure-value| : int := n - i;
+        }var |special-name-for-old-measure-value| : int := n - i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
       assert [arbitrary_iter_maintain_invariant]: i <= n;
-      })|loop havoc|: ({
+      }|loop havoc|: {
       havoc i;
-      })assume [not_guard]: !(i < n);
+      }assume [not_guard]: !(i < n);
     assume [invariant]: i <= n;
-    }()assert [i_eq_n]: i == n;
+    }assert [i_eq_n]: i == n;
   return := i;
   };
 -/

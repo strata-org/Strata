@@ -187,10 +187,10 @@ instance : ToStrataFormat StrataFormat where
   mformat := id
 
 instance : ToStrataFormat Nat where
-  mformat n _ _ := private .ofFormat n
+  mformat n _ _ := private .ofFormat n (maxPrec + 1)
 
 instance : ToStrataFormat Decimal where
-  mformat n _ _ := private .ofFormat n
+  mformat n _ _ := private .ofFormat n (maxPrec + 1)
 
 namespace StrataFormat
 
@@ -316,19 +316,28 @@ This pretty prints the argument an op atom has.
 -/
 private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFormat) (stx : SyntaxDefAtom) : Format :=
   match stx with
-  | .ident lvl prec _ =>
-    let ⟨r, innerPrec⟩ := args[lvl]!
-    if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
-      f!"({r})"
+  | .ident lvl prec =>
+    if h : lvl ≥ args.size then
+      panic! s!"ident level {lvl} out of bounds"
     else
-      r
+      let ⟨r, innerPrec⟩ := args[lvl]
+      if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
+        f!"({r})"
+      else
+        r
   | .str s => format s
   | .indent n f =>
     let r := Format.join (f.attach.map (fun ⟨a, _⟩ => a.formatArgs opts args) |>.toList)
     .nest n r
 
 private def ppOp (opts : FormatOptions) (stx : SyntaxDef) (args : Array PrecFormat) : PrecFormat :=
-  ⟨Format.join ((·.formatArgs opts args) <$> stx.atoms).toList, stx.prec⟩
+  match stx with
+  | .passthrough =>
+    if h : args.size = 1 then
+      args[0]
+    else
+      panic! "passthrough requires one argument"
+  | .std atoms prec => ⟨Format.join ((·.formatArgs opts args) <$> atoms).toList, prec⟩
 
 private abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 
@@ -437,7 +446,11 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
     let argResults := formatArguments (← read) (← get) bindings args
     let fmt := ppOp (← read).opts decl.syntaxDef (Prod.fst <$> argResults)
     match decl.metadata.resultLevel bindings.size with
-    | some idx => set argResults[idx]!.snd
+    | some idx =>
+      if h : idx.val < argResults.size then
+        set argResults[idx.val].snd
+      else
+        panic! "result scope index out of bounds"
     | none => pure ()
     for b in decl.newBindings do
       match args[b.nameIndex.toLevel] with
@@ -560,7 +573,7 @@ end ArgDecls
 namespace SyntaxDefAtom
 
 private protected def mformat : SyntaxDefAtom → StrataFormat
-| .ident lvl prec _ => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
+| .ident lvl prec => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
 | .str lit => mformat (escapeStringLit lit)
 | .indent n f =>
   let r := f.attach.map fun ⟨a, _⟩ => a.mformat
@@ -575,7 +588,9 @@ end SyntaxDefAtom
 namespace SyntaxDef
 
 instance : ToStrataFormat SyntaxDef where
-  mformat s := private .sepBy s.atoms " "
+  mformat := private fun
+    | .std atoms _ => .sepBy atoms " "
+    | .passthrough => mf!"{StrataFormat.lvlVar 0}:{0}"
 
 end SyntaxDef
 

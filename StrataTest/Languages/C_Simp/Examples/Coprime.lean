@@ -37,20 +37,20 @@ bool procedure coprime (a: int, b: int)
 
 /--
 info: program C_Simp;
-bool procedure coprime(a:int, b:int)//@pre(a>(0))&&(b>(0));
-//@posttrue;
+bool procedure coprime(a:int, b:int)//@pre (a>0)&&(b>0);
+//@post true;
   ({
   vari:int;
   i=a;
   if(b<a){
   i=b;
   }
-  ()while(i>(1))
-  //@decreasesi//@invariant(true)({
-  if(((b%i)==(0))&&((a%i)==(0))){
+  ()while(i>1)
+  //@decreases i//@invariant true({
+  if(((b%i)==0)&&((a%i)==0)){
   returnfalse;
   }
-  ()i=i-(1);
+  ()i=i-1;
   }
   )returntrue;
   }
@@ -102,31 +102,31 @@ spec {
   i := a;
   if(b < a){
     i := b;
-    }()if(i > 1){
-    first_iter_asserts: ({
+    }if(i > 1){
+    first_iter_asserts: {
       assert [entry_invariant]: true;
       assert [assert_measure_pos]: i >= 0;
-      })|arbitrary iter facts|: ({
-      |loop havoc|: ({
+      }|arbitrary iter facts|: {
+      |loop havoc|: {
         havoc return;
         havoc i;
-        })arbitrary_iter_assumes: ({
+        }arbitrary_iter_assumes: {
         assume [assume_guard]: i > 1;
         assume [assume_invariant]: true;
         assume [assume_measure_pos]: i >= 0;
-        })var |special-name-for-old-measure-value| : int;
+        }var |special-name-for-old-measure-value| : int;
       if(b mod i == 0 && a mod i == 0){
         return := false;
-        }()i := i - 1;
+        }i := i - 1;
       assert [measure_decreases]: i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if i <= 0 then !(i > 1) else true;
       assert [arbitrary_iter_maintain_invariant]: true;
-      })|loop havoc|: ({
+      }|loop havoc|: {
       havoc return;
       havoc i;
-      })assume [not_guard]: !(i > 1);
+      }assume [not_guard]: !(i > 1);
     assume [invariant]: true;
-    }()return := true;
+    }return := true;
   };
 -/
 #guard_msgs in
