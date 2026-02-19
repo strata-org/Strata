@@ -91,6 +91,10 @@ structure SyntaxElaborator where
   syntaxCount : Nat
   argElaborators : ArgElaboratorArray syntaxCount
   resultScope : Option Nat
+  /-- Index into argElaborators for each argument (indexed by argLevel), None if arg has no syntax. -/
+  argElabIndex : Array (Option Nat) := #[]
+  /-- If set, pre-register type names from children at this arg level before elaboration. -/
+  preRegisterTypesScope : Option Nat := none
 deriving Inhabited, Repr
 
 /-- Build the syntax elaborator that maps parsed syntax positions to
@@ -110,10 +114,17 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       contextLevel := argDecls.argScopeLevel ⟨0, h⟩
       datatypeScope := argDecls.argScopeDatatypeLevel ⟨0, h⟩
     }
+    let elabs := #[⟨ae, Nat.zero_lt_one⟩]
+    -- Build argElabIndex array indexed by argLevel
+    let argElabIndex := Array.replicate argDecls.size none
+    let (argElabIndex, _) := elabs.foldl (init := (argElabIndex, 0)) fun (arr, idx) ⟨ae, _⟩ =>
+      (arr.set! ae.argLevel (some idx), idx + 1)
     {
       syntaxCount := 1
-      argElaborators := #[⟨ae, Nat.zero_lt_one⟩]
+      argElaborators := elabs
       resultScope := opMd.resultLevel argDecls.size
+      argElabIndex := argElabIndex
+      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
     }
   | .std atoms _ =>
     let init : ArgElaborators := {
@@ -127,10 +138,16 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
     let as := if as.syntaxCount = 0 then as.inc else as
     -- Sort by argument level so elaboration processes args in order.
     let elabs := as.argElaborators.qsort (·.val.argLevel < ·.val.argLevel)
+    -- Build argElabIndex array indexed by argLevel
+    let argElabIndex := Array.replicate argDecls.size none
+    let (argElabIndex, _) := elabs.foldl (init := (argElabIndex, 0)) fun (arr, idx) ⟨ae, _⟩ =>
+      (arr.set! ae.argLevel (some idx), idx + 1)
     {
       syntaxCount := as.syntaxCount
       argElaborators := elabs
       resultScope := opMd.resultLevel argDecls.size
+      argElabIndex := argElabIndex
+      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
     }
 
 private def opDeclElaborator! (decl : OpDecl) : SyntaxElaborator :=
