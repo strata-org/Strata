@@ -2016,78 +2016,534 @@ NOTE:
   variables are irrelevant, and can be approximated by updating the relevant
   variables (that is, lhs ++ modifies)
 -/
+/-
+  Helper: Given that variables `vs` are defined in both σ and σ', and σ and σ'
+  agree on all variables NOT in `vs`, we can construct HavocVars σ vs σ'.
+  Each variable in vs is updated from its value in σ to its value in σ'.
+-/
+theorem HavocVarsFromAgree :
+  isDefined σ vs →
+  isDefined σ' vs →
+  (∀ k, k ∉ vs → σ' k = σ k) →
+  HavocVars σ vs σ' := by
+  intros Hdef Hdef' Hagree
+  induction vs generalizing σ
+  case nil =>
+    have : σ' = σ := funext (fun k => Hagree k (by simp))
+    subst this; exact HavocVars.update_none
+  case cons h t ih =>
+    -- h is defined in σ
+    have Hh := Hdef h (by simp)
+    simp [Option.isSome] at Hh; split at Hh <;> simp_all
+    rename_i v_old heq_old
+    -- h is defined in σ'
+    have Hh' := Hdef' h (by simp)
+    simp [Option.isSome] at Hh'; split at Hh' <;> simp_all
+    rename_i v_new heq_new
+    -- Construct intermediate store: update h in σ to its value in σ'
+    apply HavocVars.update_some (σ' := updatedState σ h v_new) (v := v_new)
+    · exact updatedStateUpdate heq_old
+    · apply ih
+      · intro k hk
+        simp [isDefined, updatedState]
+        split
+        · simp [Option.isSome]
+        · exact Hdef k (by simp; right; exact hk)
+      · intro k hk; exact Hdef' k (by simp; right; exact hk)
+      · intro k hk
+        simp [updatedState]
+        split
+        · rename_i heq; simp_all
+        · rename_i hne
+          have hne' : k ≠ h := by intro heq; simp [heq] at hne
+          exact Hagree k hne' hk
+
+/-
+  Frame condition for UpdateStates: variables not in the update list are preserved.
+-/
+theorem UpdateStatesFrame :
+  UpdateStates (P:=P) σ ks vs σ' →
+  k ∉ ks →
+  σ' k = σ k := by
+  intros Hup Hk
+  induction Hup with
+  | update_none => rfl
+  | update_some Hup _ ih =>
+    cases Hup with | update _ _ Heq =>
+    simp at Hk
+    rw [ih Hk.2, Heq k (Ne.symm Hk.1)]
+
+/-
+  Frame condition for basic commands on defined variables: if a variable is
+  defined and not in modifiedVars, its value is preserved (init can't affect
+  it because InitState requires the variable to be undefined).
+-/
+private theorem EvalCmdFrameConditionDefined
+  {δ : CoreEval} {σ σ' : CoreStore} {c : Imperative.Cmd Expression} :
+  Imperative.EvalCmd Expression δ σ c σ' →
+  ∀ k v, k ∉ Imperative.Cmd.modifiedVars c →
+         σ k = some v →
+         σ' k = some v := by
+  intros Heval k v Hmod Hsome
+  cases Heval with
+  | eval_init _ Hinit _ =>
+    cases Hinit with | init Hnone Hsome' Heq =>
+    -- k ≠ init target because σ k = some v but σ (init target) = none
+    have hne : ∀ x, σ x = none → k ≠ x := by intro x hx heq; subst heq; simp_all
+    rw [Heq k (Ne.symm (hne _ Hnone))]; exact Hsome
+  | eval_set _ Hup _ =>
+    cases Hup with | update _ _ Heq =>
+    simp [Imperative.Cmd.modifiedVars] at Hmod
+    rw [Heq k (Ne.symm Hmod)]; exact Hsome
+  | eval_havoc Hup _ =>
+    cases Hup with | update _ _ Heq =>
+    simp [Imperative.Cmd.modifiedVars] at Hmod
+    rw [Heq k (Ne.symm Hmod)]; exact Hsome
+  | eval_assert => exact Hsome
+  | eval_assume => exact Hsome
+  | eval_cover => exact Hsome
+
+private theorem EvalCommandFrameConditionDefined
+  {π : String → Option Procedure}
+  {φ : CoreEval → PureFunc Expression → CoreEval}
+  {δ : CoreEval} {σ σ' : CoreStore} {c : Command} :
+  EvalCommand π φ δ σ c σ' →
+  ∀ k v, k ∉ Command.modifiedVarsTrans π c →
+         σ k = some v →
+         σ' k = some v := by
+  intros Heval k v Hmod Hsome
+  cases Heval with
+  | cmd_sem Hcmd =>
+    exact EvalCmdFrameConditionDefined Hcmd k v
+      (by simp [Command.modifiedVarsTrans, Imperative.Cmd.modifiedVars] at Hmod ⊢; exact Hmod)
+      Hsome
+  | call_sem lkup _ _ _ _ _ _ _ _ _ _ _ _ _ Hup2 =>
+    -- σ' obtained from σ by UpdateStates on lhs ++ p.spec.modifies
+    have Hframe := @UpdateStatesFrame _ σ _ _ σ' k Hup2
+    have : σ' k = σ k := Hframe (show k ∉ _ by
+      simp [Command.modifiedVarsTrans] at Hmod
+      rw [lkup] at Hmod; simp at Hmod
+      simp; exact ⟨Hmod.1, fun h => Hmod.2 (by
+        simp [HasVarsTrans.modifiedVarsTrans, Procedure.modifiedVarsTrans,
+              HasVarsImp.modifiedVars, Procedure.modifiedVars]
+        left; exact h)⟩)
+    rw [this]; exact Hsome
+
+/-
+  Stronger frame condition for defined variables: if a variable is defined
+  in the initial store and not in modifiedVarsTrans, its value is preserved.
+  Unlike EvalBlockFrameCondition, this does NOT require k ∉ definedVarsTrans
+  because InitState requires the variable to be undefined (contradicting
+  the hypothesis that it's defined).
+-/
+private theorem FrameConditionDefined_aux
+  {π : String → Option Procedure}
+  {φ : CoreEval → PureFunc Expression → CoreEval}
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
+  (∀ s σ σ' δ δ',
+    Stmt.sizeOf s ≤ m →
+    EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+    ∀ k v, k ∉ Statement.modifiedVarsTrans π s →
+           σ k = some v → σ' k = some v) ∧
+  (∀ ss σ σ' δ δ',
+    Block.sizeOf ss ≤ m →
+    EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+    ∀ k v, k ∉ Statements.modifiedVarsTrans π ss →
+           σ k = some v → σ' k = some v) := by
+  apply Nat.strongRecOn (motive := fun m =>
+    (∀ s σ σ' δ δ',
+      Stmt.sizeOf s ≤ m →
+      EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+      ∀ k v, k ∉ Statement.modifiedVarsTrans π s →
+             σ k = some v → σ' k = some v) ∧
+    (∀ ss σ σ' δ δ',
+      Block.sizeOf ss ≤ m →
+      EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+      ∀ k v, k ∉ Statements.modifiedVarsTrans π ss →
+             σ k = some v → σ' k = some v))
+  intro n ih
+  refine ⟨?_, ?_⟩
+  · intro s σ σ' δ δ' Hsz H k v Hmod Hsome
+    cases H with
+    | cmd_sem Hcmd _ =>
+      exact EvalCommandFrameConditionDefined Hcmd k v
+        (by simp [Statement.modifiedVarsTrans, Command.modifiedVarsTrans] at Hmod ⊢; exact Hmod)
+        Hsome
+    | block_sem Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval k v
+        (by simp [Statement.modifiedVarsTrans] at Hmod; exact Hmod) Hsome
+    | ite_true_sem _ _ Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval k v
+        (by simp [Statement.modifiedVarsTrans] at Hmod; exact Hmod.1) Hsome
+    | ite_false_sem _ _ Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval k v
+        (by simp [Statement.modifiedVarsTrans] at Hmod; exact Hmod.2) Hsome
+    | funcDecl_sem => exact Hsome
+  · intro ss σ σ' δ δ' Hsz Heval k v Hmod Hsome
+    cases ss with
+    | nil =>
+      have ⟨Hσ, _⟩ := Imperative.EvalBlockEmpty Heval
+      subst Hσ; exact Hsome
+    | cons h t =>
+      cases Heval with
+      | stmts_some_sem Heval Hevals =>
+        simp [Statements.modifiedVarsTrans] at Hmod
+        rename_i σ_mid δ_mid
+        have Hframe_h := (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega)).1
+          _ _ _ _ _ (Nat.le_refl _) Heval k v Hmod.1 Hsome
+        exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega)).2
+          _ _ _ _ _ (Nat.le_refl _) Hevals k v Hmod.2 Hframe_h
+
+theorem EvalBlockFrameConditionDefined
+  {π : String → Option Procedure}
+  {φ : CoreEval → PureFunc Expression → CoreEval}
+  {δ δ' : CoreEval} {σ σ' : CoreStore} {body : List Statement} :
+  @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _ δ σ body σ' δ' →
+  (∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) →
+  ∀ k v, k ∉ Statements.modifiedVarsTrans π body →
+         σ k = .some v → σ' k = .some v :=
+  fun Heval hmod k v Hmod Hsome =>
+    (FrameConditionDefined_aux hmod).2 _ _ _ _ _ (Nat.le_refl _) Heval k v Hmod Hsome
+
+/-
+  Frame condition for basic commands: EvalCmd preserves variables not in
+  modifiedVars or definedVars.
+-/
+private theorem EvalCmdFrameCondition
+  {δ : CoreEval} {σ σ' : CoreStore} {c : Imperative.Cmd Expression} :
+  Imperative.EvalCmd Expression δ σ c σ' →
+  ∀ k, k ∉ Imperative.Cmd.modifiedVars c →
+       k ∉ Imperative.Cmd.definedVars c →
+       σ' k = σ k := by
+  intros Heval k Hmod Hdef
+  cases Heval with
+  | eval_init _ Hinit _ =>
+    cases Hinit with | init _ _ Heq =>
+    simp [Imperative.Cmd.definedVars] at Hdef
+    exact Heq k (Ne.symm Hdef)
+  | eval_set _ Hup _ =>
+    cases Hup with | update _ _ Heq =>
+    simp [Imperative.Cmd.modifiedVars] at Hmod
+    exact Heq k (Ne.symm Hmod)
+  | eval_havoc Hup _ =>
+    cases Hup with | update _ _ Heq =>
+    simp [Imperative.Cmd.modifiedVars] at Hmod
+    exact Heq k (Ne.symm Hmod)
+  | eval_assert => rfl
+  | eval_assume => rfl
+  | eval_cover => rfl
+
+/-
+  Frame condition for EvalCommand: preserves variables not in
+  Command.modifiedVarsTrans or Command.definedVarsTrans.
+-/
+private theorem EvalCommandFrameCondition
+  {π : String → Option Procedure}
+  {φ : CoreEval → PureFunc Expression → CoreEval}
+  {δ : CoreEval} {σ σ' : CoreStore} {c : Command} :
+  EvalCommand π φ δ σ c σ' →
+  ∀ k, k ∉ Command.modifiedVarsTrans π c →
+       k ∉ Command.definedVarsTrans π c →
+       σ' k = σ k := by
+  intros Heval k Hmod Hdef
+  cases Heval with
+  | cmd_sem Hcmd =>
+    exact EvalCmdFrameCondition Hcmd k
+      (by simp [Command.modifiedVarsTrans, Imperative.Cmd.modifiedVars] at Hmod ⊢; exact Hmod)
+      (by simp [Command.definedVarsTrans, Command.definedVars, Imperative.Cmd.definedVars] at Hdef ⊢; exact Hdef)
+  | call_sem lkup _ _ _ _ _ _ _ _ _ _ _ _ HrdOutMod Hup2 =>
+    -- σ' is obtained from σ by UpdateStates on lhs ++ modifies
+    apply UpdateStatesFrame Hup2
+    simp [Command.modifiedVarsTrans] at Hmod
+    rw [lkup] at Hmod; simp at Hmod
+    simp
+    exact ⟨Hmod.1, fun h => Hmod.2 (by
+      simp [HasVarsTrans.modifiedVarsTrans, Procedure.modifiedVarsTrans,
+            HasVarsImp.modifiedVars, Procedure.modifiedVars]
+      left; exact h)⟩
+
+/-
+  Combined frame condition for EvalStmt and EvalBlock using strong induction.
+-/
+private theorem FrameCondition_aux
+  {π : String → Option Procedure}
+  {φ : CoreEval → PureFunc Expression → CoreEval}
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) :
+  (∀ s σ σ' δ δ',
+    Stmt.sizeOf s ≤ m →
+    EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+    ∀ k, k ∉ Statement.modifiedVarsTrans π s →
+         k ∉ Statement.definedVarsTrans π s →
+         σ' k = σ k) ∧
+  (∀ ss σ σ' δ δ',
+    Block.sizeOf ss ≤ m →
+    EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+    ∀ k, k ∉ Statements.modifiedVarsTrans π ss →
+         k ∉ Statements.definedVarsTrans π ss →
+         σ' k = σ k) := by
+  apply Nat.strongRecOn (motive := fun m =>
+    (∀ s σ σ' δ δ',
+      Stmt.sizeOf s ≤ m →
+      EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+      ∀ k, k ∉ Statement.modifiedVarsTrans π s →
+           k ∉ Statement.definedVarsTrans π s →
+           σ' k = σ k) ∧
+    (∀ ss σ σ' δ δ',
+      Block.sizeOf ss ≤ m →
+      EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+      ∀ k, k ∉ Statements.modifiedVarsTrans π ss →
+           k ∉ Statements.definedVarsTrans π ss →
+           σ' k = σ k))
+  intro n ih
+  refine ⟨?_, ?_⟩
+  -- Stmt case
+  · intro s σ σ' δ δ' Hsz H k Hmod Hdef
+    cases H with
+    | cmd_sem Hcmd Hdefover =>
+      exact EvalCommandFrameCondition Hcmd k
+        (by simp [Statement.modifiedVarsTrans, Command.modifiedVarsTrans] at Hmod ⊢; exact Hmod)
+        (by simp [Statement.definedVarsTrans, Imperative.Stmt.definedVars,
+                   Command.definedVarsTrans, Command.definedVars] at Hdef ⊢; exact Hdef)
+    | block_sem Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval k
+        (by simp [Statement.modifiedVarsTrans] at Hmod; exact Hmod)
+        (by simp [Statement.definedVarsTrans, Imperative.Stmt.definedVars, Imperative.Block.definedVars] at Hdef; exact Hdef)
+    | ite_true_sem _ _ Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval k
+        (by simp [Statement.modifiedVarsTrans] at Hmod; exact Hmod.1)
+        (by simp [Statement.definedVarsTrans, Imperative.Stmt.definedVars, Imperative.Block.definedVars] at Hdef ⊢
+            exact Hdef.1)
+    | ite_false_sem _ _ Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval k
+        (by simp [Statement.modifiedVarsTrans] at Hmod; exact Hmod.2)
+        (by simp [Statement.definedVarsTrans, Imperative.Stmt.definedVars, Imperative.Block.definedVars] at Hdef ⊢
+            exact Hdef.2)
+    | funcDecl_sem => rfl
+  -- Block case
+  · intro ss σ σ' δ δ' Hsz Heval k Hmod Hdef
+    cases ss with
+    | nil =>
+      have ⟨Hσ, _⟩ := Imperative.EvalBlockEmpty Heval
+      simp [Hσ]
+    | cons h t =>
+      cases Heval with
+      | stmts_some_sem Heval Hevals =>
+        simp [Statements.modifiedVarsTrans] at Hmod
+        simp [Statements.definedVarsTrans, Imperative.Block.definedVars, Imperative.Stmt.definedVars] at Hdef
+        -- σ →[h] σ_mid →[t] σ'
+        rename_i σ_mid δ_mid
+        have Hframe_h := (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega)).1
+          _ _ _ _ _ (Nat.le_refl _) Heval k Hmod.1 Hdef.1
+        have Hframe_t := (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega)).2
+          _ _ _ _ _ (Nat.le_refl _) Hevals k Hmod.2 Hdef.2
+        rw [Hframe_t, Hframe_h]
+
+theorem EvalBlockFrameCondition
+  {π : String → Option Procedure}
+  {φ : CoreEval → PureFunc Expression → CoreEval}
+  {δ δ' : CoreEval} {σ σ' : CoreStore} {body : List Statement} :
+  @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _ δ σ body σ' δ' →
+  (∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) →
+  ∀ k, k ∉ Statements.modifiedVarsTrans π body →
+       k ∉ Statements.definedVarsTrans π body →
+       σ' k = σ k :=
+  fun Heval hmod k Hmod Hdef =>
+    (FrameCondition_aux hmod).2 _ _ _ _ _ (Nat.le_refl _) Heval k Hmod Hdef
+
+/-
+  ReadValues congruence: if two stores agree on the read keys, ReadValues transfers.
+-/
+theorem ReadValuesCongr :
+  ReadValues σ ks vs →
+  (∀ k, k ∈ ks → σ' k = σ k) →
+  ReadValues σ' ks vs := by
+  intros Hrd Hagree
+  induction Hrd with
+  | read_none => exact ReadValues.read_none
+  | read_some Hsome _ ih =>
+    apply ReadValues.read_some
+    · rw [Hagree _ (by simp)]; exact Hsome
+    · exact ih (fun k hk => Hagree k (by simp; right; exact hk))
+
 theorem EvalCallBodyRefinesContract :
   ∀ {π φ δ σ lhs n args σ' p},
   π n = .some p →
   p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
+  (∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body) →
+  WellFormedSemanticEvalExprCongr (P:=Expression) δ →
   EvalCommand π φ δ σ (CmdExt.call lhs n args) σ' →
   EvalCommandContract π δ σ (CmdExt.call lhs n args) σ' := by
-  intros π φ δ σ lhs n args σ' p pFound modValid H
+  intros π φ δ σ lhs n args σ' p pFound modValid modValidAll Hwfcongr H
   cases H with
-  | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
-    sorry
+  | call_sem lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st Hdefover HinitIn HinitOut Hpre HevalBody Hpost HrdOutMod Hup2 =>
+    /-
+    Proof strategy:
+      Use σAO' as the intermediate store σO (identity havoc on outputs),
+      and σR' as the contract's final store. The key obligations are:
+        1. HavocVars σAO' outputs σAO' — by HavocVarsId (outputs defined in σAO')
+        2. HavocVars σAO' modifies σR' — by HavocVarsFromAgree + frame condition
+    -/
+    have HrdSplit := ReadValuesAppKeys' HrdOutMod
+    obtain ⟨outVals, modVals', HvApp, HrdOut, HrdMod⟩ := HrdSplit
+    have HdefMod := ReadValuesIsDefined HrdMod
+    have HdefOutAO := InitStatesDefined HinitOut
+    rename_i σ₀' vals' oVals' σA' σAO' σR' p' modvals' δ''
+    have Hpeq : p' = p := by rw [lkup] at pFound; exact Option.some.inj pFound
+    subst Hpeq
+    -- Frame condition: body preserves non-modified, non-defined variables
+    have Hframe := EvalBlockFrameCondition HevalBody modValidAll
+    -- Construct contract store: agrees with σR' on modifies, σAO' elsewhere
+    -- This avoids the issue with init'd locals (which are in σR' but not σAO')
+    let modifies := p'.spec.modifies
+    let σC : CoreStore := fun k =>
+      if k ∈ modifies then σR' k else σAO' k
+    -- Key property: σC agrees with σR' on all variables defined in σAO'
+    -- Uses the stronger frame condition that doesn't need definedVarsTrans exclusion
+    have HframeDef := EvalBlockFrameConditionDefined HevalBody modValidAll
+    have HσC_eq_σR : ∀ k, (σAO' k).isSome → σC k = σR' k := by
+      intro k hk
+      change (if k ∈ modifies then σR' k else σAO' k) = σR' k
+      split
+      · rfl
+      · rename_i hkm
+        have hkm' : k ∉ Statements.modifiedVarsTrans π p'.body := by
+          change k ∉ HasVarsTrans.modifiedVarsTrans π p'.body
+          rw [← modValid]; exact hkm
+        simp [Option.isSome] at hk; split at hk <;> simp_all
+    -- Key fact: outputs ++ modifies are all defined in σAO'
+    -- (outputs from InitStates, modifies from isDefinedOver + InitStates monotonicity)
+    have HdefAllAO : isDefined σAO' (ListMap.keys p'.header.outputs ++ p'.spec.modifies) := by
+      apply isDefinedApp HdefOutAO
+      have Hdefσ : isDefined σ p'.spec.modifies := by
+        intro k hk
+        apply Hdefover k
+        simp only [Statement.call, HasVarsTrans.allVarsTrans, Statement.allVarsTrans,
+          Statement.getVarsTrans, Statement.touchedVarsTrans,
+          Command.getVarsTrans, Command.definedVarsTrans, Command.modifiedVarsTrans,
+          lkup, List.mem_append]
+        right; right; right
+        show k ∈ HasVarsTrans.modifiedVarsTrans π p'
+        simp only [HasVarsTrans.modifiedVarsTrans,
+          Procedure.modifiedVarsTrans, HasVarsImp.modifiedVars, Procedure.modifiedVars,
+          List.mem_append]
+        left; exact hk
+      exact InitStatesDefMonotone (InitStatesDefMonotone Hdefσ HinitIn) HinitOut
+    -- Use σAO' as σO and σC as the contract's final store
+    refine EvalCommandContract.call_sem (σO := σAO') (σR := σC)
+      lkup Heval HrdLhs Hwfval Hwfvar Hwfbool Hwf2st
+      Hdefover HinitIn HinitOut Hpre ?_ ?_ ?_ ?_ Hup2
+    -- HavocVars σAO' outputs σAO' (identity havoc)
+    · exact HavocVarsId HdefOutAO
+    -- HavocVars σAO' modifies σC
+    · apply HavocVarsFromAgree
+      · -- isDefined σAO' modifies
+        intro k hk; exact HdefAllAO k (List.mem_append_right _ hk)
+      · -- isDefined σC modifies
+        intro k hk
+        change ((if k ∈ modifies then σR' k else σAO' k) : Option _).isSome = true
+        rw [if_pos hk]; exact HdefMod k hk
+      · -- σC agrees with σAO' outside modifies
+        intro k hk
+        change (if k ∈ modifies then σR' k else σAO' k) = σAO' k
+        rw [if_neg hk]
+    -- Postconditions hold on σC
+    · intro post Hcontains
+      have ⟨Hdefpost, Hpostval⟩ := Hpost post Hcontains
+      refine ⟨Hdefpost, ?_⟩
+      -- Need: δ σC post = δ σR' post (then use Hpostval)
+      -- σC and σR' agree on all variables defined in σAO', and
+      -- Hdefpost says post's variables are defined in σAO'
+      have Hagree : ∀ x ∈ HasVarsPure.getVars post, σC x = σR' x := by
+        intro x hx
+        exact HσC_eq_σR x (Hdefpost x hx)
+      rw [Hwfcongr post σC σR' Hagree]
+      exact Hpostval
+    -- ReadValues σC (outputs ++ modifies) modvals'
+    · apply ReadValuesCongr HrdOutMod
+      intro k hk
+      exact HσC_eq_σR k (HdefAllAO k hk)
 
-theorem EvalCommandRefinesContract :
+theorem EvalCommandRefinesContract
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
 EvalCommand π φ δ σ c σ' →
 EvalCommandContract π δ σ c σ' := by
   intros H
   cases H with
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
-  | call_sem _ =>
-    apply EvalCallBodyRefinesContract <;> try assumption
-    -- need to connect `modifies` with `modifiedVarsTrans`
-    sorry
+  | call_sem hlkup =>
+    apply EvalCallBodyRefinesContract hlkup (hmod _ _ hlkup) hmod hwfcongr
     constructor <;> assumption
 
-/-- NOTE: should follow the same approach as `DetToNondetCorrect` to prove this
-  mutually recursive theorem due to meta variable bug -/
-theorem EvalBlockRefinesContract :
+/-- Combined proof of `EvalStmtRefinesContract` and `EvalBlockRefinesContract`
+  using strong induction on size to handle the mutual recursion. -/
+private theorem RefinesContract_aux
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : ∀ δ : CoreEval, WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
+  (∀ s σ σ' δ δ',
+    Stmt.sizeOf s ≤ m →
+    EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+    EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ') ∧
+  (∀ ss σ σ' δ δ',
+    Block.sizeOf ss ≤ m →
+    EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+    EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ') := by
+  apply Nat.strongRecOn (motive := fun m =>
+    (∀ s σ σ' δ δ',
+      Stmt.sizeOf s ≤ m →
+      EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
+      EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ') ∧
+    (∀ ss σ σ' δ δ',
+      Block.sizeOf ss ≤ m →
+      EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
+      EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ'))
+  intro n ih
+  refine ⟨?_, ?_⟩
+  -- Stmt case
+  · intro s σ σ' δ δ' Hsz H
+    cases H with
+    | cmd_sem Hdef Heval =>
+      exact EvalStmt.cmd_sem (EvalCommandRefinesContract hmod (hwfcongr _) Hdef) Heval
+    | block_sem Heval =>
+      constructor
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | ite_true_sem Hdef Hwf Heval =>
+      apply EvalStmt.ite_true_sem Hdef Hwf
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | ite_false_sem Hdef Hwf Heval =>
+      apply EvalStmt.ite_false_sem Hdef Hwf
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | funcDecl_sem =>
+      exact EvalStmt.funcDecl_sem
+  -- Block case
+  · intro ss σ σ' δ δ' Hsz Heval
+    cases ss with
+    | nil =>
+      have ⟨Hσ, Hδ⟩ := Imperative.EvalBlockEmpty Heval
+      simp [Hσ, Hδ]; constructor
+    | cons h t =>
+      cases Heval with
+      | stmts_some_sem Heval Hevals =>
+      constructor
+      · exact (ih (Stmt.sizeOf h) (by simp [Block.sizeOf] at Hsz; omega)).1 _ _ _ _ _ (Nat.le_refl _) Heval
+      · exact (ih (Block.sizeOf t) (by simp [Block.sizeOf] at Hsz; omega)).2 _ _ _ _ _ (Nat.le_refl _) Hevals
+
+theorem EvalBlockRefinesContract
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : ∀ δ : CoreEval, WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
   EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' := by
-  intros Heval
-  cases ss
-  case nil =>
-    have ⟨Hσ, Hδ⟩ := Imperative.EvalBlockEmpty Heval
-    simp [Hσ, Hδ]
-    constructor
-  case cons h t =>
-    cases Heval with
-    | stmts_some_sem Heval Hevals =>
-    constructor
-    . sorry
-      -- apply EvalStmtRefinesContract
-      -- apply Heval
-    . apply EvalBlockRefinesContract
-      apply Hevals
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals term_by_mem
+  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
+  (RefinesContract_aux hmod hwfcongr).2 _ _ _ _ _ (Nat.le_refl _)
 
-theorem EvalStmtRefinesContract :
+theorem EvalStmtRefinesContract
+  (hmod : ∀ n p, π n = some p → p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body)
+  (hwfcongr : ∀ δ : CoreEval, WellFormedSemanticEvalExprCongr (P:=Expression) δ) :
   EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' := by
-  intros H
-  cases H with
-  | cmd_sem Hdef Heval =>
-    refine EvalStmt.cmd_sem ?_ Heval
-    exact EvalCommandRefinesContract Hdef
-  | block_sem Heval =>
-    constructor
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_true_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_true_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_false_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_false_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | funcDecl_sem =>
-    exact EvalStmt.funcDecl_sem
+  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
+  (RefinesContract_aux hmod hwfcongr).1 _ _ _ _ _ (Nat.le_refl _)
 
-/-- Currently we cannot prove this theorem,
-    since the WellFormedSemanticEval definition does not assert
-    a congruence relation for definedness on store
-    that is, if f(a) is defined, then a must be defined.
-    We work around this by requiring this condition at `EvalExpressions`.
-  -/
+/-- If an expression is defined, all its free variables are defined in the store.
+    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`. -/
 theorem EvalExpressionIsDefined :
   WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
@@ -2102,8 +2558,26 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case abs => sorry
-  case quant => sorry
-  case app => sorry
-  case ite => sorry
-  case eq => sorry
+  case abs m ty e ih =>
+    exact ih (Hwfc.absdef σ m ty e Hsome) v Hin
+  case quant m k ty tr e trih eih =>
+    have ⟨htr, he⟩ := Hwfc.quantdef σ m k ty tr e Hsome
+    rcases Hin with Hin | Hin
+    · exact trih htr v Hin
+    · exact eih he v Hin
+  case app m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.appdef σ m e₁ e₂ Hsome
+    rcases Hin with Hin | Hin
+    · exact ih₁ h₁ v Hin
+    · exact ih₂ h₂ v Hin
+  case ite m c t e cih tih eih =>
+    have ⟨hc, ht, he⟩ := Hwfc.itedef σ m c t e Hsome
+    rcases Hin with Hin | Hin | Hin
+    · exact cih hc v Hin
+    · exact tih ht v Hin
+    · exact eih he v Hin
+  case eq m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.eqdef σ m e₁ e₂ Hsome
+    rcases Hin with Hin | Hin
+    · exact ih₁ h₁ v Hin
+    · exact ih₂ h₂ v Hin

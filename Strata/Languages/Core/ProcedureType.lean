@@ -21,7 +21,7 @@ open Strata (DiagnosticModel FileRange)
 
 namespace Procedure
 
-private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
+def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if !proc.header.inputs.keys.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
@@ -30,7 +30,7 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
   if !proc.spec.modifies.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the modifies clause!"
 
-private def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
+def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if proc.spec.modifies.any (fun v => v ∈ proc.header.inputs.keys) then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \

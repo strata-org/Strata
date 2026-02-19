@@ -34,9 +34,6 @@ theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   repeat (first | (split at H' <;> try contradiction) | constructor)
   any_goals repeat (split at H <;> try contradiction)
   any_goals simp_all
-  sorry
-  sorry
-  sorry
 
 theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) = Except.ok (pp, T', C') ↔
   (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go P op C T ss acc1 = Except.ok (pp.drop acc2.length, T', C'))

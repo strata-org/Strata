@@ -54,10 +54,6 @@ structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : Str
           proc.header.inputs.length = args.length
   outlen : (Program.Procedure.find? p (.unres procName) = some proc) →
           proc.header.outputs.length = lhs.length
-  lhsDisj : (Program.Procedure.find? p (.unres procName) = some proc) →
-          lhs.Disjoint (proc.spec.modifies ++ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
-  lhsWF : lhs.Nodup ∧ Forall (CoreIdent.isLocl ·) lhs
-  wfargs : Forall (WFargProp p) args
 
 def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
@@ -143,7 +139,6 @@ structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop
 /- Procedure Wellformedness -/
 
 structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) : Prop where
-  glob : CoreIdent.isGlob name
 
 structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
@@ -153,14 +148,10 @@ structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : L
 
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
-  wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
   ioDisjoint : (ListMap.keys d.header.inputs).Disjoint (ListMap.keys d.header.outputs)
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   modNodup : d.spec.modifies.Nodup
-  inputsLocl : Forall (CoreIdent.isLocl ·) (ListMap.keys d.header.inputs)
-  outputsLocl : Forall (CoreIdent.isLocl ·) (ListMap.keys d.header.outputs)
-  wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 @[simp]
