@@ -26,6 +26,20 @@ instance : DecidableEq CoreLParams.IDMeta :=
 instance : ToFormat CoreLParams.IDMeta :=
   show ToFormat Visibility from inferInstance
 
+/-- Convert a `PureFunc Expression` (with polytypes) to a `Function` (with monotypes). -/
+def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Function := {
+  name := decl.name
+  typeArgs := decl.typeArgs
+  isConstr := decl.isConstr
+  inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
+  output := Lambda.LTy.toMonoTypeUnsafe decl.output
+  body := decl.body
+  attr := decl.attr
+  concreteEval := none
+  axioms := decl.axioms
+  preconditions := decl.preconditions
+}
+
 ---------------------------------------------------------------------
 
 end Core

@@ -145,24 +145,15 @@ theorem Statement.typeCheckAux_go_WF :
       -- v_func has type (PureFunc Expression × Function × TEnv Visibility)
       -- heq_func_match is: (match PureFunc.typeCheck ... with | .error => ... | .ok v => .ok v) = .ok v_func
       -- The match on .ok case is identity, so we can extract the equality
-      have heq_func_tc : Function.typeCheck C T
-        { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-          inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-          output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-          body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
+      have heq_func_tc : Function.typeCheck C T (Function.ofPureFunc decl)
         = .ok (v_func.2.1, v_func.2.2) := by
-          simp only [PureFunc.typeCheck, bind, Except.bind] at heq_func_match
-          cases h : Function.typeCheck C T
-            { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-              inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-              output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-              body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms } with
-          | error e => simp [h] at heq_func_match
-          | ok v =>
-            simp [h] at heq_func_match
-            -- heq_func_match shows v_func = (decl', v.fst, v.snd)
-            -- So v_func.2.1 = v.fst and v_func.2.2 = v.snd
-            simp [← heq_func_match]
+          simp only [PureFunc.typeCheck, Function.ofPureFunc, bind, Except.bind] at heq_func_match
+          split at heq_func_match <;> try contradiction
+          rename_i v h
+          split at h <;> try contradiction
+          cases h; cases heq_func_match
+          simp only [Function.ofPureFunc]
+          assumption
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
       apply ih tcok <;> try assumption
@@ -171,12 +162,10 @@ theorem Statement.typeCheckAux_go_WF :
       constructor
       -- Prove arg_nodup using Function.typeCheck_inputs_nodup
       have h_nodup := Function.typeCheck_inputs_nodup C T
-        { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-          inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-          output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-          body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
+        (Function.ofPureFunc decl)
         v_func.2.1 v_func.2.2 heq_func_tc
       -- h_nodup : (decl.inputs.map ...).keys.Nodup, we need: decl.inputs.keys.Nodup
+      simp [Function.ofPureFunc] at h_nodup
       rw [listMap_keys_map_snd] at h_nodup
       exact h_nodup
 

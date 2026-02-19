@@ -173,20 +173,6 @@ def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function) : Option De
 
 /-! ## Statement transformation -/
 
-/-- Convert a PureFunc to an LFunc for adding to the factory -/
-def pureFuncToLFunc (decl : Imperative.PureFunc Expression) : Function := {
-  name := decl.name
-  typeArgs := decl.typeArgs
-  isConstr := decl.isConstr
-  inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
-  output := Lambda.LTy.toMonoTypeUnsafe decl.output
-  body := decl.body
-  attr := decl.attr
-  concreteEval := none
-  axioms := decl.axioms
-  preconditions := decl.preconditions
-}
-
 mutual
 /-- Eliminate function preconditions from blocks.  -/
 def transformStmts (F : @Lambda.Factory CoreLParams) (ss : List Statement)
@@ -230,7 +216,7 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
   | .funcDecl decl md =>
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
-    let func := pureFuncToLFunc decl
+    let func := Function.ofPureFunc decl
     let F' := F.push func
     let decl' := { decl with preconditions := [] }
     match mkFuncWFStmts F' funcName decl.preconditions decl.body with
