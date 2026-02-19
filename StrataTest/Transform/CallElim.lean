@@ -177,6 +177,52 @@ procedure h() returns () spec {
 };
 #end
 
+-- Free preconditions should NOT be asserted at call sites
+def CallElimTestFreeRequires :=
+#strata
+program Core;
+var j : bool;
+var k : bool;
+procedure f(x : bool) returns (y : bool)
+spec {
+  free requires (x == k);
+  requires (x == j);
+  ensures (y == x);
+  modifies j;
+};
+procedure h() returns () spec {
+  modifies j;
+} {
+  var b : bool;
+  call b := f(k);
+};
+#end
+
+def CallElimTestFreeRequiresAns :=
+#strata
+program Core;
+var j : bool;
+var k : bool;
+procedure f(x : bool) returns (y : bool)
+spec {
+  free requires (x == k);
+  requires (x == j);
+  ensures (y == x);
+  modifies j;
+};
+procedure h() returns () spec {
+  modifies j;
+} {
+  var b : bool;
+  var tmp_arg_0 : bool := k;
+  var tmp_b_1 : bool := b;
+  assert [callElimAssert_f_requires_1_2]: (tmp_arg_0 == j);
+  havoc b;
+  havoc j;
+  assume [callElimAssume_f_ensures_2_3]: (b == tmp_arg_0);
+};
+#end
+
 def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
 def env := (Lambda.LContext.default.addFactoryFunctions Core.Factory)
@@ -191,6 +237,7 @@ def tests : List (Core.Program × Core.Program) := [
   (CallElimTest1, CallElimTest1Ans),
   (CallElimTest2, CallElimTest2Ans),
   (CallElimTest3, CallElimTest3Ans),
+  (CallElimTestFreeRequires, CallElimTestFreeRequiresAns),
 ].map (Prod.map translate translate)
 
 def callElim (p : Core.Program)
