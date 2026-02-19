@@ -2100,25 +2100,25 @@ theorem EvalExpressionIsDefined :
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
   case abs m ty e ih =>
-    exact ih (Hwfc.absdef σ m ty e Hsome) v Hin
+    exact ih (Hwfc.definedness.absdef σ m ty e Hsome) v Hin
   case quant m k ty tr e trih eih =>
-    have ⟨htr, he⟩ := Hwfc.quantdef σ m k ty tr e Hsome
+    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k ty tr e Hsome
     rcases Hin with Hin | Hin
     · exact trih htr v Hin
     · exact eih he v Hin
   case app m e₁ e₂ ih₁ ih₂ =>
-    have ⟨h₁, h₂⟩ := Hwfc.appdef σ m e₁ e₂ Hsome
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.appdef σ m e₁ e₂ Hsome
     rcases Hin with Hin | Hin
     · exact ih₁ h₁ v Hin
     · exact ih₂ h₂ v Hin
   case ite m c t e cih tih eih =>
-    have ⟨hc, ht, he⟩ := Hwfc.itedef σ m c t e Hsome
+    have ⟨hc, ht, he⟩ := Hwfc.definedness.itedef σ m c t e Hsome
     rcases Hin with Hin | Hin | Hin
     · exact cih hc v Hin
     · exact tih ht v Hin
     · exact eih he v Hin
   case eq m e₁ e₂ ih₁ ih₂ =>
-    have ⟨h₁, h₂⟩ := Hwfc.eqdef σ m e₁ e₂ Hsome
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
     rcases Hin with Hin | Hin
     · exact ih₁ h₁ v Hin
     · exact ih₂ h₂ v Hin
