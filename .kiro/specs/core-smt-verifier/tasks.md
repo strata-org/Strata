@@ -190,23 +190,23 @@ The implementation follows a phased approach, starting with prerequisites and fo
 - [x] 10. Checkpoint - Ensure statement processor compiles and tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Diagnosis Engine
-  - [ ] 11.1 Create `Strata/Languages/Core/CoreSMT/Diagnosis.lean`
+- [x] 11. Diagnosis Engine
+  - [x] 11.1 Create `Strata/Languages/Core/CoreSMT/Diagnosis.lean`
     - Define `DiagnosedFailure` structure (expression, isRefuted, result)
     - Define `DiagnosisResult` structure (originalCheck, diagnosedFailures)
     - _Requirements: 4.1, 4.7_
   
-  - [ ] 11.2 Implement `splitConjunction : Expression.Expr → Option (Expression.Expr × Expression.Expr)`
+  - [x] 11.2 Implement `splitConjunction : Expression.Expr → Option (Expression.Expr × Expression.Expr)`
     - Detect conjunction expressions (And operator)
     - Return left and right conjuncts
     - _Requirements: 4.3_
   
-  - [ ] 11.3 Implement `checkRefuted : CoreSMTState → Expression.Expr → IO Bool`
+  - [x] 11.3 Implement `checkRefuted : CoreSMTState → Expression.Expr → IO Bool`
     - Use push/pop to check if expression is provably false
     - Assert expression, check-sat, return true if unsat
     - _Requirements: 4.5_
   
-  - [ ] 11.4 Implement `diagnoseFailure : CoreSMTState → Expression.Expr → Bool → IO DiagnosisResult`
+  - [x] 11.4 Implement `diagnoseFailure : CoreSMTState → Expression.Expr → Bool → IO DiagnosisResult`
     - Recursively split conjunctions
     - For proof checks: diagnose all conjuncts
     - For cover checks: stop after first unreachable conjunct
