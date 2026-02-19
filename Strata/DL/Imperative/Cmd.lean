@@ -67,29 +67,6 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
--- Overriding the default `SizeOf String` instance can cause downstream code,
--- which depends on the default instance, to break. The default instance depends
--- on `String.utf8ByteSize`, which is different from `String.length`.
--- instance : SizeOf String where
-  -- sizeOf s := s.length
-
-@[simp]
-def Cmd.sizeOf (c : Imperative.Cmd P) : Nat :=
-  match c with
-  | .init   n t e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf t + SizeOf.sizeOf e
-  | .set    n e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf e
-  | .havoc  n _ => 1 + SizeOf.sizeOf n
-  | .assert l b _ => 1 + l.length + SizeOf.sizeOf b
-  | .assume l b _ => 1 + l.length + SizeOf.sizeOf b
-  | .cover l b _ => 1 + l.length + SizeOf.sizeOf b
-
--- TODO: the above `sizeOf` definition is probably not the intended one.
--- Since it's missing `[SizeOf P.Ident]`, `[SizeOf P.Ty]`, and
--- `[SizeOf P.Expr]` as input, Lean ends up using the default `SizeOf`
--- instance for any type, which returns `0` as shown below.
-example : Cmd.sizeOf (Cmd.init n t e md) = 1 := by
-  rfl
-
 ---------------------------------------------------------------------
 
 class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
