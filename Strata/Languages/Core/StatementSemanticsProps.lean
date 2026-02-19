@@ -2067,21 +2067,15 @@ private theorem RefinesContract_aux :
     cases H with
     | cmd_sem Hdef Heval =>
       exact EvalStmt.cmd_sem (EvalCommandRefinesContract Hdef) Heval
-    | block_sem (ss := ss) Heval =>
+    | block_sem Heval =>
       constructor
-      exact
-        (ih (Block.sizeOf ss) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2
-          ss σ σ' δ δ' (Nat.le_refl _) Heval
-    | ite_true_sem (ss := ss) Hdef Hwf Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | ite_true_sem Hdef Hwf Heval =>
       apply EvalStmt.ite_true_sem Hdef Hwf
-      exact
-        (ih (Block.sizeOf ss) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2
-          ss σ σ' δ δ' (Nat.le_refl _) Heval
-    | ite_false_sem (ss := ss) Hdef Hwf Heval =>
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
+    | ite_false_sem Hdef Hwf Heval =>
       apply EvalStmt.ite_false_sem Hdef Hwf
-      exact
-        (ih (Block.sizeOf ss) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2
-          ss σ σ' δ δ' (Nat.le_refl _) Heval
+      exact (ih (Block.sizeOf _) (by simp [Stmt.sizeOf] at Hsz; omega) π φ).2 _ _ _ _ _ (Nat.le_refl _) Heval
     | funcDecl_sem =>
       exact EvalStmt.funcDecl_sem
   -- Block case
