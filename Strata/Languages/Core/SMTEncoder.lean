@@ -170,13 +170,7 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
         ) ctx
       ) ctx
   | none =>
-    let ctx := ctx.addSort { name := id, arity := args.length }
-    args.foldl (fun (ctx : SMT.Context) arg =>
-      match arg with
-      | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
-      | _ => ctx
-    ) ctx
-
+    ctx.addSort { name := id, arity := args.length }
 
 mutual
 def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) :
