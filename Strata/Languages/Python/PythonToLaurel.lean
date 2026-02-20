@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Core.Program
 
 /-!
@@ -65,6 +66,8 @@ structure TranslationContext where
   userFunctions : List String := []
   /-- Names of prelude types -/
   preludeTypes : List String := []
+  /-- Overload dispatch table from PySpec: function name → overloads -/
+  overloadTable : Specs.ToLaurel.OverloadTable := {}
   /-- Behavior for unmodeled functions -/
   unmodeledBehavior : UnmodeledFunctionBehavior := .havocOutputs
   /-- File path for source location metadata -/
@@ -169,6 +172,42 @@ def mkNoneForType (typeName : String) : StmtExprMd :=
   let noneVal := mkStmtExprMd (StmtExpr.StaticCall "None_none" [])
   mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
 
+/-- Look up a function call in the overload dispatch table.
+    Returns the class name if the first arg is a string literal
+    matching an overload entry. Warns when a dispatched function
+    is called with no arguments. -/
+def resolveDispatch (ctx : TranslationContext)
+    (funcName : String)
+    (args : Array (Python.expr SourceRange))
+    : Except TranslationError (Option String) := do
+  match ctx.overloadTable.get? funcName with
+  | none => return none
+  | some fnOverloads =>
+    let .isTrue _ := decideProp (args.size > 0)
+      | throw (.typeError
+          s!"Dispatched function '{funcName}' called with no \
+            arguments (expected a string literal first argument)")
+    match args[0] with
+    | .Constant _ (.ConString _ s) _ =>
+      return (fnOverloads.get? s.val).map (·.name)
+    | _ => return none
+
+/-- Infer a UserDefined type from a call expression using the
+    overload dispatch table. Extracts the bare function name from
+    the Call node and delegates to `resolveDispatch`. -/
+def inferTypeFromCall (ctx : TranslationContext)
+    (e : Python.expr SourceRange)
+    : Except TranslationError (Option HighTypeMd) := do
+  match e with
+  | .Call _ f args _kwargs =>
+    let bareName := match f with
+      | .Attribute _ _ attr _ => attr.val
+      | .Name _ n _ => n.val
+      | _ => ""
+    return (← resolveDispatch ctx bareName args.val).map
+      fun name => mkHighTypeMd (.UserDefined name)
+  | _ => return none
+
 /-! ## Expression Translation -/
 
 /-- Check if a function has a model (is in prelude or user-defined) -/
@@ -271,7 +310,40 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       let first ← translateExpr ctx values.val[0]!
       return first
 
-  | .Call _ f args _kwargs => translateCall ctx (pyExprToString f) args.val.toList
+  | .Call _ f args _kwargs =>
+    match f with
+    | .Attribute _ obj methodAttr _ =>
+      match obj with
+      | .Name _ objName _ =>
+        -- Case 1: method call on typed variable (e.g., s3.put_object())
+        match ctx.variableTypes.lookup objName.val with
+        | some ⟨.UserDefined className, _⟩ =>
+          let resolved := s!"{className}_{methodAttr.val}"
+          -- Prepend the object as 'self' argument
+          translateCall ctx resolved (obj :: args.val.toList)
+        | _ =>
+          -- Case 2: dispatched factory call (e.g., boto3.client('s3'))
+          match ← resolveDispatch ctx methodAttr.val args.val with
+          | some className =>
+            return mkStmtExprMd (.New className)
+          | none =>
+            translateCall ctx (pyExprToString f) args.val.toList
+      | _ =>
+        -- Object is not a simple Name; try dispatch then fall through
+        match ← resolveDispatch ctx methodAttr.val args.val with
+        | some className =>
+          return mkStmtExprMd (.New className)
+        | none =>
+          translateCall ctx (pyExprToString f) args.val.toList
+    | .Name _ funcName _ =>
+      -- Case 2 again: bare dispatched call (e.g., client('s3'))
+      match ← resolveDispatch ctx funcName.val args.val with
+      | some className =>
+        return mkStmtExprMd (.New className)
+      | none =>
+        translateCall ctx (pyExprToString f) args.val.toList
+    | _ =>
+      translateCall ctx (pyExprToString f) args.val.toList
 
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
 
@@ -329,10 +401,15 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let target ← match targets.val[0]! with
       | .Name _ name _ => .ok name.val
       | _ => throw (.unsupportedConstruct "Only simple variable assignment supported" (toString (repr s)))
-    let valueExpr ← translateExpr ctx value
+    -- Try to infer a UserDefined type from dispatch table
+    let newCtx := match ← inferTypeFromCall ctx value with
+      | some varType =>
+        { ctx with variableTypes := ctx.variableTypes ++ [(target, varType)] }
+      | none => ctx
+    let valueExpr ← translateExpr newCtx value
     let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
     let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
-    return (ctx, assignStmt)
+    return (newCtx, assignStmt)
 
   -- Annotated assignment: x: int = expr
   | .AnnAssign _ target annotation value _ => do
@@ -340,7 +417,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .Name _ name _ => .ok name.val
       | _ => throw (.unsupportedConstruct "Only simple variable annotation supported" (toString (repr s)))
     let typeStr := pyExprToString annotation
-    let varType ← translateType ctx typeStr
+    -- Try dispatch table first (if there's an initializer call), fall back to annotation
+    let varType ← match value.val with
+      | some initExpr =>
+        match ← inferTypeFromCall ctx initExpr with
+        | some dispatchType => .ok dispatchType
+        | none => translateType ctx typeStr
+      | none => translateType ctx typeStr
     -- Add to context
     let newCtx := { ctx with variableTypes := ctx.variableTypes ++ [(varName, varType)] }
     -- If there's an initializer, create declaration with init
@@ -536,7 +619,11 @@ def extractPreludeProcedures (prelude : Core.Program) : List (String × CoreProc
     | none => none
 
 /-- Translate Python module to Laurel Program -/
-def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRange) (filePath : String := "") : Except TranslationError Laurel.Program := do
+def pythonToLaurel (prelude: Core.Program)
+    (pyModule : Python.Command SourceRange)
+    (filePath : String := "")
+    (overloadTable : Specs.ToLaurel.OverloadTable := {})
+    : Except TranslationError Laurel.Program := do
   match pyModule with
   | .Module _ body _ => do
     let preludeProcedures := extractPreludeProcedures prelude
@@ -552,6 +639,7 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       preludeProcedures := preludeProcedures,
       preludeTypes := preludeTypes,
       userFunctions := userFunctions,
+      overloadTable := overloadTable,
       filePath := filePath
     }
 
