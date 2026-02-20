@@ -68,6 +68,18 @@ procedure useBool(c: Container) returns (r: bool) {
   r := c#boolValue;
 }
 
+composite SameFieldName {
+  var intValue: bool
+}
+
+procedure sameFieldNameDifferentType(a: Container, b: SameFieldName) {
+  a#intValue := 1;
+  b#intValue := true;
+
+  assert a#intValue == 1;
+  assert b#intValue;
+}
+
 // Following test-cases can't be run because Core procedures are not transparent.
 // procedure modifiesFirst(c: Container, d: Container) returns (x: int) {
 //  c#intValue := 3;

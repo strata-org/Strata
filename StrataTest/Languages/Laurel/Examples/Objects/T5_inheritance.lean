@@ -21,6 +21,14 @@ composite Extender extends Base {
   var yValue: int
 }
 
+procedure inheritedFields(a: Extender) {
+  a#xValue := 1;
+  a#yValue := 2;
+
+  assert a#xValue == 1;
+  assert a#yValue == 2;
+}
+
 procedure typeCheckingAndCasting() {
   var a: Base := new Base;
   assert a is Base;
@@ -33,19 +41,6 @@ procedure typeCheckingAndCasting() {
   var d: Extender := c as Extender;
   var e: Extender := a as Extender;
 //                   ^^^^^^^^^^^^^ error: assertion could not be proved
-
-}
-
-composite SameFieldName {
-  var yValue: bool
-}
-
-procedure inheritedFields(a: Extender, b: SameFieldName) {
-  a#yValue := 1;
-  b#yValue := true;
-
-  assert a#yValue == 1;
-  assert b#yValue;
 }
 "
 

@@ -411,7 +411,8 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .IsType t _ => isPureExpr t
   | .Block [single] _ => isPureExpr single
-  | _ => panic "not implemented"
+  | .Block _ _ => false
+  | _ => panic s!"not implemented {Std.format expr.val}"
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
@@ -477,10 +478,17 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
   let constDecls := program.constants.filter (fun c => !c.name.endsWith "_UserType") |>.map translateConstant
+  -- Generate distinct declaration for field constants so the SMT solver knows they differ
+  let fieldConstants := program.constants.filter (fun c => match c.type.val with | .TTypedField _ => true | _ => false)
+  let fieldDistinctDecls := if fieldConstants.length >= 2 then
+    let fieldExprs := fieldConstants.map fun c =>
+      LExpr.op () (Core.CoreIdent.unres c.name) none
+    [Core.Decl.distinct (Core.CoreIdent.unres "Field_distinct") fieldExprs]
+  else []
   let preludeDecls := corePrelude.decls
   -- Generate type hierarchy declarations (UserType constants, distinct, axioms)
   let typeHierarchyDecls := generateTypeHierarchyDecls program.types
-  pure ({ decls := preludeDecls ++ typeHierarchyDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  pure ({ decls := preludeDecls ++ typeHierarchyDecls ++ constDecls ++ fieldDistinctDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
