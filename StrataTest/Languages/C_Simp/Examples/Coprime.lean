@@ -66,7 +66,7 @@ info: function coprime {
   post: #true
   body:
 {
-  init (i : int) := init_i
+  init (i : int)
   i := a
   if (~Int.Lt b a) {
     i := b
@@ -114,7 +114,7 @@ spec {
         assume [assume_guard]: i > 1;
         assume [assume_invariant]: true;
         assume [assume_measure_pos]: i >= 0;
-        }var |special-name-for-old-measure-value| : int;
+        }var |special-name-for-old-measure-value| : int := i;
       if(b mod i == 0 && a mod i == 0){
         return := false;
         }i := i - 1;

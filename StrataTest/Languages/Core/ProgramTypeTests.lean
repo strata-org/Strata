@@ -318,10 +318,10 @@ def outOfScopeVarProg : Program := { decls := [
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)],
                 .ite eb[(x == #true)]
-                  [Statement.init "q" t[int] eb[#0],
+                  [Statement.init "q" t[int] (some eb[#0]),
                            Statement.set "q" eb[#1],
                            Statement.set "y" eb[#true]]
-                  [Statement.init "q" t[int] eb[#0],
+                  [Statement.init "q" t[int] (some eb[#0]),
                            Statement.set "q" eb[#2],
                            Statement.set "y" eb[#true]],
                 Statement.assert "y_check" eb[y == #true],
@@ -361,7 +361,7 @@ def polyFuncProg : Program := { decls := [
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
-            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) eb[init_m_0],
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) none,
             -- m := makePair(identity(42), identity(true));
             Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))]
           ]
