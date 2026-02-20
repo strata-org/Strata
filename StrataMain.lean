@@ -552,24 +552,27 @@ private def parseArgs (cmdName : String)
     pure (acc, pflags)
 
 def main (args : List String) : IO Unit := do
-  match args with
-  | ["--help"] => printGlobalHelp
-  | cmd :: args =>
-    match commandMap[cmd]? with
-    | none => exitFailure s!"Expected subcommand, got {cmd}."
-    | some cmd =>
-      -- Handle per-command help before parsing flags.
-      if args.contains "--help" then
-        printCommandHelp cmd
-        return
-      -- Index the command's flags by name for O(1) lookup during parsing.
-      let flagMap : Std.HashMap String Flag :=
-        cmd.flags.foldl (init := {}) fun m f => m.insert f.name f
-      -- Split raw args into positional arguments and parsed flags.
-      let (args, pflags) ← parseArgs cmd.name flagMap #[] {} args
-      if p : args.size = cmd.args.length then
-        cmd.callback ⟨args, p⟩ pflags
-      else
-        exitCmdFailure cmd.name s!"{cmd.name} expects {cmd.args.length} argument(s)."
-  | [] => do
+  try do
+    match args with
+    | ["--help"] => printGlobalHelp
+    | cmd :: args =>
+      match commandMap[cmd]? with
+      | none => exitFailure s!"Expected subcommand, got {cmd}."
+      | some cmd =>
+        -- Handle per-command help before parsing flags.
+        if args.contains "--help" then
+          printCommandHelp cmd
+          return
+        -- Index the command's flags by name for O(1) lookup during parsing.
+        let flagMap : Std.HashMap String Flag :=
+          cmd.flags.foldl (init := {}) fun m f => m.insert f.name f
+        -- Split raw args into positional arguments and parsed flags.
+        let (args, pflags) ← parseArgs cmd.name flagMap #[] {} args
+        if p : args.size = cmd.args.length then
+          cmd.callback ⟨args, p⟩ pflags
+        else
+          exitCmdFailure cmd.name s!"{cmd.name} expects {cmd.args.length} argument(s)."
+    | [] => do
     exitFailure "Expected subcommand."
+  catch e =>
+    exitFailure e.toString
