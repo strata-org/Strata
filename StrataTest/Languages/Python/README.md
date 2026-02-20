@@ -167,7 +167,7 @@ These commands are useful for inspecting intermediate artifacts.
 ### pySpecToLaurel
 
 Translate a PySpec Ion file to Laurel and print a summary of the resulting
-types, procedures, overload dispatch table, and method registry:
+types, procedures, and overload dispatch table:
 
 ```
 lake exe strata pySpecToLaurel path/to/service.py output_dir/
@@ -181,7 +181,6 @@ from `python_path`'s filename stem, and the Ion file is read from
 ```
 Laurel: 42 procedure(s), 3 type(s)
 Overloads: 0 function(s)
-Method registry: 3 class(es)
   type MyClient
   procedure MyClient_put_object(Key:TString, ...) returns(result:TString)
 ```

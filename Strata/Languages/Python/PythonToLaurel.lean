@@ -173,13 +173,17 @@ def mkNoneForType (typeName : String) : StmtExprMd :=
   mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
 
 /-- Look up a function call in the overload dispatch table.
-    Returns the class name if the first arg is a string literal
-    matching an overload entry. Warns when a dispatched function
-    is called with no arguments. -/
+    Extracts the bare function name from the call target, then
+    returns the class name if the first arg is a string literal
+    matching an overload entry. -/
 def resolveDispatch (ctx : TranslationContext)
-    (funcName : String)
+    (f : Python.expr SourceRange)
     (args : Array (Python.expr SourceRange))
     : Except TranslationError (Option String) := do
+  let funcName := match f with
+    | .Attribute _ _ attr _ => attr.val
+    | .Name _ n _ => n.val
+    | _ => ""
   match ctx.overloadTable.get? funcName with
   | none => return none
   | some fnOverloads =>
@@ -191,22 +195,6 @@ def resolveDispatch (ctx : TranslationContext)
     | .Constant _ (.ConString _ s) _ =>
       return (fnOverloads.get? s.val).map (·.name)
     | _ => return none
-
-/-- Infer a UserDefined type from a call expression using the
-    overload dispatch table. Extracts the bare function name from
-    the Call node and delegates to `resolveDispatch`. -/
-def inferTypeFromCall (ctx : TranslationContext)
-    (e : Python.expr SourceRange)
-    : Except TranslationError (Option HighTypeMd) := do
-  match e with
-  | .Call _ f args _kwargs =>
-    let bareName := match f with
-      | .Attribute _ _ attr _ => attr.val
-      | .Name _ n _ => n.val
-      | _ => ""
-    return (← resolveDispatch ctx bareName args.val).map
-      fun name => mkHighTypeMd (.UserDefined name)
-  | _ => return none
 
 /-! ## Expression Translation -/
 
@@ -311,50 +299,35 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       return first
 
   | .Call _ f args _kwargs =>
-    match f with
-    | .Attribute _ obj methodAttr _ =>
-      match obj with
-      | .Name _ objName _ =>
-        -- Case 1: method call on typed variable (e.g., s3.put_object())
-        match ctx.variableTypes.lookup objName.val with
-        | some ⟨.UserDefined className, _⟩ =>
-          let resolved := s!"{className}_{methodAttr.val}"
-          -- Prepend the object as 'self' argument
-          translateCall ctx resolved (obj :: args.val.toList)
-        | _ =>
-          -- Case 2: dispatched factory call (e.g., boto3.client('s3'))
-          match ← resolveDispatch ctx methodAttr.val args.val with
-          | some className =>
-            return mkStmtExprMd (.New className)
-          | none =>
-            translateCall ctx (pyExprToString f) args.val.toList
-      | _ =>
-        -- Object is not a simple Name; try dispatch then fall through
-        match ← resolveDispatch ctx methodAttr.val args.val with
-        | some className =>
-          return mkStmtExprMd (.New className)
-        | none =>
-          translateCall ctx (pyExprToString f) args.val.toList
-    | .Name _ funcName _ =>
-      -- Case 2 again: bare dispatched call (e.g., client('s3'))
-      match ← resolveDispatch ctx funcName.val args.val with
-      | some className =>
-        return mkStmtExprMd (.New className)
-      | none =>
-        translateCall ctx (pyExprToString f) args.val.toList
-    | _ =>
-      translateCall ctx (pyExprToString f) args.val.toList
+    translateCall ctx f args.val.toList
 
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
 
-/-- Translate function call, filling in optional arguments with None if needed -/
-partial def translateCall (ctx : TranslationContext) (funcName : String) (args : List (Python.expr SourceRange))
+/-- Translate a Python call expression to Laurel.
+    Tries factory dispatch, then method dispatch on typed variables,
+    then falls back to a static call by flattened name. -/
+partial def translateCall (ctx : TranslationContext) (f : Python.expr SourceRange) (args : List (Python.expr SourceRange))
     : Except TranslationError StmtExprMd := do
-  let mut translatedArgs ← args.mapM (translateExpr ctx)
+  -- Step 1: factory dispatch (e.g., boto3.client('iam'))
+  if let some className ← resolveDispatch ctx f args.toArray then
+    return mkStmtExprMd (.New className)
+  -- Step 2: method call on typed variable (e.g., iam.get_role())
+  --   Resolve to ClassName_method(obj, args)
+  let (funcName, finalArgs) := match f with
+    | .Attribute _ obj methodAttr _ =>
+      match obj with
+      | .Name _ objName _ =>
+        match ctx.variableTypes.lookup objName.val with
+        | some ⟨.UserDefined className, _⟩ =>
+          (s!"{className}_{methodAttr.val}", obj :: args)
+        | _ => (pyExprToString f, args)
+      | _ => (pyExprToString f, args)
+    | _ => (pyExprToString f, args)
+  -- Step 3: translate the resolved call
+  let mut translatedArgs ← finalArgs.mapM (translateExpr ctx)
 
   -- Check if function has a model
   if !hasModel ctx funcName then
-    -- Unmodeled function - use Hole
     return mkStmtExprMd .Hole
 
   -- Check if this is a prelude procedure and fill in optional args
@@ -363,7 +336,6 @@ partial def translateCall (ctx : TranslationContext) (funcName : String) (args :
     let numExpected := sig.inputs.length
 
     if numProvided < numExpected then
-      -- Fill remaining args with None of the appropriate type
       for i in [numProvided:numExpected] do
         let paramType := sig.inputs[i]!
         translatedArgs := translatedArgs ++ [mkNoneForType paramType]
@@ -401,15 +373,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let target ← match targets.val[0]! with
       | .Name _ name _ => .ok name.val
       | _ => throw (.unsupportedConstruct "Only simple variable assignment supported" (toString (repr s)))
-    -- Try to infer a UserDefined type from dispatch table
-    let newCtx := match ← inferTypeFromCall ctx value with
-      | some varType =>
-        { ctx with variableTypes := ctx.variableTypes ++ [(target, varType)] }
-      | none => ctx
-    let valueExpr ← translateExpr newCtx value
+    let valueExpr ← translateExpr ctx value
     let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
     let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
-    return (newCtx, assignStmt)
+    return (ctx, assignStmt)
 
   -- Annotated assignment: x: int = expr
   | .AnnAssign _ target annotation value _ => do
@@ -417,13 +384,16 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .Name _ name _ => .ok name.val
       | _ => throw (.unsupportedConstruct "Only simple variable annotation supported" (toString (repr s)))
     let typeStr := pyExprToString annotation
-    -- Try dispatch table first (if there's an initializer call), fall back to annotation
-    let varType ← match value.val with
-      | some initExpr =>
-        match ← inferTypeFromCall ctx initExpr with
-        | some dispatchType => .ok dispatchType
-        | none => translateType ctx typeStr
-      | none => translateType ctx typeStr
+    -- Try the annotation first; if it resolves to PyAnyType and there's
+    -- an initializer call, fall back to the dispatch table.  This handles
+    -- the mismatch between Python type-stub names and PySpec service names.
+    let annotationType ← translateType ctx typeStr
+    let varType ← match annotationType.val, value.val with
+      | .TCore "PyAnyType", some (.Call _ f args _) =>
+        match ← resolveDispatch ctx f args.val with
+        | some name => .ok (mkHighTypeMd (.UserDefined name))
+        | none => .ok annotationType
+      | _, _ => .ok annotationType
     -- Add to context
     let newCtx := { ctx with variableTypes := ctx.variableTypes ++ [(varName, varType)] }
     -- If there's an initializer, create declaration with init
