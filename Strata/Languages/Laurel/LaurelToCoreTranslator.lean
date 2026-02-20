@@ -409,8 +409,9 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
   | .New _ => false
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
+  | .IsType t _ => isPureExpr t
   | .Block [single] _ => isPureExpr single
-  | _ => false
+  | _ => panic "not implemented"
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
