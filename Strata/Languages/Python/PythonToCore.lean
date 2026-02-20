@@ -71,7 +71,7 @@ deriving Repr, BEq, Inhabited
 structure ExtrinsicsModelingConfig where
   behaviors : String → ExtrinsicModelingChoice
 
-def defaultExtrinsicsModelChoice (s: String) : ExtrinsicModelingChoice :=
+def defaultExtrinsicsModelChoice (_s: String) : ExtrinsicModelingChoice :=
   .havocArgsAndRet
 
 instance : Inhabited ExtrinsicsModelingConfig where
