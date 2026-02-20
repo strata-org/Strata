@@ -718,6 +718,18 @@ partial def lappToExpr {M} [Inhabited M]
     pure (.btrue default)  -- Default to true literal
 end
 
+/-- Convert preconditions to CST spec elements -/
+private def precondsToSpecElts {M} [Inhabited M]
+    (preconds : List (DL.Util.FuncPrecondition
+      (Lambda.LExpr CoreLParams.mono) CoreLParams.Metadata))
+    : ToCSTM M (Ann (Array (SpecElt M)) M) := do
+  let specElts ← preconds.toArray.mapM fun precond => do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, none⟩
+    let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
+    let exprCST ← lexprToExpr precond.expr 0
+    pure (SpecElt.requires_spec default labelAnn freeAnn exprCST)
+  pure ⟨default, specElts⟩
+
 /-- Convert a function declaration to a statement -/
 def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression)
     : ToCSTM M (CoreDDM.Statement M) := do
@@ -745,12 +757,7 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   -- Add formals to the context
   modify (·.addScopedBoundVars (reverse? := false) paramNames)
   -- Convert preconditions
-  let specElts ← decl.preconditions.toArray.mapM fun precond => do
-    let labelAnn : Ann (Option (Label M)) M := ⟨default, none⟩
-    let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
-    let exprCST ← lexprToExpr precond.expr 0
-    pure (SpecElt.requires_spec default labelAnn freeAnn exprCST)
-  let preconds : Ann (Array (SpecElt M)) M := ⟨default, specElts⟩
+  let preconds ← precondsToSpecElts decl.preconditions
   let bodyExpr ← match decl.body with
   | none =>
     -- Dummy expr for the body.
@@ -970,12 +977,7 @@ def funcToCST {M} [Inhabited M]
     -- Add formals to the context.
     modify (·.addScopedBoundVars (reverse? := false) paramNames)
     -- Convert preconditions
-    let specElts ← func.preconditions.toArray.mapM fun precond => do
-      let labelAnn : Ann (Option (Label M)) M := ⟨default, none⟩
-      let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
-      let exprCST ← lexprToExpr precond.expr 0
-      pure (SpecElt.requires_spec default labelAnn freeAnn exprCST)
-    let preconds : Ann (Array (SpecElt M)) M := ⟨default, specElts⟩
+    let preconds ← precondsToSpecElts func.preconditions
     let bodyExpr ← lexprToExpr body 0
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r preconds bodyExpr inline?)
