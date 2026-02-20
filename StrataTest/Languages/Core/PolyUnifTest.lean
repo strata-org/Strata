@@ -64,6 +64,6 @@ info: error: (1284-1357) Impossible to unify (arrow string int) with (arrow int 
 First mismatch: string with int.
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram polyUnifBadPgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram polyUnifBadPgm)).fst
 
 end Strata.PolyUnifTest
