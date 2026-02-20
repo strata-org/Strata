@@ -179,6 +179,12 @@ where
       go C Env srest (s' :: acc)
     termination_by Block.sizeOf ss
     decreasing_by all_goals term_by_mem
+
+private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
+  match oe with
+  | some e => some (LExpr.applySubst e S)
+  | none => none
+
 /--
 Apply type substitution `S` to a command.
 -/
@@ -186,7 +192,7 @@ def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
   | .cmd c => match c with
     | .init x ty e md =>
-      .cmd $ .init x (LTy.subst S ty) (e.applySubst S) md
+      .cmd $ .init x (LTy.subst S ty) (substOptionExpr S e) md
     | .set x e md =>
       .cmd $ .set x (e.applySubst S) md
     | .havoc _ _ => .cmd $ c
@@ -198,11 +204,6 @@ def Command.subst (S : Subst) (c : Command) : Command :=
       .cmd $ .cover label (b.applySubst S) md
   | .call lhs pname args md =>
     .call lhs pname (args.map (fun a => a.applySubst S)) md
-
-private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
-  match oe with
-  | some e => some (LExpr.applySubst e S)
-  | none => none
 
 /--
 Apply type substitution `S` to a statement.

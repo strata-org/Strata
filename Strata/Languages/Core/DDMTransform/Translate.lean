@@ -179,13 +179,13 @@ instance : Inhabited (List Core.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Core.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.false ())
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) none
 
 instance : Inhabited (Core.Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Core.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) (.false ()), {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) none, {})
 
 instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
@@ -1013,8 +1013,7 @@ def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBi
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Core.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))
-    let bindings := incrNum .var_def bindings
+    let s := Core.Statement.init id tp none
     let (stmts, bindings) ← initVarStmts rest bindings
     return ((s :: stmts), bindings)
 
@@ -1717,7 +1716,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
   let md ← getOpMetaData op
-  let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))) md)
+  let decl := (.var id ty none md)
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 

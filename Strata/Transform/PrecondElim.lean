@@ -63,7 +63,8 @@ Collect assertions for all expressions in a command.
 def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
   (cmd : Imperative.Cmd Expression) : List Statement :=
   match cmd with
-  | .init _ _ e md => collectPrecondAsserts F e "init" md
+  | .init _ _ (some e) md => collectPrecondAsserts F e "init" md
+  | .init _ _ _ _ => []
   | .set x e md => collectPrecondAsserts F e s!"set_{x.name}" md
   | .assert l e md => collectPrecondAsserts F e s!"assert_{l}" md
   | .assume l e md => collectPrecondAsserts F e s!"assume_{l}" md
@@ -224,7 +225,7 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
     | some wfStmts =>
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
-        Statement.init name ty (.fvar () (CoreIdent.unres ("init_" ++ name.name)) none)
+        Statement.init name ty none
       .ok ([.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts), .funcDecl decl' md], F')
   termination_by s.sizeOf
   decreasing_by all_goals (simp_wf; try omega)

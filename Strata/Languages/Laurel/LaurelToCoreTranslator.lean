@@ -199,20 +199,20 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
           if isCoreFunction funcNames callee then
             -- Translate as expression (function application)
             let boogieExpr := translateExpr constants env (⟨ .StaticCall callee args, callMd ⟩)
-            (env', [Core.Statement.init ident boogieType boogieExpr md])
+            (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
           else
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr constants env)
             let defaultExpr := defaultExprForType ty
-            let initStmt := Core.Statement.init ident boogieType defaultExpr
+            let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr constants env initExpr
-          (env', [Core.Statement.init ident boogieType boogieExpr])
+          (env', [Core.Statement.init ident boogieType (some boogieExpr)])
       | none =>
           let defaultExpr := defaultExprForType ty
-          (env', [Core.Statement.init ident boogieType defaultExpr])
+          (env', [Core.Statement.init ident boogieType (some defaultExpr)])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
