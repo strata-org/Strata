@@ -63,7 +63,7 @@ abbrev FunctionNames := List Identifier
 def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" ||
-  name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
+  name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" || name == "increment" ||
   name == "MkComposite" || name == "Composite..ref" || name == "Composite..userType" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
@@ -149,6 +149,22 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
+  | .IsType target ty =>
+      -- `target is Type` translates to: ancestorsPerType[Composite..userType(target)][Type_UserType]
+      let targetExpr := translateExpr constants env target boundVars
+      -- Extract the userType from the Composite: Composite..userType(target)
+      let getUserType := LExpr.mkApp () (.op () (Core.CoreIdent.unres "Composite..userType") none) [targetExpr]
+      -- Look up ancestorsPerType
+      let ancestorsPerType := LExpr.op () (Core.CoreIdent.unres "ancestorsPerType") none
+      -- Get the type name from the HighType
+      let typeName := match ty.val with
+        | .UserDefined name => name
+        | _ => panic! "IsType: expected UserDefined type, got {format ty.val}"
+      -- Build the UserType constant for the target type
+      let typeConst := LExpr.op () (Core.CoreIdent.glob (typeName ++ "_UserType")) none
+      -- ancestorsPerType[Composite..userType(target)][Type_UserType]
+      let innerMap := LExpr.mkApp () Core.mapSelectOp [ancestorsPerType, getUserType]
+      LExpr.mkApp () Core.mapSelectOp [innerMap, typeConst]
   | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr

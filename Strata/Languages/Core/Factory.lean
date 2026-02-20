@@ -290,21 +290,21 @@ def polyOldFunc : LFunc CoreLParams :=
       output := mty[%a]}
 
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
-   `Map.empty(d)` returns a map where every key maps to the default value `d`. -/
-def mapEmptyFunc : LFunc CoreLParams :=
-   { name := "Map.empty",
+   `Map.const(d)` returns a map where every key maps to the value `d`. -/
+def mapConstFunc : LFunc CoreLParams :=
+   { name := "Map.const",
      typeArgs := ["k", "v"],
      inputs := [("d", mty[%v])],
      output := mapTy mty[%k] mty[%v],
      axioms :=
      [
-      -- emptySelect: forall d: v, kk: k :: select(empty(d), kk) == d
+      -- constSelect: forall d: v, kk: k :: select(const(d), kk) == d
       ToCoreIdent esM[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
-                ((~Map.empty : %v → (Map %k %v)) %1)) %0)}
+                ((~Map.const : %v → (Map %k %v)) %1)) %0)}
             (((~select : (Map %k %v) → %k → %v)
-                ((~Map.empty : %v → (Map %k %v)) %1)) %0) == %1)]
+                ((~Map.const : %v → (Map %k %v)) %1)) %0) == %1)]
      ]
    }
 
@@ -466,7 +466,7 @@ def Factory : @Factory CoreLParams := #[
 
   polyOldFunc,
 
-  mapEmptyFunc,
+  mapConstFunc,
   mapSelectFunc,
   mapUpdateFunc,
 
@@ -568,7 +568,7 @@ def reInterOp : Expression.Expr := reInterFunc.opExpr
 def reCompOp : Expression.Expr := reCompFunc.opExpr
 def reNoneOp : Expression.Expr := reNoneFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
-def mapEmptyOp : Expression.Expr := mapEmptyFunc.opExpr
+def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 

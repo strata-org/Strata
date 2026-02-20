@@ -68,7 +68,7 @@ def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
   let mkInnerMap (ct : CompositeType) : Core.Expression.Expr :=
     let ancestors := computeAncestors types ct.name
     let falseConst := LExpr.const () (.boolConst false)
-    let emptyInner := LExpr.mkApp () Core.mapEmptyOp [falseConst]
+    let emptyInner := LExpr.mkApp () Core.mapConstOp [falseConst]
     composites.foldl (fun acc otherCt =>
       let otherConst := LExpr.op () (Core.CoreIdent.glob (otherCt.name ++ "_UserType")) none
       let isAncestor := ancestors.contains otherCt.name
@@ -86,8 +86,8 @@ def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
     }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
   let falseConst := LExpr.const () (.boolConst false)
-  let emptyInner := LExpr.mkApp () Core.mapEmptyOp [falseConst]
-  let emptyOuter := LExpr.mkApp () Core.mapEmptyOp [emptyInner]
+  let emptyInner := LExpr.mkApp () Core.mapConstOp [falseConst]
+  let emptyOuter := LExpr.mkApp () Core.mapConstOp [emptyInner]
   let outerMapExpr := composites.foldl (fun acc ct =>
     let typeConst := LExpr.op () (Core.CoreIdent.glob (ct.name ++ "_UserType")) none
     let innerMapRef := LExpr.op () (Core.CoreIdent.unres (s!"ancestorsFor{ct.name}")) (some innerMapTy)
