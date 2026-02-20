@@ -30,6 +30,7 @@ Wellformedness of Factory
 -/
 theorem Factory_wf :
     FactoryWF Factory := by
+/- AL2: skip -/
   unfold Factory
   simp only [array_list_happend_toArray, List.cons_append, List.nil_append]
   apply FactoryWF.mk
@@ -74,4 +75,5 @@ theorem Factory_wf :
       · decide -- LFuncWF.inputs_typevars_in_typeArgs
       · decide -- LFuncWF.output_typevars_in_typeArgs
     )
+/- AL2: skip end -/
 end Core
