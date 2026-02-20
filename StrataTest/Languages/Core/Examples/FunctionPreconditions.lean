@@ -490,4 +490,71 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify funcDeclPgm
 
+-- Precondition in loop guard
+def loopGuardPrecondPgm :=
+#strata
+program Core;
+
+procedure test(n : int) returns ()
+spec {
+  requires n != 0;
+}
+{
+  var i : int := 0;
+  while (i / n < 10)
+    invariant i >= 0
+  {
+    i := i + 1;
+  }
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: loop_guard_calls_Int.SafeDiv_0
+Property: assert
+Assumptions:
+test_requires_0: !($__n0 == 0)
+Obligation:
+!($__n0 == 0)
+
+Label: entry_invariant_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
+test_requires_0: !($__n0 == 0)
+Obligation:
+true
+
+Label: arbitrary_iter_maintain_invariant_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
+assume_guard_0: $__i1 / $__n0 < 10
+assume_invariant_0: $__i1 >= 0
+test_requires_0: !($__n0 == 0)
+Obligation:
+$__i1 + 1 >= 0
+
+---
+info:
+Obligation: loop_guard_calls_Int.SafeDiv_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify loopGuardPrecondPgm
+
 end Strata

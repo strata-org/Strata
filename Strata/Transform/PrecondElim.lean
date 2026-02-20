@@ -49,7 +49,7 @@ Given a Factory and an expression, collect all partial function call
 precondition obligations and return them as `assert` statements.
 The metadata from the original statement is attached to the generated assertions.
 -/
-def collectAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
+def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 (labelPrefix : String) (md : Imperative.MetaData Expression := .empty)
 : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
@@ -60,23 +60,23 @@ def collectAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 /--
 Collect assertions for all expressions in a command.
 -/
-def collectCmdAsserts (F : @Lambda.Factory CoreLParams)
+def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
   (cmd : Imperative.Cmd Expression) : List Statement :=
   match cmd with
-  | .init _ _ e md => collectAsserts F e "init" md
-  | .set x e md => collectAsserts F e s!"set_{x.name}" md
-  | .assert l e md => collectAsserts F e s!"assert_{l}" md
-  | .assume l e md => collectAsserts F e s!"assume_{l}" md
-  | .cover l e md => collectAsserts F e s!"cover_{l}" md
+  | .init _ _ e md => collectPrecondAsserts F e "init" md
+  | .set x e md => collectPrecondAsserts F e s!"set_{x.name}" md
+  | .assert l e md => collectPrecondAsserts F e s!"assert_{l}" md
+  | .assume l e md => collectPrecondAsserts F e s!"assume_{l}" md
+  | .cover l e md => collectPrecondAsserts F e s!"cover_{l}" md
   | .havoc _ _ => []
 
 /--
 Collect assertions for call arguments.
 -/
-def collectCallAsserts (F : @Lambda.Factory CoreLParams) (pname : String)
+def collectCallPrecondAsserts (F : @Lambda.Factory CoreLParams) (pname : String)
   (args : List Expression.Expr) (md : Imperative.MetaData Expression := .empty)
   : List Statement :=
-  args.flatMap fun arg => collectAsserts F arg s!"call_{pname}_arg" md
+  args.flatMap fun arg => collectPrecondAsserts F arg s!"call_{pname}_arg" md
 
 /-! ## Processing contract conditions -/
 
@@ -87,7 +87,7 @@ then assume the condition. Returns the generated statements.
 def processCondition (F : @Lambda.Factory CoreLParams)
     (expr : Expression.Expr) (assertLabel : String) (assumeLabel : String)
     (md : Imperative.MetaData Expression := .empty) : List Statement :=
-  let asserts := collectAsserts F expr assertLabel md
+  let asserts := collectPrecondAsserts F expr assertLabel md
   let assume := Statement.assume assumeLabel expr md
   asserts ++ [assume]
 
@@ -146,7 +146,7 @@ def mkFuncWFStmts (F : @Lambda.Factory CoreLParams) (funcName : String)
     (stmts ++ stmts', idx + 1)) ([], 0)
   let bodyStmts := match body with
     | none => []
-    | some b => collectAsserts F b s!"{funcName}_body"
+    | some b => collectPrecondAsserts F b s!"{funcName}_body"
   let allStmts := precondStmts ++ bodyStmts
   if hasAssert allStmts then
     some allStmts
@@ -194,9 +194,9 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
     : Except DiagnosticModel (List Statement × @Lambda.Factory CoreLParams) :=
   match s with
   | .cmd (.cmd c) =>
-    .ok (collectCmdAsserts F c ++ [.cmd (.cmd c)], F)
+    .ok (collectCmdPrecondAsserts F c ++ [.cmd (.cmd c)], F)
   | .cmd (.call lhs pname args md) =>
-    .ok (collectCallAsserts F pname args md ++ [.call lhs pname args md], F)
+    .ok (collectCallPrecondAsserts F pname args md ++ [.call lhs pname args md], F)
   | .block lbl b md => do
     let (b', _) ← transformStmts F b
     .ok ([.block lbl b' md], F)
@@ -206,9 +206,9 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
     .ok ([.ite c thenb' elseb' md], F)
   | .loop guard measure invariant body md => do
     let invAsserts := match invariant with
-      | some inv => collectAsserts F inv "loop_invariant" md
+      | some inv => collectPrecondAsserts F inv "loop_invariant" md
       | none => []
-    let guardAsserts := collectAsserts F guard "loop_guard" md
+    let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
     let (body', _) ← transformStmts F body
     .ok (guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md], F)
   | .goto lbl md =>
