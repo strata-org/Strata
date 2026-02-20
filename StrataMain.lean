@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
+import Strata.Languages.Core.SarifOutput
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 
@@ -307,10 +308,12 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × Lean.FileMap)
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
-  flags := [{ name := "verbose", help := "Enable verbose output." }]
+  flags := [{ name := "verbose", help := "Enable verbose output." },
+            { name := "sarif", help := "Write results as SARIF to a file." }]
   help := "Verify a Python Ion program. Translates to Core, inlines procedures, and runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
+    let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pgm ← readPythonStrata filePath
     -- Try to read the Python source for line number conversion
@@ -382,14 +385,29 @@ def pyAnalyzeCommand : Command where
           | none => ("", "")
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
       IO.println s
+      -- Output in SARIF format if requested
+      if outputSarif then
+        let files := match pySourceOpt with
+          | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
+          | none => Map.empty
+        let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
+        let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
+        let sarifFile := filePath ++ ".sarif"
+        try
+          IO.FS.writeFile sarifFile sarifJson
+          IO.println s!"SARIF output written to {sarifFile}"
+        catch e =>
+          IO.eprintln s!"Error writing SARIF output to {sarifFile}: {e.toString}"
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
-  flags := [{ name := "verbose", help := "Enable verbose output." }]
+  flags := [{ name := "verbose", help := "Enable verbose output." },
+            { name := "sarif", help := "Write results as SARIF to a file." }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
+    let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pgm ← readPythonStrata filePath
     let pySourceOpt ← tryReadPythonSource filePath
@@ -459,6 +477,19 @@ def pyAnalyzeLaurelCommand : Command where
               | none => ("", "")
             s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
           IO.println s
+          -- Output in SARIF format if requested
+          if outputSarif then
+            let files := match pySourceOpt with
+              | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
+              | none => Map.empty
+            let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
+            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
+            let sarifFile := filePath ++ ".sarif"
+            try
+              IO.FS.writeFile sarifFile sarifJson
+              IO.println s!"SARIF output written to {sarifFile}"
+            catch e =>
+              IO.eprintln s!"Error writing SARIF output to {sarifFile}: {e.toString}"
 
 def javaGenCommand : Command where
   name := "javaGen"
