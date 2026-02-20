@@ -17,12 +17,6 @@ open Core Lambda Imperative
 
   Also see `LabelGen.lean` for the generic type class for a unique label generator.
 -/
-namespace Names
-
-def initVarValue (id : CoreIdent) : Expression.Expr :=
-  .fvar () (CoreIdent.unres ("init_" ++ id.name)) none
-
-end Names
 
 namespace Core
 
