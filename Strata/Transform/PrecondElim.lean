@@ -185,7 +185,7 @@ def transformStmts (F : @Lambda.Factory CoreLParams) (ss : List Statement)
     let (rest', F'') ← transformStmts F' rest
     .ok (s' ++ rest', F'')
   termination_by Imperative.Block.sizeOf ss
-  decreasing_by all_goals (simp_wf; omega)
+  decreasing_by all_goals term_by_mem
 
 /-- Eliminate function preconditions from statement, adding assertions
   at call sites (including in existing assertions and loop invariants).
@@ -228,7 +228,7 @@ def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
         Statement.init name ty none
       .ok ([.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts), .funcDecl decl' md], F')
   termination_by s.sizeOf
-  decreasing_by all_goals (simp_wf; try omega)
+  decreasing_by all_goals term_by_mem
 end
 
 /-! ## Main transformation -/
