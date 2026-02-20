@@ -24,7 +24,7 @@ theorem array_list_happend_toArray:
   grind
 
 set_option maxRecDepth 1024 in
-set_option maxHeartbeats 4000000 in
+set_option maxHeartbeats 400000 in
 /--
 Wellformedness of Factory
 -/
@@ -35,6 +35,7 @@ theorem Factory_wf :
   apply FactoryWF.mk
   · decide -- FactoryWF.name_nodup
   · intros f Hmem
+    -- 176 is the number of functions in Factory (#eval Factory.size)
     iterate 176 (any_goals (rcases Hmem with _ | ⟨ a', Hmem ⟩ <;> try contradiction))
     all_goals (
       rw [LFuncWF]
@@ -42,7 +43,12 @@ theorem Factory_wf :
       · decide -- LFuncWF.arg_nodup
       · decide -- LFuncWF.body_freevars
       · -- LFuncWF.concreteEval_argmatch
-        simp (config := { ground := true })
+        intros lf md args res
+        -- Reduce '<func name>.concreteEval'
+        conv => lhs; simp (config := { ground := true })
+        -- Reduce 'List.length <func name>.inputs'
+        conv => rhs; rhs; rhs; whnf
+        try (solve | intro h; contradiction)
         try (
           try unfold unOpCeval
           try unfold binOpCeval
@@ -54,12 +60,18 @@ theorem Factory_wf :
           try unfold bvBinaryOp
           try unfold bvShiftOp
           try unfold bvBinaryPred
-          intros lf md args res
-          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind))
+          intro Hlf_def
+          rw [← Hlf_def]
+          -- Destruct the 'args' list until the goal is discharged.
+          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try (
+            conv => lhs; lhs; simp only []
+            intros Habsurd
+            contradiction))
+          -- When the [arg0,arg1,..].length = n exactly matches
+          intro _Hdummy; rfl)
       · decide -- LFuncWF.body_or_concreteEval
       · decide -- LFuncWF.typeArgs_nodup
       · decide -- LFuncWF.inputs_typevars_in_typeArgs
       · decide -- LFuncWF.output_typevars_in_typeArgs
     )
-
 end Core
