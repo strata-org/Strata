@@ -18,11 +18,20 @@ namespace WF
 open Std Lambda
 
 /-- Helper lemma: mapping only the values of a ListMap preserves the keys. -/
-private theorem listMap_keys_map_snd {α β γ : Type} (l : List (α × β)) (f : β → γ) :
-    ListMap.keys (l.map (fun (id, ty) => (id, f ty))) = ListMap.keys l := by
-  induction l with
-  | nil => simp [ListMap.keys]
-  | cons h t ih => simp [ListMap.keys, ih]
+private theorem listMap_keys_mapM_snd {α β γ : Type} (l : List (α × β))
+    (f : (α × β) → Except ε (α × γ)) (result : List (α × γ))
+    (hf : ∀ a b, ∀ r, f (a, b) = .ok r → r.1 = a)
+    (h : l.mapM f = .ok result) :
+    ListMap.keys result = ListMap.keys l := by
+  induction l generalizing result with
+  | nil => cases h; rfl
+  | cons hd tl ih =>
+    rw [List.mapM_cons] at h
+    simp only[bind, Except.bind] at h
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    cases h; simp only[ListMap.keys]
+    grind
 
 theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   → WFCmdExtProp p c := by
@@ -142,17 +151,20 @@ theorem Statement.typeCheckAux_go_WF :
       -- Now split on the PureFunc.typeCheck result
       split at * <;> try contradiction
       rename_i v_go heq_go v_func heq_func_match heq_tryCatch
-      -- v_func has type (PureFunc Expression × Function × TEnv Visibility)
-      -- heq_func_match is: (match PureFunc.typeCheck ... with | .error => ... | .ok v => .ok v) = .ok v_func
-      -- The match on .ok case is identity, so we can extract the equality
-      have heq_func_tc : Function.typeCheck C T (Function.ofPureFunc decl)
+      -- Case split on Function.ofPureFunc decl
+      match hofp_eq : Function.ofPureFunc decl with
+      | .error _ =>
+        simp only [hofp_eq, PureFunc.typeCheck, bind, Except.bind] at heq_func_match
+        contradiction
+      | .ok funcData =>
+      -- funcData is the same Function as the old ofPureFunc would have returned
+      have heq_func_tc : Function.typeCheck C T funcData
         = .ok (v_func.2.1, v_func.2.2) := by
-          simp only [PureFunc.typeCheck, Function.ofPureFunc, bind, Except.bind] at heq_func_match
+          simp only [PureFunc.typeCheck, hofp_eq, bind, Except.bind] at heq_func_match
           split at heq_func_match <;> try contradiction
           rename_i v h
           split at h <;> try contradiction
           cases h; cases heq_func_match
-          simp only [Function.ofPureFunc]
           assumption
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
@@ -162,11 +174,17 @@ theorem Statement.typeCheckAux_go_WF :
       constructor
       -- Prove arg_nodup using Function.typeCheck_inputs_nodup
       have h_nodup := Function.typeCheck_inputs_nodup C T
-        (Function.ofPureFunc decl)
+        funcData
         v_func.2.1 v_func.2.2 heq_func_tc
-      -- h_nodup : (decl.inputs.map ...).keys.Nodup, we need: decl.inputs.keys.Nodup
-      simp [Function.ofPureFunc] at h_nodup
-      rw [listMap_keys_map_snd] at h_nodup
+      -- Idea: mapM preserves keys
+      have h_keys : funcData.inputs.keys = decl.inputs.keys := by
+        simp only [Function.ofPureFunc, bind, Except.bind] at hofp_eq
+        split at hofp_eq <;> try contradiction
+        split at hofp_eq <;> try contradiction
+        cases hofp_eq
+        apply listMap_keys_mapM_snd _ _ _ _ ‹_›
+        grind
+      rw [h_keys] at h_nodup
       exact h_nodup
 
 /--

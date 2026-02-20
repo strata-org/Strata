@@ -176,13 +176,13 @@ def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function) : Option De
 mutual
 /-- Eliminate function preconditions from blocks.  -/
 def transformStmts (F : @Lambda.Factory CoreLParams) (ss : List Statement)
-    : List Statement × @Lambda.Factory CoreLParams :=
+    : Except DiagnosticModel (List Statement × @Lambda.Factory CoreLParams) :=
   match ss with
-  | [] => ([], F)
-  | s :: rest =>
-    let (s', F') := transformStmt F s
-    let (rest', F'') := transformStmts F' rest
-    (s' ++ rest', F'')
+  | [] => .ok ([], F)
+  | s :: rest => do
+    let (s', F') ← transformStmt F s
+    let (rest', F'') ← transformStmts F' rest
+    .ok (s' ++ rest', F'')
   termination_by Imperative.Block.sizeOf ss
   decreasing_by all_goals (simp_wf; omega)
 
@@ -191,41 +191,41 @@ def transformStmts (F : @Lambda.Factory CoreLParams) (ss : List Statement)
   Function declaration statements produce a well-formedness check block
   mirroring the procedure created for top-level functions. -/
 def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
-    : List Statement × @Lambda.Factory CoreLParams :=
+    : Except DiagnosticModel (List Statement × @Lambda.Factory CoreLParams) :=
   match s with
   | .cmd (.cmd c) =>
-    (collectCmdAsserts F c ++ [.cmd (.cmd c)], F)
+    .ok (collectCmdAsserts F c ++ [.cmd (.cmd c)], F)
   | .cmd (.call lhs pname args md) =>
-    (collectCallAsserts F pname args md ++ [.call lhs pname args md], F)
-  | .block lbl b md =>
-    let (b', _) := transformStmts F b
-    ([.block lbl b' md], F)
-  | .ite c thenb elseb md =>
-    let (thenb', _) := transformStmts F thenb
-    let (elseb', _) := transformStmts F elseb
-    ([.ite c thenb' elseb' md], F)
-  | .loop guard measure invariant body md =>
+    .ok (collectCallAsserts F pname args md ++ [.call lhs pname args md], F)
+  | .block lbl b md => do
+    let (b', _) ← transformStmts F b
+    .ok ([.block lbl b' md], F)
+  | .ite c thenb elseb md => do
+    let (thenb', _) ← transformStmts F thenb
+    let (elseb', _) ← transformStmts F elseb
+    .ok ([.ite c thenb' elseb' md], F)
+  | .loop guard measure invariant body md => do
     let invAsserts := match invariant with
       | some inv => collectAsserts F inv "loop_invariant" md
       | none => []
     let guardAsserts := collectAsserts F guard "loop_guard" md
-    let (body', _) := transformStmts F body
-    (guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md], F)
+    let (body', _) ← transformStmts F body
+    .ok (guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md], F)
   | .goto lbl md =>
-    ([.goto lbl md], F)
-  | .funcDecl decl md =>
+    .ok ([.goto lbl md], F)
+  | .funcDecl decl md => do
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
-    let func := Function.ofPureFunc decl
+    let func ← (Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat
     let F' := F.push func
     let decl' := { decl with preconditions := [] }
     match mkFuncWFStmts F' funcName decl.preconditions decl.body with
-    | none => ([.funcDecl decl' md], F')
+    | none => .ok ([.funcDecl decl' md], F')
     | some wfStmts =>
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty (.fvar () (CoreIdent.unres ("init_" ++ name.name)) none)
-      ([.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts), .funcDecl decl' md], F')
+      .ok ([.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts), .funcDecl decl' md], F')
   termination_by s.sizeOf
   decreasing_by all_goals (simp_wf; try omega)
 end
@@ -252,7 +252,7 @@ where
     | d :: rest =>
       match d with
       | .proc proc md =>
-        let (body', _) := transformStmts F proc.body
+        let (body', _) ← transformStmts F proc.body
         let proc' := { proc with body := body' }
         let procDecl := Decl.proc proc' md
         let (rest', F') ← transformDecls F rest

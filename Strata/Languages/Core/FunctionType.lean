@@ -81,7 +81,7 @@ and the `Function` (for adding to the context).
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl : PureFunc Expression) :
     Except Format (PureFunc Expression × Function × Core.Expression.TyEnv) := do
   -- Convert PureFunc to Function for type checking
-  let func := Function.ofPureFunc decl
+  let func ← Function.ofPureFunc decl
   let (func', Env) ← Function.typeCheck C Env func
   -- Convert back by wrapping monotypes in trivial polytypes
   let decl' : PureFunc Expression := {
