@@ -57,7 +57,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm1 (options := Options.quiet)
+#eval verify coverPgm1 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -93,6 +93,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm2 (options := Options.quiet)
+#eval verify coverPgm2 (options := .quiet)
 
 ---------------------------------------------------------------------

@@ -26,7 +26,7 @@ error: ❌ Type checking error.
 Variable g of type int already in context.
 -/
 #guard_msgs in
-#eval verify noShadowPgm1 (options := Options.quiet)
+#eval verify noShadowPgm1 (options := .quiet)
 
 def noShadowPgm2 :=
 #strata
@@ -43,6 +43,6 @@ error: ❌ Type checking error.
 Variable g of type bool already in context.
 -/
 #guard_msgs in
-#eval verify noShadowPgm2 (options := Options.quiet)
+#eval verify noShadowPgm2 (options := .quiet)
 
 ---------------------------------------------------------------------

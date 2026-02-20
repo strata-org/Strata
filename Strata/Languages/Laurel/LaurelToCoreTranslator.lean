@@ -21,7 +21,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
-open Core (VCResult VCResults)
+open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
 
 namespace Strata.Laurel
@@ -460,7 +460,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (program : Program)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     : IO (Except (Array DiagnosticModel) VCResults) := do
   let (strataCoreProgram, translateDiags) ← match translate program with
     | .error translateErrorDiags => return .error translateErrorDiags
@@ -485,14 +485,14 @@ def verifyToVcResults (program : Program)
 
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
-    (options : Options := Options.default): IO (Array Diagnostic) := do
+    (options : VerifyOptions := .default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (program : Program) (options : Options := Options.default) : IO (Array DiagnosticModel) := do
+def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors

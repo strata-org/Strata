@@ -6,6 +6,7 @@
 
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Integration.Java.Gen
+import Strata.Languages.Core.Options
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
@@ -13,104 +14,16 @@ import Strata.Languages.Python.Specs
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 
+import Strata.SimpleAPI
+
+open Core (VerifyOptions VerboseMode)
+
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
   IO.Process.exit 1
 
 def exitCmdFailure {α} (cmdName : String) (message : String) : IO α :=
   exitFailure message (hint := s!"strata {cmdName} --help")
-
-namespace Strata
-
-def asText {m} [Monad m] [MonadExcept String m] (path : System.FilePath) (bytes : ByteArray) : m String :=
-  match String.fromUTF8? bytes with
-  | some s =>
-    pure s
-  | none =>
-    throw s!"{path} is not an Ion file and contains non UTF-8 data"
-
-def mkErrorReport (path : System.FilePath) (errors : Array Lean.Message) : BaseIO String := do
-  let msg : String := s!"{errors.size} error(s) reading {path}:\n"
-  let msg ← errors.foldlM (init := msg) fun msg e =>
-    return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
-  return toString msg
-
-inductive DialectOrProgram
-| dialect (d : Dialect)
-| program (pgm : Program)
-
-end Strata
-
-def readStrataText (fm : Strata.DialectFileMap) (input : System.FilePath) (bytes : ByteArray)
-    : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
-  let leanEnv ← Lean.mkEmptyEnvironment 0
-  let contents ←
-    match Strata.asText input bytes with
-    | Except.ok c => pure c
-    | Except.error msg => exitFailure msg
-  let inputContext := Strata.Parser.stringInputContext input contents
-  let (header, errors, startPos) := Strata.Elab.elabHeader leanEnv inputContext
-  if errors.size > 0 then
-    exitFailure  (← Strata.mkErrorReport input errors)
-  match header with
-  | .program _ dialect =>
-    let dialects ←
-      match ← Strata.Elab.loadDialect fm .builtin dialect with
-      | (dialects, .ok _) => pure dialects
-      | (_, .error msg) => exitFailure msg
-    let .isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
-      | panic! "internal: loadDialect failed"
-    match Strata.Elab.elabProgramRest dialects leanEnv inputContext dialect mem startPos with
-    | .ok program => pure (dialects, .program program)
-    | .error errors => exitFailure (← Strata.mkErrorReport input errors)
-  | .dialect stx dialect =>
-    let (loaded, d, s) ←
-      Strata.Elab.elabDialectRest fm .builtin #[] inputContext stx dialect startPos
-    if s.errors.size > 0 then
-      exitFailure (← Strata.mkErrorReport input s.errors)
-    pure (loaded.addDialect! d, .dialect d)
-
-def fileReadError {α} (path : System.FilePath) (msg : String) : IO α := do
-  IO.eprintln s!"Error reading {path}:"
-  IO.eprintln s!"  {msg}\n"
-  IO.eprintln s!"Either the file is invalid or there is a bug in Strata."
-  IO.Process.exit 1
-
-def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes : ByteArray) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
-  let (hdr, frag) ←
-    match Strata.Ion.Header.parse bytes with
-    | .error msg =>
-      exitFailure msg
-    | .ok p =>
-      pure p
-  match hdr with
-  | .dialect dialect =>
-    match ← Strata.Elab.loadDialectFromIonFragment fm .builtin #[] dialect frag with
-    | (_, .error msg) =>
-      fileReadError path msg
-    | (dialects, .ok d) =>
-      pure (dialects, .dialect d)
-  | .program dialect => do
-    let dialects ←
-      match ← Strata.Elab.loadDialect fm .builtin dialect with
-      | (loaded, .ok _) => pure loaded
-      | (_, .error msg) => exitFailure msg
-    let .isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
-      | panic! "loadDialect failed"
-    let dm := dialects.dialects.importedDialects dialect mem
-    match Strata.Program.fromIonFragment frag dm dialect with
-    | .ok pgm =>
-      pure (dialects, .program pgm)
-    | .error msg =>
-      fileReadError path msg
-
-def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
-  let bytes ← Strata.Util.readBinInputSource path.toString
-  let displayPath : System.FilePath := Strata.Util.displayName path.toString
-  if Ion.isIonFile bytes then
-    readStrataIon fm displayPath bytes
-  else
-    readStrataText fm displayPath bytes
 
 /-- How a flag consumes arguments. -/
 inductive FlagArg where
@@ -176,7 +89,7 @@ def checkCommand : Command where
   help := "Parse and validate a Strata file (text or Ion). Reports errors and exits."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let _ ← readFile fm v[0]
+    let _ ← Strata.readStrataFile fm v[0]
     pure ()
 
 def toIonCommand : Command where
@@ -186,12 +99,12 @@ def toIonCommand : Command where
   help := "Convert a Strata text file to Ion binary format."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
-    let (_, pd) ← readFile searchPath v[0]
+    let (_, pd) ← Strata.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
       IO.FS.writeBinFile v[1] d.toIon
     | .program pgm =>
-      IO.FS.writeBinFile v[1] pgm.toIon
+      IO.FS.writeBinFile v[1] (Strata.writeStrataIon pgm)
 
 def printCommand : Command where
   name := "print"
@@ -200,7 +113,7 @@ def printCommand : Command where
   help := "Pretty-print a Strata file (text or Ion) to stdout."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
-    let (ld, pd) ← readFile searchPath v[0]
+    let (ld, pd) ← Strata.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
       let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ ld.dialects))
@@ -208,7 +121,7 @@ def printCommand : Command where
           return
       IO.print <| ld.dialects.format d.name mem
     | .program pgm =>
-      IO.print <| toString pgm
+      IO.print <| Strata.writeStrataText pgm
 
 def diffCommand : Command where
   name := "diff"
@@ -217,8 +130,8 @@ def diffCommand : Command where
   help := "Compare two program files for syntactic equality. Reports the first difference found."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let ⟨_, p1⟩ ← readFile fm v[0]
-    let ⟨_, p2⟩ ← readFile fm v[1]
+    let ⟨_, p1⟩ ← Strata.readStrataFile fm v[0]
+    let ⟨_, p2⟩ ← Strata.readStrataFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
       if p1.dialect != p2.dialect then
@@ -338,7 +251,7 @@ def pyAnalyzeCommand : Command where
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
       let verboseMode := VerboseMode.ofBool verbose
       let options :=
-              { Options.default with
+              { VerifyOptions.default with
                 stopOnFirstError := false,
                 verbose := verboseMode,
                 removeIrrelevantAxioms := true,
@@ -429,7 +342,7 @@ def pyAnalyzeLaurelCommand : Command where
               EIO.toIO
                 (fun f => IO.Error.userError (toString f))
                 (Core.verify coreProgram tempDir .none
-                  { Options.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
+                  { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
 
           -- Print results
           IO.println "\n==== Verification Results ===="
@@ -467,7 +380,7 @@ def javaGenCommand : Command where
   help := "Generate Java source files from a DDM dialect definition. Writes .java files under output-dir."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let (ld, pd) ← readFile fm v[0]
+    let (ld, pd) ← Strata.readStrataFile fm v[0]
     match pd with
     | .dialect d =>
       match Strata.Java.generateDialect d v[1] with

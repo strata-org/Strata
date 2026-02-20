@@ -44,7 +44,7 @@ procedure testmap () returns ()
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify mapBranch (options := Options.quiet)
+#eval verify mapBranch (options := .quiet)
 
 
 end Strata
