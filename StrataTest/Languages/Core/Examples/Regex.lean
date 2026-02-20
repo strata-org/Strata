@@ -255,7 +255,7 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re(init_s_0, re.none()))
+!(str.in.re($__s1, re.none()))
 
 ---
 info:

@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
--- Minimal Laurel dialect for AssertFalse example
+-- Laurel dialect definition, loaded from LaurelGrammar.st
 import Strata.DDM.Integration.Lean
 
 namespace Strata.Laurel
