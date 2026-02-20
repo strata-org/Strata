@@ -39,7 +39,7 @@ function OptString_len (o : (Option string)) : int {
   somefunc(Option..unwrap(o))
 }-/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram polyUnifPgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram polyUnifPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 2: Incorrect polymorphic instantiation caught by type checking
