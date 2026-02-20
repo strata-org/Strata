@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Program
+import Strata.Transform.CoreTransform
 import Strata.DL.Lambda.Preconditions
 import Strata.DL.Lambda.TypeFactory
 
@@ -34,6 +34,7 @@ namespace PrecondElim
 
 open Lambda
 open Strata (DiagnosticModel)
+open Core.Transform
 
 /-! ## Naming conventions -/
 
@@ -175,15 +176,15 @@ def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function) : Option De
 /-! ## Statement transformation -/
 
 mutual
-/-- Eliminate function preconditions from blocks.  -/
-def transformStmts (F : @Lambda.Factory CoreLParams) (ss : List Statement)
-    : Except DiagnosticModel (List Statement × @Lambda.Factory CoreLParams) :=
+/-- Eliminate function preconditions from blocks. -/
+def transformStmts (ss : List Statement)
+    : CoreTransformM (Bool × List Statement) :=
   match ss with
-  | [] => .ok ([], F)
+  | [] => return (false, [])
   | s :: rest => do
-    let (s', F') ← transformStmt F s
-    let (rest', F'') ← transformStmts F' rest
-    .ok (s' ++ rest', F'')
+    let (changed, s') ← transformStmt s
+    let (changed', rest') ← transformStmts rest
+    return (changed || changed', s' ++ rest')
   termination_by Imperative.Block.sizeOf ss
   decreasing_by all_goals term_by_mem
 
@@ -191,42 +192,55 @@ def transformStmts (F : @Lambda.Factory CoreLParams) (ss : List Statement)
   at call sites (including in existing assertions and loop invariants).
   Function declaration statements produce a well-formedness check block
   mirroring the procedure created for top-level functions. -/
-def transformStmt (F : @Lambda.Factory CoreLParams) (s : Statement)
-    : Except DiagnosticModel (List Statement × @Lambda.Factory CoreLParams) :=
+def transformStmt (s : Statement)
+    : CoreTransformM (Bool × List Statement) := do
+  let F ← getFactory
   match s with
   | .cmd (.cmd c) =>
-    .ok (collectCmdPrecondAsserts F c ++ [.cmd (.cmd c)], F)
+    let asserts := collectCmdPrecondAsserts F c
+    return (!asserts.isEmpty, asserts ++ [.cmd (.cmd c)])
   | .cmd (.call lhs pname args md) =>
-    .ok (collectCallPrecondAsserts F pname args md ++ [.call lhs pname args md], F)
+    let asserts := collectCallPrecondAsserts F pname args md
+    return (!asserts.isEmpty, asserts ++ [.call lhs pname args md])
   | .block lbl b md => do
-    let (b', _) ← transformStmts F b
-    .ok ([.block lbl b' md], F)
+    let savedF ← getFactory
+    let (changed, b') ← transformStmts b
+    setFactory savedF
+    return (changed, [.block lbl b' md])
   | .ite c thenb elseb md => do
-    let (thenb', _) ← transformStmts F thenb
-    let (elseb', _) ← transformStmts F elseb
-    .ok ([.ite c thenb' elseb' md], F)
+    let savedF ← getFactory
+    let (changed, thenb') ← transformStmts thenb
+    setFactory savedF
+    let (changed', elseb') ← transformStmts elseb
+    setFactory savedF
+    return (changed || changed', [.ite c thenb' elseb' md])
   | .loop guard measure invariant body md => do
     let invAsserts := match invariant with
       | some inv => collectPrecondAsserts F inv "loop_invariant" md
       | none => []
     let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
-    let (body', _) ← transformStmts F body
-    .ok (guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md], F)
+    let savedF ← getFactory
+    let (changed, body') ← transformStmts body
+    setFactory savedF
+    return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty,
+      guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md])
   | .goto lbl md =>
-    .ok ([.goto lbl md], F)
+    return (false, [.goto lbl md])
   | .funcDecl decl md => do
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
-    let func ← (Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat
+    let func ← liftDiag ((Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat)
     let F' := F.push func
+    setFactory F'
     let decl' := { decl with preconditions := [] }
+    let hasPreconds := !decl.preconditions.isEmpty
     match mkFuncWFStmts F' funcName decl.preconditions decl.body with
-    | none => .ok ([.funcDecl decl' md], F')
+    | none => return (hasPreconds, [.funcDecl decl' md])
     | some wfStmts =>
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty none
-      .ok ([.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts), .funcDecl decl' md], F')
+      return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts), .funcDecl decl' md])
   termination_by s.sizeOf
   decreasing_by all_goals term_by_mem
 end
@@ -239,43 +253,51 @@ Transform an entire program:
 2. For each function, strip preconditions and if needed generate a WF procedure
 3. For each function call, assert that the preconditions hold
 
-Returns the transformed program.
+Returns (changed, transformed program).
 -/
 def precondElim (p : Program) (F : @Lambda.Factory CoreLParams)
-    : Except DiagnosticModel Program := do
-  let (newDecls, _) ← transformDecls F p.decls
-  return { decls := newDecls }
+    : CoreTransformM (Bool × Program) := do
+  setFactory F
+  let (changed, newDecls) ← transformDecls p.decls
+  return (changed, { decls := newDecls })
 where
-  transformDecls (F : @Lambda.Factory CoreLParams) (decls : List Decl)
-      : Except DiagnosticModel (List Decl × @Lambda.Factory CoreLParams) := do
+  transformDecls (decls : List Decl)
+      : CoreTransformM (Bool × List Decl) := do
     match decls with
-    | [] => return ([], F)
+    | [] => return (false, [])
     | d :: rest =>
       match d with
-      | .proc proc md =>
-        let (body', _) ← transformStmts F proc.body
+      | .proc proc md => do
+        let F ← getFactory
+        let (changed, body') ← transformStmts proc.body
+        setFactory F
         let proc' := { proc with body := body' }
         let procDecl := Decl.proc proc' md
-        let (rest', F') ← transformDecls F rest
+        let (changed', rest') ← transformDecls rest
         match mkContractWFProc F proc with
-        | some wfDecl => return (wfDecl :: procDecl :: rest', F')
-        | none => return (procDecl :: rest', F')
-      | .func func md =>
+        | some wfDecl => return (true, wfDecl :: procDecl :: rest')
+        | none => return (changed || changed', procDecl :: rest')
+      | .func func md => do
+        let F ← getFactory
         let F' := F.push func
+        setFactory F'
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
-        let (rest', F'') ← transformDecls F' rest
+        let hasPreconds := !func.preconditions.isEmpty
+        let (changed, rest') ← transformDecls rest
         match mkFuncWFProc F' func with
-        | some wfDecl => return (wfDecl :: funcDecl :: rest', F'')
-        | none => return (funcDecl :: rest', F'')
-      | .type (.data block) _ =>
-        let bf ← Lambda.genBlockFactory (T := CoreLParams) block
-        let F' ← F.addFactory bf
-        let (rest', F'') ← transformDecls F' rest
-        return (d :: rest', F'')
-      | _ =>
-        let (rest', F') ← transformDecls F rest
-        return (d :: rest', F')
+        | some wfDecl => return (true, wfDecl :: funcDecl :: rest')
+        | none => return (changed || hasPreconds, funcDecl :: rest')
+      | .type (.data block) _ => do
+        let F ← getFactory
+        let bf ← liftDiag (Lambda.genBlockFactory (T := CoreLParams) block)
+        let F' ← liftDiag (F.addFactory bf)
+        setFactory F'
+        let (changed, rest') ← transformDecls rest
+        return (changed, d :: rest')
+      | _ => do
+        let (changed, rest') ← transformDecls rest
+        return (changed, d :: rest')
 
 end PrecondElim
 end Core
