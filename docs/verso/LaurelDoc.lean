@@ -35,30 +35,30 @@ Laurel is an intermediate verification language designed to serve as a target fo
 
 Laurel enables doing various forms of verification:
 - Deductive verification
-- Model checking
-- Property based testing
-- Data-flow analysis
+- (WIP) Model checking
+- (WIP) Property based testing
+- (WIP) Data-flow analysis
 
 Here are some Laurel language features that are shared between the source languages:
 - Statements such as loops and return statements
 - Mutation of variables, including in expressions
 - Reading and writing of fields of references
 - Object oriented concepts such as inheritance, type checking, up and down casting and dynamic dispatch
-- Error handling via exceptions
-- Higher-order procedures and procedure types
-- Parametric polymorphism
+- (WIP) Error handling via exceptions
+- (WIP) Higher-order procedures and procedure types
+- (WIP) Parametric polymorphism
 
 On top of the above features, Laurel adds features that are useful specifically for verification:
 - Assert and assume statements
 - Loop invariants
 - Pre and postconditions for procedures
 - Modifies and reads clauses for procedures
-- Decreases clauses for procedures and loops
-- Immutable fields and constructors that support assigning to them
-- Constrained types
-- Type invariants
+- (WIP) Decreases clauses for procedures and loops
+- (WIP) Immutable fields and constructors that support assigning to them
+- (WIP) Constrained types
+- (WIP) Type invariants
 - Forall and exists expressions
-- Old and fresh expressions
+- (WIP) Old and fresh expressions
 - Unbounded integer and real types
 - To be designed constructs for supporting proof writing
 
@@ -71,8 +71,6 @@ procedure increment(counter: Counter)
   x.value := x.value + 1;
 }
 ```
-
-Another Laurel choice is that a procedure may only specify a postcondition when its body is opaque.
 
 ## Implementation Choices
 
