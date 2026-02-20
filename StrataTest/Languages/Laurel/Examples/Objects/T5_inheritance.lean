@@ -34,8 +34,18 @@ procedure typeCheckingAndCasting() {
   var e: Extender := a as Extender;
 //                   ^^^^^^^^^^^^^ error: assertion could not be proved
 
-  b#xValue := 1;
-  b#yValue := 2;
+}
+
+composite SameFieldName {
+  var yValue: bool
+}
+
+procedure inheritedFields(a: Extender, b: SameFieldName) {
+  a#yValue := 1;
+  b#yValue := true;
+
+  assert a#yValue == 1;
+  assert b#yValue;
 }
 "
 
