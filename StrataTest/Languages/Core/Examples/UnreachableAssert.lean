@@ -35,27 +35,27 @@ VCs:
 Label: x_eq_y_internal
 Property: assert
 Assumptions:
-<label_ite_cond_true: (z == #false)>: init_z_2 == false
-z_false: init_z_2 == false
+<label_ite_cond_true: (z == #false)>: $__z2 == false
+z_false: $__z2 == false
 Obligation:
 true
 
 Label: unreachable
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(z == #false)>: if init_z_2 == false then false else true
-z_false: init_z_2 == false
+<label_ite_cond_false: !(z == #false)>: if $__z2 == false then false else true
+z_false: $__z2 == false
 Obligation:
 false
 
 Label: x_eq_y
 Property: assert
 Assumptions:
-z_false: init_z_2 == false
-<label_ite_cond_true: (z == #false)>: if init_z_2 == false then (init_z_2 == false) else true
-<label_ite_cond_false: !(z == #false)>: if if init_z_2 == false then false else true then if init_z_2 == false then false else true else true
+z_false: $__z2 == false
+<label_ite_cond_true: (z == #false)>: if $__z2 == false then ($__z2 == false) else true
+<label_ite_cond_false: !(z == #false)>: if if $__z2 == false then false else true then if $__z2 == false then false else true else true
 Obligation:
-init_x_0 == if init_z_2 == false then init_x_0 else init_y_1
+$__x0 == if $__z2 == false then $__x0 else $__y1
 
 ---
 info:

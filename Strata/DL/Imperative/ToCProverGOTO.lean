@@ -55,15 +55,23 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       { type := .DECL, locationNum := trans.nextLoc,
         sourceLoc := { SourceLocation.nil with function := functionName },
         code := Code.decl v_expr }
-    let e_expr ← G.toGotoExpr e
-    let assign_inst :=
-      { type := .ASSIGN, locationNum := (trans.nextLoc + 1),
-        sourceLoc := { SourceLocation.nil with function := functionName },
-        code := Code.assign v_expr e_expr }
-    return { trans with
-              instructions := trans.instructions.append #[decl_inst, assign_inst],
-              nextLoc := trans.nextLoc + 2,
-              T := T }
+    match e with
+    | some expr =>
+      let e_expr ← G.toGotoExpr expr
+      let assign_inst :=
+        { type := .ASSIGN, locationNum := (trans.nextLoc + 1),
+          sourceLoc := { SourceLocation.nil with function := functionName },
+          code := Code.assign v_expr e_expr }
+      return { trans with
+                instructions := trans.instructions.append #[decl_inst, assign_inst],
+                nextLoc := trans.nextLoc + 2,
+                T := T }
+    | none =>
+      -- Init without expression - just declare
+      return { trans with
+                instructions := trans.instructions.append #[decl_inst],
+                nextLoc := trans.nextLoc + 1,
+                T := T }
   | .set v e _md =>
     let gty ← G.lookupType T v
     let v_expr := Expr.symbol (G.identToString v) gty
