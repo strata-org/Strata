@@ -42,7 +42,7 @@ info: error: Impossible to unify (Foo bool bool) with (Foo int bool).
 First mismatch: bool with int.
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval Options.default bad_prog
+#eval do let ans ← typeCheckAndPartialEval .default bad_prog
          return (format ans)
 
 def good_prog : Program := { decls := [
@@ -301,7 +301,7 @@ info: ok: [(type Foo (a0 : Type, a1 : Type);
   )]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval Options.default good_prog
+#eval do let ans ← typeCheckAndPartialEval .default good_prog
          return (format ans)
 
 ---------------------------------------------------------------------
@@ -335,7 +335,7 @@ info: error: [assert [q_check] (q == #1)] No free variables are allowed here!
 Free Variables: [q]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval Options.default outOfScopeVarProg
+#eval do let ans ← typeCheckAndPartialEval .default outOfScopeVarProg
          return (format ans)
 
 ---------------------------------------------------------------------
@@ -382,7 +382,7 @@ procedure Test () returns ()
 -/
 #guard_msgs in
 #eval do
-  let ans ← typeCheck Options.default polyFuncProg
+  let ans ← typeCheck .default polyFuncProg
   return (format ans)
 
 ---------------------------------------------------------------------

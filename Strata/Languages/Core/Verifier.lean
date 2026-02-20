@@ -69,7 +69,7 @@ def getSolverPrelude : String → SolverM Unit
 | "cvc5" => return ()
 | _ => return ()
 
-def getSolverFlags (options : Options) : Array String :=
+def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
     match options.solver with
     | "cvc5" => #["--produce-models"]
@@ -84,7 +84,7 @@ def getSolverFlags (options : Options) : Array String :=
   produceModels ++ setTimeout
 
 def dischargeObligation
-  (options : Options)
+  (options : VerifyOptions)
   (vars : List Expression.TypedIdent)
   (md : Imperative.MetaData Expression)
   (filename : String)
@@ -186,7 +186,7 @@ instance : ToString VCResults where
 Preprocess a proof obligation before handing it off to a backend engine.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
+    (options : VerifyOptions) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
   match obligation.property with
   | .cover =>
     if obligation.obligation.isFalse then
@@ -233,7 +233,7 @@ given proof obligation.
 -/
 def getObligationResult (terms : List Term) (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) (counter : IO.Ref Nat)
+    (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
@@ -268,7 +268,7 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
                      verbose := options.verbose }
     return result
 
-def verifySingleEnv (pE : Program × Env) (options : Options)
+def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath) :
     EIO DiagnosticModel VCResults := do
   let (p, E) := pE
@@ -319,7 +319,7 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO DiagnosticModel VCResults := do
   let finalProgram ← match proceduresToVerify with
@@ -352,12 +352,14 @@ def verify (program : Program)
 end Core
 ---------------------------------------------------------------------
 
+open Core (VerifyOptions)
+
 namespace Strata
 
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
 
-def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
+def typeCheck (ictx : InputContext) (env : Program) (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
   Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
@@ -376,7 +378,7 @@ def verify
     (env : Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx

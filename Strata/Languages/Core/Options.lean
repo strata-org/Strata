@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+namespace Core
+
 inductive VerboseMode where
   | quiet
   | models
@@ -41,7 +43,7 @@ instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
 /-- Default SMT solver to use -/
 def defaultSolver : String := "cvc5"
 
-structure Options where
+structure VerifyOptions where
   verbose : VerboseMode
   parseOnly : Bool
   typeCheckOnly : Bool
@@ -59,7 +61,7 @@ structure Options where
   /-- Directory to store VCs -/
   vcDirectory : Option System.FilePath
 
-def Options.default : Options := {
+def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
   parseOnly := false,
   typeCheckOnly := false,
@@ -73,14 +75,16 @@ def Options.default : Options := {
   vcDirectory := .none
 }
 
-instance : Inhabited Options where
+instance : Inhabited VerifyOptions where
   default := .default
 
-def Options.quiet : Options :=
-  { Options.default with verbose := .quiet }
+def VerifyOptions.quiet : VerifyOptions :=
+  { VerifyOptions.default with verbose := .quiet }
 
-def Options.models : Options :=
-  { Options.default with verbose := .models }
+def VerifyOptions.models : VerifyOptions :=
+  { VerifyOptions.default with verbose := .models }
 
-def Options.debug : Options :=
-  { Options.default with verbose := .debug }
+def VerifyOptions.debug : VerifyOptions :=
+  { VerifyOptions.default with verbose := .debug }
+
+end Core
