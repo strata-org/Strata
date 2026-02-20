@@ -5,6 +5,7 @@
 -/
 
 import Strata.Transform.CoreTransform
+import Strata.Languages.Core.OldExpressions
 
 /-! # Call Elimination Transformation -/
 
