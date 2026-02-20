@@ -93,10 +93,8 @@ where
         (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all ty (.bvar md 0) ob.obligation }
       | .quant md _ ty trigger body =>
-        let triggerObs := go F trigger implications
-        let bodyObs := (go F body implications).map fun ob =>
+        (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all ty trigger ob.obligation }
-        triggerObs ++ bodyObs
       /- If we are on the RHS of an implication, add assumption
         E.g. y > 0 ==> x / y = 1 should produce
         y > 0 ==> y != 0 -/
