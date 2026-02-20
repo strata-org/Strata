@@ -21,6 +21,4 @@ py_assertion: ✅ pass (at line 16, col 4)
 
 py_assertion: ✅ pass (at line 20, col 4)
 
-set_quot_calls_Int.Div_0: ✅ pass
-
 py_assertion: ✅ pass (at line 24, col 4)

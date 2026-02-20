@@ -1,15 +1,10 @@
 Successfully parsed.
- [assert_entry_invariant_calls_Int.Div_0]: ✅ pass
  [entry_invariant]: ✅ pass
  [assert_measure_pos]: ✅ pass
- [assume_assume_invariant_calls_Int.Div_0]: ✅ pass
  [measure_decreases]: ✅ pass
  [measure_imp_not_guard]: ✅ pass
- [assert_arbitrary_iter_maintain_invariant_calls_Int.Div_0]: ✅ pass
  [arbitrary_iter_maintain_invariant]: ✅ pass
- [assume_invariant_calls_Int.Div_0]: ✅ pass
- [assert_sum_assert_calls_Int.Div_0]: ✅ pass
  [sum_assert]: ✅ pass
  [neg_cond]: ✅ pass
  [post]: ✅ pass
-All 13 goals passed.
+All 8 goals passed.

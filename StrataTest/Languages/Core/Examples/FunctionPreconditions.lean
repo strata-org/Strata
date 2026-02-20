@@ -97,19 +97,20 @@ VCs:
 Label: init_calls_safeHead_0
 Property: assert
 Assumptions:
-assume_0: $__x0 == 1
+assume_0: $__x1 == 1
 Obligation:
 true
 
 Label: assert_0
 Property: assert
 Assumptions:
-assume_0: $__x0 == 1
+assume_0: $__x1 == 1
 Obligation:
-$__x0 == 1
+$__x1 == 1
 
 ---
-info: Obligation: init_calls_safeHead_0
+info:
+Obligation: init_calls_safeHead_0
 Property: assert
 Result: ✅ pass
 
