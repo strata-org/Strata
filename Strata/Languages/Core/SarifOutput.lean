@@ -24,6 +24,7 @@ def outcomeToLevel : Outcome → Level
   | .pass => .none
   | .fail => .error
   | .unknown => .warning
+  | .unreachable => .warning
   | .implementationError _ => .error
 
 /-- Convert Core Outcome to a descriptive message -/
@@ -39,6 +40,7 @@ def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
         s!"Verification failed with counterexample: {Std.format m}"
     | _ => "Verification failed"
   | .unknown => "Verification result unknown (solver timeout or incomplete)"
+  | .unreachable => "Path is unreachable"
   | .implementationError msg => s!"Verification error: {msg}"
 
 /-- Extract location information from metadata -/
