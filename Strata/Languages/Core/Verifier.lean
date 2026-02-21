@@ -26,6 +26,7 @@ open Strata
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
+    (md : Imperative.MetaData Core.Expression)
     (reachCheck : Bool := false) :
     SolverM (List String × EncoderState) := do
   Solver.reset
@@ -45,10 +46,13 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Optional reachability check-sat
   if reachCheck then
     Solver.comment "Reachability check"
+    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+      (message := ("unsat-message", s!"\"Path condition unreachable\""))
     let _ ← Solver.checkSat []
   -- Assert obligation term
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
   Solver.assert obligationId
+  Solver.comment "Proof check"
   let ids := estate.ufs.values
   return (ids, estate)
 
@@ -109,7 +113,7 @@ def dischargeObligation
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm (reachCheck := reachCheck))
+      assumptionTerms obligationTerm md (reachCheck := reachCheck))
     (typedVarToSMTFn ctx)
     vars
     md

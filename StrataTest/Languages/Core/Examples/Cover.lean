@@ -97,15 +97,11 @@ Result: ✅ pass
 
 ---------------------------------------------------------------------
 
-/-! ## Reachability check tests -/
-
-/-!
-### Test: Global `reachCheck` with contradictory assumptions
-
-Both assert and cover sit behind contradictory path conditions
-(`x >= 0` ∧ `x < 0`). Without reachCheck they would be `pass`/`fail`
-(vacuously); with reachCheck they should both be `❗ unreachable`.
--/
+-- Test: Global `reachCheck` with contradictory assumptions
+--
+-- Both assert and cover sit behind contradictory path conditions
+-- (`x >= 0` ∧ `x < 0`). Without `reachCheck` they would be `pass`/`fail`
+-- (vacuously); with `reachCheck` they should both be `❗ unreachable`.
 def reachCheckGlobalPgm :=
 #strata
 program Core;
@@ -135,14 +131,13 @@ Result: ❗ unreachable
 
 ---------------------------------------------------------------------
 
-/-!
-### Test: Global `reachCheck` with reachable and unreachable paths
 
-The if-true branch is unreachable (`x >= 0` ∧ `x < 0`), while the
-else branch is reachable. Obligations on the reachable path should
-have their normal result; those on the unreachable path should be
-`❗ unreachable`.
--/
+-- Test: Global `reachCheck` with reachable and unreachable paths
+--
+-- The if-true branch is unreachable (`x >= 0` ∧ `x < 0`), while the
+-- else branch is reachable. Obligations on the reachable path should
+-- have their normal result; those on the unreachable path should be
+-- `❗ unreachable`.
 def reachCheckMixedPgm :=
 #strata
 program Core;
@@ -189,13 +184,11 @@ Result: ❌ fail
 
 ---------------------------------------------------------------------
 
-/-!
-### Test: Per-statement `@[reachCheck]` annotation
-
-Global `reachCheck` is off. Only statements with `@[reachCheck]` get
-the reachability check. Non-annotated statements under the same
-contradictory assumptions produce the old (vacuous) results.
--/
+-- Test: Per-statement `@[reachCheck]` annotation
+--
+-- Global `reachCheck` is off. Only statements with `@[reachCheck]` get
+-- the reachability check. Non-annotated statements under the same
+-- contradictory assumptions produce the old (vacuous) results.
 def reachCheckPerStmtPgm :=
 #strata
 program Core;
@@ -235,12 +228,10 @@ Result: ❌ fail
 
 ---------------------------------------------------------------------
 
-/-!
-### Test: Diagnostic messages for unreachable outcomes
-
-Verify that `toDiagnosticModel` produces the expected messages for
-both assert and cover when they are unreachable.
--/
+-- Test: Diagnostic messages for unreachable outcomes
+--
+-- Verify that `toDiagnosticModel` produces the expected messages for
+-- both assert and cover when they are unreachable.
 def reachCheckDiagnosticsPgm :=
 #strata
 program Core;
@@ -266,15 +257,13 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 
 ---------------------------------------------------------------------
 
-/-!
-### Test: `reachCheck` overrides PE-optimized results
-
-When `reachCheck` is active, even obligations that PE would normally
-short-circuit (`assert(true)` → pass, `cover(false)` → fail) are sent
-to the SMT solver so that the reachability check can detect unreachable
-paths. Under contradictory assumptions (`x >= 0` ∧ `x < 0`), all four
-obligations are reported as `❗ unreachable`.
--/
+-- Test: `reachCheck` overrides PE-optimized results
+--
+-- When `reachCheck` is active, even obligations that PE would normally
+-- short-circuit (`assert(true)` → pass, `cover(false)` → fail) are sent
+-- to the SMT solver so that the reachability check can detect unreachable
+-- paths. Under contradictory assumptions (`x >= 0` ∧ `x < 0`), all four
+-- obligations are reported as `❗ unreachable`.
 def reachCheckPEPgm :=
 #strata
 program Core;

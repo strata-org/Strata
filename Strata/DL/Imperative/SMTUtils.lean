@@ -170,17 +170,16 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 
 def addLocationInfo {P : PureExpr} [BEq P.Ident]
-  (solver : Strata.SMT.Solver)
-  (md : Imperative.MetaData P)
-  : IO Unit := do
+  (md : Imperative.MetaData P) (message : String × String)
+  : Strata.SMT.SolverM Unit := do
   match Imperative.getFileRange md with
     | .some fileRange => do
-      solver.setInfo "file" s!"\"{format fileRange.file}\""
-      solver.setInfo "start" s!"{fileRange.range.start}"
-      solver.setInfo "stop" s!"{fileRange.range.stop}"
-      -- TODO: the following should probably be stored in metadata so it
-      -- can be set in an application-specific way.
-      solver.setInfo "unsat-message" s!"\"Assertion cannot be proven\""
+      Strata.SMT.Solver.setInfo "file" s!"\"{format fileRange.file}\""
+      Strata.SMT.Solver.setInfo "start" s!"{fileRange.range.start}"
+      Strata.SMT.Solver.setInfo "stop" s!"{fileRange.range.stop}"
+      -- TODO: the following should probably be stored in metadata so it can be
+      -- set in an application-specific way.
+      Strata.SMT.Solver.setInfo message.fst message.snd
     | .none => pure ()
 
 /--
@@ -204,7 +203,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   let solver ← Strata.SMT.Solver.fileWriter handle
 
   let (ids, estate) ← encodeSMT solver
-  addLocationInfo solver md
+  (addLocationInfo md ("sat-message", s!"\"Assertion cannot be proven\"")) solver
 
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
   if printFilename then IO.println s!"Wrote problem to {filename}."
