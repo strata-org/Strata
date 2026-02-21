@@ -108,8 +108,12 @@ def dischargeObligation
   (reachCheck : Bool := false)
   : IO (Except Format (Option SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
-  let solverFlags := getSolverFlags options ++
-    (if reachCheck && options.solver == "cvc5" then #["--incremental"] else #[])
+  let baseFlags := getSolverFlags options
+  let solverFlags :=
+    if reachCheck && options.solver == "cvc5" && !baseFlags.contains "--incremental" then
+      baseFlags ++ #["--incremental"]
+    else
+      baseFlags
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
@@ -155,9 +159,9 @@ analysis.
 -/
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
-  smtResult : SMT.Result := .unknown
+  smtObligationResult : SMT.Result := .unknown
+  smtReachResult : Option SMT.Result := none
   result : Outcome := .unknown
-  reachResult : Option SMT.Result := none
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
 
@@ -177,7 +181,7 @@ instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
                  Property: {r.obligation.property}\n\
                  Result: {r.result}\
-                 {r.smtResult.formatModelIfSat (r.verbose >= .models)}"
+                 {r.smtObligationResult.formatModelIfSat (r.verbose >= .models)}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.result with | .pass => true | _ => false
@@ -296,8 +300,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
         smtResultToOutcome smt_result (obligation.property == .cover)
     let result :=  { obligation,
                      result := outcome,
-                     smtResult := smt_result,
-                     reachResult := reachResult?,
+                     smtReachResult := reachResult?
+                     smtObligationResult := smt_result,
                      estate,
                      verbose := options.verbose }
     return result

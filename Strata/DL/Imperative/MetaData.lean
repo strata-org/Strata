@@ -175,7 +175,7 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
-def MetaData.reachCheck : MetaDataElem.Field P := .label "ReachCheck"
+def MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with

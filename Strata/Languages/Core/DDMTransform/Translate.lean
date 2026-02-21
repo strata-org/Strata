@@ -1078,7 +1078,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateOptionLabel default_name la
     let hasRC ← translateOptionReachCheck rca
     let md ← getOpMetaData op
-    let md := if hasRC then md.pushElem (.label "ReachCheck") (.switch true) else md
+    let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
     return ([.assert l c md], bindings)
   | q`Core.cover, #[rca, la, ca] =>
     let c ← translateExpr p bindings ca
@@ -1087,7 +1087,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateOptionLabel default_name la
     let hasRC ← translateOptionReachCheck rca
     let md ← getOpMetaData op
-    let md := if hasRC then md.pushElem (.label "ReachCheck") (.switch true) else md
+    let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
     return ([.cover l c md], bindings)
   | q`Core.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
