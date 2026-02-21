@@ -2,8 +2,6 @@ import Strata.MetaVerifier
 
 open Strata
 
-namespace Strata
-
 private def findMaxPgm: Strata.Program :=
 #strata
 program Boole;
@@ -34,5 +32,3 @@ spec
 theorem findMaxPgm_smtVCsCorrect : Strata.smtVCsCorrect findMaxPgm := by
   gen_smt_vcs
   all_goals (try grind)
-
-end Strata

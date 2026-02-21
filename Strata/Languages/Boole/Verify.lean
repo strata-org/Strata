@@ -250,23 +250,35 @@ partial def lowerFor
   let loopBody := body ++ [stepStmt]
   .block "for" [initStmt, .loop guardExpr none inv loopBody]
 
+private partial def lowerVarStatement (ds : BooleDDM.DeclList SourceRange) : TranslateM (List Core.Statement) := do
+  let mut out : List Core.Statement := []
+  let mut newBVars : List Core.Expression.Expr := []
+  for d in declListToList ds do
+    let (id, ty) ← toCoreBind d
+    let n := (← get).globalVarCounter
+    modify fun st => { st with globalVarCounter := n + 1 }
+    let initName := mkIdent s!"init_{id.name}_{n}"
+    newBVars := newBVars ++ [(.fvar () id none : Core.Expression.Expr)]
+    out := out ++ [.cmd (.cmd (.init id ty (.fvar () initName none)))]
+  modify fun st => { st with bvars := st.bvars ++ newBVars.toArray }
+  pure out
+
 partial def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Statement) := do
   match b with
-  | .block _ ⟨_, ss⟩ => ss.toList.mapM toCoreStmt
+  | .block _ ⟨_, ss⟩ =>
+    let mut out : List Core.Statement := []
+    for s in ss.toList do
+      match s with
+      | .varStatement _ ds =>
+        out := out ++ (← lowerVarStatement ds)
+      | _ =>
+        out := out ++ [← toCoreStmt s]
+    pure out
 
 partial def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
   match s with
   | .varStatement _ ds =>
-    let mut out : List Core.Statement := []
-    let mut newBVars : List Core.Expression.Expr := []
-    for d in declListToList ds do
-      let (id, ty) ← toCoreBind d
-      let n := (← get).globalVarCounter
-      modify fun st => { st with globalVarCounter := n + 1 }
-      let initName := mkIdent s!"init_{id.name}_{n}"
-      newBVars := newBVars ++ [(.fvar () id none : Core.Expression.Expr)]
-      out := out ++ [.cmd (.cmd (.init id ty (.fvar () initName none)))]
-    modify fun st => { st with bvars := st.bvars ++ newBVars.toArray }
+    let out ← lowerVarStatement ds
     let some first := out.head?
       | throwAt default "Empty var declaration list"
     match ds with

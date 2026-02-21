@@ -1,8 +1,8 @@
 import Strata.MetaVerifier
 
-namespace Strata
+open Strata
 
-private def deterministic : Strata.Program :=
+private def deterministic :=
 #strata
 program Boole;
 
@@ -25,12 +25,12 @@ spec
 
 procedure Check(x1:int, x2:int) returns ()
 {
-  var r1: int;
-  var r2: int;
+  var r1: int, r2: int;
 
   call r1 := Foo(x1);
   call r2 := Foo(x2);
 
+  // results equal when inputs equal
   if (x1 == x2) {
     assert r1 == r2;
   }
@@ -40,8 +40,6 @@ procedure Check(x1:int, x2:int) returns ()
 
 #eval Strata.Boole.verify "cvc5" deterministic
 
-theorem deterministic_smtVCsCorrect : Strata.smtVCsCorrect deterministic := by
+example : Strata.smtVCsCorrect deterministic := by
   gen_smt_vcs
   all_goals (try grind)
-
-end Strata
