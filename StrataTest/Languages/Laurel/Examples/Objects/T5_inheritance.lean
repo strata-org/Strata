@@ -64,7 +64,8 @@ composite Bottom extends Left, Right {
   var bValue: int
 }
 
-procedure diamondInheritance(b: Bottom) {
+procedure diamondInheritance() {
+  var a: Bottom := new Bottom;
   a#lValue := 1;
   a#rValue := 2;
   a#bValue := 3;
@@ -74,12 +75,12 @@ procedure diamondInheritance(b: Bottom) {
   assert a#rValue == 2;
   assert a#bValue == 3;
 
-  assert b is Left;
-  assert b is Right;
-  assert b is Top;
-  assert b is Bottom;
+  assert a is Left;
+  assert a is Right;
+  assert a is Top;
+  assert a is Bottom;
 }
 "
 
-#guard_msgs (drop info) in
+#guard_msgs  in --(drop info) in
 #eval testInputWithOffset "Inheritance" program 14 processLaurelFile
