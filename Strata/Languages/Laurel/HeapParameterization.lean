@@ -232,9 +232,9 @@ Transform an expression, adding heap parameters where needed.
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
 def heapTransformExpr (heapVar : Identifier) (env : TypeEnv) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
-  recurse expr valueUsed
+  recurse env expr valueUsed
 where
-  recurse (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
+  recurse (env : TypeEnv) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
     let md := expr.md
     let types := (← get).types
     match _h : expr.val with
@@ -247,7 +247,7 @@ where
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
     | .StaticCall callee args =>
-        let args' ← args.mapM (recurse ·)
+        let args' ← args.mapM (recurse env ·)
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -265,12 +265,12 @@ where
         else
           return ⟨ .StaticCall callee args', md ⟩
     | .InstanceCall callTarget callee args =>
-        let t ← recurse callTarget
-        let args' ← args.mapM (recurse ·)
+        let t ← recurse env callTarget
+        let args' ← args.mapM (recurse env ·)
         return ⟨ .InstanceCall t callee args', md ⟩
     | .IfThenElse c t e =>
-        let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
-        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', md ⟩
+        let e' ← match e with | some x => some <$> recurse env x valueUsed | none => pure none
+        return ⟨ .IfThenElse (← recurse env c) (← recurse env t valueUsed) e', md ⟩
     | .Block stmts label =>
         let n := stmts.length
         let rec processStmts (env : TypeEnv) (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
@@ -282,20 +282,20 @@ where
               let env' := match s.val with
                 | .LocalVariable name ty _ => (name, ty) :: env
                 | _ => env
-              let s' ← recurse s (isLast && valueUsed)
+              let s' ← recurse env s (isLast && valueUsed)
               let rest' ← processStmts env' (idx + 1) rest
               pure (s' :: rest')
           termination_by sizeOf remaining
         let stmts' ← processStmts env 0 stmts
         return ⟨ .Block stmts' label, md ⟩
     | .LocalVariable n ty i =>
-        let i' ← match i with | some x => some <$> recurse x | none => pure none
+        let i' ← match i with | some x => some <$> recurse env x | none => pure none
         return ⟨ .LocalVariable n ty i', md ⟩
     | .While c invs d b =>
-        let invs' ← invs.mapM (recurse ·)
-        return ⟨ .While (← recurse c) invs' d (← recurse b false), md ⟩
+        let invs' ← invs.mapM (recurse env ·)
+        return ⟨ .While (← recurse env c) invs' d (← recurse env b false), md ⟩
     | .Return v =>
-        let v' ← match v with | some x => some <$> recurse x | none => pure none
+        let v' ← match v with | some x => some <$> recurse env x | none => pure none
         return ⟨ .Return v', md ⟩
     | .Assign targets v =>
         match targets with
@@ -306,8 +306,8 @@ where
             let fieldType ← lookupFieldType qualifiedName
             let valTy := fieldType.getD (panic s!"could not find field type for {qualifiedName}")
             addFieldConstant qualifiedName valTy
-            let target' ← recurse target
-            let v' ← recurse v
+            let target' ← recurse env target
+            let v' ← recurse env v
             -- Wrap value in Box constructor
             let boxedVal := mkMd <| .StaticCall (boxConstructorName valTy.val) [v']
             let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
@@ -317,17 +317,17 @@ where
             else
               return heapAssign
           | _ =>
-            let tgt' ← recurse fieldSelectMd
-            return ⟨ .Assign [tgt'] (← recurse v), md ⟩
+            let tgt' ← recurse env fieldSelectMd
+            return ⟨ .Assign [tgt'] (← recurse env v), md ⟩
         | [] =>
-            return ⟨ .Assign [] (← recurse v), md ⟩
+            return ⟨ .Assign [] (← recurse env v), md ⟩
         | tgt :: rest =>
-            let tgt' ← recurse tgt
-            let targets' ← rest.mapM (recurse ·)
-            return ⟨ .Assign (tgt' :: targets') (← recurse v), md ⟩
-    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), md ⟩
+            let tgt' ← recurse env tgt
+            let targets' ← rest.mapM (recurse env ·)
+            return ⟨ .Assign (tgt' :: targets') (← recurse env v), md ⟩
+    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse env t) f (← recurse env v), md ⟩
     | .PrimitiveOp op args =>
-      let args' ← args.mapM (recurse ·)
+      let args' ← args.mapM (recurse env ·)
       return ⟨ .PrimitiveOp op args', md ⟩
     | .New name =>
         let freshVar ← freshVarName
@@ -337,22 +337,22 @@ where
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
         let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.Identifier (name ++ "_UserType"))])
         return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
-    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
+    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse env l) (← recurse env r), md ⟩
     | .AsType t ty =>
-        let t' ← recurse t valueUsed
+        let t' ← recurse env t valueUsed
         let isCheck := ⟨ .IsType t' ty, md ⟩
         let assertStmt := ⟨ .Assert isCheck, md ⟩
         return ⟨ .Block [assertStmt, t'] none, md ⟩
-    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
-    | .Forall n ty b => return ⟨ .Forall n ty (← recurse b), md ⟩
-    | .Exists n ty b => return ⟨ .Exists n ty (← recurse b), md ⟩
-    | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
-    | .Old v => return ⟨ .Old (← recurse v), md ⟩
-    | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
-    | .Assert c => return ⟨ .Assert (← recurse c), md ⟩
-    | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
-    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
-    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
+    | .IsType t ty => return ⟨ .IsType (← recurse env t) ty, md ⟩
+    | .Forall n ty b => return ⟨ .Forall n ty (← recurse env b), md ⟩
+    | .Exists n ty b => return ⟨ .Exists n ty (← recurse env b), md ⟩
+    | .Assigned n => return ⟨ .Assigned (← recurse env n), md ⟩
+    | .Old v => return ⟨ .Old (← recurse env v), md ⟩
+    | .Fresh v => return ⟨ .Fresh (← recurse env v), md ⟩
+    | .Assert c => return ⟨ .Assert (← recurse env c), md ⟩
+    | .Assume c => return ⟨ .Assume (← recurse env c), md ⟩
+    | .ProveBy v p => return ⟨ .ProveBy (← recurse env v) (← recurse env p), md ⟩
+    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse env f), md ⟩
     | _ => return expr
     termination_by sizeOf expr
     decreasing_by
