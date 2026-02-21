@@ -49,6 +49,36 @@ procedure typeCheckingAndCasting() {
   var e: Extender := a as Extender;
 //                   ^^^^^^^^^^^^^ error: assertion could not be proved
 }
+
+composite Top {
+  var tValue: int
+}
+
+composite Left extends Top {
+  var lValue: int
+}
+composite Right extends Top {
+  var rValue: int
+}
+composite Bottom extends Left, Right {
+  var bValue: int
+}
+
+procedure diamondInheritance(b: Bottom) {
+  a#lValue := 1;
+  a#rValue := 2;
+  a#bValue := 3;
+  // tValue can not be used
+
+  assert a#lValue == 1;
+  assert a#rValue == 2;
+  assert a#bValue == 3;
+
+  assert b is Left;
+  assert b is Right;
+  assert b is Top;
+  assert b is Bottom;
+}
 "
 
 #guard_msgs (drop info) in
