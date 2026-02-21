@@ -30,7 +30,14 @@ program Core;
 
 // Abstract types for the heap model
 type Field;
-type Composite := int;
+
+// UserType represents the runtime type tag for composite objects
+type UserType;
+
+// Composite is a datatype with a reference (int) and a runtime type tag
+datatype Composite () {
+  MkComposite(ref: int, userType: UserType)
+};
 
 // Tagged union for field values
 datatype Box () {

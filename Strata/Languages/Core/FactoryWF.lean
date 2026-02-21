@@ -37,7 +37,7 @@ theorem Factory_wf :
   · decide -- FactoryWF.name_nodup
   · intros f Hmem
     -- 176 is the number of functions in Factory (#eval Factory.size)
-    iterate 176 (any_goals (rcases Hmem with _ | ⟨ a', Hmem ⟩ <;> try contradiction))
+    iterate 177 (any_goals (rcases Hmem with _ | ⟨ a', Hmem ⟩ <;> try contradiction))
     all_goals (
       rw [LFuncWF]
       apply Strata.DL.Util.FuncWF.mk

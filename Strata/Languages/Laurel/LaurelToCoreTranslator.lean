@@ -15,6 +15,7 @@ import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.CorePrelude
+import Strata.Languages.Laurel.TypeHierarchy
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -63,6 +64,7 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" || name == "increment" ||
   name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
+  name == "MkComposite" || name == "Composite..ref" || name == "Composite..userType" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
@@ -147,7 +149,23 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
-  | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none -- TODO: don't do this
+  | .IsType target ty =>
+      -- `target is Type` translates to: ancestorsPerType[Composite..userType(target)][Type_UserType]
+      let targetExpr := translateExpr constants env target boundVars
+      -- Extract the userType from the Composite: Composite..userType(target)
+      let getUserType := LExpr.mkApp () (.op () (Core.CoreIdent.unres "Composite..userType") none) [targetExpr]
+      -- Look up ancestorsPerType
+      let ancestorsPerType := LExpr.op () (Core.CoreIdent.unres "ancestorsPerType") none
+      -- Get the type name from the HighType
+      let typeName := match ty.val with
+        | .UserDefined name => name
+        | _ => panic! "IsType: expected UserDefined type, got {format ty.val}"
+      -- Build the UserType constant for the target type
+      let typeConst := LExpr.op () (Core.CoreIdent.glob (typeName ++ "_UserType")) none
+      -- ancestorsPerType[Composite..userType(target)][Type_UserType]
+      let innerMap := LExpr.mkApp () Core.mapSelectOp [ancestorsPerType, getUserType]
+      LExpr.mkApp () Core.mapSelectOp [innerMap, typeConst]
+  | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
   decreasing_by
@@ -391,8 +409,10 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
   | .New _ => false
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
+  | .IsType t _ => isPureExpr t
   | .Block [single] _ => isPureExpr single
-  | _ => false
+  | .Block _ _ => false
+  | _ => panic s!"not implemented {Std.format expr.val}"
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
@@ -436,6 +456,11 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+  -- Add UserType constants for each composite type to the program's constants
+  let userTypeConstants := program.types.filterMap fun td => match td with
+    | .Composite ct => some { name := ct.name ++ "_UserType", type := ⟨.UserDefined "UserType", #[]⟩ : Constant }
+    | _ => none
+  let program := { program with constants := program.constants ++ userTypeConstants }
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
@@ -452,9 +477,18 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procedures := procProcs.map (translateProcedure program.constants funcNames)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
-  let constDecls := program.constants.map translateConstant
+  let constDecls := program.constants.filter (fun c => !c.name.endsWith "_UserType") |>.map translateConstant
+  -- Generate distinct declaration for field constants so the SMT solver knows they differ
+  let fieldConstants := program.constants.filter (fun c => match c.type.val with | .TTypedField _ => true | _ => false)
+  let fieldDistinctDecls := if fieldConstants.length >= 2 then
+    let fieldExprs := fieldConstants.map fun c =>
+      LExpr.op () (Core.CoreIdent.unres c.name) none
+    [Core.Decl.distinct (Core.CoreIdent.unres "Field_distinct") fieldExprs]
+  else []
   let preludeDecls := corePrelude.decls
-  pure ({ decls := preludeDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  -- Generate type hierarchy declarations (UserType constants, distinct, axioms)
+  let typeHierarchyDecls := generateTypeHierarchyDecls program.types
+  pure ({ decls := preludeDecls ++ typeHierarchyDecls ++ constDecls ++ fieldDistinctDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
@@ -486,6 +520,11 @@ def verifyToVcResults (program : Program)
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : Options := Options.default): IO (Array Diagnostic) := do
+  -- Validate for diamond-inherited field accesses before translation
+  let uri := files.keys.head!
+  let diamondErrors := validateDiamondFieldAccesses uri program
+  if !diamondErrors.isEmpty then
+    return diamondErrors.map (fun dm => dm.toDiagnostic files)
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
