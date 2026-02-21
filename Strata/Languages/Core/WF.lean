@@ -142,7 +142,7 @@ structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop
 
 /- Procedure Wellformedness -/
 
-structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) : Prop where
+structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) : Prop where
   glob : CoreIdent.isGlob name
 
 structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
