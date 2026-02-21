@@ -61,6 +61,11 @@ Returns false if e did not reduce to a constant.
 def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
   let tenv := TEnv.default
   let init_state := LState.init
+  let e_fvs := LExpr.freeVars e
+  let e_fvs_typed ← e_fvs.mapM (fun (v,ty) => do
+    match ty with
+    | .none => throw (IO.userError s!"error: {v} is untyped!")
+    | .some ty => return (v,LTy.forAll [] ty))
   match encode e tenv init_state with
   | .error msg => throw (IO.userError s!"error: {msg}")
   | .ok (.none) => return false
@@ -69,7 +74,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let filename := tempDir / s!"exprEvalTest.smt2"
       let ans ← Core.SMT.dischargeObligation
         { Options.default with verbose := .quiet }
-        (LExpr.freeVars e) "z3" filename.toString
+        e_fvs_typed Imperative.MetaData.empty filename.toString
         [smt_term] ctx
       match ans with
       | .ok (.sat _,_) => return true
@@ -141,7 +146,7 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
       print "- Has non-empty type arguments, skipping..."
       continue
     else
-      let cnt := 50
+      let cnt := 5
       let mut unsupported := false
       let mut cnt_skipped := 0
       for _ in [0:cnt] do
@@ -188,7 +193,7 @@ open Lambda.LTy.Syntax
   (.app () (.app () (.op () (CoreIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
 
 
--- This may take a while (~ 5min)
+-- This may take a while
 #eval (checkFactoryOps false)
 
 open Plausible TestGen

@@ -26,7 +26,7 @@ procedure syntacticallyABoogieFunction(x: int): int {
 procedure noFunctionBecauseContract() returns (r: int)
   ensures r > 0
 {
-  10
+  return 10;
 }
 
 procedure noFunctionBecauseStatements(): int {

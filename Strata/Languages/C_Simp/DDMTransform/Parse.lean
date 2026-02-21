@@ -110,9 +110,9 @@ op procedure (retType: Type,
               @[scope(b)] pre: bool,
               @[scope(b)] post: bool,
               @[scope(b)] body : Block) : Command => retType " procedure " name typeArgs b
-                                                     indent(2, "\n//@pre " pre ";"
-                                                     "\n//@post " post ";\n")
-                                                     body;
+                                                     "//@pre " indent(2, pre) ";\n"
+                                                     "//@post " indent(2, post) ";\n"
+                                                     indent(2, body);
 
 category Annotation;
 op assert (lbl : Ident, c: bool) : Annotation => "//@assert [" lbl "] " c ";";

@@ -155,12 +155,14 @@ mutual
 /--
 Compute the size of `ty` as a tree.
 -/
+@[simp]
 def LMonoTy.size (ty : LMonoTy) : Nat :=
   match ty with
   | .ftvar _ => 1
   | .tcons _ args => 1 + LMonoTys.size args
   | .bitvec _ => 1
 
+@[simp]
 def LMonoTys.size (args : LMonoTys) : Nat :=
     match args with
     | [] => 0
@@ -345,6 +347,14 @@ Obtain a mono-type from a type scheme `ty`.
 def LTy.toMonoType (ty : LTy) (h : LTy.isMonoType ty) : LMonoTy :=
   match ty with
   | .forAll _ lty => lty
+
+/--
+Optionally obtain a mono-type from a type scheme `ty`.
+-/
+def LTy.toMonoType? (ty : LTy) : Option LMonoTy :=
+  match ty with
+  | .forAll [] lty => .some lty
+  | _ => .none
 
 /--
 Unsafe coerce from a type scheme to a mono-type.

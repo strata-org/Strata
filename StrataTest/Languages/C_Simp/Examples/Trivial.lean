@@ -37,7 +37,9 @@ info: function trivial {
   pre: #true
   post: #true
   body:
-return := #true
+{
+  return := #true
+}
 }
 Errors: #[]
 -/
@@ -51,11 +53,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: post
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:
@@ -64,4 +63,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" TrivialPgm
+#eval Strata.C_Simp.verify TrivialPgm

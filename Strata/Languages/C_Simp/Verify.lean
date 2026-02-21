@@ -52,7 +52,7 @@ def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.
   | .goto label _md => .goto label {}
   termination_by s.sizeOf
   decreasing_by
-  all_goals(simp_wf; rename_i x_in; have := Imperative.sizeOf_stmt_in_block x_in; omega)
+  all_goals term_by_mem [Imperative.Stmt, Imperative.sizeOf_stmt_in_block]
 
 
 /--
@@ -132,13 +132,13 @@ def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default)
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
-def C_Simp.verify (smtsolver : String) (p : Strata.Program)
+def C_Simp.verify (p : Strata.Program)
     (options : Options := Options.default)
     (tempDir : Option String := .none):
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Core.verify smtsolver (to_core program) tempDir .none options)
+    (Core.verify (to_core program) tempDir .none options)
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner

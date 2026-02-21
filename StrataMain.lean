@@ -274,12 +274,20 @@ def pyAnalyzeCommand : Command where
         IO.print newPgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
       let verboseMode := VerboseMode.ofBool verbose
-      let vcResults ← IO.FS.withTempDir (fun tempDir =>
+      let options :=
+              { Options.default with
+                stopOnFirstError := false,
+                verbose := verboseMode,
+                removeIrrelevantAxioms := true,
+                solver := solverName }
+      let runVerification tempDir :=
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
-            (Core.verify solverName newPgm tempDir .none
-              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
-                                      (moreFns := Strata.Python.ReFactory)))
+            (Core.verify newPgm tempDir .none options
+                                      (moreFns := Strata.Python.ReFactory))
+      let vcResults ← match options.vcDirectory with
+                      | .none => IO.FS.withTempDir runVerification
+                      | .some tempDir => runVerification tempDir
       let mut s := ""
       for vcResult in vcResults do
         -- Build location string based on available metadata
@@ -318,7 +326,9 @@ def pyAnalyzeLaurelCommand : Command where
   help := "Analyze a Strata Python Ion file through Laurel. Write results to stdout."
   callback := fun _ v => do
     let verbose := v[1] == "1"
-    let pgm ← readPythonStrata v[0]
+    let filePath := v[0]
+    let pgm ← readPythonStrata filePath
+    let pySourceOpt ← tryReadPythonSource filePath
     let cmds := Strata.toPyCommands pgm.commands
     if verbose then
       IO.println "==== Python AST ===="
@@ -327,7 +337,10 @@ def pyAnalyzeLaurelCommand : Command where
 
     let prelude := Strata.Python.Core.prelude
 
-    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
+    let sourcePathForMetadata := match pySourceOpt with
+      | some (pyPath, _) => pyPath
+      | none => filePath
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
@@ -341,27 +354,46 @@ def pyAnalyzeLaurelCommand : Command where
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok coreProgram =>
-          let coreProgram := {decls := prelude.decls ++ coreProgram.decls }
           if verbose then
             IO.println "\n==== Core Program ===="
             IO.print coreProgram
 
+          let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
+
           -- Verify using Core verifier
-          let solverName : String := "z3"
-          let verboseMode := VerboseMode.ofBool verbose
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
               EIO.toIO
                 (fun f => IO.Error.userError (toString f))
-                (Core.verify solverName coreProgram tempDir .none
-                  { Options.default with stopOnFirstError := false, verbose := verboseMode }))
+                (Core.verify coreProgram tempDir .none
+                  { Options.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
 
           -- Print results
           IO.println "\n==== Verification Results ===="
           let mut s := ""
           for vcResult in vcResults do
-            match vcResult.result with
-            | .pass => s := s ++ s!"Assertion: {Std.format vcResult.result}\n"
-            | _ => s := s ++ s!"Assertion: {Std.format vcResult.result} [{vcResult.obligation.label}]\n"
+            let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+              | some fr =>
+                if fr.range.isNone then ("", "")
+                else
+                  match pySourceOpt with
+                  | some (pyPath, fileMap) =>
+                    match fr.file with
+                    | .file path =>
+                      if path == pyPath then
+                        let pos := fileMap.toPosition fr.range.start
+                        match vcResult.result with
+                        | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                        | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                      else
+                        match vcResult.result with
+                        | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                        | _ => ("", s!" (at byte {fr.range.start})")
+                  | none =>
+                    match vcResult.result with
+                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                    | _ => ("", s!" (at byte {fr.range.start})")
+              | none => ("", "")
+            s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
           IO.println s
 
 def javaGenCommand : Command where
@@ -411,7 +443,7 @@ def laurelAnalyzeBinaryCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels "z3" combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do

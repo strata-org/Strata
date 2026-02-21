@@ -95,14 +95,23 @@ instance : ToString TranslationError where
 
 /-! ## Helper Functions -/
 
+/-- Create metadata from a SourceRange for attaching to Laurel statements. -/
+def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
+  let uri : Uri := .file filePath
+  let fileRangeElt := ⟨ Imperative.MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
+  #[fileRangeElt]
+
 /-- Create default metadata for Laurel AST nodes -/
 def defaultMetadata : Imperative.MetaData Core.Expression :=
-  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ ⟨"foo"⟩ , 0, 0 ⟩ ⟩
-  #[fileRangeElt]
+  #[]
 
 /-- Create a HighTypeMd with default metadata -/
 def mkHighTypeMd (ty : HighType) : HighTypeMd :=
   { val := ty, md := defaultMetadata }
+
+/-- Create a HighTypeMd with source location metadata -/
+def mkHighTypeMdWithLoc (ty : HighType) (md : Imperative.MetaData Core.Expression) : HighTypeMd :=
+  { val := ty, md := md }
 
 def mkCoreType (s: String): HighTypeMd :=
   {val := .TCore s , md := defaultMetadata}
@@ -110,6 +119,8 @@ def mkCoreType (s: String): HighTypeMd :=
 /-- Create a StmtExprMd with default metadata -/
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
   { val := expr, md := defaultMetadata }
+
+
 
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=

@@ -75,22 +75,18 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: test
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-(~fooAliasVal == ~fooVal)
+Obligation:
+fooAliasVal == fooVal
 
 ---
-info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
-  type FooAlias a := (Foo int bool)
-  func fooAliasVal :  () → (Foo int bool);
-  func fooVal :  () → (Foo int bool);
-  (procedure P :  () → ())
-  modifies: []
-  preconditions: ⏎
-  postconditions: ⏎
-  body: assert [test] (~fooAliasVal == ~fooVal)
+info: ok: [(type Foo (a0 : Type, a1 : Type);
+  type FooAlias (a : Type) := Foo int bool;
+  function fooAliasVal () : Foo int bool;
+  function fooVal () : Foo int bool;
+  procedure P () returns ()
+  {
+    assert [test]: fooAliasVal == fooVal;
+    };
   ,
   Error:
   none
@@ -110,6 +106,8 @@ info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   func Int.Mul :  ((x : int) (y : int)) → int;
   func Int.Div :  ((x : int) (y : int)) → int;
   func Int.Mod :  ((x : int) (y : int)) → int;
+  func Int.DivT :  ((x : int) (y : int)) → int;
+  func Int.ModT :  ((x : int) (y : int)) → int;
   func Int.Neg :  ((x : int)) → int;
   func Int.Lt :  ((x : int) (y : int)) → bool;
   func Int.Le :  ((x : int) (y : int)) → bool;
@@ -374,14 +372,13 @@ def polyFuncProg : Program := { decls := [
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
-func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
-(procedure Test :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (m : (Map int bool)) := (init_m_0 : (Map int bool))
-m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
+info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0;
+function makePair<|$__ty1|, |$__ty2|> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+procedure Test () returns ()
+{
+  var m : (Map int bool);
+  m := makePair(identity(42), identity(true));
+  };
 -/
 #guard_msgs in
 #eval do

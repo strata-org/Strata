@@ -40,11 +40,13 @@ def core_pgm := TransM.run Inhabited.default (translateProgram pgm)
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: type set := (Map int bool)
-func diff :  ((a : (Map int bool)) (b : (Map int bool))) → (Map int bool);
-func lambda_0 :  ((l_0 : bool) (l_1 : int) (l_2 : int)) → (Map int int);
-axiom a1: (∀ (∀ ((((~diff : (arrow (Map int bool) (arrow (Map int bool) (Map int bool)))) %1) %0) == (((~diff : (arrow (Map int bool) (arrow (Map int bool) (Map int bool)))) %0) %1))));
-axiom a2: (∀ (∀ (∀ (∀ ((((~select : (arrow (Map int int) (arrow int int))) ((((~lambda_0 : (arrow bool (arrow int (arrow int (Map int int))))) %3) %2) %1)) %0) == (((~select : (arrow (Map int int) (arrow int int))) ((((~lambda_0 : (arrow bool (arrow int (arrow int (Map int int))))) %3) %1) %2)) %0))))));
+info: ok: type set := Map int bool;
+function diff (a : (Map int bool), b : (Map int bool)) : Map int bool;
+function lambda_0 (l_0 : bool, l_1 : int, l_2 : int) : Map int int;
+axiom [a1]: forall __q0 : (Map int bool) :: forall __q1 : (Map int bool) ::  { diff(__q0, __q1) }
+  diff(__q0, __q1) == diff(__q1, __q0);
+axiom [a2]: forall __q0 : bool :: forall __q1 : int :: forall __q2 : int :: forall __q3 : int ::  { (lambda_0(__q0, __q1, __q2))[__q3] }
+  (lambda_0(__q0, __q1, __q2))[__q3] == (lambda_0(__q0, __q2, __q1))[__q3];
 -/
 #guard_msgs in
 #eval Core.typeCheck Options.default core_pgm.fst

@@ -252,20 +252,20 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
     let tv ← eval valExpr
     withResult (EvalResult.Return tv.val)
   | StmtExpr.Return none => fun env => (EvalResult.Success { val := Value.VVoid, ty := env.returnType }, env)
-  | StmtExpr.While _ none _ _  => withResult <| EvalResult.TypeError "While invariant was not derived"
+  | StmtExpr.While _ [] none _  => withResult <| EvalResult.TypeError "While invariant was not derived"
   | StmtExpr.While _ _ none _  => withResult <| EvalResult.TypeError "While decreases was not derived"
-  | StmtExpr.While condExpr (some invariantExpr) (some decreasedExpr) bodyExpr => do
+  | StmtExpr.While condExpr invariantExprs (some decreasedExpr) bodyExpr => do
     let rec loop : Eval TypedValue := do
       let cond ← eval condExpr
       if (cond.ty.isBool) then
         withResult <| EvalResult.TypeError "Condition must be boolean"
       else if cond.val.asBool! then
-        let invariant ← eval invariantExpr
-        if (invariant.ty.isBool) then
-          withResult <| EvalResult.TypeError "Invariant must be boolean"
-        else if (!invariant.val.asBool!) then
-          withResult <| EvalResult.VerficationError VerificationErrorType.InvariantFailed "While invariant does not hold"
-        else
+        for invariantExpr in invariantExprs do
+          let invariant ← eval invariantExpr
+          if (invariant.ty.isBool) then
+            withResult <| EvalResult.TypeError "Invariant must be boolean"
+          else if (!invariant.val.asBool!) then
+            withResult <| EvalResult.VerficationError VerificationErrorType.InvariantFailed "While invariant does not hold"
         -- TODO handle decreases
           fun env => match eval bodyExpr env with
             | (EvalResult.Success _, env') => loop env'

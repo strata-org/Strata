@@ -3,9 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Integration.Lean
-import Strata.Languages.Python.Specs.Decls
+module
 
+public import Strata.DDM.Integration.Lean
+public import Strata.Languages.Python.Specs.Decls
+
+import Strata.DDM.AST
+import Strata.DDM.Util.ByteArray
+import Strata.DDM.Format
+import Strata.DDM.BuiltinDialects.Init
+public import Strata.DDM.Integration.Lean.OfAstM
+import Strata.DDM.Ion
+
+public section
 namespace Strata.Python.Specs
 namespace DDM
 
@@ -28,7 +38,6 @@ op typeClass (x : Ident, y : CommaSepBy SpecType) : SpecType => "class" "(" x ",
 op typeIntLiteral (x : Int) : SpecType => x;
 op typeStringLiteral (x : Str) : SpecType => x;
 op typeUnion (args : CommaSepBy SpecType) : SpecType => "union" "(" args ")";
-op typeNoneType : SpecType => "NoneType";
 op typeTypedDict (fields : CommaSepBy FieldDecl, isTotal : Bool): SpecType =>
   "dict" "(" fields ")" "[" "isTotal" "=" isTotal "]";
 
@@ -72,51 +81,49 @@ abbrev Signature := Command
 end DDM
 
 /-- Converts a Python identifier to an annotated string for DDM serialization. -/
-def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
+private def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
   ⟨.none, toString d⟩
 
 /-- Converts a Lean `Int` to the DDM representation which separates natural and negative cases. -/
-def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
+private def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
   match i with
   | .ofNat n => .natInt ann ⟨ann, n⟩
   | .negSucc n => .negSuccInt ann ⟨ann, n⟩
 
-def DDM.Int.ofDDM : DDM.Int α → _root_.Int
+private def DDM.Int.ofDDM : DDM.Int α → _root_.Int
 | .natInt _ ⟨_, n⟩ => .ofNat n
 | .negSuccInt _ ⟨_, n⟩ => .negSucc n
 
-
 mutual
 
-def SpecAtomType.toDDM (d : SpecAtomType) : DDM.SpecType SourceRange :=
+private def SpecAtomType.toDDM (d : SpecAtomType) (loc : SourceRange := .none) : DDM.SpecType SourceRange :=
   match d with
   | .ident nm args =>
     if args.isEmpty then
-      .typeIdentNoArgs .none nm.toDDM
+      .typeIdentNoArgs loc nm.toDDM
     else
-      .typeIdent .none nm.toDDM ⟨.none, args.map (·.toDDM)⟩
+      .typeIdent loc nm.toDDM ⟨.none, args.map (·.toDDM)⟩
   | .pyClass name args =>
     if args.isEmpty then
-      .typeClassNoArgs .none ⟨.none, name⟩
+      .typeClassNoArgs loc ⟨.none, name⟩
     else
-      .typeClass .none ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
-  | .intLiteral i => .typeIntLiteral .none (toDDMInt .none i)
-  | .stringLiteral v => .typeStringLiteral .none ⟨.none, v⟩
-  | .noneType => .typeNoneType .none
+      .typeClass loc ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
+  | .intLiteral i => .typeIntLiteral loc (toDDMInt .none i)
+  | .stringLiteral v => .typeStringLiteral loc ⟨.none, v⟩
   | .typedDict fields types isTotal =>
     assert! fields.size = types.size
     let argc := types.size
     let a := Array.ofFn fun (⟨i, ilt⟩ : Fin argc) =>
       .mkFieldDecl .none ⟨.none, fields[i]!⟩ types[i].toDDM
-    .typeTypedDict .none ⟨.none, a⟩ ⟨.none, isTotal⟩
+    .typeTypedDict loc ⟨.none, a⟩ ⟨.none, isTotal⟩
 termination_by sizeOf d
 
-def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
+private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
   assert! d.atoms.size > 0
   if p : d.atoms.size = 1 then
-    d.atoms[0].toDDM
+    d.atoms[0].toDDM (loc := d.loc)
   else
-    .typeUnion .none ⟨.none, d.atoms.map (·.toDDM)⟩
+    .typeUnion d.loc ⟨.none, d.atoms.map (·.toDDM)⟩
 termination_by sizeOf d
 decreasing_by
   all_goals {
@@ -126,11 +133,10 @@ decreasing_by
 
 end
 
-
-def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
+private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
   .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.hasDefault⟩
 
-def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
+private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
   .mkFunDecl
     d.loc
     (name := .mk d.nameLoc d.name)
@@ -139,7 +145,7 @@ def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
     (returnType := d.returnType.toDDM)
     (isOverload := ⟨.none, d.isOverload⟩)
 
-def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
+private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   match sig with
   | .externTypeDecl name source =>
     .externTypeDecl .none ⟨.none, name⟩ source.toDDM
@@ -150,47 +156,48 @@ def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   | .typeDef d =>
     .typeDef d.loc (.mk d.nameLoc d.name) d.definition.toDDM
 
-def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
+private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
-  | .typeClassNoArgs _ ⟨_, cl⟩ =>
-    .ofAtom <| .pyClass cl #[]
-  | .typeClass _ ⟨_, cl⟩ ⟨_, args⟩ =>
+  | .typeClassNoArgs loc ⟨_, cl⟩ =>
+    .ofAtom loc <| .pyClass cl #[]
+  | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
-    .ofAtom <| .pyClass cl a
-  | .typeIdentNoArgs _ ⟨_, ident⟩ =>
+    .ofAtom loc <| .pyClass cl a
+  | .typeIdentNoArgs loc ⟨_, ident⟩ =>
     if let some pyIdent := PythonIdent.ofString ident then
-      .ident pyIdent #[]
+      .ident loc pyIdent #[]
     else
       panic! "Bad identifier"
-  | .typeIdent _ ⟨_, ident⟩ ⟨_, args⟩ =>
+  | .typeIdent loc ⟨_, ident⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
     if let some pyIdent := PythonIdent.ofString ident then
-      .ident pyIdent a
+      .ident loc pyIdent a
     else
       panic! "Bad identifier"
-  | .typeIntLiteral _ i => .ofAtom <| .intLiteral i.ofDDM
-  | .typeNoneType _ => .ident .noneType
-  | .typeStringLiteral _ ⟨_, s⟩ => .ofAtom <| .stringLiteral s
-  | .typeTypedDict _ ⟨_, fields⟩ ⟨_, isTotal⟩ =>
+  | .typeIntLiteral loc i => .ofAtom loc <| .intLiteral i.ofDDM
+  | .typeStringLiteral loc ⟨_, s⟩ => .ofAtom loc <| .stringLiteral s
+  | .typeTypedDict loc ⟨_, fields⟩ ⟨_, isTotal⟩ =>
     let names := fields.map fun (.mkFieldDecl _ ⟨_, name⟩ _) => name
     let types := fields.attach.map fun ⟨.mkFieldDecl _ _ tp, mem⟩ => tp.fromDDM
-    .ofAtom <| .typedDict names types isTotal
-  | .typeUnion _ ⟨_, args⟩ =>
+    .ofAtom loc <| .typedDict names types isTotal
+  | .typeUnion loc ⟨_, args⟩ =>
     if p : args.size > 0 then
-      args.foldl (init := args[0].fromDDM) fun a b => a ||| b.fromDDM
+      args.attach.foldl (init := args[0].fromDDM) (start := 1)
+        fun a ⟨b, mem⟩ => SpecType.union loc a b.fromDDM
     else
       panic! "Expected non-empty union"
 termination_by sizeOf d
 decreasing_by
   · decreasing_tactic
   · decreasing_tactic
-  · have szp := Array.sizeOf_lt_of_mem mem
-    simp_all
+  · rename_i _ ann nm
+    have szp : 1 + sizeOf ann + sizeOf nm + sizeOf tp < sizeOf fields :=
+       Array.sizeOf_lt_of_mem mem
     decreasing_tactic
   · decreasing_tactic
   · decreasing_tactic
 
-def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
+private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
   let .mkArgDecl _ ⟨_, name⟩ type ⟨_, hasDefault⟩ := d
   {
     name := name
@@ -198,7 +205,7 @@ def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
     hasDefault := hasDefault
   }
 
-def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
+private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
   let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
                  returnType ⟨_, isOverload⟩ := d
   {
@@ -215,7 +222,7 @@ def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
     postconditions := #[] -- FIXME
   }
 
-def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
+private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
   match cmd with
   | .externTypeDecl _ ⟨_, name⟩ ⟨_, ddmDefinition⟩ =>
     if let some definition := PythonIdent.ofString ddmDefinition then
@@ -239,6 +246,7 @@ def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
     }
     .typeDef d
 
+/-- Reads Python spec signatures from a DDM Ion file. -/
 def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
   let contents ←
         match ← IO.FS.readBinFile path |>.toBaseIO with
@@ -255,15 +263,17 @@ def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
     | .error msg => throw msg
   | .error msg => throw msg
 
+/-- Converts Python spec signatures to a DDM program for serialization. -/
 def toDDMProgram (sigs : Array Signature) : Strata.Program := {
     dialects := DDM.PythonSpecs_map
     dialect := DDM.PythonSpecs.name
     commands := sigs.map fun s => s.toDDM.toAst
   }
 
+/-- Writes Python spec signatures to a DDM Ion file. -/
 def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
   let pgm := toDDMProgram sigs
   IO.FS.writeBinFile path <| pgm.toIon
 
-
 end Strata.Python.Specs
+end
