@@ -46,7 +46,7 @@ instance : HasNot Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.LFunc.opExpr (T:=CoreLParams) Lambda.boolNotFunc) e
+  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
 abbrev CoreEval := SemanticEval Expression
 abbrev CoreStore := SemanticStore Expression
