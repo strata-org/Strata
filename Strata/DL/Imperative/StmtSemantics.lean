@@ -115,7 +115,8 @@ theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
-  next _ Hup => exact InitStateDefMonotone Hdef Hup
+  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
+  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
   next _ Hup => exact UpdateStateDefMonotone Hdef Hup
   next Hup => exact UpdateStateDefMonotone Hdef Hup
 

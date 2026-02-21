@@ -70,61 +70,61 @@ VCs:
 Label: new_g_value
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter0 >= 0
-a_positive: $__a1 > 0
+counter_ge_zero: $__counter1 >= 0
+a_positive: $__a2 > 0
 Obligation:
 true
 
 Label: old_g_property
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter0 >= 0
-a_positive: $__a1 > 0
+counter_ge_zero: $__counter1 >= 0
+a_positive: $__a2 > 0
 Obligation:
-$__counter0 + $__a1 - $__a1 == $__counter0
+$__counter1 + $__a2 - $__a2 == $__counter1
 
 Label: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter3 >= 0
+counter_ge_zero: $__counter4 >= 0
 Obligation:
-$__counter3 >= 0
+$__counter4 >= 0
 
 Label: (Origin_Inc_Requires)a_positive
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter3 >= 0
+counter_ge_zero: $__counter4 >= 0
 Obligation:
 true
 
 Label: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter3 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter6 == $__counter3 + 8
-(Origin_Inc_Ensures)old_g_property: $__b5 - 8 == $__counter3
+counter_ge_zero: $__counter4 >= 0
+(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
+(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
 Obligation:
-$__counter6 >= 0
+$__counter7 >= 0
 
 Label: (Origin_Inc_Requires)a_positive
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter3 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter6 == $__counter3 + 8
-(Origin_Inc_Ensures)old_g_property: $__b5 - 8 == $__counter3
+counter_ge_zero: $__counter4 >= 0
+(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
+(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
 Obligation:
 true
 
 Label: return_value_lemma
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter3 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter6 == $__counter3 + 8
-(Origin_Inc_Ensures)old_g_property: $__b5 - 8 == $__counter3
-(Origin_Inc_Ensures)new_g_value: $__counter8 == $__counter6 + 8
-(Origin_Inc_Ensures)old_g_property: $__b7 - 8 == $__counter6
+counter_ge_zero: $__counter4 >= 0
+(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
+(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
+(Origin_Inc_Ensures)new_g_value: $__counter9 == $__counter7 + 8
+(Origin_Inc_Ensures)old_g_property: $__b8 - 8 == $__counter7
 Obligation:
-$__b7 == $__counter3 + 16
+$__b8 == $__counter4 + 16
 
 Label: assert_0
 Property: assert

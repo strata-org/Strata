@@ -50,24 +50,24 @@ Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard_0: $__i2 < $__n0
-assume_invariant_0: 0 <= $__i2 && $__i2 <= $__n0 && $__s3 == $__i2 * ($__i2 + 1) div 2
+assume_guard_0: $__i3 < $__n0
+assume_invariant_0: 0 <= $__i3 && $__i3 <= $__n0 && $__s4 == $__i3 * ($__i3 + 1) div 2
 sum_requires_0: $__n0 >= 0
 Obligation:
-0 <= $__i2 + 1 && $__i2 + 1 <= $__n0 && $__s3 + ($__i2 + 1) == ($__i2 + 1) * ($__i2 + 1 + 1) div 2
+0 <= $__i3 + 1 && $__i3 + 1 <= $__n0 && $__s4 + ($__i3 + 1) == ($__i3 + 1) * ($__i3 + 1 + 1) div 2
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
 sum_requires_0: $__n0 >= 0
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
-assume_guard_0: if 0 < $__n0 then ($__i2 < $__n0) else true
-assume_invariant_0: if 0 < $__n0 then (0 <= $__i2 && $__i2 <= $__n0 && $__s3 == $__i2 * ($__i2 + 1) div 2) else true
-not_guard_0: if 0 < $__n0 then !($__i4 < $__n0) else true
-invariant_0: if 0 < $__n0 then (0 <= $__i4 && $__i4 <= $__n0 && $__s5 == $__i4 * ($__i4 + 1) div 2) else true
+assume_guard_0: if 0 < $__n0 then ($__i3 < $__n0) else true
+assume_invariant_0: if 0 < $__n0 then (0 <= $__i3 && $__i3 <= $__n0 && $__s4 == $__i3 * ($__i3 + 1) div 2) else true
+not_guard_0: if 0 < $__n0 then !($__i5 < $__n0) else true
+invariant_0: if 0 < $__n0 then (0 <= $__i5 && $__i5 <= $__n0 && $__s6 == $__i5 * ($__i5 + 1) div 2) else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
-if 0 < $__n0 then $__s5 else 0 == $__n0 * ($__n0 + 1) div 2
+if 0 < $__n0 then $__s6 else 0 == $__n0 * ($__n0 + 1) div 2
 
 ---
 info:

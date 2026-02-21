@@ -190,7 +190,7 @@ Generate an init statement with rhs as expression
 def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
   : Statement :=
   match trip with
-  | ((v', ty), e) => Statement.init v' ty e
+  | ((v', ty), e) => Statement.init v' ty (some e)
 
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
   : List Statement :=
@@ -202,7 +202,7 @@ Generate an init statement with rhs as a free variable reference
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (Lambda.LExpr.fvar () v none)
+  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none))
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
   : List Statement :=
