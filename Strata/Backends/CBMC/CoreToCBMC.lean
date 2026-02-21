@@ -181,8 +181,6 @@ def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (
     ]),
     ("sub", Json.arr (b.map (stmtToJson (I:=I) · loc)).toArray)
   ]
-  termination_by (Imperative.Block.sizeOf b)
-  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Json :=
@@ -204,8 +202,6 @@ def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (L
       ])
     ]
   | _ => panic! "Unimplemented"
-  termination_by (Imperative.Stmt.sizeOf e)
-  decreasing_by all_goals term_by_mem
 end
 
 def listToExpr (l: ListMap CoreLabel Core.Procedure.Check) : Core.Expression.Expr :=

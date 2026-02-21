@@ -302,8 +302,6 @@ def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Comm
     ]),
     ("sub", Json.arr (b.map (stmtToJson · loc)).toArray)
   ]
-  termination_by b.sizeOf
-  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
  def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
   match e with
@@ -323,7 +321,6 @@ def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Comm
       ])
     ]
   | _ => panic! "Unimplemented"
-  termination_by e.sizeOf
 end
 
 def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
