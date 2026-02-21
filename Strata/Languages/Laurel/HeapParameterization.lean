@@ -212,7 +212,7 @@ def findFieldOwner (types : List TypeDefinition) (typeName : Identifier) (fieldN
             else ct.extending.findSome? (go fuel')
           else none
         | _ => none
-  (go types.length typeName).getD typeName
+  (go types.length typeName).getD (panic "type inheritance forms a cycle")
 
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.
@@ -223,7 +223,7 @@ def resolveQualifiedFieldName (env : TypeEnv) (types : List TypeDefinition) (tar
   | .UserDefined typeName =>
     let owner := findFieldOwner types typeName fieldName
     owner ++ "." ++ fieldName
-  | _ => fieldName  -- fallback to unqualified
+  | _ => panic "assigning to a target that's not a composite type"
 
 /--
 Transform an expression, adding heap parameters where needed.

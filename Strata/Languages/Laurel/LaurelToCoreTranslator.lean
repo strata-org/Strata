@@ -62,8 +62,8 @@ abbrev FunctionNames := List Identifier
 
 def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
-  name == "readField" || name == "updateField" ||
-  name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" || name == "increment" ||
+  name == "readField" || name == "updateField" || name == "increment" ||
+  name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
   name == "MkComposite" || name == "Composite..ref" || name == "Composite..userType" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
