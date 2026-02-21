@@ -80,7 +80,16 @@ procedure diamondInheritance() {
   assert a is Top;
   assert a is Bottom;
 }
+
+// Currently does not pass. Implementation needs a type invariant mechanism that we have yet to add.
+//procedure typedParameter(a: Bottom) {
+//  var b: Bottom := a;
+//  assert b is Left;
+//  assert b is Right;
+//  assert b is Top;
+//  assert b is Bottom;
+//}
 "
 
-#guard_msgs  in --(drop info) in
+#guard_msgs (drop info) in
 #eval testInputWithOffset "Inheritance" program 14 processLaurelFile
