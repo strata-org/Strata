@@ -487,7 +487,12 @@ private def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List 
   | .command_fndef _ ⟨_, n⟩ ⟨_, targs?⟩ bs ret body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
-      pure [.func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := some (← toCoreExpr body), concreteEval := none, attr := if inline?.isSome then #["inline"] else #[], axioms := [] }]
+      let bsList := bindingsToList bs
+      let inputs ← bsList.mapM toCoreBinding
+      let inputNames := bsList.map fun
+        | .mkBinding _ ⟨_, x⟩ _ => x
+      let body ← withBVars inputNames (toCoreExpr body)
+      pure [.func { name := mkIdent n, typeArgs := tys, inputs := inputs, output := ← toCoreMonoType ret, body := some body, concreteEval := none, attr := if inline?.isSome then #["inline"] else #[], axioms := [] }]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter
