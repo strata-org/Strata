@@ -16,9 +16,11 @@ def corePrelude :=
 #strata
 program Core;
 
-datatype None () {
+datatype PNone () {
   None_none()
 };
+
+datatype Option (a: Type) {Some (unwrap: a), None ()};
 
 type Object;
 function Object_len(x : Object) : int;
@@ -78,53 +80,35 @@ datatype ListStr () {
 
 // Temporary Types
 
-datatype ExceptOrNone () {
-  ExceptOrNone_mk_code(code_val: string),
-  ExceptOrNone_mk_none(none_val: None)
-};
+type StrOrNone := Option (string);
+type IntOrNone := Option (int);
+type ExceptOrNone:= Option (string);
 
-datatype IntOrNone () {
-  IntOrNone_mk_int(int_val: int),
-  IntOrNone_mk_none(none_val: None)
-};
-
-datatype StrOrNone () {
-  StrOrNone_mk_str(str_val: string),
-  StrOrNone_mk_none(none_val: None)
-};
 
 function strOrNone_toObject(v : StrOrNone) : Object;
 // Injectivity axiom: different StrOrNone map to different objects.
 axiom (forall s1:StrOrNone, s2: StrOrNone :: {strOrNone_toObject(s1), strOrNone_toObject(s2)}
         s1 != s2 ==>
         strOrNone_toObject(s1) != strOrNone_toObject(s2));
-axiom (forall s : StrOrNone :: {StrOrNone..isStrOrNone_mk_str(s)}
-        StrOrNone..isStrOrNone_mk_str(s) ==>
-        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone..str_val(s)));
 
-datatype AnyOrNone () {
-  AnyOrNone_mk_str(str_val: string),
-  AnyOrNone_mk_none(none_val: None)
-};
-
-datatype BoolOrNone () {
-  BoolOrNone_mk_str(str_val: string),
-  BoolOrNone_mk_none(none_val: None)
-};
+//https://github.com/strata-org/Strata/issues/460
+//axiom (forall s : StrOrNone :: {Some (s)}
+//        Option..isSome (s) ==>
+//        Object_len(strOrNone_toObject(s)) == str.len(Option..unwrap(s)));
 
 datatype BoolOrStrOrNone () {
   BoolOrStrOrNone_mk_bool(bool_val: bool),
   BoolOrStrOrNone_mk_str(str_val: string),
-  BoolOrStrOrNone_mk_none(none_val: None)
+  BoolOrStrOrNone_mk_none(none_val: PNone)
 };
 
 datatype DictStrStrOrNone () {
   DictStrStrOrNone_mk_str(str_val: string),
-  DictStrStrOrNone_mk_none(none_val: None)
+  DictStrStrOrNone_mk_none(none_val: PNone)
 };
 
 datatype BytesOrStrOrNone () {
-  BytesOrStrOrNone_mk_none(none_val: None),
+  BytesOrStrOrNone_mk_none(none_val: PNone),
   BytesOrStrOrNone_mk_str(str_val: string)
 };
 
@@ -167,12 +151,12 @@ spec{
 }
 {
   var days_i : int := 0;
-  if (IntOrNone..isIntOrNone_mk_int(days)) {
-        days_i := IntOrNone..int_val(days);
+  if (Option..isSome(days)) {
+        days_i := Option..unwrap(days);
   }
   var hours_i : int := 0;
-  if (IntOrNone..isIntOrNone_mk_int(hours)) {
-        hours_i := IntOrNone..int_val(hours);
+  if (Option..isSome(hours)) {
+        hours_i := Option..unwrap(hours);
   }
   assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
 };
@@ -214,7 +198,7 @@ function Datetime_get_timedelta(d : Datetime) : int;
 // means subtracting an 'old' timestamp from a 'new' timestamp may return
 // a negative difference.
 
-procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
+procedure datetime_now() returns (d:Datetime)
 spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 }
@@ -320,20 +304,51 @@ function Float_gt(lhs : string, rhs: string) : bool;
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";
-  requires [req_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
-  ensures [ensures_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
+  requires [req_opt_name_none_or_bar]: (Option..isNone(opt_name)) || (Option..unwrap(opt_name) == "bar") ;
+  ensures [ensures_maybe_except_none]: (Option..isNone(maybe_except));
 }
 {
   assert [assert_name_is_foo]: req_name == "foo";
-  assert [assert_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
-  assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
+  assert [assert_opt_name_none_or_bar]: (Option..isNone(opt_name)) || (Option..unwrap(opt_name) == "bar");
+  assume [assume_maybe_except_none]: (Option..isNone(maybe_except));
 };
 
-datatype PyAnyType () {
-  PyAnyType_Inhabitant()
+forward type ListAny;
+forward type Any;
+
+mutual
+datatype Any () {
+  from_none (),
+  from_bool (as_bool : bool),
+  from_int (as_int : int),
+  from_float (as_float : real),
+  from_string (as_string : string),
+  from_datetime (as_datetime : int),
+  from_Dict (as_Dict: DictStrAny),
+  from_ListAny (as_ListAny : ListAny),
+  from_ClassInstance (classname : string, instance_attributes: DictStrAny)
 };
+
+datatype ListAny () {
+  ListAny_nil (),
+  ListAny_cons (h: Any, t: ListAny)
+};
+
+
+end;
+
+function TypeOf (v: Any) : string;
+function DictStrAny_empty () : DictStrAny;
+function DictStrAny_insert (d: DictStrAny, key: string, v: Any) : DictStrAny;
+
+inline function Any_to_bool (v: Any) : bool {
+  if (Any..isfrom_bool(v)) then Any..as_bool(v) else
+  if (Any..isfrom_none(v)) then false else
+  if (Any..isfrom_string(v)) then !(Any..as_string(v) == "") else
+  if (Any..isfrom_int(v)) then !(Any..as_int(v) == 0) else
+  false
+  //TOBE MORE
+}
 
 #end
 
