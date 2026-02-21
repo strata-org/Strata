@@ -31,6 +31,7 @@ abbrev Program := BooleDDM.Program SourceRange
 
 structure TranslateState where
   fvars : Array String := #[]
+  fvarIsOp : Array Bool := #[]
   tyBVars : Array String := #[]
   bvars : Array Core.Expression.Expr := #[]
   labelCounter : Nat := 0
@@ -86,6 +87,11 @@ private def getTypeBVarName (m : SourceRange) (i : Nat) : TranslateM String := d
 private def getFVarName (m : SourceRange) (i : Nat) : TranslateM String := do
   match (← get).fvars[i]? with
   | some n => pure n
+  | none => throwAt m s!"Unknown free variable with index {i}"
+
+private def getFVarIsOp (m : SourceRange) (i : Nat) : TranslateM Bool := do
+  match (← get).fvarIsOp[i]? with
+  | some b => pure b
   | none => throwAt m s!"Unknown free variable with index {i}"
 
 private def getBVarExpr (m : SourceRange) (i : Nat) : TranslateM Core.Expression.Expr := do
@@ -175,7 +181,12 @@ private partial def toCoreQuant
 
 partial def toCoreExpr (e : Expr) : TranslateM Core.Expression.Expr := do
   match e with
-  | .fvar m i => pure <| .fvar () (mkIdent (← getFVarName m i)) none
+  | .fvar m i =>
+    let id := mkIdent (← getFVarName m i)
+    if (← getFVarIsOp m i) then
+      pure <| .op () id none
+    else
+      pure <| .fvar () id none
   | .bvar m i => getBVarExpr m i
   | .app _ f a => pure <| .app () (← toCoreExpr f) (← toCoreExpr a)
   | .not _ a => pure <| .app () Core.boolNotOp (← toCoreExpr a)
@@ -402,27 +413,28 @@ private def toCoreSpec (_m : SourceRange) (pname : String) (spec? : Option (Bool
         enss := enss ++ [(← defaultLabel em s!"{pname}_ensures" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? })]
     pure { modifies := modifies, preconditions := reqs, postconditions := enss }
 
-private partial def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List String :=
+private partial def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List (String × Bool) :=
   match cmd with
-  | .command_typedecl _ ⟨_, n⟩ _ => [n]
-  | .command_forward_typedecl _ ⟨_, n⟩ _ => [n]
-  | .command_typesynonym _ ⟨_, n⟩ _ _ _ => [n]
-  | .command_constdecl _ ⟨_, n⟩ _ _ => [n]
-  | .command_fndecl _ ⟨_, n⟩ _ _ _ => [n]
-  | .command_fndef _ ⟨_, n⟩ _ _ _ _ _ => [n]
-  | .command_var _ (.bind_mk _ ⟨_, n⟩ _ _) => [n]
-  | .command_procedure _ ⟨_, n⟩ _ _ _ _ _ => [n]
-  | .command_datatype _ ⟨_, n⟩ _ _ => [n]
+  | .command_typedecl _ ⟨_, n⟩ _ => [(n, false)]
+  | .command_forward_typedecl _ ⟨_, n⟩ _ => [(n, false)]
+  | .command_typesynonym _ ⟨_, n⟩ _ _ _ => [(n, false)]
+  | .command_constdecl _ ⟨_, n⟩ _ _ => [(n, true)]
+  | .command_fndecl _ ⟨_, n⟩ _ _ _ => [(n, true)]
+  | .command_fndef _ ⟨_, n⟩ _ _ _ _ _ => [(n, true)]
+  | .command_var _ (.bind_mk _ ⟨_, n⟩ _ _) => [(n, false)]
+  | .command_procedure _ ⟨_, n⟩ _ _ _ _ _ => [(n, false)]
+  | .command_datatype _ ⟨_, n⟩ _ _ => [(n, false)]
   | .command_mutual _ ⟨_, cmds⟩ =>
     (cmds.toList.map registerCommandSymbols).foldl (· ++ ·) []
   | .command_block _ _ => []
   | .command_axiom _ _ _ => []
   | .command_distinct _ _ _ => []
 
-private def initFVars (p : Program) : Array String :=
+private def initFVars (p : Program) : Array String × Array Bool :=
   match p with
   | .prog _ ⟨_, cmds⟩ =>
-    ((cmds.toList.map registerCommandSymbols).foldl (· ++ ·) []).toArray
+    let syms := (cmds.toList.map registerCommandSymbols).foldl (· ++ ·) []
+    (syms.map (·.1) |>.toArray, syms.map (·.2) |>.toArray)
 
 private def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
   match cmd with
@@ -505,7 +517,8 @@ private def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List 
 def toCoreProgram (p : Program) : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
-    let init : TranslateState := { fvars := initFVars p }
+    let (fvars, fvarIsOp) := initFVars p
+    let init : TranslateState := { fvars := fvars, fvarIsOp := fvarIsOp }
     let act : TranslateM Core.Program := do
       let decls := (← cmds.toList.mapM toCoreDecls).foldl (· ++ ·) []
       pure { decls := decls }
