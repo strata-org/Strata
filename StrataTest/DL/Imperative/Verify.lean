@@ -56,9 +56,9 @@ def verify (cmds : Commands) (verbose : Bool) :
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
                 Imperative.MetaData.empty "cvc5" filename.toString
-                #["--produce-models"] false)
+                #["--produce-models"] false false)
         match ans with
-        | .ok (result, estate) =>
+        | .ok (_, result, estate) =>
            let vcres := { obligation, result, estate }
            results := results.push vcres
            if result ≠ .unsat then

@@ -24,6 +24,7 @@ def outcomeToLevel : Outcome → Level
   | .pass => .none
   | .fail => .error
   | .unknown => .warning
+  | .unreachable => .warning
   | .implementationError _ => .error
 
 /-- Convert Core Outcome to a descriptive message -/
@@ -39,6 +40,7 @@ def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
         s!"Verification failed with counterexample: {Std.format m}"
     | _ => "Verification failed"
   | .unknown => "Verification result unknown (solver timeout or incomplete)"
+  | .unreachable => "Path is unreachable"
   | .implementationError msg => s!"Verification error: {msg}"
 
 /-- Extract location information from metadata -/
@@ -57,7 +59,7 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
 def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
   let level := outcomeToLevel vcr.result
-  let messageText := outcomeToMessage vcr.result vcr.smtResult
+  let messageText := outcomeToMessage vcr.result vcr.smtObligationResult
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation files vcr.obligation.metadata with
