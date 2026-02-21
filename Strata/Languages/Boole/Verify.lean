@@ -134,7 +134,7 @@ partial def toCoreMonoType (t : BooleTy) : TranslateM Lambda.LMonoTy := do
   | .arrow _ a b => pure <| .arrow (← toCoreMonoType a) (← toCoreMonoType b)
   | .bool _ => pure .bool
   | .int _ => pure .int
-  | .Map _ d r => pure <| .tcons "Map" [← toCoreMonoType d, ← toCoreMonoType r]
+  | .Map _ v k => pure <| .tcons "Map" [← toCoreMonoType k, ← toCoreMonoType v]
   | _ => throwAt default "Unsupported type"
 
 partial def toCoreType (t : BooleTy) : TranslateM Core.Expression.Ty := do
