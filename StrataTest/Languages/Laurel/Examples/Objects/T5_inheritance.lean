@@ -17,16 +17,22 @@ composite Base {
   var xValue: int
 }
 
-composite Extender extends Base {
+composite Base2 {
   var yValue: int
+}
+
+composite Extender extends Base, Base2 {
+  var zValue: int
 }
 
 procedure inheritedFields(a: Extender) {
   a#xValue := 1;
   a#yValue := 2;
+  a#zValue := 3;
 
   assert a#xValue == 1;
   assert a#yValue == 2;
+  assert a#zValue == 3;
 }
 
 procedure typeCheckingAndCasting() {
@@ -35,6 +41,7 @@ procedure typeCheckingAndCasting() {
   assert !(a is Extender);
   var b: Extender := new Extender;
   assert b is Base;
+  assert b is Base2;
   assert b is Extender;
 
   var c: Base := b;

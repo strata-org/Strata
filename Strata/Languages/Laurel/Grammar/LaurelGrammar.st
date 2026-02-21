@@ -100,7 +100,7 @@ op asType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " 
 
 // Composite types with optional extends
 category OptionalExtends;
-op optionalExtends(parent: Ident): OptionalExtends => "extends " parent;
+op optionalExtends(parents: CommaSepBy Ident): OptionalExtends => "extends " parents;
 
 category Composite;
 op composite (name: Ident, extending: Option OptionalExtends, fields: Seq Field): Composite => "composite " name extending "{" fields "}";

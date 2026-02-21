@@ -238,7 +238,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.fieldAccess, #[objArg, fieldArg] =>
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
-      return mkStmtExprMd (.FieldSelect obj field) md
+      let fieldMd ← getArgMetaData fieldArg
+      return mkStmtExprMd (.FieldSelect obj field) fieldMd
     | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
       let cond ← translateStmtExpr condArg
       let invariants ← match invSeqArg with
@@ -412,9 +413,10 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
     let name ← translateIdent nameArg
     let extending ← match extendsArg with
       | .option _ (some (.op extendsOp)) => match extendsOp.name, extendsOp.args with
-        | q`Laurel.optionalExtends, #[parentArg] =>
-          let parent ← translateIdent parentArg
-          pure [parent]
+        | q`Laurel.optionalExtends, #[parentsArg] =>
+          match parentsArg with
+          | .seq _ .comma args => args.toList.mapM translateIdent
+          | singleArg => do let parent ← translateIdent singleArg; pure [parent]
         | _, _ => TransM.error s!"Expected optionalExtends operation, got {repr extendsOp.name}"
       | .option _ none => pure []
       | _ => TransM.error s!"Expected optionalExtends, got {repr extendsArg}"

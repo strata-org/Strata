@@ -520,6 +520,11 @@ def verifyToVcResults (program : Program)
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : Options := Options.default): IO (Array Diagnostic) := do
+  -- Validate for diamond-inherited field accesses before translation
+  let uri := files.keys.head!
+  let diamondErrors := validateDiamondFieldAccesses uri program
+  if !diamondErrors.isEmpty then
+    return diamondErrors.map (fun dm => dm.toDiagnostic files)
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
