@@ -58,6 +58,9 @@ structure Options where
   solver : String
   /-- Directory to store VCs -/
   vcDirectory : Option System.FilePath
+  /-- Enable reachability checks for all assert and cover statements.
+      Off by default; can be overridden per-statement with `@[reachCheck]`. -/
+  reachCheck : Bool
 
 def Options.default : Options := {
   verbose := .normal,
@@ -71,6 +74,7 @@ def Options.default : Options := {
   outputSarif := false,
   solver := defaultSolver
   vcDirectory := .none
+  reachCheck := false
 }
 
 instance : Inhabited Options where
