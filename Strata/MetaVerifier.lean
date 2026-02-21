@@ -8,7 +8,7 @@ import Lean
 
 import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
-import Strata.Languages.Boole.VerifyOld
+import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 import Strata.DL.SMT.Denote
@@ -54,7 +54,7 @@ end C_Simp
 namespace Boole
 
 def genVCs (program : Strata.Boole.Program) (options : Options := Options.default) : Option Core.coreVCs := do
-  let program := Strata.Boole.toCoreProgram program
+  let program ← (Strata.Boole.toCoreProgram program).toOption
   Core.genVCs program options
 
 end Boole
@@ -69,8 +69,10 @@ def genCoreVCs (program : Program) : Option Core.coreVCs := do
     let (program, #[]) := C_Simp.TransM.run (C_Simp.translateProgram (program.commands)) | none
     C_Simp.genVCs program { (default : Options) with verbose := .quiet : Options }
   else if program.dialect == "Boole" then
-    let (program, #[]) := Boole.TransM.run default (Boole.translateProgram program) | none
-    Boole.genVCs program { (default : Options) with verbose := .quiet : Options }
+    match Boole.getProgram program with
+    | .ok booleProgram =>
+      Boole.genVCs booleProgram { (default : Options) with verbose := .quiet : Options }
+    | .error _ => none
   else
     none
 

@@ -6,10 +6,18 @@
 
 import Strata.Languages.Boole.Boole
 import Strata.Languages.Boole.DDMTransform.Parse
-import Strata.Languages.Boole.DDMTransform.Translate
+import Strata.Languages.Boole.DDMTransform.TranslateOld
 import Strata.Languages.Core.Verifier
 import Strata.DL.Imperative.Stmt
 
+/--
+Legacy Boole verification path:
+`Strata.Program` -> handwritten `translateProgram` -> legacy `Boole.Program`
+-> handwritten `toCoreProgram` -> `Core.verify`.
+
+Kept for comparison/migration; the active pipeline is in `Verify.lean`
+and uses generated `BooleDDM.Program.ofAst`.
+-/
 def Lambda.LExpr.replaceExpr (e : Lambda.LExpr T) (f : Lambda.LExpr T → Option (Lambda.LExpr T))
   : Lambda.LExpr T :=
   match f e with

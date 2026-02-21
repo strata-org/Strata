@@ -13,8 +13,9 @@ spec {
 }
 {
   var sum : int := 0;
-  for (i : int := 0; i < n; i + 1)
-    invariant (i <= n && ((i * (i-1)) div 2 == sum))
+  for i : int := 0 to (n - 1) by 1
+    invariant i <= n
+    invariant (i * (i-1)) div 2 == sum
   {
     sum := sum + i;
   }

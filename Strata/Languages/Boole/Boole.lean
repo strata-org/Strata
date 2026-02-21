@@ -9,9 +9,13 @@ import Strata.Languages.Core.Program
 -- We define the AST for our language here.
 
 -- The CST and grammar are defined in `DDMTransform/Parse.lean`
--- The conversion to this AST are defined in `DDMTransform/Translate.lean`
--- Typechecking is done in ___ (TODO)
--- We symbolically execute the Boole program in ___, collecting path conditions. (TODO)
+-- Legacy conversion to this AST is in `DDMTransform/TranslateOld.lean`.
+-- The current verifier pipeline uses generated `BooleDDM.*` (see `Verify.lean`)
+-- and lowers directly to Core, bypassing this legacy frontend AST.
+-- Typechecking in the active pipeline is done by `Strata.Boole.typeCheck`
+-- in `Verify.lean` via Core typechecking.
+-- Verification / symbolic execution and VC generation in the active pipeline
+-- is done by `Strata.Boole.verify` in `Verify.lean` via `Core.verify`.
 
 namespace Strata.Boole
 
