@@ -72,9 +72,9 @@ as readable as the functional specification. For example:
 ```
 procedure increment(counter: Counter)
   // In Laurel, this ensures clause can be left out
-  ensures x.value == old(x.value) + 1
+  ensures counter.value == old(counter.value) + 1
 {
-  x.value := x.value + 1;
+  counter.value := counter.value + 1;
 }
 ```
 
