@@ -434,7 +434,8 @@ private partial def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) 
   | .command_fndecl _ ⟨_, n⟩ _ _ _ => [(n, true)]
   | .command_fndef _ ⟨_, n⟩ _ _ _ _ _ => [(n, true)]
   | .command_var _ (.bind_mk _ ⟨_, n⟩ _ _) => [(n, false)]
-  | .command_procedure _ ⟨_, n⟩ _ _ _ _ _ => [(n, false)]
+  -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
+  | .command_procedure _ _ _ _ _ _ _ => []
   | .command_datatype _ ⟨_, n⟩ _ _ => [(n, false)]
   | .command_mutual _ ⟨_, cmds⟩ =>
     (cmds.toList.map registerCommandSymbols).foldl (· ++ ·) []
