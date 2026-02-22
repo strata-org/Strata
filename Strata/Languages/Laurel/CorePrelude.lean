@@ -28,7 +28,8 @@ def corePreludeDDM :=
 #strata
 program Core;
 
-// Abstract types for the heap model
+// Field is declared as an opaque type for DDM resolution to pass; the Laurel translator
+// replaces it with a datatype when field constants are present.
 type Field;
 
 // UserType represents the runtime type tag for composite objects

@@ -373,24 +373,14 @@ def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (
   }
 
 def translateConstant (c : Constant) : Core.Decl :=
-  match c.type.val with
-  | .TTypedField _ =>
-      .func {
-        name := Core.CoreIdent.unres c.name
-        typeArgs := []
-        inputs := []
-        output := .tcons "Field" []
-        body := none
-      }
-  | _ =>
-      let ty := translateType c.type
-      .func {
-        name := Core.CoreIdent.unres c.name
-        typeArgs := []
-        inputs := []
-        output := ty
-        body := none
-      }
+  let ty := translateType c.type
+  .func {
+    name := Core.CoreIdent.unres c.name
+    typeArgs := []
+    inputs := []
+    output := ty
+    body := none
+  }
 
 /--
 Check if a StmtExpr is a pure expression (can be used as a Core function body).
@@ -477,18 +467,28 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procedures := procProcs.map (translateProcedure program.constants funcNames)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
-  let constDecls := program.constants.filter (fun c => !c.name.endsWith "_UserType") |>.map translateConstant
-  -- Generate distinct declaration for field constants so the SMT solver knows they differ
+  -- Separate field constants from non-field constants
   let fieldConstants := program.constants.filter (fun c => match c.type.val with | .TTypedField _ => true | _ => false)
-  let fieldDistinctDecls := if fieldConstants.length >= 2 then
-    let fieldExprs := fieldConstants.map fun c =>
-      LExpr.op () (Core.CoreIdent.unres c.name) none
-    [Core.Decl.distinct (Core.CoreIdent.unres "Field_distinct") fieldExprs]
-  else []
-  let preludeDecls := corePrelude.decls
+  let nonFieldConstants := program.constants.filter (fun c =>
+    !c.name.endsWith "_UserType" && (match c.type.val with | .TTypedField _ => false | _ => true))
+  let constDecls := nonFieldConstants.map translateConstant
+  -- When there are field constants, generate a Field datatype with one constructor per field
+  -- (distinctness is automatic with datatype constructors). Otherwise keep the opaque type from the prelude.
+  let (fieldDatatypeDecls, preludeDecls) := match h : fieldConstants with
+    | [] => ([], corePrelude.decls)
+    | first :: rest =>
+      let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun c =>
+        { name := Core.CoreIdent.unres c.name, args := [] }
+      let fieldDatatype : Lambda.LDatatype Core.Visibility := {
+        name := "Field"
+        typeArgs := []
+        constrs := constrs
+        constrs_ne := by simp [constrs]
+      }
+      ([Core.Decl.type (.data [fieldDatatype])], corePrelude.decls.filter (fun d => d.name != "Field"))
   -- Generate type hierarchy declarations (UserType constants, distinct, axioms)
   let typeHierarchyDecls := generateTypeHierarchyDecls program.types
-  pure ({ decls := preludeDecls ++ typeHierarchyDecls ++ constDecls ++ fieldDistinctDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  pure ({ decls := fieldDatatypeDecls ++ preludeDecls ++ typeHierarchyDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
