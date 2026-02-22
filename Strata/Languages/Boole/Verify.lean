@@ -368,7 +368,12 @@ partial def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.St
         (Lambda.LExpr.mkApp () Core.intSubOp [.fvar () id none, stepExpr])
         (← toCoreInvariant invs)
         body
-  | .array_assign_2d m _ _ _ _ => throwAt m "2D array assignment is not yet supported"
+  | .array_assign_2d m arr i j rhs =>
+    let baseExpr ← toCoreExpr arr
+    match baseExpr with
+    | .fvar _ id _ =>
+      pure <| .cmd (.cmd (.set id (nestMapSet baseExpr [← toCoreExpr i, ← toCoreExpr j] (← toCoreExpr rhs))))
+    | _ => throwAt m "2D array assignment target must be a variable"
 
 end
 
