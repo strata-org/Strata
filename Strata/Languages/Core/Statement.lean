@@ -401,8 +401,8 @@ def Statement.renameLhs (s : Core.Statement)
     .loop m g i (Block.renameLhs b fr to) md
   | .havoc l md => .havoc (if l.name == fr.name then to else l) md
   | .funcDecl decl md =>
-    -- Rename function name if it matches
-    let decl' := if decl.name == fr.name then { decl with name := to } else decl
+    -- Rename function name if it matches (compare .name strings to avoid metadata mismatch)
+    let decl' := if decl.name.name == fr.name then { decl with name := to } else decl
     .funcDecl decl' md
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
   termination_by s.sizeOf
