@@ -62,10 +62,17 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .StaticCall _ _ => panic "Not supported StaticCall"
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
   -- Operators
-  | .PrimitiveOp op _ =>
+  | .PrimitiveOp op args =>
       match op with
       | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
-      | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => ⟨ .TInt, md ⟩
+      | .Add =>
+          match args with
+          | firstArg :: _ =>
+              match (computeExprType env types firstArg).val with
+              | .TString => ⟨ .TString, md ⟩
+              | _ => ⟨ .TInt, md ⟩
+          | [] => ⟨ .TInt, md ⟩
+      | .Neg | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => ⟨ .TInt, md ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
