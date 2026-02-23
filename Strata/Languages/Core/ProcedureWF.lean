@@ -29,8 +29,6 @@ theorem snd_values_mem {ps : ListMap CoreLabel Procedure.Check} :
     case inr mem => right ; exact (ih mem)
   case nil => cases Hin
 
-set_option maxHeartbeats 1600000 in
-set_option maxRecDepth 1024 in
 theorem Procedure.typeCheckWF :
     Procedure.typeCheck C T p pp md = Except.ok (pp', T') →
     WFProcedureProp p pp := by
