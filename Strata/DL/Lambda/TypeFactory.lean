@@ -178,7 +178,7 @@ def validateMutualBlock (block: MutualDatatype IDMeta) : Except DiagnosticModel 
     .error <| DiagnosticModel.fromFormat f!"Error: Empty mutual block is not allowed"
   match (block.foldl (fun (o, names) d =>
     if d.name ∈ names then (some d, names) else (o, Std.HashSet.insert names d.name)) (none, ∅)).1 with
-  | some dup => .error <| DiagnosticModel.fromFormat f!"Duplicate datataype name in mutual block: {dup}"
+  | some dup => .error <| DiagnosticModel.fromFormat f!"Duplicate datatype name in mutual block: {dup}"
   | none => .ok ()
 
 ---------------------------------------------------------------------

@@ -122,7 +122,24 @@ info: error: (3453-3516) Error in constructor MkNest: Datatype Nest appears nest
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedDatatypePgm) |>.fst)
 
 ---------------------------------------------------------------------
--- Test 7: Nested Datatype with Map
+-- Test 7: Type Depending on Previously Defined Type
+---------------------------------------------------------------------
+
+def previouslyDefinedTypePgm : Program :=
+#strata
+program Core;
+
+datatype List (a : Type) { Nil(), Cons(hd: a, tl: List a) };
+
+datatype Wrapper () { MkWrapper(xs: List int) };
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram previouslyDefinedTypePgm) |>.snd |>.isEmpty
+
+---------------------------------------------------------------------
+-- Test 8: Nested Datatype with Map
 ---------------------------------------------------------------------
 
 def nestedMapPgm : Program :=
@@ -133,13 +150,13 @@ datatype Nest2 (a : Type) { Base(), MkNest2(xs: Map int (Nest2 a)) };
 #end
 
 /--
-info: error: (4039-4108) Error in constructor MkNest2: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
+info: error: (4546-4615) Error in constructor MkNest2: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedMapPgm) |>.fst)
 
 ---------------------------------------------------------------------
--- Test 8: Mutually Recursive Nesting
+-- Test 9: Mutually Recursive Nesting
 ---------------------------------------------------------------------
 
 def mutualNestedPgm : Program :=
@@ -157,13 +174,13 @@ end;
 #end
 
 /--
-info: error: (4767-4904) Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
+info: error: (5274-5411) Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNestedPgm) |>.fst)
 
 ---------------------------------------------------------------------
--- Test 9: Constructor Name Clashes with Built-in Function
+-- Test 10: Constructor Name Clashes with Built-in Function
 ---------------------------------------------------------------------
 
 def constrClashPgm : Program :=
@@ -174,7 +191,7 @@ datatype Bad () { select(x: int) };
 #end
 
 /--
-info: error: (5455-5490) A function of name select already exists! Redefinitions are not allowed.
+info: error: (5963-5998) A function of name select already exists! Redefinitions are not allowed.
 Existing Function: func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 New Function:func select :  ((x : int)) → Bad;
 -/
@@ -182,7 +199,7 @@ New Function:func select :  ((x : int)) → Bad;
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram constrClashPgm) |>.fst)
 
 ---------------------------------------------------------------------
--- Test 10: Non-Strictly Positive in Mutual Block
+-- Test 11: Non-Strictly Positive in Mutual Block
 ---------------------------------------------------------------------
 
 def mutualNonPositivePgm : Program :=
@@ -198,13 +215,13 @@ end;
 #end
 
 /--
-info: error: (6136-6240) Error in constructor MkA: Non-strictly positive occurrence of BadB in type (arrow BadB int)
+info: error: (6644-6748) Error in constructor MkA: Non-strictly positive occurrence of BadB in type (arrow BadB int)
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNonPositivePgm) |>.fst)
 
 ---------------------------------------------------------------------
--- Test 11: Uninhabited Datatype
+-- Test 12: Uninhabited Datatype
 ---------------------------------------------------------------------
 
 def uninhabitedPgm : Program :=
@@ -215,13 +232,13 @@ datatype Void () { MkVoid(x: Void) };
 #end
 
 /--
-info: error: (6724-6761) Error: datatype Void not inhabited
+info: error: (7232-7269) Error: datatype Void not inhabited
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram uninhabitedPgm) |>.fst)
 
 ---------------------------------------------------------------------
--- Test 12: Mutually Uninhabited Datatypes
+-- Test 13: Mutually Uninhabited Datatypes
 ---------------------------------------------------------------------
 
 def mutualUninhabitedPgm : Program :=
@@ -237,13 +254,13 @@ end;
 #end
 
 /--
-info: error: (7236-7319) Error: datatype Bad1 not inhabited
+info: error: (7744-7827) Error: datatype Bad1 not inhabited
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualUninhabitedPgm) |>.fst)
 
 ---------------------------------------------------------------------
--- Test 13: Three-Way Mutual Uninhabited Cycle
+-- Test 14: Three-Way Mutual Uninhabited Cycle
 ---------------------------------------------------------------------
 
 def threeWayCyclePgm : Program :=
@@ -261,7 +278,7 @@ end;
 #end
 
 /--
-info: error: (7825-7956) Error: datatype Cycle1 not inhabited
+info: error: (8333-8464) Error: datatype Cycle1 not inhabited
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram threeWayCyclePgm) |>.fst)
