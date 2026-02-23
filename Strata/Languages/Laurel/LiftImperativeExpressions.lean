@@ -80,6 +80,8 @@ structure LiftState where
   condCounter : Nat := 0
   /-- Names of imperative procedures whose calls must be lifted from expression position -/
   imperativeNames : List Identifier := []
+  /-- All procedures in the program, used to look up return types of imperative calls -/
+  procedures : List Procedure := []
 
 abbrev LiftM := StateM LiftState
 
@@ -129,7 +131,7 @@ private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit :=
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
-  return computeExprType s.env s.types expr
+  return computeExprType s.env s.types expr s.procedures
 
 /-- Check if an expression contains any assignments or imperative calls (recursively). -/
 private def containsAssignmentOrImperativeCall (imperativeNames : List Identifier) (expr : StmtExprMd) : Bool :=
@@ -214,6 +216,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         -- so that when reversed the var declaration comes before the call.
         let callResultVar ← freshCondVar
         let callResultType ← computeType expr
+        addToEnv callResultVar callResultType
         addPrepend (⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩)
         addPrepend (bare (.LocalVariable callResultVar callResultType none))
         return bare (.Identifier callResultVar)
@@ -464,7 +467,7 @@ Transform a program to lift all assignments that occur in an expression context.
 -/
 def liftImperativeExpressions (program : Program) : Program :=
   let imperativeNames := program.staticProcedures.filter (fun p => !p.isPure) |>.map (·.name)
-  let initState : LiftState := { types := program.types, imperativeNames := imperativeNames }
+  let initState : LiftState := { types := program.types, imperativeNames := imperativeNames, procedures := program.staticProcedures }
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
   { program with staticProcedures := seqProcedures }
 

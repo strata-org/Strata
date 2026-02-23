@@ -31,11 +31,12 @@ def lookupFieldInTypes (types : List TypeDefinition) (typeName : Identifier) (fi
     | _ => none
 
 /--
-Compute the HighType of a StmtExpr given a type environment and type definitions.
+Compute the HighType of a StmtExpr given a type environment, type definitions, and procedure list.
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
 -/
-def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
+def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd)
+    (procedures : List Procedure := []) : HighTypeMd :=
   match expr with
   | WithMetadata.mk val md =>
   match val with
@@ -50,16 +51,19 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
       | none => panic s!"Could not find variable {name} in environment"
   -- Field access
   | .FieldSelect target fieldName =>
-      match computeExprType env types target with
+      match computeExprType env types target procedures with
       | WithMetadata.mk (.UserDefined typeName) _ =>
           match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
           | none => panic s!"Could not find field in type"
       | _ => panic s!"Selecting from a type that's not a composite"
   -- Pure field update returns the same type as the target
-  | .PureFieldUpdate target _ _ => computeExprType env types target
-  -- Calls — we don't track return types here, so fall back to TVoid
-  | .StaticCall _ _ => panic "Not supported StaticCall"
+  | .PureFieldUpdate target _ _ => computeExprType env types target procedures
+  -- Calls — look up return type from first output of matching procedure
+  | .StaticCall name _ =>
+      match procedures.find? (·.name == name) with
+      | some proc => proc.outputs.head?.map (·.type) |>.getD ⟨ .TVoid, md ⟩
+      | none => ⟨ .TVoid, md ⟩
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
   -- Operators
   | .PrimitiveOp op _ =>
@@ -67,11 +71,11 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
       | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
       | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => ⟨ .TInt, md ⟩
   -- Control flow
-  | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
+  | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch procedures
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
-        computeExprType env types last
+        computeExprType env types last procedures
     | none => ⟨ .TVoid, md ⟩
   -- Statements (void-typed)
   | .LocalVariable _ _ _ => ⟨ .TVoid, md ⟩
@@ -91,10 +95,10 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .Forall _ _ _ => ⟨ .TBool, md ⟩
   | .Exists _ _ _ => ⟨ .TBool, md ⟩
   | .Assigned _ => ⟨ .TBool, md ⟩
-  | .Old v => computeExprType env types v
+  | .Old v => computeExprType env types v procedures
   | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
-  | .ProveBy v _ => computeExprType env types v
+  | .ProveBy v _ => computeExprType env types v procedures
   | .ContractOf _ _ => panic "Not supported"
   -- Special
   | .Abstract => panic "Not supported"
