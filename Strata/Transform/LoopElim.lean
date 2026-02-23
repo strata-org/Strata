@@ -55,7 +55,7 @@ def Stmt.removeLoopsM
     let bss ← Block.removeLoopsM bss
     pure (.block label bss md)
   | .cmd _ => pure s
-  | .goto _ _ => pure s
+  | .exit _ _ => pure s
   | .funcDecl _ _ => pure s  -- Function declarations pass through unchanged
 
 def Block.removeLoopsM

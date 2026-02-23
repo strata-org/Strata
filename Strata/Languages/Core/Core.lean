@@ -26,8 +26,8 @@ open Strata
 
 3. Strata.Core does not (yet) support polymorphism.
 
-4. Strata.Core does not (yet) support arbitrary gotos. All gotos must
-   currently be to labels later in the program.
+4. Strata.Core supports `exit` statements that exit the nearest enclosing
+   block with a matching label (or the nearest block if no label is given).
 
 5. Strata.Core does not support `where` clauses and `unique` constants,
    requiring a tool like `BoogieToStrata` to desugar them.

@@ -324,7 +324,7 @@ def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Cor
 
 def handleCallThrow (jmp_target : String) : Core.Statement :=
   let cond := .app () (.op () "ExceptOrNone..isExceptOrNone_mk_code" none) (.fvar () "maybe_except" none)
-  .ite cond [.goto jmp_target] []
+  .ite cond [.exit (some jmp_target)] []
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
   let mut m : Map String String := []
@@ -624,7 +624,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
     | .none =>
       [.set "exception_ty_matches" (.boolConst () false)]
     let cond := .fvar () "exception_ty_matches" none
-    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.goto jmp_targets[1]!]
+    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.exit (some jmp_targets[1]!)]
     set_ex_ty_matches ++ [.ite cond body_if_matches []]
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)
@@ -721,8 +721,8 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       ([.ite (PyExprToCore guard_ctx test).expr (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst], none)
     | .Return _ v =>
       match v.val with
-      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr, .goto jmp_targets[0]!], none) -- TODO: need to thread return value name here. For now, assume "ret"
-      | .none => ([.goto jmp_targets[0]!], none)
+      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr, .exit (some jmp_targets[0]!)], none) -- TODO: need to thread return value name here. For now, assume "ret"
+      | .none => ([.exit (some jmp_targets[0]!)], none)
     | .For _ tgt itr body _ _ =>
       -- Do one unrolling:
       let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst () 0))

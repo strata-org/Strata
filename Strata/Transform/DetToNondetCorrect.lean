@@ -80,7 +80,7 @@ theorem EvalStmt_noFuncDecl_preserves_δ
   | loop_case guard measure invariant body md ih =>
     intros Hno Heval
     cases Heval
-  | goto_case label md =>
+  | exit_case label md =>
     intros Hno Heval
     cases Heval
   | funcDecl_case decl md =>
@@ -200,7 +200,7 @@ theorem StmtToNondetCorrect
           omega
           exact Hno.2
           rw [← Hδ]; exact Heval
-    | .goto _ _ =>
+    | .exit _ _ =>
       cases Heval
     | .loop _ _ _ _ _ =>
       cases Heval

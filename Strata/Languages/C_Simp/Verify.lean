@@ -49,7 +49,7 @@ def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.
   | .ite cond thenb elseb _md => .ite (translate_expr cond) (thenb.map translate_stmt) (elseb.map translate_stmt) {}
   | .loop guard measure invariant body _md => .loop (translate_expr guard) (translate_opt_expr measure) (translate_opt_expr invariant) (body.map translate_stmt) {}
   | .funcDecl _ _ => panic! "C_Simp does not support function declarations"
-  | .goto label _md => .goto label {}
+  | .exit label _md => .exit label {}
   termination_by s.sizeOf
   decreasing_by
   all_goals term_by_mem [Imperative.Stmt, Imperative.sizeOf_stmt_in_block]

@@ -121,7 +121,7 @@ theorem Statement.typeCheckAux_go_WF :
       simp [WFStatementsProp] at *
       simp [List.Forall_append, Forall, *]
       constructor
-    | goto l =>
+    | exit l =>
       simp [Except.bind] at tcok
       split at tcok <;> try contradiction
       have tcok := Statement.typeCheckAux_elim_singleton tcok
@@ -281,7 +281,7 @@ theorem Statement.typeCheckWF :
       rw [heq]
     | loop g m i b md =>
       sorry
-    | goto l =>
+    | exit l =>
       simp at Htc
       split at Htc <;> try simp_all
       split at Htc <;> try simp_all

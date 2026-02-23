@@ -104,7 +104,7 @@ inductive StepStmt
       (.stmt (.loop g m inv body _) σ δ)
       (.terminal σ δ)
 
-  /- Goto: not implemented, because we plan to remove it. -/
+  /- Exit: not yet implemented in small-step semantics. -/
 
   /-- A function declaration extends the evaluator with the new function. -/
   | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr] :

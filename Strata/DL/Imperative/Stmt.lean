@@ -36,11 +36,10 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   /-- An iterated execution statement. Includes an optional measure (for
   termination) and invariant. -/
   | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
-  /-- A semi-structured control flow statement transferring control to the given
-  label. The control flow induced by `goto` must not create cycles. **NOTE:**
-  This will likely be removed, in favor of an alternative view of imperative
-  programs that is purely untructured. -/
-  | goto     (label : String) (md : MetaData P := .empty)
+  /-- An exit statement that transfers control out of the nearest enclosing
+  block with the given label. If no label is provided, exits the nearest
+  enclosing block. -/
+  | exit     (label : Option String) (md : MetaData P := .empty)
   /-- A function declaration within a statement block. -/
   | funcDecl (decl : PureFunc P) (md : MetaData P := .empty)
   deriving Inhabited
@@ -72,23 +71,23 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       (body : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ body → motive s) →
       motive (Stmt.loop guard measure invariant body md))
-    (goto_case : ∀ (label : String) (md : MetaData P),
-      motive (Stmt.goto label md))
+    (exit_case : ∀ (label : Option String) (md : MetaData P),
+      motive (Stmt.exit label md))
     (funcDecl_case : ∀ (decl : PureFunc P) (md : MetaData P),
       motive (Stmt.funcDecl decl md))
     (s : Stmt P Cmd) : motive s :=
   match s with
   | Stmt.cmd c => cmd_case c
   | Stmt.block label b md =>
-    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
+    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
   | Stmt.ite cond thenb elseb md =>
     ite_case cond thenb elseb md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
   | Stmt.loop guard measure invariant body md =>
     loop_case guard measure invariant body md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case funcDecl_case s)
-  | Stmt.goto label md => goto_case label md
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
+  | Stmt.exit label md => exit_case label md
   | Stmt.funcDecl decl md => funcDecl_case decl md
   termination_by s
 
@@ -104,7 +103,7 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   | .block _ bss _ => 1 + Block.sizeOf bss
   | .ite c tss ess _ => 3 + sizeOf c + Block.sizeOf tss + Block.sizeOf ess
   | .loop g _ _ bss _ => 3 + sizeOf g + Block.sizeOf bss
-  | .goto _ _ => 1
+  | .exit _ _ => 1
   | .funcDecl _ _ => 1
 
 @[simp]
@@ -129,34 +128,6 @@ instance (P : PureExpr) : SizeOf (Imperative.Block P C) where
 
 ---------------------------------------------------------------------
 
-/--
-`Stmt.hasLabel label s` checks whether statement `s` is a block labeled
-`label`. -/
-def Stmt.hasLabel : String → Stmt P C → Bool
-| label, Stmt.block label' _ _ => label = label'
-| _, _ => False
-
-mutual
-/-- Does statement `s` contain any block labeled `label`? -/
-def Stmt.hasLabelInside (label : String) (s : Stmt P C) : Bool :=
-  match s with
-  |  .block label' bss _ => label = label' || Block.hasLabelInside label bss
-  |  .ite _ tss ess _ => Block.hasLabelInside label tss || Block.hasLabelInside label ess
-  |  _ => false
-  termination_by (Stmt.sizeOf s)
-
-/--
-Do statements `ss` contain any block labeled `label`?
--/
-def Block.hasLabelInside (label : String) (ss : List (Stmt P C)) : Bool :=
-  match ss with
-  | [] => false
-  | s :: ss => Stmt.hasLabelInside label s || Block.hasLabelInside label ss
-  termination_by (Block.sizeOf ss)
-end
-
----------------------------------------------------------------------
-
 /-! ### NoFuncDecl
 
 Predicate stating that a statement or block contains no function declarations.
@@ -171,7 +142,7 @@ def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
   | .block _ bss _ => Block.noFuncDecl bss
   | .ite _ tss ess _ => Block.noFuncDecl tss && Block.noFuncDecl ess
   | .loop _ _ _ bss _ => Block.noFuncDecl bss
-  | .goto _ _ => true
+  | .exit _ _ => true
   | .funcDecl _ _ => false
   termination_by (Stmt.sizeOf s)
 
@@ -199,7 +170,7 @@ def Stmt.stripMetaData (s : Stmt P C) : Stmt P C :=
   | .block label bss _ => .block label (Block.stripMetaData bss)
   | .ite cond tss ess _ => .ite cond (Block.stripMetaData tss) (Block.stripMetaData ess)
   | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss)
-  | .goto label _ => .goto label
+  | .exit label _ => .exit label
   | .funcDecl decl _ => .funcDecl decl
   termination_by (Stmt.sizeOf s)
 
@@ -223,7 +194,7 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
   | .block _ bss _ => Block.getVars bss
   | .ite _ tbss ebss _ => Block.getVars tbss ++ Block.getVars ebss
   | .loop _ _ _ bss _ => Block.getVars bss
-  | .goto _ _  => []
+  | .exit _ _  => []
   | .funcDecl decl _ =>
     -- Get free variables from function body, excluding formal parameters
     match decl.body with
@@ -273,7 +244,7 @@ mutual
 def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Block.modifiedVars bss
   | .ite _ tbss ebss _ => Block.modifiedVars tbss ++ Block.modifiedVars ebss
   | .loop _ _ _ bss _ => Block.modifiedVars bss
@@ -341,7 +312,9 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
       let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}({invariant})"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"
-  | .goto label md => f!"{md}goto {label}"
+  | .exit label md => match label with
+    | some l => f!"{md}exit {l}"
+    | none => f!"{md}exit"
   | .funcDecl _ md => f!"{md}funcDecl <function>"
   termination_by s.sizeOf
 

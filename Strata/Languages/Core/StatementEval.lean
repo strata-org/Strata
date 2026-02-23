@@ -240,7 +240,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .funcDecl _ _ | .goto _ _ => false  -- Function declarations and gotos don't contain commands
+  | .funcDecl _ _ | .exit _ _ => false  -- Function declarations and exits don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -279,7 +279,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .funcDecl _ _ | .goto _ _ => []  -- Function declarations and gotos don't contain cover commands
+  | .funcDecl _ _ | .exit _ _ => []  -- Function declarations and exits don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -303,7 +303,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .funcDecl _ _ | .goto _ _ => []  -- Function declarations and gotos don't contain assert commands
+  | .funcDecl _ _ | .exit _ _ => []  -- Function declarations and exits don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -368,39 +368,39 @@ def StmtsStack.appendToTop (stk : StmtsStack) (ss : Statements) : StmtsStack :=
   (top ++ ss) :: stk
 
 /--
-A new environment with an optional next label to execute and transformed
+An environment with an optional exit label and transformed
 statements (i.e., statements that have already been evaluated).
 -/
 structure EnvWithNext where
   env  : Env
-  nextLabel : Option String := .none
+  /-- `none` = no exit active; `some none` = exit nearest block; `some (some l)` = exit block `l` -/
+  exitLabel : Option (Option String) := .none
   stk : StmtsStack := []
 
 /--
-Drop statements up to the given label, and indicate whether goto
-needs to propagate up.
+Process an exit statement. When `exitLabel` is active, skip remaining
+statements. The exit propagates up through blocks until a matching block
+is found.
 
-NOTE: We only allow forward-gotos right now.
+- `exit` (no label): exits the nearest enclosing block
+- `exit l`: exits the nearest enclosing block labeled `l`
 -/
-def processGoto : Statements → Option String → (Statements × Option String)
+def processExit : Statements → Option (Option String) → (Statements × Option (Option String))
 | rest, .none => (rest, .none)
-| rest, .some l =>
-  match rest.dropWhile (fun s => !s.hasLabel l) with
-  | [] => ([], .some l) -- Not found, so propagate goto
-  | (rest') => (rest', .none) -- Found, so we're done
+| _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
 mutual
-def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optLabel : Option String) :
+def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
     List EnvWithNext :=
   match steps, Ewn.env.error with
-  | _, some _ => [{Ewn with nextLabel := .none}]
-  | 0, none => [{Ewn with env := { Ewn.env with error := some .OutOfFuel}, nextLabel := .none}]
+  | _, some _ => [{Ewn with exitLabel := .none}]
+  | 0, none => [{Ewn with env := { Ewn.env with error := some .OutOfFuel}, exitLabel := .none}]
   | steps' + 1, none =>
     have _htermination_lemma : wfParam steps' < steps' + 1 := by simp [wfParam]
     let go' := evalAuxGo steps' old_var_subst
-    match processGoto ss optLabel with
-    | ([], .none) => [{ Ewn with nextLabel := .none }]
-    | (_, .some l) => [{ Ewn with nextLabel := .some l }] -- Implies statement list is empty
+    match processExit ss optExit with
+    | ([], .none) => [{ Ewn with exitLabel := .none }]
+    | (_, .some l) => [{ Ewn with exitLabel := .some l }] -- Exit propagating, statement list skipped
     | (s :: rest, .none) =>
       let EAndNexts : List EnvWithNext :=
         match s with
@@ -409,7 +409,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             let (c', E) := Command.eval Ewn.env old_var_subst c
             [{ Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')],
                         env := E,
-                        nextLabel := .none }]
+                        exitLabel := .none }]
 
           | .block label ss md =>
             let orig_stk := Ewn.stk
@@ -419,7 +419,15 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             let Ewns := go' Ewn ss .none
             let Ewns := Ewns.map
                             (fun (ewn : EnvWithNext) =>
+                                 let exitLabel := match ewn.exitLabel with
+                                   -- exit with no label: consumed by this block
+                                   | .some .none => .none
+                                   -- exit with matching label: consumed by this block
+                                   | .some (.some l) => if l == label then .none else .some (.some l)
+                                   -- no exit or non-matching: pass through
+                                   | other => other
                                  { ewn with env := ewn.env.popScope,
+                                            exitLabel := exitLabel,
                                             stk :=
                                               let ss' := ewn.stk.top
                                               let s' := Imperative.Stmt.block label ss' md
@@ -492,9 +500,9 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | .error e =>
               [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
 
-          | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
+          | .exit l md => [{ Ewn with stk := Ewn.stk.appendToTop [.exit l md], exitLabel := .some l}]
 
-      List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.nextLabel) EAndNexts
+      List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.exitLabel) EAndNexts
   termination_by (steps, Imperative.Block.sizeOf ss)
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
@@ -528,9 +536,9 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                   else_ss .none
   match Ewns_t, Ewns_f with
   -- Special case: if there's only one result from each path,
-  -- with no next label, we can merge both states into one.
-  | [{ stk := stk_t, env := E_t, nextLabel := .none}],
-    [{ stk := stk_f, env := E_f, nextLabel := .none}] =>
+  -- with no exit label, we can merge both states into one.
+  | [{ stk := stk_t, env := E_t, exitLabel := .none}],
+    [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
     let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
     [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
@@ -550,13 +558,14 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 end
 
-def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
+def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
   List EnvWithNext :=
-  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optLabel
+  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optExit
 
-def gotoToError : EnvWithNext → Statements × Env
-  | { stk, env, nextLabel := .none } => (stk.flatten, env)
-  | { stk, env, nextLabel := .some l } => (stk.flatten, { env with error := some (.LabelNotExists l) })
+def exitToError : EnvWithNext → Statements × Env
+  | { stk, env, exitLabel := .none } => (stk.flatten, env)
+  | { stk, env, exitLabel := .some (.some l) } => (stk.flatten, { env with error := some (.LabelNotExists l) })
+  | { stk, env, exitLabel := .some .none } => (stk.flatten, { env with error := some (.Misc "exit outside of any block") })
 
 /--
 Partial evaluator for statements yielding a list of environments and transformed
@@ -566,7 +575,7 @@ The argument `old_var_subst` below is a substitution map from global variables
 to their pre-state value in the enclosing procedure of `ss`.
 -/
 def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Statements × Env) :=
-  (evalAux E old_var_subst ss .none).map gotoToError
+  (evalAux E old_var_subst ss .none).map exitToError
 
 /--
 Partial evaluator for statements yielding one environment and transformed

@@ -143,9 +143,13 @@ info: while
 #eval! format (Stmt.loop xEq0 (some x) (some tt)
                 ([Statement.set "x" int1] : Ss) : S)
 
--- 14. goto
-/-- info: goto target -/
-#guard_msgs in #eval! format (Stmt.goto "target" : S)
+-- 14. exit with label
+/-- info: exit target -/
+#guard_msgs in #eval! format (Stmt.exit (some "target") : S)
+
+-- 14b. exit without label
+/-- info: exit -/
+#guard_msgs in #eval! format (Stmt.exit none : S)
 
 -- 15. funcDecl
 /-- info: funcDecl <function> -/

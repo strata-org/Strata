@@ -796,9 +796,27 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
     }
 
+    /// <summary>
+    /// Collect all forward goto target labels from a list of blocks.
+    /// Returns a set of label names that are targets of goto commands.
+    /// </summary>
+    private static HashSet<string> CollectGotoTargets(IEnumerable<Block> blocks) {
+        var targets = new HashSet<string>();
+        foreach (var blk in blocks) {
+            if (blk.TransferCmd is GotoCmd gotoCmd) {
+                foreach (var target in gotoCmd.LabelTargets) {
+                    targets.Add(target.Label);
+                }
+            } else if (blk.TransferCmd is ReturnCmd) {
+                targets.Add("_exit");
+            }
+        }
+        return targets;
+    }
+
     public override GotoCmd VisitGotoCmd(GotoCmd node) {
         if (node.LabelTargets.Count == 1) {
-            IndentLine($"goto {Name(node.LabelTargets[0].Label)};");
+            IndentLine($"exit {Name(node.LabelTargets[0].Label)};");
         } else if (node.LabelTargets.Count == 2) {
             var thenBlock = node.LabelTargets[0];
             var elseBlock = node.LabelTargets[1];
@@ -806,7 +824,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             if (cond != null) {
                 Indent("if (");
                 VisitExpr(cond);
-                WriteLine($") {{ goto {Name(thenBlock.Label)}; }} else {{ goto {Name(elseBlock.Label)}; }}");
+                WriteLine($") {{ exit {Name(thenBlock.Label)}; }} else {{ exit {Name(elseBlock.Label)}; }}");
             } else {
                 throw new StrataConversionException(node.tok, "Unsupported: goto with two targets that aren't obvious inverses");
             }
@@ -846,7 +864,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override ReturnCmd VisitReturnCmd(ReturnCmd node) {
-        IndentLine("goto _exit;");
+        IndentLine("exit _exit;");
         return node;
     }
 
@@ -951,9 +969,9 @@ public class StrataGenerator : ReadOnlyVisitor {
         } else if (cmd is BreakCmd breakCmd) {
             Indent();
             if (breakCmd.Label != null) {
-                IndentLine($"goto {Name(breakCmd.Label)};");
+                IndentLine($"exit {Name(breakCmd.Label)};");
             } else if (_breakLabels.TryPeek(out var label)) {
-                IndentLine($"goto {label};");
+                IndentLine($"exit {label};");
             } else {
                 throw new StrataConversionException(cmd.tok, "Internal: break statement outside loop");
             }
@@ -1326,8 +1344,55 @@ public class StrataGenerator : ReadOnlyVisitor {
         if (node.StructuredStmts != null) {
             EmitStmtList(node.StructuredStmts);
         } else {
-            foreach (var blk in node.Blocks) {
-                VisitBlock(blk);
+            // For unstructured blocks, we wrap groups of blocks so that
+            // forward gotos (now `exit label`) can exit to the right place.
+            // For each goto target, we open a wrapper block before the first
+            // block and close it just before the target block.
+            var blocks = node.Blocks;
+            var gotoTargets = CollectGotoTargets(blocks);
+
+            // Build a map from target label to its index in the block list
+            var labelToIndex = new Dictionary<string, int>();
+            for (var i = 0; i < blocks.Count; i++) {
+                labelToIndex[blocks[i].Label] = i;
+            }
+            // _exit is after all blocks
+            labelToIndex["_exit"] = blocks.Count;
+
+            // Determine which wrapper blocks to open at each position.
+            // A wrapper for target T opens at position 0 and closes at the
+            // index of T. We sort by closing position (descending) so that
+            // inner wrappers are opened last (and closed first).
+            var wrappers = gotoTargets
+                .Where(t => labelToIndex.ContainsKey(t))
+                .Select(t => (label: t, closeAt: labelToIndex[t]))
+                .OrderByDescending(w => w.closeAt)
+                .ToList();
+
+            // Open all wrapper blocks (outermost = latest close first)
+            foreach (var (label, _) in wrappers) {
+                IndentLine($"{Name(label)}: {{");
+                IncIndent();
+            }
+
+            for (var i = 0; i < blocks.Count; i++) {
+                // Close any wrapper blocks that end at this position
+                foreach (var (label, closeAt) in wrappers) {
+                    if (closeAt == i) {
+                        DecIndent();
+                        IndentLine("}");
+                    }
+                }
+
+                VisitBlock(blocks[i]);
+            }
+
+            // Close any wrapper blocks that end after all blocks (i.e., _exit)
+            foreach (var (label, closeAt) in wrappers) {
+                if (closeAt == blocks.Count) {
+                    DecIndent();
+                    IndentLine("}");
+                }
             }
         }
 

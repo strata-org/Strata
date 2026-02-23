@@ -155,13 +155,9 @@ where
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
-        | .goto label md => do try
+        | .exit _label md => do try
           match op with
-          | .some p =>
-            if Block.hasLabelInside label p.body then
-              .ok (s, Env, C)
-            else
-              .error <| md.toDiagnosticF f!"Label {label} does not exist in the body of {p.header.name}"
+          | .some _ => .ok (s, Env, C)
           | .none => .error <| md.toDiagnosticF f!"{s} occurs outside a procedure."
           catch e =>
             -- Add source location to error messages.
@@ -223,7 +219,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
     .ite (cond.applySubst S) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
     .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) (go S bss []) md
-  | .goto _ _ => s
+  | .exit _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with
       inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.subst S ty)),
@@ -241,7 +237,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
 Type checker and annotater for Statements.
 
 Note that this function needs the entire program to type-check statements to
-check whether `goto` targets exist (or .none for statements that don't occur
+check whether `exit` statements occur inside a procedure (or .none for statements that don't occur
 inside a procedure).
 -/
 def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
