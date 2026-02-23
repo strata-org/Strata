@@ -335,7 +335,7 @@ where
         let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
         let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-        let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.Identifier (name ++ "_UserType"))])
+        let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name ++ "_UserType") [])])
         return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse env l) (← recurse env r), md ⟩
     | .AsType t ty =>
@@ -452,8 +452,8 @@ def heapParameterization (program : Program) : Program :=
     match typeDef with
     | .Composite ct => acc ++ ct.fields.map (fun f => (ct.name ++ "." ++ f.name, f.type))
     | .Constrained _ => acc) []
-  let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run
+  let (procs', _) := (program.staticProcedures.mapM heapTransformProcedure).run
     { heapReaders, heapWriters, fieldTypes, types := program.types }
-  { program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }
+  { program with staticProcedures := procs' }
 
 end Strata.Laurel

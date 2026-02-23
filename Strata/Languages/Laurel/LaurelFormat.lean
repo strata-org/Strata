@@ -59,6 +59,8 @@ def formatHighTypeVal : HighType → Format
   decreasing_by all_goals term_by_mem
 end
 
+instance : Std.ToFormat HighTypeMd where
+  format := formatHighType
 
 mutual
 def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val

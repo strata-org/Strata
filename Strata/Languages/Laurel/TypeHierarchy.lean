@@ -160,7 +160,11 @@ def collectDiamondFieldErrors (uri : Uri) (types : List TypeDefinition) (env : T
       | _ => []
     targetErrors ++ fieldError
   | .Block stmts _ =>
-    stmts.attach.foldl (fun acc ⟨s, _⟩ => acc ++ collectDiamondFieldErrors uri types env s) []
+    (stmts.attach.foldl (fun (acc, env') ⟨s, _⟩ =>
+      let env'' := match s.val with
+        | .LocalVariable name ty _ => (name, ty) :: env'
+        | _ => env'
+      (acc ++ collectDiamondFieldErrors uri types env' s, env'')) ([], env)).1
   | .Assign targets value =>
     let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ => acc ++ collectDiamondFieldErrors uri types env t) []
     targetErrors ++ collectDiamondFieldErrors uri types env value

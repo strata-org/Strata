@@ -65,25 +65,25 @@ composite Bottom extends Left, Right {
 }
 
 procedure diamondInheritance() {
-  var a: Bottom := new Bottom;
-  a#lValue := 1;
-  a#rValue := 2;
-  a#bValue := 3;
+  var b: Bottom := new Bottom;
+  b#lValue := 1;
+  b#rValue := 2;
+  b#bValue := 3;
   // tValue can not be used
 
-  assert a#lValue == 1;
-  assert a#rValue == 2;
-  assert a#bValue == 3;
+  assert b#lValue == 1;
+  assert b#rValue == 2;
+  assert b#bValue == 3;
 
-  assert a is Left;
-  assert a is Right;
-  assert a is Top;
-  assert a is Bottom;
+  assert b is Left;
+  assert b is Right;
+  assert b is Top;
+  assert b is Bottom;
 }
 
-// Currently does not pass. Implementation needs a type invariant mechanism that we have yet to add.
-//procedure typedParameter(a: Bottom) {
-//  var b: Bottom := a;
+// Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.
+//procedure typedParameter(b: Bottom) {
+//  var b: Bottom := b;
 //  assert b is Left;
 //  assert b is Right;
 //  assert b is Top;
