@@ -72,8 +72,18 @@ private def isStringExpr (env : TypeEnv) (e : StmtExprMd) : Bool :=
   | .LiteralString _ => true
   | .Identifier name =>
     match env.find? (fun (n, _) => n == name) with
-    | some (_, ty) => match ty.val with | .TString => true | _ => false
+    | some (_, ty) =>
+      match ty.val with
+      | .TString => true
+      | _ => false
     | none => false
+  -- A single-expression block has the same type as its inner expression
+  | .Block [single] _ => isStringExpr env single
+  -- A conditional expression is string-typed if both branches are string-typed
+  | .IfThenElse _ thenExpr elseExpr =>
+    isStringExpr env thenExpr && isStringExpr env elseExpr
+  -- Old preserves the type of its inner expression
+  | .Old inner => isStringExpr env inner
   | _ => false
 
 /--
