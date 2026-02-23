@@ -317,6 +317,10 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
           if options.stopOnFirstError then break
     return results
 
+/-- Run the Strata Core verification pipeline on a program: transform,
+type-check, partially evaluate, and discharge proof obligations via SMT.
+All program-wide transformations that occur before any analyses
+(including type inference) should be placed here. -/
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
