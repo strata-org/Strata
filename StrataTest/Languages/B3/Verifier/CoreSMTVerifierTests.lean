@@ -5,11 +5,13 @@
 -/
 
 import Strata.Languages.B3.Verifier
+import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
 import Strata.Languages.B3.ToCore
 import Strata.Languages.Core.CoreSMT
 import Strata.DL.SMT.Solver
+import Strata.DL.Imperative.SMTUtils
 
 /-!
 # B3 → Core → CoreSMT Verification Tests
@@ -37,23 +39,15 @@ open Strata.SMT
 -- Test Harness: B3 → Core → CoreSMT Pipeline
 ---------------------------------------------------------------------
 
-/-- Format a CheckOutcome for display -/
-private def formatOutcome (outcome : CheckOutcome) (isCover : Bool) : String :=
+/-- Format Core Outcome for display -/
+private def formatOutcome (outcome : Core.Outcome) (isCover : Bool) : String :=
   match outcome, isCover with
   | .pass, false => "✓ verified"
   | .pass, true => "✓ reachable"
   | .fail, false => "✗ counterexample found"
   | .fail, true => "✗ refuted"
-  | .unknown, false => "✗ unknown"
-  | .unknown, true => "✓ reachability unknown"
-  | .refuted, _ => "✗ refuted"
-  | .error msg, _ => s!"✗ error: {msg}"
-
-/-- Check if a CheckOutcome represents an error -/
-private def isErrorOutcome (outcome : CheckOutcome) : Bool :=
-  match outcome with
-  | .pass => false
-  | _ => true
+  | .unknown, _ => "✗ unknown"
+  | .implementationError msg, _ => s!"✗ error: {msg}"
 
 /-- Extract procedure name from B3 AST -/
 private def getProcedureName (prog : B3AST.Program SourceRange) : String :=
@@ -91,7 +85,8 @@ def testB3ViaCoreVerification (prog : Program) : IO Unit := do
   -- Step 6: Display results
   let procName := getProcedureName b3AST
   for result in results do
-    let marker := formatOutcome result.outcome result.isCover
+    let isCover := result.obligation.property == .cover
+    let marker := formatOutcome result.result isCover
     IO.println s!"{procName}: {marker}"
 ---------------------------------------------------------------------
 -- Basic Tests
@@ -142,8 +137,6 @@ procedure test_reach() {
   reach true
 }
 #end
-
-end B3.Verifier.CoreSMTTests
 
 /--
 info: test_complex: ✗ counterexample found
