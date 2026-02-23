@@ -460,9 +460,15 @@ def heapParameterization (program : Program) : Program :=
     match td with
     | .Composite ct => acc ++ ct.fields.map (fun f => ct.name ++ "." ++ f.name)
     | _ => acc) ([] : List Identifier)
-  let fieldDatatype : List TypeDefinition :=
-    if fieldNames.isEmpty then []
-    else [.Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }]
-  { program with staticProcedures := procs', types := program.types ++ fieldDatatype }
+  let fieldDatatype : TypeDefinition :=
+    .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
+  -- Collect composite type names and generate a UserType datatype
+  let compositeNames := program.types.filterMap fun td =>
+    match td with
+    | .Composite ct => some ct.name
+    | _ => none
+  let userTypeDatatype : TypeDefinition :=
+    .Datatype { name := "UserType", typeArgs := [], constructors := compositeNames.map fun n => { name := n ++ "_UserType", args := [] } }
+  { program with staticProcedures := procs', types := program.types ++ [fieldDatatype, userTypeDatatype] }
 
 end Strata.Laurel

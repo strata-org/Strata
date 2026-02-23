@@ -161,7 +161,7 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
         | .UserDefined name => name
         | _ => panic! "IsType: expected UserDefined type, got {format ty.val}"
       -- Build the UserType constant for the target type
-      let typeConst := LExpr.op () (Core.CoreIdent.glob (typeName ++ "_UserType")) none
+      let typeConst := LExpr.op () (Core.CoreIdent.unres (typeName ++ "_UserType")) none
       -- ancestorsPerType[Composite..userType(target)][Type_UserType]
       let innerMap := LExpr.mkApp () Core.mapSelectOp [ancestorsPerType, getUserType]
       LExpr.mkApp () Core.mapSelectOp [innerMap, typeConst]
@@ -451,11 +451,6 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
-  -- Add UserType constants for each composite type to the program's constants
-  let userTypeConstants := program.types.filterMap fun td => match td with
-    | .Composite ct => some { name := ct.name ++ "_UserType", type := ⟨.UserDefined "UserType", #[]⟩ : Constant }
-    | _ => none
-  let program := { program with constants := program.constants ++ userTypeConstants }
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
@@ -474,14 +469,9 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procedures := procProcs.map (translateProcedure fieldNames funcNames)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction fieldNames)
-  -- Filter out the prelude's opaque `type Field;` when we have a Field datatype
-  let hasFieldDatatype := program.types.any fun td => match td with
-    | .Datatype dt => dt.name == "Field" && !dt.constructors.isEmpty
-    | _ => false
-  let preludeDecls := if hasFieldDatatype then
-    corePrelude.decls.filter (fun d => d.name.name != "Field")
-  else
-    corePrelude.decls
+  -- Filter out the Field and UserType opaque types. These are only in the prelude to satisfy the DDM type checker.
+  let preludeDecls := corePrelude.decls.filter fun d =>
+    d.name.name != "Field" && d.name.name != "UserType"
   -- Generate type hierarchy declarations (UserType constants, distinct, axioms)
   let typeHierarchyDecls := generateTypeHierarchyDecls program.types
   -- Translate Laurel datatype definitions to Core datatype declarations
