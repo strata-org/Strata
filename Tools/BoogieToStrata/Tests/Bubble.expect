@@ -1,7 +1,4 @@
 Successfully parsed.
-⚠️ [addPathCondition] Label clash detected for assume_invariant_0, using unique label assume_invariant_0_1.
-⚠️ [addPathCondition] Label clash detected for not_guard_0, using unique label not_guard_0_1.
-⚠️ [addPathCondition] Label clash detected for invariant_0, using unique label invariant_0_1.
 Bubble.core.st(32, 0) [entry_invariant_0]: ✅ pass
 Bubble.core.st(32, 0) [arbitrary_iter_maintain_invariant_0]: ✅ pass
 Bubble.core.st(46, 0) [entry_invariant_0]: ✅ pass
