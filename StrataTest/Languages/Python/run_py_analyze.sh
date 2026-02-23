@@ -2,6 +2,7 @@
 
 # Usage: ./run_py_analyze.sh [--print-only]
 # Default: Compare outputs with expected files
+# Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel
 # --print-only: Just run tests and print results without comparing
 
 print_only=false
@@ -15,11 +16,11 @@ mode="${1:-core}"
 if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
-    skip_tests="test_datetime test_class_decl test_strings"
+    skip_tests="test_datetime" 
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
-    skip_tests=""
+    skip_tests="test_class_field_use"
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)

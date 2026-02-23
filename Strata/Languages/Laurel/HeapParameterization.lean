@@ -82,7 +82,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
-  | .Assert c => collectExprMd c
+  | .Assert c _=> collectExprMd c
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
@@ -310,7 +310,7 @@ where
     | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
     | .Old v => return ⟨ .Old (← recurse v), md ⟩
     | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
-    | .Assert c => return ⟨ .Assert (← recurse c), md ⟩
+    | .Assert c label=> return ⟨ .Assert (← recurse c) label, md ⟩
     | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
     | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
@@ -342,7 +342,7 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     let outputs' := heapOutParam :: proc.outputs
 
     -- Preconditions use heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapInName)
+    let precondition' ← heapTransformExpr heapInName proc.precondition
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
@@ -368,7 +368,7 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     return { proc with
       inputs := inputs',
       outputs := outputs',
-      preconditions := preconditions',
+      precondition := precondition',
       body := body' }
 
   else if readsHeap then
@@ -376,7 +376,7 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, #[]⟩ }
     let inputs' := heapInParam :: proc.inputs
 
-    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapInName)
+    let precondition' ← heapTransformExpr heapInName proc.precondition
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
@@ -393,7 +393,7 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
 
     return { proc with
       inputs := inputs',
-      preconditions := preconditions',
+      precondition := precondition',
       body := body' }
 
   else

@@ -17,7 +17,6 @@ def formatOperation : Operation → Format
   | .Neq => "!="
   | .And => "&&"
   | .Or => "||"
-  | .Implies => "==>"
   | .Not => "!"
   | .Implies => "==>"
   | .Neg => "-"
@@ -144,6 +143,11 @@ end
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
 
+def formatDeterminism : Determinism → Format
+  | .deterministic none => "deterministic"
+  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
+  | .nondeterministic => "nondeterministic"
+
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque postconds impl modif =>
@@ -153,13 +157,14 @@ def formatBody : Body → Format
       match impl with
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
-  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
+  | .Abstract post => "abstract ensures " ++ formatStmtExpr post
 
 def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
-  Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
+  "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++
+  formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 
 def formatField (f : Field) : Format :=
@@ -170,7 +175,11 @@ def formatCompositeType (ct : CompositeType) : Format :=
   "composite " ++ Format.text ct.name ++
   (if ct.extending.isEmpty then Format.nil else " extends " ++
    Format.joinSep (ct.extending.map Format.text) ", ") ++
-  " { " ++ Format.joinSep (ct.fields.map formatField) "; " ++ " }"
+  " {\n" ++
+  "  fields: " ++ Format.joinSep (ct.fields.map formatField) "; " ++ "\n" ++
+  "  procedures:\n" ++
+  Format.joinSep (ct.instanceProcedures.map (fun p => "    " ++ formatProcedure p)) "\n\n" ++
+  "\n}"
 
 def formatConstrainedType (ct : ConstrainedType) : Format :=
   "constrained " ++ Format.text ct.name ++
@@ -182,7 +191,14 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Constrained ty => formatConstrainedType ty
 
 def formatProgram (prog : Program) : Format :=
-  Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
+  let types := Format.joinSep (prog.types.map formatTypeDefinition) "\n\n"
+  let procs := Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
+  if prog.types.isEmpty then
+    procs
+  else if prog.staticProcedures.isEmpty then
+    types
+  else
+    types ++ "\n\n" ++ procs
 
 instance : Std.ToFormat Operation where
   format := formatOperation

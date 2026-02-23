@@ -76,7 +76,7 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
-  | .TVoid => LMonoTy.bool
+  | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
@@ -86,7 +86,7 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
 termination_by ty.val
 decreasing_by cases elementType; term_by_mem
 
-def lookupType (ctMap : ConstrainedTypeMap) (env : TypeEnv) (name : Identifier) : Except String LMonoTy :=
+def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
   | some (_, ty) => translateType ty
   | none => panic s!"could not find variable {name} in environment"
@@ -157,6 +157,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
     | .Leq => binOp intLeOp
     | .Gt => binOp intGtOp
     | .Geq => binOp intGeOp
+    | .StrConcat => binOp strConcatOp
     | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
     panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
@@ -215,11 +216,11 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
   (outputParams : List Parameter) (stmt : StmtExprMd) : TypeEnv × List Core.Statement :=
   let md := stmt.md
   match h : stmt.val with
-  | @StmtExpr.Assert cond =>
+  | @StmtExpr.Assert cond label=>
       let boogieExpr := translateExpr constants env cond
       let assertLabel := label.getD ("assert" ++ getNameFromMd stmt.md)
       (env, [Core.Statement.assert assertLabel boogieExpr md])
-  | @StmtExpr.Assume cond label =>
+  | @StmtExpr.Assume cond =>
       let boogieExpr := translateExpr constants env cond
       (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md])
   | .Block stmts _ =>
@@ -229,9 +230,9 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
       (env', stmtsList)
   | .LocalVariable name ty initializer =>
       let env' := (name, ty) :: env
-      let coreType := LTy.forAll [] (translateTypeMdWithCT ctMap ty)
+      let boogieMonoType := translateType ty
+      let boogieType := LTy.forAll [] boogieMonoType
       let ident := Core.CoreIdent.locl name
-      let constraintCheck := genConstraintAssert ctMap tcMap name ty
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
@@ -334,19 +335,8 @@ Translate Laurel Parameter to Core Signature entry
 -/
 def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
   let ident := Core.CoreIdent.locl param.name
-  let ty := translateTypeMdWithCT ctMap param.type
+  let ty := translateType param.type
   (ident, ty)
-
-/-- Expand array parameter to (arr, arr_len) pair -/
-def expandArrayParam (ctMap : ConstrainedTypeMap) (param : Parameter) : List (Core.CoreIdent × LMonoTy) :=
-  match param.type.val with
-  | .Applied ctor _ =>
-    match ctor.val with
-    | .UserDefined "Array" =>
-        [ (Core.CoreIdent.locl param.name, translateTypeMdWithCT ctMap param.type)
-        , (Core.CoreIdent.locl (param.name ++ "_len"), LMonoTy.int) ]
-    | _ => [translateParameterToCoreWithCT ctMap param]
-  | _ => [translateParameterToCoreWithCT ctMap param]
 
 /--
 Translate Laurel Procedure to Core Procedure
@@ -361,7 +351,7 @@ def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (
     name := proc.name
     typeArgs := []
     inputs := inputs
-    outputs := proc.outputs.flatMap (expandArrayParam ctMap)
+    outputs := outputs
   }
   -- Build type environment with original types (for constraint checks)
   -- Include array length parameters
@@ -412,7 +402,7 @@ def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (
     header := header
     spec := spec
     body := body
-  }) .empty
+  }
 
 def translateConstant (c : Constant) : Core.Decl :=
   match c.type.val with
@@ -459,16 +449,14 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
-
 /--
 Check if a procedure can be translated as a Core function.
 A procedure can be a function if:
 - It has a transparent body that is a pure expression
 - It has no precondition (or just `true`)
 - It has exactly one output parameter (the return type)
-- The output parameter does not have a constrained type (constraints need postcondition checks)
 -/
-def canBeCoreFunction (ctMap : ConstrainedTypeMap) (proc : Procedure) : Bool :=
+def canBeBoogieFunction (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
@@ -494,7 +482,7 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
     inputs := inputs
     output := outputTy
     body := body
-  })
+  }
 
 /--
 Translate Laurel Program to Core Program

@@ -12,3 +12,11 @@ assert_opt_name_none_or_str: ✅ pass (at byte 11127)
 assert_opt_name_none_or_bar: ✅ pass (at byte 11274)
 
 ensures_maybe_except_none: ✅ pass (at byte 10980)
+
+assert_name_is_foo: ✅ pass (at byte 12063)
+
+assert_opt_name_none_or_str: ✅ pass (at byte 12113)
+
+assert_opt_name_none_or_bar: ✅ pass (at byte 12260)
+
+ensures_maybe_except_none: ✅ pass (at byte 11966)

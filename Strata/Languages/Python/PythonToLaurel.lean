@@ -388,8 +388,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           -- Translate constructor arguments
           let translatedArgs ← args.val.toList.mapM (translateExpr ctx)
 
-          -- Generate: var a: C; call a.__init__(args);
-          let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType none)
+          -- Generate: var a = new C; call a.__init__(args);
+          let newExpr := mkStmtExprMd (StmtExpr.New funcName)
+          let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some newExpr))
 
           let initCall := mkStmtExprMd (StmtExpr.InstanceCall
             (mkStmtExprMd (StmtExpr.Identifier varName))
@@ -563,9 +564,11 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
       name := funcName
       inputs := inputs
       outputs := outputs
-      preconditions := []
+      precondition := mkStmtExprMd (StmtExpr.LiteralBool true)
+      determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Transparent bodyBlock
+      md := default
     }
 
     return proc
@@ -667,9 +670,11 @@ def translateMethod (ctx : TranslationContext) (className : String)
       name := methodName
       inputs := inputs
       outputs := outputs
-      preconditions := []
+      precondition := mkStmtExprMd (StmtExpr.LiteralBool true)
+      determinism := .nondeterministic
       decreases := none
       body := .Transparent bodyBlock
+      md := {}
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -764,14 +769,21 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
     let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" (mkHighTypeMd .TString) (some <| mkStmtExprMd (.LiteralString "__main__"))) :: bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
-    let mainProc : Procedure := {name := "__main__", inputs := [], outputs := [], preconditions := [], decreases := none, body := .Transparent bodyBlock}
-
-    let typeDefinitions := compositeTypes.map TypeDefinition.Composite
+    let mainProc : Procedure := {
+      name := "__main__",
+      inputs := [],
+      outputs := [],
+      precondition := mkStmtExprMd (StmtExpr.LiteralBool true),
+      decreases := none,
+      determinism := .deterministic none --TODO: need to set reads
+      body := .Transparent bodyBlock
+      md := default
+    }
 
     let program : Laurel.Program := {
       staticProcedures := mainProc :: procedures
       staticFields := []
-      types := typeDefinitions
+      types := compositeTypes.map TypeDefinition.Composite
       constants := []
     }
 

@@ -199,10 +199,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let seqArgs ← args.reverse.mapM transformExpr
       return ⟨.PrimitiveOp op seqArgs.reverse, md⟩
 
-  | .StaticCall name args =>
-      let seqArgs ← args.reverse.mapM transformExpr
-      return ⟨.StaticCall name seqArgs.reverse, md⟩
-
   | .IfThenElse cond thenBranch elseBranch =>
       let thenHasAssign := containsAssignment thenBranch
       let elseHasAssign := match elseBranch with
@@ -327,10 +323,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmt with
   | WithMetadata.mk val md =>
   match val with
-  | .Assert cond =>
+  | .Assert cond label =>
       let seqCond ← transformExpr cond
       let prepends ← takePrepends
-      return prepends ++ [⟨.Assert seqCond, md⟩]
+      return prepends ++ [⟨.Assert seqCond label, md⟩]
 
   | .Assume cond =>
       let seqCond ← transformExpr cond
