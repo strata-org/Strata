@@ -1345,7 +1345,11 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
 
         if (node.StructuredStmts != null) {
+            IndentLine("_exit: {");
+            IncIndent();
             EmitStmtList(node.StructuredStmts);
+            DecIndent();
+            IndentLine("}");
         } else {
             // For unstructured blocks, we wrap groups of blocks so that
             // forward gotos (now `exit label`) can exit to the right place.
