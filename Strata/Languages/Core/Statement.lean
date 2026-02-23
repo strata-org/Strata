@@ -387,22 +387,22 @@ def Statement.renameLhs (s : Core.Statement)
     : Statement :=
   match s with
   | .init lhs ty rhs metadata =>
-    .init (if lhs.name == fr then to else lhs) ty rhs metadata
+    .init (if lhs.name == fr.name then to else lhs) ty rhs metadata
   | .set lhs rhs metadata =>
-    .set (if lhs.name == fr then to else lhs) rhs metadata
+    .set (if lhs.name == fr.name then to else lhs) rhs metadata
   | .call lhs pname args metadata =>
     .call (lhs.map (fun l =>
-      if l.name == fr  then to else l)) pname args metadata
+      if l.name == fr.name then to else l)) pname args metadata
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
   | .ite x thenb elseb m =>
     .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
   | .loop m g i b md =>
     .loop m g i (Block.renameLhs b fr to) md
-  | .havoc l md => .havoc (if l.name == fr then to else l) md
+  | .havoc l md => .havoc (if l.name == fr.name then to else l) md
   | .funcDecl decl md =>
     -- Rename function name if it matches
-    let decl' := if decl.name == fr then { decl with name := to } else decl
+    let decl' := if decl.name == fr.name then { decl with name := to } else decl
     .funcDecl decl' md
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
   termination_by s.sizeOf
