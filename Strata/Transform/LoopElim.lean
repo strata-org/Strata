@@ -30,14 +30,16 @@ def Stmt.removeLoopsM
     let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
     let neg_guard : P.Expr := HasNot.not guard
     let assigned_vars := Block.modifiedVars bss
+    -- All of the replaced statements reuse the metadata md.
     let havocd : Stmt P C :=
-      .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n))) {}
+      .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
     let entry_invariant :=
       Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}" invariant md)
     let first_iter_facts :=
       .block s!"first_iter_asserts_{loop_num}" [entry_invariant] {}
     let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}" [(Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" guard md)),
              (Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}" invariant md))]
+      md
     let maintain_invariant :=
       Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}" invariant md)
     let body_statements ← Block.removeLoopsM bss

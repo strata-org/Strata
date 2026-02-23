@@ -2021,12 +2021,12 @@ NOTE:
   variables (that is, lhs ++ modifies)
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ lhs n args σ' p},
+  ∀ {π φ δ σ lhs n args σ' p md md'},
   π n = .some p →
   p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
-  EvalCommand π φ δ σ (CmdExt.call lhs n args) σ' →
-  EvalCommandContract π δ σ (CmdExt.call lhs n args) σ' := by
-  intros π φ δ σ lhs n args σ' p pFound modValid H
+  EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' →
+  EvalCommandContract π δ σ (CmdExt.call lhs n args md') σ' := by
+  intros π φ δ σ lhs n args σ' p md md' pFound modValid H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry

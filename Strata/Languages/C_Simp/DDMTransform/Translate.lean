@@ -363,7 +363,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty none))], newBindings)
+    return ([(.cmd (.init id ty none .empty))], newBindings)
   | q`C_Simp.init_def, #[ida, tpa, ea] =>
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
@@ -374,22 +374,21 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty val))], newBindings)
+    return ([(.cmd (.init id ty val .empty))], newBindings)
   | q`C_Simp.assign, #[_tpa, ida, ea] =>
     let id ← translateIdent ida
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set id val))], bindings)
+    return ([(.cmd (.set id val .empty))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa))], bindings)
+    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa) .empty)], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
-    -- TODO: Handle measure and invariant
-    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba)], bindings)
+    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) .empty], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set "return" val))], bindings)
+    return ([(.cmd (.set "return" val .empty))], bindings)
   | q`C_Simp.annotation, #[a] =>
     let .op a_op := a
       | TransM.error s!"Annotation expected op {repr a}"
@@ -397,11 +396,11 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     | q`C_Simp.assert, #[la, ca] =>
       let l ← translateIdent la
       let c ← translateExpr bindings ca
-      return ([(.cmd (.assert l c))], bindings)
+      return ([(.cmd (.assert l c .empty))], bindings)
     | q`C_Simp.assume, #[la, ca] =>
       let l ← translateIdent la
       let c ← translateExpr bindings ca
-      return ([(.cmd (.assume l c))], bindings)
+      return ([(.cmd (.assume l c .empty))], bindings)
     | _,_ => TransM.error s!"Unexpected annotation."
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 

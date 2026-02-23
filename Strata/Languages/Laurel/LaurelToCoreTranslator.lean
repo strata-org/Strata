@@ -204,15 +204,15 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr constants env)
             let defaultExpr := defaultExprForType ty
-            let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
-            let callStmt := Core.Statement.call [ident] callee boogieArgs
+            let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
+            let callStmt := Core.Statement.call [ident] callee boogieArgs md
             (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr constants env initExpr
-          (env', [Core.Statement.init ident boogieType (some boogieExpr)])
+          (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
       | none =>
           let defaultExpr := defaultExprForType ty
-          (env', [Core.Statement.init ident boogieType (some defaultExpr)])
+          (env', [Core.Statement.init ident boogieType (some defaultExpr) md])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -223,14 +223,14 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
               if isCoreFunction funcNames callee then
                 -- Functions are translated as expressions
                 let boogieExpr := translateExpr constants env value
-                (env, [Core.Statement.set ident boogieExpr])
+                (env, [Core.Statement.set ident boogieExpr md])
               else
                 -- Procedure calls need to be translated as call statements
                 let boogieArgs := args.map (translateExpr constants env)
-                (env, [Core.Statement.call [ident] callee boogieArgs])
+                (env, [Core.Statement.call [ident] callee boogieArgs md])
           | _ =>
               let boogieExpr := translateExpr constants env value
-              (env, [Core.Statement.set ident boogieExpr])
+              (env, [Core.Statement.set ident boogieExpr md])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
@@ -258,13 +258,13 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
         (env, [])
       else
         let boogieArgs := args.map (translateExpr constants env)
-        (env, [Core.Statement.call [] name boogieArgs])
+        (env, [Core.Statement.call [] name boogieArgs md])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           let ident := Core.CoreIdent.locl outParam.name
           let boogieExpr := translateExpr constants env value
-          let assignStmt := Core.Statement.set ident boogieExpr
+          let assignStmt := Core.Statement.set ident boogieExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           (env, [assignStmt, noFallThrough])
       | none, _ =>

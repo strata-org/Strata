@@ -253,7 +253,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
   Here's a Zulip thread that can shed some light on this error message:
   https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
   -/
-  | call_sem {δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ' δ'} :
+  | call_sem {δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ' δ' md} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ args vals →
     ReadValues σ lhs oVals →
@@ -262,7 +262,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     WellFormedSemanticEvalBool δ →
     WellFormedCoreEvalTwoState δ σ₀ σ →
 
-    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args) →
+    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args md) →
 
     -- Note: this puts caller and callee names in the same store. If the program is type correct, however,
     -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
@@ -285,7 +285,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommand π φ δ σ (CmdExt.call lhs n args) σ'
+    EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ'
 
 abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → Statement → CoreStore → CoreEval → Prop :=
@@ -302,7 +302,7 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ----
     EvalCommandContract π δ σ (CmdExt.cmd c) σ'
 
-  | call_sem {π δ σ args oVals vals σA σAO σO σR n p modvals lhs σ'} :
+  | call_sem {π δ σ args oVals vals σA σAO σO σR n p modvals lhs σ' md} :
     π n = .some p →
     EvalExpressions (P:=Core.Expression) δ σ args vals →
     ReadValues σ lhs oVals →
@@ -311,7 +311,7 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     WellFormedSemanticEvalBool δ →
     WellFormedCoreEvalTwoState δ σ₀ σ →
 
-    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args) →
+    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args md) →
 
     -- Note: this puts caller and callee names in the same store. If the program is type correct, however,
     -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
@@ -334,7 +334,7 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommandContract π δ σ (.call lhs n args) σ'
+    EvalCommandContract π δ σ (.call lhs n args md) σ'
 
 abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → Statement → CoreStore → CoreEval → Prop :=

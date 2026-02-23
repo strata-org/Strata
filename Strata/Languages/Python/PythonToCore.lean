@@ -324,7 +324,7 @@ def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Cor
 
 def handleCallThrow (jmp_target : String) : Core.Statement :=
   let cond := .app () (.op () "ExceptOrNone..isExceptOrNone_mk_code" none) (.fvar () "maybe_except" none)
-  .ite cond [.goto jmp_target] []
+  .ite cond [.goto jmp_target .empty] [] .empty
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
   let mut m : Map String String := []
@@ -363,24 +363,24 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
     let name := p.fst
     let ty_name := p.snd
     match ty_name with
-    | "bool" => [(.init name t[bool] (some (.boolConst () false))), (.havoc name)]
-    | "str" => [(.init name t[string] (some (.strConst () ""))), (.havoc name)]
-    | "int" => [(.init name t[int] (some (.intConst () 0))), (.havoc name)]
-    | "float" => [(.init name t[string] (some (.strConst () "0.0"))), (.havoc name)] -- Floats as strs for now
-    | "bytes" => [(.init name t[string] (some (.strConst () ""))), (.havoc name)]
-    | "Client" => [(.init name clientType (some dummyClient)), (.havoc name)]
-    | "Dict[str Any]" => [(.init name dictStrAnyType (some dummyDictStrAny)), (.havoc name)]
-    | "List[str]" => [(.init name listStrType (some dummyListStr)), (.havoc name)]
-    | "datetime" => [(.init name datetimeType (some dummyDatetime)), (.havoc name)]
-    | "date" => [(.init name dateType (some dummyDate)), (.havoc name)]
-    | "timedelta" => [(.init name timedeltaType (some dummyTimedelta)), (.havoc name)]
+    | "bool" => [(.init name t[bool] (some (.boolConst () false)) .empty), (.havoc name .empty)]
+    | "str" => [(.init name t[string] (some (.strConst () "")) .empty), (.havoc name .empty)]
+    | "int" => [(.init name t[int] (some (.intConst () 0)) .empty), (.havoc name .empty)]
+    | "float" => [(.init name t[string] (some (.strConst () "0.0")) .empty), (.havoc name .empty)] -- Floats as strs for now
+    | "bytes" => [(.init name t[string] (some (.strConst () "")) .empty), (.havoc name .empty)]
+    | "Client" => [(.init name clientType (some dummyClient) .empty), (.havoc name .empty)]
+    | "Dict[str Any]" => [(.init name dictStrAnyType (some dummyDictStrAny) .empty), (.havoc name .empty)]
+    | "List[str]" => [(.init name listStrType (some dummyListStr) .empty), (.havoc name .empty)]
+    | "datetime" => [(.init name datetimeType (some dummyDatetime) .empty), (.havoc name .empty)]
+    | "date" => [(.init name dateType (some dummyDate) .empty), (.havoc name .empty)]
+    | "timedelta" => [(.init name timedeltaType (some dummyTimedelta) .empty), (.havoc name .empty)]
     | _ =>
       let user_defined_class := translation_ctx.class_infos.find? (λ i => i.name == ty_name)
       match user_defined_class with
       | .some i =>
         let user_defined_class_ty := .forAll [] (.tcons i.name [])
         let user_defined_class_dummy := .fvar () ("DUMMY_" ++ i.name) none
-        [(.init name user_defined_class_ty (some user_defined_class_dummy)), (.havoc name)]
+        [(.init name user_defined_class_ty (some user_defined_class_dummy) .empty), (.havoc name .empty)]
       | .none => panic! s!"Unsupported type annotation: `{ty_name}`"
   let foo := dedup.map toCore
   foo.flatten
@@ -422,10 +422,10 @@ def handleUnmodeledFunCall (lhs: List Core.Expression.Ident)
     | .mk_keyword _ _ expr => match expr with
       | .Name _ n _ => .some n
       | _ => .none)
-    let havocArgs := nameArgs.toList.map (λ n => .havoc n.val) ++ nameKWs.toList.map (λ n => .havoc n.val)
-    lhs.map (λ e => .havoc e) ++ havocArgs
+    let havocArgs := nameArgs.toList.map (λ n => .havoc n.val .empty) ++ nameKWs.toList.map (λ n => .havoc n.val .empty)
+    lhs.map (λ e => .havoc e .empty) ++ havocArgs
   | .havocRet =>
-    lhs.map (λ e => .havoc e)
+    lhs.map (λ e => .havoc e .empty)
 
 mutual
 
@@ -481,18 +481,18 @@ partial def handleDict (keys: Array (Python.opt_expr SourceRange)) (values: Arra
 
   let res := zipped.toList.flatMap (λ (k, v) =>
     let n := PyOptExprToString k
-    let in_dict := (.assume s!"assume_{n}_in_dict" (.app () (.app () (.op () "str_in_dict_str_any" none) (.strConst () n)) dict))
+    let in_dict := (.assume s!"assume_{n}_in_dict" (.app () (.app () (.op () "str_in_dict_str_any" none) (.strConst () n)) dict) .empty)
     match v with
     | .Call _ f args _ =>
       match f with
       | .Name _ {ann := _ , val := "str"} _ =>
         assert! args.val.size == 1
         let dt := (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr))
-        let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq () (.app () (.app () (.op () "dict_str_any_get_str" none) dict) (.strConst () n)) dt))
+        let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq () (.app () (.app () (.op () "dict_str_any_get_str" none) dict) (.strConst () n)) dt) .empty)
         [in_dict, dict_of_v_is_k]
       | _ => panic! "Unsupported function when constructing map"
     | _ =>
-      let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq () (.app () (.app () (.op () "dict_str_any_get_str" none) dict) (.strConst () n)) (.strConst () "DummyVal")))
+      let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq () (.app () (.app () (.op () "dict_str_any_get_str" none) dict) (.strConst () n)) (.strConst () "DummyVal")) .empty)
       [in_dict, dict_of_v_is_k])
 
   {stmts := res , expr := dict, post_stmts := []}
@@ -575,10 +575,10 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       | _ =>
         match translation_ctx.expectedType with
         | .some (.tcons "ListStr" []) =>
-          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
+          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr) .empty
           {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get_list_str" none) l.expr) k.expr}
         | _ =>
-          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
+          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr) .empty
           {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get" none) l.expr) k.expr}
     | .List _ elmts _ =>
       match elmts.val[0]! with
@@ -598,11 +598,11 @@ partial def initTmpParam (p: Python.expr SourceRange × String) : List Core.Stat
     match f with
     | .Name _ n _ =>
       match n.val with
-      | "json_dumps" => [(.init p.snd t[string] (some (.strConst () ""))), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToCoreExpr "IntOrNone")]]
+      | "json_dumps" => [(.init p.snd t[string] (some (.strConst () "")) .empty), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToCoreExpr "IntOrNone")] .empty]
       | "str" =>
         assert! args.val.size == 1
-        [(.init p.snd t[string] (some (.strConst () ""))), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr))]
-      | "int" => [(.init p.snd t[int] (some (.intConst () 0))), .set p.snd (.op () "datetime_to_int" none)]
+        [(.init p.snd t[string] (some (.strConst () "")) .empty), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr)) .empty]
+      | "int" => [(.init p.snd t[int] (some (.intConst () 0)) .empty), .set p.snd (.op () "datetime_to_int" none) .empty]
       | _ => panic! s!"Unsupported name {n.val}"
     | _ => panic! s!"Unsupported tmp param init call: {repr f}"
   | _ => panic! "Expected Call"
@@ -619,13 +619,13 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
       let rhs_curried : Core.Expression.Expr := .app () (.op () inherits_from none) exception_ty
       let res := PyExprToCore translation_ctx ex_ty
       let rhs : Core.Expression.Expr := .app () rhs_curried (res.expr)
-      let call := .set "exception_ty_matches" rhs
+      let call := .set "exception_ty_matches" rhs .empty
       res.stmts ++ [call]
     | .none =>
-      [.set "exception_ty_matches" (.boolConst () false)]
+      [.set "exception_ty_matches" (.boolConst () false) .empty]
     let cond := .fvar () "exception_ty_matches" none
-    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.goto jmp_targets[1]!]
-    set_ex_ty_matches ++ [.ite cond body_if_matches []]
+    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.goto jmp_targets[1]! .empty]
+    set_ex_ty_matches ++ [.ite cond body_if_matches [] .empty]
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)
                                (fname: String)
@@ -656,7 +656,7 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
   let res := argsAndKWordsToCanonicalList translation_ctx fname args.val kwords.val substitution_records
   args_calls_to_tmps.toList.flatMap initTmpParam ++
     kwords_calls_to_tmps.toList.flatMap initTmpParam ++
-    res.snd ++ [.call lhs fname res.fst]
+    res.snd ++ [.call lhs fname res.fst .empty]
 
 partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Python.comprehension SourceRange)) : List Core.Statement :=
   assert! gen.size == 1
@@ -664,15 +664,15 @@ partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Pyth
   | .mk_comprehension _ _ itr _ _ =>
     let res := PyExprToCore default itr
     let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
-    let then_ss: List Core.Statement := [.havoc (PyExprToString lhs)]
-    let else_ss: List Core.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none)]
-    res.stmts ++ [.ite guard then_ss else_ss]
+    let then_ss: List Core.Statement := [.havoc (PyExprToString lhs) .empty]
+    let else_ss: List Core.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none) .empty]
+    res.stmts ++ [.ite guard then_ss else_ss .empty]
 
 partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : TranslationContext) (s : Python.stmt SourceRange) : List Core.Statement × TranslationContext :=
   assert! jmp_targets.length > 0
   let non_throw : List Core.Statement × Option (String × Lambda.LMonoTy) := match s with
     | .Import _ names =>
-      ([.call [] "import" [PyListStrToCore names.val]], none)
+      ([.call [] "import" [PyListStrToCore names.val] .empty], none)
     | .ImportFrom _ s names i =>
       let n := match s.val with
       | some s => [strToCoreExpr s.val]
@@ -680,7 +680,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       let i := match i.val with
       | some i => [intToCoreExpr (PyIntToInt i)]
       | none => []
-      ([.call [] "importFrom" (n ++ [PyListStrToCore names.val] ++ i)], none)
+      ([.call [] "importFrom" (n ++ [PyListStrToCore names.val] ++ i) .empty], none)
     | .Expr _ (.Call _ func args kwords) =>
       let fname := PyExprToString func
       if callCanThrow translation_ctx.func_infos s then
@@ -699,7 +699,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
     | .Assign _ lhs rhs _ =>
       assert! lhs.val.size == 1
       let res := PyExprToCore translation_ctx rhs
-      (res.stmts ++ [.set (PyExprToString lhs.val[0]!) res.expr], none)
+      (res.stmts ++ [.set (PyExprToString lhs.val[0]!) res.expr .empty], none)
     | .AnnAssign _ lhs ty { ann := _ , val := (.some (.Call _ func args kwords))} _ =>
       let fname := PyExprToString func
       (handleFunctionCall [PyExprToString lhs, "maybe_except"] fname args kwords jmp_targets translation_ctx s, some (PyExprToString lhs, PyExprToMonoTy ty))
@@ -707,35 +707,35 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       (handleComprehension lhs gen.val, some (PyExprToString lhs, PyExprToMonoTy ty))
     | .AnnAssign _ lhs ty {ann := _, val := (.some e)} _ =>
       let res := (PyExprToCore {translation_ctx with expectedType := PyExprToMonoTy ty} e)
-      (res.stmts ++ [.set (PyExprToString lhs) res.expr], some (PyExprToString lhs, PyExprToMonoTy ty))
+      (res.stmts ++ [.set (PyExprToString lhs) res.expr .empty], some (PyExprToString lhs, PyExprToMonoTy ty))
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
-        let entry_except_handlers := [.block new_target []]
+        let entry_except_handlers := [.block new_target [] .empty]
         let new_jmp_stack := new_target :: jmp_targets
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToCore new_jmp_stack translation_ctx)
         let var_decls := collectVarDecls translation_ctx body.val
-        ([.block "try_block" (var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst) ++ entry_except_handlers ++ except_handlers)], none)
+        ([.block "try_block" (var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst) ++ entry_except_handlers ++ except_handlers) .empty], none)
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Strata Core statement"
     | .If _ test then_b else_b =>
       let guard_ctx := {translation_ctx with expectedType := some (.tcons "bool" [])}
-      ([.ite (PyExprToCore guard_ctx test).expr (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst], none)
+      ([.ite (PyExprToCore guard_ctx test).expr (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst .empty], none)
     | .Return _ v =>
       match v.val with
-      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr, .goto jmp_targets[0]!], none) -- TODO: need to thread return value name here. For now, assume "ret"
-      | .none => ([.goto jmp_targets[0]!], none)
+      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr .empty, .goto jmp_targets[0]! .empty], none) -- TODO: need to thread return value name here. For now, assume "ret"
+      | .none => ([.goto jmp_targets[0]! .empty], none)
     | .For _ tgt itr body _ _ =>
       -- Do one unrolling:
       let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst () 0))
       match tgt with
       | .Name _ n _ =>
-        let assign_tgt := [(.init n.val dictStrAnyType (some dummyDictStrAny))]
-        ([.ite guard (assign_tgt ++ (ArrPyStmtToCore translation_ctx body.val).fst) []], none)
+        let assign_tgt := [(.init n.val dictStrAnyType (some dummyDictStrAny) .empty)]
+        ([.ite guard (assign_tgt ++ (ArrPyStmtToCore translation_ctx body.val).fst) [] .empty], none)
       | _ => panic! s!"tgt must be single name: {repr tgt}"
       -- TODO: missing havoc
     | .While _ test body _ =>
       -- Do one unrolling:
       let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default test).expr) (.intConst () 0))
-      ([.ite guard (ArrPyStmtToCore translation_ctx body.val).fst []], none)
+      ([.ite guard (ArrPyStmtToCore translation_ctx body.val).fst [] .empty], none)
       -- TODO: missing havoc
     | .Assert sr a _ =>
       let res := PyExprToCore translation_ctx a
@@ -748,7 +748,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
         | .Name _ n _ =>
           let rhs := PyExprToCore translation_ctx rhs
           let new_lhs := (.strConst () "DUMMY_FLOAT")
-          (rhs.stmts ++ [.set n.val new_lhs], none)
+          (rhs.stmts ++ [.set n.val new_lhs .empty], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
       | .FloorDiv _ =>
         match lhs with
@@ -756,7 +756,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
           let lhs := PyExprToCore translation_ctx lhs
           let rhs := PyExprToCore translation_ctx rhs
           let new_lhs := .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs.expr) rhs.expr
-          (rhs.stmts ++ [.set n.val new_lhs], none)
+          (rhs.stmts ++ [.set n.val new_lhs .empty], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
       | _ => panic! s!"Unsupported AugAssign op: {repr op}"
     | _ =>
@@ -790,7 +790,7 @@ def translateFunctions (a : Array (Python.stmt SourceRange)) (translation_ctx: T
                inputs := [],
                outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
         spec := default,
-        body := varDecls ++ (ArrPyStmtToCore translation_ctx body.val).fst ++ [.block "end" []]
+        body := varDecls ++ (ArrPyStmtToCore translation_ctx body.val).fst ++ [.block "end" [] .empty]
       }
       some (.proc proc)
     | _ => none)
@@ -804,9 +804,9 @@ def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
 
 def pythonFuncToCore (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Core.Procedure.Spec) (translation_ctx : TranslationContext) : Core.Procedure :=
   let inputs : List (Lambda.Identifier Core.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
-  let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (some (.boolConst () false))), (.havoc "exception_ty_matches")]
+  let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (some (.boolConst () false)) .empty), (.havoc "exception_ty_matches" .empty)]
   let stmts := (ArrPyStmtToCore translation_ctx body).fst
-  let body := varDecls ++ stmts ++ [.block "end" []]
+  let body := varDecls ++ stmts ++ [.block "end" [] .empty]
   let constructor := name.endsWith "___init__"
   let outputs : Lambda.LMonoTySignature := if not constructor then
     match ret with
