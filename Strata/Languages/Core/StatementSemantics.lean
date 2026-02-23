@@ -83,10 +83,6 @@ structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
     /-- Definedness-propagation properties for compound expressions. -/
     definedness : WellFormedCoreEvalDefinedness δ
 
-/-- Bundle both congruence and definedness properties for a core evaluator. -/
-structure WellFormedCoreEval (δ : CoreEval) : Prop where
-  cong        : WellFormedCoreEvalCong δ
-  definedness : WellFormedCoreEvalDefinedness δ
 inductive EvalExpressions {P} [HasVarsPure P P.Expr] : SemanticEval P → SemanticStore P → List P.Expr → List P.Expr → Prop where
   | eval_none :
     EvalExpressions δ σ [] []
