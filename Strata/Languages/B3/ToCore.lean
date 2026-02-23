@@ -26,11 +26,27 @@ open Lambda
 /-- Conversion context: maps de Bruijn indices to Core identifiers. -/
 structure ConvContext where
   vars : List (String × Lambda.LMonoTy)  -- index 0 = head
+  funcs : List (String × List Lambda.LMonoTy × Lambda.LMonoTy)  -- (name, argTypes, retType)
+  boundDepth : Nat := 0  -- number of enclosing quantifiers/abstractions
 
-def ConvContext.empty : ConvContext := { vars := [] }
+def ConvContext.empty : ConvContext := { vars := [], funcs := [] }
 
 def ConvContext.push (ctx : ConvContext) (name : String) (ty : Lambda.LMonoTy) : ConvContext :=
-  { vars := (name, ty) :: ctx.vars }
+  { ctx with vars := (name, ty) :: ctx.vars }
+
+/-- Push a bound variable (for quantifiers/abstractions) -/
+def ConvContext.pushBound (ctx : ConvContext) (name : String) (ty : Lambda.LMonoTy) : ConvContext :=
+  { ctx with vars := (name, ty) :: ctx.vars, boundDepth := ctx.boundDepth + 1 }
+
+def ConvContext.addFunc (ctx : ConvContext) (name : String) (argTypes : List Lambda.LMonoTy) (retType : Lambda.LMonoTy) : ConvContext :=
+  { ctx with funcs := (name, argTypes, retType) :: ctx.funcs }
+
+/-- Look up a function's type as an arrow type -/
+def ConvContext.lookupFuncType (ctx : ConvContext) (name : String) : Option Lambda.LMonoTy :=
+  match ctx.funcs.find? (fun (n, _, _) => n == name) with
+  | some (_, argTypes, retType) =>
+    some (argTypes.foldr (fun argTy acc => .arrow argTy acc) retType)
+  | none => none
 
 /-- Map B3 type name to Core monomorphic type. -/
 def b3TypeToCoreTy (typeName : String) : Lambda.LMonoTy :=
@@ -47,35 +63,35 @@ def b3TypeToCoreLTy (typeName : String) : Lambda.LTy :=
 
 
 /-- Convert B3 binary operator to a Core expression builder.
-    Returns a function that takes two Core expressions and produces the result. -/
+    Uses factory operator expressions with proper type annotations. -/
 def convertBinaryOp (op : BinaryOp M) (lhs rhs : Core.Expression.Expr) : Core.Expression.Expr :=
-  let mkBinApp (opName : String) :=
-    .app () (.app () (.op () (CoreIdent.unres opName) none) lhs) rhs
+  let mkBinApp (opExpr : Core.Expression.Expr) :=
+    .app () (.app () opExpr lhs) rhs
   match op with
   | .eq _ => .eq () lhs rhs
-  | .neq _ => .app () (.op () (CoreIdent.unres "Bool.Not") none) (.eq () lhs rhs)
-  | .and _ => mkBinApp "Bool.And"
-  | .or _ => mkBinApp "Bool.Or"
-  | .implies _ => mkBinApp "Bool.Implies"
-  | .iff _ => mkBinApp "Bool.Equiv"
+  | .neq _ => .app () Core.boolNotOp (.eq () lhs rhs)
+  | .and _ => mkBinApp Core.boolAndOp
+  | .or _ => mkBinApp Core.boolOrOp
+  | .implies _ => mkBinApp Core.boolImpliesOp
+  | .iff _ => mkBinApp Core.boolEquivOp
   | .impliedBy _ =>
-    .app () (.app () (.op () (CoreIdent.unres "Bool.Implies") none) rhs) lhs
-  | .lt _ => mkBinApp "Int.Lt"
-  | .le _ => mkBinApp "Int.Le"
-  | .gt _ => mkBinApp "Int.Gt"
-  | .ge _ => mkBinApp "Int.Ge"
-  | .add _ => mkBinApp "Int.Add"
-  | .sub _ => mkBinApp "Int.Sub"
-  | .mul _ => mkBinApp "Int.Mul"
-  | .div _ => mkBinApp "Int.Div"
-  | .mod _ => mkBinApp "Int.Mod"
+    .app () (.app () Core.boolImpliesOp rhs) lhs
+  | .lt _ => mkBinApp Core.intLtOp
+  | .le _ => mkBinApp Core.intLeOp
+  | .gt _ => mkBinApp Core.intGtOp
+  | .ge _ => mkBinApp Core.intGeOp
+  | .add _ => mkBinApp Core.intAddOp
+  | .sub _ => mkBinApp Core.intSubOp
+  | .mul _ => mkBinApp Core.intMulOp
+  | .div _ => mkBinApp Core.intDivOp
+  | .mod _ => mkBinApp Core.intModOp
 
 /-- Convert B3 unary operator to a Core expression. -/
 def convertUnaryOp (op : UnaryOp M) (arg : Core.Expression.Expr) : Core.Expression.Expr :=
-  let opName := match op with
-    | .not _ => "Bool.Not"
-    | .neg _ => "Int.Neg"
-  .app () (.op () (CoreIdent.unres opName) none) arg
+  let opExpr := match op with
+    | .not _ => Core.boolNotOp
+    | .neg _ => Core.intNegOp
+  .app () opExpr arg
 
 
 /-- Convert B3 expression to Core expression.
@@ -85,9 +101,14 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
   | .literal _ (.boolLit _ b) => .boolConst () b
   | .literal _ (.stringLit _ s) => .strConst () s
   | .id _ idx =>
-    match ctx.vars[idx]? with
-    | some (name, ty) => .fvar () (CoreIdent.unres name) (some ty)
-    | none => .intConst () 0  -- fallback for unbound
+    if idx < ctx.boundDepth then
+      -- Bound variable (inside quantifier/abstraction) → de Bruijn index
+      .bvar () idx
+    else
+      -- Free variable → named reference
+      match ctx.vars[idx]? with
+      | some (name, ty) => .fvar () (CoreIdent.unres name) (some ty)
+      | none => .intConst () 0  -- fallback for unbound
   | .binaryOp _ op lhs rhs =>
     convertBinaryOp op (convertExpr ctx lhs) (convertExpr ctx rhs)
   | .unaryOp _ op arg =>
@@ -95,11 +116,12 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
   | .ite _ cond thn els =>
     .ite () (convertExpr ctx cond) (convertExpr ctx thn) (convertExpr ctx els)
   | .functionCall _ fnName args =>
-    let base : Core.Expression.Expr := .fvar () (CoreIdent.unres fnName.val) none
+    let fnTy := ctx.lookupFuncType fnName.val
+    let base : Core.Expression.Expr := .fvar () (CoreIdent.unres fnName.val) fnTy
     args.val.toList.foldl (fun acc arg => .app () acc (convertExpr ctx arg)) base
   | .letExpr _ varName value body =>
     let valTy := LMonoTy.tcons "int" []  -- default type for let bindings
-    .app () (.abs () (some valTy) (convertExpr (ctx.push varName.val valTy) body))
+    .app () (.abs () (some valTy) (convertExpr (ctx.pushBound varName.val valTy) body))
             (convertExpr ctx value)
   | .quantifierExpr _ qk vars _patterns body =>
     let qkind : Lambda.QuantifierKind := match qk with
@@ -108,7 +130,7 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
     let varList := vars.val.toList.filterMap fun v =>
       match v with
       | .quantVarDecl _ name ty => some (name.val, b3TypeToCoreTy ty.val)
-    let ctx' := varList.foldl (fun c (name, ty) => c.push name ty) ctx
+    let ctx' := varList.foldl (fun c (name, ty) => c.pushBound name ty) ctx
     let bodyExpr := convertExpr ctx' body
     varList.foldr (fun (_, ty) acc =>
       .quant () qkind (some ty) (.boolConst () true) acc
@@ -165,7 +187,7 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → Li
 
 
 /-- Convert a B3 function declaration to a Core funcDecl statement. -/
-def convertFuncDecl : B3AST.Decl SourceRange → List Core.Statement
+def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → List Core.Statement
   | .function _ name params retType _tag body =>
     let inputs : ListMap CoreIdent Lambda.LTy := params.val.toList.map fun p =>
       match p with
@@ -174,10 +196,10 @@ def convertFuncDecl : B3AST.Decl SourceRange → List Core.Statement
     let outputTy := b3TypeToCoreLTy retType.val
     let coreBody := match body.val with
       | some (.functionBody _ _whens bodyExpr) =>
-        let paramCtx := params.val.toList.foldl (fun ctx p =>
+        let paramCtx := params.val.toList.foldl (fun c p =>
           match p with
-          | .fParameter _ _ pname pty => ctx.push pname.val (b3TypeToCoreTy pty.val)
-        ) ConvContext.empty
+          | .fParameter _ _ pname pty => c.push pname.val (b3TypeToCoreTy pty.val)
+        ) ctx
         some (convertExpr paramCtx bodyExpr)
       | none => none
     let decl : Imperative.PureFunc Core.Expression := {
@@ -189,17 +211,30 @@ def convertFuncDecl : B3AST.Decl SourceRange → List Core.Statement
     [Imperative.Stmt.funcDecl decl]
   | _ => []
 
+/-- Build a ConvContext with all function declarations from a B3 program. -/
+private def buildFuncContext (decls : List (B3AST.Decl SourceRange)) : ConvContext :=
+  decls.foldl (fun ctx decl =>
+    match decl with
+    | .function _ name params retType _ _ =>
+      let argTypes := params.val.toList.map fun p =>
+        match p with
+        | .fParameter _ _ _ pty => b3TypeToCoreTy pty.val
+      ctx.addFunc name.val argTypes (b3TypeToCoreTy retType.val)
+    | _ => ctx
+  ) ConvContext.empty
+
 /-- Convert a B3 program to a list of Core statements. -/
 def convertProgram : B3AST.Program SourceRange → List Core.Statement
   | .program _ decls =>
+    let ctx := buildFuncContext decls.val.toList
     decls.val.toList.flatMap fun decl =>
       match decl with
-      | .function _ _ _ _ _ _ => convertFuncDecl decl
+      | .function _ _ _ _ _ _ => convertFuncDecl ctx decl
       | .axiom _ _vars expr =>
-        [Core.Statement.assume "axiom" (convertExpr ConvContext.empty expr)]
+        [Core.Statement.assume "axiom" (convertExpr ctx expr)]
       | .procedure _ _name _params _specs body =>
         match body.val with
-        | some bodyStmt => convertStmt ConvContext.empty bodyStmt
+        | some bodyStmt => convertStmt ctx bodyStmt
         | none => []
       | _ => []
 

@@ -154,6 +154,11 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let (smtTy, _) ← translateTypeOrThrow E ty smtCtx
       return acc ++ [smtTy]) []
     let (outTy, smtCtx) ← translateTypeOrThrow E decl.output smtCtx
+    -- Add function to smtCtx so expression translator can find it
+    let ufArgs := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) =>
+      TermVar.mk name.name smtTy
+    let uf : UF := { id := decl.name.name, args := ufArgs, out := outTy }
+    let smtCtx := smtCtx.addUF uf
     match decl.body with
     | none =>
       state.solver.declareFun decl.name.name inputTypes outTy

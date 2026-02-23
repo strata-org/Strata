@@ -275,8 +275,8 @@ The implementation follows a phased approach, starting with prerequisites and fo
     - **Property 20: Equivalent results via B3 to Core conversion**
     - **Validates: Requirements 5.5**
 
-- [ ] 15. Test Migration and Validation
-  - [ ] 15.1 Create test harness `testB3ViaCoreVerification`
+- [-] 15. Test Migration and Validation
+  - [x] 15.1 Create test harness `testB3ViaCoreVerification`
     - Parse B3 DDM syntax to B3 AST
     - Convert B3 AST to Core AST via B3ToCore
     - Verify Core AST via CoreSMT_Verifier
