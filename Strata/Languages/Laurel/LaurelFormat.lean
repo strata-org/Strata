@@ -159,6 +159,7 @@ def formatBody : Body → Format
   | .Abstract post => "abstract ensures " ++ formatStmtExpr post
 
 def formatProcedure (proc : Procedure) : Format :=
+  (if proc.isPure then "pure " else "") ++
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++

@@ -129,6 +129,7 @@ instance : Inhabited Procedure where
     precondition := mkStmtExprMdEmpty <| .LiteralBool true
     determinism := .deterministic none
     decreases := none
+    isPure := false
     body := .Transparent ⟨.LiteralBool true, #[]⟩
     md := .empty
   }
@@ -322,6 +323,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+      requiresArg, ensuresArg, modifiesArg, bodyArg]
+  | q`Laurel.pureProcedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
       requiresArg, ensuresArg, modifiesArg, bodyArg] =>
     let name ← translateIdent nameArg
     let nameMd ← getArgMetaData nameArg
@@ -373,10 +376,12 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       precondition := precondition
       determinism := .deterministic none
       decreases := none
+      isPure := op.name == q`Laurel.pureProcedure
       body := procBody
       md := nameMd
     }
-  | q`Laurel.procedure, args =>
+  | q`Laurel.procedure, args
+  | q`Laurel.pureProcedure, args =>
     TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"

@@ -126,6 +126,15 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   body : Option OptionalBody) : Procedure =>
   "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
 
+op pureProcedure (name : Ident, parameters: CommaSepBy Parameter,
+  returnType: Option OptionalReturnType,
+  returnParameters: Option ReturnParameters,
+  requires: Option OptionalRequires,
+  ensures: Seq EnsuresClause,
+  modifies: Seq ModifiesClause,
+  body : Option OptionalBody) : Procedure =>
+  "pure procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
+
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
 op topLevelProcedure(procedure: Procedure): TopLevel => procedure;

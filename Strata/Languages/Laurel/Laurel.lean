@@ -93,6 +93,7 @@ structure Procedure : Type where
   precondition : WithMetadata StmtExpr
   determinism : Determinism
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
+  isPure : Bool := false
   body : Body
   md : Imperative.MetaData Core.Expression
 

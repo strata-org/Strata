@@ -379,7 +379,7 @@ Check if a StmtExpr is a pure expression (can be used as a Core function body).
 Pure expressions don't contain statements like assignments, loops, or local variables.
 A Block with a single pure expression is also considered pure.
 -/
-def isPureExpr(expr: StmtExprMd): Bool :=
+private def isPureExpr(expr: StmtExprMd): Bool :=
   match _h : expr.val with
   | .LiteralBool _ => true
   | .LiteralInt _ => true
@@ -396,15 +396,9 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
-
-/--
-Check if a procedure can be translated as a Core function.
-A procedure can be a function if:
-- It has a transparent body that is a pure expression
-- It has no precondition (or just `true`)
-- It has exactly one output parameter (the return type)
--/
-def canBeBoogieFunction (proc : Procedure) : Bool :=
+/-- Check if a pure-marked procedure can actually be represented as a Core function:
+    transparent body that is a pure expression, no precondition, exactly one output. -/
+private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
@@ -433,6 +427,21 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
   }
 
 /--
+Try to translate a Laurel Procedure marked `isPure` to a Core Function.
+Returns `.error` with a diagnostic if the procedure cannot be represented as a Core function
+(e.g. it has a non-pure body, a precondition, or multiple outputs).
+-/
+def tryTranslatePureToFunction (constants : List Constant) (proc : Procedure)
+    : Except DiagnosticModel Core.Decl :=
+  let fileRange := (Imperative.getFileRange proc.md).getD FileRange.unknown
+  if !canBeCoreFunctionBody proc then
+    .error (DiagnosticModel.withRange fileRange
+      s!"Pure procedure '{proc.name}' cannot be translated to a Core function. \
+         It must have a transparent pure body, no precondition, and exactly one output.")
+  else
+    .ok (translateProcedureToFunction constants proc)
+
+/--
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
@@ -445,16 +454,21 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
-  -- Separate procedures that can be functions from those that must be procedures
-  let (funcProcs, procProcs) := program.staticProcedures.partition canBeBoogieFunction
-  -- Build the set of function names for use during translation
-  let funcNames : FunctionNames := funcProcs.map (·.name)
+  -- Procedures marked isPure are translated to Core functions; all others become Core procedures.
+  let (markedPure, procProcs) := program.staticProcedures.partition (·.isPure)
+  -- Try to translate each isPure procedure to a Core function, collecting errors for failures
+  let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
+    match tryTranslatePureToFunction program.constants p with
+    | .error e => (errs.push e, decls)
+    | .ok d    => (errs, decls.push d)) (#[], #[])
+  if !pureErrors.isEmpty then
+    .error pureErrors
+  let funcNames : FunctionNames := markedPure.map (·.name)
   let procedures := procProcs.map (translateProcedure program.constants funcNames)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
-  let laurelFuncDecls := funcProcs.map (translateProcedureToFunction program.constants)
   let constDecls := program.constants.map translateConstant
   let preludeDecls := corePrelude.decls
-  pure ({ decls := preludeDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  pure ({ decls := preludeDecls ++ constDecls ++ pureFuncDecls.toList ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver

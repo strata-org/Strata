@@ -19,7 +19,7 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-procedure syntacticallyABoogieFunction(x: int): int {
+pure procedure syntacticallyABoogieFunction(x: int): int {
   x + 1
 }
 
