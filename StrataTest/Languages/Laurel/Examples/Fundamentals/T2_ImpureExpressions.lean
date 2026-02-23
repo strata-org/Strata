@@ -66,6 +66,34 @@ procedure nestedImpureStatementsAndOpaque()
 //^^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y;
 }
+
+-- An impure procedure call in expression position is lifted before the
+-- surrounding expression is evaluated.
+procedure impureProc(x: int) returns (r: int) {
+  r := r + 1;
+  return;
+}
+
+procedure impureCallInExpressionPosition() {
+  var x: int := 0;
+  -- impureProc(x) is lifted out; its argument is evaluated before the call,
+  -- so the result is 1 (impureProc(0)), and x is still 0 afterwards.
+  var y: int := impureProc(x) + x;
+  assert y == 1;
+  assert x == 0;
+}
+
+-- An impure call inside a conditional expression is also lifted.
+procedure impureCallInConditionalExpression(b: bool) {
+  var counter: int := 0;
+  -- The impure call in the then-branch is lifted out of the expression.
+  var result: int := (if (b) { impureProc(counter); } else { 0 }) + counter;
+  if (b) {
+    assert result == 1;
+  } else {
+    assert result == 0;
+  }
+}
 "
 
 #guard_msgs (error, drop all) in
