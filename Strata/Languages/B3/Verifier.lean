@@ -5,6 +5,11 @@
 -/
 
 import Strata.Languages.B3.Verifier.Formatter
+import Strata.Languages.B3.Verifier.State
+import Strata.Languages.B3.Verifier.Expression
+import Strata.Languages.B3.Verifier.Statements
+import Strata.Languages.B3.Verifier.Diagnosis
+import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.B3.ToCore
 import Strata.Languages.B3.Transform.FunctionToAxiom
 import Strata.Languages.B3.DDMTransform.ParseCST
