@@ -35,19 +35,19 @@ int procedure loopSimple (n: int)
 
 /--
 info: program C_Simp;
-int procedure loopSimple(n:int)//@pren>=(0);
-//@posttrue;
+int procedure loopSimple(n:int)//@pre n>=0;
+//@post true;
   ({
   varsum:int;
   vari:int;
   sum=0;
   i=0;
   while(i<n)
-  //@decreases(n-i)//@invariant((i<=n)&&(((i*(i-(1)))/(2))==sum))({
+  //@decreases (n-i)//@invariant ((i<=n)&&(((i*(i-1))/2)==sum))({
   sum=sum+i;
-  i=i+(1);
+  i=i+1;
   }
-  )//@assert [sum_assert]((n*(n-(1)))/(2))==sum;
+  )//@assert [sum_assert]((n*(n-1))/2)==sum;
   returnsum;
   }
   )
@@ -61,8 +61,8 @@ info: function loopSimple {
   post: #true
   body:
 {
-  init (sum : int) := init_sum
-  init (i : int) := init_i
+  init (sum : int)
+  init (i : int)
   sum := #0
   i := #0
   while
@@ -92,29 +92,29 @@ spec {
   sum := 0;
   i := 0;
   if(i < n){
-    first_iter_asserts: ({
+    first_iter_asserts: {
       assert [entry_invariant]: i <= n && i * (i - 1) div 2 == sum;
       assert [assert_measure_pos]: n - i >= 0;
-      })|arbitrary iter facts|: ({
-      |loop havoc|: ({
+      }|arbitrary iter facts|: {
+      |loop havoc|: {
         havoc sum;
         havoc i;
-        })arbitrary_iter_assumes: ({
+        }arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
         assume [assume_invariant]: i <= n && i * (i - 1) div 2 == sum;
         assume [assume_measure_pos]: n - i >= 0;
-        })var |special-name-for-old-measure-value| : int := n - i;
+        }var |special-name-for-old-measure-value| : int := n - i;
       sum := sum + i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
       assert [arbitrary_iter_maintain_invariant]: i <= n && i * (i - 1) div 2 == sum;
-      })|loop havoc|: ({
+      }|loop havoc|: {
       havoc sum;
       havoc i;
-      })assume [not_guard]: !(i < n);
+      }assume [not_guard]: !(i < n);
     assume [invariant]: i <= n && i * (i - 1) div 2 == sum;
-    }()assert [sum_assert]: n * (n - 1) div 2 == sum;
+    }assert [sum_assert]: n * (n - 1) div 2 == sum;
   return := sum;
   };
 -/
@@ -146,59 +146,59 @@ Label: measure_decreases
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: $__n0 - $__i3 >= 0
+assume_guard: $__i5 < $__n0
+assume_invariant: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
 pre: $__n0 >= 0
 Obligation:
-$__n0 - ($__i3 + 1) < $__n0 - $__i3
+$__n0 - ($__i5 + 1) < $__n0 - $__i5
 
 Label: measure_imp_not_guard
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: $__n0 - $__i3 >= 0
+assume_guard: $__i5 < $__n0
+assume_invariant: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
 pre: $__n0 >= 0
 Obligation:
-if $__n0 - ($__i3 + 1) <= 0 then !($__i3 + 1 < $__n0) else true
+if $__n0 - ($__i5 + 1) <= 0 then !($__i5 + 1 < $__n0) else true
 
 Label: arbitrary_iter_maintain_invariant
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: $__n0 - $__i3 >= 0
+assume_guard: $__i5 < $__n0
+assume_invariant: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
 pre: $__n0 >= 0
 Obligation:
-$__i3 + 1 <= $__n0 && ($__i3 + 1) * ($__i3 + 1 - 1) div 2 == $__sum2 + $__i3
+$__i5 + 1 <= $__n0 && ($__i5 + 1) * ($__i5 + 1 - 1) div 2 == $__sum4 + $__i5
 
 Label: sum_assert
 Property: assert
 Assumptions:
 pre: $__n0 >= 0
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
-assume_guard: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant: if 0 < $__n0 then ($__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2) else true
-assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i3 >= 0) else true
-not_guard: if 0 < $__n0 then !($__i5 < $__n0) else true
-invariant: if 0 < $__n0 then ($__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4) else true
+assume_guard: if 0 < $__n0 then ($__i5 < $__n0) else true
+assume_invariant: if 0 < $__n0 then ($__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4) else true
+assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i5 >= 0) else true
+not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
+invariant: if 0 < $__n0 then ($__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6) else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
-$__n0 * ($__n0 - 1) div 2 == if 0 < $__n0 then $__sum4 else 0
+$__n0 * ($__n0 - 1) div 2 == if 0 < $__n0 then $__sum6 else 0
 
 Label: post
 Property: assert
 Assumptions:
 pre: $__n0 >= 0
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
-assume_guard: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant: if 0 < $__n0 then ($__i3 <= $__n0 && $__i3 * ($__i3 - 1) div 2 == $__sum2) else true
-assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i3 >= 0) else true
-not_guard: if 0 < $__n0 then !($__i5 < $__n0) else true
-invariant: if 0 < $__n0 then ($__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4) else true
+assume_guard: if 0 < $__n0 then ($__i5 < $__n0) else true
+assume_invariant: if 0 < $__n0 then ($__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4) else true
+assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i5 >= 0) else true
+not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
+invariant: if 0 < $__n0 then ($__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6) else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
 true

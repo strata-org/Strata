@@ -179,13 +179,13 @@ instance : Inhabited (List Core.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Core.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.false ())
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) none
 
 instance : Inhabited (Core.Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Core.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) (.false ()), {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) none, {})
 
 instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
@@ -1010,8 +1010,7 @@ def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBi
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Core.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))
-    let bindings := incrNum .var_def bindings
+    let s := Core.Statement.init id tp none
     let (stmts, bindings) ← initVarStmts rest bindings
     return ((s :: stmts), bindings)
 
@@ -1086,10 +1085,10 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.assume l c md], bindings)
   | q`Core.if_statement, #[ca, ta, fa] =>
     let c ← translateExpr p bindings ca
-    let (tss, bindings) ← translateBlock p bindings ta
-    let (fss, bindings) ← translateElse p bindings fa
+    let (tss, thenBindings) ← translateBlock p bindings ta
+    let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
     let md ← getOpMetaData op
-    return ([.ite c tss fss md], bindings)
+    return ([.ite c tss fss md], { bindings with gen := elseBindings.gen })
   | q`Core.while_statement, #[ca, ia, ba] =>
     let c ← translateExpr p bindings ca
     let invs ← translateInvariants p bindings ia
@@ -1117,7 +1116,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateIdent String la
     let md ← getOpMetaData op
     return ([.goto l md], bindings)
-  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, _axiomsa, bodya] =>
+  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, bodya, _inlinea] =>
     let name ← translateIdent Core.CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa
     let outputMono ← translateLMonoTy bindings returna
@@ -1125,21 +1124,14 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let inputsConverted : ListMap Core.Expression.Ident Core.Expression.Ty :=
       inputs.map (fun (id, mty) => (id, .forAll [] mty))
 
-    -- The DDM parser's declareFn annotation adds the function name to scope,
-    -- then @[scope(b)] adds the parameters. So in the body, the scope order is:
-    -- Index 0: parameters (from @[scope(b)])
-    -- Index 1: function name (from declareFn)
-    -- Index 2+: outer scope variables
-    --
-    -- We need to include both the function and parameters in boundVars.
-    -- The function is represented as an op expression that can be called.
+    -- The DDM parser's @[scope(b)] on the body adds only the parameters.
+    -- The function name is NOT in scope inside the body (declareFn adds it
+    -- for subsequent statements only). So body bindings = outer + parameters.
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
     let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-    -- Order: existing boundVars, then function, then parameters
-    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ #[funcBinding] ++ in_bindings }
+    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
 
-    -- Translate body with function parameters in scope
     let body ← match bodya with
       | .option _ (.some bodyExpr) => do
         let expr ← translateExpr p bodyBindings bodyExpr
@@ -1158,8 +1150,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     }
     let md ← getOpMetaData op
     -- Add the function to boundVars for subsequent statements.
-    let newBoundVars := bindings.boundVars.push funcBinding
-    let updatedBindings := { bindings with boundVars := newBoundVars }
+    let updatedBindings := { bindings with boundVars := bindings.boundVars.push funcBinding }
     return ([.funcDecl decl md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
@@ -1702,7 +1693,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
   let md ← getOpMetaData op
-  let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))) md)
+  let decl := (.var id ty none md)
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 

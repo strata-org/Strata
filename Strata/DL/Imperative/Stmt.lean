@@ -256,6 +256,7 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .cmd cmd => HasVarsImp.definedVars cmd
   | .block _ bss _ => Block.definedVars bss
   | .ite _ tbss ebss _ => Block.definedVars tbss ++ Block.definedVars ebss
+  | .loop _ _ _ body _ => Block.definedVars body
   | .funcDecl decl _ => [decl.name]  -- Function declaration defines the function name
   | _ => []
   termination_by (Stmt.sizeOf s)
