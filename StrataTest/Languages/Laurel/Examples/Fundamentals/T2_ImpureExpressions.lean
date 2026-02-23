@@ -67,27 +67,27 @@ procedure nestedImpureStatementsAndOpaque()
   assert z == y;
 }
 
--- An impure procedure call in expression position is lifted before the
+-- An imperative procedure call in expression position is lifted before the
 -- surrounding expression is evaluated.
-procedure impureProc(x: int) returns (r: int) {
+procedure imperativeProc(x: int) returns (r: int) {
   r := r + 1;
-  return;
+  r
 }
 
-procedure impureCallInExpressionPosition() {
+procedure imperativeCallInExpressionPosition() {
   var x: int := 0;
-  -- impureProc(x) is lifted out; its argument is evaluated before the call,
-  -- so the result is 1 (impureProc(0)), and x is still 0 afterwards.
-  var y: int := impureProc(x) + x;
+  -- imperativeProc(x) is lifted out; its argument is evaluated before the call,
+  -- so the result is 1 (imperativeProc(0)), and x is still 0 afterwards.
+  var y: int := imperativeProc(x) + x;
   assert y == 1;
   assert x == 0;
 }
 
--- An impure call inside a conditional expression is also lifted.
-procedure impureCallInConditionalExpression(b: bool) {
+-- An imperative call inside a conditional expression is also lifted.
+procedure imperativeCallInConditionalExpression(b: bool) {
   var counter: int := 0;
-  -- The impure call in the then-branch is lifted out of the expression.
-  var result: int := (if (b) { impureProc(counter); } else { 0 }) + counter;
+  -- The imperative call in the then-branch is lifted out of the expression.
+  var result: int := (if (b) { imperativeProc(counter); } else { 0 }) + counter;
   if (b) {
     assert result == 1;
   } else {

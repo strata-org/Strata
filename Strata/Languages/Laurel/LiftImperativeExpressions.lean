@@ -78,8 +78,8 @@ structure LiftState where
   types : List TypeDefinition := []
   /-- Global counter for fresh conditional variables -/
   condCounter : Nat := 0
-  /-- Names of impure procedures whose calls must be lifted from expression position -/
-  impureNames : List Identifier := []
+  /-- Names of imperative procedures whose calls must be lifted from expression position -/
+  imperativeNames : List Identifier := []
 
 abbrev LiftM := StateM LiftState
 
@@ -131,21 +131,21 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
   return computeExprType s.env s.types expr
 
-/-- Check if an expression contains any assignments or impure calls (recursively). -/
-private def containsAssignmentOrImpureCall (impureNames : List Identifier) (expr : StmtExprMd) : Bool :=
+/-- Check if an expression contains any assignments or imperative calls (recursively). -/
+private def containsAssignmentOrImperativeCall (imperativeNames : List Identifier) (expr : StmtExprMd) : Bool :=
   match expr with
   | WithMetadata.mk val _ =>
   match val with
   | .Assign .. => true
   | .StaticCall name args1 =>
-      impureNames.contains name ||
-      args1.attach.any (fun x => containsAssignmentOrImpureCall impureNames x.val)
-  | .PrimitiveOp _ args2 => args2.attach.any (fun x => containsAssignmentOrImpureCall impureNames x.val)
-  | .Block stmts _ => stmts.attach.any (fun x => containsAssignmentOrImpureCall impureNames x.val)
+      imperativeNames.contains name ||
+      args1.attach.any (fun x => containsAssignmentOrImperativeCall imperativeNames x.val)
+  | .PrimitiveOp _ args2 => args2.attach.any (fun x => containsAssignmentOrImperativeCall imperativeNames x.val)
+  | .Block stmts _ => stmts.attach.any (fun x => containsAssignmentOrImperativeCall imperativeNames x.val)
   | .IfThenElse cond th el =>
-      containsAssignmentOrImpureCall impureNames cond ||
-      containsAssignmentOrImpureCall impureNames th ||
-      match el with | some e => containsAssignmentOrImpureCall impureNames e | none => false
+      containsAssignmentOrImperativeCall imperativeNames cond ||
+      containsAssignmentOrImperativeCall imperativeNames th ||
+      match el with | some e => containsAssignmentOrImperativeCall imperativeNames e | none => false
   | _ => false
   termination_by expr
   decreasing_by
@@ -205,11 +205,11 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.PrimitiveOp op seqArgs.reverse, md⟩
 
   | .StaticCall name args =>
-      let impure := (← get).impureNames
+      let imperative := (← get).imperativeNames
       let seqArgs ← args.reverse.mapM transformExpr
       let seqCall := ⟨.StaticCall name seqArgs.reverse, md⟩
-      if impure.contains name then
-        -- Impure call in expression position: lift it like an assignment
+      if imperative.contains name then
+        -- Imperative call in expression position: lift it like an assignment
         -- Order matters: assign must be prepended first (it's newest-first),
         -- so that when reversed the var declaration comes before the call.
         let callResultVar ← freshCondVar
@@ -221,10 +221,10 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return seqCall
 
   | .IfThenElse cond thenBranch elseBranch =>
-      let impure := (← get).impureNames
-      let thenHasAssign := containsAssignmentOrImpureCall impure thenBranch
+      let imperative := (← get).imperativeNames
+      let thenHasAssign := containsAssignmentOrImperativeCall imperative thenBranch
       let elseHasAssign := match elseBranch with
-        | some e => containsAssignmentOrImpureCall impure e
+        | some e => containsAssignmentOrImperativeCall imperative e
         | none => false
       if thenHasAssign || elseHasAssign then
         -- Lift the entire if-then-else. Introduce a fresh variable for the result.
@@ -359,12 +359,12 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       addToEnv name ty
       match initializer with
       | some initExpr =>
-          -- If the initializer is a direct non-pure StaticCall, don't lift it —
+          -- If the initializer is a direct imperative StaticCall, don't lift it —
           -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
           match initExpr.val with
           | .StaticCall callee args =>
-              let impure := (← get).impureNames
-              if impure.contains callee then
+              let imperative := (← get).imperativeNames
+              if imperative.contains callee then
                 -- Pass through as-is; translateStmt will emit init + call
                 let seqArgs ← args.mapM transformExpr
                 let argPrepends ← takePrepends
@@ -384,12 +384,12 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
           return [stmt]
 
   | .Assign targets value =>
-      -- If the RHS is a direct impure StaticCall, don't lift it —
+      -- If the RHS is a direct imperative StaticCall, don't lift it —
       -- translateStmt handles Assign + StaticCall directly as a call statement.
       match value.val with
       | .StaticCall callee args =>
-          let impure := (← get).impureNames
-          if impure.contains callee then
+          let imperative := (← get).imperativeNames
+          if imperative.contains callee then
             let seqArgs ← args.mapM transformExpr
             let argPrepends ← takePrepends
             modify fun s => { s with subst := [] }
@@ -462,9 +462,9 @@ def transformProcedure (proc : Procedure) : LiftM Procedure := do
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftImpureExpressions (program : Program) : Program :=
-  let impureNames := program.staticProcedures.filter (fun p => !p.isPure) |>.map (·.name)
-  let initState : LiftState := { types := program.types, impureNames := impureNames }
+def liftImperativeExpressions (program : Program) : Program :=
+  let imperativeNames := program.staticProcedures.filter (fun p => !p.isPure) |>.map (·.name)
+  let initState : LiftState := { types := program.types, imperativeNames := imperativeNames }
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
   { program with staticProcedures := seqProcedures }
 
