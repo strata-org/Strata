@@ -212,6 +212,7 @@ partial def toCoreExpr (e : Expr) : TranslateM Core.Expression.Expr := do
   | .mul_expr m ty a b => toCoreTypedBin m ty "Mul" a b
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" a b
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" a b
+  | .old _ _ a => pure <| .app () Core.polyOldOp (← toCoreExpr a)
   | .forall _ ds body
   | .forallT _ ds _ body => toCoreQuant true ds body
   | .exists _ ds body
