@@ -33,7 +33,10 @@ currently do.
 **Note:** Some definitions are opaque for the moment, so that we can discuss the
 structure. Most can be implemented straightforwardly by calling existing code.
 Those that can't are noted explicitly.
-
+**Note:** This is a proposed API that is only partially implemented. Functions
+that have been implemented are marked `def`. Proposed but unimplemented functions
+are declared using `opaque` to define the intended API surface; these should not
+be invoked.
 It involves several key types:
 
 * `Strata.Dialect`: The formal description of a Strata dialect. Used only to
