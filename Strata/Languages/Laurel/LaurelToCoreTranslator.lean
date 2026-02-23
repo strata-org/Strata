@@ -39,7 +39,7 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
-  | .THeap => Core.mapTy (.tcons "Composite" []) (Core.mapTy (.tcons "Field" []) (.tcons "Box" []))
+  | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
   | .UserDefined _ => .tcons "Composite" []
@@ -61,7 +61,8 @@ abbrev FunctionNames := List Identifier
 
 def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
-  name == "readField" || name == "updateField" ||
+  name == "readField" || name == "updateField" || name == "increment" ||
+  name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
@@ -198,20 +199,20 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
           if isCoreFunction funcNames callee then
             -- Translate as expression (function application)
             let boogieExpr := translateExpr constants env (⟨ .StaticCall callee args, callMd ⟩)
-            (env', [Core.Statement.init ident boogieType boogieExpr md])
+            (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
           else
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr constants env)
             let defaultExpr := defaultExprForType ty
-            let initStmt := Core.Statement.init ident boogieType defaultExpr
+            let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
             let callStmt := Core.Statement.call [ident] callee boogieArgs
             (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr constants env initExpr
-          (env', [Core.Statement.init ident boogieType boogieExpr])
+          (env', [Core.Statement.init ident boogieType (some boogieExpr)])
       | none =>
           let defaultExpr := defaultExprForType ty
-          (env', [Core.Statement.init ident boogieType defaultExpr])
+          (env', [Core.Statement.init ident boogieType (some defaultExpr)])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -388,6 +389,7 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .IfThenElse c t none => isPureExpr c && isPureExpr t
   | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
   | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .New _ => false
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .Block [single] _ => isPureExpr single
   | _ => false
@@ -436,6 +438,9 @@ Translate Laurel Program to Core Program
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
+  dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace "================================="
   let program := liftExpressionAssignments program
   -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
@@ -479,7 +484,8 @@ def verifyToVcResults (program : Program)
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program) (options : Options := Options.default): IO (Array Diagnostic) := do
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
+    (options : Options := Options.default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)

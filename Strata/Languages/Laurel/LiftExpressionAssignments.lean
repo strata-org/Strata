@@ -402,7 +402,11 @@ def transformProcedure (proc : Procedure) : LiftM Procedure := do
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody bodyExpr
       pure { proc with body := .Transparent seqBody }
-  | _ => pure proc
+  | .Opaque postconds impl modif =>
+      let impl' ← impl.mapM transformProcedureBody
+      pure { proc with body := .Opaque postconds impl' modif }
+  | .Abstract _ =>
+      pure proc
 
 /--
 Transform a program to lift all assignments that occur in an expression context.

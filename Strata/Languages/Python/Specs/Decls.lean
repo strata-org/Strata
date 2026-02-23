@@ -62,14 +62,14 @@ handling during type translation (e.g., parameterized types with specific
 arity requirements).
 -/
 inductive MetadataType where
-  | typingDict
-  | typingGenerator
-  | typingList
-  | typingLiteral
-  | typingMapping
-  | typingSequence
-  | typingUnion
-  deriving Repr
+| typingDict
+| typingGenerator
+| typingList
+| typingLiteral
+| typingMapping
+| typingSequence
+| typingUnion
+deriving Repr
 
 def MetadataType.ident : MetadataType -> PythonIdent
 | .typingDict => .typingDict
@@ -95,7 +95,6 @@ inductive SpecAtomType where
 | intLiteral (value : Int)
 /-- A string literal -/
 | stringLiteral (value : String)
-| noneType
 /-
 A typed dictionary with an array of fields and their types.  The arrays
 must be of the same length.
@@ -105,16 +104,95 @@ fields are optional.
 | typedDict (fields : Array String)
             (fieldTypes : Array SpecType)
             (isTotal : Bool)
-deriving BEq, Hashable, Inhabited, Ord, Repr
+deriving Inhabited, Repr
 
 /--
 A PySpec type is a union of atom types.
 -/
 structure SpecType where
   atoms : Array SpecAtomType
-deriving Inhabited, Ord
+  /-- Source location of this type. May be `.none` for builtin types. -/
+  loc : SourceRange
+deriving Inhabited
 
 end
+
+namespace SpecAtomType
+
+def noneType : SpecAtomType := .ident .noneType #[]
+
+end SpecAtomType
+
+/-- Heterogeneous lexicographic comparison of two arrays. Shorter arrays
+    compare as less than longer arrays when all shared elements are equal. -/
+@[specialize]
+def compareHLex {α β} (cmp : α → β → Ordering) (a₁ : Array α) (a₂ : Array β) : Ordering :=
+  go 0
+where go i :=
+  if h₁ : a₁.size <= i then
+    if a₂.size <= i then .eq else .lt
+  else
+    if h₂ : a₂.size <= i then
+      .gt
+    else cmp a₁[i] a₂[i] |>.then $ go (i + 1)
+termination_by a₁.size - i
+
+mutual
+
+/-- Compare two atom types by structure, ignoring `loc` in nested `SpecType`
+    values. Variants are ordered: ident < pyClass < intLiteral < stringLiteral
+    < typedDict. -/
+protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
+  match x, y with
+  | .ident xnm xargs, .ident ynm yargs =>
+    compare xnm ynm |>.then $
+      compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
+  | .ident .., _ => .lt
+  | _, .ident .. => .gt
+
+  | .pyClass xname xargs, .pyClass yname yargs =>
+    compare xname yname |>.then $
+      compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
+  | .pyClass .., _ => .lt
+  | _, .pyClass .. => .gt
+
+  | .intLiteral xval, .intLiteral yval => compare xval yval
+  | .intLiteral .., _ => .lt
+  | _, .intLiteral .. => .gt
+
+  | .stringLiteral xval, .stringLiteral yval => compare xval yval
+  | .stringLiteral .., _ => .lt
+  | _, .stringLiteral .. => .gt
+
+  | .typedDict xfields xfieldTypes xisTotal, .typedDict yfields yfieldTypes yisTotal =>
+    compare xfields yfields |>.then $
+    compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xfieldTypes.attach yfieldTypes |>.then $
+    compare xisTotal yisTotal
+termination_by sizeOf x
+
+/-- Compare two types by their atoms arrays, ignoring `loc`. -/
+protected def SpecType.compare (x y : SpecType) : Ordering :=
+  compareHLex (fun ⟨xe, _⟩ y => xe.compare y )
+      x.atoms.attach y.atoms
+termination_by sizeOf x
+decreasing_by
+  cases x
+  case mk xl xa =>
+    decreasing_tactic
+
+end
+
+instance : BEq SpecAtomType where
+  beq x y := SpecAtomType.compare x y == .eq
+
+instance : BEq SpecType where
+  beq x y := SpecType.compare x y == .eq
+
+instance : Ord SpecAtomType where
+  compare := SpecAtomType.compare
+
+instance : Ord SpecType where
+  compare := SpecType.compare
 
 instance : LT SpecAtomType where
   lt x y := private compare x y = .lt
@@ -152,28 +230,53 @@ private partial def unionAux (x y : Array SpecAtomType) (i : Fin x.size) (j : Fi
   | .gt =>
     let j' := j.val + 1
     if yjp : j' < y.size then
-      unionAux x y i ⟨j', yjp⟩ (r.push xe)
+      unionAux x y i ⟨j', yjp⟩ (r.push ye)
     else
-      r.push xe ++ x.drop i.val
+      r.push ye ++ x.drop i.val
 
-instance : OrOp SpecType where
-  or x y := private
-    if xp : 0 < x.atoms.size then
-      if yp : 0 < y.atoms.size then
-        { atoms := unionAux x.atoms y.atoms ⟨0, xp⟩ ⟨0, yp⟩ #[] }
-      else
-        x
+/-- Union two SpecTypes with a specified location for the result -/
+def union (loc : SourceRange) (x y : SpecType) : SpecType :=
+  if xp : 0 < x.atoms.size then
+    if yp : 0 < y.atoms.size then
+      { loc := loc, atoms := unionAux x.atoms y.atoms ⟨0, xp⟩ ⟨0, yp⟩ #[] }
     else
-      y
+      x
+  else
+    y
 
-def ofAtom (atom : SpecAtomType) : SpecType := { atoms := #[atom] }
+def ofAtom (loc : SourceRange) (atom : SpecAtomType) : SpecType := { loc := loc, atoms := #[atom] }
 
-def ofArray (atoms : Array SpecAtomType) : SpecType := { atoms := atoms.qsort (· < ·) }
+@[specialize]
+private def removeAdjDupsAux {α} [BEq α] (a : Array α) (i : Nat) (r : Array α) (rne : r.size > 0) : Array α :=
+  if ilt : i < a.size then
+    if r.back == a[i] then
+      removeAdjDupsAux a (i+1) r rne
+    else
+      removeAdjDupsAux a (i+1) (r.push a[i]) (by simp +arith)
+  else
+    r
 
-def ident (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
-  .ofAtom (.ident i args)
+/--
+Removes duplicate adjacent elements
+-/
+@[inline]
+private def removeAdjDups {α} [BEq α] (a : Array α) : Array α :=
+  if p : a.size = 0 then
+    #[]
+  else
+    removeAdjDupsAux a 1 #[a[0]] (by simp +arith)
 
-def pyClass (name : String) (params : Array SpecType) : SpecType := ofAtom <| .pyClass name params
+/-- Construct a `SpecType` from an array of atoms by sorting and
+    removing duplicates to produce a canonical representation. -/
+protected def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecType :=
+  let elts := atoms.qsort (· < ·)
+  { loc := loc, atoms := removeAdjDups elts }
+
+def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
+  ofAtom loc (.ident i args)
+
+def pyClass (loc : SourceRange) (name : String) (params : Array SpecType) : SpecType :=
+  ofAtom loc (.pyClass name params)
 
 def asSingleton (tp : SpecType) : Option SpecAtomType := do
   if tp.atoms.size = 1 then

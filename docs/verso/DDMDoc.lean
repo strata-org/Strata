@@ -31,13 +31,13 @@ distributed analysis across language and system boundaries.
 
 The Strata DDM is implemented in Lean.  Strata dialects and programs may be embedded
 in Lean or in standalone dialect files.  In a future release, we will support working with
-Strata from the command line as well as other languages such as .Net-based language,
+Strata from the command line as well as other languages such as .Net-based languages,
 JVM-based languages, Rust, Python and JavaScript/TypeScript.
 
 # Strata Dialect Definitions
 
 Dialects are the core mechanism in Strata used to declare and extend program
-intermediate representations.   A Strata dialect defines new syntactic categories,
+intermediate representations.  A Strata dialect defines new syntactic categories,
 operations, types, functions and metadata.  Strata dialects are composable and
 can be used to define extensions that can be used in multiple languages.  There
 is a builtin dialect, called `Init` that provides some basic declarations that
@@ -54,20 +54,19 @@ are five basic types of declarations:
  * A {deftech}_Operator_ declaration defines information that may be stored in a
    syntactic category, along with how it is textually presented.
    Operators have arguments that may reference categories or types, and
-   use metadata to define how their arguments affect Strata
-   [typechecking](typechecking).
+   use metadata to define how their arguments affect
+   [type checking](#typechecking).
  * A {deftech}_Type_ declaration declares a new builtin type for the dialect
-   that all programs in a dialect may refer to.  Types declarations do not introduce
-   new syntactic categories in a dialect, but rather extend a dialect `Init.Type`
-   with new types that may be referred to.  This allows Strata to support type variables
-   and polymorphism.
+   that all programs in a dialect may refer to.  Type declarations do not introduce
+   new syntactic categories, but rather extend the `Init.Type` category.
+   This allows Strata to support type variables and polymorphism.
  * A {deftech}_Function_ declaration introduces a new function into Strata's
    builtin expression syntactic category `Init.Expr`.  Functions have a user-
    definable syntax like operators, but can be polymorphic and are type checked
    after parsing.
  * A {deftech}_Metadata_ declaration introduces a new attribute that may be attached
    to other Strata declarations.  There are builtin metadata attributes used to
-   control parsing and typechecking in dialects.  Dialects may introduce new metadata
+   control parsing and type checking in dialects.  Dialects may introduce new metadata
    to provide a mechanism for associating properties with declarations.
 
 ## Strata Examples
@@ -117,8 +116,8 @@ fn ge (a : Int, b : Int) : BoolType => @[prec(15)] a " >= " b;
 fn gt (a : Int, b : Int) : BoolType => @[prec(15)] a " > " b;
 ```
 
-By itself, these dialects do not define a new language.  To define a
-language, one needs to extends a builtin `Command` category with
+By themselves, these dialects do not define a new language.  To define a
+language, one needs to extend the builtin `Command` category with
 new commands.  This is done with the following dialect that introduces
 commands for assertions and defining functions:
 
@@ -175,7 +174,7 @@ The convention is to use `monospace` text for concrete syntax in the dialect def
 language and _italic_ for identifiers and other expressions introduced as part of a
 specific dialect.
 
-Each dialect definition must begin with the `dialect` followed by the name of the dialect.
+Each dialect definition must begin with `dialect` followed by the name of the dialect.
 
 `dialect` _name_`;`.
 
@@ -242,7 +241,7 @@ op assign (tp : Type, v : Ident, e : tp) : Statement => v " := " e ";";
 ```
 
 As an example, the following introduces an operator `const` that takes a single binding value
-as argument and produce a `Command`.  The `scope` and `prec` metadata attributes are
+as an argument and produces a `Command`.  The `scope` and `prec` metadata attributes are
 described in the [Metadata](#metadata).
 
 ```
@@ -261,13 +260,13 @@ extends the expression language with new functions using the `fn` declaration.  
 `Init.Type` and `Init.Expr` categories have some special support to simplify the
 creation of typed IRs in Strata.
 
- * Strata supports type polymorphic functions and operations and has a support for
+ * Strata supports polymorphic functions and operations and has support for
    type inference that allows it to automatically infer type arguments as long as
    an expression argument uses that type.
  * Unlike categories, user types may contain parameters and parameters may themselves
    be variables.  This allows more general functions than can be supported by operators
    such as a polymorphic length function over lists.
- * Types use a standardized syntax that do not require syntax definitions for each type.
+ * Types use a standardized syntax that does not require syntax definitions for each type.
  * After parsing, expressions are type checked to ensure that the syntax is well
    formed.
 
@@ -288,7 +287,10 @@ type Map (dom : Type, range : Type);  -- Ex. Map Nat BoolType
 
 _metadata_ `fn` _name_`(`_id1_ `:` _k1_`,` _id2_ `:` _k2_, _..._`) :` _type_ `=>` _syntax_`;`
 
-This introduces a new function
+This introduces a new function into the `Init.Expr` category.  Unlike `op`
+declarations, functions can be polymorphic — type arguments (parameters of
+kind `Type`) are automatically inferred from the types of other arguments.
+Expressions built from functions are also type checked after parsing.
 
 As an example, the code below introduces a polymorphic `if` expression.
 
@@ -304,11 +306,10 @@ tag := "metadata"
 
 The Strata `Init` dialect provides a builtin `Init.Metadata` category that allows metadata
 to be declared and attached to other declarations in dialects.  Predefined metadata attributes
-are used in dialect definitions for
-[defining precedence and type checking](#parsing_typechecking), but additional metadata
-attributes can be declared in dialects to build new capabilities on top of Strata.  The goal
-of this is to provide a user-controllable extension mechanism to Strata dialects so that
-dialects themselves may be repurposed to new use cases.
+are used for [precedence](#syntaxdef), [type checking](#typechecking), and
+configuring [list categories](#init) (e.g., `@[nonempty]`).
+Additional metadata attributes can be declared in dialects as a user-controllable extension
+mechanism, allowing dialects to be repurposed to new use cases.
 
 `metadata` _name_ `(`_id1_ `:` _tp1_`,` _id2_ `:` _tp2_`,` _..._ `);`
 
@@ -319,7 +320,7 @@ The type annotations in _tp1_ are currently restricted to `Ident`
 each (`Option Ident` and `Option Num`).  More general support for metadata will
 be added in a future release.
 
-### Syntax Definitions
+## Syntax Definitions
 %%%
 tag := "syntaxdef"
 %%%
@@ -336,38 +337,90 @@ describe the syntax of the operator or function.
 * For multiline declarations, the function `indent(`_n_`,` _tokens_`)` may
   be used.  The _tokens_ will appear indented when they appear on new lines.
 
-There are three metadata annotations in the Strata dialect that may affect
-precedence in syntax definitions.
+### Precedence
+
+Precedence controls when parentheses are inserted during pretty-printing.
+There are two precedence values at play:
+
+* *Operator precedence* (`@[prec(p)]`): The precedence of the formatted
+  result produced by this operator. When omitted, defaults to `maxPrec`.
+  A higher value means the operator binds more tightly.
+
+* *Argument precedence* (`arg:p`): The minimum precedence an argument must
+  have to appear without parentheses. If the argument's operator precedence
+  is ≤ `p`, it will be wrapped in parentheses. The special case `arg:0`
+  disables parenthesization entirely for that argument position. When
+  omitted, defaults are derived from the operator precedence as described
+  below.
+
+Atoms (identifiers, numeric literals, string literals) have precedence
+`maxPrec + 1`, so they are never parenthesized.
+
+*Single-token syntax.* When an operator or function has exactly one
+argument and no other syntax tokens (e.g., `op foo (x : Cat) : Cat => x;`),
+the formatted result inherits the argument's precedence directly, so
+trivial wrapper operators do not introduce unnecessary parentheses. When
+the syntax is a single string literal (e.g.,
+`=> "keyword";`), the result gets precedence `maxPrec + 1`.
+
+Three metadata annotations affect precedence:
 
 ```
-metadata prec(p : Nat); -- Controls the precedence of the outermost operator
-metadata leftassoc; -- Indicates operator is left-associative
-metadata rightassoc; -- Indicates operator is right associative.
+metadata prec(p : Nat); -- Sets the operator precedence of the result
+metadata leftassoc;     -- Left-associative: left arg binds tighter
+metadata rightassoc;    -- Right-associative: right arg binds tighter
 ```
 
-As an example, a right associative implies operator can be defined with the syntax:
+*Default argument precedences.* When `arg:p` is not written explicitly,
+the argument precedence is derived from the operator precedence and
+associativity:
+
+* For a non-associative operator with precedence `p` and multiple arguments,
+  the first and last arguments get precedence `p` and middle arguments get
+  precedence `0`.
+* For `leftassoc` with precedence `p`, the leftmost argument gets `p - 1`
+  (allowing the same operator to nest on the left without parens) and the
+  remaining arguments get `p`.
+* For `rightassoc` with precedence `p`, the rightmost argument gets `p - 1`
+  and the remaining arguments get `p`.
+
+As an example, a right-associative implies operator can be defined with the
+syntax:
 
 ```
 fn implies (p : Pred, q : Pred) : Pred => @[prec(20), rightassoc] p " ==> " q;
 ```
 
-Without the rightassoc operator, this is equivalent to the definition:
+Without the `rightassoc` annotation, this is equivalent to the definition:
 
 ```
 fn implies (p : Pred, q : Pred) : Pred => @[prec(20)] p:20 " ==> " q:19;
 ```
 
+Here `p:20` means the left argument needs precedence > 20 to avoid parens
+(so a nested `implies` on the left *will* be parenthesized), while `q:19`
+means the right argument needs precedence > 19 (so a nested `implies` on
+the right will *not* be parenthesized, since `implies` itself has
+precedence 20 > 19).
 
-## Parsing, Type Checking and Pretty Printings
+
+## Type Checking
 %%%
-tag := "parsing_typechecking"
+tag := "typechecking"
 %%%
 
-When parsing an operation or expression from source, there is an implicit variable
-context that contains bindings for variables in scope. Operators may transform this
-context while expressions are evaluated within a context.
-The changes to the context are controlled via metadata, and the Strata dialect makes
-three declarations for affecting this.
+Expressions composed from functions introduced by `fn` declarations are
+type checked by the DDM after parsing.  This ensures that argument types
+match, type variables are consistently instantiated, and polymorphic type
+inference succeeds.  Type checking enables polymorphic functions whose type
+arguments are inferred from the types of value arguments, so users can write
+`a == b` rather than explicitly providing the type as in `equal(Int, a, b)`.
+
+To support type checking, the DDM maintains a variable context during
+parsing that tracks which bindings are in scope.  Operators can introduce
+new bindings (e.g., a variable declaration) or evaluate arguments within
+a particular scope.  The following metadata declarations control how the
+variable context is built up during parsing.
 
 ```
 -- Specify result scope of argument used to evaluate
@@ -443,9 +496,9 @@ be defined in user definable dialects.
   can be type checked after parsing.  See [Types and Expressions](#type_expression) for
   more details.
 
-* Syntactic categories that in dialects other than `Init` currently cannot
+* Syntactic categories in dialects other than `Init` currently cannot
   take additional parameters.  This support will be added in a future update, but
-  to help users, the `Init` declares a few builtin parametric categories:
+  to help users, `Init` declares a few builtin parametric categories:
 
   * `Init.Option c` denotes an optional value of `c`.  Syntactically, either
     `c` may be read in or the empty string.
@@ -466,8 +519,8 @@ be defined in user definable dialects.
   with the `@[nonempty]` metadata attribute to require at least one element during parsing.
   For example: `@[nonempty] items : SpaceSepBy Item` will reject empty lists with a parse error.
 
-* Parsing for primitive literals and identifiers cannot be directly in syntax definitions.
-  To accommodate this, the `Init` dialect introduces the syntactic categories for this:
+* Parsing for primitive literals and identifiers cannot be expressed directly in syntax definitions.
+  To accommodate this, the `Init` dialect introduces syntactic categories for them:
 
   * `Init.Ident` represents identifiers.  These are alphanumeric sequences that start with
     a letter that are not otherwise used as keywords in a dialect.
@@ -666,7 +719,7 @@ The core types are listed below in the same order as the
 * `ExprF α` — a typed expression.  Expressions are represented in curried
   form: a head (`fn` for a named dialect function, `bvar` for a bound
   variable, or `fvar` for a free variable) applied to arguments via `app`.
-  Type arguments found bound and free variables are implicit and omitted.
+  Type arguments for bound and free variables are implicit and omitted.
 
 For the common case where annotations are source locations, Strata defines
 abbreviations:
