@@ -43,7 +43,7 @@ VCs:
 Label: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Obligation:
-List..isCons($__xs2)
+List..isCons($__xs3)
 
 Label: Test_ensures_0
 Property: assert
@@ -56,7 +56,7 @@ Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ❌ fail
 Model:
-($__xs2, (as Nil (List Int))
+($__xs3, (as Nil (List Int))
 
 
 [DEBUG] Evaluated program:
@@ -88,7 +88,7 @@ Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ❌ fail
 Model:
-($__xs2, (as Nil (List Int))
+($__xs3, (as Nil (List Int))
 
 Obligation: Test_ensures_0
 Property: assert
@@ -132,14 +132,14 @@ true
 Label: assert_0
 Property: assert
 Assumptions:
-(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r2)
+(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r3)
 Obligation:
-List..isCons($__r2)
+List..isCons($__r3)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r2)
+(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r3)
 Obligation:
 true
 

@@ -50,14 +50,17 @@ def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression
   let substMap := oldVarSubst E.substMap E
   let e' := OldExpressions.substsOldExpr substMap e
   match c with
-  | .init _ _ _ _ =>
+  | .init _ _ eOpt _ =>
     -- The type checker only allows free variables to appear in `init`
     -- statements, so we only need to compute them when we see an `init`
     -- command.
     -- See `CmdType.lean` for details.
-    let freeVars := e.freeVars
-    let E' := E.insertFreeVarsInOldestScope freeVars
-    (e', E')
+    match eOpt with
+    | some _ =>
+      let freeVars := e.freeVars
+      let E' := E.insertFreeVarsInOldestScope freeVars
+      (e', E')
+    | none => (e', E)
   | _ => (e', E)
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=

@@ -47,7 +47,7 @@ Proof Obligation:
 #true
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ [.init "x" t[int] eb[#0],
+#eval (evalOne ∅ ∅ [.init "x" t[int] (some eb[#0]),
                     .set "x" eb[#18],
                     .assert "x_eq_18" eb[x == #18]]) |>.snd |> format
 
@@ -87,7 +87,7 @@ Proof Obligation:
 #eval (evalOne
   ((Env.init (empty_factory := true)).pushScope [("y", (mty[int], eb[_yinit]))])
   ∅
-  [.init "x" t[int] eb[#0],
+  [.init "x" t[int] (some eb[#0]),
   .set "x" eb[y],
   .assert "x_eq_12" eb[x == #12]]) |>.snd |> format
 
@@ -122,7 +122,7 @@ Deferred Proof Obligations:
 -- though because `x` can't appear in its own initialization expression.
 #eval evalOne ∅ ∅
        [
-       .init "x" t[bool] eb[x == #true]
+       .init "x" t[bool] (some eb[x == #true])
        ] |>.snd |> format
 
 /--
@@ -178,8 +178,8 @@ Proof Obligation:
   ((Env.init (empty_factory := true)).pushScope
     [("minit", (mty[int → int], eb[(_minit : int → int)]))])
   ∅
-  [.init "m" t[int → int] eb[minit],
-  .init "m0" t[int] eb[(m #0)],
+  [.init "m" t[int → int] (some eb[minit]),
+  .init "m0" t[int] (some eb[(m #0)]),
   .set "m" eb[λ (if (%0 == #1) then #10 else ((m : int → int) %0))],
   .set "m" eb[λ (if (%0 == #2) then #20 else ((m : int → int) %0))],
   .assert "m_5_eq_50" eb[(m #5) == #50],
@@ -239,7 +239,7 @@ Proof Obligation:
 #eval (evalOne
   ((Env.init (empty_factory := true)).pushScope [("minit", (none, eb[_minit]))])
   ∅
-  [.init "m" t[int → int] eb[minit],
+  [.init "m" t[int → int] (some eb[minit]),
   .set "m" eb[λ (if (%0 == #1) then #10 else (m %0))],
   .set "m" eb[λ (if (%0 == #2) then #20 else (m %0))],
   .assert "m_5_eq_50" eb[(m #5) == #50],
@@ -252,11 +252,11 @@ Proof Obligation:
 
 private def prog1 : Statements :=
  [
- .init "x" t[int] eb[#0],
- .init "y" t[int] eb[#6],
+ .init "x" t[int] (some eb[#0]),
+ .init "y" t[int] (some eb[#6]),
  .block "label_0"
 
-   [Statement.init "z" t[bool] eb[zinit],
+   [Statement.init "z" t[bool] (some eb[zinit]),
     Statement.assume "z_false" eb[z == #false],
 
    .ite eb[z == #false]
@@ -331,7 +331,7 @@ Proof Obligation:
 
 
 private def prog2 : Statements := [
-  .init "x" t[int] eb[#0],
+  .init "x" t[int] (some eb[#0]),
   .set "x" eb[#1],
   .havoc "x",
   .assert "x_eq_1" eb[x == #1], -- error
@@ -403,7 +403,7 @@ def testFuncDecl : List Statement :=
   }
   [
     .funcDecl doubleFunc,
-    .init "y" t[int] eb[(~double #5)],
+    .init "y" t[int] (some eb[(~double #5)]),
     .assert "y_eq_10" eb[y == #10]
   ]
 
@@ -459,10 +459,10 @@ def testFuncDeclSymbolic : List Statement :=
     axioms := []
   }
   [
-    .init "n" t[int] eb[#10],  -- Initialize n to 10
+    .init "n" t[int] (some eb[#10]),  -- Initialize n to 10
     .funcDecl addNFunc,  -- Function captures n = 10 at declaration time
     .set "n" eb[#20],  -- Mutate n to 20
-    .init "result" t[int] eb[(~addN #5)],  -- Call function
+    .init "result" t[int] (some eb[(~addN #5)]),  -- Call function
     .assert "result_eq_15" eb[result == #15]  -- Result is 5 + 10 = 15 (uses captured value)
   ]
 
@@ -529,10 +529,10 @@ def testPolymorphicFuncDecl : List Statement :=
   [
     .funcDecl chooseFunc,
     -- Use with int type (curried application)
-    .init "intResult" t[int] eb[(((~choose #true) #1) #2)],
+    .init "intResult" t[int] (some eb[(((~choose #true) #1) #2)]),
     .assert "intResult_eq_1" eb[intResult == #1],
     -- Use with bool type (curried application)
-    .init "boolResult" t[bool] eb[(((~choose #false) #true) #false)],
+    .init "boolResult" t[bool] (some eb[(((~choose #false) #true) #false)]),
     .assert "boolResult_eq_false" eb[boolResult == #false]
   ]
 
