@@ -289,9 +289,23 @@ Example 2:
 `composite Cons<T> { head: T, tail: List<T> }`
 `constrained List<T> = value: Dynamic | value is Cons<T> || value is Unit`
  -/
+
+/-- A constructor of a Laurel datatype, with a name and typed arguments. -/
+structure DatatypeConstructor where
+  name : Identifier
+  args : List (Identifier × HighTypeMd)
+
+/-- A Laurel datatype definition with optional type parameters.
+    Zero constructors produces an opaque (abstract) type in Core. -/
+structure DatatypeDefinition where
+  name : Identifier
+  typeArgs : List Identifier
+  constructors : List DatatypeConstructor
+
 inductive TypeDefinition where
   | Composite (ty : CompositeType)
   | Constrained (ty : ConstrainedType)
+  | Datatype (ty : DatatypeDefinition)
 
 structure Constant where
   name : Identifier

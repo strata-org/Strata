@@ -451,7 +451,8 @@ def heapParameterization (program : Program) : Program :=
   let fieldTypes := program.types.foldl (fun acc typeDef =>
     match typeDef with
     | .Composite ct => acc ++ ct.fields.map (fun f => (ct.name ++ "." ++ f.name, f.type))
-    | .Constrained _ => acc) []
+    | .Constrained _ => acc
+    | .Datatype _ => acc) []
   let (procs', _) := (program.staticProcedures.mapM heapTransformProcedure).run
     { heapReaders, heapWriters, fieldTypes, types := program.types }
   { program with staticProcedures := procs' }

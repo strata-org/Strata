@@ -427,6 +427,27 @@ def canBeBoogieFunction (proc : Procedure) : Bool :=
   | _ => false
 
 /--
+Translate a Laurel DatatypeDefinition to a Core type declaration.
+Zero constructors produces an opaque (abstract) type; otherwise a Core datatype.
+-/
+def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
+  match h : dt.constructors with
+  | [] =>
+    -- Zero constructors: opaque type
+    Core.Decl.type (.con { name := dt.name, numargs := dt.typeArgs.length })
+  | first :: rest =>
+    let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun c =>
+      { name := Core.CoreIdent.unres c.name
+        args := c.args.map fun (n, ty) => (Core.CoreIdent.unres n, translateType ty) }
+    let ldt : Lambda.LDatatype Core.Visibility := {
+      name := dt.name
+      typeArgs := dt.typeArgs
+      constrs := constrs
+      constrs_ne := by simp [constrs]
+    }
+    Core.Decl.type (.data [ldt])
+
+/--
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
@@ -454,18 +475,15 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction fieldNames)
   -- Generate Field datatype or keep opaque type depending on whether fields exist
-  let fieldTypeDecls : List Core.Decl := match h : fieldNames with
+  let fieldTypeDecls : List Core.Decl := match fieldNames with
     | [] => []  -- No fields: keep the opaque `type Field;` from the prelude
-    | first :: rest =>
-      let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun name =>
-        { name := Core.CoreIdent.unres name, args := [] }
-      let fieldDatatype : Lambda.LDatatype Core.Visibility := {
+    | _ =>
+      let fieldDt : DatatypeDefinition := {
         name := "Field"
         typeArgs := []
-        constrs := constrs
-        constrs_ne := by simp [constrs]
+        constructors := fieldNames.map fun name => { name := name, args := [] }
       }
-      [Core.Decl.type (.data [fieldDatatype])]
+      [translateDatatypeDefinition fieldDt]
   -- Filter out the prelude's opaque `type Field;` when we're replacing it with a datatype
   let preludeDecls := if fieldNames.isEmpty then
     corePrelude.decls
@@ -473,7 +491,11 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     corePrelude.decls.filter (fun d => d.name != "Field")
   -- Generate type hierarchy declarations (UserType constants, distinct, axioms)
   let typeHierarchyDecls := generateTypeHierarchyDecls program.types
-  pure ({ decls := fieldTypeDecls ++ preludeDecls ++ typeHierarchyDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  -- Translate Laurel datatype definitions to Core datatype declarations
+  let laurelDatatypeDecls := program.types.filterMap fun td => match td with
+    | .Datatype dt => some (translateDatatypeDefinition dt)
+    | _ => none
+  pure ({ decls := fieldTypeDecls ++ preludeDecls ++ laurelDatatypeDecls ++ typeHierarchyDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
