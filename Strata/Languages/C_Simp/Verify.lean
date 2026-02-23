@@ -35,7 +35,7 @@ def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExp
 
 def translate_cmd (c: C_Simp.Command) : Core.Command :=
   match c with
-  | .init name ty e _md => .cmd (.init ⟨name.name, .unres⟩ ty (e.map translate_expr) {})
+  | .init name ty e _md => .cmd (.init ⟨name.name, .unres⟩ ty (translate_opt_expr e) {})
   | .set name e _md => .cmd (.set ⟨name.name, .unres⟩ (translate_expr e) {})
   | .havoc name _md => .cmd (.havoc ⟨name.name, .unres⟩ {})
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})

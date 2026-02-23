@@ -71,7 +71,7 @@ deriving Repr, BEq, Inhabited
 structure ExtrinsicsModelingConfig where
   behaviors : String → ExtrinsicModelingChoice
 
-def defaultExtrinsicsModelChoice (s: String) : ExtrinsicModelingChoice :=
+def defaultExtrinsicsModelChoice (_s: String) : ExtrinsicModelingChoice :=
   .havocArgsAndRet
 
 instance : Inhabited ExtrinsicsModelingConfig where
@@ -879,7 +879,7 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals := [(.var "__name__" (.forAll [] mty[string]) (.strConst () "__main__"))]
+  let globals := [(.var "__name__" (.forAll [] mty[string]) (some (.strConst () "__main__")))]
 
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)

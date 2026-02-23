@@ -34,7 +34,8 @@ Commands don't create local control flow, and are typically used as a parameter
 to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
-  /-- Define a variable called `name` with type `ty` and optional initial value `e`. -/
+  /-- Define a variable called `name` with type `ty` and optional initial value `e`.
+      When `e` is `none`, the variable is initialized with an arbitrary value. -/
   | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P) := .empty)
   /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
@@ -175,7 +176,8 @@ open Std (ToFormat Format format)
 def formatCmd (P : PureExpr) (c : Cmd P)
     [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=
   match c with
-  | .init name ty e _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty (some e) _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty none _md => f!"init ({name} : {ty})"
   | .set name e _md => f!"{name} := {e}"
   | .havoc name _md => f!"havoc {name}"
   | .assert label b _md => f!"assert [{label}] {b}"

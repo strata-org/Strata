@@ -185,11 +185,11 @@ error: none
 warnings: []
 deferred: #[Label: x_value_eq
  Property : assert
- Assumptions: ⏎
+ Assumptions: 
  Obligation: true
- Metadata: ⏎
+ Metadata: 
  ]
-pathConditions: ⏎
+pathConditions: 
 env: (x, (Num, 100))
 genNum: 0
 -/
@@ -213,11 +213,11 @@ error: none
 warnings: []
 deferred: #[Label: x_value_eq
  Property : assert
- Assumptions: ⏎
+ Assumptions: 
  Obligation: ($__x0 : Num) = 100
- Metadata: ⏎
+ Metadata: 
  ]
-pathConditions: ⏎
+pathConditions: 
 env: (y, (Num, y)) (x, (Num, ($__x0 : Num)))
 genNum: 1
 -/
