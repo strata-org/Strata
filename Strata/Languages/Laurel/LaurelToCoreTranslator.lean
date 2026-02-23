@@ -151,8 +151,9 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
   | .IsType _ _ =>
-      -- IsType should have been eliminated by the type hierarchy pass
       panic! s!"IsType should have been eliminated by typeHierarchyTransform"
+  | .New _ =>
+      panic! s!"New should have been eliminated by typeHierarchyTransform"
   | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
@@ -393,7 +394,34 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .Block [single] _ => isPureExpr single
   | .Block _ _ => false
-  | _ => panic s!"not implemented {Std.format expr.val}"
+  -- Statement-like
+  | .LocalVariable .. => true
+  | .While .. => false
+  | .Exit .. => false
+  | .Return .. => false
+  -- Expression-like
+  | .Assign .. => false
+  | .FieldSelect .. => true
+  | .PureFieldUpdate .. => true
+  -- Instance related
+  | .This => panic s!"isPureExpr not implemented for This"
+  | .AsType .. => panic s!"isPureExpr not supported for AsType"
+  | .IsType .. => panic s!"isPureExpr not supported for IsType"
+  | .InstanceCall .. => panic s!"isPureExpr not implemented for InstanceCall"
+  -- Verification specific
+  | .Forall .. => panic s!"isPureExpr not implemented for Forall"
+  | .Exists .. => panic s!"isPureExpr not implemented for Exists"
+  | .Assigned .. => panic s!"isPureExpr not supported for AsType"
+  | .Old .. => panic s!"isPureExpr not supported for AsType"
+  | .Fresh .. => panic s!"isPureExpr not supported for AsType"
+  | .Assert .. => panic s!"isPureExpr not implemented for Assert"
+  | .Assume .. => panic s!"isPureExpr not implemented for Assume"
+  | .ProveBy .. => panic s!"isPureExpr not implemented for ProveBy"
+  | .ContractOf .. => panic s!"isPureExpr not implemented for ContractOf"
+  | .Abstract => panic s!"isPureExpr not implemented for Abstract"
+  | .All => panic s!"isPureExpr not implemented for All"
+  -- Dynamic / closures
+  | .Hole => true
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
@@ -438,8 +466,8 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
-  let program := typeHierarchyTransform program
   let program := heapParameterization program
+  let program := typeHierarchyTransform program
   let (program, modifiesDiags) := modifiesClausesTransform program
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))

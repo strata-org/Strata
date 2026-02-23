@@ -359,8 +359,8 @@ where
             (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; term_by_mem)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
+  let heapName := "$heap"
   let heapInName := "$heap_in"
-  let heapOutName := "$heap_out"
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
@@ -369,37 +369,37 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
                            proc.outputs.map (fun p => (p.name, p.type))
 
   if writesHeap then
-    -- This procedure writes the heap - add heap_in as input and heap_out as output
-    -- At the start, assign heap_in to heap_out, then use heap_out throughout
+    -- This procedure writes the heap - add $heap_in as input and $heap as output
+    -- At the start, assign $heap_in to $heap, then use $heap throughout
     let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, #[]⟩ }
-    let heapOutParam : Parameter := { name := heapOutName, type := ⟨.THeap, #[]⟩ }
+    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, #[]⟩ }
 
     let inputs' := heapInParam :: proc.inputs
     let outputs' := heapOutParam :: proc.outputs
 
-    -- Precondition uses heap_in (the input state)
+    -- Precondition uses $heap_in (the input state)
     let precondition' ← heapTransformExpr heapInName initEnv proc.precondition
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          -- First assign heap_in to heap_out, then transform body using heap_out
-          let assignHeapOut := mkMd (.Assign [mkMd (.Identifier heapOutName)] (mkMd (.Identifier heapInName)))
-          let bodyExpr' ← heapTransformExpr heapOutName initEnv bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeapOut, bodyExpr'] none)))
+          -- First assign $heap_in to $heap, then transform body using $heap
+          let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
+          let bodyExpr' ← heapTransformExpr heapName initEnv bodyExpr bodyValueIsUsed
+          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
       | .Opaque postconds impl modif =>
-          -- Postconditions use heap_out (the output state)
-          let postconds' ← postconds.mapM (heapTransformExpr heapOutName initEnv ·)
+          -- Postconditions use $heap (the output state)
+          let postconds' ← postconds.mapM (heapTransformExpr heapName initEnv ·)
           let impl' ← match impl with
             | some implExpr =>
-                let assignHeapOut := mkMd (.Assign [mkMd (.Identifier heapOutName)] (mkMd (.Identifier heapInName)))
-                let implExpr' ← heapTransformExpr heapOutName initEnv implExpr bodyValueIsUsed
-                pure (some (mkMd (.Block [assignHeapOut, implExpr'] none)))
+                let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
+                let implExpr' ← heapTransformExpr heapName initEnv implExpr bodyValueIsUsed
+                pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
             | none => pure none
-          let modif' ← modif.mapM (heapTransformExpr heapOutName initEnv ·)
+          let modif' ← modif.mapM (heapTransformExpr heapName initEnv ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postcond =>
-          let postcond' ← heapTransformExpr heapOutName initEnv postcond
+          let postcond' ← heapTransformExpr heapName initEnv postcond
           pure (.Abstract postcond')
 
     return { proc with
@@ -409,23 +409,23 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
       body := body' }
 
   else if readsHeap then
-    -- This procedure only reads the heap - add heap_in as input only
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, #[]⟩ }
-    let inputs' := heapInParam :: proc.inputs
+    -- This procedure only reads the heap - add $heap as input only
+    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, #[]⟩ }
+    let inputs' := heapParam :: proc.inputs
 
-    let precondition' ← heapTransformExpr heapInName initEnv proc.precondition
+    let precondition' ← heapTransformExpr heapName initEnv proc.precondition
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          let bodyExpr' ← heapTransformExpr heapInName initEnv bodyExpr
+          let bodyExpr' ← heapTransformExpr heapName initEnv bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM (heapTransformExpr heapInName initEnv ·)
-          let impl' ← impl.mapM (heapTransformExpr heapInName initEnv ·)
-          let modif' ← modif.mapM (heapTransformExpr heapInName initEnv ·)
+          let postconds' ← postconds.mapM (heapTransformExpr heapName initEnv ·)
+          let impl' ← impl.mapM (heapTransformExpr heapName initEnv ·)
+          let modif' ← modif.mapM (heapTransformExpr heapName initEnv ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postcond =>
-          let postcond' ← heapTransformExpr heapInName initEnv postcond
+          let postcond' ← heapTransformExpr heapName initEnv postcond
           pure (.Abstract postcond')
 
     return { proc with
