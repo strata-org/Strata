@@ -520,7 +520,9 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | "Int.Sub" | "Real.Sub" => pure (.sub_expr default ty arg1 arg2)
   | "Int.Mul" | "Real.Mul" => pure (.mul_expr default ty arg1 arg2)
   | "Int.Div" | "Real.Div" => pure (.div_expr default ty arg1 arg2)
+  | "Int.SafeDiv" => pure (.safediv_expr default ty arg1 arg2)
   | "Int.Mod" => pure (.mod_expr default ty arg1 arg2)
+  | "Int.SafeMod" => pure (.safemod_expr default ty arg1 arg2)
   | "Int.Le" | "Real.Le" => pure (.le default ty arg1 arg2)
   | "Int.Lt" | "Real.Lt" => pure (.lt default ty arg1 arg2)
   | "Int.Ge" | "Real.Ge" => pure (.ge default ty arg1 arg2)
@@ -716,6 +718,18 @@ partial def lappToExpr {M} [Inhabited M]
     pure (.btrue default)  -- Default to true literal
 end
 
+/-- Convert preconditions to CST spec elements -/
+private def precondsToSpecElts {M} [Inhabited M]
+    (preconds : List (DL.Util.FuncPrecondition
+      (Lambda.LExpr CoreLParams.mono) CoreLParams.Metadata))
+    : ToCSTM M (Ann (Array (SpecElt M)) M) := do
+  let specElts ← preconds.toArray.mapM fun precond => do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, none⟩
+    let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
+    let exprCST ← lexprToExpr precond.expr 0
+    pure (SpecElt.requires_spec default labelAnn freeAnn exprCST)
+  pure ⟨default, specElts⟩
+
 /-- Convert a function declaration to a statement -/
 def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression)
     : ToCSTM M (CoreDDM.Statement M) := do
@@ -742,6 +756,8 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
   -- Add formals to the context
   modify (·.addScopedBoundVars (reverse? := false) paramNames)
+  -- Convert preconditions
+  let preconds ← precondsToSpecElts decl.preconditions
   let bodyExpr ← match decl.body with
   | none =>
     -- Dummy expr for the body.
@@ -753,7 +769,7 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   -- Register function name as a scoped bound variable in the parent scope,
   -- matching DDM's @[declareFn] which makes the name a bvar.
   modify (·.pushBoundVar name.val)
-  pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
+  pure (.funcDecl_statement default name typeArgs b r preconds bodyExpr inline?)
 
 mutual
 /-- Convert `Core.Statement` to `CoreDDM.Statement` -/
@@ -952,9 +968,11 @@ def funcToCST {M} [Inhabited M]
   | some body => do
     -- Add formals to the context.
     modify (·.addScopedBoundVars (reverse? := false) paramNames)
+    -- Convert preconditions
+    let preconds ← precondsToSpecElts func.preconditions
     let bodyExpr ← lexprToExpr body 0
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
-    pure (.command_fndef default name typeArgs b r bodyExpr inline?)
+    pure (.command_fndef default name typeArgs b r preconds bodyExpr inline?)
   modify ToCSTContext.popScope
   -- Register function name as free variable.
   modify (·.addGlobalFreeVars #[name.val])
