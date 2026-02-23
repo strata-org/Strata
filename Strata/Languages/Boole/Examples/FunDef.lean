@@ -1,6 +1,6 @@
 import Strata.MetaVerifier
 
-namespace Strata
+open Strata
 
 private def funDef :=
 #strata
@@ -30,5 +30,3 @@ spec {
 example : Strata.smtVCsCorrect funDef := by
   gen_smt_vcs
   all_goals (try grind)
-
-end Strata
