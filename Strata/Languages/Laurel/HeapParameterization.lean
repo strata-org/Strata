@@ -7,6 +7,7 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Util.Tactics
 
 /-
@@ -469,6 +470,11 @@ def heapParameterization (program : Program) : Program :=
     | _ => none
   let typeTagDatatype : TypeDefinition :=
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := n ++ "_TypeTag", args := [] } }
-  { program with staticProcedures := procs', types := program.types ++ [fieldDatatype, typeTagDatatype] }
+  -- Generate type hierarchy constants (ancestorsFor<Type>, ancestorsPerType)
+  let typeHierarchyConstants := generateTypeHierarchyDecls program.types
+  { program with
+    staticProcedures := procs',
+    types := program.types ++ [fieldDatatype, typeTagDatatype],
+    constants := program.constants ++ typeHierarchyConstants }
 
 end Strata.Laurel

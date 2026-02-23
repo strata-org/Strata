@@ -4,17 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Program
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelTypes
-import Strata.DL.Lambda.LExpr
 import Strata.DL.Imperative.MetaData
 import Strata.Util.Tactics
 
 namespace Strata.Laurel
 
 open Strata
-open Lambda (LMonoTy LExpr)
 
 /--
 Compute the flattened set of ancestors for a composite type, including itself.
@@ -34,61 +31,54 @@ def computeAncestors (types : List TypeDefinition) (name : Identifier) : List Id
         | _ => acc) [])
   (go types.length name).eraseDups
 
+private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+
 /--
-Generate Core declarations for the type hierarchy:
+Generate Laurel constant definitions for the type hierarchy:
 - A `ancestorsFor<Type>` constant per composite type with the inner ancestor map
 - A `ancestorsPerType` constant combining the per-type constants
 
-Note: TypeTag constants and their distinctness are now handled by the TypeTag datatype
-generated in HeapParameterization. Datatype constructors are automatically distinct.
+Uses `StaticCall` to reference map operations (`Map.const`, `update`) and TypeTag constructors.
 -/
-def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
+def generateTypeHierarchyDecls (types : List TypeDefinition) : List Constant :=
   let composites := types.filterMap fun td => match td with
     | .Composite ct => some ct
     | _ => none
   if composites.isEmpty then [] else
-  -- Build a separate ancestorsFor<Type> constant for each composite type
-  let typeTagTy := LMonoTy.tcons "TypeTag" []
-  let innerMapTy := Core.mapTy typeTagTy .bool
-  let outerMapTy := Core.mapTy typeTagTy innerMapTy
+  let typeTagTy : HighTypeMd := ⟨.TCore "TypeTag", #[]⟩
+  let boolTy : HighTypeMd := ⟨.TBool, #[]⟩
+  let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, #[]⟩
+  let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, #[]⟩
   -- Helper: build an inner map (Map TypeTag bool) for a given composite type
-  -- Start with Map.empty(false), then update each composite type's entry
-  let mkInnerMap (ct : CompositeType) : Core.Expression.Expr :=
+  -- Start with Map.const(false), then update each composite type's entry
+  let mkInnerMap (ct : CompositeType) : StmtExprMd :=
     let ancestors := computeAncestors types ct.name
-    let falseConst := LExpr.const () (.boolConst false)
-    let emptyInner := LExpr.mkApp () Core.mapConstOp [falseConst]
+    let falseConst := mkMd (.LiteralBool false)
+    let emptyInner := mkMd (.StaticCall "Map.const" [falseConst])
     composites.foldl (fun acc otherCt =>
-      let otherConst := LExpr.op () (Core.CoreIdent.unres (otherCt.name ++ "_TypeTag")) none
+      let otherConst := mkMd (.StaticCall (otherCt.name ++ "_TypeTag") [])
       let isAncestor := ancestors.contains otherCt.name
-      let boolVal := LExpr.const () (.boolConst isAncestor)
-      LExpr.mkApp () Core.mapUpdateOp [acc, otherConst, boolVal]
+      let boolVal := mkMd (.LiteralBool isAncestor)
+      mkMd (.StaticCall "update" [acc, otherConst, boolVal])
     ) emptyInner
   -- Generate a separate constant `ancestorsFor<Type>` for each composite type
   let ancestorsForDecls := composites.map fun ct =>
-    Core.Decl.func {
-      name := Core.CoreIdent.unres (s!"ancestorsFor{ct.name}")
-      typeArgs := []
-      inputs := []
-      output := innerMapTy
-      body := some (mkInnerMap ct)
-    }
+    { name := s!"ancestorsFor{ct.name}"
+      type := innerMapTy
+      initializer := some (mkInnerMap ct) : Constant }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
-  let falseConst := LExpr.const () (.boolConst false)
-  let emptyInner := LExpr.mkApp () Core.mapConstOp [falseConst]
-  let emptyOuter := LExpr.mkApp () Core.mapConstOp [emptyInner]
+  let falseConst := mkMd (.LiteralBool false)
+  let emptyInner := mkMd (.StaticCall "Map.const" [falseConst])
+  let emptyOuter := mkMd (.StaticCall "Map.const" [emptyInner])
   let outerMapExpr := composites.foldl (fun acc ct =>
-    let typeConst := LExpr.op () (Core.CoreIdent.unres (ct.name ++ "_TypeTag")) none
-    let innerMapRef := LExpr.op () (Core.CoreIdent.unres (s!"ancestorsFor{ct.name}")) (some innerMapTy)
-    LExpr.mkApp () Core.mapUpdateOp [acc, typeConst, innerMapRef]
+    let typeConst := mkMd (.StaticCall (ct.name ++ "_TypeTag") [])
+    let innerMapRef := mkMd (.StaticCall s!"ancestorsFor{ct.name}" [])
+    mkMd (.StaticCall "update" [acc, typeConst, innerMapRef])
   ) emptyOuter
-  -- Generate ancestorsPerType as a 0-ary function (constant) combining the per-type constants
-  let ancestorsDecl := Core.Decl.func {
-    name := Core.CoreIdent.unres "ancestorsPerType"
-    typeArgs := []
-    inputs := []
-    output := outerMapTy
-    body := some outerMapExpr
-  }
+  let ancestorsDecl : Constant :=
+    { name := "ancestorsPerType"
+      type := outerMapTy
+      initializer := some outerMapExpr }
   ancestorsForDecls ++ [ancestorsDecl]
 
 /--

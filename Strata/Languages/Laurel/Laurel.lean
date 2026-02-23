@@ -72,6 +72,7 @@ inductive HighType : Type where
   | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
   | TTypedField (valueType : WithMetadata HighType) /- Field constant with known value type. Not accessible via grammar. -/
   | TSet (elementType : WithMetadata HighType) /- Set type, e.g. Set Composite. Used in modifies clauses. -/
+  | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType) /- Map type for internal use (e.g. type hierarchy maps). -/
   | UserDefined (name : Identifier)
   | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
   /- Pure represents a composite type that does not support reference equality -/
@@ -232,6 +233,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.THeap, HighType.THeap => true
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
+  | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -315,6 +317,7 @@ inductive TypeDefinition where
 structure Constant where
   name : Identifier
   type : HighTypeMd
+  initializer : Option StmtExprMd := none
 
 structure Program where
   staticProcedures : List Procedure

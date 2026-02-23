@@ -15,7 +15,6 @@ import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.CorePrelude
-import Strata.Languages.Laurel.TypeHierarchy
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -43,11 +42,12 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
+  | .TMap keyType valueType => Core.mapTy (translateType keyType) (translateType valueType)
   | .UserDefined _ => .tcons "Composite" []
   | .TCore s => .tcons s []
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by ty.val
-decreasing_by cases elementType; term_by_mem
+decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
 def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
@@ -472,13 +472,22 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- Filter out the Field and TypeTag opaque types. These are only in the prelude to satisfy the DDM type checker.
   let preludeDecls := corePrelude.decls.filter fun d =>
     d.name.name != "Field" && d.name.name != "TypeTag"
-  -- Generate type hierarchy declarations (TypeTag constants, distinct, axioms)
-  let typeHierarchyDecls := generateTypeHierarchyDecls program.types
+  -- Translate Laurel constants to Core function declarations (0-ary functions)
+  let constantDecls := program.constants.map fun c =>
+    let coreTy := translateType c.type
+    let body := c.initializer.map (translateExpr fieldNames [] ·)
+    Core.Decl.func {
+      name := Core.CoreIdent.unres c.name
+      typeArgs := []
+      inputs := []
+      output := coreTy
+      body := body
+    }
   -- Translate Laurel datatype definitions to Core datatype declarations
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with
     | .Datatype dt => some (translateDatatypeDefinition dt)
     | _ => none
-  pure ({ decls := laurelDatatypeDecls ++ preludeDecls ++ typeHierarchyDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  pure ({ decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
