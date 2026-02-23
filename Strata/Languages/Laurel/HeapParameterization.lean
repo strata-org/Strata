@@ -328,7 +328,25 @@ where
     | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse env t) f (← recurse env v), md ⟩
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse env ·)
-      return ⟨ .PrimitiveOp op args', md ⟩
+      -- For == and != on Composite types, compare refs instead
+      match op, args with
+      | .Eq, [e1, _e2] =>
+        let ty := (computeExprType env types e1).val
+        match ty with
+        | .UserDefined _ =>
+          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
+          return ⟨ .PrimitiveOp .Eq [ref1, ref2], md ⟩
+        | _ => return ⟨ .PrimitiveOp op args', md ⟩
+      | .Neq, [e1, _e2] =>
+        let ty := (computeExprType env types e1).val
+        match ty with
+        | .UserDefined _ =>
+          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
+          return ⟨ .PrimitiveOp .Neq [ref1, ref2], md ⟩
+        | _ => return ⟨ .PrimitiveOp op args', md ⟩
+      | _, _ => return ⟨ .PrimitiveOp op args', md ⟩
     | .New _ => return expr
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse env l) (← recurse env r), md ⟩
     | .AsType t ty =>
