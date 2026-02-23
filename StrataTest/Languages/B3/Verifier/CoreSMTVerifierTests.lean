@@ -109,4 +109,38 @@ procedure test() {
 }
 #end
 
+/--
+info: test_fail: ✗ counterexample found
+-/
+#guard_msgs in
+#eval testB3ViaCoreVerification $ #strata program B3CST;
+function f(x : int) : int
+procedure test_fail() {
+  check 5 == 5 && f(5) == 10
+}
+#end
+
+/--
+info: test_assert: ✓ verified
+-/
+#guard_msgs in
+#eval testB3ViaCoreVerification $ #strata program B3CST;
+function f(x : int) : int
+axiom forall x : int pattern f(x) f(x) == x + 1
+procedure test_assert() {
+  assert f(5) == 6
+  check f(5) == 6
+}
+#end
+
+/--
+info: test_reach: ✓ reachable
+-/
+#guard_msgs in
+#eval testB3ViaCoreVerification $ #strata program B3CST;
+procedure test_reach() {
+  reach true
+}
+#end
+
 end B3.Verifier.CoreSMTTests
