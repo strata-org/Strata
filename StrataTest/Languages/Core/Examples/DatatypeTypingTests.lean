@@ -134,10 +134,18 @@ datatype List (a : Type) { Nil(), Cons(hd: a, tl: List a) };
 datatype Wrapper () { MkWrapper(xs: List int) };
 #end
 
-/-- info: true -/
-#guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram previouslyDefinedTypePgm) |>.snd |>.isEmpty
+/-- info: [Strata.Core] Type checking succeeded.
 
+---
+info: ok: datatype List (a : Type) {(
+  (Nil())),
+  (Cons(hd : a, tl : (List a)))
+};
+datatype Wrapper {
+  (MkWrapper(xs : (List int)))
+}; -/
+#guard_msgs in
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram previouslyDefinedTypePgm) |>.fst)
 ---------------------------------------------------------------------
 -- Test 8: Nested Datatype with Map
 ---------------------------------------------------------------------
@@ -150,7 +158,7 @@ datatype Nest2 (a : Type) { Base(), MkNest2(xs: Map int (Nest2 a)) };
 #end
 
 /--
-info: error: (4546-4615) Error in constructor MkNest2: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
+info: error: (4737-4806) Error in constructor MkNest2: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedMapPgm) |>.fst)
@@ -174,7 +182,7 @@ end;
 #end
 
 /--
-info: error: (5274-5411) Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
+info: error: (5465-5602) Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNestedPgm) |>.fst)
@@ -191,7 +199,7 @@ datatype Bad () { select(x: int) };
 #end
 
 /--
-info: error: (5963-5998) A function of name select already exists! Redefinitions are not allowed.
+info: error: (6154-6189) A function of name select already exists! Redefinitions are not allowed.
 Existing Function: func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 New Function:func select :  ((x : int)) → Bad;
 -/
@@ -215,7 +223,7 @@ end;
 #end
 
 /--
-info: error: (6644-6748) Error in constructor MkA: Non-strictly positive occurrence of BadB in type (arrow BadB int)
+info: error: (6835-6939) Error in constructor MkA: Non-strictly positive occurrence of BadB in type (arrow BadB int)
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNonPositivePgm) |>.fst)
@@ -232,7 +240,7 @@ datatype Void () { MkVoid(x: Void) };
 #end
 
 /--
-info: error: (7232-7269) Error: datatype Void not inhabited
+info: error: (7423-7460) Error: datatype Void not inhabited
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram uninhabitedPgm) |>.fst)
@@ -254,7 +262,7 @@ end;
 #end
 
 /--
-info: error: (7744-7827) Error: datatype Bad1 not inhabited
+info: error: (7935-8018) Error: datatype Bad1 not inhabited
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualUninhabitedPgm) |>.fst)
@@ -278,7 +286,7 @@ end;
 #end
 
 /--
-info: error: (8333-8464) Error: datatype Cycle1 not inhabited
+info: error: (8524-8655) Error: datatype Cycle1 not inhabited
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram threeWayCyclePgm) |>.fst)

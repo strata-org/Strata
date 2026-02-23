@@ -1128,7 +1128,7 @@ end ThreeWayMutualRecursion
 def dupTy1 : LDatatype Unit := {name := "Dup", typeArgs := ["a"], constrs := [{name := "A", args := [], testerName := "isA"}], constrs_ne := rfl}
 def dupTy2 : LDatatype Unit := {name := "Dup", typeArgs := ["a"], constrs := [{name := "B", args := [], testerName := "isB"}], constrs_ne := rfl}
 
-/-- info: Duplicate datataype name in mutual block: type:
+/-- info: Duplicate datatype name in mutual block: type:
 Dup
 Type Arguments:
 [a]
