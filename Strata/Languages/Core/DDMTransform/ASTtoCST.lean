@@ -386,6 +386,20 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
 
+/-- Fallback for operations not in the DDM Grammar: register as a free variable
+    and build a generic function application (`fvar` + `app`). -/
+def handleGenericFuncApp {M} [Inhabited M] (name : String) (args : List (CoreDDM.Expr M))
+    : ToCSTM M (CoreDDM.Expr M) := do
+  modify (·.addGlobalFreeVars #[name])
+  let ctx ← get
+  match ctx.freeVarIndex? name with
+  | some idx =>
+    let fnExpr := CoreDDM.Expr.fvar default idx
+    pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
+  | none =>
+    ToCSTM.logError "handleGenericFuncApp" "failed to register free var" name
+    pure (.btrue default)
+
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
@@ -422,9 +436,7 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv64.Extract_7_0" => pure (.bvextract_7_0_64 default arg)
   | "Bv64.Extract_15_0" => pure (.bvextract_15_0_64 default arg)
   | "Bv64.Extract_31_0" => pure (.bvextract_31_0_64 default arg)
-  | _ => do
-    ToCSTM.logError "handleUnaryOps" "unary op" name
-    pure (.not default arg)
+  | _ => handleGenericFuncApp name [arg]
 
 /-- Map from bitvector binary operation base names to DDM Expr constructors -/
 def bvBinaryOpMap {M} [Inhabited M] :
@@ -503,12 +515,10 @@ def handleBitvecBinaryOps {M} [Inhabited M] (name : String) (arg1 arg2 : CoreDDM
       | none => do
         ToCSTM.logError "handleBitvecBinaryOps" "invalid size format" (toString sizeNumStr)
         pure (.bvand default (.bv64 default) arg1 arg2) -- Default to bitwise AND
-    else do
-      ToCSTM.logError "handleBitvecBinaryOps" "not a bitvec operation" name
-      pure (.bvand default (.bv64 default) arg1 arg2) -- Default to bitwise AND
-  | _ => do
-    ToCSTM.logError "handleBitvecBinaryOps" "invalid operation format" name
-    pure (.bvand default (.bv64 default) arg1 arg2) -- Default to bitwise AND
+    else
+      handleGenericFuncApp name [arg1, arg2]
+  | _ =>
+    handleGenericFuncApp name [arg1, arg2]
 
 /-- Handle binary operations -/
 def handleBinaryOps {M} [Inhabited M] (name : String)
@@ -551,9 +561,7 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   -- Strings and regexes
   | "Str.Substr" => pure (.str_substr default arg1 arg2 arg3)
   | "Re.Loop" => pure (.re_loop default arg1 arg2 arg3)
-  | _ => do
-    ToCSTM.logError "handleTernaryOps" "ternary op not found" name
-    pure (.map_set default ty ty arg1 arg2 arg3)  -- Default to map update
+  | _ => handleGenericFuncApp name [arg1, arg2, arg3]
 
 def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
@@ -577,9 +585,7 @@ def lopToExpr {M} [Inhabited M]
     | [arg] => handleUnaryOps name arg
     | [arg1, arg2] => handleBinaryOps name arg1 arg2
     | [arg1, arg2, arg3] => handleTernaryOps name arg1 arg2 arg3
-    | _ => do
-      ToCSTM.logError "lopToExpr" "unknown operation" name
-      pure (.btrue default)  -- Default to true literal
+    | _ => handleGenericFuncApp name args
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
