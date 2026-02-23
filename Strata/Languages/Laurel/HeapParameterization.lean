@@ -7,7 +7,6 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Util.Tactics
 
 /-
@@ -330,14 +329,7 @@ where
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse env ·)
       return ⟨ .PrimitiveOp op args', md ⟩
-    | .New name =>
-        let freshVar ← freshVarName
-        let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
-        let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
-        let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
-        let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-        let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name ++ "_TypeTag") [])])
-        return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
+    | .New _ => return expr
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse env l) (← recurse env r), md ⟩
     | .AsType t ty =>
         let t' ← recurse env t valueUsed
@@ -463,18 +455,8 @@ def heapParameterization (program : Program) : Program :=
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
-  -- Collect composite type names and generate a TypeTag datatype
-  let compositeNames := program.types.filterMap fun td =>
-    match td with
-    | .Composite ct => some ct.name
-    | _ => none
-  let typeTagDatatype : TypeDefinition :=
-    .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := n ++ "_TypeTag", args := [] } }
-  -- Generate type hierarchy constants (ancestorsFor<Type>, ancestorsPerType)
-  let typeHierarchyConstants := generateTypeHierarchyDecls program.types
   { program with
     staticProcedures := procs',
-    types := program.types ++ [fieldDatatype, typeTagDatatype],
-    constants := program.constants ++ typeHierarchyConstants }
+    types := program.types ++ [fieldDatatype] }
 
 end Strata.Laurel

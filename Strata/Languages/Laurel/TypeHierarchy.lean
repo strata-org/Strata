@@ -186,4 +186,92 @@ def validateDiamondFieldAccesses (uri : Uri) (program : Program) : Array Diagnos
     acc ++ bodyErrors) []
   errors.toArray
 
+/--
+Lower `IsType target ty` to Laurel-level map lookups:
+  `select(select(ancestorsPerType(), Composite..typeTag(target)), TypeName_TypeTag())`
+-/
+def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
+  let typeName := match ty.val with
+    | .UserDefined name => name
+    | _ => panic! s!"IsType: expected UserDefined type"
+  let typeTag := mkMd (.StaticCall "Composite..typeTag" [target])
+  let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
+  let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
+  let typeConst := mkMd (.StaticCall (typeName ++ "_TypeTag") [])
+  ⟨.StaticCall "select" [innerMap, typeConst], md⟩
+
+/--
+Walk a StmtExpr AST and rewrite `IsType` nodes into Laurel-level map lookups.
+-/
+def rewriteTypeHierarchyExpr (expr : StmtExprMd) : StmtExprMd :=
+  match expr with
+  | ⟨ val, md ⟩ =>
+  match _h : expr.val with
+  | .IsType target ty => lowerIsType (rewriteTypeHierarchyExpr target) ty md
+  | .IfThenElse c t e =>
+      let e' := match e with | some x => some (rewriteTypeHierarchyExpr x) | none => none
+      ⟨.IfThenElse (rewriteTypeHierarchyExpr c) (rewriteTypeHierarchyExpr t) e', md⟩
+  | .Block stmts label => ⟨.Block (stmts.attach.map fun ⟨s, _⟩ => rewriteTypeHierarchyExpr s) label, md⟩
+  | .LocalVariable n ty i =>
+      let i' := match i with | some x => some (rewriteTypeHierarchyExpr x) | none => none
+      ⟨.LocalVariable n ty i', md⟩
+  | .While c invs d b =>
+      let d' := match d with | some x => some (rewriteTypeHierarchyExpr x) | none => none
+      ⟨.While (rewriteTypeHierarchyExpr c) (invs.attach.map fun ⟨inv, _⟩ => rewriteTypeHierarchyExpr inv) d' (rewriteTypeHierarchyExpr b), md⟩
+  | .Return v =>
+      let v' := match v with | some x => some (rewriteTypeHierarchyExpr x) | none => none
+      ⟨.Return v', md⟩
+  | .Assign targets v => ⟨.Assign (targets.attach.map fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t) (rewriteTypeHierarchyExpr v), md⟩
+  | .FieldSelect t f => ⟨.FieldSelect (rewriteTypeHierarchyExpr t) f, md⟩
+  | .PureFieldUpdate t f v => ⟨.PureFieldUpdate (rewriteTypeHierarchyExpr t) f (rewriteTypeHierarchyExpr v), md⟩
+  | .StaticCall callee args => ⟨.StaticCall callee (args.attach.map fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a), md⟩
+  | .PrimitiveOp op args => ⟨.PrimitiveOp op (args.attach.map fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a), md⟩
+  | .ReferenceEquals l r => ⟨.ReferenceEquals (rewriteTypeHierarchyExpr l) (rewriteTypeHierarchyExpr r), md⟩
+  | .AsType t ty => ⟨.AsType (rewriteTypeHierarchyExpr t) ty, md⟩
+  | .InstanceCall t callee args => ⟨.InstanceCall (rewriteTypeHierarchyExpr t) callee (args.attach.map fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a), md⟩
+  | .Forall n ty b => ⟨.Forall n ty (rewriteTypeHierarchyExpr b), md⟩
+  | .Exists n ty b => ⟨.Exists n ty (rewriteTypeHierarchyExpr b), md⟩
+  | .Assigned n => ⟨.Assigned (rewriteTypeHierarchyExpr n), md⟩
+  | .Old v => ⟨.Old (rewriteTypeHierarchyExpr v), md⟩
+  | .Fresh v => ⟨.Fresh (rewriteTypeHierarchyExpr v), md⟩
+  | .Assert c => ⟨.Assert (rewriteTypeHierarchyExpr c), md⟩
+  | .Assume c => ⟨.Assume (rewriteTypeHierarchyExpr c), md⟩
+  | .ProveBy v p => ⟨.ProveBy (rewriteTypeHierarchyExpr v) (rewriteTypeHierarchyExpr p), md⟩
+  | .ContractOf ty f => ⟨.ContractOf ty (rewriteTypeHierarchyExpr f), md⟩
+  | _ => expr
+  termination_by sizeOf expr
+  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+
+def rewriteTypeHierarchyProcedure (proc : Procedure) : Procedure :=
+  let precondition' := rewriteTypeHierarchyExpr proc.precondition
+  let body' := match proc.body with
+    | .Transparent b => .Transparent (rewriteTypeHierarchyExpr b)
+    | .Opaque postconds impl modif =>
+        .Opaque (postconds.map rewriteTypeHierarchyExpr)
+                (impl.map rewriteTypeHierarchyExpr)
+                (modif.map rewriteTypeHierarchyExpr)
+    | .Abstract postcond => .Abstract (rewriteTypeHierarchyExpr postcond)
+  { proc with precondition := precondition', body := body' }
+
+/--
+Type hierarchy transformation pass (Laurel → Laurel).
+
+1. Rewrites `IsType target ty` into `select(select(ancestorsPerType(), Composite..typeTag(target)), TypeName_TypeTag())`
+2. Generates the `TypeTag` datatype with one constructor per composite type
+3. Generates type hierarchy constants (`ancestorsFor<Type>`, `ancestorsPerType`)
+-/
+def typeHierarchyTransform (program : Program) : Program :=
+  let compositeNames := program.types.filterMap fun td =>
+    match td with
+    | .Composite ct => some ct.name
+    | _ => none
+  let typeTagDatatype : TypeDefinition :=
+    .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := n ++ "_TypeTag", args := [] } }
+  let typeHierarchyConstants := generateTypeHierarchyDecls program.types
+  let procs' := program.staticProcedures.map rewriteTypeHierarchyProcedure
+  { program with
+    staticProcedures := procs',
+    types := program.types ++ [typeTagDatatype],
+    constants := program.constants ++ typeHierarchyConstants }
+
 end Laurel

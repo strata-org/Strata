@@ -12,6 +12,7 @@ import Strata.Languages.Core.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.CorePrelude
@@ -149,22 +150,9 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
-  | .IsType target ty =>
-      -- `target is Type` translates to: ancestorsPerType[Composite..typeTag(target)][Type_TypeTag]
-      let targetExpr := translateExpr fieldNames env target boundVars
-      -- Extract the typeTag from the Composite: Composite..typeTag(target)
-      let getUserType := LExpr.mkApp () (.op () (Core.CoreIdent.unres "Composite..typeTag") none) [targetExpr]
-      -- Look up ancestorsPerType
-      let ancestorsPerType := LExpr.op () (Core.CoreIdent.unres "ancestorsPerType") none
-      -- Get the type name from the HighType
-      let typeName := match ty.val with
-        | .UserDefined name => name
-        | _ => panic! "IsType: expected UserDefined type, got {format ty.val}"
-      -- Build the TypeTag constant for the target type
-      let typeConst := LExpr.op () (Core.CoreIdent.unres (typeName ++ "_TypeTag")) none
-      -- ancestorsPerType[Composite..typeTag(target)][Type_TypeTag]
-      let innerMap := LExpr.mkApp () Core.mapSelectOp [ancestorsPerType, getUserType]
-      LExpr.mkApp () Core.mapSelectOp [innerMap, typeConst]
+  | .IsType _ _ =>
+      -- IsType should have been eliminated by the type hierarchy pass
+      panic! s!"IsType should have been eliminated by typeHierarchyTransform"
   | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
@@ -403,7 +391,6 @@ def isPureExpr(expr: StmtExprMd): Bool :=
   | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
   | .New _ => false
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
-  | .IsType t _ => isPureExpr t
   | .Block [single] _ => isPureExpr single
   | .Block _ _ => false
   | _ => panic s!"not implemented {Std.format expr.val}"
@@ -451,6 +438,7 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+  let program := typeHierarchyTransform program
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
