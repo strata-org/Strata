@@ -76,7 +76,7 @@ def readStrataText (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes 
   let inputContext := Strata.Parser.stringInputContext path contents
   let (header, errors, startPos) := Strata.Elab.elabHeader leanEnv inputContext
   if errors.size > 0 then
-    IO.eprintln (← mkErrorReport path errors)
+    throw (IO.userError (← mkErrorReport path errors))
   match header with
   | .program _ dialect =>
     let dialects ←
