@@ -43,13 +43,6 @@ def LMonoTy.toExpr (mty : LMonoTy) : MetaM Lean.Expr := do
     return mkApp2 (mkConst ``Map) a b
   | _ => throwError f!"[LMonoTy.toExpr] Unimplemented: {mty}"
 
-/--
-info: Lean.Expr.app (Lean.Expr.app (Lean.Expr.const `Map []) (Lean.Expr.const `Int [])) (Lean.Expr.const `Bool [])
--/
-#guard_msgs in
-open LTy.Syntax in
-#eval LMonoTy.toExpr mty[Map int bool]
-
 def toProp (e : Lean.Expr) : MetaM Lean.Expr := do
   let eType ← inferType e
   let eLvl ← getLevel eType
@@ -61,49 +54,39 @@ def toProp (e : Lean.Expr) : MetaM Lean.Expr := do
   else
     throwError f!"Cannot coerce to a Prop: {e}"
 
-def LExpr.const.toExpr (c : String) (mty : Option LMonoTy) : MetaM Lean.Expr := do
-  match mty with
-  | none => throwError f!"Cannot reflect an untyped constant: {c}!"
-  | some mty => match mty with
-    | LMonoTy.bool =>
-      match c with
-      | "true" => return (mkConst ``Bool.true)
-      | "false" => return (mkConst ``Bool.false)
-      | _ => throwError f!"Unexpected boolean: {c}"
-    | LMonoTy.int =>
-      if c.isInt then
-        return (mkIntLit c.toInt!)
-      else
-        throwError f!"Unexpected integer: {c}"
-    | LMonoTy.string =>
-      return (mkStrLit c)
-    | _ => throwError f!"Unexpected constant: {c}"
+def LExpr.const.toExpr (c : LConst) : MetaM Lean.Expr := do
+  match c with
+  | .boolConst .true => return (mkConst ``Bool.true)
+  | .boolConst .false => return (mkConst ``Bool.false)
+  | .intConst i => return (mkIntLit i)
+  | .strConst s => return (mkStrLit s)
+  | _ => throwError f!"Unexpected constant: {c}"
 
-def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
+abbrev MonoString: LExprParamsT := ⟨⟨Unit, String⟩, LMonoTy⟩
+
+def LExpr.toExprNoFVars (e : LExpr MonoString) : MetaM Lean.Expr := do
   match e with
-  | .const c mty =>
-    let expr ← LExpr.const.toExpr c mty
+  | .const _ c =>
+    let expr ← LExpr.const.toExpr c
     return expr
 
-  | .op _ _ =>
+  | .op _ _ _ =>
     throwError f!"[LExpr.toExprNoFVars] Operations not yet supported: {e}"
 
-  | .bvar i =>
+  | .bvar _ i =>
     let lctx ← getLCtx
     let some decl := lctx.getAt? (lctx.decls.size - i - 1) |
         throwError f!"[LExpr {e}]: No local declaration found in the context!"
     let expr := .fvar decl.fvarId
     return expr
 
-  | .fvar f _ =>
+  | .fvar _ f _ =>
     let lctx ← getLCtx
-    match lctx.findFromUserName? (Lean.Name.mkSimple f) with
+    match lctx.findFromUserName? (Lean.Name.mkSimple f.name) with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot find free var in the local context: {e}"
     | some decl => return decl.toExpr
 
-  | .mdata _ e' => LExpr.toExprNoFVars e'
-
-  | .abs mty e' =>
+  | .abs _ mty e' =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped abstraction!"
     | some ty => do
@@ -113,7 +96,7 @@ def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
         let bodyExpr ← LExpr.toExprNoFVars e'
         mkLambdaFVars #[x] bodyExpr
 
-  | .quant qk mty tr e =>
+  | .quant _ qk mty _ e =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped quantifier!"
     | some ty =>
@@ -130,12 +113,12 @@ def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
           let lambdaExpr ← mkLambdaFVars #[x] bodyExpr
           mkAppM ``Exists #[lambdaExpr]
 
-  | .app fn arg =>
+  | .app _ fn arg =>
     let fnExpr ← LExpr.toExprNoFVars fn
     let argExpr ← LExpr.toExprNoFVars arg
     mkAppM' fnExpr #[argExpr]
 
-  | .ite c t e =>
+  | .ite _ c t e =>
     -- Lean's ite:
     -- _root_.ite.{u} {α : Sort u} (c : Prop) [h : Decidable c] (t e : α) : α
     let cExpr ← LExpr.toExprNoFVars c
@@ -146,13 +129,13 @@ def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
     let cProp ← mkAppM ``Eq #[cExpr, mkConst ``Bool.true]
     mkAppM ``_root_.ite #[cProp, tExpr, eExpr]
 
-  | .eq e1 e2 =>
+  | .eq _ e1 e2 =>
     let e1Expr ← LExpr.toExprNoFVars e1
     let e2Expr ← LExpr.toExprNoFVars e2
     let expr ← mkAppM ``BEq.beq #[e1Expr, e2Expr]
     return expr
 
-def LExpr.toExpr (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
+def LExpr.toExpr (e : LExpr MonoString) : MetaM Lean.Expr := do
   let idTs := e.freeVars
   let decls : List (Name × (Array Lean.Expr → MetaM Lean.Expr)) ←
     idTs.mapM fun idT => do
@@ -160,7 +143,7 @@ def LExpr.toExpr (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
       | none => throwError f!"Untyped fvar encountered: {idT.fst}"
       | some ty =>
         -- let name ← Lean.Core.mkFreshUserName (Lean.Name.mkSimple idT.fst)
-        let name := Lean.Name.mkSimple idT.fst
+        let name := Lean.Name.mkSimple idT.fst.name
         return (name, fun _ => LMonoTy.toExpr ty)
   withLocalDeclsD decls.toArray fun fvars => do
     let e ← LExpr.toExprNoFVars e
@@ -172,87 +155,6 @@ def LExpr.toExpr (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
 section Tests
 
 open LTy.Syntax LExpr.Syntax
-
-def test1 : MetaM Lean.Expr :=
-  LExpr.toExpr
-    (.quant .all (some mty[int]) LExpr.noTrigger (.eq (.fvar "x" mty[int]) (.bvar 0)))
-
-/--
-info: Lean.Expr.forallE
-  `x
-  (Lean.Expr.const `Int [])
-  (Lean.Expr.forallE
-    (Lean.Name.mkNum `x._@.Strata.DL.Lambda.Reflect._hyg 1645)
-    (Lean.Expr.const `Int [])
-    (Lean.Expr.app
-      (Lean.Expr.app
-        (Lean.Expr.app (Lean.Expr.const `Eq [Lean.Level.succ (Lean.Level.zero)]) (Lean.Expr.const `Bool []))
-        (Lean.Expr.app
-          (Lean.Expr.app
-            (Lean.Expr.app
-              (Lean.Expr.app (Lean.Expr.const `BEq.beq [Lean.Level.zero]) (Lean.Expr.const `Int []))
-              (Lean.Expr.app
-                (Lean.Expr.app (Lean.Expr.const `instBEqOfDecidableEq [Lean.Level.zero]) (Lean.Expr.const `Int []))
-                (Lean.Expr.const `Int.instDecidableEq [])))
-            (Lean.Expr.bvar 1))
-          (Lean.Expr.bvar 0)))
-      (Lean.Expr.const `Bool.true []))
-    (Lean.BinderInfo.default))
-  (Lean.BinderInfo.default)
--/
-#guard_msgs in
-#eval test1
-
--- #eval show MetaM _ from do
---   ppExpr (← test1)
-
-elab "test1" : term => do
-  let result ← liftM test1
-  return result
-
-/-- info: ∀ (x x_1 : Int), (x == x_1) = true : Prop -/
-#guard_msgs in
-#check test1
-
-
-def test2 : MetaM Lean.Expr :=
-  LExpr.toExpr
-    (LExpr.app (.abs (some mty[bool]) (.bvar 0)) (.eq (.const "4" mty[int]) (.const "4" mty[int])))
-
-
-elab "test2" : term => do
-  let result ← liftM test2
-  return result
-
-/-- info: (fun x => x) (4 == 4) = true : Prop -/
-#guard_msgs in
-#check test2
-
-elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
-  let expr ← Term.elabTerm e none
-  let lexpr ← Lean.Meta.evalExpr (LExpr LMonoTy String) (mkApp (mkConst ``LExpr) (mkConst ``String)) expr
-  let result ← liftM (LExpr.toExpr lexpr)
-  return result
-
-/-- error: Cannot reflect an untyped constant: 5! -/
-#guard_msgs in
-#check elaborate_lexpr [@LExpr.const String "5" Option.none]
-
-/-- error: Cannot coerce to a Prop: OfNat.ofNat.{0} Int 5 (instOfNat 5) -/
-#guard_msgs in
-#check elaborate_lexpr [@LExpr.const String "5" (Option.some (LMonoTy.int))]
-
-/-- info: true -/
-#guard_msgs in
-#eval elaborate_lexpr [@LExpr.eq String
-                          (@LExpr.const String "5" (Option.some (LMonoTy.int)))
-                          (@LExpr.const String "5" (Option.some (LMonoTy.int)))]
-
-/-- info: ∀ (x : Int), (x == 5) = true : Prop -/
-#guard_msgs in
-#check elaborate_lexpr [@LExpr.eq String
-                          (@LExpr.fvar String "x" (Option.some (LMonoTy.int)))
-                          (@LExpr.const String "5" (Option.some (LMonoTy.int)))]
 
 end Tests
 

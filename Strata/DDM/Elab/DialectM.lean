@@ -3,16 +3,23 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab.Core
+public import Strata.DDM.AST
+public import Strata.DDM.Elab.Core
+
+import Std.Data.HashMap
+import all Strata.DDM.Util.Array
+import all Strata.DDM.Util.Fin
 
 set_option autoImplicit false
 
+public section
 namespace Strata
 
 namespace PreType
 
-/-
+/--
 Apply a function f over all bound variables in expression.
 
 Note this does not return variables referenced by .funMacro.
@@ -22,6 +29,7 @@ private def foldBoundTypeVars {α} (tp : PreType) (init : α) (f : α → Nat �
   | .ident _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
   | .fvar _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
   | .bvar _ i => f init i
+  | .tvar _ _ => init
   | .arrow _ a r => r.foldBoundTypeVars (a.foldBoundTypeVars init f) f
   | .funMacro _ _ r => r.foldBoundTypeVars init f
 
@@ -54,7 +62,7 @@ def isType {argc} (m : ArgDeclsMap argc) (lvl : Fin argc) := m.decls[lvl].val.ki
 def empty (capacity : Nat := 0) : ArgDeclsMap 0 := {
   argIndexMap := {},
   decls := .emptyWithCapacity capacity,
-  argIndexMapSize := rfl
+  argIndexMapSize := by simp
   mapIndicesValid := fun v p => by simp at p
 }
 
@@ -252,6 +260,71 @@ def elabMetadataName (loc : SourceRange) (mi : MaybeQualifiedIdent) : ElabM (Qua
       logError loc s!"{ident} is ambiguous; declared in {d} and {d_alt}"
     return ({ dialect := d, name := ident }, decl.val)
 
+/-- Translate a FunctionIterScope syntax tree to the AST type -/
+def translateFunctionIterScope (tree : Tree) : ElabM FunctionIterScope := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for FunctionIterScope"
+  match opInfo.op.name with
+  | q`Init.scopePerConstructor => return .perConstructor
+  | q`Init.scopePerField => return .perField
+  | name => panic! s!"Unknown FunctionIterScope: {name.fullName}"
+
+/-- Translate a NamePatternPart syntax tree to the AST type -/
+def translateNamePatternPart (tree : Tree) : ElabM NamePatternPart := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for NamePatternPart"
+  match opInfo.op.name with
+  | q`Init.patternLiteral =>
+    let .ofStrlitInfo strInfo := tree[0]!.info
+      | panic! "Expected string literal for pattern literal"
+    return .literal strInfo.val
+  | q`Init.patternDatatype => return .datatype
+  | q`Init.patternConstructor => return .constructor
+  | q`Init.patternField => return .field
+  | name => panic! s!"Unknown NamePatternPart: {name.fullName}"
+
+/-- Translate a NamePattern syntax tree (array of NamePatternPart) -/
+def translateNamePattern (tree : Tree) : ElabM (Array NamePatternPart) := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for NamePattern"
+  assert! opInfo.op.name == q`Init.namePatternMk
+  let some parts := tree[0]!.asCommaSepInfo?
+    | panic! "Expected comma-separated list for name pattern"
+  parts.mapM translateNamePatternPart
+
+/-- Translate a TypeRef syntax tree to the AST type -/
+def translateTypeRef (tree : Tree) : ElabM TypeRef := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for TypeRef"
+  match opInfo.op.name with
+  | q`Init.typeRefDatatype => return .datatype
+  | q`Init.typeRefFieldType => return .fieldType
+  | q`Init.typeRefBuiltin =>
+    let .ofStrlitInfo strInfo := tree[0]!.info
+      | panic! "Expected string literal for builtin type name"
+    return .builtin strInfo.val
+  | name => panic! s!"Unknown TypeRef: {name.fullName}"
+
+/-- Translate a TypeRefList syntax tree (array of TypeRef) -/
+def translateTypeRefList (tree : Tree) : ElabM (Array TypeRef) := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for TypeRefList"
+  assert! opInfo.op.name == q`Init.typeRefListMk
+  let some types := tree[0]!.asCommaSepInfo?
+    | panic! "Expected comma-separated list for type ref list"
+  types.mapM translateTypeRef
+
+/-- Translate a FunctionTemplate syntax tree to the AST type -/
+def translateFunctionTemplate (tree : Tree) : ElabM FunctionTemplate := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for FunctionTemplate"
+  assert! opInfo.op.name == q`Init.functionTemplateMk
+  let scope ← translateFunctionIterScope tree[0]!
+  let namePattern ← translateNamePattern tree[1]!
+  let paramTypes ← translateTypeRefList tree[2]!
+  let returnType ← translateTypeRef tree[3]!
+  return { scope, namePattern, paramTypes, returnType }
+
 partial def translateMetadataArg {argc} (args : ArgDeclsMap argc) (argName : String) (expected : MetadataArgType) (tree : Tree) : ElabM MetadataArg := do
   let .ofOperationInfo argInfo := tree.info
     | panic! "Expected an operator"
@@ -306,6 +379,14 @@ partial def translateMetadataArg {argc} (args : ArgDeclsMap argc) (argName : Str
       return .option none
     | _ =>
       logErrorMF argInfo.loc mf!"Expected {expected} value."
+      return default
+  | q`Init.MetadataArgFunctionTemplate =>
+    match expected with
+    | .functionTemplate =>
+      let template ← translateFunctionTemplate tree[0]!
+      return .functionTemplate template
+    | _ =>
+      logErrorMF argInfo.loc mf!"Expected {expected} value, got function template."
       return default
   | name =>
     panic! s!"Unknown metadata arg kind {name.fullName}"
@@ -399,6 +480,7 @@ partial def elabMetadataArgCatType (loc : SourceRange) (cat : SyntaxCat) : DeclM
   | q`Init.Option =>
     assert! cat.args.size = 1
     .opt <$> elabMetadataArgCatType loc cat.args[0]!
+  | q`Init.FunctionTemplate => pure .functionTemplate
   | c =>
     logErrorMF loc mf!"Unsupported metadata category {c}"
     pure default
@@ -453,21 +535,46 @@ def elabSyntaxDefAtom {argc} (argDecls : ArgDeclsMap argc) (defaultPrec : Nat) (
   | nm, _ =>
     return panic! s!"Syntax {nm.fullName} {children.size} {eformat info.op}"
 
+/-- Classify a single-token syntax for precedence handling.
+- `.ident`: single identifier reference (e.g., `=> v;`) — use passthrough
+- `.string`: single string literal (e.g., `=> "true";`) — use `maxPrec + 1`
+- `.standard`: anything else — use standard precedence -/
+private inductive SingleAtomKind | ident | string | standard
+
+private def classifySyntaxArgs (args : Array Tree) : SingleAtomKind :=
+  if h : args.size = 1 then
+    match args[0] with
+    | .node (.ofOperationInfo info) _ =>
+      match info.op.name with
+      | q`Init.syntaxAtomIdent => .ident
+      | q`Init.syntaxAtomString => .string
+      | _ => .standard
+    | _ => .standard
+  else .standard
+
 def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree) : ElabM SyntaxDef := do
   let (syntaxMetadata, success) ← runChecked <| translateOptMetadata! argDecls mdTree
   if !success then
     return default
 
-  let prec : Nat :=
-      match syntaxMetadata[q`StrataDDL.prec]? with
-      | some #[.num l] => l
-      | some _ => panic! "Unexpected precedence" -- FIXME
-      | none => maxPrec
   let op := tree.info.asOp!.op
 
   assert! tree.children.size = 1
   let .node (.ofSeqInfo _) args := tree[0]!
     | panic! s!"Expected many args"
+
+  -- Classify syntax before elaboration for precedence and passthrough decisions.
+  let singleAtomKind := classifySyntaxArgs args
+  let hasExplicitPrec := syntaxMetadata[q`StrataDDL.prec]?.isSome
+
+  let prec : Nat :=
+      match syntaxMetadata[q`StrataDDL.prec]? with
+      | some #[.num l] => l
+      | some _ => panic! "Unexpected precedence" -- FIXME
+      | none =>
+        match singleAtomKind with
+        | .string => maxPrec + 1
+        | _ => maxPrec
 
   let isLeftAssoc := q`StrataDDL.leftassoc ∈ syntaxMetadata
   let isRightAssoc := q`StrataDDL.rightassoc ∈ syntaxMetadata
@@ -501,19 +608,25 @@ def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree)
   if !success then
     return default
 
-  -- Check every argument is used.
+  -- Check every argument is used (including implicitly inferred type params).
   for i in Fin.range argDecls.decls.size do
     if i.val ∉ usedArgs then
       logError argDecls.decls[i].nameLoc s!"Argument is not elaborated."
       return default
 
-  return { atoms, prec }
+  -- Use passthrough for single-ident syntax without explicit precedence.
+  -- This runs after the argument-usage check so that polymorphic operators
+  -- with inferred type parameters are validated before simplification.
+  if !hasExplicitPrec && singleAtomKind matches .ident then
+    return .passthrough
+
+  return .std atoms prec
 
 structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/
   loadDialect : LoadDialectCallback
   inputContext : Parser.InputContext
-  stopPos : String.Pos
+  stopPos : String.Pos.Raw
 
 structure DialectState where
   loaded : LoadedDialects
@@ -597,7 +710,7 @@ def elabDialectImportCommand : DialectElab := fun tree => do
       let loadCallback ← (·.loadDialect) <$> read
       let r ← fun _ ref => do
         let loaded := (← ref.get).loaded
-        assert! "StrataDDL" ∈ loaded.dialects.map.keys
+        assert! "StrataDDL" ∈ loaded.dialects
         let (loaded, r) ← loadCallback loaded name
         ref.modify fun s => { s with loaded := loaded }
         pure r
@@ -737,7 +850,7 @@ def elabFnCommand : DialectElab := fun tree => do
   if !stxSuccess then
     return
 
-  let ident := { dialect := d.name, name }
+  let ident : QualifiedIdent := { dialect := d.name, name }
   match (←getDeclState).fixedParsers.opSyntaxParser q`Init.Expr ident argDecls opStx with
   | .error msg =>
     logErrorMF tree.info.loc msg
@@ -808,7 +921,7 @@ def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
     ]
 
 partial def runDialectCommand (leanEnv : Lean.Environment) : DialectM Bool := do
-  assert! "StrataDDL" ∈ (← get).loaded.dialects.map.keys
+  assert! "StrataDDL" ∈ (← get).loaded.dialects
   let (mtree, success) ← MonadLift.monadLift <| runChecked <| elabCommand leanEnv
   match mtree with
   | none =>

@@ -71,19 +71,27 @@ jobs:
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
       - name: Build and run StrataVerify
-        run: lake exe StrataVerify Examples/SimpleProc.boogie.st
+        run: lake exe StrataVerify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
       - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh        
-      - name: Verify examples
+        run: .github/scripts/testStrataCommand.sh
+      - name: Validate examples against expected output
+        working-directory: Examples
         shell: bash
-        run: |
-              find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
-                  source ~/.profile && lake exe StrataVerify "$file"
-              done
+        run: ./run_examples.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Build using pip
+        run: pip install .
+        working-directory: Tools/Python
+      - name: Run pyAnalyze tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: ./run_py_analyze.sh
 
   lint_checks:
     name: Run lint checks
@@ -104,33 +112,47 @@ jobs:
         run: .github/scripts/lintWhitespace.sh
       - name: Check for import Lean
         run: .github/scripts/checkLeanImport.sh
+      - name: Check Lean version consistncy
+        run: .github/scripts/check_lean_consistency.sh
 
   build_doc:
-    name: Build Documentation
+    name: Build documentation
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Build documetation package
+      - name: Build API documentation package
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: 'docs/api'
+      - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
-          lake-package-directory: 'docs/ddm'
-      - name: Build Documentation
-        run: lake exe docs 
-        working-directory: docs/ddm
+          lake-package-directory: 'docs/verso'
+      - name: Build documentation
+        run: ./generate.sh
+        working-directory: docs/verso
+      - name: Check for broken links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress --exclude-path '.*/find/.*' docs/verso/_out/
+          fail: true
 
   build_python:
-    name: Build and test Python package
+    name: Build and test Python
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      matrix:
+        python_version: [3.11, 3.12, 3.13, 3.14]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
+        python-version: ${{ matrix.python_version }}
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
@@ -140,6 +162,14 @@ jobs:
         auto-config: false
         build: true
         build-args: "strata:exe"
+    - name: Run PySpec test that may be skipped without Python
+      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest
     - name: Run test script
-      run: ./scripts/run_cpython_tests.sh
+      run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
+
+  cbmc:
+    needs: build_and_test_lean
+    permissions:
+      contents: read
+    uses: ./.github/workflows/cbmc.yml

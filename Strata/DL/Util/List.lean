@@ -411,4 +411,35 @@ theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List
       simp_all [dedup]
       omega
 
+theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
+  induction s1 generalizing s2 with
+  | nil => simp
+  | cons x t IH =>
+    simp only[List.length]
+    have xin: x ∈ s2 := by apply hsub; grind
+    rw[List.mem_iff_append] at xin
+    rcases xin with ⟨l1, ⟨l2, hs2⟩⟩; subst_vars
+    have hsub1: t ⊆ (l1 ++ l2) := by grind
+    grind
+
+
+/-- Deduplicates l and counts the number of occurrences for each element. -/
+def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=
+  l.dedup.map (λ x => (x, l.count x))
+
+theorem occurrences_len_eq_dedup {α} [DecidableEq α]:
+  ∀ (l : List α), l.dedup.length = l.occurrences.length := by
+  intros l
+  unfold occurrences
+  grind
+
+theorem occurrences_find {α} [DecidableEq α] (l : List α) (x : α)
+  (hx : x ∈ l)
+  : l.occurrences.find? (fun ⟨k, _⟩ => k == x) = .some (x, l.count x) := by
+  simp only [occurrences, find?_map, Option.map_eq_some_iff, Prod.mk.injEq]
+  have : x ∈ l.dedup := by induction l <;> grind [dedup]
+  generalize l.dedup = ld at *
+  induction ld <;> simp [List.find?, Function.comp_apply] <;>
+    (first | grind | split <;> grind)
+
 end List

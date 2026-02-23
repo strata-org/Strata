@@ -21,25 +21,26 @@ program ArithPrograms;
 
 /--
 info: Label: x_eq_1
+Property : assert
 Assumptions: ⏎
 Obligation: ($__x0 : Num) = 1
 Metadata: ⏎
 
-Wrote problem to vcs/x_eq_1.smt2.
 
 
 Obligation x_eq_1: could not be proved!
 
+Result: Obligation: x_eq_1
 Result: failed
-Counterexample: (($__x0, Num), 0)
+Counterexample: ($__x0, 0)
 ---
 info:
 Obligation: x_eq_1
 Result: failed
-Counterexample: (($__x0, Num), 0)
+Counterexample: ($__x0, 0)
 -/
 #guard_msgs in
-#eval Strata.ArithPrograms.verify "cvc5" testProgram1
+#eval Strata.ArithPrograms.verify testProgram1
 
 ---------------------------------------------------------------------
 
@@ -54,18 +55,18 @@ program ArithPrograms;
 
 /--
 info: Label: x_eq_y
+Property : assert
 Assumptions: ⏎
 Obligation: true
 Metadata: ⏎
 
-Wrote problem to vcs/x_eq_y.smt2.
 ---
 info:
 Obligation: x_eq_y
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.ArithPrograms.verify "cvc5" testProgram2
+#eval Strata.ArithPrograms.verify testProgram2
 
 ---------------------------------------------------------------------
 
@@ -80,17 +81,17 @@ program ArithPrograms;
 
 /--
 info: Label: double_x_lemma
+Property : assert
 Assumptions: ⏎
 Obligation: 2 × (init_x_0 : Num) = (init_x_0 : Num) + (init_x_0 : Num)
 Metadata: ⏎
 
-Wrote problem to vcs/double_x_lemma.smt2.
 ---
 info:
 Obligation: double_x_lemma
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.ArithPrograms.verify "cvc5" testProgram3
+#eval Strata.ArithPrograms.verify testProgram3
 
 ---------------------------------------------------------------------

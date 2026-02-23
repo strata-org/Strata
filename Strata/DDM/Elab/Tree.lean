@@ -3,11 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Format
+module
+
+public import Strata.DDM.AST
+public import Strata.DDM.Format
 set_option autoImplicit false
 
 open Lean (Syntax)
 
+public section
 namespace Strata.Elab
 
 /--
@@ -28,6 +32,11 @@ over the parameters.
 Variable belongs to the particular category below.
 -/
 | cat (k : SyntaxCat)
+/--
+Variable is a polymorphic type variable (for function type parameters).
+These are passed through to the dialect's typechecker for inference.
+-/
+| tvar (ann : SourceRange) (name : String)
 deriving Inhabited, Repr
 
 namespace BindingKind
@@ -36,21 +45,24 @@ instance : Coe TypeExpr BindingKind where
   coe tp := .expr tp
 
 def ofCat (c : SyntaxCat) : BindingKind :=
-  match c with
-  | .atom _ q`Init.Expr => panic! "Init.Expr may not appear as a category."
-  | .atom loc q`Init.Type => .type loc [] .none
-  | c => .cat c
+  match c.name with
+  | q`Init.Expr => panic! "Init.Expr may not appear as a category."
+  | q`Init.Type => .type c.ann [] .none
+  | _ => .cat c
 
 def categoryOf : BindingKind → SyntaxCat
 | .expr tp => .atom tp.ann q`Init.Expr
 | .type loc _ _ => .atom loc q`Init.Type
+| .tvar loc _ => .atom loc q`Init.Type
 | .cat c => c
 
 instance : ToStrataFormat BindingKind where
-  mformat
-  | .expr tp => mformat tp
-  | .type _ params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
-  | .cat c => mformat c
+  mformat bk := private
+    match bk with
+    | .expr tp => mformat tp
+    | .type _ params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
+    | .tvar _ name => mformat f!"tvar({name})"
+    | .cat c => mformat c
 
 end BindingKind
 
@@ -82,7 +94,7 @@ protected def isEmpty (b:Bindings) := b.toArray.isEmpty
 protected def size (b:Bindings) := b.toArray.size
 
 instance : GetElem Bindings Nat Binding (fun bs i => i < bs.size) where
-  getElem bindings idx p := bindings.toArray[idx]'p
+  getElem bindings idx p := bindings.toArray[idx]'(by exact p)
 
 protected def empty : Bindings where
   toArray := #[]
@@ -156,6 +168,15 @@ protected def pushBindings (tctx : TypingContext) (b : Bindings) : TypingContext
   b.toArray.foldl .push tctx
 
 /--
+Create a new TypingContext with a different GlobalContext but the same local
+bindings. Used for recursive datatype definitions where the datatype name needs to be added to the GlobalContext before parsing constructor field types.
+-/
+protected def withGlobalContext (tctx : TypingContext) (gctx : GlobalContext) : TypingContext where
+  globalContext := gctx
+  bindings := tctx.bindings
+  map := tctx.map
+
+/--
 This contains information about a bound or global variable.
 -/
 inductive VarBinding
@@ -216,31 +237,23 @@ structure TypeInfo extends ElabInfo where
   isInferred : Bool
 deriving Inhabited, Repr
 
-structure IdentInfo extends ElabInfo where
-  val : String
+structure ConstInfo (α : Type) extends ElabInfo where
+  val : α
 deriving Inhabited, Repr
 
-structure NumInfo extends ElabInfo where
-  val : Nat
-deriving Inhabited, Repr
+abbrev IdentInfo := ConstInfo String
 
-structure DecimalInfo extends ElabInfo where
-  val : Decimal
-deriving Inhabited, Repr
+abbrev NumInfo := ConstInfo Nat
 
-structure StrlitInfo extends ElabInfo where
-  val : String
-deriving Inhabited, Repr
+abbrev DecimalInfo := ConstInfo Decimal
+
+abbrev StrlitInfo := ConstInfo String
 
 structure OptionInfo extends ElabInfo where
   deriving Inhabited, Repr
 
 structure SeqInfo extends ElabInfo where
-  args : Array Arg
-  resultCtx : TypingContext
-deriving Inhabited, Repr
-
-structure CommaSepInfo extends ElabInfo where
+  sep : SepFormat
   args : Array Arg
   resultCtx : TypingContext
 deriving Inhabited, Repr
@@ -254,9 +267,9 @@ inductive Info
 | ofNumInfo (info : NumInfo)
 | ofDecimalInfo (info : DecimalInfo)
 | ofStrlitInfo (info : StrlitInfo)
+| ofBytesInfo (info : ConstInfo ByteArray)
 | ofOptionInfo (info : OptionInfo)
 | ofSeqInfo (info : SeqInfo)
-| ofCommaSepInfo (info : CommaSepInfo)
 deriving Inhabited, Repr
 
 namespace Info
@@ -287,9 +300,9 @@ def elabInfo (info : Info) : ElabInfo :=
   | .ofNumInfo info => info.toElabInfo
   | .ofDecimalInfo info => info.toElabInfo
   | .ofStrlitInfo info => info.toElabInfo
+  | .ofBytesInfo info => info.toElabInfo
   | .ofOptionInfo info => info.toElabInfo
   | .ofSeqInfo info => info.toElabInfo
-  | .ofCommaSepInfo info => info.toElabInfo
 
 def inputCtx (info : Info) : TypingContext := info.elabInfo.inputCtx
 
@@ -303,18 +316,18 @@ deriving Inhabited, Repr
 
 namespace Tree
 
-def info : Tree → Info
+@[expose] def info : Tree → Info
 | .node info _ => info
 
-def children : Tree → Array Tree
+@[expose] def children : Tree → Array Tree
 | .node _ c => c
 
 instance : GetElem Tree Nat Tree fun t i => i < t.children.size where
   getElem xs i h := xs.children[i]
 
 @[simp]
-theorem node_getElem (info : Info) (c : Array Tree) (i : Nat) (p : _) :
-  (node info c)[i]'p = c[i]'p := rfl
+theorem node_getElem (info : Info) (c : Array Tree) (i : Nat) (p : i < (node info c).children.size) :
+  (node info c)[i]'p = c[i]'(by apply p) := by rfl
 
 def arg : Tree → Arg
 | .node info children =>
@@ -327,6 +340,7 @@ def arg : Tree → Arg
   | .ofNumInfo info => .num info.loc info.val
   | .ofDecimalInfo info => .decimal info.loc info.val
   | .ofStrlitInfo info => .strlit info.loc info.val
+  | .ofBytesInfo info => .bytes info.loc info.val
   | .ofOptionInfo _ =>
     let r :=
       match children with
@@ -334,8 +348,7 @@ def arg : Tree → Arg
       | #[x] => some x.arg
       | _ => panic! "Unexpected option"
     .option info.loc r
-  | .ofSeqInfo info => .seq info.loc info.args
-  | .ofCommaSepInfo info => .commaSepList info.loc info.args
+  | .ofSeqInfo info => .seq info.loc info.sep info.args
 
 theorem sizeOf_children (t : Tree) (i : Nat) (p : i < t.children.size) : sizeOf t[i] < sizeOf t := by
   match t with
@@ -349,7 +362,7 @@ def resultContext (t : Tree) : TypingContext :=
   | .ofOperationInfo info => info.resultCtx
   | .ofCatInfo info => info.inputCtx
   | .ofExprInfo _ | .ofTypeInfo _ => t.info.inputCtx
-  | .ofIdentInfo _ | .ofNumInfo _ | .ofDecimalInfo _ | .ofStrlitInfo _ => t.info.inputCtx
+  | .ofIdentInfo _ | .ofNumInfo _ | .ofDecimalInfo _ | .ofStrlitInfo _ | .ofBytesInfo .. => t.info.inputCtx
   | .ofOptionInfo info =>
     if p : t.children.size > 0 then
       have q : sizeOf t[0] < sizeOf t := sizeOf_children _ _ _
@@ -357,7 +370,6 @@ def resultContext (t : Tree) : TypingContext :=
     else
       info.inputCtx
   | .ofSeqInfo info => info.resultCtx
-  | .ofCommaSepInfo info => info.resultCtx
 termination_by t
 
 def isSpecificOp (tree : Tree) (expected : QualifiedIdent) : Bool :=
@@ -371,14 +383,20 @@ def asOption? (t : Tree) : Option (Option Tree) :=
   | _ => none
 
 def asCommaSepInfo? (t : Tree) : Option (Array Tree) :=
-  if let .ofCommaSepInfo _ := t.info then
-    some t.children
+  if let .ofSeqInfo info := t.info then
+    if info.sep == .comma then
+      some t.children
+    else
+      none
   else
     none
 
 def asCommaSepInfo! (t : Tree) : Array Tree :=
-  if let .ofCommaSepInfo _ := t.info then
-    t.children
+  if let .ofSeqInfo info := t.info then
+    if info.sep == .comma then
+      t.children
+    else
+      panic! "Expected commaSepInfo"
   else
     panic! "Expected commaSepInfo"
 

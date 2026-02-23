@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
+public import Strata.DDM.Integration.Lean
+
+public section
 
 -- Minimal dialect to test dialects can be declared.
 #guard_msgs in
@@ -13,6 +16,8 @@ dialect Test;
 op assert : Command => "assert" ";";
 op decimal (v : Decimal) : Command => "decimal " v ";";
 op str (v : Str) : Command => "str " v ";\n";
+// Test whitepace only literals are counted correctly
+op ws (i : Num, j : Num) : Command => "ws " i " " j ";";
 #end
 
 def testProgram := #strata program Test; decimal 1e99; #end
@@ -21,7 +26,14 @@ def testProgram := #strata program Test; decimal 1e99; #end
 info: "program Test;\ndecimal 1e99;"
 -/
 #guard_msgs in
-#eval toString testProgram.format
+#eval toString testProgram
+
+/--
+info: program Test;
+ws 1 2;
+-/
+#guard_msgs in
+#eval IO.println #strata program Test; ws 1  2; #end
 
 /--
 error: P already declared.
@@ -115,3 +127,5 @@ program Test;
 str "\r\u20ac\u2022\x9d\n\t";
 str "\\n\"";
 #end
+
+end

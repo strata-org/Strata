@@ -170,7 +170,7 @@ instance : ToFormat (Cmds PureExpr × State) where
 /- Tests -/
 
 private def testProgram1 : Cmds PureExpr :=
-  [.init "x" .Num (.Num 0),
+  [.init "x" .Num (some (.Num 0)),
    .set "x" (.Plus (.Var "x" .none) (.Num 100)),
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
@@ -184,11 +184,12 @@ State:
 error: none
 warnings: []
 deferred: #[Label: x_value_eq
- Assumptions: ⏎
+ Property : assert
+ Assumptions: 
  Obligation: true
- Metadata: ⏎
+ Metadata: 
  ]
-pathConditions: ⏎
+pathConditions: 
 env: (x, (Num, 100))
 genNum: 0
 -/
@@ -197,25 +198,26 @@ genNum: 0
 
 
 private def testProgram2 : Cmds PureExpr :=
-  [.init "x" .Num (.Var "y" .none),
+  [.init "x" .Num (some (.Var "y" .none)),
    .havoc "x",
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
 /--
 info: Commands:
 init (x : Num) := y
-#[<var x: ($__x0 : Num)>] havoc x
+havoc x
 assert [x_value_eq] ($__x0 : Num) = 100
 
 State:
 error: none
 warnings: []
 deferred: #[Label: x_value_eq
- Assumptions: ⏎
+ Property : assert
+ Assumptions: 
  Obligation: ($__x0 : Num) = 100
- Metadata: ⏎
+ Metadata: 
  ]
-pathConditions: ⏎
+pathConditions: 
 env: (y, (Num, y)) (x, (Num, ($__x0 : Num)))
 genNum: 1
 -/

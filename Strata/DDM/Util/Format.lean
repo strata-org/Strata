@@ -3,12 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Util.String
+import all Strata.DDM.Util.String
 
 namespace Std.Format
 
-private def appendSpaces (s : String) (n : Nat) : String :=
+def appendSpaces (s : String) (n : Nat) : String :=
   n.fold (init := s) (fun _ _ u => u.push ' ')
 
 def sline (s : String) (indent : Nat) : String :=
@@ -77,3 +78,5 @@ def renderAux (a : Array Std.Format) : RenderM Unit :=
 /-- Alternative render format for string -/
 def render (fmt : Std.Format) : String :=
   renderAux #[fmt] 0 { soFar := "" } |>.snd |>.soFar
+
+end Std.Format

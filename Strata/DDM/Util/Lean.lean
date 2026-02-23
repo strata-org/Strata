@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Lean.Expr
 import Lean.Parser.Types
+import Lean.ResolveName
 
 open Lean Parser
 
@@ -13,9 +16,9 @@ namespace Lean
 /- Creates a local variable name from a string -/
 def mkLocalDeclId (name : String) : TSyntax `Lean.Parser.Command.declId :=
   let dName := .anonymous |>.str name
-  .mk (.ident .none name.toSubstring dName [])
+  .mk (.ident .none name.toRawSubstring dName [])
 
-partial def mkErrorMessage (c : InputContext) (pos : String.Pos) (stk : SyntaxStack) (e : Parser.Error) (isSilent : Bool := false) : Message := Id.run do
+partial def mkErrorMessage (c : InputContext) (pos : String.Pos.Raw) (stk : SyntaxStack) (e : Parser.Error) (isSilent : Bool := false) : Message := Id.run do
   let mut pos := pos
   let mut endPos? := none
   let mut e := e
@@ -42,12 +45,12 @@ partial def mkErrorMessage (c : InputContext) (pos : String.Pos) (stk : SyntaxSt
     data := toString e }
 where
   -- Error recovery might lead to there being some "junk" on the stack
-  lastTrailing (s : SyntaxStack) : Option Substring :=
+  lastTrailing (s : SyntaxStack) : Option Substring.Raw :=
     s.toSubarray.findSomeRevM? (m := Id) fun stx =>
       if let .original (trailing := trailing) .. := stx.getTailInfo then pure (some trailing)
         else none
 
-partial def mkStringMessage (c : InputContext) (pos : String.Pos) (msg : String) (isSilent : Bool := false) : Message :=
+def mkStringMessage (c : InputContext) (pos : String.Pos.Raw) (msg : String) (isSilent : Bool := false) : Message :=
   mkErrorMessage c pos SyntaxStack.empty { unexpected := msg } (isSilent := isSilent)
 
 instance : Quote Int where
@@ -55,16 +58,44 @@ instance : Quote Int where
   | Int.ofNat n => Syntax.mkCApp ``Int.ofNat #[quote n]
   | Int.negSucc n => Syntax.mkCApp ``Int.negSucc #[quote n]
 
+/- Returns an identifier from a string. -/
+def localIdent (name : String) : Ident :=
+  let dName := .anonymous |>.str name
+  .mk (.ident .none name.toRawSubstring dName [])
+
+/-- Create a canonical identifier. -/
+def mkCanIdent (src : Lean.Syntax) (val : Name) : Ident :=
+  mkIdentFrom src val true
+
+/--
+Create an identifier to a fully qualified Lean name
+-/
+def mkRootIdent (name : Name) : Ident :=
+  let rootName := `_root_ ++ name
+  .mk (.ident .none name.toString.toRawSubstring rootName [.decl name []])
+
+end Lean
+
+public section
+namespace Strata.Lean
+
+@[inline]
+def arrayToExpr (level : Level) (type : Expr) (a : Array Expr) : Expr :=
+  let init := mkApp2 (mkConst ``Array.mkEmpty [level]) type (toExpr a.size)
+  let pushFn := mkApp (mkConst ``Array.push [level]) type
+  a.foldl (init := init) (mkApp2 pushFn)
+
+def listToExpr (level : Level) (type : Lean.Expr) (es : List Lean.Expr) : Lean.Expr :=
+  let nilFn  := mkApp (mkConst ``List.nil [level]) type
+  let consFn := mkApp (mkConst ``List.cons [level]) type
+  es.foldr (init := nilFn) (mkApp2 consFn)
+
 @[inline]
 def optionToExpr (type : Lean.Expr) (a : Option Lean.Expr) : Lean.Expr :=
   match a with
   | none => mkApp (mkConst ``Option.none [levelZero]) type
   | some a => mkApp2 (mkConst ``Option.some [levelZero]) type a
 
-@[inline]
-def arrayToExpr (type : Lean.Expr) (a : Array Lean.Expr) : Lean.Expr :=
-  let init := mkApp2 (mkConst ``Array.mkEmpty [levelZero]) type (toExpr a.size)
-  let pushFn := mkApp (mkConst ``Array.push [levelZero]) type
-  a.foldl (init := init) (mkApp2 pushFn)
 
-end Lean
+end Strata.Lean
+end section

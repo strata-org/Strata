@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Test the #load_dialect command and also validate example dialects parse.
@@ -31,6 +32,14 @@ error: 1 error(s) in ../../Examples/dialects/Arith.dialect.st:
 
 namespace Bool
 #strata_gen Bool
+
+-- Test that boolLit has the expected signature
+/--
+info: Strata.Test.Bool.Expr.boolLit {α : Type} : α → (b : Ann _root_.Bool α) → Expr α
+-/
+#guard_msgs in
+#check Expr.boolLit
+
 end Bool
 
 #load_dialect "../../Examples/dialects/Arith.dialect.st"

@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core.Options
+
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Solver.lean)
@@ -47,14 +49,18 @@ namespace Solver
   arguments to that solver.
 -/
 def spawn (path : String) (args : Array String) : IO Solver := do
-  let proc ← IO.Process.spawn {
-    stdin  := .piped
-    stdout := .piped
-    stderr := .piped
-    cmd    := path
-    args   := args
-  }
-  return ⟨IO.FS.Stream.ofHandle proc.stdin, IO.FS.Stream.ofHandle proc.stdout⟩
+  try
+    let proc ← IO.Process.spawn {
+      stdin  := .piped
+      stdout := .piped
+      stderr := .piped
+      cmd    := path
+      args   := args
+    }
+    return ⟨IO.FS.Stream.ofHandle proc.stdin, IO.FS.Stream.ofHandle proc.stdout⟩
+  catch e =>
+    let suggestion := if path == defaultSolver || path.endsWith defaultSolver then s!" Ensure {defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
+    throw (IO.userError s!"could not execute external process '{path}'.{suggestion} Original error: {e}")
 
 /--
   Returns an instance of the solver that is backed by the executable
@@ -96,6 +102,9 @@ def setLogic (logic : String) : SolverM Unit :=
 def setOption (name value : String) : SolverM Unit :=
   emitln s!"(set-option :{name} {value})"
 
+def setInfo (name value : String) : SolverM Unit :=
+  emitln s!"(set-info :{name} {value})"
+
 def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "
   emitln s!"; {inline}"
@@ -131,6 +140,20 @@ def declareDatatype (id : String) (params : List String) (constructors : List St
   then emitln s!"(declare-datatype {id} ({cInline}))"
   else emitln s!"(declare-datatype {id} (par ({pInline}) ({cInline})))"
 
+/-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
+def declareDatatypes (dts : List (String × List String × List String)) : SolverM Unit := do
+  if dts.isEmpty then return
+  let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
+  let sortDeclStr := String.intercalate " " sortDecls
+  let bodies := dts.map fun (_, params, constrs) =>
+    let cInline := String.intercalate " " constrs
+    if params.isEmpty then s!"({cInline})"
+    else
+      let pInline := String.intercalate " " params
+      s!"(par ({pInline}) ({cInline}))"
+  let bodyStr := String.intercalate "\n  " bodies
+  emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
+
 private def readlnD (dflt : String) : SolverM String := do
   match (← read).smtLibOutput with
   | .some stdout => stdout.getLine
@@ -138,7 +161,7 @@ private def readlnD (dflt : String) : SolverM String := do
 
 def checkSat (vars : List String) : SolverM Decision := do
   emitln "(check-sat)"
-  let result := (← readlnD "unknown").trim
+  let result := (← readlnD "unknown").trimAscii.toString
   match result with
   | "sat"     =>
     if !vars.isEmpty then

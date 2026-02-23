@@ -6,6 +6,7 @@
 
 import Strata.Backends.CBMC.GOTO.Program
 import Strata.Backends.CBMC.Common
+import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Lean
@@ -54,7 +55,7 @@ def tyToJson (ty : Ty) : Json :=
   | _ => Json.mkObj [("id", "unknown")]
 
 /-- Convert `Expr` to JSON format -/
-partial def exprToJson (expr : Expr) : Json :=
+def exprToJson (expr : Expr) : Json :=
   let srcField := sourceLocationToJson expr.sourceLoc
   let exprObj := match expr.id with
     | .nullary (.symbol name) => mkSymbolWithSourceLocation name (tyToJson expr.type) expr.sourceLoc
@@ -118,6 +119,8 @@ partial def exprToJson (expr : Expr) : Json :=
       ]
     | _ => panic s!"[exprToJson] Unsupported expr: {format expr}"
   exprObj
+  termination_by (SizeOf.sizeOf expr)
+  decreasing_by all_goals (cases expr; term_by_mem)
 
 /-- Convert `Code` to Json -/
 def codeToJson (code : Code) : Json :=

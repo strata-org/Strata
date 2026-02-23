@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Python.PythonToBoogie
+import Strata.Languages.Python.PythonToCore
 import Strata.Languages.Python.PythonDialect
-import StrataTest.Internal.InternalBoogiePrelude
-import StrataTest.Internal.InternalFunctionSignatures
+import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.FunctionSignatures
+import Strata.Languages.Python.PythonToLaurel

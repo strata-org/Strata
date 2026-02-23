@@ -20,21 +20,21 @@ namespace Lambda
 open Std (ToFormat Format format)
 
 
+/-- Type identifiers. For now, these are just strings. -/
 abbrev TyIdentifier := String
 
 instance : Coe String TyIdentifier where
   coe := id
 
-/--
-Types in Lambda: these are mono-types. Note that all free type variables
-(`.ftvar`) are implicitly universally quantified.
--/
+/-- Monomorphic types in Lambda. Note that all free type variables (`.ftvar`)
+are implicitly universally quantified.  -/
 inductive LMonoTy : Type where
-  /-- Type variable. -/
+  /-- A type variable. -/
   | ftvar (name : TyIdentifier)
-  /-- Type constructor. -/
+  /-- A type constructor. -/
   | tcons (name : String) (args : List LMonoTy)
-  /-- Special support for bitvector types of every size. -/
+  /-- A bit vector type. This is a special case so that it can be parameterized
+  by a size. -/
   | bitvec (size : Nat)
   deriving Inhabited, Repr
 
@@ -86,6 +86,14 @@ def LMonoTy.mkArrow (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
     let mrest' := LMonoTy.mkArrow m mrest
     .arrow mty mrest'
 
+/--
+Create an iterated arrow type where `mty` is the return type
+-/
+def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
+  match mtys with
+  | [] => mty
+  | m :: mrest => .arrow m (LMonoTy.mkArrow' mty mrest)
+
 mutual
 def LMonoTy.destructArrow (mty : LMonoTy) : LMonoTys :=
   match mty with
@@ -106,10 +114,16 @@ theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
   (mty.destructArrow) ≠ [] := by
   unfold destructArrow; split <;> simp_all
 
+def LMonoTy.getArrowArgs (t: LMonoTy) : List LMonoTy :=
+  match t with
+  | .arrow t1 t2 => t1 :: t2.getArrowArgs
+  | _ => []
+
 /--
-Type schemes (poly-types) in Lambda.
+Polymorphic type schemes in Lambda.
 -/
 inductive LTy : Type where
+  /-- A type containing universally quantified type variables. -/
   | forAll (vars : List TyIdentifier) (ty : LMonoTy)
   deriving Inhabited, Repr
 
@@ -141,12 +155,14 @@ mutual
 /--
 Compute the size of `ty` as a tree.
 -/
+@[simp]
 def LMonoTy.size (ty : LMonoTy) : Nat :=
   match ty with
   | .ftvar _ => 1
   | .tcons _ args => 1 + LMonoTys.size args
   | .bitvec _ => 1
 
+@[simp]
 def LMonoTys.size (args : LMonoTys) : Nat :=
     match args with
     | [] => 0
@@ -158,6 +174,10 @@ theorem LMonoTy.size_gt_zero :
   induction ty <;>  simp_all [LMonoTy.size]
   unfold LMonoTys.size; split
   simp_all; omega
+
+theorem LMonoTy.size_lt_of_mem {ty: LMonoTy} {tys: LMonoTys} (h: ty ∈ tys):
+  ty.size <= tys.size := by
+  induction tys <;> simp only[LMonoTys.size]<;> grind
 
 /--
 Boolean equality for `LMonoTy`.
@@ -278,16 +298,6 @@ def LMonoTy.getTyConstructors (mty : LMonoTy) : List LMonoTy :=
   match mtys with
   | [] => [] | m :: mrest => LMonoTy.getTyConstructors m ++ go mrest
 
-/--
-info: [Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "_dummy0", Lambda.LMonoTy.ftvar "_dummy1"],
- Lambda.LMonoTy.tcons "bool" [],
- Lambda.LMonoTy.tcons "foo" [Lambda.LMonoTy.ftvar "_dummy0"],
- Lambda.LMonoTy.tcons "a" [Lambda.LMonoTy.ftvar "_dummy0", Lambda.LMonoTy.ftvar "_dummy1"]]
--/
-#guard_msgs in
-#eval LMonoTy.getTyConstructors
-        ((.tcons "arrow" [.tcons "bool" [], .tcons "foo" [.tcons "a" [.ftvar "b", .tcons "bool" []]]]))
-
 ---------------------------------------------------------------------
 
 /--
@@ -337,6 +347,14 @@ Obtain a mono-type from a type scheme `ty`.
 def LTy.toMonoType (ty : LTy) (h : LTy.isMonoType ty) : LMonoTy :=
   match ty with
   | .forAll _ lty => lty
+
+/--
+Optionally obtain a mono-type from a type scheme `ty`.
+-/
+def LTy.toMonoType? (ty : LTy) : Option LMonoTy :=
+  match ty with
+  | .forAll [] lty => .some lty
+  | _ => .none
 
 /--
 Unsafe coerce from a type scheme to a mono-type.
@@ -440,30 +458,6 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
 
 elab "mty[" ty:lmonoty "]" : term => elabLMonoTy ty
 
-/-- info: LMonoTy.tcons "list" [LMonoTy.tcons "int" []] : LMonoTy -/
-#guard_msgs in
-#check mty[list int]
-
-/-- info: LMonoTy.tcons "pair" [LMonoTy.tcons "int" [], LMonoTy.tcons "bool" []] : LMonoTy -/
-#guard_msgs in
-#check mty[pair int bool]
-
-/--
-info: LMonoTy.tcons "arrow"
-  [LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"],
-    LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]] : LMonoTy
--/
-#guard_msgs in
-#check mty[(Map %k %v) → %k → %v]
-
-/--
-info: LMonoTy.tcons "arrow"
-  [LMonoTy.ftvar "a",
-    LMonoTy.tcons "arrow" [LMonoTy.ftvar "b", LMonoTy.tcons "arrow" [LMonoTy.ftvar "c", LMonoTy.ftvar "d"]]] : LMonoTy
--/
-#guard_msgs in
-#check mty[%a → %b → %c → %d]
-
 declare_syntax_cat lty
 scoped syntax (lmonoty)* : lty
 scoped syntax "∀" (ident)* "." (lmonoty)* : lty
@@ -485,17 +479,6 @@ partial def elabLTy : Lean.Syntax → MetaM Expr
 
 elab "t[" lsch:lty "]" : term => elabLTy lsch
 
-/-- info: forAll ["α"] (LMonoTy.tcons "myType" [LMonoTy.ftvar "α"]) : LTy -/
-#guard_msgs in
-#check t[∀α. myType %α]
-
-/--
-info: forAll ["α"]
-  (LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "arrow" [LMonoTy.ftvar "α", LMonoTy.tcons "int" []]]) : LTy
--/
-#guard_msgs in
-#check t[∀α. %α → %α → int]
-
 end Syntax
 end LTy
 
@@ -516,19 +499,6 @@ def LTy.inputArity (ty : LTy) : Nat :=
   match ty with
   | .forAll _ mty => mty.inputArity
 
-/-- info: 3 -/
-#guard_msgs in
-#eval LTy.inputArity t[int → (int → (int → int))]
-/-- info: 2 -/
-#guard_msgs in
-#eval LTy.inputArity t[int → (int → int)]
-/-- info: 1 -/
-#guard_msgs in
-#eval LTy.inputArity t[∀a. (%a → int) → int]
-/-- info: 0 -/
-#guard_msgs in
-#eval LTy.inputArity t[∀a. pair %a bool]
-
 def LMonoTy.inputTypes (ty : LMonoTy) : List LMonoTy :=
   match ty with
   | .tcons "arrow" (a :: rest) => a :: go rest
@@ -537,22 +507,6 @@ def LMonoTy.inputTypes (ty : LMonoTy) : List LMonoTy :=
   match args with
   | [] => []
   | a :: arest => inputTypes a ++ go arest
-
-/-- info: [int, int, int] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[int → (int → (int → int))]
-/-- info: [int, bool] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[int → (bool → int)]
-/-- info: [int, bool, bit] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[int → (bool → (bit → nat))]
-/-- info: [(arrow int int)] -/
-#guard_msgs in
-#eval format $ LMonoTy.inputTypes mty[(int → int) → nat]
-/-- info: [] -/
-#guard_msgs in
-#eval LMonoTy.inputTypes mty[pair int bool]
 
 ---------------------------------------------------------------------
 

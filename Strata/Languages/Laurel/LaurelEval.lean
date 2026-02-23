@@ -29,6 +29,7 @@ inductive Value : Type where
   | VInt : Int → Value
   -- | VReal : Rat → Value -- Skipped for now, as Lean's Rat requires importing MathLib
   | VFloat64 : Float → Value
+  | VString : String → Value
   | VBoxed : TypedValue → Value
   | VObject : (type: Identifier) → (field: AssocList Identifier Value) → Value
   | VNull : Value
@@ -54,6 +55,10 @@ def Value.asInt! : Value → Int
 def Value.asFloat64! : Value → Float
   | VFloat64 f => f
   | _ => panic! "expected VFloat64"
+
+def Value.asString! : Value → String
+  | VString s => s
+  | _ => panic! "expected VString"
 
 def Value.asBoxed! : Value → TypedValue
   | VBoxed tv => tv
@@ -170,6 +175,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
 -- Expressions
   | StmtExpr.LiteralBool b => pure <| TypedValue.mk (Value.VBool b) HighType.TBool
   | StmtExpr.LiteralInt i => pure <| TypedValue.mk (Value.VInt i) HighType.TInt
+  | StmtExpr.LiteralString s => pure <| TypedValue.mk (Value.VString s) HighType.TString
   | StmtExpr.Identifier name => getLocal name
 
   | StmtExpr.IfThenElse condExpr thenBranch elseBranch => do
@@ -220,7 +226,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
                 withResult <| EvalResult.TypeError s!"Static invocation of {callee} with wrong return type"
               else
                 pure transparantResult
-            | Body.Opaque (postcondition: StmtExpr) _ => panic! "not implemented: opaque body"
+            | Body.Opaque (postcondition: StmtExpr) _ _ => panic! "not implemented: opaque body"
             | Body.Abstract (postcondition: StmtExpr) => panic! "not implemented: opaque body"
           popStack
           pure result
@@ -246,20 +252,20 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
     let tv ← eval valExpr
     withResult (EvalResult.Return tv.val)
   | StmtExpr.Return none => fun env => (EvalResult.Success { val := Value.VVoid, ty := env.returnType }, env)
-  | StmtExpr.While _ none _ _  => withResult <| EvalResult.TypeError "While invariant was not derived"
+  | StmtExpr.While _ [] none _  => withResult <| EvalResult.TypeError "While invariant was not derived"
   | StmtExpr.While _ _ none _  => withResult <| EvalResult.TypeError "While decreases was not derived"
-  | StmtExpr.While condExpr (some invariantExpr) (some decreasedExpr) bodyExpr => do
+  | StmtExpr.While condExpr invariantExprs (some decreasedExpr) bodyExpr => do
     let rec loop : Eval TypedValue := do
       let cond ← eval condExpr
       if (cond.ty.isBool) then
         withResult <| EvalResult.TypeError "Condition must be boolean"
       else if cond.val.asBool! then
-        let invariant ← eval invariantExpr
-        if (invariant.ty.isBool) then
-          withResult <| EvalResult.TypeError "Invariant must be boolean"
-        else if (!invariant.val.asBool!) then
-          withResult <| EvalResult.VerficationError VerificationErrorType.InvariantFailed "While invariant does not hold"
-        else
+        for invariantExpr in invariantExprs do
+          let invariant ← eval invariantExpr
+          if (invariant.ty.isBool) then
+            withResult <| EvalResult.TypeError "Invariant must be boolean"
+          else if (!invariant.val.asBool!) then
+            withResult <| EvalResult.VerficationError VerificationErrorType.InvariantFailed "While invariant does not hold"
         -- TODO handle decreases
           fun env => match eval bodyExpr env with
             | (EvalResult.Success _, env') => loop env'

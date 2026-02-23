@@ -34,23 +34,24 @@ match s with
   let l ← StringGenState.gen "l"
   -- TODO: this introduces a separate block for every command
   pure (l, [detCmdBlock l c k])
-| .block l ⟨ bss ⟩  _md => do
+| .funcDecl _ _ => pure (k, []) -- TODO: not yet supported
+| .block l bss  _md => do
   let (bl, bbs) ← stmtsToBlocks k bss
   -- TODO: this introduces another unnecessary block
   let b := { label := l, cmds := [], transfer := .goto bl }
   pure (l, b :: bbs)
-| .ite c ⟨ tss ⟩ ⟨ fss ⟩ _md => do
+| .ite c tss fss _md => do
   let l ← StringGenState.gen "ite"
   let (tl, tbs) ← stmtsToBlocks k tss
   let (fl, fbs) ← stmtsToBlocks k fss
   let b := { label := l, cmds := [], transfer := .cgoto c tl fl }
   pure (l, [b] ++ tbs ++ fbs)
-| .loop c _m i? ⟨ bss ⟩ _md => do
+| .loop c _m i? bss _md => do
   let lentry ← StringGenState.gen "loop_entry"
   let (bl, bbs) ← stmtsToBlocks lentry bss
   let cmds : List CmdT :=
     match i? with
-    | .some i => [HasPassiveCmds.assert "inv" i]
+    | .some i => [HasPassiveCmds.assert "inv" i MetaData.empty]
     | .none => []
   let b := { label := lentry, cmds := cmds, transfer := .cgoto c bl k }
   pure (lentry, [b] ++ bbs)

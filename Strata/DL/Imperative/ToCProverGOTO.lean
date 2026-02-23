@@ -41,7 +41,7 @@ Convert an `Imperative` command to one or more `CProverGOTO.Instruction`s.
 field of the Imperative command. For now, we just populate source location's
 "comment" field with assertion/assumption names.
 -/
-def Cmd.toGotoInstructions {P} [G: ToGoto P]
+def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     (T : P.TyEnv) (functionName : String) (c : Cmd P) (trans : GotoTransform P.TyEnv) :
     Except Format (GotoTransform P.TyEnv) := do
   match c with
@@ -55,15 +55,23 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P]
       { type := .DECL, locationNum := trans.nextLoc,
         sourceLoc := { SourceLocation.nil with function := functionName },
         code := Code.decl v_expr }
-    let e_expr ← G.toGotoExpr e
-    let assign_inst :=
-      { type := .ASSIGN, locationNum := (trans.nextLoc + 1),
-        sourceLoc := { SourceLocation.nil with function := functionName },
-        code := Code.assign v_expr e_expr }
-    return { trans with
-              instructions := trans.instructions.append #[decl_inst, assign_inst],
-              nextLoc := trans.nextLoc + 2,
-              T := T }
+    match e with
+    | some expr =>
+      let e_expr ← G.toGotoExpr expr
+      let assign_inst :=
+        { type := .ASSIGN, locationNum := (trans.nextLoc + 1),
+          sourceLoc := { SourceLocation.nil with function := functionName },
+          code := Code.assign v_expr e_expr }
+      return { trans with
+                instructions := trans.instructions.append #[decl_inst, assign_inst],
+                nextLoc := trans.nextLoc + 2,
+                T := T }
+    | none =>
+      -- Init without expression - just declare
+      return { trans with
+                instructions := trans.instructions.append #[decl_inst],
+                nextLoc := trans.nextLoc + 1,
+                T := T }
   | .set v e _md =>
     let gty ← G.lookupType T v
     let v_expr := Expr.symbol (G.identToString v) gty
@@ -114,10 +122,13 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P]
               instructions := trans.instructions.push assign_inst,
               nextLoc := trans.nextLoc + 1,
               T := T }
+  | .cover name _b md =>
+    .error s!"{MetaData.formatFileRangeD md} [cover {name}]\
+               Unimplemented command."
 
 open CProverGOTO in
-def Cmds.toGotoTransform {P} [G: ToGoto P] (T : P.TyEnv)
-    (functionName : String) (cs : Cmds P) (loc : Nat := 0) :
+def Cmds.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident]
+    (T : P.TyEnv) (functionName : String) (cs : Cmds P) (loc : Nat := 0) :
     Except Format (GotoTransform P.TyEnv) := do
   let rec go (trans : GotoTransform P.TyEnv) (cs' : List (Cmd P)) :
       Except Format (GotoTransform P.TyEnv) :=

@@ -4,24 +4,37 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
+import Strata.DL.Util.Func
 
 namespace Imperative
+
+open Strata.DL.Util (Func)
 
 /--
 Expected interface for pure expressions that can be used to specialize the
 Imperative dialect.
 -/
 structure PureExpr : Type 1 where
+  /-- Kinds of identifiers allowed in expressions. We expect identifiers to have
+   decidable equality; see `EqIdent`. -/
   Ident   : Type
+  EqIdent : DecidableEq Ident
+  /-- Expressions -/
   Expr    : Type
+  /-- Types -/
   Ty      : Type
-  /-- Typing environment -/
+  /-- Expression metadata type (for use in function declarations, etc.) -/
+  ExprMetadata : Type
+  /-- Typing environment, expected to contain a map of variables to their types,
+  type substitution, etc.
+  -/
   TyEnv   : Type
+  /-- Typing context, expected to contain information that does not change
+    during type checking/inference (e.g., known types and known functions.)
+  -/
   TyContext : Type
   /-- Evaluation environment -/
   EvalEnv : Type
-  EqIdent : DecidableEq Ident
 
 abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
 abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
@@ -53,5 +66,21 @@ class HasVal (P : PureExpr) where
 
 class HasBoolVal (P : PureExpr) [HasBool P] [HasVal P] where
   bool_is_val : (@HasVal.value P) HasBool.tt ∧ (@HasVal.value P) HasBool.ff
+
+/-- Substitution of free variables in expressions.
+    Used for closure capture in function declarations. -/
+class HasSubstFvar (P : PureExpr) where
+  /-- Substitute a single free variable with an expression -/
+  substFvar : P.Expr → P.Ident → P.Expr → P.Expr
+
+/-- Substitute multiple free variables with expressions -/
+def HasSubstFvar.substFvars [HasSubstFvar P] (e : P.Expr) (substs : List (P.Ident × P.Expr)) : P.Expr :=
+  substs.foldl (fun e (id, val) => HasSubstFvar.substFvar e id val) e
+
+/--
+A function declaration for use with `PureExpr` - instantiation of `Func` for
+any expression system that implements the `PureExpr` interface.
+-/
+abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
 
 end Imperative

@@ -11,48 +11,58 @@ import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
+open Strata (DiagnosticModel FileRange)
 
 ---------------------------------------------------------------------
 
 /--
 Type checker for an Imperative Command.
--/
-def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T]
-    (ctx: C) (τ : T) (c : Cmd P) : Except Format (Cmd P × T) := do
 
-  match c with
+The `TypeError` parameter for the `TypeContext` instance `TC` is `DiagnosticModel`.
+-/
+def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
+    [DecidableEq P.Ident] [TC : TypeContext P C T DiagnosticModel]
+    (ctx: C) (τ : T) (c : Cmd P) : Except DiagnosticModel (Cmd P × T) := do
+
+  try match c with
 
   | .init x xty e md =>
     match TC.lookup τ x with
     | none =>
-      if x ∈ TC.freeVars e then
-        .error f!"Type Checking [{c}]: \
-                  Variable {x} cannot appear in its own initialization expression!"
-      else
+      match e with
+      | some expr =>
+        if x ∈ TC.freeVars expr then
+          .error <| md.toDiagnosticF f!"Variable {x} cannot appear in its own initialization expression!"
+        else
+          let (xty, τ) ← TC.preprocess ctx τ xty
+          let (expr, ety, τ) ← TC.inferType ctx τ c expr
+          let τ ← TC.unifyTypes τ [(xty, ety)]
+          let (xty, τ) ← TC.postprocess ctx τ xty
+          let τ := TC.update τ x xty
+          let c := Cmd.init x xty (some expr) md
+          .ok (c, τ)
+      | none =>
         let (xty, τ) ← TC.preprocess ctx τ xty
-        let (e, ety, τ) ← TC.inferType ctx τ c e
-        let τ ← TC.unifyTypes τ [(xty, ety)]
         let (xty, τ) ← TC.postprocess ctx τ xty
         let τ := TC.update τ x xty
-        let c := Cmd.init x xty e md
+        let c := Cmd.init x xty none md
         .ok (c, τ)
     | some xty =>
-      .error f!"Type Checking [{c}]: Variable {x} of type {xty} already in context."
+      .error <| md.toDiagnosticF f!"Variable {x} of type {xty} already in context."
 
   | .set x e md =>
     match TC.lookup τ x with
-    | none => .error f!"Type Checking [{c}]: Cannot set undefined variable {x}."
+    | none => .error <| md.toDiagnosticF f!"Cannot set undeclared variable {x}."
     | some xty =>
       let (e, ety, τ) ← TC.inferType ctx τ c e
       let τ ← TC.unifyTypes τ [(xty, ety)]
       let c := Cmd.set x e md
       .ok (c, τ)
 
-  | .havoc x _md =>
+  | .havoc x md =>
     match TC.lookup τ x with
     | some _ => .ok (c, τ)
-    | none => .error f!"Type Checking [{c}]: Cannot havoc undefined variable {x}."
+    | none => .error <| md.toDiagnosticF f!"Cannot havoc undeclared variable {x}."
 
   | .assert label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -60,8 +70,8 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
        let c := Cmd.assert label e md
        .ok (c, τ)
     else
-      .error f!"Type Checking [assert {label}]: \
-                Assertion expected to be of type boolean, but inferred type is {ety}."
+      .error <| md.toDiagnosticF f!"Assertion {label} expected to be of type boolean, \
+                but inferred type is {ety}."
 
   | .assume label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -69,15 +79,28 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
        let c := Cmd.assume label e md
        .ok (c, τ)
     else
-      .error f!"Type Checking [assume {label}]: \
-                Assumption expected to be of type boolean, but inferred type is {ety}."
+      .error <| md.toDiagnosticF f!"Assumption {label} expected to be of type boolean, \
+                but inferred type is {ety}."
+
+  | .cover label e md =>
+    let (e, ety, τ) ← TC.inferType ctx τ c e
+    if TC.isBoolType ety then
+       let c := Cmd.cover label e md
+       .ok (c, τ)
+    else
+      .error <| md.toDiagnosticF f!"Cover {label} expected to be of type boolean, \
+                but inferred type is {ety}."
+
+  catch e =>
+    -- Add source location to error messages if not already present.
+    .error <| e.withRangeIfUnknown (getFileRange c.getMetaData |>.getD FileRange.unknown)
 
 /--
 Type checker for Imperative's Commands.
 -/
 def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T]
-    (ctx: C) (τ : T) (cs : Cmds P) : Except Format (Cmds P × T) := do
+    [DecidableEq P.Ident] [TC : TypeContext P C T DiagnosticModel]
+    (ctx: C) (τ : T) (cs : Cmds P) : Except DiagnosticModel (Cmds P × T) := do
   match cs with
   | [] => .ok ([], τ)
   | c :: crest =>

@@ -6,6 +6,7 @@
 
 import Strata.Backends.CBMC.GOTO.Expr
 import Strata.Backends.CBMC.GOTO.SourceLocation
+import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
@@ -124,11 +125,13 @@ structure Code where
   statements : List Code := []
   deriving Repr, Inhabited
 
-partial def Code.beq (x y : Code) : Bool :=
+def Code.beq (x y : Code) : Bool :=
   x.id == y.id && x.sourceLoc == y.sourceLoc &&
   x.namedFields == y.namedFields &&
   goExpr x.operands y.operands &&
   goCode x.statements y.statements
+  termination_by (SizeOf.sizeOf x)
+  decreasing_by cases x; term_by_mem
   where
     goExpr xs ys :=
       match xs, ys with
@@ -142,11 +145,12 @@ partial def Code.beq (x y : Code) : Bool :=
       | _, [] | [], _ => false
       | x :: xrest, y :: yrest =>
         Code.beq x y && goCode xrest yrest
+    termination_by (SizeOf.sizeOf xs)
 
 instance : BEq Code where
   beq := Code.beq
 
-partial def formatCode (c : Code) : Format :=
+def formatCode (c : Code) : Format :=
   let operands := c.operands.map (fun o => format o)
   let operands := Format.joinSep operands " "
   let statements := c.statements.map (fun s => formatCode s)
@@ -161,6 +165,8 @@ partial def formatCode (c : Code) : Format :=
     base
   else
     f!"{base} {statements}"
+  termination_by (SizeOf.sizeOf c)
+  decreasing_by cases c; term_by_mem
 
 instance : ToFormat Code where
   format c := formatCode c

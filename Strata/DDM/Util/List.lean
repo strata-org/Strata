@@ -3,6 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+set_option autoImplicit false
 
 namespace List
 
@@ -21,7 +23,7 @@ theorem sizeOf_append {α} [SizeOf α] (k l : List α) :
     have p := sizeOf_pos l
     decreasing_tactic
 
-/-
+/--
 This is similiar to `Array.sizeOf_lt_of_mem`, but stren
 -/
 theorem sizeOf_lt_of_mem_strict {α} [inst : SizeOf α] {as : List α} {a} (h : a ∈ as) : sizeOf a + 2 ≤ sizeOf as := by
@@ -32,7 +34,7 @@ theorem sizeOf_lt_of_mem_strict {α} [inst : SizeOf α] {as : List α} {a} (h : 
   | tail _ _ ih => exact Nat.lt_trans ih (by simp +arith)
 
 @[simp]
-theorem sizeOf_set [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
+theorem sizeOf_set {α} [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
     sizeOf (as.set i v) =
       if p : i < as.length then
         sizeOf as + sizeOf v - sizeOf as[i]

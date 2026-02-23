@@ -1,0 +1,10 @@
+Successfully parsed.
+ [entry_invariant]: ✅ pass
+ [assert_measure_pos]: ✅ pass
+ [measure_decreases]: ✅ pass
+ [measure_imp_not_guard]: ✅ pass
+ [arbitrary_iter_maintain_invariant]: ✅ pass
+ [sum_assert]: ✅ pass
+ [neg_cond]: ✅ pass
+ [post]: ✅ pass
+All 8 goals passed.

@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Ion
+import all Strata.DDM.Ion
 import Strata.DDM.BuiltinDialects.StrataDDL
 import Strata.DDM.Integration.Lean
+import StrataTest.DDM.DeclareFn
+meta import StrataTest.DDM.DeclareFn
 
 namespace Strata
 
@@ -21,29 +24,22 @@ def testRoundTrip {α} [FromIon α] [BEq α] [Inhabited α] (toF : α → ByteAr
 def testDialectRoundTrip (d : Dialect) : Bool :=
   testRoundTrip Dialect.toIon d
 
-#dialect
-dialect Bool;
-// Introduce Boolean type
-type Bool;
+/-- Test that a `Program` can round-trip through Ion
+serialization without losing commands. -/
+private def testProgramRoundTrip (p : Program) : Bool :=
+  let bs := p.toIon
+  match Program.fromIon p.dialects p.dialect bs with
+  | .error msg => @panic _ ⟨false⟩ msg
+  | .ok res  => res.commands.size == p.commands.size
 
-// Introduce literals as constants.
-fn true_lit : Bool => "true";
-fn false_lit : Bool => "false";
-
-// Introduce basic Boolean operations.
-fn not_expr (tp : Type) : tp => tp;
-fn and (a : Bool, b : Bool) : Bool => @[prec(10), leftassoc] a " && " b;
-fn or (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " || " b;
-fn imp (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " ==> " b;
-
-// Introduce equality operations that work for arbitrary types.
-// The type is inferred.
-fn equal (tp : Type, a : tp, b : tp) : Bool => @[prec(15)] a " == " b;
-fn not_equal (tp : Type, a : tp, b : tp) : Bool => @[prec(15)] a " != " b;
-#end
+-- Load the actual Bool dialect from Examples
+#load_dialect "../../Examples/dialects/Bool.dialect.st"
 
 #guard testDialectRoundTrip Bool
 
 -- Test we can serialize/deserialize dialect
 #guard testDialectRoundTrip initDialect
 #guard testDialectRoundTrip StrataDDL
+
+-- Test we can serialize/deserialize programs with expressions
+#guard testProgramRoundTrip testDeclareFnPgm

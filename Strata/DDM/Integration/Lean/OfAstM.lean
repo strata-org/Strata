@@ -3,16 +3,24 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+public import Strata.DDM.AST
 
-import Strata.DDM.AST
+/-!
+Runtime support for converting AST representations back to generated types.
+Defines the `OfAstM` error monad and argument-parsing combinators used by
+the `ofAst` functions that `#strata_gen` emits.
+-/
 
+public section
 namespace Strata
 
 class HasEta (α : Type u) (β : outParam (Type v)) where
   bvar : Nat → α
   lambda : String → β → α → α
 
-def etaExpand {E T} [HasEta E T] (argTypes : Array (String × T)) (provided : Nat) (e : E) : E :=
+def etaExpand {E T} [HasEta E T]
+    (argTypes : Array (String × T)) (provided : Nat) (e : E) : E :=
   if argTypesP  : provided < argTypes.size then
     let b := argTypes[argTypes.size - 1]
     let e := HasEta.lambda b.fst b.snd e
@@ -20,16 +28,16 @@ def etaExpand {E T} [HasEta E T] (argTypes : Array (String × T)) (provided : Na
   else
     e
 
-def OfAstM (α : Type _) := Except String α
+@[expose] def OfAstM (α : Type _) := Except String α
 
-instance [ToString α] : ToString (OfAstM α) where
-  toString e :=
+instance {α} [ToString α] : ToString (OfAstM α) where
+  toString e := private
     match e with
     | .error e => e
     | .ok r => toString r
 
-instance [Repr α] : Repr (OfAstM α) where
-  reprPrec e prec :=
+instance {α} [Repr α] : Repr (OfAstM α) where
+  reprPrec e prec := private
     match e with
     | .error e => Repr.addAppParen ("error " ++ reprArg e) prec
     | .ok r => Repr.addAppParen ("ok " ++ reprArg r) prec
@@ -108,8 +116,10 @@ protected def checkEtaExprArgCount
   else
     .throwUnexpectedArgCount tp expected.size args.size
 
-def ofExpressionM {α β} [Repr α] [SizeOf α] (val : ArgF α) (act : ∀(e : ExprF α), sizeOf e < sizeOf val → OfAstM β)
-  : OfAstM β :=
+def ofExpressionM {α β} [Repr α] [SizeOf α]
+    (val : ArgF α)
+    (act : ∀(e : ExprF α), sizeOf e < sizeOf val → OfAstM β)
+    : OfAstM β :=
   match val with
   | .expr a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "expression" a
@@ -130,22 +140,76 @@ def ofOperationM {α β} [Repr α] [SizeOf α]
   | .op a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "operation" a
 
-def ofIdentM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
+def ofIdentM {α} [Repr α] : ArgF α → OfAstM String
+| .ident _ val => pure val
+| a => .throwExpected "identifier" a
+
+def ofAnnIdentM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
 | .ident ann val => pure { ann := ann, val := val }
 | a => .throwExpected "identifier" a
 
-def ofNumM {α} [Repr α] : ArgF α → OfAstM (Ann Nat α)
+def ofNumM {α} [Repr α] : ArgF α → OfAstM Nat
+| .num _ val => pure val
+| a => .throwExpected "numeric literal" a
+
+def ofAnnNumM {α} [Repr α] : ArgF α → OfAstM (Ann Nat α)
 | .num ann val => pure { ann := ann, val := val }
 | a => .throwExpected "numeric literal" a
 
-def ofDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
+def ofDecimalM {α} [Repr α] : ArgF α → OfAstM Decimal
+| .decimal _ val => pure val
+| a => .throwExpected "scientific literal" a
+
+def ofAnnDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
 | .decimal ann val => pure { ann := ann, val := val }
 | a => .throwExpected "scientific literal" a
 
-def ofStrlitM {α} [Repr α]
-      : ArgF α → OfAstM (Ann String α)
+def ofStrlitM {α} [Repr α] : ArgF α → OfAstM String
+| .strlit _ val => pure val
+| a => .throwExpected "string literal" a
+
+def ofAnnStrlitM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
 | .strlit ann val => pure { ann := ann, val := val }
 | a => .throwExpected "string literal" a
+
+def ofBytesM {α} [Repr α] : ArgF α → OfAstM ByteArray
+| .bytes _ val => pure val
+| a => .throwExpected "byte array" a
+
+def ofAnnBytesM {α} [Repr α] : ArgF α → OfAstM (Ann ByteArray α)
+| .bytes ann val => pure { ann := ann, val := val }
+| a => .throwExpected "byte array" a
+
+/-- Convert Ann Bool to OperationF -/
+def toAstBool {α} [Inhabited α] (v : Ann Bool α) : OperationF α :=
+  if v.val then
+    ⟨v.ann, q`Init.boolTrue, #[]⟩
+  else
+    ⟨v.ann, q`Init.boolFalse, #[]⟩
+
+/-- Convert OperationF to Ann Bool -/
+def ofAstBool {α} [Inhabited α] [Repr α] (op : OperationF α) : OfAstM (Ann Bool α) :=
+  match op.name with
+  | q`Init.boolTrue =>
+    if op.args.size = 0 then
+      pure ⟨op.ann, true⟩
+    else
+      .error s!"boolTrue expects 0 arguments, got {op.args.size}"
+  | q`Init.boolFalse =>
+    if op.args.size = 0 then
+      pure ⟨op.ann, false⟩
+    else
+      .error s!"boolFalse expects 0 arguments, got {op.args.size}"
+  | _ =>
+    .error s!"Unknown Bool operator: {op.name}"
+
+def ofBoolM {α} [Inhabited α] [Repr α] : ArgF α → OfAstM Bool
+| .op op => Ann.val <$> ofAstBool op
+| a => .throwExpected "boolean" a
+
+def ofAnnBoolM {α} [Inhabited α] [Repr α] : ArgF α → OfAstM (Ann Bool α)
+| .op op => ofAstBool op
+| a => .throwExpected "boolean" a
 
 def ofOptionM {α β} [Repr α] [SizeOf α]
       (arg : ArgF α)
@@ -160,65 +224,36 @@ def ofOptionM {α β} [Repr α] [SizeOf α]
       (fun v => { ann := ann, val := some v }) <$> act v (by decreasing_tactic)
   | _ => throwExpected "option" arg
 
-def ofCommaSepByM {α β} [Repr α] [SizeOf α]
-      (arg : ArgF α)
-      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Ann (Array β) α) :=
-  match arg with
-  | .commaSepList ann a => do
-    let val ← a.attach.mapM fun ⟨v, vIn⟩  => do
-      act v (by decreasing_tactic)
-    pure { ann := ann, val := val }
-  | _ => throwExpected "seq" arg
-
 def ofSeqM {α β} [Repr α] [SizeOf α]
+      (sep : SepFormat)
       (arg : ArgF α)
       (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .seq ann a => do
-    let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
-      act v (by decreasing_tactic)
-    pure { ann := ann, val := val }
-  | _ => throwExpected "seq" arg
+  | .seq ann sep' a =>
+    if sep == sep' then do
+      let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
+        act v (by decreasing_tactic)
+      pure { ann := ann, val := val }
+    else
+      throwExpected sep.toString arg
+  | _ => throwExpected sep.toString arg
 
 /--
-Get the expression at index `lvl` in the arguments.
-
-Note that in conversion, we will
+Distinguishes between a type parameter (category reference) and a type
+expression in Init.TypeP, applying the appropriate handler.
 -/
-def atArg {Ann α β} [SizeOf α] {e : α} (as : SizeBounded (Array (ArgF Ann)) e 1) (lvl : Nat)
-        (act : (s : SizeBounded (ArgF Ann) e (-1)) → OfAstM β)
-        (lvlP : lvl < as.val.size := by get_elem_tactic) :
-        OfAstM β :=
-  have lvlP : lvl < as.val.size := by omega
-  have p : sizeOf as.val[lvl] ≤ sizeOf e + (-1 : Int) := by
-      have asP := as.property
-      have inP : as.val[lvl] ∈ as.val := by simp
-      have eltSizeOfP := Array.sizeOf_lt_of_mem_strict inP;
-      omega
-  act ⟨as.val[lvl], p⟩
-
-/--
-Get the expression at index `lvl` in the arguments.
-
-Note that in conversion, we will
--/
-def exprEtaArg{Ann α T} [Repr Ann] [HasEta α T] {e : Expr} {n : Nat} (as : SizeBounded (Array (ArgF Ann)) e 1) (_ : as.val.size ≤ n) (lvl : Nat)
-        (act : (s : ExprF Ann) → sizeOf s < sizeOf e → OfAstM α) :
-        OfAstM α :=
-  if lvlP : lvl < as.val.size then
-    let i := as.val.size - 1 - lvl
-    have iP : i < as.val.size := by omega
-    match arg_eq : as.val[i] with
-    | .expr a1 => act a1 (by
-        have asP := as.property
-        have idxP := Array.sizeOf_getElem as.val i iP;
-        simp +arith [arg_eq] at idxP;
-        omega)
-    | _ => .throwExpectedExpr as.val[i]
-  else
-    let i := n - 1 - lvl
-    return HasEta.bvar i
+def matchTypeParamOrType {Ann α} [Repr Ann] (a : ArgF Ann)
+    (onTypeParam : Ann → α) (onType : TypeExprF Ann → OfAstM α)
+    : OfAstM α :=
+  match a with
+  | .cat cat =>
+    if cat.name == q`Init.Type && cat.args.isEmpty then
+      pure (onTypeParam cat.ann)
+    else
+      .throwExpected "Type parameter or type expression" a
+  | .type tp => onType tp
+  | _ => .throwExpected "Type parameter or type expression" a
 
 end Strata.OfAstM
+end

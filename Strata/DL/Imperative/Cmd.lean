@@ -28,20 +28,31 @@ variable declaration and assignment, and assertions and assumptions.
 -/
 
 /--
-A command in the Imperative dialect
+A an atomic command in the `Imperative` dialect.
+
+Commands don't create local control flow, and are typically used as a parameter
+to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
-  /-- `init` defines a variable called `name` with type `ty` and
-    initial value `e`. -/
-  | init     (name : P.Ident) (ty : P.Ty) (e : P.Expr) (md : (MetaData P) := .empty)
-  /-- `set` assigns `e` to a pre-existing variable `name`. -/
+  /-- Define a variable called `name` with type `ty` and optional initial value `e`.
+      When `e` is `none`, the variable is initialized with an arbitrary value. -/
+  | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P) := .empty)
+  /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
-  /-- `havoc` assigns a pre-existing variable `name` a random value. -/
+  /-- Assigns an arbitrary value to an existing variable `name`. -/
   | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
-  /-- `assert` checks whether condition `b` is true. -/
+  /-- Checks if condition `b` is true on _all_ paths on which this command is
+    encountered. Reports an error if `b` does not hold on _any_ of these paths.
+  -/
   | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
-  /-- `assume` constrains execution by adding assumption `b`. -/
+  /-- Ignore any execution state in which `b` is not true. -/
   | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  /--
+  Checks if there _exists_ a path that reaches this command and condition `b` is
+  true. Reports an error otherwise. This is the dual of `assert`, and can be
+  used for coverage analysis.
+  -/
+  | cover    (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
 
 abbrev Cmds (P : PureExpr) := List (Cmd P)
 
@@ -52,8 +63,8 @@ instance [Inhabited P.Ident]: Inhabited (Cmd P) where
 
 def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   match c with
-  | .init _ _ _ md | .set _ _ md
-  | .havoc _ md  | .assert _ _ md | .assume _ _ md =>
+  | .init _ _ _ md | .set _ _ md | .havoc _ md
+  | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
 instance : SizeOf String where
@@ -62,11 +73,12 @@ instance : SizeOf String where
 @[simp]
 def Cmd.sizeOf (c : Imperative.Cmd P) : Nat :=
   match c with
-  | .init   n t e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf t + SizeOf.sizeOf e
+  | .init   n t eOpt _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf t + (match eOpt with | some e => SizeOf.sizeOf e | none => 0)
   | .set    n e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf e
   | .havoc  n _ => 1 + SizeOf.sizeOf n
   | .assert l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
   | .assume l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
+  | .cover l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
 
 instance (P : PureExpr) : SizeOf (Imperative.Cmd P) where
   sizeOf := Cmd.sizeOf
@@ -74,12 +86,12 @@ instance (P : PureExpr) : SizeOf (Imperative.Cmd P) where
 ---------------------------------------------------------------------
 
 class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
-  assume : String → P.Expr → CmdT
-  assert : String → P.Expr → CmdT
+  assume : String → P.Expr → MetaData P → CmdT
+  assert : String → P.Expr → MetaData P → CmdT
 
 instance : HasPassiveCmds P (Cmd P) where
-  assume l e := .assume l e
-  assert l e := .assert l e
+  assume l e (md := MetaData.empty):= .assume l e md
+  assert l e (md := MetaData.empty):= .assert l e md
 
 class HasHavoc (P : PureExpr) (CmdT : Type) where
   havoc : P.Ident → CmdT
@@ -92,11 +104,14 @@ mutual
 /-- Get all variables accessed by `c`. -/
 def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
   match c with
-  | .init _ _ e _ => HasVarsPure.getVars e
+  | .init _ _ eOpt _ => match eOpt with
+    | some e => HasVarsPure.getVars e
+    | none => []
   | .set _ e _ => HasVarsPure.getVars e
   | .havoc _ _ => []
   | .assert _ e _ => HasVarsPure.getVars e
   | .assume _ e _ => HasVarsPure.getVars e
+  | .cover _ e _ => HasVarsPure.getVars e
 
 def Cmds.getVars [HasVarsPure P P.Expr] (cs : Cmds P) : List P.Ident :=
   match cs with
@@ -135,6 +150,7 @@ def Cmd.modifiedVars (c : Cmd P) : List P.Ident :=
   | .havoc name _ => [name]
   | .assert _ _ _ => []
   | .assume _ _ _ => []
+  | .cover _ _ _ => []
 
 /-- Get all variables modified by commands `cs`. -/
 def Cmds.modifiedVars (cs : Cmds P) : List P.Ident :=
@@ -160,11 +176,13 @@ open Std (ToFormat Format format)
 def formatCmd (P : PureExpr) (c : Cmd P)
     [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=
   match c with
-  | .init name ty e md => f!"{md}init ({name} : {ty}) := {e}"
-  | .set name e md => f!"{md}{name} := {e}"
-  | .havoc name md => f!"{md}havoc {name}"
-  | .assert label b md => f!"{md}assert [{label}] {b}"
-  | .assume label b md => f!"{md}assume [{label}] {b}"
+  | .init name ty (some e) _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty none _md => f!"init ({name} : {ty})"
+  | .set name e _md => f!"{name} := {e}"
+  | .havoc name _md => f!"havoc {name}"
+  | .assert label b _md => f!"assert [{label}] {b}"
+  | .assume label b _md => f!"assume [{label}] {b}"
+  | .cover label b _md => f!"cover [{label}] {b}"
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
         : ToFormat (Cmd P) where

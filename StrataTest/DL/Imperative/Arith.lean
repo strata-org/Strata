@@ -14,24 +14,26 @@ open Std (ToFormat Format format)
 
 def typeCheckAndPartialEval (cmds : Commands) : Except Format (Commands × Eval.State) := do
   let (cmds, _T) ← Imperative.Cmds.typeCheck () TEnv.init cmds
+    |>.mapError (fun dm => dm.message)
   let (cmds, S) := Imperative.Cmds.eval Eval.State.init cmds
   return (cmds, S)
 
 private def testProgram1 : Commands :=
-  [.init "x" .Num (.Var "y" (.some .Num)),
+  [.init "x" .Num (some (.Var "y" (.some .Num))),
    .havoc "x",
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Var "y" none))]
 
 /--
 info: ok: Commands:
 init (x : Num) := (y : Num)
-#[<var x: ($__x0 : Num)>] havoc x
+havoc x
 assert [x_value_eq] ($__x0 : Num) = (y : Num)
 
 State:
 error: none
 warnings: []
 deferred: #[Label: x_value_eq
+ Property : assert
  Assumptions: ⏎
  Obligation: ($__x0 : Num) = (y : Num)
  Metadata: ⏎
@@ -46,7 +48,7 @@ genNum: 1
 
 
 private def testProgram2 : Commands :=
-  [.init "x" .Num (.Num 0),
+  [.init "x" .Num (some (.Num 0)),
    .set "x" (.Plus (.Var "x" .none) (.Num 100)),
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
@@ -60,6 +62,7 @@ State:
 error: none
 warnings: []
 deferred: #[Label: x_value_eq
+ Property : assert
  Assumptions: ⏎
  Obligation: true
  Metadata: ⏎

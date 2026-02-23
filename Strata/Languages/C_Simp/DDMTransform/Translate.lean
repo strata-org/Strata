@@ -11,7 +11,7 @@ import Strata.Languages.C_Simp.C_Simp
 namespace Strata
 
 namespace C_Simp
--- (TODO) A bunch of this is just copied from Boogie (or copied with very minor changes)
+-- (TODO) A bunch of this is just copied from Strata Core  (or copied with very minor changes)
 -- What can we factor out to shared code (and where should we put it)?
 
 
@@ -19,11 +19,6 @@ namespace C_Simp
 
 open C_Simp Lambda Imperative
 open Std (ToFormat Format format)
-
----------------------------------------------------------------------
-
-def initVarValue (id : String) : LExpr LMonoTy Unit :=
-  .fvar ("init_" ++ id) none
 
 ---------------------------------------------------------------------
 
@@ -77,7 +72,7 @@ def checkOpArg (arg : Arg) (name : QualifiedIdent) (argc : Nat) : TransM (Array 
 
 def translateCommaSep [Inhabited α] (f : Strata.Arg → TransM α) (arg : Strata.Arg) :
   TransM (Array α) := do
-  let .commaSepList _ args := arg
+  let .seq _ .comma args := arg
     | TransM.error s!"Expected commaSepList: {repr arg}"
   args.mapM f
 
@@ -103,7 +98,7 @@ def translateNat (arg : Arg) : TransM Nat := do
 
 structure TransBindings where
   boundTypeVars : Array String := #[]
-  boundVars : Array (LExpr LMonoTy Unit) := #[]
+  boundVars : Array (LExpr CSimpLParams.mono) := #[]
   freeVars  : Array String := #["return"] -- There's a global variable "return" for return values
 
 instance : ToFormat TransBindings where
@@ -117,7 +112,7 @@ instance : Inhabited (List Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (C_Simp.Function × TransBindings) where
-  default := ({name := "badfun", pre := .true, post := .true, body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
+  default := ({name := "badfun", pre := .true (), post := .true (), body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
 
 instance : Inhabited (List C_Simp.Function × TransBindings) where
   default := ([], {})
@@ -151,6 +146,8 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.boundTypeVars.size
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
+  | .tvar _ name =>
+    return (.ftvar name)
   | _ => TransM.error s!"translateLMonoTy not yet implemented {repr tp}"
 
 partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :
@@ -160,78 +157,78 @@ end
 
 ---------------------------------------------------------------------
 
-def translateFn (q : QualifiedIdent) : TransM (LExpr LMonoTy Unit) :=
+def translateFn (q : QualifiedIdent) : TransM (LExpr CSimpLParams.mono) :=
   match q with
-  | q`C_Simp.and      => return (.op "Bool.And"     none)
-  | q`C_Simp.or       => return (.op "Bool.Or"      none)
-  | q`C_Simp.not      => return (.op "Bool.Not"     none)
-  | q`C_Simp.le       => return (.op "Int.Le"       none)
-  | q`C_Simp.lt       => return (.op "Int.Lt"       none)
-  | q`C_Simp.ge       => return (.op "Int.Ge"       none)
-  | q`C_Simp.gt       => return (.op "Int.Gt"       none)
-  | q`C_Simp.add      => return (.op "Int.Add"      none)
-  | q`C_Simp.sub      => return (.op "Int.Sub"      none)
-  | q`C_Simp.mul      => return (.op "Int.Mul"      none)
-  | q`C_Simp.div      => return (.op "Int.Div"      none)
-  | q`C_Simp.mod      => return (.op "Int.Mod"      none)
-  | q`C_Simp.len      => return (.op "Array.Len"    none)
-  | q`C_Simp.get      => return (.op "Array.Get"    none)
+  | q`C_Simp.and      => return (.op () "Bool.And"     none)
+  | q`C_Simp.or       => return (.op () "Bool.Or"      none)
+  | q`C_Simp.not      => return (.op () "Bool.Not"     none)
+  | q`C_Simp.le       => return (.op () "Int.Le"       none)
+  | q`C_Simp.lt       => return (.op () "Int.Lt"       none)
+  | q`C_Simp.ge       => return (.op () "Int.Ge"       none)
+  | q`C_Simp.gt       => return (.op () "Int.Gt"       none)
+  | q`C_Simp.add      => return (.op () "Int.Add"      none)
+  | q`C_Simp.sub      => return (.op () "Int.Sub"      none)
+  | q`C_Simp.mul      => return (.op () "Int.Mul"      none)
+  | q`C_Simp.div      => return (.op () "Int.Div"      none)
+  | q`C_Simp.mod      => return (.op () "Int.Mod"      none)
+  | q`C_Simp.len      => return (.op () "Array.Len"    none)
+  | q`C_Simp.get      => return (.op () "Array.Get"    none)
   | _                 => TransM.error s!"translateFn: Unknown/unimplemented function {repr q}"
 
 mutual
 partial def translateExpr (bindings : TransBindings) (arg : Arg) :
-  TransM (LExpr LMonoTy Unit) := do
+  TransM (LExpr CSimpLParams.mono) := do
   let .expr expr := arg
     | TransM.error s!"translateExpr expected expr {repr arg}"
   let (op, args) := expr.flatten
   match op, args with
   -- Constants/Literals
   | .fn _ q`C_Simp.btrue, [] =>
-    return .true
+    return .true ()
   | .fn _ q`C_Simp.bfalse, [] =>
-    return .false
+    return .false ()
   | .fn _ q`C_Simp.to_int, [xa] =>
     let n ← translateNat xa
-    return .intConst n
+    return .intConst () n
   -- Equality
   | .fn _ q`C_Simp.eq, [_tpa, xa, ya] =>
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
-    return .eq x y
+    return .eq () x y
   -- Unary function applications
   | .fn _ q`C_Simp.not, [xa] =>
-    let fn := (LExpr.op "Bool.Not" none)
+    let fn := LExpr.op () ⟨"Bool.Not", ()⟩ none
     let x ← translateExpr bindings xa
-    return .mkApp fn [x]
+    return .mkApp () fn [x]
   -- Unary array operations
   | .fn _ q`C_Simp.len, [xa] =>
     let fn ← translateFn q`C_Simp.len
     let x ← translateExpr bindings xa
-    return .mkApp fn [x]
+    return .mkApp () fn [x]
   -- Binary function applications
   | .fn _ fni, [xa, ya] =>
     let fn ← translateFn fni
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
-    return .mkApp fn [x, y]
+    return .mkApp () fn [x, y]
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
   | .bvar _ i, [] =>
     assert! i < bindings.boundVars.size
     let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
     match expr with
-    | .bvar _ => return .bvar i
+    | .bvar _ _ => return .bvar () i
     | _ => return expr
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
-    return (.fvar name none)
+    return (.fvar () name none)
   | .fvar _ i, argsa =>
     -- Call of a function declared/defined in C_Simp.
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
     let args ← translateExprs bindings argsa.toArray
-    return .mkApp (.op name none) args.toList
+    return .mkApp () (.op () name none) args.toList
   | op, args =>
     TransM.error s!"translateExpr unimplemented op:\n\
                      Op: {repr op}\n\
@@ -239,11 +236,11 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
                      Bindings: {format bindings}}"
 
 partial def translateExprs (bindings : TransBindings) (args : Array Arg) :
-  TransM (Array (LExpr LMonoTy Unit)) :=
+  TransM (Array (LExpr CSimpLParams.mono)) :=
   args.mapM (fun a => translateExpr bindings a)
 end
 
-def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy Unit)) := do
+def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -253,7 +250,7 @@ def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LE
                       return some (← translateExpr bindings e[0]!))
                   arg
 
-def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy Unit)) := do
+def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -338,7 +335,7 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   TransM (ListMap Expression.Ident LMonoTy) := do
   let bargs ← checkOpArg op q`C_Simp.mkBindings 1
   match bargs[0]! with
-  | .commaSepList _ args =>
+  | .seq _ .comma args =>
     let arr ← args.mapM (fun op => do
       let bargs ← checkOpArg op q`C_Simp.mkBinding 2
       let id ← translateIdent bargs[0]!
@@ -361,18 +358,18 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
     let ty := (.forAll [] tp)
-    let newFVar: LExpr LMonoTy Unit := LExpr.fvar id none
+    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar () id none
     let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty (initVarValue id)))], newBindings)
+    return ([(.cmd (.init id ty none))], newBindings)
   | q`C_Simp.init_def, #[ida, tpa, ea] =>
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
     let val ← translateExpr bindings ea
     let ty := (.forAll [] tp)
-    let newFVar: LExpr LMonoTy Unit := LExpr.fvar id none
+    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar () id none
     let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
@@ -384,12 +381,10 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     return ([(.cmd (.set id val))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    let t := { ss := ← translateBlock bindings ta }
-    let f := { ss := ← translateElse bindings fa }
-    return ([(.ite c t f)], bindings)
+    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa))], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
     -- TODO: Handle measure and invariant
-    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) { ss := ← translateBlock bindings ba }], bindings)
+    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba)], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types
@@ -413,7 +408,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
 partial def translateBlock (bindings : TransBindings) (arg : Arg) :
   TransM (List Statement) := do
   let args ← checkOpArg arg q`C_Simp.block 1
-  let .seq _ stmts := args[0]!
+  let .seq _ .none stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
   let (a, _) ← stmts.foldlM (init := (#[], bindings)) fun (a, b) s => do
       let (s, b) ← translateStmt b s
@@ -446,7 +441,7 @@ def translateProcedure (bindings : TransBindings) (op : Operation) :
   let pname ← translateIdent op.args[3]!
 
   -- Add parameters to bindings for pre/post/body translation
-  let paramBindings := (sig.keys.map (fun v => (LExpr.fvar v none))).toArray
+  let paramBindings := (sig.keys.map (fun v => (LExpr.fvar () v none))).toArray
   let extendedBindings := { bindings with
                             boundVars := bindings.boundVars ++ paramBindings,
                             freeVars := bindings.freeVars ++ sig.keys.toArray.map Identifier.name }

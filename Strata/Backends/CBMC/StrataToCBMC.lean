@@ -9,6 +9,7 @@ import Strata.DL.Util.Map
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Backends.CBMC.Common
+import Strata.Util.Tactics
 
 open Lean
 open Strata.CBMC
@@ -50,7 +51,7 @@ def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   let cfg := CBMCConfig.empty
   match expr with
-  | .app (.app (.op op _) (.fvar varName _)) (.const value) =>
+  | .app () (.app () (.op () op _) (.fvar () varName _)) (.const () value) =>
     mkBinaryOp (opToStr op.name) "2" functionName (config := cfg)
       (Json.mkObj [
         ("id", "symbol"),
@@ -64,7 +65,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ])
       ])
       (mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
-  | .true =>
+  | .true _ =>
     Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [
@@ -194,17 +195,17 @@ def getParamJson(func: Strata.C_Simp.Function) : Json :=
 def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
   let cfg := CBMCConfig.empty
   match e with
-  | .app (.app (.op op _) left) right =>
+  | .app _ (.app _ (.op _ op _) left) right =>
     let leftJson := match left with
-      | .fvar "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName cfg
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
+      | .fvar _ "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName cfg
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
       | _ => exprToJson left loc
     let rightJson := match right with
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
-      | .const value => mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
+      | .const _ value => mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
       | _ => exprToJson right loc
     mkBinaryOp (opToStr op.name) loc.lineNum loc.functionName leftJson rightJson cfg
-  | .intConst n =>
+  | .intConst _ n =>
     mkConstant (toString n) "10" (mkSourceLocation "from_andrew.c" loc.functionName "14" cfg) cfg
   | _ => panic! "Unimplemented"
 
@@ -286,10 +287,10 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
         ]
       ]
     ]
-  | .havoc _ _ => panic! "Unimplemented"
+  | .havoc _ _ | .cover _ _ _ => panic! "Unimplemented"
 
 mutual
-partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
+def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
   let cfg := CBMCConfig.empty
   Json.mkObj [
     ("id", "code"),
@@ -299,10 +300,12 @@ partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_S
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
-    ("sub", Json.arr (b.ss.map (stmtToJson · loc)).toArray)
+    ("sub", Json.arr (b.map (stmtToJson · loc)).toArray)
   ]
+  termination_by b.sizeOf
+  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
-partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
+ def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
   | .ite cond thenb elseb _ =>
@@ -320,6 +323,7 @@ partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
       ])
     ]
   | _ => panic! "Unimplemented"
+  termination_by e.sizeOf
 end
 
 def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=

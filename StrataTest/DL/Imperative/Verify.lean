@@ -25,7 +25,7 @@ def typedVarToSMT (v : String) (ty : Ty) : Except Format (String × Strata.SMT.T
   let ty' ← toSMTType ty
   return (v, ty')
 
-def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
+def verify (cmds : Commands) (verbose : Bool) :
   EIO Format (Imperative.VCResults Arith.PureExpr) := do
   match typeCheckAndPartialEval cmds with
   | .error err =>
@@ -46,22 +46,25 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
         results := results.push { obligation, result := .err msg }
         break
       | .ok terms =>
+        let tempDir ← IO.toEIO (fun e => f!"{e}") IO.FS.createTempDir
+        let filename := tempDir / s!"{obligation.label}.smt2"
         let ans ←
             IO.toEIO
               (fun e => f!"{e}")
-              (@Imperative.dischargeObligation Arith.PureExpr _
-               encodeArithToSMTTerms typedVarToSMT
+              (@Imperative.SMT.dischargeObligation Arith.PureExpr _ _
+               (encodeArithToSMTTerms terms) typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
-                smtsolver (Imperative.smt2_filename obligation.label)
-                terms)
+                Imperative.MetaData.empty "cvc5" filename.toString
+                #["--produce-models"] false)
         match ans with
         | .ok (result, estate) =>
-           results := results.push { obligation, result, estate }
+           let vcres := { obligation, result, estate }
+           results := results.push vcres
            if result ≠ .unsat then
             let prog := f!"\n\nEvaluated program:\n{format cmds}"
             dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
-                         \n\nResult: {result}\
+                         \n\nResult: {vcres}\
                          {if verbose then prog else ""}"
             break
         | .error e =>
@@ -80,12 +83,12 @@ end Arith
 namespace Strata
 namespace ArithPrograms
 
-def verify (smtsolver : String) (pgm : Program)
+def verify (pgm : Program)
     (verbose : Bool := false) : IO (Imperative.VCResults Arith.PureExpr) := do
   let (program, errors) := ArithPrograms.TransM.run (ArithPrograms.translateProgram pgm.commands)
   if errors.isEmpty then
     EIO.toIO (fun f => IO.Error.userError (toString f))
-                (Arith.verify smtsolver program verbose)
+                (Arith.verify program verbose)
   else
     let errors := Std.Format.joinSep errors.toList "{Format.line}"
     panic! s!"DDM Transform Error: {errors}"

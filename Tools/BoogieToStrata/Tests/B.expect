@@ -1,6 +1,6 @@
 Successfully parsed.
-assert_0: verified
-assert_1: verified
-assert_2: verified
-assert_3: verified
-Proved all 4 goals.
+B.core.st(36, 4) [assert_0]: ✅ pass
+B.core.st(62, 4) [assert_1]: ✅ pass
+B.core.st(88, 4) [assert_2]: ✅ pass
+B.core.st(115, 4) [assert_3]: ✅ pass
+All 4 goals passed.
