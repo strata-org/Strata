@@ -4,7 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.B3.Verifier.Expression
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.DL.SMT.Solver

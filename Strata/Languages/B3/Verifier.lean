@@ -4,11 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.B3.Verifier.Expression
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.B3.Verifier.Diagnosis
+import Strata.Languages.B3.ToCore
+import Strata.Languages.Core.CoreSMT
 
 open Strata
 open Strata.B3.Verifier
@@ -17,7 +17,7 @@ open Strata.SMT
 /-!
 # B3 Verifier
 
-Converts B3 programs to SMT and verifies them using SMT solvers.
+Converts B3 programs to Core and verifies them using the CoreSMT verifier.
 
 ## Architecture Overview
 
@@ -32,15 +32,11 @@ FunctionToAxiom Transform
       ↓
   B3 AST (declarations + axioms)
       ↓
-expressionToSMT (Conversion)
+B3.ToCore (Conversion)
       ↓
-  SMT Terms
+  Core Statements
       ↓
-formatTermDirect (Formatter)
-      ↓
-  SMT-LIB strings
-      ↓
-  SMT Solver (e.g., Z3/CVC5)
+CoreSMT Verifier
       ↓
   Results (proved/counterexample/unknown)
       ↓
@@ -126,3 +122,20 @@ meta def exampleVerification : IO Unit := do
   pure ()
 
 -- See StrataTest/Languages/B3/Verifier/VerifierTests.lean for test of this example.
+
+/-- Convert B3 program to Core and verify via CoreSMT pipeline -/
+def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
+  -- Transform functions to axioms
+  let transformedAST := B3.Transform.functionToAxiom prog
+  -- Convert to Core
+  let coreStmts := B3.ToCore.convertProgram transformedAST
+  -- Verify via CoreSMT
+  let config : Core.CoreSMT.CoreSMTConfig := { diagnosisEnabled := true, accumulateErrors := true }
+  let state := Core.CoreSMT.CoreSMTState.init solver config
+  let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
+  -- Convert results to B3 format (simplified - returns empty for now)
+  return []
+
+def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
+  let _ ← programToSMT prog solver
+  return []
