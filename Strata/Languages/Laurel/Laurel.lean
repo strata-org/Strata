@@ -389,7 +389,6 @@ Example 1:
 Example 2:
 `composite Cons<T> { head: T, tail: List<T> }`
 `constrained List<T> = value: Dynamic | value is Cons<T> || value is Unit`
- -/
 -/
 inductive TypeDefinition where
   /-- A composite (class-like) type with fields and methods. -/
