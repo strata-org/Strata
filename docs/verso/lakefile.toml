@@ -1,5 +1,5 @@
 name = "StrataDoc"
-defaultTargets = ["ddm", "langdef"]
+defaultTargets = ["ddm", "langdef", "laurel"]
 
 [[require]]
 name = "Strata"
@@ -23,3 +23,10 @@ root = "DDMDocMain"
 [[lean_exe]]
 name = "langdef"
 root = "LangDefDocMain"
+
+[[lean_lib]]
+name = "LaurelDoc"
+
+[[lean_exe]]
+name = "laurel"
+root = "LaurelDocMain"

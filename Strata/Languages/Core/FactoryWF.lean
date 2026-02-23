@@ -36,7 +36,7 @@ theorem Factory_wf :
   apply FactoryWF.mk
   · decide -- FactoryWF.name_nodup
   · intros f Hmem
-    -- 176 is the number of functions in Factory (#eval Factory.size)
+    -- the number is the number of functions in Factory (#eval Factory.size)
     iterate 177 (any_goals (rcases Hmem with _ | ⟨ a', Hmem ⟩ <;> try contradiction))
     all_goals (
       rw [LFuncWF]
