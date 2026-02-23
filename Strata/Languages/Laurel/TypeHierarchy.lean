@@ -203,10 +203,10 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaDat
 /--
 Walk a StmtExpr AST and rewrite `IsType` nodes into Laurel-level map lookups.
 -/
-def rewriteTypeHierarchyExpr (expr : StmtExprMd) : StmtExprMd :=
+def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : StmtExprMd :=
+  match exprMd with
+  | WithMetadata.mk expr md =>
   match expr with
-  | ⟨ val, md ⟩ =>
-  match _h : expr.val with
   | .IsType target ty => lowerIsType (rewriteTypeHierarchyExpr target) ty md
   | .IfThenElse c t e =>
       let e' := match e with | some x => some (rewriteTypeHierarchyExpr x) | none => none
@@ -238,9 +238,9 @@ def rewriteTypeHierarchyExpr (expr : StmtExprMd) : StmtExprMd :=
   | .Assume c => ⟨.Assume (rewriteTypeHierarchyExpr c), md⟩
   | .ProveBy v p => ⟨.ProveBy (rewriteTypeHierarchyExpr v) (rewriteTypeHierarchyExpr p), md⟩
   | .ContractOf ty f => ⟨.ContractOf ty (rewriteTypeHierarchyExpr f), md⟩
-  | _ => expr
-  termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+  | _ => exprMd
+  termination_by sizeOf exprMd
+  decreasing_by all_goals (simp_all; try term_by_mem)
 
 def rewriteTypeHierarchyProcedure (proc : Procedure) : Procedure :=
   let precondition' := rewriteTypeHierarchyExpr proc.precondition
