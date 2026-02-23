@@ -121,7 +121,7 @@ def printCommand : Command where
           return
       IO.print <| ld.dialects.format d.name mem
     | .program pgm =>
-      IO.print <| Strata.writeStrataText pgm
+      IO.print <| toString pgm
 
 def diffCommand : Command where
   name := "diff"
