@@ -937,6 +937,8 @@ public class StrataGenerator : ReadOnlyVisitor {
     private void EmitWhileCmd(WhileCmd whileCmd) {
         var label = $"break_{_breakLabelCount++}";
         _breakLabels.Push(label);
+        IndentLine($"{label}: {{");
+        IncIndent();
         WriteText("while (");
         if (whileCmd.Guard != null) {
             VisitExpr(whileCmd.Guard);
@@ -955,7 +957,8 @@ public class StrataGenerator : ReadOnlyVisitor {
         EmitStmtList(whileCmd.Body);
         DecIndent();
         IndentLine("}");
-        IndentLine($"{label}: {{}}");
+        DecIndent();
+        IndentLine("}");
         _breakLabels.Pop();
     }
 
@@ -1395,8 +1398,6 @@ public class StrataGenerator : ReadOnlyVisitor {
                 }
             }
         }
-
-        IndentLine("_exit : {}");
 
         DecIndent();
         WriteLine("};");
