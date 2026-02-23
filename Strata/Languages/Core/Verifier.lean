@@ -126,6 +126,11 @@ instance : ToFormat Outcome where
     | .unknown => "🟡 unknown"
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
+/-- Diagnosis information for verification failures -/
+structure DiagnosisInfo where
+  isRefuted : Bool := false
+  deriving Repr, Inhabited
+
 /--
 A collection of all information relevant to a verification condition's
 analysis.
@@ -136,6 +141,7 @@ structure VCResult where
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
+  diagnosis : Option DiagnosisInfo := .none
 
 /--
 Map the result from an SMT backend engine to an `Outcome`.
