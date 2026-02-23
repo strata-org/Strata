@@ -32,8 +32,8 @@ structure CoreSMTConfig where
 
 /-- A context item represents something added to the SMT solver state -/
 inductive ContextItem where
-  /-- An assumed expression -/
-  | assumption : Core.Expression.Expr → ContextItem
+  /-- An assumed expression (as SMT term) -/
+  | assumption : Term → ContextItem
   /-- A declared sort (name, arity) -/
   | sortDecl : String → Nat → ContextItem
   /-- A declared function (name, arg types, return type) -/

@@ -38,11 +38,11 @@ def isCoreSMTExpr : Core.Expression.Expr → Bool
 
 /-- Predicate for commands that map directly to SMT-LIB constructs. -/
 def isCoreSMTCmd : Core.Command → Bool
-  | .cmd (.assume _ _ _)  => true
-  | .cmd (.assert _ _ _)  => true
-  | .cmd (.cover _ _ _)   => true
-  | .cmd (.init _ _ _ _)  => true
-  | .cmd (.havoc _ _)     => true
+  | .cmd (.assume _ e _)  => isCoreSMTExpr e
+  | .cmd (.assert _ e _)  => isCoreSMTExpr e
+  | .cmd (.cover _ e _)   => isCoreSMTExpr e
+  | .cmd (.init _ _ e _)  => e.all isCoreSMTExpr
+  | .cmd (.havoc _ _)     => false  -- Havoc not in CoreSMT subset
   | .cmd (.set _ _ _)     => false  -- Assignment requires symbolic execution
   | .call _ _ _ _         => false  -- Procedure calls not in CoreSMT subset
 

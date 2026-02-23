@@ -19,7 +19,7 @@ namespace Strata.Core.CoreSMT
 /-- Verify a list of CoreSMT statements. Returns updated state and check results. -/
 def verify (state : CoreSMTState) (E : Core.Env) (stmts : List Core.Statement)
     (smtCtx : Core.SMT.Context := Core.SMT.Context.default)
-    : IO (CoreSMTState × Core.SMT.Context × List CheckResult) :=
+    : IO (CoreSMTState × Core.SMT.Context × List VCResult) :=
   processStatements state E stmts smtCtx
 
 /-- Process prelude statements to initialize state for subsequent verification.

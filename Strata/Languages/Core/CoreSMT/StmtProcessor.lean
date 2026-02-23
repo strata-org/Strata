@@ -21,7 +21,6 @@ Each statement type maps to specific SMT-LIB operations:
 - cover → check-sat (push/pop)
 - block → push/pop
 - funcDecl → declare-fun or define-fun
-- havoc → declare-fun (fresh)
 -/
 
 namespace Strata.Core.CoreSMT
@@ -30,30 +29,6 @@ open Core
 open Strata.SMT
 open Lambda
 open Imperative
-
-/-- Outcome of a CoreSMT verification check -/
-inductive CheckOutcome where
-  | pass        -- Proved (unsat when checking negation)
-  | fail        -- Counterexample found (sat when checking negation)
-  | unknown     -- Solver couldn't determine
-  | refuted     -- Provably false (unsat when checking the assertion itself)
-  | error (msg : String)
-  deriving Repr, DecidableEq, Inhabited
-
-instance : Std.ToFormat CheckOutcome where
-  format
-    | .pass => "✅ pass"
-    | .fail => "❌ fail"
-    | .unknown => "🟡 unknown"
-    | .refuted => "🔴 refuted"
-    | .error msg => s!"🚨 error: {msg}"
-
-/-- Result of a single verification check -/
-structure CheckResult where
-  label : String
-  outcome : CheckOutcome
-  isCover : Bool := false
-  deriving Repr, Inhabited
 
 /-- Helper: translate an expression to SMT term, throwing IO error on failure -/
 private def translateOrThrow (E : Core.Env) (e : Core.Expression.Expr)
@@ -72,46 +47,58 @@ private def translateTypeOrThrow (E : Core.Env) (ty : Core.Expression.Ty)
 /-- Proof check: check-sat of negation using push/pop -/
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) : IO (CheckResult × Core.SMT.Context) := do
+    (smtCtx : Core.SMT.Context) : IO (VCResult × Core.SMT.Context) := do
   let (term, smtCtx) ← translateOrThrow E expr smtCtx
   state.solver.push
   state.solver.assert (Factory.not term)
   let decision ← state.solver.checkSat
   state.solver.pop
   let outcome := match decision with
-    | .unsat   => CheckOutcome.pass
-    | .sat     => CheckOutcome.fail
-    | .unknown => CheckOutcome.unknown
-  return ({ label, outcome, isCover := false }, smtCtx)
+    | .unsat   => Outcome.pass
+    | .sat     => Outcome.fail
+    | .unknown => Outcome.unknown
+  let obligation : ProofObligation Expression := { label, property := expr }
+  let smtResult := match decision with
+    | .unsat => SMT.Result.unsat
+    | .sat => SMT.Result.sat none
+    | .unknown => SMT.Result.unknown
+  return ({ obligation, smtResult, result := outcome }, smtCtx)
 
 /-- Cover check: check-sat of expression using push/pop -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) : IO (CheckResult × Core.SMT.Context) := do
+    (smtCtx : Core.SMT.Context) : IO (VCResult × Core.SMT.Context) := do
   let (term, smtCtx) ← translateOrThrow E expr smtCtx
   state.solver.push
   state.solver.assert term
   let decision ← state.solver.checkSat
   state.solver.pop
   let outcome := match decision with
-    | .sat     => CheckOutcome.pass      -- Reachable
-    | .unsat   => CheckOutcome.fail      -- Unreachable
-    | .unknown => CheckOutcome.unknown
-  return ({ label, outcome, isCover := true }, smtCtx)
+    | .sat     => Outcome.pass      -- Reachable
+    | .unsat   => Outcome.fail      -- Unreachable
+    | .unknown => Outcome.unknown
+  let obligation : ProofObligation Expression := { label, property := expr }
+  let smtResult := match decision with
+    | .sat => SMT.Result.sat none
+    | .unsat => SMT.Result.unsat
+    | .unknown => SMT.Result.unknown
+  return ({ obligation, smtResult, result := outcome }, smtCtx)
 
 mutual
 /-- Process a single CoreSMT statement. Returns updated state, SMT context,
     and an optional check result (for assert/cover). -/
 partial def processStatement (state : CoreSMTState) (E : Core.Env)
     (stmt : Core.Statement) (smtCtx : Core.SMT.Context)
-    : IO (CoreSMTState × Core.SMT.Context × Option CheckResult) := do
+    : IO (CoreSMTState × Core.SMT.Context × Option VCResult) := do
   if !isCoreSMTStmt stmt then
-    return (state, smtCtx, some { label := "non-CoreSMT", outcome := .error "Statement not in CoreSMT subset" })
+    let obligation : ProofObligation Expression := { label := "non-CoreSMT", property := Factory.boolLit true }
+    let result : VCResult := { obligation, result := .implementationError "Statement not in CoreSMT subset" }
+    return (state, smtCtx, some result)
   match stmt with
   | Core.Statement.assume _label expr _ =>
     let (term, smtCtx) ← translateOrThrow E expr smtCtx
     state.solver.assert term
-    let state := state.addItem (.assumption expr)
+    let state := state.addItem (.assumption term)
     return (state, smtCtx, none)
 
   | Core.Statement.init name ty (some expr) _ =>
@@ -134,13 +121,6 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
   | Core.Statement.cover label expr _ =>
     let (result, smtCtx) ← coverCheck state E label expr smtCtx
     return (state.incResultCount, smtCtx, some result)
-
-  | .cmd (.cmd (.havoc name _)) =>
-    -- For havoc, declare a fresh unconstrained variable
-    -- We need the type from context; for now declare as uninterpreted
-    let state := state.addItem (.varDecl name.name .int)
-    state.solver.declareFun name.name [] .int
-    return (state, smtCtx, none)
 
   | .block _label stmts _ =>
     let state ← state.push
@@ -179,10 +159,10 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
 /-- Process a list of CoreSMT statements sequentially -/
 partial def processStatements (state : CoreSMTState) (E : Core.Env)
     (stmts : List Core.Statement) (smtCtx : Core.SMT.Context)
-    : IO (CoreSMTState × Core.SMT.Context × List CheckResult) := do
+    : IO (CoreSMTState × Core.SMT.Context × List VCResult) := do
   let mut state := state
   let mut smtCtx := smtCtx
-  let mut results : List CheckResult := []
+  let mut results : List VCResult := []
   for stmt in stmts do
     let (state', smtCtx', result) ← processStatement state E stmt smtCtx
     state := state'
