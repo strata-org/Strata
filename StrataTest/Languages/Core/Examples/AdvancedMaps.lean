@@ -194,64 +194,64 @@ VCs:
 Label: c_0_eq_a
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 $__c5[0] == $__a3
 
 Label: c_1_eq_a
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 ($__c5[1:=$__a3])[1] == $__a3
 
 Label: a0eq0
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 $__a3[0] == 0
 
 Label: a1eq1
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 ($__a3[1:=1])[1] == 1
 
 Label: a0eq1
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 (($__a3[1:=1])[0:=1])[0] == 1
 
 Label: a0neq2
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 !((($__a3[1:=1])[0:=1])[0] == 2)
 
 Label: bTrueEqTrue
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 ($__b4[true:=-1])[true] == -1
 
 Label: mix
 Property: assert
 Assumptions:
-P_requires_3: $__a3[0] == 0
-P_requires_4: $__c5[0] == $__a3
+P_requires_1: $__a3[0] == 0
+P_requires_2: $__c5[0] == $__a3
 Obligation:
 (($__a3[1:=1])[0:=1])[1] == -(($__b4[true:=-1])[true])
 
