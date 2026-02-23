@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.CoreSMT.SMTSolverInterface
 import Strata.Languages.Core.Expressions
+import Strata.Languages.Core.Options
 
 /-!
 # CoreSMT State and Context Management
@@ -18,13 +19,6 @@ across multiple verification sessions.
 namespace Strata.Core.CoreSMT
 
 open Strata.SMT
-
-/-- Verbosity level for verification reporting -/
-inductive VerboseMode where
-  | quiet   -- No output
-  | normal  -- Standard output
-  | verbose -- Detailed output
-  deriving DecidableEq, Repr, Inhabited
 
 /-- Configuration for CoreSMT verification -/
 structure CoreSMTConfig where
