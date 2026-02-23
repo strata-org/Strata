@@ -96,28 +96,6 @@ def cevalIntMod (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mo
     | _, _ => .none
   | _ => .none
 
-/- Integer Arithmetic Operations -/
-
-def intAddFunc : LFunc T :=
-  binaryOp "Int.Add" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.add))
-
-def intSubFunc : LFunc T :=
-  binaryOp "Int.Sub" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.sub))
-
-def intMulFunc : LFunc T :=
-  binaryOp "Int.Mul" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.mul))
-
-def intDivFunc : LFunc T :=
-  binaryOp "Int.Div" .int
-  (some cevalIntDiv)
-
-def intModFunc : LFunc T :=
-  binaryOp "Int.Mod" .int
-  (some cevalIntMod)
-
 -- Truncating division: rounds toward zero (unlike Euclidean division which floors)
 -- Int.tdiv in Lean4
 def cevalIntDivT (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
@@ -141,6 +119,61 @@ def cevalIntModT (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.m
       if y == 0 then .none else .some (.intConst m (x.tmod y))
     | _, _ => .none
   | _ => .none
+
+/- Boolean Operations -/
+def boolAndFunc : LFunc T :=
+  binaryOp "Bool.And" .bool
+  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.and))
+
+def boolOrFunc : LFunc T :=
+  binaryOp "Bool.Or" .bool
+  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.or))
+
+def boolImpliesFunc : LFunc T :=
+  binaryOp "Bool.Implies" .bool
+  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool (fun x y => ((not x) || y))))
+
+def boolEquivFunc : LFunc T :=
+  binaryOp "Bool.Equiv" .bool
+  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool (fun x y => (x == y))))
+
+def boolNotFunc : LFunc T :=
+  unaryOp "Bool.Not" .bool
+  (some (unOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.not))
+
+/- Integer Arithmetic Operations -/
+
+def intAddFunc : LFunc T :=
+  binaryOp "Int.Add" .int
+  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.add))
+
+def intSubFunc : LFunc T :=
+  binaryOp "Int.Sub" .int
+  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.sub))
+
+def intMulFunc : LFunc T :=
+  binaryOp "Int.Mul" .int
+  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.mul))
+
+def intDivFunc : LFunc T :=
+  binaryOp "Int.Div" .int (some cevalIntDiv)
+
+def intSafeDivFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
+  let yVar : LExpr T.mono := .fvar default "y" (some .int)
+  let zero : LExpr T.mono := .intConst default 0
+  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
+  { binaryOp "Int.SafeDiv" .int (some cevalIntDiv) with
+    preconditions := [⟨yNeZero, default⟩] }
+
+def intModFunc : LFunc T :=
+  binaryOp "Int.Mod" .int (some cevalIntMod)
+
+def intSafeModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
+  let yVar : LExpr T.mono := .fvar default "y" (some .int)
+  let zero : LExpr T.mono := .intConst default 0
+  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
+  { binaryOp "Int.SafeMod" .int (some cevalIntMod) with
+    preconditions := [⟨yNeZero, default⟩] }
 
 def intDivTFunc : LFunc T :=
   binaryOp "Int.DivT" .int
@@ -170,34 +203,16 @@ def intGeFunc : LFunc T :=
   binaryPredicate "Int.Ge" .int
   (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x >= y)))
 
-/- Boolean Operations -/
-def boolAndFunc : LFunc T :=
-  binaryOp "Bool.And" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.and))
 
-def boolOrFunc : LFunc T :=
-  binaryOp "Bool.Or" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.or))
-
-def boolImpliesFunc : LFunc T :=
-  binaryOp "Bool.Implies" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool (fun x y => ((not x) || y))))
-
-def boolEquivFunc : LFunc T :=
-  binaryOp "Bool.Equiv" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool (fun x y => (x == y))))
-
-def boolNotFunc : LFunc T :=
-  unaryOp "Bool.Not" .bool
-  (some (unOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.not))
-
-def IntBoolFactory : @Factory T :=
+def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T :=
   open LTy.Syntax in #[
     intAddFunc,
     intSubFunc,
     intMulFunc,
     intDivFunc,
+    intSafeDivFunc,
     intModFunc,
+    intSafeModFunc,
     intDivTFunc,
     intModTFunc,
     intNegFunc,
