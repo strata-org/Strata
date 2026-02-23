@@ -22,7 +22,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
 
@@ -67,6 +67,15 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
 
+private def isStringExpr (env : TypeEnv) (e : StmtExprMd) : Bool :=
+  match e.val with
+  | .LiteralString _ => true
+  | .Identifier name =>
+    match env.find? (fun (n, _) => n == name) with
+    | some (_, ty) => match ty.val with | .TString => true | _ => false
+    | none => false
+  | _ => false
+
 /--
 Translate Laurel StmtExpr to Core Expression.
 
@@ -108,7 +117,7 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
     | .And => binOp boolAndOp
     | .Or => binOp boolOrOp
     | .Implies => binOp boolImpliesOp
-    | .Add => binOp intAddOp
+    | .Add => if isStringExpr env e1 then binOp strConcatOp else binOp intAddOp
     | .Sub => binOp intSubOp
     | .Mul => binOp intMulOp
     | .Div => binOp intDivOp
