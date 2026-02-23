@@ -710,11 +710,11 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       (res.stmts ++ [.set (PyExprToString lhs) res.expr], some (PyExprToString lhs, PyExprToMonoTy ty))
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
-        let entry_except_handlers := [.block new_target []]
         let new_jmp_stack := new_target :: jmp_targets
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToCore new_jmp_stack translation_ctx)
         let var_decls := collectVarDecls translation_ctx body.val
-        ([.block "try_block" (var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst) ++ entry_except_handlers ++ except_handlers)], none)
+        let try_body := var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst)
+        ([.block "try_block" ([.block new_target try_body] ++ except_handlers)], none)
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Strata Core statement"
     | .If _ test then_b else_b =>
       let guard_ctx := {translation_ctx with expectedType := some (.tcons "bool" [])}
@@ -790,7 +790,7 @@ def translateFunctions (a : Array (Python.stmt SourceRange)) (translation_ctx: T
                inputs := [],
                outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
         spec := default,
-        body := varDecls ++ (ArrPyStmtToCore translation_ctx body.val).fst ++ [.block "end" []]
+        body := varDecls ++ [.block "end" ((ArrPyStmtToCore translation_ctx body.val).fst)]
       }
       some (.proc proc)
     | _ => none)
@@ -806,7 +806,7 @@ def pythonFuncToCore (name : String) (args: List (String × String)) (body: Arra
   let inputs : List (Lambda.Identifier Core.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
   let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (some (.boolConst () false))), (.havoc "exception_ty_matches")]
   let stmts := (ArrPyStmtToCore translation_ctx body).fst
-  let body := varDecls ++ stmts ++ [.block "end" []]
+  let body := varDecls ++ [.block "end" stmts]
   let constructor := name.endsWith "___init__"
   let outputs : Lambda.LMonoTySignature := if not constructor then
     match ret with
