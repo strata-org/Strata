@@ -1005,9 +1005,72 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
     }
 
+    /// <summary>
+    /// Collect all forward goto target labels from a list of big blocks.
+    /// </summary>
+    private static HashSet<string> CollectGotoTargetsFromBigBlocks(IList<BigBlock> bigBlocks) {
+        var targets = new HashSet<string>();
+        foreach (var bb in bigBlocks) {
+            if (bb.tc is GotoCmd gotoCmd) {
+                foreach (var target in gotoCmd.LabelTargets) {
+                    targets.Add(target.Label);
+                }
+            } else if (bb.tc is ReturnCmd) {
+                targets.Add("_exit");
+            }
+        }
+        return targets;
+    }
+
     private void EmitStmtList(StmtList stmtList) {
-        // TODO: cross-platform newline?
-        EmitSeparated(stmtList.BigBlocks, EmitBigBlock, "\n");
+        var bigBlocks = stmtList.BigBlocks;
+        var gotoTargets = CollectGotoTargetsFromBigBlocks(bigBlocks);
+
+        if (gotoTargets.Count == 0) {
+            EmitSeparated(bigBlocks, EmitBigBlock, "\n");
+            return;
+        }
+
+        // Build label-to-index map for big blocks
+        var labelToIndex = new Dictionary<string, int>();
+        for (var i = 0; i < bigBlocks.Count; i++) {
+            if (bigBlocks[i].LabelName != null) {
+                labelToIndex[bigBlocks[i].LabelName] = i;
+            }
+        }
+        // _exit is after all blocks, unless there's a big block labeled _exit
+        if (!labelToIndex.ContainsKey("_exit")) {
+            labelToIndex["_exit"] = bigBlocks.Count;
+        }
+
+        var wrappers = gotoTargets
+            .Where(t => labelToIndex.ContainsKey(t))
+            .Select(t => (label: t, closeAt: labelToIndex[t]))
+            .OrderByDescending(w => w.closeAt)
+            .ToList();
+
+        foreach (var (label, _) in wrappers) {
+            IndentLine($"{Name(label)}: {{");
+            IncIndent();
+        }
+
+        for (var i = 0; i < bigBlocks.Count; i++) {
+            foreach (var (label, closeAt) in wrappers) {
+                if (closeAt == i) {
+                    DecIndent();
+                    IndentLine("}");
+                }
+            }
+            if (i > 0) { WriteLine(); }
+            EmitBigBlock(bigBlocks[i]);
+        }
+
+        foreach (var (label, closeAt) in wrappers) {
+            if (closeAt == bigBlocks.Count) {
+                DecIndent();
+                IndentLine("}");
+            }
+        }
     }
 
     public override Block VisitBlock(Block node) {
@@ -1345,11 +1408,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
 
         if (node.StructuredStmts != null) {
-            IndentLine("_exit: {");
-            IncIndent();
             EmitStmtList(node.StructuredStmts);
-            DecIndent();
-            IndentLine("}");
         } else {
             // For unstructured blocks, we wrap groups of blocks so that
             // forward gotos (now `exit label`) can exit to the right place.
