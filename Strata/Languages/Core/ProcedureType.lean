@@ -56,10 +56,7 @@ theorem checkNoDuplicates_ok {proc : Procedure} {sl : FileRange} {u : Unit} :
   unfold checkNoDuplicates
   simp only [bind, Except.bind, pure, Except.pure]
   intro h
-  split at h <;> try contradiction
-  split at h <;> try contradiction
-  split at h <;> try contradiction
-  simp_all
+  grind
 
 theorem checkVariableScoping_ok {proc : Procedure} {sl : FileRange} {u : Unit} :
     proc.checkVariableScoping sl = Except.ok u →
