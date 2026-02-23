@@ -10,7 +10,7 @@ import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Options
 import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LiftExpressionAssignments
+import Strata.Languages.Laurel.LiftImpureExpressions
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
@@ -450,8 +450,8 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
-  let program := liftExpressionAssignments program
-  -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
+  let program := liftImpureExpressions program
+  -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftImpureExpressions ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
   -- Procedures marked isPure are translated to Core functions; all others become Core procedures.
