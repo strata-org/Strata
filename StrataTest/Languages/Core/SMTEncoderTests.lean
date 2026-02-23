@@ -5,7 +5,6 @@
 -/
 
 import Strata.Languages.Core.SMTEncoder
-import Strata.DL.SMT.Encoder
 import Strata.Languages.Core.Verifier
 
 /-! ## Tests for SMTEncoder -/
@@ -20,21 +19,6 @@ open Strata.SMT
   (.quant () .all (.some .int) (LExpr.noTrigger ())
    (.quant () .exist (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
-
-#eval Strata.SMT.Encoder.termToString
-  (Strata.SMT.Term.quant
-  (Strata.SMT.QuantifierKind.all)
-  [{ id := "$__bv0", ty := Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.int) }]
-  (Strata.SMT.Term.var { id := "$__bv0", ty := Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.int) })
-  (Strata.SMT.Term.quant
-    (Strata.SMT.QuantifierKind.exist)
-    [{ id := "$__bv1", ty := Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.int) }]
-    (Strata.SMT.Term.var { id := "$__bv1", ty := Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.int) })
-    (Strata.SMT.Term.app
-      (Strata.SMT.Op.core (Strata.SMT.Op.Core.eq))
-      [Strata.SMT.Term.var { id := "$__bv0", ty := Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.int) },
-       Strata.SMT.Term.var { id := "$__bv1", ty := Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.int) }]
-      (Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.bool)))))
 
 /--
 info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (= $__bv0 f0)))\n"

@@ -227,14 +227,45 @@ def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
   xs.attach.mapM f
 
+partial
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
   if let (.some enc) := (← get).terms.get? t then return enc
-  match Strata.SMTDDM.termToString t with
-  | .ok enc =>
-    if inBinder
-    then pure enc
-    else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
-  | .error msg => panic! s!"Strata.SMT.Encoder.encodeTerm failed: {msg}"
+  let tyEnc ← encodeType t.typeOf
+  let enc ←
+    match t with
+    | .var v            => return v.id
+    | .prim _           =>
+      match Strata.SMTDDM.termToString t with
+      | .ok s => return s
+      | .error _ => return "<error>"
+    | .none _           => defineTerm inBinder tyEnc s!"(as none {tyEnc})"
+    | .some t₁          => defineTerm inBinder tyEnc s!"(some {← encodeTerm inBinder t₁})"
+    | .app .re_allchar [] .regex => return encodeReAllChar
+    | .app .re_all     [] .regex => return encodeReAll
+    | .app .re_none    [] .regex => return encodeReNone
+    | .app .bvnego [t] .bool =>
+      -- don't encode bvnego itself, for compatibility with older CVC5 (bvnego was
+      -- introduced in CVC5 1.1.2)
+      -- this rewrite is done in the encoder and is thus trusted
+      match t.typeOf with
+      | .bitvec n =>
+        defineApp inBinder tyEnc .eq [← encodeTerm inBinder t, encodeBitVec (BitVec.intMin n)] [t, BitVec.intMin n]
+      | _ =>
+        -- we could put anything here and be sound, because `bvnego` should only be
+        -- applied to Terms of type .bitvec
+        return "false"
+    | .app op ts _         => defineApp inBinder tyEnc op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ)) ts
+    | .quant qk args tr t =>
+      let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
+      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨t, _⟩ => encodeTerm True t))
+      match qk, args with
+      | .all, [⟨x, ty⟩] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .all, _ => defineMultiAll inBinder args trEncs (← encodeTerm True t)
+      | .exist, [⟨x, ty⟩] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .exist, _ => defineMultiExist inBinder args trEncs (← encodeTerm True t)
+  if inBinder
+  then pure enc
+  else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
 
 def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
@@ -247,9 +278,13 @@ def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do
-  match Strata.SMTDDM.termToString e with
-  | .ok s => pure s
-  | .error msg => throw (IO.userError s!"Strata.SMT.Encoder.termToString failed: {msg}")
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Solver.bufferWriter b
+  let _ ← ((Encoder.encodeTerm False e).run EncoderState.init).run solver
+  let contents ← b.get
+  if h: contents.data.IsValidUTF8
+  then pure (String.fromUTF8 contents.data h)
+  else pure "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
 
 /--
 Once you've generated `Asserts` with one of the functions in Verifier.lean, you

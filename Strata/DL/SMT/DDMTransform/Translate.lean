@@ -111,7 +111,7 @@ private def translateFromTermType (t:SMT.TermType):
     let argtys <- args.mapM translateFromTermType
     let argtys_array := translateFromSMTSortList argtys
     if argtys_array.isEmpty then
-      throw "empty argument to type constructor"
+      return .smtsort_ident srnone (mkIdentifier id)
     else
       return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 

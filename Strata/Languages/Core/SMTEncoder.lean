@@ -666,8 +666,6 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   let smtctx := toSMTTerm E [] e ctx useArrayTheory
   match smtctx with
   | .error e => return e.pretty
-  | .ok (smt, _) =>
-    dbg_trace f!"Ok... Core.toSMTTermString. {repr smt}"
-    Encoder.termToString smt
+  | .ok (smt, _) => Encoder.termToString smt
 
 end Core
