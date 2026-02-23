@@ -39,7 +39,7 @@ Generate Core declarations for the type hierarchy:
 - A `ancestorsFor<Type>` constant per composite type with the inner ancestor map
 - A `ancestorsPerType` constant combining the per-type constants
 
-Note: UserType constants and their distinctness are now handled by the UserType datatype
+Note: TypeTag constants and their distinctness are now handled by the TypeTag datatype
 generated in HeapParameterization. Datatype constructors are automatically distinct.
 -/
 def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
@@ -48,17 +48,17 @@ def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
     | _ => none
   if composites.isEmpty then [] else
   -- Build a separate ancestorsFor<Type> constant for each composite type
-  let userTypeTy := LMonoTy.tcons "UserType" []
-  let innerMapTy := Core.mapTy userTypeTy .bool
-  let outerMapTy := Core.mapTy userTypeTy innerMapTy
-  -- Helper: build an inner map (Map UserType bool) for a given composite type
+  let typeTagTy := LMonoTy.tcons "TypeTag" []
+  let innerMapTy := Core.mapTy typeTagTy .bool
+  let outerMapTy := Core.mapTy typeTagTy innerMapTy
+  -- Helper: build an inner map (Map TypeTag bool) for a given composite type
   -- Start with Map.empty(false), then update each composite type's entry
   let mkInnerMap (ct : CompositeType) : Core.Expression.Expr :=
     let ancestors := computeAncestors types ct.name
     let falseConst := LExpr.const () (.boolConst false)
     let emptyInner := LExpr.mkApp () Core.mapConstOp [falseConst]
     composites.foldl (fun acc otherCt =>
-      let otherConst := LExpr.op () (Core.CoreIdent.unres (otherCt.name ++ "_UserType")) none
+      let otherConst := LExpr.op () (Core.CoreIdent.unres (otherCt.name ++ "_TypeTag")) none
       let isAncestor := ancestors.contains otherCt.name
       let boolVal := LExpr.const () (.boolConst isAncestor)
       LExpr.mkApp () Core.mapUpdateOp [acc, otherConst, boolVal]
@@ -77,7 +77,7 @@ def generateTypeHierarchyDecls (types : List TypeDefinition) : List Core.Decl :=
   let emptyInner := LExpr.mkApp () Core.mapConstOp [falseConst]
   let emptyOuter := LExpr.mkApp () Core.mapConstOp [emptyInner]
   let outerMapExpr := composites.foldl (fun acc ct =>
-    let typeConst := LExpr.op () (Core.CoreIdent.unres (ct.name ++ "_UserType")) none
+    let typeConst := LExpr.op () (Core.CoreIdent.unres (ct.name ++ "_TypeTag")) none
     let innerMapRef := LExpr.op () (Core.CoreIdent.unres (s!"ancestorsFor{ct.name}")) (some innerMapTy)
     LExpr.mkApp () Core.mapUpdateOp [acc, typeConst, innerMapRef]
   ) emptyOuter

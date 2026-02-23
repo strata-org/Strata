@@ -64,7 +64,7 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" || name == "increment" ||
   name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
-  name == "MkComposite" || name == "Composite..ref" || name == "Composite..userType" ||
+  name == "MkComposite" || name == "Composite..ref" || name == "Composite..typeTag" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
@@ -150,19 +150,19 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
   | .IsType target ty =>
-      -- `target is Type` translates to: ancestorsPerType[Composite..userType(target)][Type_UserType]
+      -- `target is Type` translates to: ancestorsPerType[Composite..typeTag(target)][Type_TypeTag]
       let targetExpr := translateExpr fieldNames env target boundVars
-      -- Extract the userType from the Composite: Composite..userType(target)
-      let getUserType := LExpr.mkApp () (.op () (Core.CoreIdent.unres "Composite..userType") none) [targetExpr]
+      -- Extract the typeTag from the Composite: Composite..typeTag(target)
+      let getUserType := LExpr.mkApp () (.op () (Core.CoreIdent.unres "Composite..typeTag") none) [targetExpr]
       -- Look up ancestorsPerType
       let ancestorsPerType := LExpr.op () (Core.CoreIdent.unres "ancestorsPerType") none
       -- Get the type name from the HighType
       let typeName := match ty.val with
         | .UserDefined name => name
         | _ => panic! "IsType: expected UserDefined type, got {format ty.val}"
-      -- Build the UserType constant for the target type
-      let typeConst := LExpr.op () (Core.CoreIdent.unres (typeName ++ "_UserType")) none
-      -- ancestorsPerType[Composite..userType(target)][Type_UserType]
+      -- Build the TypeTag constant for the target type
+      let typeConst := LExpr.op () (Core.CoreIdent.unres (typeName ++ "_TypeTag")) none
+      -- ancestorsPerType[Composite..typeTag(target)][Type_TypeTag]
       let innerMap := LExpr.mkApp () Core.mapSelectOp [ancestorsPerType, getUserType]
       LExpr.mkApp () Core.mapSelectOp [innerMap, typeConst]
   | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
@@ -469,10 +469,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let procedures := procProcs.map (translateProcedure fieldNames funcNames)
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
   let laurelFuncDecls := funcProcs.map (translateProcedureToFunction fieldNames)
-  -- Filter out the Field and UserType opaque types. These are only in the prelude to satisfy the DDM type checker.
+  -- Filter out the Field and TypeTag opaque types. These are only in the prelude to satisfy the DDM type checker.
   let preludeDecls := corePrelude.decls.filter fun d =>
-    d.name.name != "Field" && d.name.name != "UserType"
-  -- Generate type hierarchy declarations (UserType constants, distinct, axioms)
+    d.name.name != "Field" && d.name.name != "TypeTag"
+  -- Generate type hierarchy declarations (TypeTag constants, distinct, axioms)
   let typeHierarchyDecls := generateTypeHierarchyDecls program.types
   -- Translate Laurel datatype definitions to Core datatype declarations
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with

@@ -28,14 +28,14 @@ def corePreludeDDM :=
 #strata
 program Core;
 
-// Field and UserType are declared as an opaque type for DDM resolution to pass; the Laurel translator
+// Field and TypeTag are declared as an opaque type for DDM resolution to pass; the Laurel translator
 // replaces them with datatypes that contain one constructor for each field and composite type
 type Field;
-type UserType;
+type TypeTag;
 
 // Composite is a datatype with a reference (int) and a runtime type tag
 datatype Composite () {
-  MkComposite(ref: int, userType: UserType)
+  MkComposite(ref: int, typeTag: TypeTag)
 };
 
 // Tagged union for field values

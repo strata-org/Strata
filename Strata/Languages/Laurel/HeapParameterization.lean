@@ -335,7 +335,7 @@ where
         let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
         let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-        let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name ++ "_UserType") [])])
+        let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name ++ "_TypeTag") [])])
         return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse env l) (← recurse env r), md ⟩
     | .AsType t ty =>
@@ -462,13 +462,13 @@ def heapParameterization (program : Program) : Program :=
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
-  -- Collect composite type names and generate a UserType datatype
+  -- Collect composite type names and generate a TypeTag datatype
   let compositeNames := program.types.filterMap fun td =>
     match td with
     | .Composite ct => some ct.name
     | _ => none
-  let userTypeDatatype : TypeDefinition :=
-    .Datatype { name := "UserType", typeArgs := [], constructors := compositeNames.map fun n => { name := n ++ "_UserType", args := [] } }
-  { program with staticProcedures := procs', types := program.types ++ [fieldDatatype, userTypeDatatype] }
+  let typeTagDatatype : TypeDefinition :=
+    .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := n ++ "_TypeTag", args := [] } }
+  { program with staticProcedures := procs', types := program.types ++ [fieldDatatype, typeTagDatatype] }
 
 end Strata.Laurel
