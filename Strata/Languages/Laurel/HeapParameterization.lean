@@ -455,6 +455,14 @@ def heapParameterization (program : Program) : Program :=
     | .Datatype _ => acc) []
   let (procs', _) := (program.staticProcedures.mapM heapTransformProcedure).run
     { heapReaders, heapWriters, fieldTypes, types := program.types }
-  { program with staticProcedures := procs' }
+  -- Collect all qualified field names and generate a Field datatype
+  let fieldNames := program.types.foldl (fun acc td =>
+    match td with
+    | .Composite ct => acc ++ ct.fields.map (fun f => ct.name ++ "." ++ f.name)
+    | _ => acc) ([] : List Identifier)
+  let fieldDatatype : List TypeDefinition :=
+    if fieldNames.isEmpty then []
+    else [.Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }]
+  { program with staticProcedures := procs', types := program.types ++ fieldDatatype }
 
 end Strata.Laurel

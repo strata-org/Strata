@@ -296,7 +296,12 @@ structure DatatypeConstructor where
   args : List (Identifier × HighTypeMd)
 
 /-- A Laurel datatype definition with optional type parameters.
-    Zero constructors produces an opaque (abstract) type in Core. -/
+    Zero constructors produces an opaque (abstract) type in Core.
+
+    The use-case of this type is to enable incremental translation to Core.
+    Core features datatypes and having these in Laurel allows Laurel->Laurel passes
+    to already translate to datatypes.
+     -/
 structure DatatypeDefinition where
   name : Identifier
   typeArgs : List Identifier
