@@ -128,7 +128,7 @@ info: while
 -/
 #guard_msgs in
 #eval! format (Stmt.loop xEq0 none none
-                ([Statement.set "x" int1 .empty] : Ss) : S)
+                ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 13. loop: with measure and invariant
 /--
@@ -142,7 +142,7 @@ info: while
 -/
 #guard_msgs in
 #eval! format (Stmt.loop xEq0 (some x) (some tt)
-                ([Statement.set "x" int1 .empty] : Ss) : S)
+                ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 14. goto
 /-- info: goto target -/

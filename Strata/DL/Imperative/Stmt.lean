@@ -35,7 +35,7 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | ite      (cond : P.Expr)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P)
   /-- An iterated execution statement. Includes an optional measure (for
   termination) and invariant. -/
-  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
+  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : List (Stmt P Cmd)) (md : MetaData P)
   /-- A semi-structured control flow statement transferring control to the given
   label. The control flow induced by `goto` must not create cycles. **NOTE:**
   This will likely be removed, in favor of an alternative view of imperative
@@ -198,7 +198,7 @@ def Stmt.stripMetaData (s : Stmt P C) : Stmt P C :=
   | .cmd c => .cmd c
   | .block label bss _ => .block label (Block.stripMetaData bss) .empty
   | .ite cond tss ess _ => .ite cond (Block.stripMetaData tss) (Block.stripMetaData ess) .empty
-  | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss)
+  | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss) .empty
   | .goto label _ => .goto label .empty
   | .funcDecl decl _ => .funcDecl decl .empty
   termination_by (Stmt.sizeOf s)
