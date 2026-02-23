@@ -9,7 +9,6 @@ import Strata.Languages.Core.Options
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Transform.PrecondElim
 
 ---------------------------------------------------------------------
 
@@ -71,9 +70,6 @@ def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
   let factory ← Core.Factory.addFactory moreFns
-  let program ← match Transform.run program (PrecondElim.precondElim · factory) with
-    | .ok (_changed, prog) => .ok prog
-    | .error e => .error (DiagnosticModel.fromMessage e)
   let program ← typeCheck options program moreFns
   let datatypes := program.decls.filterMap fun decl =>
     match decl with
