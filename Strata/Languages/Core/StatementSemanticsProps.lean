@@ -2046,37 +2046,26 @@ EvalCommandContract π δ σ c σ' := by
 mutual
 /-- Proof that `EvalStmt` with concrete semantics refines contract semantics,
     by structural recursion on the derivation. -/
-private def RefinesContractStatement
+theorem EvalStmtRefinesContract
   (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ') :
   EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
   match H with
   | .cmd_sem Heval Hdef => .cmd_sem (EvalCommandRefinesContract Heval) Hdef
-  | .block_sem Heval => .block_sem (RefinesContractBlock Heval)
-  | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (RefinesContractBlock Heval)
-  | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (RefinesContractBlock Heval)
+  | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
+  | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .funcDecl_sem => .funcDecl_sem
 
 /-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
     by structural recursion on the derivation. -/
-private def RefinesContractBlock
+theorem EvalBlockRefinesContract
   (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ') :
   EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
   match H with
   | .stmts_none_sem => .stmts_none_sem
   | .stmts_some_sem Hstmt Hrest =>
-    .stmts_some_sem (RefinesContractStatement Hstmt) (RefinesContractBlock Hrest)
-
+    .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
 end
-
-theorem EvalBlockRefinesContract :
-  EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
-  RefinesContractBlock
-
-theorem EvalStmtRefinesContract :
-  EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
-  RefinesContractStatement
 
 /-- Currently we cannot prove this theorem,
     since the WellFormedSemanticEval definition does not assert
