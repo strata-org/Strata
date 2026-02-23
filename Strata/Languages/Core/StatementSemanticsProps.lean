@@ -1710,7 +1710,8 @@ theorem EvalCmdDefMonotone' :
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
-  next _ Hup => exact InitStateDefMonotone Hdef Hup
+  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
+  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
   next _ Hup => exact UpdateStateDefMonotone Hdef Hup
   next Hup => exact UpdateStateDefMonotone Hdef Hup
 
@@ -1721,6 +1722,9 @@ theorem EvalCmdTouch
   intro Heval
   induction Heval <;> simp [HasVarsImp.touchedVars, Cmd.definedVars, Cmd.modifiedVars]
   case eval_init x' δ σ x v σ' σ₀ e Hsm Hup Hwf =>
+    apply TouchVars.init_some Hup
+    constructor
+  case eval_init_unconstrained x' δ σ x v σ' σ₀ Hup Hwf =>
     apply TouchVars.init_some Hup
     constructor
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>

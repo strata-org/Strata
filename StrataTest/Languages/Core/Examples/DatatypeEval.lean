@@ -21,7 +21,6 @@ datatype Any () {
 procedure test () returns ()
 {
   var b: bool;
-  havoc b;
   assert [constr_tester_cancel]: Any..isfrom_bool(from_bool(b));
 };
 
@@ -59,7 +58,6 @@ datatype Any () {
 procedure test () returns ()
 {
   var b: bool;
-  havoc b;
   assume (b == true);
   assert [constr_destr_cancel]: Any..as_bool(from_bool(b));
 };

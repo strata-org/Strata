@@ -27,9 +27,9 @@ info: ok: {
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
                    Program.init
                    none
-                   [.init "x" t[int] eb[xinit],
+                   [.init "x" t[int] (some eb[xinit]),
                     .set "x" eb[xinit],
-                    .init "y" t[∀α. %α] eb[xinit]]
+                    .init "y" t[∀α. %α] (some eb[xinit])]
          return format ans.fst
 
 
@@ -39,7 +39,7 @@ info: ok: {
                    Program.init
                    none
                    [
-                    .init "x" t[bool] eb[#true]
+                    .init "x" t[bool] (some eb[#true])
                    ]
          return format ans
 
@@ -59,11 +59,11 @@ subst:
                     Program.init
                     none
                     [
-                    .init "x" t[int] eb[#0],
-                    .init "y" t[int] eb[#6],
+                    .init "x" t[int] (some eb[#0]),
+                    .init "y" t[int] (some eb[#6]),
                     .block "label_0"
 
-                      [Statement.init "z" t[bool] eb[zinit],
+                      [Statement.init "z" t[bool] (some eb[zinit]),
                        Statement.assume "z_false" eb[z == #false],
 
                       .ite eb[z == #false]
@@ -80,9 +80,9 @@ subst:
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
-                    .init "x" t[int] eb[#0],
-                    .init "y" t[int] eb[#6],
-                    .init "z" t[bool] eb[if (x == y) then #true else #2]
+                    .init "x" t[int] (some eb[#0]),
+                    .init "y" t[int] (some eb[#6]),
+                    .init "z" t[bool] (some eb[if (x == y) then #true else #2])
                     ]
           return format ans
 
@@ -90,9 +90,9 @@ subst:
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
-                    .init "x" t[bool] eb[#true],
+                    .init "x" t[bool] (some eb[#true]),
                     .block "label_0"
-                      [ Statement.init "x" t[int] eb[#1] ]
+                      [ Statement.init "x" t[int] (some eb[#1]) ]
                     ]
           return format ans
 
@@ -110,13 +110,13 @@ subst: [($__ty0, int)]
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
-                    .init "x" t[int] eb[#0],
+                    .init "x" t[int] (some eb[#0]),
                     .ite eb[x == #3]
                     [
-                      Statement.init "y" t[∀α. %α] eb[x],
+                      Statement.init "y" t[∀α. %α] (some eb[x]),
                       Statement.assert "local_y_eq_3" eb[y == #3]
                     ]
-                    [ Statement.init "z" t[bool] eb[#true] ]
+                    [ Statement.init "z" t[bool] (some eb[#true]) ]
                     ]
           return format ans.snd
 
@@ -129,7 +129,7 @@ info: ok: {
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
               [
-              .init "x" t[∀a. %a] eb[#1],
+              .init "x" t[∀a. %a] (some eb[#1]),
               .set "x" eb[#2]
               ]
           return (format ans.fst)
@@ -149,8 +149,8 @@ subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
                       Program.init none
               [
-              .init "m1" t[∀a. %a → int] eb[fn], -- var m : <a>[a]int
-              .init "m2" t[∀a. %a → int] eb[(λ (%0 (fn #true)))],
+              .init "m1" t[∀a. %a → int] (some eb[fn]), -- var m : <a>[a]int
+              .init "m2" t[∀a. %a → int] (some eb[(λ (%0 (fn #true)))]),
               ]
           return (format ans.snd)
 
@@ -182,7 +182,7 @@ def testFuncDeclTypeCheck : List Statement :=
   }
   [
     .funcDecl identityFunc,
-    .init "y" t[int] eb[(~identity #5)],  -- Call the declared function
+    .init "y" t[int] (some eb[(~identity #5)]),  -- Call the declared function
     .assert "y_eq_5" eb[y == #5]
   ]
 
