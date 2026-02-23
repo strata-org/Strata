@@ -144,3 +144,17 @@ procedure test_reach() {
 #end
 
 end B3.Verifier.CoreSMTTests
+
+/--
+info: test_complex: ✗ counterexample found
+-/
+#guard_msgs in
+#eval testB3ViaCoreVerification $ #strata program B3CST;
+function f(x : int) : int
+axiom forall x : int pattern f(x) f(x) == x + 1
+procedure test_complex() {
+  check f(5) == 6 && f(10) == 11 && f(5) == 7
+}
+#end
+
+end B3.Verifier.CoreSMTTests
