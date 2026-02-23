@@ -47,39 +47,51 @@ private def translateTypeOrThrow (E : Core.Env) (ty : Core.Expression.Ty)
 /-- Proof check: check-sat of negation using push/pop -/
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) : IO (VCResult × Core.SMT.Context) := do
+    (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
   let (term, smtCtx) ← translateOrThrow E expr smtCtx
   state.solver.push
   state.solver.assert (Factory.not term)
   let decision ← state.solver.checkSat
   state.solver.pop
   let outcome := match decision with
-    | .unsat   => Outcome.pass
-    | .sat     => Outcome.fail
-    | .unknown => Outcome.unknown
-  let obligation : ProofObligation Expression := { label, property := expr }
+    | .unsat   => Core.Outcome.pass
+    | .sat     => Core.Outcome.fail
+    | .unknown => Core.Outcome.unknown
+  let obligation : Imperative.ProofObligation Core.Expression := {
+    label
+    property := .assert
+    assumptions := []
+    obligation := expr
+    metadata := .empty
+  }
   let smtResult := match decision with
     | .unsat => SMT.Result.unsat
-    | .sat => SMT.Result.sat none
+    | .sat => SMT.Result.unknown
     | .unknown => SMT.Result.unknown
   return ({ obligation, smtResult, result := outcome }, smtCtx)
 
 /-- Cover check: check-sat of expression using push/pop -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) : IO (VCResult × Core.SMT.Context) := do
+    (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
   let (term, smtCtx) ← translateOrThrow E expr smtCtx
   state.solver.push
   state.solver.assert term
   let decision ← state.solver.checkSat
   state.solver.pop
   let outcome := match decision with
-    | .sat     => Outcome.pass      -- Reachable
-    | .unsat   => Outcome.fail      -- Unreachable
-    | .unknown => Outcome.unknown
-  let obligation : ProofObligation Expression := { label, property := expr }
+    | .sat     => Core.Outcome.pass      -- Reachable
+    | .unsat   => Core.Outcome.fail      -- Unreachable
+    | .unknown => Core.Outcome.unknown
+  let obligation : Imperative.ProofObligation Core.Expression := {
+    label
+    property := .cover
+    assumptions := []
+    obligation := expr
+    metadata := .empty
+  }
   let smtResult := match decision with
-    | .sat => SMT.Result.sat none
+    | .sat => SMT.Result.unknown
     | .unsat => SMT.Result.unsat
     | .unknown => SMT.Result.unknown
   return ({ obligation, smtResult, result := outcome }, smtCtx)
@@ -89,10 +101,16 @@ mutual
     and an optional check result (for assert/cover). -/
 partial def processStatement (state : CoreSMTState) (E : Core.Env)
     (stmt : Core.Statement) (smtCtx : Core.SMT.Context)
-    : IO (CoreSMTState × Core.SMT.Context × Option VCResult) := do
+    : IO (CoreSMTState × Core.SMT.Context × Option Core.VCResult) := do
   if !isCoreSMTStmt stmt then
-    let obligation : ProofObligation Expression := { label := "non-CoreSMT", property := Factory.boolLit true }
-    let result : VCResult := { obligation, result := .implementationError "Statement not in CoreSMT subset" }
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label := "non-CoreSMT"
+      property := .assert
+      assumptions := []
+      obligation := .fvar () (Core.CoreIdent.unres "error") none
+      metadata := .empty
+    }
+    let result : Core.VCResult := { obligation, result := .implementationError "Statement not in CoreSMT subset" }
     return (state, smtCtx, some result)
   match stmt with
   | Core.Statement.assume _label expr _ =>
@@ -154,15 +172,23 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let state := state.addItem (.funcDef decl.name.name args outTy bodyTerm)
       return (state, smtCtx, none)
 
-  | _ => return (state, smtCtx, some { label := "unknown", outcome := .error "Unexpected statement" })
+  | _ =>
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label := "unknown"
+      property := .assert
+      assumptions := []
+      obligation := .fvar () (Core.CoreIdent.unres "error") none
+      metadata := .empty
+    }
+    return (state, smtCtx, some { obligation, result := .implementationError "Unexpected statement" })
 
 /-- Process a list of CoreSMT statements sequentially -/
 partial def processStatements (state : CoreSMTState) (E : Core.Env)
     (stmts : List Core.Statement) (smtCtx : Core.SMT.Context)
-    : IO (CoreSMTState × Core.SMT.Context × List VCResult) := do
+    : IO (CoreSMTState × Core.SMT.Context × List Core.VCResult) := do
   let mut state := state
   let mut smtCtx := smtCtx
-  let mut results : List VCResult := []
+  let mut results : List Core.VCResult := []
   for stmt in stmts do
     let (state', smtCtx', result) ← processStatement state E stmt smtCtx
     state := state'
@@ -174,7 +200,7 @@ partial def processStatements (state : CoreSMTState) (E : Core.Env)
     if !state.config.accumulateErrors then
       match result with
       | some r =>
-        if r.outcome != .pass then
+        if r.result != Core.Outcome.pass then
           return (state, smtCtx, results)
       | none => pure ()
   return (state, smtCtx, results)
