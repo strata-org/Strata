@@ -68,16 +68,16 @@ info: function coprime {
 {
   init (i : int)
   i := a
-  if (~Int.Lt b a) {
+  #[<[fileRange]: :320-351>] if (~Int.Lt b a) {
     i := b
   }
   else {}
-  while
+  #[<[fileRange]: :351-498>] while
     (~Int.Gt i #1)
     (some i)
     (some #true)
   {
-    if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
+    #[<[fileRange]: :414-484>] if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
       return := #false
     }
     else {}
@@ -90,7 +90,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (CoprimePgm.commands))
+#eval TransM.run Inhabited.default (translateProgram (CoprimePgm.commands))
 
 /--
 info: procedure coprime (a : int, b : int) returns (return : bool)

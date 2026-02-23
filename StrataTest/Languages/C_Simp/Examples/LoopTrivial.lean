@@ -59,7 +59,7 @@ info: function loopTrivial {
 {
   init (i : int)
   i := #0
-  while
+  #[<[fileRange]: :308-391>] while
     (~Int.Lt i n)
     (some (~Int.Sub n i))
     (some (~Int.Le i n))
@@ -74,7 +74,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (LoopTrivialPgm.commands))
+#eval TransM.run Inhabited.default (translateProgram (LoopTrivialPgm.commands))
 
 /--
 info: procedure loopTrivial (n : int) returns (return : int)

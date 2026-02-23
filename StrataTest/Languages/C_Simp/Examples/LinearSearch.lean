@@ -63,12 +63,12 @@ info: function linearSearch {
 {
   init (idx : int)
   idx := #0
-  while
+  #[<[fileRange]: :324-480>] while
     (~Int.Lt idx (~Array.Len arr))
     (some (~Int.Sub (~Array.Len arr) idx))
     (some #true)
   {
-    if (e == (~Array.Get arr idx)) {
+    #[<[fileRange]: :407-462>] if (e == (~Array.Get arr idx)) {
       return := #true
     }
     else {}
@@ -81,7 +81,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (LinearSearchEnv.commands))
+#eval TransM.run Inhabited.default (translateProgram (LinearSearchEnv.commands))
 
 /--
 info: procedure linearSearch (arr : intArr, e : int) returns (return : bool)

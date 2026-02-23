@@ -61,7 +61,7 @@ info: function simpleTest {
   init (z : int)
   z := (~Int.Add x y)
   assert [test_assert] (~Int.Gt z x)
-  if (~Int.Gt z #10) {
+  #[<[fileRange]: :347-405>] if (~Int.Gt z #10) {
     z := (~Int.Sub z #1)
   }
   else {
@@ -75,7 +75,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (SimpleTestEnv.commands))
+#eval TransM.run Inhabited.default (translateProgram (SimpleTestEnv.commands))
 
 /--
 info: [Strata.Core] Type checking succeeded.
