@@ -4,11 +4,19 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Lambda.TypeFactory
+
+/-!
+# TypeFactory Tests
+
+Unit tests for datatype-generated functions (constructors, eliminators,
+testers, destructors) via Lambda's `typeCheckAndPartialEval`. Also
+includes typing tests not expressible in concrete syntax (e.g. duplicate
+constructor names, empty mutual blocks, constructor clashes with built-in
+functions).
+-/
 
 ---------------------------------------------------------------------
 
@@ -809,7 +817,7 @@ New Function:func Int.Add :  ((x : int)) → Bad;-/
 #eval format $ typeCheckAndPartialEval #[[badTy5]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 ---------------------------------------------------------------------
--- Test 9: Mutually recursive datatypes (RoseTree and Forest)
+-- Mutually recursive datatypes (RoseTree and Forest)
 ---------------------------------------------------------------------
 
 section MutualRecursion
@@ -906,7 +914,7 @@ info: ((~Node : (arrow int (arrow (Forest int) (RoseTree int)))) #7 (~FNil : (Fo
     ((LExpr.op () ("Forest..head" : TestParams.Identifier) .none).mkApp () [fcons' (node' (intConst () 7) fnil') fnil'])
 
 ---------------------------------------------------------------------
--- Test 10: Eliminator on mutually recursive types - computing tree size
+-- Eliminator on mutually recursive types - computing tree size
 ---------------------------------------------------------------------
 
 /-
@@ -994,7 +1002,7 @@ def emptyBlock : MutualDatatype Unit := []
   typeCheckAndPartialEval #[emptyBlock] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 ---------------------------------------------------------------------
--- Test 13: Type reference in wrong order should be rejected
+-- Type reference in wrong order should be rejected
 ---------------------------------------------------------------------
 
 -- Wrapper references List, but List is defined after Wrapper
@@ -1008,7 +1016,7 @@ def wrapperTy' : LDatatype Unit := {name := "Wrapper", typeArgs := [], constrs :
 
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
--- Test 14: 3-way mutually recursive datatypes (A -> B -> C -> A)
+-- 3-way mutually recursive datatypes (A -> B -> C -> A)
 ---------------------------------------------------------------------
 
 section ThreeWayMutualRecursion
@@ -1114,7 +1122,7 @@ info: #15
 end ThreeWayMutualRecursion
 
 ---------------------------------------------------------------------
--- Test 15: Duplicate datatype name in mutual block should be rejected
+-- Duplicate datatype name in mutual block should be rejected
 ---------------------------------------------------------------------
 
 def dupTy1 : LDatatype Unit := {name := "Dup", typeArgs := ["a"], constrs := [{name := "A", args := [], testerName := "isA"}], constrs_ne := rfl}
