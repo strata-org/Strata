@@ -43,7 +43,9 @@ A Strata Core declaration.
 Note: constants are 0-ary functions.
  -/
 inductive Decl where
-  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) (md : MetaData Core.Expression := .empty)
+  /-- Global variable declaration. The optional RHS is not currently used in verification
+      but could serve as a starting value for future execution-based analyses. -/
+  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) (md : MetaData Core.Expression := .empty)
   | type (t : TypeDecl) (md : MetaData Core.Expression := .empty)
   | ax   (a : Axiom) (md : MetaData Core.Expression := .empty)
   -- The following is temporary, until we have lists and can encode `distinct` in Lambda.
@@ -86,13 +88,13 @@ def Decl.names (d : Decl) : List Expression.Ident :=
   | _ => [d.name]
 
 def Decl.getVar? (d : Decl) :
-  Option (Expression.Ident × Expression.Ty × Expression.Expr) :=
+  Option (Expression.Ident × Expression.Ty × Option Expression.Expr) :=
   match d with
   | .var name ty e _ => some (name, ty, e)
   | _ => none
 
 def Decl.getVar (d : Decl) (H: d.kind = .var):
-  Expression.Ident × Expression.Ty × Expression.Expr :=
+  Expression.Ident × Expression.Ty × Option Expression.Expr :=
   match d with | .var name ty e _ => (name, ty, e)
 
 def Decl.getTypeDecl? (d : Decl) : Option TypeDecl :=
@@ -144,7 +146,8 @@ def Decl.stripMetaData (d : Decl) : Decl :=
 -- Metadata not included.
 instance : ToFormat Decl where
   format d := match d with
-    | .var name ty e _md => f!"var ({name} : {ty}) := {e}"
+    | .var name ty (some e) _md => f!"var ({name} : {ty}) := {e}"
+    | .var name ty none _md => f!"var ({name} : {ty})"
     | .type t _md => f!"{t}"
     | .ax a _md  => f!"{a}"
     | .distinct l es _md  => f!"distinct [{l}] {es}"
@@ -202,7 +205,7 @@ theorem Program.find?_kind : ∀ {p : Program}, (p.find? k x) = some d → d.kin
     apply ih (by rfl)
 
 def Program.getVar? (P: Program) (x : Expression.Ident)
-  : Option (Expression.Ident × Expression.Ty × Expression.Expr) := do
+  : Option (Expression.Ident × Expression.Ty × Option Expression.Expr) := do
   let decl ← P.find? .var x
   let var ← decl.getVar?
   return var
@@ -249,7 +252,7 @@ def Program.getVarTy? (P: Program) (x : Expression.Ident) : Option Expression.Ty
 def Program.getVarInit? (P: Program) (x : Expression.Ident) : Option Expression.Expr := do
   match H: (P.find? .var x) with
   | none => none
-  | some decl => some $ (decl.getVar $ Program.find?_kind H).2.2
+  | some decl => (decl.getVar $ Program.find?_kind H).2.2
 
 theorem Program.findproc_some : (P.find? .proc x).isSome = (Procedure.find? P x).isSome := by
   simp [Procedure.find?, Option.isSome, Program.find?]
@@ -302,7 +305,7 @@ def Program.Function.find (P: Program) (x : Expression.Ident) (H : (P.find? .fun
   (P.find .func x H).getFunc (find_kind P)
 
 def Program.getVar (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
-  : Expression.Ident × Expression.Ty × Expression.Expr :=
+  : Expression.Ident × Expression.Ty × Option Expression.Expr :=
   (P.find .var x H).getVar (find_kind P)
 
 def Program.getVarTy (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
@@ -310,7 +313,7 @@ def Program.getVarTy (P: Program) (x : Expression.Ident) (H : (P.find? .var x).i
   ((P.find .var x H).getVar (find_kind P)).2.1
 
 def Program.getVarInit (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
-  : Expression.Expr :=
+  : Option Expression.Expr :=
   ((P.find .var x H).getVar (find_kind P)).2.2
 def Program.Procedure.findP? (P : Program) (x : Expression.Ident)
   : Option (Procedure ×' (find? P x).isSome = true) :=

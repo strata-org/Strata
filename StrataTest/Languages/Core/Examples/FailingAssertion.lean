@@ -56,9 +56,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-P_requires_1: $__a0[0] == 0
+P_requires_1: $__a1[0] == 0
 Obligation:
-$__a0[0] == 1
+$__a1[0] == 1
 
 
 
@@ -75,8 +75,8 @@ spec {
   modifies a;
   requires [P_requires_1]: a[0] == 0;
   } {
-  assume [P_requires_1]: $__a0[0] == 0;
-  assert [assert_0]: $__a0[0] == 1;
+  assume [P_requires_1]: $__a1[0] == 0;
+  assert [assert_0]: $__a1[0] == 1;
   };
 
 ---

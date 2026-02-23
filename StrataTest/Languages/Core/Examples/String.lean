@@ -49,27 +49,27 @@ true
 Label: s1_s2_len_sum_eq_s3_len
 Property: assert
 Assumptions:
-s1_len: str.len(init_s1_0) == 3
-s2_len: str.len(init_s2_1) == 3
-s1_s2_concat_eq_s3: str.concat(init_s1_0, init_s2_1) == init_s3_2
+s1_len: str.len($__s10) == 3
+s2_len: str.len($__s21) == 3
+s1_s2_concat_eq_s3: str.concat($__s10, $__s21) == $__s32
 Obligation:
-str.len(init_s1_0) + str.len(init_s2_1) == str.len(init_s3_2)
+str.len($__s10) + str.len($__s21) == str.len($__s32)
 
 Label: substr_of_concat
 Property: assert
 Assumptions:
-s1_len: str.len(init_s1_0) == 3
-s2_len: str.len(init_s2_1) == 3
-s1_s2_concat_eq_s3: str.concat(init_s1_0, init_s2_1) == init_s3_2
+s1_len: str.len($__s10) == 3
+s2_len: str.len($__s21) == 3
+s1_s2_concat_eq_s3: str.concat($__s10, $__s21) == $__s32
 Obligation:
-str.substr(str.concat(init_s1_0, init_s2_1), 0, str.len(init_s1_0)) == init_s1_0
+str.substr(str.concat($__s10, $__s21), 0, str.len($__s10)) == $__s10
 
 Label: substr_of_concat_concrete_test
 Property: assert
 Assumptions:
-s1_len: str.len(init_s1_0) == 3
-s2_len: str.len(init_s2_1) == 3
-s1_s2_concat_eq_s3: str.concat(init_s1_0, init_s2_1) == init_s3_2
+s1_len: str.len($__s10) == 3
+s2_len: str.len($__s21) == 3
+s1_s2_concat_eq_s3: str.concat($__s10, $__s21) == $__s32
 Obligation:
 str.substr("testing123", 2, 0) == ""
 

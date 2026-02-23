@@ -97,7 +97,7 @@ def Core.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Expr
     : Imperative.Cmd Core.ExprStr :=
   match c with
   | .init name ty e _ =>
-    let e' := substVarNames e frto
+    let e' := e.map (substVarNames · frto)
     let name_alt := frto.find? (Core.CoreIdent.toPretty name)
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .init new ty e' .empty
