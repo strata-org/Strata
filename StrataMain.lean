@@ -104,7 +104,7 @@ def toIonCommand : Command where
     | .dialect d =>
       IO.FS.writeBinFile v[1] d.toIon
     | .program pgm =>
-      IO.FS.writeBinFile v[1] (Strata.writeStrataIon pgm)
+      IO.FS.writeBinFile v[1] pgm.toIon
 
 def printCommand : Command where
   name := "print"
