@@ -94,14 +94,6 @@ inductive HighType : Type where
   | TBool
   /-- Arbitrary-precision integer type. -/
   | TInt
-<<<<<<< HEAD
-  | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
-  | TString /- String type for text data -/
-  | THeap /- Internal type for heap parameterization pass. Not accessible via grammar. -/
-  | TTypedField (valueType : WithMetadata HighType) /- Field constant with known value type. Not accessible via grammar. -/
-  | TSet (elementType : WithMetadata HighType) /- Set type, e.g. Set Composite. Used in modifies clauses. -/
-  | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType) /- Map type for internal use (e.g. type hierarchy maps). -/
-=======
   /-- 64-bit floating point type. Required for JavaScript (`number`), also used by Python (`float`) and Java (`double`). -/
   | TFloat64
   /-- String type for text data. -/
@@ -112,8 +104,9 @@ inductive HighType : Type where
   | TTypedField (valueType : WithMetadata HighType)
   /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : WithMetadata HighType)
+  /-- Map type. -/
+  | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType)
   /-- A reference to a user-defined composite or constrained type by name. -/
->>>>>>> origin/main
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
   | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
