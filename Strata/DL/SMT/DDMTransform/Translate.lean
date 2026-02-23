@@ -104,8 +104,9 @@ private def translateFromTermType (t:SMT.TermType):
           | .string => "String"
           | .regex => "RegLan"
           | _ => panic! "unreachable"))
-  | .option _ =>
-    throw "don't know how to translate an option type"
+  | .option ty =>
+    let argty ← translateFromTermType ty
+    return .smtsort_param srnone (mkIdentifier "Option") (Ann.mk srnone #[argty])
   | .constr id args =>
     let argtys <- args.mapM translateFromTermType
     let argtys_array := translateFromSMTSortList argtys
@@ -205,9 +206,16 @@ private def dummy_prg_for_toString :=
      Strata.SMT]
   Program.create dialect_map "SMT" #[]
 
-def toString (t:SMT.Term): Except String String := do
+def termToString (t:SMT.Term): Except String String := do
   let ddm_term <- translateFromTerm t
   let ddm_ast := SMTDDM.Term.toAst ddm_term
+  let ctx := dummy_prg_for_toString.formatContext {}
+  let s := dummy_prg_for_toString.formatState
+  return ddm_ast.render ctx s |>.fst
+
+def termTypeToString (t:SMT.TermType): Except String String := do
+  let ddm_term <- translateFromTermType t
+  let ddm_ast := SMTDDM.SMTSort.toAst ddm_term
   let ctx := dummy_prg_for_toString.formatContext {}
   let s := dummy_prg_for_toString.formatState
   return ddm_ast.render ctx s |>.fst
