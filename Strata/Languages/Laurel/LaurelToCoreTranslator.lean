@@ -68,7 +68,7 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   funcNames.contains name
 
 private def isStringExpr (env : TypeEnv) (e : StmtExprMd) : Bool :=
-  match e.val with
+  match h : e.val with
   | .LiteralString _ => true
   | .Identifier name =>
     match env.find? (fun (n, _) => n == name) with
@@ -80,11 +80,14 @@ private def isStringExpr (env : TypeEnv) (e : StmtExprMd) : Bool :=
   -- A single-expression block has the same type as its inner expression
   | .Block [single] _ => isStringExpr env single
   -- A conditional expression is string-typed if both branches are string-typed
-  | .IfThenElse _ thenExpr elseExpr =>
+  | .IfThenElse _ thenExpr (some elseExpr) =>
     isStringExpr env thenExpr && isStringExpr env elseExpr
+  | .IfThenElse _ _ none => false
   -- Old preserves the type of its inner expression
   | .Old inner => isStringExpr env inner
   | _ => false
+  termination_by e
+  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt e; term_by_mem)
 
 /--
 Translate Laurel StmtExpr to Core Expression.
