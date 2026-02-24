@@ -40,7 +40,7 @@ def EvalError.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
   | AssertFail label b =>
     (f!"[ASSERT ERROR] Assertion {label} failed!{Format.line}{b}")
   | LabelNotExists label =>
-    (f!"[EXIT ERROR] No enclosing block with label {label} exists.")
+    (f!"[EXIT ERROR] No enclosing block with label '{label}' exists.")
   | OutOfFuel =>
     (f!"[ERROR] Ran out of fuel.")
   | Misc f =>
