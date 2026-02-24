@@ -137,13 +137,13 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
 
 // Datatypes
 category DatatypeConstructor;
-op datatypeConstructorNoArgs (name: Ident): DatatypeConstructor => name "()";
+op datatypeConstructorNoArgs (name: Ident): DatatypeConstructor => name "(" ")";
 op datatypeConstructorWithArgs (name: Ident, args: CommaSepBy Parameter): DatatypeConstructor => name "(" args ")";
 
 category Datatype;
 op datatype (name: Ident, constructors: CommaSepBy DatatypeConstructor): Datatype =>
   "datatype " name "{" constructors "}";
-  
+
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
