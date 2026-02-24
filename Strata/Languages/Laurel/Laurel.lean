@@ -395,6 +395,7 @@ inductive TypeDefinition where
   | Composite (ty : CompositeType)
   /-- A constrained (refinement) type with a base type and predicate. -/
   | Constrained (ty : ConstrainedType)
+  /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
 
 structure Constant where
