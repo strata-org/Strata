@@ -52,6 +52,8 @@ structure Procedure.Header where
   typeArgs : List TyIdentifier
   inputs   : @LMonoTySignature Visibility
   outputs  : @LMonoTySignature Visibility
+  /-- If true, FilterProcedures will never remove this procedure. -/
+  noFilter : Bool := false
   deriving Repr, DecidableEq, Inhabited
 
 instance : ToFormat Procedure.Header where

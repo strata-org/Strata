@@ -37,7 +37,7 @@ theorem Factory_wf :
   · decide -- FactoryWF.name_nodup
   · intros f Hmem
     -- the number is the number of functions in Factory (#eval Factory.size)
-    iterate 177 (any_goals (rcases Hmem with _ | ⟨ a', Hmem ⟩ <;> try contradiction))
+    iterate 179 (any_goals (rcases Hmem with _ | ⟨ a', Hmem ⟩ <;> try contradiction))
     all_goals (
       rw [LFuncWF]
       apply Strata.DL.Util.FuncWF.mk
@@ -74,6 +74,7 @@ theorem Factory_wf :
       · decide -- LFuncWF.typeArgs_nodup
       · decide -- LFuncWF.inputs_typevars_in_typeArgs
       · decide -- LFuncWF.output_typevars_in_typeArgs
+      · decide -- LFuncWF.precond_freevars
     )
 /- AL2: skip end -/
 end Core

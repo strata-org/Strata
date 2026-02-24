@@ -69,16 +69,14 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
 def typeCheckAndPartialEval (options : Options) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
+  let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
-  -- Extract datatypes from program declarations and add to environment
   let datatypes := program.decls.filterMap fun decl =>
     match decl with
     | .type (.data d) _ => some d
     | _ => none
-  let σ ← (Lambda.LState.init).addFactory Core.Factory
-  let σ ← σ.addFactory moreFns
-  let E := { Env.init with exprEnv := σ,
-                           program := program }
+  let σ ← (Lambda.LState.init).addFactory factory
+  let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
   let pEs := Program.eval E
   if options.verbose >= .normal then do
