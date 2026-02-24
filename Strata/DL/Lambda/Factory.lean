@@ -56,10 +56,6 @@ abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
 abbrev LTySignature := Signature IDMeta LTy
 
-def inline_attr : String := "inline"
-def inline_if_constr_attr : String := "inline_if_constr"
-def eval_if_constr_attr : String := "eval_if_constr"
-
 -- Re-export Func from Util for backward compatibility
 open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
 
@@ -76,7 +72,7 @@ Helper constructor for LFunc to maintain backward compatibility.
 -/
 def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
     (isConstr : Bool := false) (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
-    (body : Option (LExpr T.mono) := .none) (attr : Array String := #[])
+    (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])
     (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
     (axioms : List (LExpr T.mono) := [])
     (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := []) : LFunc T :=
