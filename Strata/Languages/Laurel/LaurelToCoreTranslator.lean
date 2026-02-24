@@ -431,8 +431,10 @@ private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
-    (match proc.precondition.val with | .LiteralBool true => true | _ => false) &&
+    -- (match proc.precondition.val with | .LiteralBool true => true | _ => false) &&
     proc.outputs.length == 1
+  | .Opaque _ (some bodyExpr) _ => isPureExpr bodyExpr
+  | .Opaque _ none _ => true
   | _ => false
 
 /--

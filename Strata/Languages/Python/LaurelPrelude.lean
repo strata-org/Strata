@@ -97,8 +97,8 @@ procedure PyReMatchRegex(pattern: string, str: string, flags: int) returns (resu
   ensures flags == 0 ==> result == str.in.re(str, pattern)
 
 datatype ExceptErrorBool {
-  Except_mkOK(Except_getOK: bool),
-  Except_mkErr(Except_getErr: Error)
+  Except2_mkOK(Except_getOK: bool),
+  Except2_mkErr(Except_getErr: Error)
 }
 
 procedure PyReMatchStr(pattern: string, str: string, flags: int) returns (result: ExceptErrorBool)

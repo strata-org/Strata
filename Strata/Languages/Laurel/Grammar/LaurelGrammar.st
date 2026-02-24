@@ -137,7 +137,6 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
 
 // Datatypes
 category DatatypeConstructor;
-op datatypeConstructorNoArgs (name: Ident): DatatypeConstructor => name "(" ")";
 op datatypeConstructorWithArgs (name: Ident, args: CommaSepBy Parameter): DatatypeConstructor => name "(" args ")";
 
 category Datatype;
