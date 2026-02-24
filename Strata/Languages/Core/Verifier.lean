@@ -15,6 +15,7 @@ import Strata.DL.SMT.CexParser
 import Strata.DDM.AST
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
+import Strata.Transform.PrecondElim
 
 ---------------------------------------------------------------------
 
@@ -316,14 +317,25 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
           if options.stopOnFirstError then break
     return results
 
+/-- Run the Strata Core verification pipeline on a program: transform,
+type-check, partially evaluate, and discharge proof obligations via SMT.
+All program-wide transformations that occur before any analyses
+(including type inference) should be placed here. -/
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
     (options : Options := Options.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO DiagnosticModel VCResults := do
+  let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
+  let runPrecondElim := fun prog => do
+    let (_changed, prog) ← PrecondElim.precondElim prog factory
+    return prog
   let finalProgram ← match proceduresToVerify with
-    | none => .ok program  -- Verify all procedures (default).
+    | none =>
+      match Transform.run program runPrecondElim with
+      | .ok prog => .ok prog
+      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
     | some procs =>
        -- Verify specific procedures. By default, we apply the call elimination
        -- transform to the targeted procedures to inline the contracts of any
@@ -333,6 +345,7 @@ def verify (program : Program)
         let prog ← FilterProcedures.run prog procs
         let (_changed,prog) ← CallElim.callElim' prog
         let prog ← FilterProcedures.run prog procs
+        let prog ← runPrecondElim prog
         return prog
       let res := Transform.run program passes
       match res with

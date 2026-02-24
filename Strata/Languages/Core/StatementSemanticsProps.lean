@@ -2043,48 +2043,29 @@ EvalCommandContract π δ σ c σ' := by
     sorry
     constructor <;> assumption
 
-/-- NOTE: should follow the same approach as `DetToNondetCorrect` to prove this
-  mutually recursive theorem due to meta variable bug -/
-theorem EvalBlockRefinesContract :
-  EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' := by
-  intros Heval
-  cases ss
-  case nil =>
-    have ⟨Hσ, Hδ⟩ := Imperative.EvalBlockEmpty Heval
-    simp [Hσ, Hδ]
-    constructor
-  case cons h t =>
-    cases Heval with
-    | stmts_some_sem Heval Hevals =>
-    constructor
-    . sorry
-      -- apply EvalStmtRefinesContract
-      -- apply Heval
-    . apply EvalBlockRefinesContract
-      apply Hevals
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals term_by_mem
+mutual
+/-- Proof that `EvalStmt` with concrete semantics refines contract semantics,
+    by structural recursion on the derivation. -/
+theorem EvalStmtRefinesContract
+  (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ') :
+  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
+  match H with
+  | .cmd_sem Heval Hdef => .cmd_sem (EvalCommandRefinesContract Heval) Hdef
+  | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
+  | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .funcDecl_sem => .funcDecl_sem
 
-theorem EvalStmtRefinesContract :
-  EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' := by
-  intros H
-  cases H with
-  | cmd_sem Hdef Heval =>
-    refine EvalStmt.cmd_sem ?_ Heval
-    exact EvalCommandRefinesContract Hdef
-  | block_sem Heval =>
-    constructor
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_true_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_true_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_false_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_false_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | funcDecl_sem =>
-    exact EvalStmt.funcDecl_sem
+/-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
+    by structural recursion on the derivation. -/
+theorem EvalBlockRefinesContract
+  (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ') :
+  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
+  match H with
+  | .stmts_none_sem => .stmts_none_sem
+  | .stmts_some_sem Hstmt Hrest =>
+    .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
+end
 
 /-- Currently we cannot prove this theorem,
     since the WellFormedSemanticEval definition does not assert
