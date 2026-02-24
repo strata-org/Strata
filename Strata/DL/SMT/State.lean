@@ -6,7 +6,6 @@
 
 import Strata.DL.SMT.SolverInterface
 import Strata.Languages.Core.Expressions
-import Strata.Languages.Core.Options
 
 /-!
 # SMT State and Context Management
@@ -19,16 +18,6 @@ multiple verification sessions.
 namespace Strata.SMT
 
 open Strata.SMT
-
-/-- Configuration for SMT-based verification -/
-structure VerifierConfig where
-  /-- Enable automatic diagnosis of failures -/
-  diagnosisEnabled : Bool := true
-  /-- Continue verification after errors (accumulate all errors) -/
-  accumulateErrors : Bool := true
-  /-- Verbosity level for reporting -/
-  verbose : VerboseMode := .normal
-  deriving Repr, Inhabited
 
 /-- A context item represents something added to the SMT solver state -/
 inductive ContextItem where
@@ -56,16 +45,14 @@ abbrev ContextStack := List ContextScope
 structure VerifierState where
   /-- The SMT solver interface -/
   solver : SMT.SolverInterface
-  /-- Configuration -/
-  config : VerifierConfig
   /-- Stack of context scopes (for push/pop support) -/
   contextStack : ContextStack
   /-- Number of verification results accumulated -/
   resultCount : Nat
 
 /-- Create initial state from a solver interface -/
-def VerifierState.init (solver : SMT.SolverInterface) (config : VerifierConfig := {}) : VerifierState :=
-  { solver, config, contextStack := [[]], resultCount := 0 }
+def VerifierState.init (solver : SMT.SolverInterface) : VerifierState :=
+  { solver, contextStack := [[]], resultCount := 0 }
 
 /-- Push a new scope onto the context stack -/
 def VerifierState.push (state : VerifierState) : IO VerifierState := do
