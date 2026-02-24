@@ -54,7 +54,7 @@ def run(test_file: str, *, laurel: bool) -> bool:
 
     # Run analysis with --sarif
     subprocess.run(
-        ["lake", "exe", "strata", cmd_name, "--sarif", ion_rel, "0"],
+        ["lake", "exe", "strata", cmd_name, "--sarif", ion_rel],
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
     )
