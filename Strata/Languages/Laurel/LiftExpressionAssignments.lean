@@ -308,10 +308,6 @@ def transformExprDiscarded (expr2 : StmtExprMd) : LiftM Unit := do
   | _ =>
       let result ← transformExpr expr2
       addPrepend result
-  termination_by (sizeOf expr2, 1)
-  decreasing_by
-    simp_all; omega
-    rw [<- _hExpr]; omega
 
 /--
 Process a statement, handling any assignments in its sub-expressions.
