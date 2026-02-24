@@ -505,6 +505,8 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .int, q`Core.mul_expr => return Core.intMulOp
   | .some .int, q`Core.div_expr => return Core.intDivOp
   | .some .int, q`Core.mod_expr => return Core.intModOp
+  | .some .int, q`Core.safediv_expr => return Core.intSafeDivOp
+  | .some .int, q`Core.safemod_expr => return Core.intSafeModOp
   | .some .int, q`Core.neg_expr => return Core.intNegOp
 
   | .some .real, q`Core.le       => return Core.realLeOp
@@ -882,7 +884,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.sub_expr
     | q`Core.mul_expr
     | q`Core.div_expr
+    | q`Core.safediv_expr
     | q`Core.mod_expr
+    | q`Core.safemod_expr
     | q`Core.bvand
     | q`Core.bvor
     | q`Core.bvxor
@@ -928,12 +932,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
         let decl := bindings.freeVars[funcIndex]!
         match decl with
         | .func func _md =>
-          let funcOp := .op () func.name (some func.output)
           match argsa with
-          | [] => return funcOp
+          | [] => return func.opExpr
           | _ =>
             let args ← translateExprs p bindings argsa.toArray
-            return .mkApp () funcOp args.toList
+            return .mkApp () func.opExpr args.toList
         | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
       else
         TransM.error s!"translateExpr out-of-range bound variable: {i}"
@@ -1043,6 +1046,22 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     return ([.init lhs ty val], { bindings with boundVars := bbindings })
 
 mutual
+partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
+  TransM (List (Strata.DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata)) := do
+  let .seq _ .none args := arg
+    | TransM.error s!"translateFnPreconds expected seq {repr arg}"
+  let preconds ← args.foldlM (init := ([], 0)) fun (acc, count) specElt => do
+    let .op op := specElt
+      | TransM.error s!"translateFnPreconds expected op {repr specElt}"
+    match op.name with
+    | q`Core.requires_spec =>
+      let args ← checkOpArg specElt q`Core.requires_spec 3
+      let _l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
+      let e ← translateExpr p bindings args[2]!
+      return (acc ++ [⟨e, ()⟩], count + 1)
+    | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
+  return preconds.1
+
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List Core.Statement × TransBindings) := do
   let .op op := arg
@@ -1116,7 +1135,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateIdent String la
     let md ← getOpMetaData op
     return ([.goto l md], bindings)
-  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, bodya, _inlinea] =>
+  | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, precondsa, bodya, _inlinea] =>
     let name ← translateIdent Core.CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa
     let outputMono ← translateLMonoTy bindings returna
@@ -1130,7 +1149,10 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
     let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
+    -- Translate preconditions
+    let preconds ← translateFnPreconds p name bodyBindings precondsa
 
     let body ← match bodya with
       | .option _ (.some bodyExpr) => do
@@ -1146,7 +1168,8 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
       inputs := inputsConverted,
       output := output,
       body := body,
-      axioms := []
+      axioms := [],
+      preconditions := preconds
     }
     let md ← getOpMetaData op
     -- Add the function to boundVars for subsequent statements.
@@ -1385,7 +1408,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  6
+    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  7
     | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
@@ -1397,21 +1420,21 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let orig_bbindings := bindings.boundVars
   let bbindings := bindings.boundVars ++ in_bindings
   let bindings := { bindings with boundVars := bbindings }
-  let body ← match status with
+  let (preconds, body, inline?) ← match status with
              | .Definition =>
-                let e ← translateExpr p bindings op.args[4]!
-                pure (some e)
-             | .Declaration => pure none
-  let inline? ← match status with
-                 | .Definition => translateOptionInline op.args[5]!
-                 | .Declaration => pure #[]
+                let preconds ← translateFnPreconds p fname bindings op.args[4]!
+                let e ← translateExpr p bindings op.args[5]!
+                let inline? ← translateOptionInline op.args[6]!
+                pure (preconds, some e, inline?)
+             | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
                       inputs := sig,
                       output := ret,
                       body := body,
-                      attr := inline? } md
+                      attr := inline?,
+                      preconditions := preconds } md
   return (decl,
           { bindings with
             boundVars := orig_bbindings,

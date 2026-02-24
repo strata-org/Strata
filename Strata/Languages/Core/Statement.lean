@@ -124,7 +124,8 @@ def Statement.eraseTypes (s : Statement) : Statement :=
   | .funcDecl decl md =>
     let decl' := { decl with
       body := decl.body.map Lambda.LExpr.eraseTypes,
-      axioms := decl.axioms.map Lambda.LExpr.eraseTypes }
+      axioms := decl.axioms.map Lambda.LExpr.eraseTypes,
+      preconditions := decl.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
     .funcDecl decl' md
 
 def Statements.eraseTypes (ss : Statements) : Statements :=
