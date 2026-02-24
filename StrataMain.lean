@@ -399,7 +399,13 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print pgm
     assert! cmds.size == 1
 
-    let prelude := Strata.Python.Core.prelude
+    let prelude := Strata.Python.Laurel.prelude
+
+    -- Translate the Laurel prelude to Core so we can prepend its declarations
+    let preludeCoreDecls ← match Strata.Laurel.translate prelude with
+      | .error diagnostics =>
+        exitFailure s!"Laurel prelude translation failed: {diagnostics}"
+      | .ok (corePgm, _) => pure corePgm.decls
 
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
@@ -422,7 +428,7 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Core Program ===="
             IO.print coreProgram
 
-          let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
+          let coreProgram := {decls := preludeCoreDecls ++ coreProgram.fst.decls }
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>

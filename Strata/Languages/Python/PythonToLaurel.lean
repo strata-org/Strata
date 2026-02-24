@@ -10,7 +10,7 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.LaurelPrelude
 import Strata.Languages.Core.Program
 
 /-!
@@ -34,7 +34,7 @@ This module translates Python AST to Laurel intermediate representation.
 
 namespace Strata.Python
 
-open Laurel
+open Strata.Laurel
 
 /-! ## Translation Context
 
@@ -510,34 +510,33 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
 
   | _ => throw (.internalError "Expected FunctionDef")
 
-/-- Extract type name from LMonoTy -/
-def getTypeName (ty : Lambda.LMonoTy) : String :=
-  match ty with
-  | .tcons name _ => name
-  | .ftvar name => name
-  | .bitvec n => s!"bv{n}"
+/-- Extract type names from a Laurel program -/
+def extractPreludeTypes (prelude : Laurel.Program) : List String :=
+  prelude.types.flatMap fun td =>
+    match td with
+    | .Composite c => [c.name]
+    | .Datatype dt => dt.name :: dt.constructors.map (·.name)
+    | _ => panic! "not supported case for extractPreludeTypes"
 
-/-- Extract type names from a Core program -/
-def extractPreludeTypes (prelude : Core.Program) : List String :=
-  prelude.decls.flatMap fun decl =>
-    match decl with
-    | .type (.con tc) _ => [tc.name]
-    | .type (.syn ts) _ => [ts.name]
-    | .type (.data dts) _ => dts.map (·.name)
-    | _ => []
-
-/-- Extract procedure signatures from a Core program -/
-def extractPreludeProcedures (prelude : Core.Program) : List (String × CoreProcedureSignature) :=
-  prelude.decls.filterMap fun decl =>
-    match Core.Program.Procedure.find? prelude decl.name with
-    | some proc =>
-      let inputs := proc.header.inputs.values.map getTypeName
-      let outputs := proc.header.outputs.values.map getTypeName
-      some (proc.header.name.name, { inputs := inputs, outputs := outputs })
-    | none => none
+/-- Extract procedure signatures from a Laurel program -/
+def extractPreludeProcedures (prelude : Laurel.Program) : List (String × CoreProcedureSignature) :=
+  prelude.staticProcedures.map fun proc =>
+    let inputs := proc.inputs.map (fun p => match p.type.val with
+      | .UserDefined name => name
+      | .TInt => "int"
+      | .TBool => "bool"
+      | .TString => "string"
+      | _ => "PyAnyType")
+    let outputs := proc.outputs.map (fun p => match p.type.val with
+      | .UserDefined name => name
+      | .TInt => "int"
+      | .TBool => "bool"
+      | .TString => "string"
+      | _ => "PyAnyType")
+    (proc.name, { inputs := inputs, outputs := outputs })
 
 /-- Translate Python module to Laurel Program -/
-def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRange) (filePath : String := "") : Except TranslationError Laurel.Program := do
+def pythonToLaurel (prelude : Laurel.Program) (pyModule : Python.Command SourceRange) (filePath : String := "") : Except TranslationError Laurel.Program := do
   match pyModule with
   | .Module _ body _ => do
     let preludeProcedures := extractPreludeProcedures prelude
