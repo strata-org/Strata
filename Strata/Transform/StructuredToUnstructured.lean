@@ -13,11 +13,11 @@ import Strata.DL.Util.LabelGen
 
 namespace Imperative
 
-abbrev DetBlocks (Label CmdT : Type) (P : PureExpr) := List (DetBlock Label CmdT P)
+abbrev DetBlocks (Label CmdT : Type) (P : PureExpr) := List (Label × DetBlock Label CmdT P)
 
-def detCmdBlock [HasBool P] (l : Label) (c : CmdT) (k : Label) :
+def detCmdBlock [HasBool P] (c : CmdT) (k : Label) :
   DetBlock Label CmdT P :=
-  { label := l, cmds := [c], transfer := .goto k }
+  { cmds := [c], transfer := .goto k }
 
 open LabelGen
 
@@ -33,18 +33,18 @@ match s with
 | .cmd c => do
   let l ← StringGenState.gen "l"
   -- TODO: this introduces a separate block for every command
-  pure (l, [detCmdBlock l c k])
+  pure (l, [(l, detCmdBlock c k)])
 | .funcDecl _ _ => pure (k, []) -- TODO: not yet supported
 | .block l bss  _md => do
   let (bl, bbs) ← stmtsToBlocks k bss
   -- TODO: this introduces another unnecessary block
-  let b := { label := l, cmds := [], transfer := .goto bl }
+  let b := (l, { cmds := [], transfer := .goto bl })
   pure (l, b :: bbs)
 | .ite c tss fss _md => do
   let l ← StringGenState.gen "ite"
   let (tl, tbs) ← stmtsToBlocks k tss
   let (fl, fbs) ← stmtsToBlocks k fss
-  let b := { label := l, cmds := [], transfer := .cgoto c tl fl }
+  let b := (l, { cmds := [], transfer := .cgoto c tl fl })
   pure (l, [b] ++ tbs ++ fbs)
 | .loop c _m i? bss _md => do
   let lentry ← StringGenState.gen "loop_entry"
@@ -53,7 +53,7 @@ match s with
     match i? with
     | .some i => [HasPassiveCmds.assert "inv" i MetaData.empty]
     | .none => []
-  let b := { label := lentry, cmds := cmds, transfer := .cgoto c bl k }
+  let b := (lentry, { cmds := cmds, transfer := .cgoto c bl k })
   pure (lentry, [b] ++ bbs)
 | .goto l _md => pure (l, [])
 
@@ -75,7 +75,7 @@ def stmtsToCFGM
   (ss : List (Stmt P CmdT)) :
   StringGenM (CFG String (DetBlock String CmdT P)) := do
   let lend ← StringGenState.gen "end"
-  let bend := { label := lend, cmds := [], transfer := .finish }
+  let bend := (lend, { cmds := [], transfer := .finish })
   let (l, bs) ← stmtsToBlocks lend ss
   pure { entry := l, blocks := bs ++ [bend] }
 

@@ -52,25 +52,28 @@ inductive NondetTransferCmd (Label : Type) (P : PureExpr) where
 def NondetTransferCmd.targets : NondetTransferCmd Label P → List Label
 | .goto ls _ => ls
 
-/-- A basic block consists of a label, a list of body commands, and a transfer
+/-- A basic block consists of a list of body commands, and a transfer
 command that indicates where to go next. It can be deterministic or
 non-deterministic depending on the type of transfer command. -/
-structure BasicBlock (Label TransferCmd Cmd : Type) where
-  label : Label
+structure BasicBlock (TransferCmd Cmd : Type) where
   cmds : List Cmd
   transfer : TransferCmd
 
+/-- A deterministic basic block is a basic block parameterized by deterministic
+commands. -/
 def DetBlock (Label Cmd : Type) (P : PureExpr) :=
-  BasicBlock Label (DetTransferCmd Label P) Cmd
+  BasicBlock (DetTransferCmd Label P) Cmd
 
+/-- A non-deterministic basic block is a basic block parameterized by
+non-deterministic commands. -/
 def NondetBlock (Label Cmd : Type) (P : PureExpr) :=
-  BasicBlock Label (NondetTransferCmd Label P) Cmd
+  BasicBlock (NondetTransferCmd Label P) Cmd
 
 /-- A control flow graph is a list of blocks paired with a label indicating
 where execution should start. -/
 structure CFG (Label Block : Type) where
   entry : Label
-  blocks : List Block -- TODO: it would be very nice to have Label → Block
+  blocks : List (Label × Block)
 
 --------
 
@@ -87,12 +90,13 @@ def formatNondetTransferCmd (P : PureExpr) (c : NondetTransferCmd Label P)
   match c with
   | .goto ls md => f!"{md}goto {ls}"
 
-def formatBasicBlock (b : BasicBlock Label TransferCmd TCmd)
-  [ToFormat Label] [ToFormat TransferCmd] [ToFormat TCmd] : Format :=
-  f!"{b.label}:{Format.line}  {b.cmds}{Format.line}  {b.transfer}"
+def formatBasicBlock (b : BasicBlock TransferCmd TCmd)
+  [ToFormat TransferCmd] [ToFormat TCmd] : Format :=
+  f!"{Format.line}  {b.cmds}{Format.line}  {b.transfer}"
 
 def formatCFG (cfg : CFG Label Blk)
   [ToFormat Label] [ToFormat Blk] : Format :=
+  -- TODO: fix to match test case format
   f!"Entry: {cfg.entry}{Format.line}{Format.line}{cfg.blocks}"
 
 instance [ToFormat Label] [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
@@ -103,8 +107,8 @@ instance [ToFormat Label] [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
     : ToFormat (NondetTransferCmd Label P) where
   format c := formatNondetTransferCmd P c
 
-instance [ToFormat Label] [ToFormat TransferCmd] [ToFormat TCmd]
-    : ToFormat (BasicBlock Label TransferCmd TCmd) where
+instance [ToFormat TransferCmd] [ToFormat TCmd]
+    : ToFormat (BasicBlock TransferCmd TCmd) where
   format b := formatBasicBlock b
 
 instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat Label] [ToFormat TCmd]
