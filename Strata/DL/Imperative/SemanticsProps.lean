@@ -17,19 +17,19 @@ theorem eval_assert_store_cst
 theorem eval_stmt_assert_store_cst
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l e md)) σ' δ' → σ = σ' := by
+  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l e md)) σ' δ' .normal → σ = σ' := by
   intros Heval; cases Heval with | cmd_sem Hcmd => exact eval_assert_store_cst Hcmd
 
 theorem eval_stmt_assert_eval_cst
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l e md)) σ' δ' → δ = δ' := by
+  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l e md)) σ' δ' .normal → δ = δ' := by
   intros Heval; cases Heval with | cmd_sem Hcmd => rfl
 
 theorem eval_stmts_assert_store_cst
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ [(.cmd (Cmd.assert l e md))] σ' δ' → σ = σ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ [(.cmd (Cmd.assert l e md))] σ' δ' .normal → σ = σ' := by
   intros Heval; cases Heval with
   | stmts_some_sem H1 H2 =>
     cases H1 with
@@ -41,8 +41,8 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  (EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l1 e md1)) σ' δ' ↔
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l2 e md2)) σ' δ') := by
+  (EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l1 e md1)) σ' δ' .normal ↔
+  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (Cmd.assert l2 e md2)) σ' δ' .normal) := by
   intro Hwf
   constructor <;>
   (
@@ -61,11 +61,11 @@ theorem eval_stmts_assert_elim
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (.assert l1 e md1) :: cmds) σ' δ' →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ cmds σ' δ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (.assert l1 e md1) :: cmds) σ' δ' .normal →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ cmds σ' δ' .normal := by
   intros Hwf Heval
   cases Heval with
-  | @stmts_some_sem _ _ _ _ σ1 _ _ δ1 Has1 Has2 =>
+  | stmts_some_sem Has1 Has2 =>
     have Hσ := eval_stmt_assert_store_cst Has1
     have Hδ := eval_stmt_assert_eval_cst Has1
     rw [← Hσ, ← Hδ] at Has2
@@ -75,8 +75,8 @@ theorem assert_elim
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' δ' →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ [.cmd (.assert l3 e md3)] σ' δ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' δ' .normal →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ [.cmd (.assert l3 e md3)] σ' δ' .normal := by
   intro Hwf Heval
   have Heval := eval_stmts_assert_elim Hwf Heval
   rw [eval_stmts_singleton] at *
@@ -200,10 +200,10 @@ theorem eval_stmt_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x1 v1)) σ1 δ1 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ1 (.cmd (Cmd.set x2 v2)) σ' δ2 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x2 v2)) σ2 δ3 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ2 (.cmd (Cmd.set x1 v1)) σ'' δ4 →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x1 v1)) σ1 δ1 .normal →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ1 (.cmd (Cmd.set x2 v2)) σ' δ2 .normal →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x2 v2)) σ2 δ3 .normal →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ2 (.cmd (Cmd.set x1 v1)) σ'' δ4 .normal →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   cases Hs1; cases Hs2; cases Hs3; cases Hs4
@@ -217,8 +217,8 @@ theorem eval_stmts_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x1 v1)), (.cmd (Cmd.set x2 v2))] σ' δ' →
-  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x2 v2)), (.cmd (Cmd.set x1 v1))] σ'' δ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x1 v1)), (.cmd (Cmd.set x2 v2))] σ' δ' .normal →
+  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x2 v2)), (.cmd (Cmd.set x1 v1))] σ'' δ'' .normal →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
   -- Decompose first evaluation: [set x1 v1, set x2 v2]
