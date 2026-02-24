@@ -13,8 +13,9 @@ import Strata.Util.Tactics
 Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
-The heap is modeled as `Map Composite (Map Field Box)`, where Box is a sum type
-with constructors for each primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite).
+The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
+and a `nextReference: int` for allocating new objects. Box is a sum type with constructors for each
+primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
    - Input: `heap : THeap`
@@ -71,6 +72,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
   | .PrimitiveOp _ args => for a in args do collectExprMd a
+  | .New _ => modify fun s => { s with writesHeapDirectly := true }
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
@@ -299,6 +301,14 @@ def heapTransformExpr (heapVar : Identifier) (topExpr : StmtExprMd) (valueUsed :
     | .PrimitiveOp op args =>
       let args' ← args.mapM (heapTransformExpr heapVar)
       return ⟨ .PrimitiveOp op args', md ⟩
+    | .New _name =>
+        -- Allocate a new object: get the current nextReference, increment it, return the old value
+        let freshVar ← freshVarName
+        let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
+        let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
+        let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
+        let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
+        return ⟨ .Block [saveCounter, updateHeap, mkMd (.Identifier freshVar)] none, md ⟩
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← heapTransformExpr heapVar l) (← heapTransformExpr heapVar r), md ⟩
     | .AsType t ty => return ⟨ .AsType (← heapTransformExpr heapVar t) ty, md ⟩
     | .IsType t ty => return ⟨ .IsType (← heapTransformExpr heapVar t) ty, md ⟩

@@ -17,8 +17,8 @@ procedure nestedImpureStatements() {
   var y: int := 0;
   var x: int := y;
   var z: int := y := y + 1;;
-    assert x == y;
-//  ^^^^^^^^^^^^^^ error: assertion does not hold
+  assert x == y;
+//^^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y;
 }
 
@@ -43,8 +43,8 @@ procedure conditionalAssignmentInExpression(x: int) {
 procedure anotherConditionAssignmentInExpression(c: bool) {
   var b: bool := c;
   var z: bool := (if (b) { b := false; } else (b := true;)) || b;
-    assert z;
-//  ^^^^^^^^^ error: assertion does not hold
+  assert z;
+//^^^^^^^^^ error: assertion does not hold
 }
 
 procedure blockWithTwoAssignmentsInExpression() {
@@ -61,6 +61,17 @@ procedure AssignmentAfterConditional(x: int) {
   var y: int := 0;
   if (x > 0) { y := 1; }
   var z: int := y := y + 1;;
+  assert z == y;
+}
+
+procedure nestedImpureStatementsAndOpaque()
+  ensures true
+{
+  var y: int := 0;
+  var x: int := y;
+  var z: int := y := y + 1;;
+  assert x == y;
+//^^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y;
 }
 "

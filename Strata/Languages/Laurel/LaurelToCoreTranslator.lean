@@ -80,7 +80,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
-  | .THeap => Core.mapTy (.tcons "Composite" []) (Core.mapTy (.tcons "Field" []) (.tcons "Box" []))
+  | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType elementType.val) LMonoTy.bool
   | .Applied ctor [elemTy] =>
@@ -278,7 +278,8 @@ abbrev FunctionNames := List Identifier
 
 def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
-  name == "readField" || name == "updateField" ||
+  name == "readField" || name == "updateField" || name == "increment" ||
+  name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
@@ -779,8 +780,10 @@ def isPureExpr (e : StmtExprMd) : Bool :=
   match _h : e.val with
   | .LiteralBool _ | .LiteralInt _ | .LiteralString _ | .Identifier _ => true
   | .PrimitiveOp _ args => args.attach.all fun ⟨a, _⟩ => isPureExpr a
+  | .IfThenElse c t none => isPureExpr c && isPureExpr t
   | .IfThenElse c t (some el) => isPureExpr c && isPureExpr t && isPureExpr el
   | .StaticCall _ args => args.attach.all fun ⟨a, _⟩ => isPureExpr a
+  | .New _ => false
   | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
   | .Block [single] _ => isPureExpr single
   | .Forall _ _ body => isPureExpr body
@@ -844,6 +847,9 @@ Translate Laurel Program to Core Program
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
+  dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace "================================="
   let program := liftExpressionAssignments program
   -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
@@ -889,7 +895,8 @@ def verifyToVcResults (program : Program)
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program) (options : Options := Options.default): IO (Array Diagnostic) := do
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
+    (options : Options := Options.default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
