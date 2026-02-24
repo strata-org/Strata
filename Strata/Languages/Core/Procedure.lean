@@ -190,6 +190,8 @@ structure Procedure.Header where
   inputs   : @LMonoTySignature Visibility
   /-- Output parameters: passed by value from callee to caller (mutable in body). -/
   outputs  : @LMonoTySignature Visibility
+  /-- If true, FilterProcedures will never remove this procedure. -/
+  noFilter : Bool := false
   deriving Repr, DecidableEq, Inhabited
 
 instance : ToFormat Procedure.Header where
