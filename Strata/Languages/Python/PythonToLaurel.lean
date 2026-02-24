@@ -435,8 +435,28 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       return (ctx, assignStmt)
     | _ => throw (.unsupportedConstruct "Only simple variable or field assignment supported" (toString (repr s)))
 
-  -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args)
+  -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args) or self.field: int = expr
   | .AnnAssign _ target annotation value _ => do
+    -- Check if this is a field assignment (self.field : type = expr)
+    match target with
+    | .Attribute _ obj attr _ =>
+      match obj with
+      | .Name _ name _ =>
+        if name.val == "self" && ctx.currentClassName.isSome then
+          -- self.field : type = value in a method
+          let valueExpr ← match value.val with
+            | some initExpr => translateExpr ctx initExpr
+            | none => throw (.unsupportedConstruct "Field declaration without initializer not supported" (toString (repr s)))
+          let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
+            (mkStmtExprMd (StmtExpr.Identifier "self"))
+            attr.val)
+          let assignStmt := mkStmtExprMd (StmtExpr.Assign [fieldAccess] valueExpr)
+          return (ctx, assignStmt)
+        else
+          throw (.unsupportedConstruct "Only self.field assignments supported in methods" (toString (repr s)))
+      | _ => throw (.unsupportedConstruct "Only simple field access supported" (toString (repr s)))
+    | _ => pure ()  -- Fall through to regular variable handling below
+
     let varName ← match target with
       | .Name _ name _ => .ok name.val
       | _ => throw (.unsupportedConstruct "Only simple variable annotation supported" (toString (repr s)))
@@ -820,6 +840,23 @@ def translateMethod (ctx : TranslationContext) (className : String)
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
+/-- Extract fields from __init__ method body by scanning for self.field : type = expr patterns -/
+def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.stmt SourceRange))
+    : Except TranslationError (List Field) := do
+  let mut fields : List Field := []
+  for stmt in initBody do
+    match stmt with
+    | .AnnAssign _ (.Attribute _ (.Name _ selfName _) attr _) annotation _ _ =>
+      if selfName.val == "self" then
+        let fieldType ← translateType ctx (pyExprToString annotation)
+        fields := fields ++ [{
+          name := attr.val
+          type := fieldType
+          isMutable := true
+        }]
+    | _ => pure ()
+  return fields
+
 /-- Translate a Python class to a Laurel CompositeType -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
     : Except TranslationError CompositeType := do
@@ -827,8 +864,15 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
   | .ClassDef _ className _bases _ body _ _ =>
     let className := className.val
 
-    -- Extract fields from class body (for now, ignore fields - keep it simple)
-    let fields : List Field := []  -- We'll implement field extraction later if needed
+    -- Extract fields from __init__ method body
+    let mut fields : List Field := []
+    for stmt in body.val do
+      match stmt with
+      | .FunctionDef _ name _ initBody _ _ _ _ =>
+        if name.val == "__init__" then
+          let initFields ← extractFieldsFromInit ctx initBody.val
+          fields := fields ++ initFields
+      | _ => pure ()
 
     -- Extract methods from class body
     let methodStmts := body.val.toList.filter fun stmt =>
