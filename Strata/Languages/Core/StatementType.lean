@@ -167,6 +167,9 @@ where
             .error (errorWithSourceLoc e md)
 
         | .funcDecl decl md => do try
+          -- Recursive functions are only allowed as top-level declarations
+          if decl.isRecursive then
+            .error (md.toDiagnosticF f!"recursive functions are not allowed as local declarations")
           -- Type check the function declaration using the shared helper
           -- which returns both the type-checked PureFunc and the Function
           let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
