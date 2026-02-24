@@ -82,11 +82,11 @@ meta def exampleVerification : IO Unit := do
     | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
 
   -- Convert B3 to Core
-  let coreStmts ← match B3.ToCore.convertProgram b3AST with
-    | .ok stmts => pure stmts
-    | .error errs =>
-      let msg := errs.map toString |> String.intercalate "\n"
-      throw (IO.userError s!"Conversion errors:\n{msg}")
+  let convResult := B3.ToCore.convertProgram b3AST
+  if !convResult.errors.isEmpty then
+    let msg := convResult.errors.map toString |> String.intercalate "\n"
+    throw (IO.userError s!"Conversion errors:\n{msg}")
+  let coreStmts := convResult.value
 
   -- Create CoreSMT solver and verify
   let solver ← Core.CoreSMT.mkCvc5Solver
@@ -108,11 +108,11 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
   -- Transform functions to axioms
   let transformedAST := B3.Transform.functionToAxiom prog
   -- Convert to Core
-  let coreStmts ← match B3.ToCore.convertProgram transformedAST with
-    | .ok stmts => pure stmts
-    | .error errs =>
-      let msg := errs.map toString |> String.intercalate "\n"
-      throw (IO.userError s!"Conversion errors:\n{msg}")
+  let convResult := B3.ToCore.convertProgram transformedAST
+  if !convResult.errors.isEmpty then
+    let msg := convResult.errors.map toString |> String.intercalate "\n"
+    throw (IO.userError s!"Conversion errors:\n{msg}")
+  let coreStmts := convResult.value
   -- Create SMT solver interface
   let solverInterface ← Core.CoreSMT.mkCvc5Solver
   -- Verify via CoreSMT
