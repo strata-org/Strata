@@ -62,27 +62,28 @@ private def getProcedureName (prog : B3AST.Program SourceRange) : String :=
 
 /-- Verify a B3 program through the B3→Core→CoreSMT pipeline.
     Parses B3 DDM syntax, converts to Core, and verifies via CoreSMT. -/
-def testB3ViaCoreVerification (prog : Program) : IO Unit := do
+def verifyB3 (prog : Program) : IO Unit := do
   -- Step 1: Parse B3 DDM syntax to B3 AST
   let b3AST ← match programToB3AST prog with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Parse error: {msg}")
 
-  -- Step 2: Transform functions to axioms
-  let transformedAST := B3.Transform.functionToAxiom b3AST
+  -- Step 2: Convert B3 AST to Core AST
+  let coreStmts ← match convertProgram b3AST with
+    | .ok stmts => pure stmts
+    | .error errs =>
+      let msg := errs.map toString |> String.intercalate "\n"
+      throw (IO.userError s!"Conversion errors:\n{msg}")
 
-  -- Step 3: Convert B3 AST to Core AST
-  let coreStmts := convertProgram transformedAST
-
-  -- Step 4: Create CoreSMT solver and state
+  -- Step 3: Create CoreSMT solver and state
   let solver ← mkCvc5Solver
   let config : CoreSMTConfig := { diagnosisEnabled := true, accumulateErrors := true }
   let state := CoreSMTState.init solver config
 
-  -- Step 5: Verify via CoreSMT
+  -- Step 4: Verify via CoreSMT
   let (_, _, results) ← verify state Core.Env.init coreStmts
 
-  -- Step 6: Display results
+  -- Step 5: Display results
   let procName := getProcedureName b3AST
   for result in results do
     let isCover := result.obligation.property == .cover
@@ -96,7 +97,7 @@ def testB3ViaCoreVerification (prog : Program) : IO Unit := do
 info: test: ✓ verified
 -/
 #guard_msgs in
-#eval testB3ViaCoreVerification $ #strata program B3CST;
+#eval verifyB3 $ #strata program B3CST;
 function f(x : int) : int
 axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
 procedure test() {
@@ -108,7 +109,7 @@ procedure test() {
 info: test_fail: ✗ counterexample found
 -/
 #guard_msgs in
-#eval testB3ViaCoreVerification $ #strata program B3CST;
+#eval verifyB3 $ #strata program B3CST;
 function f(x : int) : int
 procedure test_fail() {
   check 5 == 5 && f(5) == 10
@@ -119,7 +120,7 @@ procedure test_fail() {
 info: test_assert: ✓ verified
 -/
 #guard_msgs in
-#eval testB3ViaCoreVerification $ #strata program B3CST;
+#eval verifyB3 $ #strata program B3CST;
 function f(x : int) : int
 axiom forall x : int pattern f(x) f(x) == x + 1
 procedure test_assert() {
@@ -132,7 +133,7 @@ procedure test_assert() {
 info: test_reach: ✓ reachable
 -/
 #guard_msgs in
-#eval testB3ViaCoreVerification $ #strata program B3CST;
+#eval verifyB3 $ #strata program B3CST;
 procedure test_reach() {
   reach true
 }
@@ -142,7 +143,7 @@ procedure test_reach() {
 info: test_complex: ✗ counterexample found
 -/
 #guard_msgs in
-#eval testB3ViaCoreVerification $ #strata program B3CST;
+#eval verifyB3 $ #strata program B3CST;
 function f(x : int) : int
 axiom forall x : int pattern f(x) f(x) == x + 1
 procedure test_complex() {

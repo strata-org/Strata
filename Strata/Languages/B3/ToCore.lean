@@ -23,6 +23,15 @@ open Strata.B3AST
 open Core
 open Lambda
 
+/-- Conversion errors -/
+inductive ConversionError where
+  | unsupportedFeature (feature : String) (context : String)
+  deriving Repr
+
+instance : ToString ConversionError where
+  toString
+    | .unsupportedFeature feat ctx => s!"Unsupported feature '{feat}' in {ctx}"
+
 /-- Conversion context: maps de Bruijn indices to Core identifiers. -/
 structure ConvContext where
   vars : List (String × Lambda.LMonoTy)  -- index 0 = head
@@ -187,29 +196,36 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → Li
 
 
 /-- Convert a B3 function declaration to a Core funcDecl statement. -/
-def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → List Core.Statement
-  | .function _ name params retType _tag body =>
-    let inputs : ListMap CoreIdent Lambda.LTy := params.val.toList.map fun p =>
-      match p with
-      | .fParameter _ _injective pname pty =>
-        (CoreIdent.unres pname.val, b3TypeToCoreLTy pty.val)
-    let outputTy := b3TypeToCoreLTy retType.val
-    let coreBody := match body.val with
-      | some (.functionBody _ _whens bodyExpr) =>
-        let paramCtx := params.val.toList.foldl (fun c p =>
-          match p with
-          | .fParameter _ _ pname pty => c.push pname.val (b3TypeToCoreTy pty.val)
-        ) ctx
-        some (convertExpr paramCtx bodyExpr)
-      | none => none
-    let decl : Imperative.PureFunc Core.Expression := {
-      name := CoreIdent.unres name.val
-      inputs := inputs
-      output := outputTy
-      body := coreBody
-    }
-    [Imperative.Stmt.funcDecl decl]
-  | _ => []
+def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → Except ConversionError (List Core.Statement)
+  | .function _ name params retType tag body =>
+    -- Check for unsupported features
+    if tag.val.isSome then
+      .error (.unsupportedFeature "function tags" s!"function {name.val}")
+    else if params.val.toList.any (fun p => match p with | .fParameter _ inj _ _ => inj.val) then
+      .error (.unsupportedFeature "injective parameters" s!"function {name.val}")
+    else if body.val.any (fun fb => match fb with | .functionBody _ whens _ => !whens.val.isEmpty) then
+      .error (.unsupportedFeature "'when' clauses" s!"function {name.val}")
+    else
+      let inputs : ListMap CoreIdent Lambda.LTy := params.val.toList.map fun p =>
+        match p with
+        | .fParameter _ _ pname pty => (CoreIdent.unres pname.val, b3TypeToCoreLTy pty.val)
+      let outputTy := b3TypeToCoreLTy retType.val
+      let coreBody := body.val.bind fun fb =>
+        match fb with
+        | .functionBody _ _ bodyExpr =>
+          let paramCtx := params.val.toList.foldl (fun c p =>
+            match p with
+            | .fParameter _ _ pname pty => c.push pname.val (b3TypeToCoreTy pty.val)
+          ) ctx
+          some (convertExpr paramCtx bodyExpr)
+      let decl : Imperative.PureFunc Core.Expression := {
+        name := CoreIdent.unres name.val
+        inputs := inputs
+        output := outputTy
+        body := coreBody
+      }
+      .ok [Imperative.Stmt.funcDecl decl]
+  | _ => .ok []
 
 /-- Build a ConvContext with all function declarations from a B3 program. -/
 private def buildFuncContext (decls : List (B3AST.Decl SourceRange)) : ConvContext :=
@@ -223,19 +239,25 @@ private def buildFuncContext (decls : List (B3AST.Decl SourceRange)) : ConvConte
     | _ => ctx
   ) ConvContext.empty
 
-/-- Convert a B3 program to a list of Core statements. -/
-def convertProgram : B3AST.Program SourceRange → List Core.Statement
+/-- Convert a B3 program to a list of Core statements, collecting errors. -/
+def convertProgram : B3AST.Program SourceRange → Except (List ConversionError) (List Core.Statement)
   | .program _ decls =>
     let ctx := buildFuncContext decls.val.toList
-    decls.val.toList.flatMap fun decl =>
+    let results := decls.val.toList.map fun decl =>
       match decl with
       | .function _ _ _ _ _ _ => convertFuncDecl ctx decl
       | .axiom _ _vars expr =>
-        [Core.Statement.assume "axiom" (convertExpr ctx expr)]
+        .ok [Core.Statement.assume "axiom" (convertExpr ctx expr)]
       | .procedure _ _name _params _specs body =>
         match body.val with
-        | some bodyStmt => convertStmt ctx bodyStmt
-        | none => []
-      | _ => []
+        | some bodyStmt => .ok (convertStmt ctx bodyStmt)
+        | none => .ok []
+      | _ => .ok []
+    -- Collect errors
+    let errors := results.filterMap fun r => match r with | .error e => some e | .ok _ => none
+    if errors.isEmpty then
+      .ok (results.flatMap fun r => match r with | .ok stmts => stmts | .error _ => [])
+    else
+      .error errors
 
 end Strata.B3.ToCore

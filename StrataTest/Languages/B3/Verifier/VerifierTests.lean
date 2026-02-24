@@ -242,21 +242,20 @@ def testVerification (prog : Program) : IO Unit := do
 -- Example from Verifier.lean Documentation
 ---------------------------------------------------------------------
 
--- TODO: exampleVerification is not defined - this test is broken on main
--- /--
--- info: Statement: check 8 == 8 && f(5) == 7
--- ✗ Unknown
---   Path condition:
---     forall x : int pattern f(x) f(x) == x + 1
---   Found 1 diagnosed failures
--- Failing expression: f(5) == 7
--- ✗ Refuted (proved false/unreachable)
---   Path condition:
---     8 == 8
---     forall x : int pattern f(x) f(x) == x + 1
--- -/
--- #guard_msgs in
--- #eval exampleVerification
+/--
+info: Statement: check 8 == 8 && f(5) == 7
+✗ Unknown
+  Path condition:
+    forall x : int pattern f(x) f(x) == x + 1
+  Found 1 diagnosed failures
+Failing expression: f(5) == 7
+✗ Refuted (proved false/unreachable)
+  Path condition:
+    8 == 8
+    forall x : int pattern f(x) f(x) == x + 1
+-/
+#guard_msgs in
+#eval exampleVerification
 
 ---------------------------------------------------------------------
 -- Check Statement Tests
