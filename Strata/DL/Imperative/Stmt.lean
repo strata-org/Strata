@@ -345,3 +345,4 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
 ---------------------------------------------------------------------
 
 end Imperative
+
