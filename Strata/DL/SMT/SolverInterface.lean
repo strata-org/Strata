@@ -10,29 +10,22 @@ import Strata.DL.SMT.TermType
 import Strata.DL.SMT.DDMTransform.Translate
 
 /-!
-# SMT Solver Interface for CoreSMT Verifier
+# SMT Solver Interface
 
-This module defines an abstract interface for SMT solvers that can be used by
-the CoreSMT verifier. The interface uses `Strata.SMT.Term` and `Strata.SMT.TermType`
-types, converting them to SMT-LIB strings via `SMTDDM.toString` when communicating
-with the solver.
+Abstract interface for SMT solvers using `Strata.SMT.Term` and `Strata.SMT.TermType`.
+Converts to SMT-LIB strings via `SMTDDM.toString` when communicating with solvers.
 
 The interface is a structure (not a type class) to allow runtime selection of
 different solver backends.
-
-## TODO: File Organization
-This file deals with SMT terms (not CoreSMT-specific), so it should be moved
-closer to the SMT dialect (e.g., `Strata/DL/SMT/SolverInterface.lean`).
-CoreSMT is a subset of Core; this interface is about SMT terms in general.
 -/
 
-namespace Strata.Core.CoreSMT
+namespace Strata.SMT
 
 open Strata.SMT
 
 /-- Abstract interface for SMT solvers.
     Uses Strata.SMT.Term which can be converted to SMT-LIB strings via SMTDDM.toString -/
-structure SMTSolverInterface where
+structure SolverInterface where
   /-- Push a new scope onto the solver stack -/
   push : IO Unit
   /-- Pop the top scope from the solver stack -/
@@ -73,7 +66,7 @@ private def termToString (t : Term) : Except String String :=
   SMTDDM.toString t
 
 /-- Helper to create an SMTSolverInterface from an initialized Solver -/
-private def mkSolverInterfaceFromSolver (solver : Solver) : IO SMTSolverInterface := do
+private def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
   let solverRef ← IO.mkRef solver
   return {
     push := do
@@ -127,7 +120,7 @@ private def mkSolverInterfaceFromSolver (solver : Solver) : IO SMTSolverInterfac
       (Solver.reset).run (← solverRef.get)
       (Solver.setLogic "ALL").run (← solverRef.get)
       (Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]).run (← solverRef.get)
-  }
+  : SolverInterface }
 
 /-- Initialize a solver with standard settings -/
 private def initializeSolver (solver : Solver) : IO Unit := do
@@ -135,21 +128,21 @@ private def initializeSolver (solver : Solver) : IO Unit := do
   (Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]).run solver
 
 /-- Create an SMTSolverInterface backed by cvc5 (default solver). -/
-def mkCvc5Solver : IO SMTSolverInterface := do
+def mkCvc5Solver : IO SolverInterface := do
   let solver ← Solver.spawn defaultSolver #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
   initializeSolver solver
   mkSolverInterfaceFromSolver solver
 
-/-- Create an SMTSolverInterface from a specific solver path -/
-def mkSolverFromPath (path : String) : IO SMTSolverInterface := do
+/-- Create a SolverInterface from a specific solver path -/
+def mkSolverFromPath (path : String) : IO SolverInterface := do
   let solver ← Solver.spawn path #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
   initializeSolver solver
   mkSolverInterfaceFromSolver solver
 
-/-- Create an SMTSolverInterface from the SOLVER environment variable -/
-def mkSolverFromEnv : IO SMTSolverInterface := do
+/-- Create a SolverInterface from the SOLVER environment variable -/
+def mkSolverFromEnv : IO SolverInterface := do
   match (← IO.getEnv "SOLVER") with
   | .some path => mkSolverFromPath path
   | .none => throw (IO.userError "SOLVER environment variable not defined.")
 
-end Strata.Core.CoreSMT
+end Strata.SMT

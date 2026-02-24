@@ -40,11 +40,7 @@ private def translateTypeSafe (E : Core.Env) (ty : Core.Expression.Ty)
     (ctx : Core.SMT.Context) : Except Std.Format (TermType × Core.SMT.Context) :=
   translateType E ty ctx
 
-/-- Proof check: check-sat of negation using push/pop
-    TODO: Replace push/pop with check-sat-assuming for solver compatibility.
-    This would enable solvers that don't support push/pop (e.g., some portfolio solvers).
-    Instead of: push; assert (not term); check-sat; pop
-    Use: check-sat-assuming ((not term)) -/
+/-- Proof check: check-sat of negation using check-sat-assuming -/
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
@@ -55,10 +51,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
     }
     return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
-    state.solver.push
-    state.solver.assert (Factory.not term)
-    let decision ← state.solver.checkSat
-    state.solver.pop
+    let decision ← state.solver.checkSatAssuming [Factory.not term]
     let outcome := match decision with
       | .unsat   => Core.Outcome.pass
       | .sat     => Core.Outcome.fail
@@ -72,8 +65,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
       | .unknown => SMT.Result.unknown
     return ({ obligation, smtResult, result := outcome }, smtCtx)
 
-/-- Cover check: check-sat of expression using push/pop
-    TODO: Replace push/pop with check-sat-assuming for solver compatibility. -/
+/-- Cover check: check-sat of expression using check-sat-assuming -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
@@ -84,10 +76,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
     }
     return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
-    state.solver.push
-    state.solver.assert term
-    let decision ← state.solver.checkSat
-    state.solver.pop
+    let decision ← state.solver.checkSatAssuming [term]
     let outcome := match decision with
       | .sat     => Core.Outcome.pass      -- Reachable
       | .unsat   => Core.Outcome.fail      -- Unreachable

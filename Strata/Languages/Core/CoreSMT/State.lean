@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.CoreSMT.SMTSolverInterface
+import Strata.DL.SMT.SolverInterface
 import Strata.Languages.Core.Expressions
 import Strata.Languages.Core.Options
 
@@ -55,7 +55,7 @@ abbrev ContextStack := List ContextScope
 /-- Verification state that can be reused across calls -/
 structure CoreSMTState where
   /-- The SMT solver interface -/
-  solver : SMTSolverInterface
+  solver : SMT.SolverInterface
   /-- Configuration -/
   config : CoreSMTConfig
   /-- Stack of context scopes (for push/pop support) -/
@@ -64,7 +64,7 @@ structure CoreSMTState where
   resultCount : Nat
 
 /-- Create initial state from a solver interface -/
-def CoreSMTState.init (solver : SMTSolverInterface) (config : CoreSMTConfig := {}) : CoreSMTState :=
+def CoreSMTState.init (solver : SMT.SolverInterface) (config : CoreSMTConfig := {}) : CoreSMTState :=
   { solver, config, contextStack := [[]], resultCount := 0 }
 
 /-- Push a new scope onto the context stack -/
