@@ -32,12 +32,12 @@ open Imperative
 
 /-- Helper: translate an expression to SMT term, returning error on failure -/
 private def translateExprSafe (E : Core.Env) (e : Core.Expression.Expr)
-    (ctx : Core.SMT.Context) : Except String (Term × Core.SMT.Context) :=
+    (ctx : Core.SMT.Context) : Except Std.Format (Term × Core.SMT.Context) :=
   translateExpr E e ctx
 
 /-- Helper: translate a type to SMT TermType, returning error on failure -/
 private def translateTypeSafe (E : Core.Env) (ty : Core.Expression.Ty)
-    (ctx : Core.SMT.Context) : Except String (TermType × Core.SMT.Context) :=
+    (ctx : Core.SMT.Context) : Except Std.Format (TermType × Core.SMT.Context) :=
   translateType E ty ctx
 
 /-- Proof check: check-sat of negation using push/pop -/
@@ -114,23 +114,50 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     return (state, smtCtx, some result)
   match stmt with
   | Core.Statement.assume _label expr _ =>
-    let (term, smtCtx) ← translateOrThrow E expr smtCtx
-    state.solver.assert term
-    let state := state.addItem (.assumption term)
-    return (state, smtCtx, none)
+    match translateExprSafe E expr smtCtx with
+    | .error msg =>
+      let obligation : Imperative.ProofObligation Core.Expression := {
+        label := "assume", property := .assert, assumptions := [], obligation := expr, metadata := .empty
+      }
+      return (state, smtCtx, some { obligation, result := .implementationError s!"Translation error: {msg}" })
+    | .ok (term, smtCtx) =>
+      state.solver.assert term
+      let state := state.addItem (.assumption term)
+      return (state, smtCtx, none)
 
   | Core.Statement.init name ty (some expr) _ =>
-    let (term, smtCtx) ← translateOrThrow E expr smtCtx
-    let (smtTy, smtCtx) ← translateTypeOrThrow E ty smtCtx
-    state.solver.defineFun name.name [] smtTy term
-    let state := state.addItem (.varDef name.name smtTy term)
-    return (state, smtCtx, none)
+    match translateExprSafe E expr smtCtx with
+    | .error msg =>
+      let obligation : Imperative.ProofObligation Core.Expression := {
+        label := s!"init {name.name}", property := .assert, assumptions := [], obligation := expr, metadata := .empty
+      }
+      return (state, smtCtx, some { obligation, result := .implementationError s!"Translation error: {msg}" })
+    | .ok (term, smtCtx) =>
+      match translateTypeSafe E ty smtCtx with
+      | .error msg =>
+        let obligation : Imperative.ProofObligation Core.Expression := {
+          label := s!"init {name.name}", property := .assert, assumptions := [], obligation := expr, metadata := .empty
+        }
+        return (state, smtCtx, some { obligation, result := .implementationError s!"Type translation error: {msg}" })
+      | .ok (smtTy, smtCtx) =>
+        state.solver.defineFun name.name [] smtTy term
+        let state := state.addItem (.varDef name.name smtTy term)
+        return (state, smtCtx, none)
 
   | Core.Statement.init name ty none _ =>
-    let (smtTy, smtCtx) ← translateTypeOrThrow E ty smtCtx
-    state.solver.declareFun name.name [] smtTy
-    let state := state.addItem (.varDecl name.name smtTy)
-    return (state, smtCtx, none)
+    match translateTypeSafe E ty smtCtx with
+    | .error msg =>
+      -- Use a dummy expression for error reporting
+      let dummyExpr : Core.Expression.Expr := .const () (.boolConst true)
+      let obligation : Imperative.ProofObligation Core.Expression := {
+        label := s!"init {name.name}", property := .assert, assumptions := [], 
+        obligation := dummyExpr, metadata := .empty
+      }
+      return (state, smtCtx, some { obligation, result := .implementationError s!"Type translation error: {toString msg}" })
+    | .ok (smtTy, smtCtx) =>
+      state.solver.declareFun name.name [] smtTy
+      let state := state.addItem (.varDecl name.name smtTy)
+      return (state, smtCtx, none)
 
   | Core.Statement.assert label expr _ =>
     let (result, smtCtx) ← proveCheck state E label expr smtCtx
@@ -148,29 +175,57 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     return (state, smtCtx, results.getLast?)
 
   | .funcDecl decl _ =>
-    let inputTypes ← decl.inputs.foldlM (fun acc (_, ty) => do
-      let (smtTy, _) ← translateTypeOrThrow E ty smtCtx
-      return acc ++ [smtTy]) []
-    let (outTy, smtCtx) ← translateTypeOrThrow E decl.output smtCtx
-    -- Add function to smtCtx so expression translator can find it
-    let ufArgs := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) =>
-      TermVar.mk name.name smtTy
-    let uf : UF := { id := decl.name.name, args := ufArgs, out := outTy }
-    let smtCtx := smtCtx.addUF uf
-    match decl.body with
-    | none =>
-      state.solver.declareFun decl.name.name inputTypes outTy
-      let state := state.addItem (.funcDecl decl.name.name inputTypes outTy)
-      return (state, smtCtx, none)
-    | some body =>
-      let (bodyTerm, smtCtx) ← translateOrThrow E body smtCtx
-      let args := decl.inputs.map fun (name, ty) =>
-        match translateType E ty smtCtx with
-        | .ok (smtTy, _) => (name.name, smtTy)
-        | .error _ => (name.name, TermType.int)
-      state.solver.defineFun decl.name.name args outTy bodyTerm
-      let state := state.addItem (.funcDef decl.name.name args outTy bodyTerm)
-      return (state, smtCtx, none)
+    -- Collect type translation results using foldlM
+    let result ← decl.inputs.foldlM (fun (acc : Except Std.Format (List TermType)) (_, ty) => do
+      match acc with
+      | .error msg => return .error msg
+      | .ok types =>
+        match translateTypeSafe E ty smtCtx with
+        | .error msg => return .error msg
+        | .ok (smtTy, _) => return .ok (types ++ [smtTy])
+    ) (.ok [])
+    
+    match result with
+    | .error msg =>
+      let dummyExpr : Core.Expression.Expr := .const () (.boolConst true)
+      let obligation : Imperative.ProofObligation Core.Expression := {
+        label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
+        obligation := dummyExpr, metadata := .empty
+      }
+      return (state, smtCtx, some { obligation, result := .implementationError s!"Type translation error: {toString msg}" })
+    | .ok inputTypes =>
+      match translateTypeSafe E decl.output smtCtx with
+      | .error msg =>
+        let dummyExpr : Core.Expression.Expr := .const () (.boolConst true)
+        let obligation : Imperative.ProofObligation Core.Expression := {
+          label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
+          obligation := dummyExpr, metadata := .empty
+        }
+        return (state, smtCtx, some { obligation, result := .implementationError s!"Output type translation error: {toString msg}" })
+      | .ok (outTy, smtCtx) =>
+      -- Add function to smtCtx so expression translator can find it
+      let ufArgs := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) =>
+        TermVar.mk name.name smtTy
+      let uf : UF := { id := decl.name.name, args := ufArgs, out := outTy }
+      let smtCtx := smtCtx.addUF uf
+      match decl.body with
+      | none =>
+        state.solver.declareFun decl.name.name inputTypes outTy
+        let state := state.addItem (.funcDecl decl.name.name inputTypes outTy)
+        return (state, smtCtx, none)
+      | some body =>
+        match translateExprSafe E body smtCtx with
+        | .error msg =>
+          let obligation : Imperative.ProofObligation Core.Expression := {
+            label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
+            obligation := body, metadata := .empty
+          }
+          return (state, smtCtx, some { obligation, result := .implementationError s!"Body translation error: {msg}" })
+        | .ok (bodyTerm, smtCtx) =>
+          let args := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) => (name.name, smtTy)
+          state.solver.defineFun decl.name.name args outTy bodyTerm
+          let state := state.addItem (.funcDef decl.name.name args outTy bodyTerm)
+          return (state, smtCtx, none)
 
   | _ =>
     let obligation : Imperative.ProofObligation Core.Expression := {
