@@ -147,7 +147,7 @@ Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" 
 in context
 { types := [[]], aliases := [] }
 in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
+#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.DivT, Int.ModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs in
 #eval Strata.Util.withStdGenSeed 0 do
@@ -165,7 +165,7 @@ Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" 
 in context
 { types := [[]], aliases := [] }
 in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
+#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.DivT, Int.ModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs(info, drop error) in
 #eval Strata.Util.withStdGenSeed 0 do

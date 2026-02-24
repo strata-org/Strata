@@ -48,6 +48,8 @@ theorem Factory_wf :
             try unfold binOpCeval
             try unfold cevalIntDiv
             try unfold cevalIntMod
+            try unfold cevalIntDivT
+            try unfold cevalIntModT
             try unfold bvUnaryOp
             try unfold bvBinaryOp
             try unfold bvShiftOp

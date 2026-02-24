@@ -498,7 +498,7 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
       name := funcName
       inputs := inputs
       outputs := outputs
-      preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
+      preconditions := []
       decreases := none
       body := Body.Transparent bodyBlock
       md := default
@@ -575,7 +575,7 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       name := "__main__",
       inputs := [],
       outputs := [],
-      preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)],
+      preconditions := [],
       decreases := none,
       body := .Transparent bodyBlock
       md := default

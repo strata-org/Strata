@@ -31,12 +31,6 @@ open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
 
-def intDivTOp : Core.Expression.Expr :=
-  .op () (Core.CoreIdent.unres "Int.DivT") (some (LMonoTy.arrow LMonoTy.int (LMonoTy.arrow LMonoTy.int LMonoTy.int)))
-
-def intModTOp : Core.Expression.Expr :=
-  .op () (Core.CoreIdent.unres "Int.ModT") (some (LMonoTy.arrow LMonoTy.int (LMonoTy.arrow LMonoTy.int LMonoTy.int)))
-
 /-- Map from constrained type name to its definition -/
 abbrev ConstrainedTypeMap := Std.HashMap Identifier ConstrainedType
 
@@ -156,7 +150,7 @@ def translateBinOp (op : Operation) (e1 e2 : Core.Expression.Expr) : Except Stri
   | .Implies => pure (binOp boolImpliesOp)
   | .Add => pure (binOp intAddOp) | .Sub => pure (binOp intSubOp) | .Mul => pure (binOp intMulOp)
   | .Div => pure (binOp intDivOp) | .Mod => pure (binOp intModOp)
-  | .DivT => pure (binOp intDivTOp) | .ModT => pure (binOp intModTOp)
+  | .DivT => pure (binOp Core.intDivTOp) | .ModT => pure (binOp Core.intModTOp)
   | .Lt => pure (binOp intLtOp) | .Leq => pure (binOp intLeOp) | .Gt => pure (binOp intGtOp) | .Geq => pure (binOp intGeOp)
   | _ => throw s!"translateBinOp: unsupported {repr op}"
 
@@ -755,42 +749,6 @@ def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstrain
 
 def arrayTypeSynonym : Core.Decl := .type (.syn { name := "Array", typeArgs := ["T"], type := .tcons "Map" [.int, .ftvar "T"] })
 
-/-- Truncating division (Java/C semantics): truncates toward zero -/
-def intDivTFunc : Core.Decl :=
-  let a := LExpr.fvar () (Core.CoreIdent.locl "a") (some LMonoTy.int)
-  let b := LExpr.fvar () (Core.CoreIdent.locl "b") (some LMonoTy.int)
-  let zero := LExpr.intConst () 0
-  let aGeZero := LExpr.mkApp () intGeOp [a, zero]
-  let bGeZero := LExpr.mkApp () intGeOp [b, zero]
-  let sameSign := LExpr.eq () aGeZero bGeZero
-  let euclidDiv := LExpr.mkApp () intDivOp [a, b]
-  let negA := LExpr.mkApp () intNegOp [a]
-  let negADivB := LExpr.mkApp () intDivOp [negA, b]
-  let negResult := LExpr.mkApp () intNegOp [negADivB]
-  let body := LExpr.ite () sameSign euclidDiv negResult
-  .func {
-    name := Core.CoreIdent.unres "Int.DivT"
-    typeArgs := []
-    inputs := [(Core.CoreIdent.locl "a", LMonoTy.int), (Core.CoreIdent.locl "b", LMonoTy.int)]
-    output := LMonoTy.int
-    body := some body
-  }
-
-/-- Truncating modulo (Java/C semantics): a %t b = a - (a /t b) * b -/
-def intModTFunc : Core.Decl :=
-  let a := LExpr.fvar () (Core.CoreIdent.locl "a") (some LMonoTy.int)
-  let b := LExpr.fvar () (Core.CoreIdent.locl "b") (some LMonoTy.int)
-  let divT := LExpr.mkApp () intDivTOp [a, b]
-  let mulDivB := LExpr.mkApp () intMulOp [divT, b]
-  let body := LExpr.mkApp () intSubOp [a, mulDivB]
-  .func {
-    name := Core.CoreIdent.unres "Int.ModT"
-    typeArgs := []
-    inputs := [(Core.CoreIdent.locl "a", LMonoTy.int), (Core.CoreIdent.locl "b", LMonoTy.int)]
-    output := LMonoTy.int
-    body := some body
-  }
-
 
 def translateConstant (c : Constant) : Core.Decl :=
   match c.type.val with
@@ -900,9 +858,8 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let laurelFuncDecls ← funcProcs.mapM (translateProcedureToFunction ctMap tcMap program.constants) |>.mapError fun e => #[{ fileRange := default, message := e }]
   let constDecls := program.constants.map translateConstant
   let typeDecls := [arrayTypeSynonym]
-  let funcDecls := [intDivTFunc, intModTFunc]
   let preludeDecls := corePrelude.decls
-  return ({ decls := preludeDecls ++ typeDecls ++ funcDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
+  return ({ decls := preludeDecls ++ typeDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
