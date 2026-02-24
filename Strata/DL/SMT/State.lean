@@ -9,19 +9,19 @@ import Strata.Languages.Core.Expressions
 import Strata.Languages.Core.Options
 
 /-!
-# CoreSMT State and Context Management
+# SMT State and Context Management
 
-Defines the verification state, configuration, and context tracking for the
-CoreSMT verifier. The state is returned from verify calls to enable reuse
-across multiple verification sessions.
+Defines the verification state, configuration, and context tracking for SMT-based
+verification. The state is returned from verify calls to enable reuse across
+multiple verification sessions.
 -/
 
-namespace Strata.Core.CoreSMT
+namespace Strata.SMT
 
 open Strata.SMT
 
-/-- Configuration for CoreSMT verification -/
-structure CoreSMTConfig where
+/-- Configuration for SMT-based verification -/
+structure VerifierConfig where
   /-- Enable automatic diagnosis of failures -/
   diagnosisEnabled : Bool := true
   /-- Continue verification after errors (accumulate all errors) -/
@@ -53,44 +53,44 @@ abbrev ContextScope := List ContextItem
 abbrev ContextStack := List ContextScope
 
 /-- Verification state that can be reused across calls -/
-structure CoreSMTState where
+structure VerifierState where
   /-- The SMT solver interface -/
   solver : SMT.SolverInterface
   /-- Configuration -/
-  config : CoreSMTConfig
+  config : VerifierConfig
   /-- Stack of context scopes (for push/pop support) -/
   contextStack : ContextStack
   /-- Number of verification results accumulated -/
   resultCount : Nat
 
 /-- Create initial state from a solver interface -/
-def CoreSMTState.init (solver : SMT.SolverInterface) (config : CoreSMTConfig := {}) : CoreSMTState :=
+def VerifierState.init (solver : SMT.SolverInterface) (config : VerifierConfig := {}) : VerifierState :=
   { solver, config, contextStack := [[]], resultCount := 0 }
 
 /-- Push a new scope onto the context stack -/
-def CoreSMTState.push (state : CoreSMTState) : IO CoreSMTState := do
+def VerifierState.push (state : VerifierState) : IO VerifierState := do
   state.solver.push
   return { state with contextStack := [] :: state.contextStack }
 
 /-- Pop the top scope from the context stack -/
-def CoreSMTState.pop (state : CoreSMTState) : IO CoreSMTState := do
+def VerifierState.pop (state : VerifierState) : IO VerifierState := do
   state.solver.pop
   match state.contextStack with
   | []          => return state
   | _ :: rest   => return { state with contextStack := rest }
 
 /-- Add an item to the current scope -/
-def CoreSMTState.addItem (state : CoreSMTState) (item : ContextItem) : CoreSMTState :=
+def VerifierState.addItem (state : VerifierState) (item : ContextItem) : VerifierState :=
   match state.contextStack with
   | []            => { state with contextStack := [[item]] }
   | scope :: rest => { state with contextStack := (item :: scope) :: rest }
 
 /-- Get all context items (flattened from all scopes) for error reporting -/
-def CoreSMTState.allContextItems (state : CoreSMTState) : List ContextItem :=
+def VerifierState.allContextItems (state : VerifierState) : List ContextItem :=
   state.contextStack.flatten
 
 /-- Increment the result count -/
-def CoreSMTState.incResultCount (state : CoreSMTState) : CoreSMTState :=
+def VerifierState.incResultCount (state : VerifierState) : VerifierState :=
   { state with resultCount := state.resultCount + 1 }
 
-end Strata.Core.CoreSMT
+end Strata.SMT

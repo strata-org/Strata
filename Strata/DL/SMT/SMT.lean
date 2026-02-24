@@ -12,5 +12,6 @@ import Strata.DL.SMT.Function
 import Strata.DL.SMT.Op
 import Strata.DL.SMT.Solver
 import Strata.DL.SMT.SolverInterface
+import Strata.DL.SMT.State
 import Strata.DL.SMT.Term
 import Strata.DL.SMT.TermType

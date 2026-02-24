@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.CoreSMT.StmtProcessor
+import Strata.Languages.Core.CoreSMT.StmtVerifier
 
 /-!
 # CoreSMT Verifier Public Interface

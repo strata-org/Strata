@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.CoreSMT.State
+import Strata.DL.SMT.State
 import Strata.Languages.Core.CoreSMT.ExprTranslator
 import Strata.Languages.Core.CoreSMT.IsCoreSMT
 import Strata.Languages.Core.Verifier
