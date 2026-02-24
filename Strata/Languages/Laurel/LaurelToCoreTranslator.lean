@@ -339,7 +339,7 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
         | .Identifier name => pure (.fvar () (Core.CoreIdent.locl (name ++ "_len")) (some LMonoTy.int))
         | _ => throw "Array.Length on complex expressions not supported"
       else do
-        let calleeOp := LExpr.op () (Core.CoreIdent.glob norm) none
+        let calleeOp := LExpr.op () (Core.CoreIdent.unres norm) none
         let translated ← translateExpr ctMap tcMap constants env arg
         let expandedArgs := expandArrayArgs env [arg] [translated]
         pure (expandedArgs.foldl (fun acc a => .app () acc a) calleeOp)
@@ -362,14 +362,14 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
         let body := LExpr.mkApp () boolAndOp [geStart, LExpr.mkApp () boolAndOp [ltEnd, eqElem]]
         pure (LExpr.quant () .exist (some LMonoTy.int) (LExpr.noTrigger ()) body)
       else do
-        let calleeOp := LExpr.op () (Core.CoreIdent.glob norm) none
+        let calleeOp := LExpr.op () (Core.CoreIdent.unres norm) none
         let e1 ← translateExpr ctMap tcMap constants env arg1
         let e2 ← translateExpr ctMap tcMap constants env arg2
         let expandedArgs := expandArrayArgs env [arg1, arg2] [e1, e2]
         pure (expandedArgs.foldl (fun acc a => .app () acc a) calleeOp)
   | .StaticCall name args => do
       let normName := normalizeCallee name
-      let fnIdent := Core.CoreIdent.glob normName
+      let fnIdent := Core.CoreIdent.unres normName
       let fnOp := LExpr.op () fnIdent none
       let translatedArgs ← args.attach.mapM fun ⟨a, _⟩ => translateExpr ctMap tcMap constants env a
       let expandedArgs := expandArrayArgs env args translatedArgs
@@ -437,7 +437,7 @@ def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Core.Exp
 /-- Check if a StaticCall should be translated as an expression (not a procedure call) -/
 def isExpressionCall (callee : Identifier) : Bool :=
   let norm := normalizeCallee callee
-  isHeapFunction norm || norm.startsWith "Seq." || norm.startsWith "Array."
+  isHeapFunction norm || isCoreFunction [] norm || norm.startsWith "Seq." || norm.startsWith "Array."
 
 /--
 Get element type name if `arr` is `Array<ConstrainedType>` (identifier only).

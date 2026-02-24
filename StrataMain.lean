@@ -405,7 +405,7 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults "z3" laurelProgram Options.default none
+      let results ← Strata.Laurel.verifyToVcResults laurelProgram Options.default
       match results with
       | .error errors =>
         IO.println s!"==== ERRORS ===="
@@ -467,7 +467,7 @@ def laurelToCoreCommand : Command where
     | .ok laurelProgram =>
       match Strata.Laurel.translate laurelProgram with
       | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
-      | .ok coreProgram => IO.println (prettyPrintCore coreProgram)
+      | .ok (coreProgram, _diags) => IO.println (prettyPrintCore coreProgram)
 
 def commandList : List Command := [
       javaGenCommand,
