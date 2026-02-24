@@ -60,10 +60,19 @@ datatype None { None_none() }
 
 datatype Object {}
 
-procedure Object_len(x: Object) returns (result: int)
+function Object_len(x: Object) returns (result: int)
   ensures result >= 0
 
-procedure inheritsFrom(child: string, parent: string) returns (result: bool)
+function inheritsFrom(child: string, parent: string) returns (result: bool)
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Exceptions
+// TODO: Formalize the exception hierarchy here:
+// https://docs.python.org/3/library/exceptions.html#exception-hierarchy
+// We use the name "Error" to stand for Python's Exceptions +
+// our own special indicator, Unimplemented which is an artifact of
+// Strata that indicates that our models is partial.
 
 datatype Error {
   Error_TypeError(getTypeError: string),
@@ -72,25 +81,37 @@ datatype Error {
   Error_Unimplemented(getUnimplemented: string)
 }
 
-// TODO: Except is generic in Core (Except (err: Type, ok: Type)); Laurel datatypes do not
-// support type parameters yet. Monomorphised here as Except Error string.
-datatype Except {
-  Except_mkOK(Except_getOK: string),
+// /////////////////////////////////////////////////////////////////////////////////////
+// Regular Expressions
+
+datatype ExceptErrorRegex {
+  Except_mkOK(Except_getOK: regex),
   Except_mkErr(Except_getErr: Error)
 }
 
-// TODO: ExceptErrorRegex = Except Error regex — no type alias or regex type in Laurel yet.
-
-// TODO: PyReMatchRegex axiom (forall pattern, str :: PyReMatchRegex(pattern,str,0) ==
-// str.in.re(str,pattern)) uses regex type and SMT re semantics; not expressible in Laurel.
+// original axiom
+// axiom [PyReMatchRegex_def_noFlg]:
+//  (forall pattern : regex, str : string :: {PyReMatchRegex(pattern, str, 0)}
+//    PyReMatchRegex(pattern, str, 0) == str.in.re(str, pattern));
 procedure PyReMatchRegex(pattern: string, str: string, flags: int) returns (result: bool)
+  ensures flags == 0 ==> result == str.in.re(str, pattern)
 
-procedure PyReMatchStr(pattern: string, str: string, flags: int) returns (result: Except)
+datatype ExceptErrorBool {
+  Except_mkOK(Except_getOK: bool),
+  Except_mkErr(Except_getErr: Error)
+}
 
+procedure PyReMatchStr(pattern: string, str: string, flags: int) returns (result: ExceptErrorBool)
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// List of strings
 datatype ListStr {
   ListStr_nil(),
   ListStr_cons(head: string, tail: ListStr)
 }
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Temporary Types
 
 datatype ExceptOrNone {
   ExceptOrNone_mk_code(code_val: string),
@@ -150,62 +171,108 @@ datatype Client {
   Client_CW()
 }
 
+// /////////////////////////////////////////////////////////////////////////////////////
+// Datetime
+
+////// 1. Timedelta.
+
+// According to http://docs.python.org/3/library/datetime.html,
+// ""
+//  Only days, seconds and microseconds are stored internally. Arguments are
+//  converted to those units:
+//  - A millisecond is converted to 1000 microseconds.
+//  - A minute is converted to 60 seconds.
+//  - An hour is converted to 3600 seconds.
+//  - A week is converted to 7 days.
+//  and days, seconds and microseconds are then normalized so that the
+//  representation is unique, with
+//  - 0 <= microseconds < 1000000
+//  - 0 <= seconds < 3600*24 (the number of seconds in one day)
+//  - -999999999 <= days <= 999999999
+// ""
+
 // Timedelta is represented as an int (microseconds).
 // TODO: timedelta body uses IntOrNone..isIntOrNone_mk_int discriminator syntax not
 // available in Laurel; included as opaque.
-procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta: int, maybe_except: ExceptOrNone)
+procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta: int, maybe_except: ExceptOrNone) {
+  var days_i : int := 0;
+  if (IntOrNone..isIntOrNone_mk_int(days)) {
+        days_i := IntOrNone..int_val(days);
+  }
+  var hours_i : int := 0;
+  if (IntOrNone..isIntOrNone_mk_int(hours)) {
+        hours_i := IntOrNone..int_val(hours);
+  }
+  delta := (((days_i * 24) + hours_i) * 3600) * 1000000;
+  // assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
+}
 
-// Timedelta_mk: ((days * 3600 * 24) + seconds) * 1000000 + microseconds
-procedure Timedelta_mk(days: int, seconds: int, microseconds: int) returns (result: int)
-  ensures result == (((days * 3600 * 24) + seconds) * 1000000 + microseconds)
+function Timedelta_mk(days: int, seconds: int, microseconds: int): int {
+  ((days * 3600 * 24) + seconds) * 1000000 + microseconds
+}
 
-procedure Timedelta_get_days(td: int) returns (result: int)
-procedure Timedelta_get_seconds(td: int) returns (result: int)
-procedure Timedelta_get_microseconds(td: int) returns (result: int)
+function Timedelta_get_days(td: int) returns (result: int)
+function Timedelta_get_seconds(td: int) returns (result: int)
+function Timedelta_get_microseconds(td: int) returns (result: int)
 
 // TODO: Timedelta_deconstructors axiom (forall days0, seconds0, msecs0, days, seconds, msecs
 // :: ...) — multi-variable forall with complex body; not expressible as ensures.
 
+////// Datetime.
+// Datetime is abstractly defined as a pair of (base time, relative timedelta).
+// datetime.now() returns (<the curent datetime>, 0).
+// Adding or subtracting datetime.timedelta updates
 datatype Datetime {}
 datatype Datetime_base {}
 
-procedure Datetime_get_base(d: Datetime) returns (result: Datetime_base)
-procedure Datetime_get_timedelta(d: Datetime) returns (result: int)
+function Datetime_get_base(d: Datetime): Datetime_base
+function Datetime_get_timedelta(d: Datetime): int
 
+// now() returns an abstract, fresh current datetime.
+// This abstract now() does not guarantee monotonic increase of time, and this
+// means subtracting an 'old' timestamp from a 'new' timestamp may return
+// a negative difference.
 procedure datetime_now( ) returns (d: Datetime, maybe_except: ExceptOrNone)
   ensures Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0)
 
 procedure datetime_utcnow( ) returns (d: Datetime, maybe_except: ExceptOrNone)
   ensures Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0)
 
+
+// Addition/subtraction of Datetime and Timedelta.
 // Datetime_add: both conjuncts from Core axiom [Datetime_add_ax] expressed as separate ensures.
-procedure Datetime_add(d: Datetime, timedelta: int) returns (result: Datetime)
+function Datetime_add(d: Datetime, timedelta: int) returns (result: Datetime)
   ensures Datetime_get_base(result) == Datetime_get_base(d)
   ensures Datetime_get_timedelta(result) == (Datetime_get_timedelta(d) + timedelta)
 
 // Datetime_sub is defined in Core as Datetime_add(d, -timedelta).
-procedure Datetime_sub(d: Datetime, timedelta: int) returns (result: Datetime)
+function Datetime_sub(d: Datetime, timedelta: int) returns (result: Datetime)
   ensures Datetime_get_base(result) == Datetime_get_base(d)
   ensures Datetime_get_timedelta(result) == (Datetime_get_timedelta(d) - timedelta)
 
-// TODO: Datetime_lt axiom (forall d1, d2 :: Datetime_get_base(d1) == Datetime_get_base(d2)
-// ==> Datetime_lt(d1,d2) == (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2))) —
-// conditional forall, not expressible as ensures.
-procedure Datetime_lt(d1: Datetime, d2: Datetime) returns (result: bool)
+function Datetime_lt(d1: Datetime, d2: Datetime): bool {
+  Datetime_get_base(d1) == Datetime_get_base(d2)
+        ==> Datetime_lt(d1, d2) ==
+            (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2))
+}
 
 datatype Date {}
 
 procedure datetime_date(dt: Datetime) returns (d: Datetime, maybe_except: ExceptOrNone)
 
-procedure datetime_to_str(dt: Datetime) returns (result: string)
+function datetime_to_str(dt: Datetime) returns (result: string)
 
 // datetime_to_int is a 0-ary function in Core; translated as a no-parameter procedure.
-procedure datetime_to_int( ) returns (result: int)
+function datetime_to_int( ) returns (result: int)
 
 // TODO: datetime_strptime ensures clause has (forall dt :: ...) — forall in ensures not
 // expressible in Laurel; only the requires clause is preserved.
 procedure datetime_strptime(time: string, format: string) returns (d: Datetime, maybe_except: ExceptOrNone)
   requires format == "%Y-%m-%d"
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Uninterpreted procedures
 
 // TODO: importFrom in Core has names: ListStr parameter; preserved here.
 procedure importFrom(module: string, names: ListStr, level: int) returns ( )
@@ -219,18 +286,20 @@ procedure json_loads(msg: string) returns (d: DictStrAny, maybe_except: ExceptOr
 procedure input(msg: string) returns (result: string, maybe_except: ExceptOrNone)
 procedure random_choice(l: ListStr) returns (result: string, maybe_except: ExceptOrNone)
 
-procedure str_in_list_str(s: string, l: ListStr) returns (result: bool)
-procedure str_in_dict_str_any(s: string, d: DictStrAny) returns (result: bool)
-procedure list_str_get(l: ListStr, i: int) returns (result: string)
-procedure str_len(s: string) returns (result: int)
-procedure dict_str_any_get(d: DictStrAny, k: string) returns (result: DictStrAny)
-procedure dict_str_any_get_list_str(d: DictStrAny, k: string) returns (result: ListStr)
-procedure dict_str_any_get_str(d: DictStrAny, k: string) returns (result: string)
-procedure dict_str_any_length(d: DictStrAny) returns (result: int)
+function str_in_list_str(s: string, l: ListStr) returns (result: bool)
+function str_in_dict_str_any(s: string, d: DictStrAny) returns (result: bool)
+function list_str_get(l: ListStr, i: int) returns (result: string)
+function str_len(s: string) returns (result: int)
+function dict_str_any_get(d: DictStrAny, k: string) returns (result: DictStrAny)
+function dict_str_any_get_list_str(d: DictStrAny, k: string) returns (result: ListStr)
+function dict_str_any_get_str(d: DictStrAny, k: string) returns (result: string)
+function dict_str_any_length(d: DictStrAny) returns (result: int)
 
 procedure str_to_float(s: string) returns (result: string, maybe_except: ExceptOrNone)
 
-procedure Float_gt(lhs: string, rhs: string) returns (result: bool)
+function Float_gt(lhs: string, rhs: string) returns (result: bool)
+
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // TODO: test_helper_procedure has requires/ensures using datatype discriminator expressions
 // (StrOrNone..isStrOrNone_mk_none, StrOrNone..isStrOrNone_mk_str, StrOrNone..str_val) and
