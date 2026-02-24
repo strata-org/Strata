@@ -259,9 +259,6 @@ def LExpr.sizeOf: LExpr T → Nat
   | LExpr.eq _ e1 e2 => 3 + sizeOf e1 + sizeOf e2
   | _ => 1
 
-instance  : SizeOf (LExpr T) where
-  sizeOf := LExpr.sizeOf
-
 /--
 Get type of a constant `c`
 -/
