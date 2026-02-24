@@ -51,18 +51,19 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
     }
     return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
-    let decision ← state.solver.checkSatAssuming [Factory.not term]
+    let solver := state.solver
+    let decision ← solver.checkSatAssuming [Factory.not term]
     let outcome := match decision with
-      | .unsat   => Core.Outcome.pass
-      | .sat     => Core.Outcome.fail
-      | .unknown => Core.Outcome.unknown
+      | SMT.Decision.unsat   => Core.Outcome.pass
+      | SMT.Decision.sat     => Core.Outcome.fail
+      | SMT.Decision.unknown => Core.Outcome.unknown
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property := .assert, assumptions := [], obligation := expr, metadata := .empty
     }
     let smtResult := match decision with
-      | .unsat => SMT.Result.unsat
-      | .sat => SMT.Result.unknown
-      | .unknown => SMT.Result.unknown
+      | SMT.Decision.unsat => SMT.Result.unsat
+      | SMT.Decision.sat => SMT.Result.unknown
+      | SMT.Decision.unknown => SMT.Result.unknown
     return ({ obligation, smtResult, result := outcome }, smtCtx)
 
 /-- Cover check: check-sat of expression using check-sat-assuming -/
@@ -76,18 +77,19 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
     }
     return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
-    let decision ← state.solver.checkSatAssuming [term]
+    let solver := state.solver
+    let decision ← solver.checkSatAssuming [term]
     let outcome := match decision with
-      | .sat     => Core.Outcome.pass      -- Reachable
-      | .unsat   => Core.Outcome.fail      -- Unreachable
-      | .unknown => Core.Outcome.unknown
+      | SMT.Decision.sat     => Core.Outcome.pass      -- Reachable
+      | SMT.Decision.unsat   => Core.Outcome.fail      -- Unreachable
+      | SMT.Decision.unknown => Core.Outcome.unknown
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property := .cover, assumptions := [], obligation := expr, metadata := .empty
     }
     let smtResult := match decision with
-      | .sat => SMT.Result.unknown
-      | .unsat => SMT.Result.unsat
-      | .unknown => SMT.Result.unknown
+      | SMT.Decision.sat => SMT.Result.unknown
+      | SMT.Decision.unsat => SMT.Result.unsat
+      | SMT.Decision.unknown => SMT.Result.unknown
     return ({ obligation, smtResult, result := outcome }, smtCtx)
 
 mutual
@@ -115,7 +117,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       }
       return (state, smtCtx, some { obligation, result := .implementationError s!"Translation error: {msg}" })
     | .ok (term, smtCtx) =>
-      state.solver.assert term
+      let solver := state.solver; solver.assert term
       let state := state.addItem (.assumption term)
       return (state, smtCtx, none)
 
@@ -134,7 +136,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         }
         return (state, smtCtx, some { obligation, result := .implementationError s!"Type translation error: {msg}" })
       | .ok (smtTy, smtCtx) =>
-        state.solver.defineFun name.name [] smtTy term
+        let solver := state.solver; solver.defineFun name.name [] smtTy term
         let state := state.addItem (.varDef name.name smtTy term)
         return (state, smtCtx, none)
 
@@ -149,7 +151,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       }
       return (state, smtCtx, some { obligation, result := .implementationError s!"Type translation error: {toString msg}" })
     | .ok (smtTy, smtCtx) =>
-      state.solver.declareFun name.name [] smtTy
+      let solver := state.solver; solver.declareFun name.name [] smtTy
       let state := state.addItem (.varDecl name.name smtTy)
       return (state, smtCtx, none)
 
@@ -204,7 +206,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let smtCtx := smtCtx.addUF uf
       match decl.body with
       | none =>
-        state.solver.declareFun decl.name.name inputTypes outTy
+        let solver := state.solver; solver.declareFun decl.name.name inputTypes outTy
         let state := state.addItem (.funcDecl decl.name.name inputTypes outTy)
         return (state, smtCtx, none)
       | some body =>
@@ -217,7 +219,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
           return (state, smtCtx, some { obligation, result := .implementationError s!"Body translation error: {msg}" })
         | .ok (bodyTerm, smtCtx) =>
           let args := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) => (name.name, smtTy)
-          state.solver.defineFun decl.name.name args outTy bodyTerm
+          let solver := state.solver; solver.defineFun decl.name.name args outTy bodyTerm
           let state := state.addItem (.funcDef decl.name.name args outTy bodyTerm)
           return (state, smtCtx, none)
 

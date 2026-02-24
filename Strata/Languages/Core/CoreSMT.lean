@@ -45,10 +45,11 @@ def CoreSMTState.addItem (state : CoreSMTState) (item : SMT.ContextItem) : CoreS
 def CoreSMTState.allContextItems (state : CoreSMTState) : List SMT.ContextItem :=
   state.smtState.allContextItems
 
-def CoreSMTState.solver (state : CoreSMTState) : SMT.SolverInterface :=
+-- Accessors for SMT state fields (as abbrevs for dot notation)
+@[inline] def CoreSMTState.solver (state : CoreSMTState) : SMT.SolverInterface :=
   state.smtState.solver
 
-def CoreSMTState.contextStack (state : CoreSMTState) : SMT.ContextStack :=
+@[inline] def CoreSMTState.contextStack (state : CoreSMTState) : SMT.ContextStack :=
   state.smtState.contextStack
 
 end Strata.Core.CoreSMT

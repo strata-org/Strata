@@ -5,7 +5,6 @@
 -/
 
 import Strata.Languages.B3.Verifier
-import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
 import Strata.Languages.B3.ToCore

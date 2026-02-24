@@ -4,12 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.B3.Verifier.Formatter
-import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.Verifier.Expression
-import Strata.Languages.B3.Verifier.Statements
-import Strata.Languages.B3.Verifier.Diagnosis
-import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.B3.ToCore
 import Strata.Languages.B3.Transform.FunctionToAxiom
 import Strata.Languages.B3.DDMTransform.ParseCST
@@ -17,7 +11,6 @@ import Strata.Languages.Core.CoreSMT
 import Strata.DL.SMT.Solver
 
 open Strata
-open Strata.B3.Verifier
 open Strata.SMT
 
 /-!
@@ -45,25 +38,19 @@ B3.ToCore (Conversion)
 CoreSMT Verifier
       ↓
   Results (proved/counterexample/unknown)
-      ↓
-Diagnosis (if failed)
 ```
 
-## API Choice
-
--- Minimal type stubs for B3 verifier API compatibility
-structure VerificationReport where
-  dummy : Unit := ()
-
-structure ProcedureReport where
-  procedureName : String
-  results : List (VerificationReport × Option Unit)
-
-Use `programToSMT` for automatic diagnosis (recommended) - provides detailed error analysis.
-Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - returns raw results.
-
-## Usage
+## Helper Functions
 -/
+
+/-- Parse DDM program to B3 AST -/
+def programToB3AST (ddmProgram : Strata.Program) : Except String (B3AST.Program SourceRange) :=
+  match B3.DDMTransform.parseCST ddmProgram with
+  | .error msg => .error s!"Parse error: {msg}"
+  | .ok cst =>
+    match B3.DDMTransform.cstToAST cst with
+    | .error msg => .error s!"Conversion error: {msg}"
+    | .ok ast => .ok ast
 
 -- Example: Verify a simple B3 program using CoreSMT (meta to avoid including in production)
 -- This demonstrates the end-to-end B3→Core→CoreSMT verification API
@@ -90,7 +77,7 @@ meta def exampleVerification : IO Unit := do
 
   -- Create CoreSMT solver and verify
   let solver ← Core.CoreSMT.mkCvc5Solver
-  let config : Core.CoreSMT.CoreSMTConfig := { diagnosisEnabled := true, accumulateErrors := true }
+  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solver config
   let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
 
@@ -102,6 +89,14 @@ meta def exampleVerification : IO Unit := do
     | .fail => IO.println "✗ Failed"
     | .unknown => IO.println "✗ Unknown"
     | .implementationError e => IO.println s!"✗ Error: {e}"
+
+-- Minimal type stubs for B3 verifier API compatibility
+structure VerificationReport where
+  dummy : Unit := ()
+
+structure ProcedureReport where
+  procedureName : String
+  results : List (VerificationReport × Option Unit)
 
 /-- Convert B3 program to Core and verify via CoreSMT pipeline -/
 def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
@@ -116,11 +111,12 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
   -- Create SMT solver interface
   let solverInterface ← Core.CoreSMT.mkCvc5Solver
   -- Verify via CoreSMT
-  let config : Core.CoreSMT.CoreSMTConfig := { diagnosisEnabled := true, accumulateErrors := true }
+  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
   let (_, _, _results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
-  -- Convert results to B3 format (simplified - returns empty for now)
+  -- TODO: Convert results to B3 format for test compatibility
   return []
 
 def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
+  -- TODO: Implement without diagnosis
   return []
