@@ -8,6 +8,7 @@ import Strata.DL.SMT.State
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.ExprTranslator
 import Strata.Languages.Core.CoreSMT.IsCoreSMT
+import Strata.Languages.Core.CoreSMT.Diagnosis
 import Strata.Languages.Core.Verifier
 
 /-!
@@ -65,7 +66,17 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
       | SMT.Decision.unsat => SMT.Result.unsat
       | SMT.Decision.sat => SMT.Result.unknown
       | SMT.Decision.unknown => SMT.Result.unknown
-    return ({ obligation, smtResult, result := outcome }, smtCtx)
+    
+    -- Add diagnosis for failures
+    let diagnosis ← if outcome != .pass then
+      let diagResult ← Diagnosis.diagnoseFailure state E expr false smtCtx
+      let failedExprs := diagResult.diagnosedFailures.map (·.expression)
+      let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
+      pure (some { isRefuted, failedSubExpressions := failedExprs })
+    else
+      pure none
+    
+    return ({ obligation, smtResult, result := outcome, diagnosis }, smtCtx)
 
 /-- Cover check: check-sat of expression using check-sat-assuming -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
@@ -91,7 +102,17 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
       | SMT.Decision.sat => SMT.Result.unknown
       | SMT.Decision.unsat => SMT.Result.unsat
       | SMT.Decision.unknown => SMT.Result.unknown
-    return ({ obligation, smtResult, result := outcome }, smtCtx)
+    
+    -- Add diagnosis for failures (reach checks)
+    let diagnosis ← if outcome != .pass then
+      let diagResult ← Diagnosis.diagnoseFailure state E expr true smtCtx  -- true for reach check
+      let failedExprs := diagResult.diagnosedFailures.map (·.expression)
+      let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
+      pure (some { isRefuted, failedSubExpressions := failedExprs })
+    else
+      pure none
+    
+    return ({ obligation, smtResult, result := outcome, diagnosis }, smtCtx)
 
 mutual
 /-- Process a single CoreSMT statement. Returns updated state, SMT context,

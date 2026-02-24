@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.CoreSMT.StmtVerifier
+import Strata.Languages.Core.CoreSMT.State
+import Strata.Languages.Core.CoreSMT.ExprTranslator
 
 /-!
 # CoreSMT Diagnosis Engine
@@ -45,7 +46,7 @@ def splitConjunction (e : Core.Expression.Expr) : Option (Core.Expression.Expr Ã
 /-- Check if an expression is provably false (refuted) using push/pop -/
 def checkRefuted (state : CoreSMTState) (E : Core.Env) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) : IO Bool := do
-  match translateExpr E expr smtCtx with
+  match ExprTranslator.translateExpr E smtCtx expr with
   | .error _ => return false
   | .ok (term, _) =>
     state.solver.push
@@ -71,7 +72,7 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
       if leftRefuted then
         return { originalLabel := "", diagnosedFailures := leftResult.diagnosedFailures }
     -- Push, assert left as context, diagnose right conjunct, pop
-    match translateExpr E lhs smtCtx with
+    match ExprTranslator.translateExpr E smtCtx lhs with
     | .error _ =>
       return { originalLabel := "", diagnosedFailures := leftResult.diagnosedFailures }
     | .ok (lhsTerm, _) =>

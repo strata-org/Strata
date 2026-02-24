@@ -130,6 +130,7 @@ instance : ToFormat Outcome where
 /-- Diagnosis information for verification failures -/
 structure DiagnosisInfo where
   isRefuted : Bool := false
+  failedSubExpressions : List Expression.Expr := []
   deriving Repr, Inhabited
 
 /--
