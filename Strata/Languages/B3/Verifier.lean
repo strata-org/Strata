@@ -92,11 +92,19 @@ meta def exampleVerification : IO Unit := do
 
 -- Minimal type stubs for B3 verifier API compatibility
 structure VerificationReport where
-  dummy : Unit := ()
+  label : String
+  outcome : Core.Outcome
+  deriving Repr
 
 structure ProcedureReport where
   procedureName : String
   results : List (VerificationReport × Option Unit)
+  deriving Repr
+
+/-- Convert Core VCResult to B3 VerificationReport -/
+private def vcResultToVerificationReport (vcResult : Core.VCResult) : VerificationReport :=
+  { label := vcResult.obligation.label
+    outcome := vcResult.result }
 
 /-- Convert B3 program to Core and verify via CoreSMT pipeline -/
 def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
@@ -113,10 +121,13 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
   -- Verify via CoreSMT
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
-  let (_, _, _results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
-  -- TODO: Convert results to B3 format for test compatibility
-  return []
+  let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
+  
+  -- Convert results to B3 format
+  let reports := results.map vcResultToVerificationReport
+  -- Group by procedure (simplified - all in one procedure for now)
+  return [{ procedureName := "main", results := reports.map (·, none) }]
 
 def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
-  -- TODO: Implement without diagnosis
-  return []
+  let reports ← programToSMT prog solver
+  return reports.flatMap (fun r => r.results.map (fun (vr, _) => .ok vr))

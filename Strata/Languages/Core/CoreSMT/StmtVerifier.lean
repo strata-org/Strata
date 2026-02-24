@@ -237,6 +237,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
 partial def processStatements (state : CoreSMTState) (E : Core.Env)
     (stmts : List Core.Statement) (smtCtx : Core.SMT.Context)
     : IO (CoreSMTState × Core.SMT.Context × List Core.VCResult) := do
+  let accumulateErrors := state.config.accumulateErrors
   let mut state := state
   let mut smtCtx := smtCtx
   let mut results : List Core.VCResult := []
@@ -248,12 +249,11 @@ partial def processStatements (state : CoreSMTState) (E : Core.Env)
     | some r => results := results ++ [r]
     | none => pure ()
     -- If not accumulating errors and we got a failure, stop
-    if !state.config.accumulateErrors then
-      match result with
-      | some r =>
-        if r.result != Core.Outcome.pass then
-          return (state, smtCtx, results)
-      | none => pure ()
+    let shouldStop := !accumulateErrors && match result with
+      | some r => r.result != Core.Outcome.pass
+      | none => false
+    if shouldStop then
+      return (state, smtCtx, results)
   return (state, smtCtx, results)
 end
 

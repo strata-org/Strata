@@ -133,31 +133,20 @@ def testVerification (prog : Program) : IO Unit := do
   let reports ← B3.Verifier.programToSMT ast solver
   -- Don't call exit - let the solver process terminate naturally
   for report in reports do
-    for (result, diagnosis) in report.results do
-      match result.context.decl with
-      | .procedure _ name _ _ _ =>
-          let marker := if result.result.isError then "✗" else "✓"
-          let description := match result.result with
-            | .error .counterexample => "counterexample found"
-            | .error .unknown => "unknown"
-            | .error .refuted => "refuted"
-            | .success .verified => "verified"
-            | .success .reachable => "reachable"
-            | .success .reachabilityUnknown => "reachability unknown"
+    for (result, _) in report.results do
+      let marker := match result.outcome with
+        | .pass => "✓"
+        | .fail => "✗"
+        | .unknown => "✗"
+        | .implementationError _ => "✗"
+      
+      let description := match result.outcome with
+        | .pass => "verified"
+        | .fail => "counterexample found"
+        | .unknown => "unknown"
+        | .implementationError msg => s!"error: {msg}"
 
-          IO.println s!"{name.val}: {marker} {description}"
-          if result.result.isError then
-            let baseOffset := match prog.commands.toList with
-              | [op] => op.ann.start
-              | _ => { byteIdx := 0 }
-
-            let stmt := result.context.stmt
-            IO.println s!"  {formatStatementError prog stmt}"
-
-                -- Display diagnosis with VC for each failure, or top-level VC if no diagnosis
-                match diagnosis with
-                | some diag =>
-                    if !diag.diagnosedFailures.isEmpty then
+      IO.println s!"{result.label}: {marker} {description}"
                       -- Show diagnosis with assumptions for each failure
                       for failure in diag.diagnosedFailures do
                         let exprLoc := formatExpressionLocation prog failure.expression
