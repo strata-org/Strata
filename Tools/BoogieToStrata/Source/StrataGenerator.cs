@@ -1022,27 +1022,16 @@ public class StrataGenerator : ReadOnlyVisitor {
         return targets;
     }
 
-    private void EmitStmtList(StmtList stmtList) {
-        var bigBlocks = stmtList.BigBlocks;
-        var gotoTargets = CollectGotoTargetsFromBigBlocks(bigBlocks);
-
-        if (gotoTargets.Count == 0) {
-            EmitSeparated(bigBlocks, EmitBigBlock, "\n");
-            return;
-        }
-
-        // Build label-to-index map for big blocks
-        var labelToIndex = new Dictionary<string, int>();
-        for (var i = 0; i < bigBlocks.Count; i++) {
-            if (bigBlocks[i].LabelName != null) {
-                labelToIndex[bigBlocks[i].LabelName] = i;
-            }
-        }
-        // _exit is after all blocks, unless there's a big block labeled _exit
-        if (!labelToIndex.ContainsKey("_exit")) {
-            labelToIndex["_exit"] = bigBlocks.Count;
-        }
-
+    /// <summary>
+    /// Emit a sequence of items wrapped in labeled blocks for exit targets.
+    /// For each target label, a wrapper block opens before the first item
+    /// and closes just before the item at the target's index.
+    /// </summary>
+    private void EmitWithExitWrappers(
+        HashSet<string> gotoTargets,
+        Dictionary<string, int> labelToIndex,
+        int count,
+        Action<int> emitItem) {
         var wrappers = gotoTargets
             .Where(t => labelToIndex.ContainsKey(t))
             .Select(t => (label: t, closeAt: labelToIndex[t]))
@@ -1054,23 +1043,47 @@ public class StrataGenerator : ReadOnlyVisitor {
             IncIndent();
         }
 
-        for (var i = 0; i < bigBlocks.Count; i++) {
+        for (var i = 0; i < count; i++) {
             foreach (var (label, closeAt) in wrappers) {
                 if (closeAt == i) {
                     DecIndent();
                     IndentLine("}");
                 }
             }
-            if (i > 0) { WriteLine(); }
-            EmitBigBlock(bigBlocks[i]);
+            emitItem(i);
         }
 
         foreach (var (label, closeAt) in wrappers) {
-            if (closeAt == bigBlocks.Count) {
+            if (closeAt == count) {
                 DecIndent();
                 IndentLine("}");
             }
         }
+    }
+
+    private void EmitStmtList(StmtList stmtList) {
+        var bigBlocks = stmtList.BigBlocks;
+        var gotoTargets = CollectGotoTargetsFromBigBlocks(bigBlocks);
+
+        if (gotoTargets.Count == 0) {
+            EmitSeparated(bigBlocks, EmitBigBlock, "\n");
+            return;
+        }
+
+        var labelToIndex = new Dictionary<string, int>();
+        for (var i = 0; i < bigBlocks.Count; i++) {
+            if (bigBlocks[i].LabelName != null) {
+                labelToIndex[bigBlocks[i].LabelName] = i;
+            }
+        }
+        if (!labelToIndex.ContainsKey("_exit")) {
+            labelToIndex["_exit"] = bigBlocks.Count;
+        }
+
+        EmitWithExitWrappers(gotoTargets, labelToIndex, bigBlocks.Count, i => {
+            if (i > 0) { WriteLine(); }
+            EmitBigBlock(bigBlocks[i]);
+        });
     }
 
     public override Block VisitBlock(Block node) {
@@ -1412,54 +1425,18 @@ public class StrataGenerator : ReadOnlyVisitor {
         } else {
             // For unstructured blocks, we wrap groups of blocks so that
             // forward gotos (now `exit label`) can exit to the right place.
-            // For each goto target, we open a wrapper block before the first
-            // block and close it just before the target block.
             var blocks = node.Blocks;
             var gotoTargets = CollectGotoTargets(blocks);
 
-            // Build a map from target label to its index in the block list
             var labelToIndex = new Dictionary<string, int>();
             for (var i = 0; i < blocks.Count; i++) {
                 labelToIndex[blocks[i].Label] = i;
             }
-            // _exit is after all blocks
             labelToIndex["_exit"] = blocks.Count;
 
-            // Determine which wrapper blocks to open at each position.
-            // A wrapper for target T opens at position 0 and closes at the
-            // index of T. We sort by closing position (descending) so that
-            // inner wrappers are opened last (and closed first).
-            var wrappers = gotoTargets
-                .Where(t => labelToIndex.ContainsKey(t))
-                .Select(t => (label: t, closeAt: labelToIndex[t]))
-                .OrderByDescending(w => w.closeAt)
-                .ToList();
-
-            // Open all wrapper blocks (outermost = latest close first)
-            foreach (var (label, _) in wrappers) {
-                IndentLine($"{Name(label)}: {{");
-                IncIndent();
-            }
-
-            for (var i = 0; i < blocks.Count; i++) {
-                // Close any wrapper blocks that end at this position
-                foreach (var (label, closeAt) in wrappers) {
-                    if (closeAt == i) {
-                        DecIndent();
-                        IndentLine("}");
-                    }
-                }
-
+            EmitWithExitWrappers(gotoTargets, labelToIndex, blocks.Count, i => {
                 VisitBlock(blocks[i]);
-            }
-
-            // Close any wrapper blocks that end after all blocks (i.e., _exit)
-            foreach (var (label, closeAt) in wrappers) {
-                if (closeAt == blocks.Count) {
-                    DecIndent();
-                    IndentLine("}");
-                }
-            }
+            });
         }
 
         DecIndent();
