@@ -7,6 +7,7 @@ category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
 op stringType : LaurelType => "string";
+op float64Type : LaurelType => "float64";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
@@ -134,8 +135,18 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   body : Option OptionalBody) : Procedure =>
   "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
 
+// Datatypes
+category DatatypeConstructor;
+op datatypeConstructorNoArgs (name: Ident): DatatypeConstructor => name "()";
+op datatypeConstructorWithArgs (name: Ident, args: CommaSepBy Parameter): DatatypeConstructor => name "(" args ")";
+
+category Datatype;
+op datatype (name: Ident, constructors: CommaSepBy DatatypeConstructor): Datatype =>
+  "datatype " name "{" constructors "}";
+
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
 op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
+op topLevelDatatype(datatype: Datatype): TopLevel => datatype;
 
 op program (items: Seq TopLevel): Command => items;
