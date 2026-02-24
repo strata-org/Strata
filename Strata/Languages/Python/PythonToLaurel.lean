@@ -412,18 +412,28 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     : Except TranslationError (TranslationContext × StmtExprMd) := do
   let md := sourceRangeToMetaData ctx.filePath s.toAst.ann
   match s with
-  -- Assignment: x = expr
+  -- Assignment: x = expr or self.field = expr
   | .Assign _ targets value _ => do
     -- For now, only support single target
     if targets.val.size != 1 then
       throw (.unsupportedConstruct "Multiple assignment targets not yet supported" (toString (repr s)))
-    let target ← match targets.val[0]! with
-      | .Name _ name _ => .ok name.val
-      | _ => throw (.unsupportedConstruct "Only simple variable assignment supported" (toString (repr s)))
-    let valueExpr ← translateExpr ctx value
-    let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
-    let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
-    return (ctx, assignStmt)
+
+    -- Check if target is a field assignment or simple variable
+    match targets.val[0]! with
+    | .Name _ name _ =>
+      -- Simple variable assignment: x = expr
+      let target := name.val
+      let valueExpr ← translateExpr ctx value
+      let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
+      let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
+      return (ctx, assignStmt)
+    | .Attribute _ obj attr _ =>
+      -- Field assignment: obj.field = expr or self.field = expr
+      let valueExpr ← translateExpr ctx value
+      let targetExpr ← translateExpr ctx targets.val[0]!  -- This will handle self.field via translateExpr
+      let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
+      return (ctx, assignStmt)
+    | _ => throw (.unsupportedConstruct "Only simple variable or field assignment supported" (toString (repr s)))
 
   -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args)
   | .AnnAssign _ target annotation value _ => do
