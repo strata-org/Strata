@@ -71,7 +71,7 @@ abbrev Statement := Imperative.Stmt Core.Expression Core.Command
 abbrev Statements := List Statement
 
 @[match_pattern]
-abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Expression.Expr)
+abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
     (md : MetaData Expression := .empty) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
 @[match_pattern]
@@ -105,7 +105,7 @@ def Command.eraseTypes (c : Command) : Command :=
   match c with
   | .cmd c =>
     match c with
-    | .init name ty e md => .cmd $ .init name ty e.eraseTypes md
+    | .init name ty e md => .cmd $ .init name ty (e.map Lambda.LExpr.eraseTypes) md
     | .set name e md => .cmd $ .set name e.eraseTypes md
     | .havoc name md => .cmd $ .havoc name md
     | .assert label b md => .cmd $ .assert label b.eraseTypes md
@@ -132,7 +132,8 @@ def Statement.eraseTypes (s : Statement) : Statement :=
   | .funcDecl decl md =>
     let decl' := { decl with
       body := decl.body.map Lambda.LExpr.eraseTypes,
-      axioms := decl.axioms.map Lambda.LExpr.eraseTypes }
+      axioms := decl.axioms.map Lambda.LExpr.eraseTypes,
+      preconditions := decl.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
     .funcDecl decl' md
   termination_by (Stmt.sizeOf s)
   decreasing_by all_goals simp[sizeOf] <;> term_by_mem
@@ -339,7 +340,7 @@ def Statement.substFvar (s : Core.Statement)
       (to:Expression.Expr) : Statement :=
   match s with
   | .init lhs ty rhs metadata =>
-    .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
+    .init lhs ty (rhs.map (Lambda.LExpr.substFvar · fr to)) metadata
   | .set lhs rhs metadata =>
     .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
   | .havoc _ _ => s

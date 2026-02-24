@@ -443,6 +443,9 @@ partial def unifyTypes
         return args
       assert! ea.size = ia.size
       unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+    | .tvar _ _ =>
+      -- tvar inferred types are passed through; type inference will catch mismatches
+      pure args
     | _ =>
       logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
       return args
@@ -454,6 +457,9 @@ partial def unifyTypes
         return args
       assert! ea.size = ia.size
       unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+    | .tvar _ _ =>
+      -- tvar inferred types are passed through; type inference will catch mismatches
+      pure args
     | ih =>
       logErrorMF exprLoc mf!"Encountered {ih} expression when {expectedType} expected."
       return args
@@ -484,8 +490,11 @@ partial def unifyTypes
     pure args
   | .arrow _ ea er =>
     match inferredType with
-    | .ident .. | .bvar .. | .fvar .. | .tvar .. =>
+    | .ident .. | .bvar .. | .fvar .. =>
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
+      pure args
+    | .tvar _ _ =>
+      -- tvar inferred types are passed through; type inference will catch mismatches
       pure args
     | .arrow _ ia ir =>
       let res ← unifyTypes b argLevel0 ea tctx exprSyntax ia args
@@ -973,21 +982,6 @@ def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : Ela
       return default
   return ⟨stxArgs, stxArgP⟩
 
-/--
-Unwrap a tree to a raw Arg based on the unwrap specification.
--/
-def unwrapTree (tree : Tree) (unwrap : Bool) : Arg :=
-  if !unwrap then
-    tree.arg
-  else
-    match tree.info with
-    | .ofNumInfo info => .num info.loc info.val
-    | .ofIdentInfo info => .ident info.loc info.val
-    | .ofStrlitInfo info => .strlit info.loc info.val
-    | .ofDecimalInfo info => .decimal info.loc info.val
-    | .ofBytesInfo info => .bytes info.loc info.val
-    | _ => tree.arg  -- Fallback for non-unwrappable types
-
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -1014,11 +1008,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
     ctx.push <$> evalBindingSpec loc initSize spec args
-  -- Apply unwrapping based on unwrapSpecs
-  let unwrappedArgs := args.toArray.mapIdx fun idx tree =>
-    let unwrap := se.unwrapSpecs.getD idx false
-    unwrapTree tree unwrap
-  let op : Operation := { ann := loc, name := i, args := unwrappedArgs }
+  let op : Operation := { ann := loc, name := i, args := args.toArray.map (·.arg) }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."
   let info : OperationInfo := { loc := loc, inputCtx := tctx, op, resultCtx }

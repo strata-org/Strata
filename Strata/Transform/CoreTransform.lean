@@ -6,7 +6,6 @@
 
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.CallGraph
-import Strata.Languages.Core.Core
 import Strata.Languages.Core.CoreGen
 import Strata.DL.Util.LabelGen
 
@@ -106,6 +105,10 @@ structure CoreTransformState where
   currentProgram: Option Program
   currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
+  -- Optional factory for transformations that need to track function
+  -- declarations (e.g., PrecondElim). The factory grows as function
+  -- declarations are encountered during traversal.
+  factory: Option (@Lambda.Factory CoreLParams) := .none
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -124,10 +127,27 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
       genState := res.2,
       currentProgram := coreTransformState.currentProgram,
       currentProcedureName := coreTransformState.currentProcedureName,
-      cachedAnalyses := coreTransformState.cachedAnalyses })
+      cachedAnalyses := coreTransformState.cachedAnalyses,
+      factory := coreTransformState.factory })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
+
+/-- Lift an `Except DiagnosticModel` into `CoreTransformM`. -/
+def liftDiag {α : Type} (e : Except Strata.DiagnosticModel α) : CoreTransformM α :=
+  match e with
+  | .ok a => pure a
+  | .error dm => throw dm.message
+
+/-- Get the factory from state, throwing if not set. -/
+def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
+  match (← get).factory with
+  | some F => pure F
+  | none => throw "factory not set in CoreTransformState"
+
+/-- Update the factory in state. -/
+def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
+  modify fun σ => { σ with factory := some F }
 
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
 
@@ -190,7 +210,7 @@ Generate an init statement with rhs as expression
 def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
   : Statement :=
   match trip with
-  | ((v', ty), e) => Statement.init v' ty e
+  | ((v', ty), e) => Statement.init v' ty (some e)
 
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
   : List Statement :=
@@ -202,7 +222,7 @@ Generate an init statement with rhs as a free variable reference
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (Lambda.LExpr.fvar () v none)
+  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none))
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
   : List Statement :=

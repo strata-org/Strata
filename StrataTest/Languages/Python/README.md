@@ -18,8 +18,12 @@ python -m strata.gen py_to_strata \
 
 ## Run analysis:
 
-This will run pyAnalyze with verbosity off:
+```
+lake exe strata pyAnalyze StrataTest/Languages/Python/test.python.st.ion
+```
+
+Use `--verbose` for verbose output:
 
 ```
-lake exe strata pyAnalyze StrataTest/Languages/Python/test.python.st.ion 0
+lake exe strata pyAnalyze --verbose StrataTest/Languages/Python/test.python.st.ion
 ```

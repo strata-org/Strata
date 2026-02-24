@@ -71,7 +71,7 @@ deriving Repr, BEq, Inhabited
 structure ExtrinsicsModelingConfig where
   behaviors : String → ExtrinsicModelingChoice
 
-def defaultExtrinsicsModelChoice (s: String) : ExtrinsicModelingChoice :=
+def defaultExtrinsicsModelChoice (_s: String) : ExtrinsicModelingChoice :=
   .havocArgsAndRet
 
 instance : Inhabited ExtrinsicsModelingConfig where
@@ -363,24 +363,24 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
     let name := p.fst
     let ty_name := p.snd
     match ty_name with
-    | "bool" => [(.init name t[bool] (.boolConst () false)), (.havoc name)]
-    | "str" => [(.init name t[string] (.strConst () "")), (.havoc name)]
-    | "int" => [(.init name t[int] (.intConst () 0)), (.havoc name)]
-    | "float" => [(.init name t[string] (.strConst () "0.0")), (.havoc name)] -- Floats as strs for now
-    | "bytes" => [(.init name t[string] (.strConst () "")), (.havoc name)]
-    | "Client" => [(.init name clientType dummyClient), (.havoc name)]
-    | "Dict[str Any]" => [(.init name dictStrAnyType dummyDictStrAny), (.havoc name)]
-    | "List[str]" => [(.init name listStrType dummyListStr), (.havoc name)]
-    | "datetime" => [(.init name datetimeType dummyDatetime), (.havoc name)]
-    | "date" => [(.init name dateType dummyDate), (.havoc name)]
-    | "timedelta" => [(.init name timedeltaType dummyTimedelta), (.havoc name)]
+    | "bool" => [(.init name t[bool] (some (.boolConst () false))), (.havoc name)]
+    | "str" => [(.init name t[string] (some (.strConst () ""))), (.havoc name)]
+    | "int" => [(.init name t[int] (some (.intConst () 0))), (.havoc name)]
+    | "float" => [(.init name t[string] (some (.strConst () "0.0"))), (.havoc name)] -- Floats as strs for now
+    | "bytes" => [(.init name t[string] (some (.strConst () ""))), (.havoc name)]
+    | "Client" => [(.init name clientType (some dummyClient)), (.havoc name)]
+    | "Dict[str Any]" => [(.init name dictStrAnyType (some dummyDictStrAny)), (.havoc name)]
+    | "List[str]" => [(.init name listStrType (some dummyListStr)), (.havoc name)]
+    | "datetime" => [(.init name datetimeType (some dummyDatetime)), (.havoc name)]
+    | "date" => [(.init name dateType (some dummyDate)), (.havoc name)]
+    | "timedelta" => [(.init name timedeltaType (some dummyTimedelta)), (.havoc name)]
     | _ =>
       let user_defined_class := translation_ctx.class_infos.find? (λ i => i.name == ty_name)
       match user_defined_class with
       | .some i =>
         let user_defined_class_ty := .forAll [] (.tcons i.name [])
         let user_defined_class_dummy := .fvar () ("DUMMY_" ++ i.name) none
-        [(.init name user_defined_class_ty user_defined_class_dummy), (.havoc name)]
+        [(.init name user_defined_class_ty (some user_defined_class_dummy)), (.havoc name)]
       | .none => panic! s!"Unsupported type annotation: `{ty_name}`"
   let foo := dedup.map toCore
   foo.flatten
@@ -598,11 +598,11 @@ partial def initTmpParam (p: Python.expr SourceRange × String) : List Core.Stat
     match f with
     | .Name _ n _ =>
       match n.val with
-      | "json_dumps" => [(.init p.snd t[string] (.strConst () "")), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToCoreExpr "IntOrNone")]]
+      | "json_dumps" => [(.init p.snd t[string] (some (.strConst () ""))), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToCoreExpr "IntOrNone")]]
       | "str" =>
         assert! args.val.size == 1
-        [(.init p.snd t[string] (.strConst () "")), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr))]
-      | "int" => [(.init p.snd t[int] (.intConst () 0)), .set p.snd (.op () "datetime_to_int" none)]
+        [(.init p.snd t[string] (some (.strConst () ""))), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr))]
+      | "int" => [(.init p.snd t[int] (some (.intConst () 0))), .set p.snd (.op () "datetime_to_int" none)]
       | _ => panic! s!"Unsupported name {n.val}"
     | _ => panic! s!"Unsupported tmp param init call: {repr f}"
   | _ => panic! "Expected Call"
@@ -728,7 +728,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst () 0))
       match tgt with
       | .Name _ n _ =>
-        let assign_tgt := [(.init n.val dictStrAnyType dummyDictStrAny)]
+        let assign_tgt := [(.init n.val dictStrAnyType (some dummyDictStrAny))]
         ([.ite guard (assign_tgt ++ (ArrPyStmtToCore translation_ctx body.val).fst) []], none)
       | _ => panic! s!"tgt must be single name: {repr tgt}"
       -- TODO: missing havoc
@@ -804,7 +804,7 @@ def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
 
 def pythonFuncToCore (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Core.Procedure.Spec) (translation_ctx : TranslationContext) : Core.Procedure :=
   let inputs : List (Lambda.Identifier Core.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
-  let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (.boolConst () false)), (.havoc "exception_ty_matches")]
+  let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (some (.boolConst () false))), (.havoc "exception_ty_matches")]
   let stmts := (ArrPyStmtToCore translation_ctx body).fst
   let body := varDecls ++ stmts ++ [.block "end" []]
   let constructor := name.endsWith "___init__"
@@ -879,7 +879,7 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals := [(.var "__name__" (.forAll [] mty[string]) (.strConst () "__main__"))]
+  let globals := [(.var "__name__" (.forAll [] mty[string]) (some (.strConst () "__main__")))]
 
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)

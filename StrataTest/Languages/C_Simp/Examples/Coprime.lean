@@ -37,20 +37,20 @@ bool procedure coprime (a: int, b: int)
 
 /--
 info: program C_Simp;
-bool procedure coprime(a:int, b:int)//@pre(a>(0))&&(b>(0));
-//@posttrue;
+bool procedure coprime(a:int, b:int)//@pre (a>0)&&(b>0);
+//@post true;
   ({
   vari:int;
   i=a;
   if(b<a){
   i=b;
   }
-  ()while(i>(1))
-  //@decreasesi//@invariant(true)({
-  if(((b%i)==(0))&&((a%i)==(0))){
+  ()while(i>1)
+  //@decreases i//@invariant true({
+  if(((b%i)==0)&&((a%i)==0)){
   returnfalse;
   }
-  ()i=i-(1);
+  ()i=i-1;
   }
   )returntrue;
   }
@@ -66,7 +66,7 @@ info: function coprime {
   post: #true
   body:
 {
-  init (i : int) := init_i
+  init (i : int)
   i := a
   if (~Int.Lt b a) {
     i := b
@@ -114,7 +114,7 @@ spec {
         assume [assume_guard]: i > 1;
         assume [assume_invariant]: true;
         assume [assume_measure_pos]: i >= 0;
-        }var |special-name-for-old-measure-value| : int;
+        }var |special-name-for-old-measure-value| : int := i;
       if(b mod i == 0 && a mod i == 0){
         return := false;
         }i := i - 1;
