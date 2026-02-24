@@ -1229,9 +1229,9 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
 
-def translateModifies (arg : Arg) : TransM Core.CoreIdent := do
+def translateModifies (arg : Arg) : TransM (Array Core.CoreIdent) := do
   let args ← checkOpArg arg q`Core.modifies_spec 1
-  translateIdent Core.CoreIdent args[0]!
+  translateCommaSep (translateIdent Core.CoreIdent) args[0]!
 
 def translateOptionFree (arg : Arg) : TransM Core.Procedure.CheckAttr := do
   let .option _ free := arg
@@ -1266,8 +1266,8 @@ def translateSpecElem (p : Program) (name : Core.CoreIdent) (count : Nat) (bindi
     | TransM.error s!"translateSpecElem expects an op {repr arg}"
   match op.name with
   | q`Core.modifies_spec =>
-    let elem ← translateModifies arg
-    return ([elem], [], [])
+    let elems ← translateModifies arg
+    return (elems.toList, [], [])
   | q`Core.requires_spec =>
     let elem ← translateRequires p name count bindings arg
     return ([], elem, [])
