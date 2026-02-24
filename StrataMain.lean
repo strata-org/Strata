@@ -390,14 +390,7 @@ def pyAnalyzeCommand : Command where
         let files := match pySourceOpt with
           | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
           | none => Map.empty
-        let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
-        let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
-        let sarifFile := filePath ++ ".sarif"
-        try
-          IO.FS.writeFile sarifFile sarifJson
-          IO.println s!"SARIF output written to {sarifFile}"
-        catch e =>
-          IO.eprintln s!"Error writing SARIF output to {sarifFile}: {e.toString}"
+        Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -482,14 +475,7 @@ def pyAnalyzeLaurelCommand : Command where
             let files := match pySourceOpt with
               | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
               | none => Map.empty
-            let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
-            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
-            let sarifFile := filePath ++ ".sarif"
-            try
-              IO.FS.writeFile sarifFile sarifJson
-              IO.println s!"SARIF output written to {sarifFile}"
-            catch e =>
-              IO.eprintln s!"Error writing SARIF output to {sarifFile}: {e.toString}"
+            Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
 
 def javaGenCommand : Command where
   name := "javaGen"
