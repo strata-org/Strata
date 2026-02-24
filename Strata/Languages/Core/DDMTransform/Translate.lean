@@ -1392,16 +1392,13 @@ inductive FnInterp where
   | Declaration
   deriving Repr
 
-def translateOptionInline (arg : Arg) : TransM (Array String) := do
-  -- (FIXME) The return type should be the same as that of `LFunc.attr`, which is
-  -- `Array String` but of course, this is not ideal. We'd like an inductive
-  -- type here of the allowed attributes in the future.
+def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
   let .option _ inline := arg
     | TransM.error s!"translateOptionInline unexpected {repr arg}"
   match inline with
   | some f =>
     let _ ← checkOpArg f q`Core.inline 0
-    return #[inline_attr]
+    return #[.inline]
   | none => return #[]
 
 def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :

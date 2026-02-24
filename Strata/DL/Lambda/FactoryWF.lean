@@ -36,6 +36,35 @@ abbrev LFuncWF {T : LExprParams} (f : LFunc T) :=
     (fun e => e.freeVars) -- getTyFreeVars
     f
 
+/-- An LFunc bundled with its well-formedness proof. -/
+structure WFLFunc (T : LExprParams) where
+  func : LFunc T
+  wf : LFuncWF func
+
+/-- The name of the underlying LFunc. -/
+def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
+
+/-- The operator expression for the underlying LFunc. -/
+def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
+  f.func.opExpr
+
+/-- An array of well-formed LFuncs with a proof that function
+    names are unique. -/
+structure WFLFactory (T : LExprParams) where
+  funcs : Array (WFLFunc T)
+  name_nodup : List.Nodup (funcs.toList.map (·.func.name.name))
+
+/-- Construct a `WFLFactory` from an array of `WFLFunc`s.
+    The `name_nodup` proof defaults to `by decide`. -/
+def WFLFactory.ofArray (funcs : Array (WFLFunc T))
+    (name_nodup : List.Nodup (funcs.toList.map (·.func.name.name)) := by decide)
+    : WFLFactory T :=
+  ⟨funcs, name_nodup⟩
+
+/-- Extract the underlying `Factory` from a `WFLFactory`. -/
+def WFLFactory.toFactory (wf : WFLFactory T) : @Factory T :=
+  wf.funcs.map (·.func)
+
 instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
     Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
   apply List.nodupDecidable
