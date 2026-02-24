@@ -189,13 +189,29 @@ def boolNotFunc : LFunc T :=
   unaryOp "Bool.Not" .bool
   (some (unOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.not))
 
-def IntBoolFactory : @Factory T :=
+def intSafeDivFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
+  let yVar : LExpr T.mono := .fvar default "y" (some .int)
+  let zero : LExpr T.mono := .intConst default 0
+  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
+  { binaryOp "Int.SafeDiv" .int (some cevalIntDiv) with
+    preconditions := [⟨yNeZero, default⟩] }
+
+def intSafeModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
+  let yVar : LExpr T.mono := .fvar default "y" (some .int)
+  let zero : LExpr T.mono := .intConst default 0
+  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
+  { binaryOp "Int.SafeMod" .int (some cevalIntMod) with
+    preconditions := [⟨yNeZero, default⟩] }
+
+def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T :=
   open LTy.Syntax in #[
     intAddFunc,
     intSubFunc,
     intMulFunc,
     intDivFunc,
+    intSafeDivFunc,
     intModFunc,
+    intSafeModFunc,
     intDivTFunc,
     intModTFunc,
     intNegFunc,

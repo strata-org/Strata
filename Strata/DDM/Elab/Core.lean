@@ -443,6 +443,9 @@ partial def unifyTypes
         return args
       assert! ea.size = ia.size
       unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+    | .tvar _ _ =>
+      -- tvar inferred types are passed through; type inference will catch mismatches
+      pure args
     | _ =>
       logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
       return args
@@ -454,6 +457,9 @@ partial def unifyTypes
         return args
       assert! ea.size = ia.size
       unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+    | .tvar _ _ =>
+      -- tvar inferred types are passed through; type inference will catch mismatches
+      pure args
     | ih =>
       logErrorMF exprLoc mf!"Encountered {ih} expression when {expectedType} expected."
       return args
@@ -484,8 +490,11 @@ partial def unifyTypes
     pure args
   | .arrow _ ea er =>
     match inferredType with
-    | .ident .. | .bvar .. | .fvar .. | .tvar .. =>
+    | .ident .. | .bvar .. | .fvar .. =>
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
+      pure args
+    | .tvar _ _ =>
+      -- tvar inferred types are passed through; type inference will catch mismatches
       pure args
     | .arrow _ ia ir =>
       let res ← unifyTypes b argLevel0 ea tctx exprSyntax ia args

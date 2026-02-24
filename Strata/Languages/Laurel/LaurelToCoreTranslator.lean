@@ -538,20 +538,20 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
           | .StaticCall callee args =>
               if isExpressionCall callee then do
                 let coreExpr ← translateExpr ctMap tcMap constants env init
-                pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType coreExpr] ++ constraintCheck)
+                pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType (some coreExpr)] ++ constraintCheck)
               else do
                 let coreArgs ← args.mapM (translateExpr ctMap tcMap constants env)
                 let expandedArgs := expandArrayArgs env args coreArgs
                 let defaultVal := defaultExprForType ctMap ty
-                let initStmt := Core.Statement.init ident coreType defaultVal
+                let initStmt := Core.Statement.init ident coreType (some defaultVal)
                 let callStmt := Core.Statement.call [ident] callee expandedArgs
                 pure (env', arrayElemAssumes ++ [initStmt, callStmt] ++ constraintCheck)
           | _ => do
               let coreExpr ← translateExpr ctMap tcMap constants env init
-              pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType coreExpr] ++ constraintCheck)
+              pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType (some coreExpr)] ++ constraintCheck)
       | none => do
           let defaultVal := defaultExprForType ctMap ty
-          pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType defaultVal] ++ constraintCheck)
+          pure (env', arrayElemAssumes ++ [Core.Statement.init ident coreType (some defaultVal)] ++ constraintCheck)
   | .Assign targets value =>
       match targets with
       | [target] =>

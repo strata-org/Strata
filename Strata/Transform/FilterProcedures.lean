@@ -32,7 +32,7 @@ def run (prog : Program) (targetProcs : List String) :
   -- Create a program with target procedures + dependencies.
   let prunedDecls := prog.decls.filter (fun decl =>
     match decl with
-    | .proc p _ => isNeededProc (CoreIdent.toPretty p.header.name)
+    | .proc p _ => p.header.noFilter || isNeededProc (CoreIdent.toPretty p.header.name)
     | _ => true) -- Keep all non-procedure declarations
 
   -- Update CallGraph so that filtered out procedures do not appear anymore

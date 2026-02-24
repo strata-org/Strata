@@ -278,7 +278,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ e _) σ'
+    EvalCmd δ σ (.init x _ (some e) _) σ'
+
+  /-- Initialize `x` with an unconstrained value (havoc semantics). -/
+  | eval_init_unconstrained :
+    InitState P σ x v σ' →
+    WellFormedSemanticEvalVar δ →
+    ---
+    EvalCmd δ σ (.init x _ none _) σ'
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
