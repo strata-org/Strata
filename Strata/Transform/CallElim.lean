@@ -77,7 +77,7 @@ def callElimCmd (cmd: Command)
 
         -- construct assumes and asserts in place of pre/post conditions
         -- generate asserts based on pre-conditions, substituting procedure arguments
-        let asserts ← createAsserts proc.spec.preconditions
+        let asserts ← createAsserts (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
                         (arg_subst ++ ret_subst)
         -- generate assumes based on post-conditions, substituting procedure arguments and returns
         let assumes ← createAssumes
