@@ -45,16 +45,10 @@ def CoreSMTState.addItem (state : CoreSMTState) (item : SMT.ContextItem) : CoreS
 def CoreSMTState.allContextItems (state : CoreSMTState) : List SMT.ContextItem :=
   state.smtState.allContextItems
 
-def CoreSMTState.incResultCount (state : CoreSMTState) : CoreSMTState :=
-  { state with smtState := state.smtState.incResultCount }
-
 def CoreSMTState.solver (state : CoreSMTState) : SMT.SolverInterface :=
   state.smtState.solver
 
 def CoreSMTState.contextStack (state : CoreSMTState) : SMT.ContextStack :=
   state.smtState.contextStack
-
-def CoreSMTState.resultCount (state : CoreSMTState) : Nat :=
-  state.smtState.resultCount
 
 end Strata.Core.CoreSMT

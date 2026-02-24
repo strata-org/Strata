@@ -46,12 +46,10 @@ structure VerifierState where
   solver : SMT.SolverInterface
   /-- Stack of context scopes (for push/pop support) -/
   contextStack : ContextStack
-  /-- Number of verification results accumulated -/
-  resultCount : Nat
 
 /-- Create initial state from a solver interface -/
 def VerifierState.init (solver : SMT.SolverInterface) : VerifierState :=
-  { solver, contextStack := [[]], resultCount := 0 }
+  { solver, contextStack := [[]] }
 
 /-- Push a new scope onto the context stack -/
 def VerifierState.push (state : VerifierState) : IO VerifierState := do
@@ -74,9 +72,5 @@ def VerifierState.addItem (state : VerifierState) (item : ContextItem) : Verifie
 /-- Get all context items (flattened from all scopes) for error reporting -/
 def VerifierState.allContextItems (state : VerifierState) : List ContextItem :=
   state.contextStack.flatten
-
-/-- Increment the result count -/
-def VerifierState.incResultCount (state : VerifierState) : VerifierState :=
-  { state with resultCount := state.resultCount + 1 }
 
 end Strata.SMT

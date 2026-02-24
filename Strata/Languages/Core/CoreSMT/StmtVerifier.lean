@@ -155,11 +155,11 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
 
   | Core.Statement.assert label expr _ =>
     let (result, smtCtx) ← proveCheck state E label expr smtCtx
-    return (state.incResultCount, smtCtx, some result)
+    return (state, smtCtx, some result)
 
   | Core.Statement.cover label expr _ =>
     let (result, smtCtx) ← coverCheck state E label expr smtCtx
-    return (state.incResultCount, smtCtx, some result)
+    return (state, smtCtx, some result)
 
   | .block _label stmts _ =>
     let state ← state.push
