@@ -309,7 +309,7 @@ def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "sarif", help := "Write SARIF output to <file>.sarif." }]
+            { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
   help := "Verify a Python Ion program. Translates to Core, inlines procedures, and runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -403,7 +403,7 @@ def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "sarif", help := "Write SARIF output to <file>.sarif." }]
+            { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
