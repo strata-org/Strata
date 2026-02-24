@@ -51,6 +51,7 @@ Translation notes vs CorePrelude:
 - Core `importFrom(module, names: ListStr, level)` — `names` parameter preserved.
 - Core `import(names: ListStr)` — included.
 -/
+set_option maxRecDepth 10000 in
 def laurelPreludeDDM :=
 #strata
 program Laurel;
