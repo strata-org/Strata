@@ -105,7 +105,11 @@ info: ok: [(type Foo (a0 : Type, a1 : Type);
   func Int.Sub :  ((x : int) (y : int)) → int;
   func Int.Mul :  ((x : int) (y : int)) → int;
   func Int.Div :  ((x : int) (y : int)) → int;
+  func Int.SafeDiv :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.Mod :  ((x : int) (y : int)) → int;
+  func Int.SafeMod :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.DivT :  ((x : int) (y : int)) → int;
   func Int.ModT :  ((x : int) (y : int)) → int;
   func Int.Neg :  ((x : int)) → int;
