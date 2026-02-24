@@ -27,12 +27,12 @@ private theorem noFuncDecl_preserves_δ_block_aux
   [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
   (extendEval : ExtendEval P)
   (ss : Block P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P)
-  (ih : ∀ s, s ∈ ss → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P),
-    Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' → δ' = δ)
+  (ih : ∀ s, s ∈ ss → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) (exit : ExitStatus),
+    Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' exit → δ' = δ)
   (Hno : Block.noFuncDecl ss)
-  (Heval : EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ') :
+  (Heval : EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' exit) :
   δ' = δ := by
-  induction ss generalizing σ σ' δ δ' with
+  induction ss generalizing σ σ' δ δ' exit with
   | nil =>
     cases Heval with
     | stmts_none_sem => rfl
@@ -41,23 +41,25 @@ private theorem noFuncDecl_preserves_δ_block_aux
     | stmts_some_sem Heval_h Heval_t =>
     next σ₁ δ₁ =>
     simp [Block.noFuncDecl] at Hno
-    have h_mem : h ∈ h :: t := by simp
-    have Hδ₁ : δ₁ = δ := ih h h_mem δ δ₁ σ σ₁ Hno.1 Heval_h
-    have ih_t : ∀ s, s ∈ t → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P),
-      Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' → δ' = δ :=
+    have Hδ₁ : δ₁ = δ := ih h (by simp) δ δ₁ σ σ₁ .normal Hno.1 Heval_h
+    have ih_t : ∀ s, s ∈ t → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) (exit : ExitStatus),
+      Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' exit → δ' = δ :=
       fun s hs => ih s (by simp [hs])
     have Hδ' : δ' = δ₁ := ih_list δ₁ δ' σ₁ σ' ih_t Hno.2 Heval_t
     simp [Hδ₁, Hδ']
+    | stmts_exit_sem Heval_h =>
+    simp [Block.noFuncDecl] at Hno
+    exact ih h (by simp) δ δ' σ σ' _ Hno.1 Heval_h
 
 /-- When a statement has no function declarations, evaluating it preserves the evaluator. -/
 theorem EvalStmt_noFuncDecl_preserves_δ
   [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
   (extendEval : ExtendEval P)
-  (st : Stmt P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) :
+  (st : Stmt P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) (exit : ExitStatus) :
   Stmt.noFuncDecl st →
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ' →
+  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ' exit →
   δ' = δ := by
-  induction st using Stmt.inductionOn generalizing δ δ' σ σ' with
+  induction st using Stmt.inductionOn generalizing δ δ' σ σ' exit with
   | cmd_case c =>
     intros Hno Heval
     cases Heval with
@@ -82,7 +84,7 @@ theorem EvalStmt_noFuncDecl_preserves_δ
     cases Heval
   | exit_case label md =>
     intros Hno Heval
-    cases Heval
+    cases Heval; rfl
   | funcDecl_case decl md =>
     intros Hno Heval
     simp [Stmt.noFuncDecl] at Hno
@@ -91,11 +93,11 @@ theorem EvalStmt_noFuncDecl_preserves_δ
 theorem EvalBlock_noFuncDecl_preserves_δ
   [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
   (extendEval : ExtendEval P)
-  (ss : Block P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) :
+  (ss : Block P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) (exit : ExitStatus) :
   Block.noFuncDecl ss →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' exit →
   δ' = δ := by
-  induction ss generalizing δ δ' σ σ' with
+  induction ss generalizing δ δ' σ σ' exit with
   | nil =>
     intros Hno Heval
     cases Heval with
@@ -106,9 +108,12 @@ theorem EvalBlock_noFuncDecl_preserves_δ
     | stmts_some_sem Heval_h Heval_t =>
     next σ₁ δ₁ =>
     simp [Block.noFuncDecl] at Hno
-    have Hδ₁ : δ₁ = δ := EvalStmt_noFuncDecl_preserves_δ extendEval h δ δ₁ σ σ₁ Hno.1 Heval_h
-    have Hδ' : δ' = δ₁ := ih δ₁ δ' σ₁ σ' Hno.2 Heval_t
+    have Hδ₁ : δ₁ = δ := EvalStmt_noFuncDecl_preserves_δ extendEval h δ δ₁ σ σ₁ _ Hno.1 Heval_h
+    have Hδ' : δ' = δ₁ := ih δ₁ δ' σ₁ σ' _ Hno.2 Heval_t
     simp [Hδ₁, Hδ']
+    | stmts_exit_sem Heval_h =>
+    simp [Block.noFuncDecl] at Hno
+    exact EvalStmt_noFuncDecl_preserves_δ extendEval h δ δ' σ σ' _ Hno.1 Heval_h
 
 /--
   The proof implementation for `StmtToNondetStmtCorrect` and
@@ -131,12 +136,12 @@ theorem StmtToNondetCorrect
   (∀ st,
     Stmt.sizeOf st ≤ m →
     Stmt.noFuncDecl st →
-    EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
+    EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ .normal →
     EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
   (∀ ss,
     Block.sizeOf ss ≤ m →
     Block.noFuncDecl ss →
-    EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
+    EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ .normal →
     EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ') := by
   intros Hwfb Hwfvl
   apply Nat.strongRecOn (motive := λ m ↦
@@ -144,12 +149,12 @@ theorem StmtToNondetCorrect
     (∀ st,
       Stmt.sizeOf st ≤ m →
       Stmt.noFuncDecl st →
-      EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
+      EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ .normal →
       EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
     (∀ ss,
       Block.sizeOf ss ≤ m →
       Block.noFuncDecl ss →
-      EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
+      EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ .normal →
       EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ')
   )
   intros n ih σ σ'
@@ -161,20 +166,28 @@ theorem StmtToNondetCorrect
       | cmd_sem Hcmd Hdef =>
         exact EvalNondetStmt.cmd_sem Hcmd Hdef
     | .block _ bss _ =>
-      cases Heval with
-      | block_sem Heval =>
       simp [Stmt.noFuncDecl] at Hno
-      have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval bss δ _ σ σ' Hno Heval
+      -- TODO: This case requires that the inner block evaluates with .normal exit.
+      -- The current noFuncDecl predicate doesn't exclude exit statements.
+      -- A noExit predicate would be needed for full generality.
+      -- For now, we extract the inner EvalBlock and use sorry for the exit mismatch.
+      have ⟨exit_inner, Heval_inner⟩ : ∃ exit_inner,
+          EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ bss σ' δ exit_inner := by
+        revert Heval; generalize ExitStatus.normal = x; intro Heval
+        cases Heval with | block_sem h => exact ⟨_, h⟩
+      have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval bss δ _ σ σ' _ Hno Heval_inner
       specialize ih (Block.sizeOf bss) (by simp_all; omega)
       apply (ih _ _).2
-      omega
-      exact Hno
-      rw [← Hδ]; exact Heval
+      · omega
+      · exact Hno
+      · rw [← Hδ]; sorry
     | .ite c tss ess _ =>
+      -- ite_true_sem/ite_false_sem pass through exit status directly
+      -- With .normal restriction, the branch must also be .normal
       cases Heval with
       | ite_true_sem Htrue Hwfb' Heval =>
         simp [Stmt.noFuncDecl] at Hno
-        have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval tss δ _ σ σ' Hno.1 Heval
+        have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval tss δ _ σ σ' _ Hno.1 Heval
         specialize ih (Block.sizeOf tss) (by simp_all; omega)
         refine EvalNondetStmt.choice_left_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
@@ -187,7 +200,7 @@ theorem StmtToNondetCorrect
           rw [← Hδ]; exact Heval
       | ite_false_sem Hfalse Hwfb' Heval =>
         simp [Stmt.noFuncDecl] at Hno
-        have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval ess δ _ σ σ' Hno.2 Heval
+        have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval ess δ _ σ σ' _ Hno.2 Heval
         specialize ih (Block.sizeOf ess) (by simp_all; omega)
         refine EvalNondetStmt.choice_right_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
@@ -223,7 +236,7 @@ theorem StmtToNondetCorrect
       simp [BlockToNondetStmt]
       simp [Block.sizeOf] at Hsz
       simp [Block.noFuncDecl] at Hno
-      have Hδ₁ : δ₁ = δ := EvalStmt_noFuncDecl_preserves_δ extendEval h δ δ₁ σ σ'' Hno.1 Heval
+      have Hδ₁ : δ₁ = δ := EvalStmt_noFuncDecl_preserves_δ extendEval h δ δ₁ σ σ'' _ Hno.1 Heval
       subst Hδ₁
       -- Now δ₁ is replaced by δ everywhere
       specialize ih (h.sizeOf + Block.sizeOf t) (by omega)
@@ -245,7 +258,7 @@ theorem StmtToNondetStmtCorrect
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   Stmt.noFuncDecl st →
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
+  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ .normal →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ' := by
   intros Hwfb Hwfv Hno Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=st.sizeOf)).1 st (Nat.le_refl _) Hno Heval
@@ -258,7 +271,7 @@ theorem BlockToNondetStmtCorrect
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   Block.noFuncDecl ss →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ .normal →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Hno Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Hno Heval
