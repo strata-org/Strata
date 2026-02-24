@@ -24,8 +24,6 @@ open Transform
 mutual
 def Block.labels (b : Block): List String :=
   List.flatMap (fun s => Statement.labels s) b
-  termination_by b.sizeOf
-  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def Statement.labels (s : Core.Statement) : List String :=
   match s with
@@ -39,15 +37,12 @@ def Statement.labels (s : Core.Statement) : List String :=
   -- No other labeled commands.
   | .cmd _ => []
   | .funcDecl _ _ => []
-  termination_by s.sizeOf
 end
 
 mutual
 def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
   b.map (fun s => Statement.replaceLabels s map)
-  termination_by b.sizeOf
-  decreasing_by term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
 
 def Statement.replaceLabels
     (s : Core.Statement) (map:Map String String) : Core.Statement :=
@@ -67,7 +62,6 @@ def Statement.replaceLabels
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
   | .funcDecl _ _ => s
-  termination_by s.sizeOf
 end
 
 

@@ -277,24 +277,22 @@ procedure test(cond : bool, x : int, y : int) returns ()
 info: procedure test (cond : bool, x : int, y : int) returns ()
 {
   if(cond){
-    |$_then|: {
-      |f$$wf|: {
-        var a : int;
-        assume [precond_f_0]: !(x == 0);
-        assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-        }function f (a : int) : int { a / x }
-      assert [init_calls_f_0]: !(x == 0);
-      var r1 : int := f(10);
-      }}else{
-    |$_else|: {
-      |f$$wf|: {
-        var a : int;
-        assume [precond_f_0]: !(y == 0);
-        assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-        }function f (a : int) : int { a / y }
-      assert [init_calls_f_0]: !(y == 0);
-      var r2 : int := f(20);
-      }}};-/
+    |f$$wf|: {
+      var a : int;
+      assume [precond_f_0]: !(x == 0);
+      assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
+      }function f (a : int) : int { a / x }
+    assert [init_calls_f_0]: !(x == 0);
+    var r1 : int := f(10);
+    }else{
+    |f$$wf|: {
+      var a : int;
+      assume [precond_f_0]: !(y == 0);
+      assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
+      }function f (a : int) : int { a / y }
+    assert [init_calls_f_0]: !(y == 0);
+    var r2 : int := f(20);
+    }};-/
 #guard_msgs in
 #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
 
