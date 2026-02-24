@@ -239,11 +239,11 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     return (state, smtCtx, some { obligation, result := .implementationError "Unexpected statement" })
 
 /-- Process a list of CoreSMT statements sequentially -/
-partial def processStatements (state : CoreSMTState) (E : Core.Env)
+partial def processStatements (initialState : CoreSMTState) (E : Core.Env)
     (stmts : List Core.Statement) (smtCtx : Core.SMT.Context)
     : IO (CoreSMTState × Core.SMT.Context × List Core.VCResult) := do
-  let accumulateErrors := state.config.accumulateErrors
-  let mut state := state
+  let accumulateErrors := initialState.config.accumulateErrors
+  let mut state := initialState
   let mut smtCtx := smtCtx
   let mut results : List Core.VCResult := []
   for stmt in stmts do
