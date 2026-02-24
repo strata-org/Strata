@@ -5,8 +5,8 @@
 -/
 
 import Strata.Languages.B3.ToCore
-import Strata.Languages.B3.Transform.FunctionToAxiom
 import Strata.Languages.B3.DDMTransform.ParseCST
+import Strata.Languages.B3.DDMTransform.Conversion
 import Strata.Languages.Core.CoreSMT
 import Strata.DL.SMT.Solver
 
@@ -27,10 +27,6 @@ B3 Program (CST)
       ↓
   B3 AST (de Bruijn indices)
       ↓
-FunctionToAxiom Transform
-      ↓
-  B3 AST (declarations + axioms)
-      ↓
 B3.ToCore (Conversion)
       ↓
   Core Statements
@@ -43,14 +39,30 @@ CoreSMT Verifier
 ## Helper Functions
 -/
 
+namespace B3.Verifier
+
 /-- Parse DDM program to B3 AST -/
-def programToB3AST (ddmProgram : Strata.Program) : Except String (B3AST.Program SourceRange) :=
-  match B3.DDMTransform.parseCST ddmProgram with
-  | .error msg => .error s!"Parse error: {msg}"
-  | .ok cst =>
-    match B3.DDMTransform.cstToAST cst with
-    | .error msg => .error s!"Conversion error: {msg}"
-    | .ok ast => .ok ast
+def programToB3AST (prog : Program) : Except String (B3AST.Program SourceRange) := do
+  let [op] ← pure prog.commands.toList
+    | .error "Expected single program command"
+
+  if op.name.name != "command_program" then
+    .error s!"Expected command_program, got {op.name.name}"
+
+  let [ArgF.op progOp] ← pure op.args.toList
+    | .error "Expected single program argument"
+
+  let cstProg ← B3CST.Program.ofAst progOp
+
+  let (ast, errors) := B3.programFromCST B3.FromCSTContext.empty cstProg
+  if !errors.isEmpty then
+    .error s!"CST to AST conversion errors: {errors}"
+  else
+    .ok ast
+
+end B3.Verifier
+
+namespace B3.Verifier
 
 -- Example: Verify a simple B3 program using CoreSMT (meta to avoid including in production)
 -- This demonstrates the end-to-end B3→Core→CoreSMT verification API
@@ -64,7 +76,7 @@ meta def exampleVerification : IO Unit := do
   #end
 
   -- Convert DDM to B3 AST
-  let b3AST ← match B3.Verifier.programToB3AST ddmProgram with
+  let b3AST ← match programToB3AST ddmProgram with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
 
@@ -76,7 +88,7 @@ meta def exampleVerification : IO Unit := do
   let coreStmts := convResult.value
 
   -- Create CoreSMT solver and verify
-  let solver ← Core.CoreSMT.mkCvc5Solver
+  let solver ← SMT.mkCvc5Solver
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solver config
   let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
@@ -108,16 +120,14 @@ private def vcResultToVerificationReport (vcResult : Core.VCResult) : Verificati
 
 /-- Convert B3 program to Core and verify via CoreSMT pipeline -/
 def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
-  -- Transform functions to axioms
-  let transformedAST := B3.Transform.functionToAxiom prog
   -- Convert to Core
-  let convResult := B3.ToCore.convertProgram transformedAST
+  let convResult := B3.ToCore.convertProgram prog
   if !convResult.errors.isEmpty then
     let msg := convResult.errors.map toString |> String.intercalate "\n"
     throw (IO.userError s!"Conversion errors:\n{msg}")
   let coreStmts := convResult.value
   -- Create SMT solver interface
-  let solverInterface ← Core.CoreSMT.mkCvc5Solver
+  let solverInterface ← SMT.mkCvc5Solver
   -- Verify via CoreSMT
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
@@ -131,3 +141,6 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
 def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
   let reports ← programToSMT prog solver
   return reports.flatMap (fun r => r.results.map (fun (vr, _) => .ok vr))
+
+end B3.Verifier
+

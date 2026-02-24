@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.SMT.State
+import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.ExprTranslator
 import Strata.Languages.Core.CoreSMT.IsCoreSMT
 import Strata.Languages.Core.Verifier

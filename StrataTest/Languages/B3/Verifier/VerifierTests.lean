@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.B3.Verifier
+import Strata.Languages.B3.Format
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
 import Strata.DL.SMT.Solver
@@ -71,7 +72,7 @@ These tests run the actual solver and test check, assert, reach statements with 
 namespace B3.Verifier.Tests
 
 open Strata
-open Strata.B3.Verifier
+open B3.Verifier
 open Strata.SMT
 
 ---------------------------------------------------------------------
@@ -129,7 +130,7 @@ def testVerification (prog : Program) : IO Unit := do
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Parse error: {msg}")
   -- Create a fresh solver for each test to avoid state issues
-  let solver ← createInteractiveSolver "cvc5"
+  let solver ← Solver.spawn "cvc5" #[]
   let reports ← B3.Verifier.programToSMT ast solver
   -- Don't call exit - let the solver process terminate naturally
   for report in reports do
