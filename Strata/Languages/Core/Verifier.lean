@@ -141,7 +141,6 @@ inductive Outcome where
   | pass
   | fail
   | unknown
-  | unreachable
   | implementationError (e : String)
   deriving Repr, Inhabited, DecidableEq
 
@@ -150,7 +149,6 @@ instance : ToFormat Outcome where
     | .pass => "✅ pass"
     | .fail => "❌ fail"
     | .unknown => "🟡 unknown"
-    | .unreachable => "❗ unreachable"
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
 /--
@@ -180,7 +178,7 @@ def smtResultToOutcome (r : SMT.Result) (isCover : Bool) : Outcome :=
 instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
                  Property: {r.obligation.property}\n\
-                 Result: {r.result}\
+                 Result: {r.result}{if r.smtReachResult == some .unsat then " (❗path unreachable)" else ""}\
                  {r.smtObligationResult.formatModelIfSat (r.verbose >= .models)}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
@@ -197,6 +195,15 @@ def VCResult.isImplementationError (vr : VCResult) : Bool :=
 
 def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
   !Core.VCResult.isSuccess vcResult
+
+/--
+True when the reachability check determined that the path leading to this
+obligation is unreachable (the SMT reachability check returned `unsat`).
+`unreachable` is a diagnosis rather than an outcome: an unreachable assertion
+counts as `pass` (vacuously true) and an unreachable cover counts as `fail`.
+-/
+def VCResult.isUnreachable (vr : VCResult) : Bool :=
+  vr.smtReachResult == some .unsat
 
 abbrev VCResults := Array VCResult
 
@@ -294,10 +301,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                  {if options.verbose >= .normal then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (reachResult?, smt_result, estate) =>
-    let outcome := if reachResult? == some .unsat then
-        .unreachable
-      else
-        smtResultToOutcome smt_result (obligation.property == .cover)
+    let outcome := smtResultToOutcome smt_result (obligation.property == .cover)
     let result :=  { obligation,
                      result := outcome,
                      smtReachResult := reachResult?
@@ -432,35 +436,29 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
-  let isCover := vcr.obligation.property == .cover
-  match vcr.result with
-  | .pass => none  -- Verification succeeded, no diagnostic
-  | .unknown =>
-    -- For unknown results on cover statements, only report in debug/verbose mode
-    -- (it's informational, not an error). For asserts, unknown is always a problem.
-    if isCover && vcr.verbose ≤ .normal then
-      none
-    else
-      let message := if isCover then "cover property could not be checked"
-                     else "assertion could not be proved"
-      let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
-      some { fileRange := fileRange, message := message }
-  | .unreachable =>
-    let message := if isCover then "cover property is unreachable"
-                   else "assertion holds vacuously (path unreachable)"
-    let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
-    some { fileRange := fileRange, message := message }
-  | result =>
-    let message := match result with
+def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
+  let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+  let message? : Option String :=
+    if vcr.obligation.property == .cover then
+      match vcr.result with
+      | .pass => none
       | .fail =>
-        if isCover then "cover property is not satisfiable"
-        else "assertion does not hold"
-      | .implementationError msg => s!"verification error: {msg}"
-      | _ => panic "impossible"
-
-    let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
-    some { fileRange := fileRange, message := message }
+        if vcr.isUnreachable then some "cover property is unreachable"
+        else some "cover property is not satisfiable"
+      | .unknown =>
+        -- Cover unknown is only reported in verbose mode (informational, not an error).
+        if vcr.verbose ≤ .normal then none
+        else some "cover property could not be checked"
+      | .implementationError msg => some s!"analysis error: {msg}"
+    else
+      match vcr.result with
+      | .pass =>
+        if vcr.isUnreachable then some "assertion holds vacuously (path unreachable)"
+        else none
+      | .fail => some "assertion does not hold"
+      | .unknown => some "assertion could not be proved"
+      | .implementationError msg => some s!"analysis error: {msg}"
+  message?.map fun message => { fileRange, message }
 
 structure Diagnostic where
   start : Lean.Position

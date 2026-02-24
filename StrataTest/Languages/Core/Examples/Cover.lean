@@ -101,7 +101,9 @@ Result: ✅ pass
 --
 -- Both assert and cover sit behind contradictory path conditions
 -- (`x >= 0` ∧ `x < 0`). Without `reachCheck` they would be `pass`/`fail`
--- (vacuously); with `reachCheck` they should both be `❗ unreachable`.
+-- (vacuously); with `reachCheck` the unreachable diagnosis is set:
+-- assertions on unreachable paths count as `pass` (vacuously true) and
+-- covers on unreachable paths count as `fail`.
 def reachCheckGlobalPgm :=
 #strata
 program Core;
@@ -120,11 +122,11 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ❗ unreachable
+Result: ✅ pass (❗path unreachable)
 
 Obligation: unreach_cover
 Property: cover
-Result: ❗ unreachable
+Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
 #eval verify reachCheckGlobalPgm (options := {Options.quiet with reachCheck := true})
@@ -136,8 +138,8 @@ Result: ❗ unreachable
 --
 -- The if-true branch is unreachable (`x >= 0` ∧ `x < 0`), while the
 -- else branch is reachable. Obligations on the reachable path should
--- have their normal result; those on the unreachable path should be
--- `❗ unreachable`.
+-- have their normal result; those on the unreachable path get the
+-- unreachable diagnosis (assert → pass, cover → fail).
 def reachCheckMixedPgm :=
 #strata
 program Core;
@@ -161,11 +163,11 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ❗ unreachable
+Result: ✅ pass (❗path unreachable)
 
 Obligation: unreach_cover
 Property: cover
-Result: ❗ unreachable
+Result: ❌ fail (❗path unreachable)
 
 Obligation: reach_assert_pass
 Property: assert
@@ -189,6 +191,8 @@ Result: ❌ fail
 -- Global `reachCheck` is off. Only statements with `@[reachCheck]` get
 -- the reachability check. Non-annotated statements under the same
 -- contradictory assumptions produce the old (vacuous) results.
+-- Annotated statements on the unreachable path: assert → pass (with
+-- unreachable diagnosis), cover → fail (with unreachable diagnosis).
 def reachCheckPerStmtPgm :=
 #strata
 program Core;
@@ -209,7 +213,7 @@ procedure Test() returns ()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ❗ unreachable
+Result: ✅ pass (❗path unreachable)
 
 Obligation: no_rc_assert
 Property: assert
@@ -217,7 +221,7 @@ Result: ✅ pass
 
 Obligation: rc_cover
 Property: cover
-Result: ❗ unreachable
+Result: ❌ fail (❗path unreachable)
 
 Obligation: no_rc_cover
 Property: cover
@@ -263,7 +267,8 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -- short-circuit (`assert(true)` → pass, `cover(false)` → fail) are sent
 -- to the SMT solver so that the reachability check can detect unreachable
 -- paths. Under contradictory assumptions (`x >= 0` ∧ `x < 0`), all four
--- obligations are reported as `❗ unreachable`.
+-- obligations receive the unreachable diagnosis: assertions → pass,
+-- covers → fail.
 def reachCheckPEPgm :=
 #strata
 program Core;
@@ -284,19 +289,19 @@ procedure Test() returns ()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ❗ unreachable
+Result: ✅ pass (❗path unreachable)
 
 Obligation: pe_cover_fail
 Property: cover
-Result: ❗ unreachable
+Result: ❌ fail (❗path unreachable)
 
 Obligation: rc_assert
 Property: assert
-Result: ❗ unreachable
+Result: ✅ pass (❗path unreachable)
 
 Obligation: rc_cover
 Property: cover
-Result: ❗ unreachable
+Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
 #eval verify reachCheckPEPgm (options := {Options.quiet with reachCheck := true})
