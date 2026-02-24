@@ -427,7 +427,7 @@ def translateProcedureToFunction (constants : List Constant) (proc : Procedure) 
   }
 
 /--
-Try to translate a Laurel Procedure marked `isPure` to a Core Function.
+Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
 Returns `.error` with a diagnostic if the procedure cannot be represented as a Core function
 (e.g. it has a non-pure body, a precondition, or multiple outputs).
 -/
@@ -454,9 +454,9 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftImperativeExpressions ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
-  -- Procedures marked isPure are translated to Core functions; all others become Core procedures.
-  let (markedPure, procProcs) := program.staticProcedures.partition (·.isPure)
-  -- Try to translate each isPure procedure to a Core function, collecting errors for failures
+  -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
+  let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
+  -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
   let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
     match tryTranslatePureToFunction program.constants p with
     | .error e => (errs.push e, decls)
