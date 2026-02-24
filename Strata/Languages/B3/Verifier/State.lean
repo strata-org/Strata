@@ -5,9 +5,9 @@
 -/
 
 import Strata.Languages.B3.Verifier.Expression
-import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.DL.SMT.Solver
+import Strata.DL.SMT.Factory
 
 /-!
 # B3 Verification State
@@ -87,7 +87,7 @@ structure VerificationReport where
 /-- SMT solver state (reusable for any language) -/
 structure SMTSolverState where
   solver : Solver
-  declaredFunctions : List (String × List String × String)
+  declaredFunctions : List (String × List TermType × TermType)
   assertions : List Term
 
 /-- B3-specific verification state -/
@@ -97,8 +97,8 @@ structure B3VerificationState where
   pathCondition : List (B3AST.Expression SourceRange)  -- Accumulated assertions for debugging
 
 def initVerificationState (solver : Solver) : IO B3VerificationState := do
-  let _ ← (Solver.setLogic "ALL").run solver
-  let _ ← (Solver.setOption "produce-models" "true").run solver
+  let _ ← (Solver.setLogic "ALL").run' solver
+  let _ ← (Solver.setOption "produce-models" "true").run' solver
   return {
     smtState := {
       solver := solver
@@ -109,12 +109,12 @@ def initVerificationState (solver : Solver) : IO B3VerificationState := do
     pathCondition := []
   }
 
-def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List String) (returnType : String) : IO B3VerificationState := do
-  let _ ← (Solver.declareFun name argTypes returnType).run state.smtState.solver
+def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List TermType) (returnType : TermType) : IO B3VerificationState := do
+  let _ ← (Solver.declareFun name argTypes returnType).run' state.smtState.solver
   return { state with smtState := { state.smtState with declaredFunctions := (name, argTypes, returnType) :: state.smtState.declaredFunctions } }
 
 def addPathCondition (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (term : Term) : IO B3VerificationState := do
-  let _ ← (Solver.assert (formatTermDirect term)).run state.smtState.solver
+  let _ ← (Solver.assert term).run' state.smtState.solver
   return {
     state with
     smtState := { state.smtState with assertions := term :: state.smtState.assertions }
@@ -137,11 +137,11 @@ def pop (state : B3VerificationState) : IO B3VerificationState := do
 def prove (state : B3VerificationState) (term : Term) (ctx : VerificationContext) : IO VerificationReport := do
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
-    Solver.assert s!"(not {formatTermDirect term})"
+    Solver.assert (Factory.not term)
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "model available" else none
     return (decision, model)
-  let (decision, model) ← runCheck.run state.smtState.solver
+  let ((decision, model), _) ← runCheck.run state.smtState.solver
   let _ ← pop state
   return {
     context := ctx
@@ -153,11 +153,11 @@ def prove (state : B3VerificationState) (term : Term) (ctx : VerificationContext
 def reach (state : B3VerificationState) (term : Term) (ctx : VerificationContext) : IO VerificationReport := do
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
-    Solver.assert (formatTermDirect term)
+    Solver.assert term
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "reachable" else none
     return (decision, model)
-  let (decision, model) ← runCheck.run state.smtState.solver
+  let ((decision, model), _) ← runCheck.run state.smtState.solver
   let _ ← pop state
   return {
     context := ctx
@@ -166,7 +166,7 @@ def reach (state : B3VerificationState) (term : Term) (ctx : VerificationContext
   }
 
 def closeVerificationState (state : B3VerificationState) : IO Unit := do
-  let _ ← (Solver.exit).run state.smtState.solver
+  let _ ← (Solver.exit).run' state.smtState.solver
   pure ()
 
 ---------------------------------------------------------------------

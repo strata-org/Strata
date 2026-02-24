@@ -36,6 +36,15 @@ def b3TypeToSMT (typeName : String) : String :=
   | "string" => "String"
   | other => other  -- User-defined types pass through as-is
 
+/-- Convert B3 type name to SMT `TermType`. -/
+def b3TypeToSMTType (typeName : String) : Strata.SMT.TermType :=
+  match typeName with
+  | "int" => .int
+  | "bool" => .bool
+  | "real" => .real
+  | "string" => .string
+  | other => .constr other []
+
 ---------------------------------------------------------------------
 -- Conversion Context
 ---------------------------------------------------------------------

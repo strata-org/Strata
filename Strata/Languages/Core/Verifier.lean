@@ -36,10 +36,10 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
   for id in _axms do
-    Solver.assert id
+    Solver.assertId id
   let (ids, estate) ← ts.mapM (encodeTerm False) |>.run estate
   for id in ids do
-    Solver.assert id
+    Solver.assertId id
   let ids := estate.ufs.values
   return (ids, estate)
 

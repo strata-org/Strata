@@ -15,11 +15,32 @@ import Std.Data.HashMap
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Encoder.lean)
-This differs from Cedar's implementation in that we save the problem to a string instead of piping it to the solver
-as we construct the problem.
 
 This file defines the encoder, which translates a list of boolean Terms
 into a list of SMT assertions. Term encoding is trusted.
+
+## Architecture
+
+The encoding pipeline has two layers:
+
+1. **Solver layer** (`SolverM`): A stateful monad that wraps the solver process
+   and caches `Term → SMT-LIB string` and `TermType → SMT-LIB string`
+   conversions. Core typed commands (`assert`, `defineFun`, `declareFun`,
+   `declareConst`) accept `Term`/`TermType` values directly.
+
+2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages:
+   - **Term → abbreviated name cache** (`terms`): Maps each `Term` to its
+     abbreviated SMT identifier (e.g., `t0`, `t1`). This is the ANF
+     decomposition: large terms are broken into small `define-fun` definitions
+     with short names.
+   - **TermType → SMT string cache** (`types`): Maps types to their SMT
+     string representation for the encoder's own use.
+   - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
+     their abbreviated identifiers (e.g., `f0`, `f1`).
+
+The Encoder's job is purely to decompose a large SMT term into a sequence of
+smaller `define-fun` commands using abbreviated names. The `SolverM` layer
+handles the actual string conversion and caching.
 
  We will use the following type representations for primitive types:
  * `TermType.bool`:     builtin SMT `Bool` type
@@ -51,8 +72,12 @@ namespace Strata.SMT
 open Solver
 
 structure EncoderState where
+  /-- Maps a `Term` to its abbreviated SMT identifier (e.g., `t0`, `t1`).
+      This is the ANF decomposition cache. -/
   terms : Std.HashMap Term String
+  /-- Maps a `TermType` to its SMT string representation (e.g., `Bool`, `Int`). -/
   types : Std.HashMap TermType String
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f0`, `f1`). -/
   ufs   : Std.HashMap UF String
 
 def EncoderState.init : EncoderState where
@@ -77,11 +102,11 @@ def declareType (id : String) (mks : List String) : EncoderM String := do
   declareDatatype id [] mks
   return id
 
+/-- Convert a `TermType` to its SMT-LIB string, delegating to `Solver.typeToSMTString`
+    which uses the `SolverState` cache. -/
 def encodeType (ty : TermType) : EncoderM String := do
   if let (.some enc) := (← get).types.get? ty then return enc
-  match Strata.SMTDDM.termTypeToString ty with
-  | .ok res => return res
-  | .error msg => panic! s!"Strata.SMT.Encoder.encodeType failed: {msg}"
+  Solver.typeToSMTString ty
 
 /-
 String printing has to be done carefully in the presence of
@@ -120,29 +145,34 @@ No enclosing parentheses should be used here.
 def encodeReNone : String :=
   s!"re.none"
 
-def defineTerm (inBinder : Bool) (tyEnc tEnc : String) : EncoderM String := do
+/-- Define a term in ANF. When not in a binder, emits a `define-fun` with the
+    given `TermType` and returns the abbreviated id. When in a binder, just
+    returns the expression string. -/
+def defineTerm (inBinder : Bool) (ty : TermType) (tEnc : String) : EncoderM String := do
   if inBinder
   then return tEnc
   else do
     let id := termId (← termNum)
-    defineFun id [] tyEnc tEnc
+    Solver.defineFun id [] ty tEnc
     return id
 
 def defineTermBound := defineTerm True
 def defineTermUnbound := defineTerm False
 
-def defineSet (tyEnc : String) (tEncs : List String) : EncoderM String := do
-  defineTermUnbound tyEnc (tEncs.foldl (λ acc t => s!"(set.insert {t} {acc})") s!"(as set.empty {tyEnc})")
+def defineSet (ty : TermType) (tEncs : List String) : EncoderM String := do
+  let tyEnc ← encodeType ty
+  defineTermUnbound ty (tEncs.foldl (λ acc t => s!"(set.insert {t} {acc})") s!"(as set.empty {tyEnc})")
 
-def defineRecord (tyEnc : String) (tEncs : List String) : EncoderM String := do
-  defineTermUnbound tyEnc s!"({tyEnc} {String.intercalate " " tEncs})"
+def defineRecord (ty : TermType) (tEncs : List String) : EncoderM String := do
+  let tyEnc ← encodeType ty
+  defineTermUnbound ty s!"({tyEnc} {String.intercalate " " tEncs})"
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
   let id := ufId (← ufNum)
   comment uf.id
-  let args ← uf.args.mapM (fun vt => encodeType vt.ty)
-  declareFun id args (← encodeType uf.out)
+  let argTys := uf.args.map (fun vt => vt.ty)
+  Solver.declareFun id argTys uf.out
   modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
 
  def encodeOp : Op → String
@@ -167,33 +197,31 @@ def encodeTriggerGroup (trEncs : List String) : String :=
 def encodeTriggers (trs : List (List String)) : String :=
   String.intercalate " " (trs.map encodeTriggerGroup)
 
-def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String) (_ts : List Term): EncoderM String := do
+def defineApp (inBinder : Bool) (ty : TermType) (op : Op) (tEncs : List String) (_ts : List Term): EncoderM String := do
+  let tyEnc ← encodeType ty
   let args := String.intercalate " " tEncs
   match op with
   | .uf f          =>
     if f.args.isEmpty then
-      -- 0-ary function (i.e., a constant); shouldn't add parentheses here.
-      defineTerm inBinder tyEnc s!"{← encodeUF f}"
+      defineTerm inBinder ty s!"{← encodeUF f}"
     else
-      defineTerm inBinder tyEnc s!"({← encodeUF f} {args})"
+      defineTerm inBinder ty s!"({← encodeUF f} {args})"
   | .datatype_op .constructor name =>
-    -- Zero-argument constructors are constants in SMT-LIB, not function applications
-    -- For parametric datatypes, we need to cast the constructor to the concrete type
     if tEncs.isEmpty then
-      defineTerm inBinder tyEnc s!"(as {name} {tyEnc})"
+      defineTerm inBinder ty s!"(as {name} {tyEnc})"
     else
-      defineTerm inBinder tyEnc s!"((as {name} {tyEnc}) {args})"
+      defineTerm inBinder ty s!"((as {name} {tyEnc}) {args})"
   | .datatype_op _ _ =>
-    defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
+    defineTerm inBinder ty s!"({encodeOp op} {args})"
   | _ =>
     if tEncs.isEmpty then
-      defineTerm inBinder tyEnc s!"({encodeOp op})"
+      defineTerm inBinder ty s!"({encodeOp op})"
     else
-      defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
+      defineTerm inBinder ty s!"({encodeOp op} {args})"
 
 -- Helper function for quantifier generation
 def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
-  defineTerm inBinder "Bool" $
+  defineTerm inBinder .bool $
     match trEncs with
     | [] =>
       s!"({quantKind} ({varDecls}) {tEnc})"
@@ -205,7 +233,6 @@ def defineMultiAll (inBinder : Bool) (args : List TermVar) (trEncs: List (List S
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
-  -- For multi-variable, we check if trigger equals the variable declarations string
   defineQuantifierHelper inBinder "forall" varDeclsStr trEncs tEnc
 
 def defineMultiExist (inBinder : Bool) (args : List TermVar) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
@@ -213,7 +240,6 @@ def defineMultiExist (inBinder : Bool) (args : List TermVar) (trEncs: List (List
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
-  -- For multi-variable, we check if trigger equals the variable declarations string
   defineQuantifierHelper inBinder "exists" varDeclsStr trEncs tEnc
 
 -- Convenience wrappers for single-variable quantifiers - implemented in terms of helper
@@ -230,38 +256,34 @@ def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
 partial
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
   if let (.some enc) := (← get).terms.get? t then return enc
-  let tyEnc ← encodeType t.typeOf
+  let ty := t.typeOf
+  let tyEnc ← encodeType ty
   let enc ←
     match t with
     | .var v            => return v.id
     | .prim _           =>
-      match Strata.SMTDDM.termToString t with
-      | .ok s => return s
-      | .error _ => return "<error>"
-    | .none _           => defineTerm inBinder tyEnc s!"(as none {tyEnc})"
-    | .some t₁          => defineTerm inBinder tyEnc s!"(some {← encodeTerm inBinder t₁})"
+      -- Use the cached termToSMTString for primitives
+      let s ← Solver.termToSMTString t
+      return s
+    | .none _           => defineTerm inBinder ty s!"(as none {tyEnc})"
+    | .some t₁          => defineTerm inBinder ty s!"(some {← encodeTerm inBinder t₁})"
     | .app .re_allchar [] .regex => return encodeReAllChar
     | .app .re_all     [] .regex => return encodeReAll
     | .app .re_none    [] .regex => return encodeReNone
     | .app .bvnego [t] .bool =>
-      -- don't encode bvnego itself, for compatibility with older CVC5 (bvnego was
-      -- introduced in CVC5 1.1.2)
-      -- this rewrite is done in the encoder and is thus trusted
       match t.typeOf with
       | .bitvec n =>
-        defineApp inBinder tyEnc .eq [← encodeTerm inBinder t, encodeBitVec (BitVec.intMin n)] [t, BitVec.intMin n]
+        defineApp inBinder ty .eq [← encodeTerm inBinder t, encodeBitVec (BitVec.intMin n)] [t, BitVec.intMin n]
       | _ =>
-        -- we could put anything here and be sound, because `bvnego` should only be
-        -- applied to Terms of type .bitvec
         return "false"
-    | .app op ts _         => defineApp inBinder tyEnc op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ)) ts
+    | .app op ts _         => defineApp inBinder ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ)) ts
     | .quant qk args tr t =>
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
       let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨t, _⟩ => encodeTerm True t))
       match qk, args with
-      | .all, [⟨x, ty⟩] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .all, [⟨x, xty⟩] => defineAll inBinder x (← encodeType xty) trEncs (← encodeTerm True t)
       | .all, _ => defineMultiAll inBinder args trEncs (← encodeTerm True t)
-      | .exist, [⟨x, ty⟩] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .exist, [⟨x, xty⟩] => defineExist inBinder x (← encodeType xty) trEncs (← encodeTerm True t)
       | .exist, _ => defineMultiExist inBinder args trEncs (← encodeTerm True t)
   if inBinder
   then pure enc
@@ -271,9 +293,8 @@ def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
   let id := ufId (← ufNum)
   comment uf.id
-  let ids ← uf.args.mapM (fun vt => pure vt.id)
-  let args ← uf.args.mapM (fun vt => encodeType vt.ty)
-  defineFun id (ids.zip args) (← encodeType uf.out) (← encodeTerm true body)
+  let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
+  Solver.defineFun id argPairs uf.out (← encodeTerm true body)
   modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
 
 /-- A utility for debugging. -/
@@ -306,7 +327,7 @@ def encode (ts : List Term) : SolverM Unit := do
   Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]
   let (ids, _) ← ts.mapM (encodeTerm False) |>.run EncoderState.init
   for id in ids do
-    Solver.assert id
+    Solver.assertId id
 
 end Encoder
 namespace Strata.SMT
