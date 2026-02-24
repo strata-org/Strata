@@ -524,7 +524,7 @@ def testPolymorphicFuncDecl : List Statement :=
     ],
     output := .forAll [] (.ftvar "a"),
     body := some eb[(if cond then x else y)],
-    attr := #["inline"],  -- Enable inlining so body is expanded during evaluation
+    attr := #[.inline],  -- Enable inlining so body is expanded during evaluation
     concreteEval := none,
     axioms := []
   }
@@ -553,7 +553,7 @@ Eval Depth: 200
 Variable Prefix: $__
 Variable gen count: 0
 Factory Functions:
-@[#[inline]]
+@[inline]
 func choose : ∀[a]. ((cond : bool) (x : a) (y : a)) → a :=
   ((if cond then x else y))
 

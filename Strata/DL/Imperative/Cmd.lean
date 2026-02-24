@@ -67,22 +67,6 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
-instance : SizeOf String where
-  sizeOf s := s.length
-
-@[simp]
-def Cmd.sizeOf (c : Imperative.Cmd P) : Nat :=
-  match c with
-  | .init   n t eOpt _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf t + (match eOpt with | some e => SizeOf.sizeOf e | none => 0)
-  | .set    n e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf e
-  | .havoc  n _ => 1 + SizeOf.sizeOf n
-  | .assert l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
-  | .assume l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
-  | .cover l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
-
-instance (P : PureExpr) : SizeOf (Imperative.Cmd P) where
-  sizeOf := Cmd.sizeOf
-
 ---------------------------------------------------------------------
 
 class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
