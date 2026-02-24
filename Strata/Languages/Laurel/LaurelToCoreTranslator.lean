@@ -654,7 +654,7 @@ def expandArrayParam (ctMap : ConstrainedTypeMap) (param : Parameter) : List (Co
 Translate Laurel Procedure to Core Procedure
 -/
 def translateProcedure (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
-  (constants : List Constant) (funcNames : FunctionNames) (proc : Procedure) : Except String Core.Decl := do
+  (constants : List Constant) (_funcNames : FunctionNames) (proc : Procedure) : Except String Core.Decl := do
   let inputs := proc.inputs.flatMap (expandArrayParam ctMap)
   let header : Core.Procedure.Header := {
     name := proc.name
