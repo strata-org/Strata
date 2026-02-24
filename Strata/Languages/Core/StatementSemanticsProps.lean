@@ -2043,55 +2043,33 @@ EvalCommandContract π δ σ c σ' := by
     sorry
     constructor <;> assumption
 
-/-- NOTE: should follow the same approach as `DetToNondetCorrect` to prove this
-  mutually recursive theorem due to meta variable bug -/
-theorem EvalBlockRefinesContract :
-  EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' →
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' := by
-  intros Heval
-  cases ss
-  case nil =>
-    have ⟨Hσ, Hδ⟩ := Imperative.EvalBlockEmpty Heval
-    simp [Hσ, Hδ]
-    constructor
-  case cons h t =>
-    cases Heval with
-    | stmts_some_sem Heval Hevals =>
-    constructor
-    . sorry
-      -- apply EvalStmtRefinesContract
-      -- apply Heval
-    . apply EvalBlockRefinesContract
-      apply Hevals
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals term_by_mem
+mutual
+/-- Proof that `EvalStmt` with concrete semantics refines contract semantics,
+    by structural recursion on the derivation. -/
+theorem EvalStmtRefinesContract
+  (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ') :
+  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
+  match H with
+  | .cmd_sem Heval Hdef => .cmd_sem (EvalCommandRefinesContract Heval) Hdef
+  | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
+  | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .funcDecl_sem => .funcDecl_sem
 
-theorem EvalStmtRefinesContract :
-  EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' →
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' := by
-  intros H
-  cases H with
-  | cmd_sem Hdef Heval =>
-    refine EvalStmt.cmd_sem ?_ Heval
-    exact EvalCommandRefinesContract Hdef
-  | block_sem Heval =>
-    constructor
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_true_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_true_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_false_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_false_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | funcDecl_sem =>
-    exact EvalStmt.funcDecl_sem
+/-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
+    by structural recursion on the derivation. -/
+theorem EvalBlockRefinesContract
+  (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ') :
+  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
+  match H with
+  | .stmts_none_sem => .stmts_none_sem
+  | .stmts_some_sem Hstmt Hrest =>
+    .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
+end
 
-/-- Currently we cannot prove this theorem,
-    since the WellFormedSemanticEval definition does not assert
-    a congruence relation for definedness on store
-    that is, if f(a) is defined, then a must be defined.
-    We work around this by requiring this condition at `EvalExpressions`.
-  -/
+/-- If an expression is defined, all its free variables are defined in the store.
+    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
+    together with the variable-evaluation condition in `WellFormedSemanticEvalVar`. -/
 theorem EvalExpressionIsDefined :
   WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
@@ -2106,8 +2084,17 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case abs => sorry
-  case quant => sorry
-  case app => sorry
-  case ite => sorry
-  case eq => sorry
+  case abs m ty e ih =>
+    exact ih (Hwfc.definedness.absdef σ m ty e Hsome) v Hin
+  case quant m k ty tr e trih eih =>
+    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k ty tr e Hsome
+    grind
+  case app m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.appdef σ m e₁ e₂ Hsome
+    grind
+  case ite m c t e cih tih eih =>
+    have ⟨hc, ht, he⟩ := Hwfc.definedness.itedef σ m c t e Hsome
+    grind
+  case eq m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
+    grind

@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Util.ListMap
+import Strata.DL.Util.FuncAttr
 
 /-!
 ## Generic Function Structure
@@ -23,6 +24,11 @@ open Std (ToFormat Format format)
 
 /-- Type identifiers for generic type arguments. Alias for String. -/
 abbrev TyIdentifier := String
+
+/-- A precondition with its associated metadata -/
+structure FuncPrecondition (ExprT : Type) (MetadataT : Type) where
+  expr : ExprT
+  md : MetadataT
 
 /--
 A generic function structure, parameterized by identifier, expression, type, and metadata types.
@@ -63,13 +69,13 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   inputs   : ListMap IdentT TyT
   output   : TyT
   body     : Option ExprT := .none
-  -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
-  -- a function, etc.).
-  attr     : Array String := #[]
+  -- Structured attributes controlling partial evaluator behavior (inlining, etc.)
+  attr     : Array FuncAttr := #[]
   -- The MetadataT argument is the metadata that will be attached to the
   -- resulting expression of concreteEval if evaluation was successful.
   concreteEval : Option (MetadataT → List ExprT → Option ExprT) := .none
   axioms   : List ExprT := []  -- For axiomatic definitions
+  preconditions : List (FuncPrecondition ExprT MetadataT) := []
 
 def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] (f : Func IdentT ExprT TyT MetadataT) : Format :=
   let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
@@ -83,10 +89,12 @@ def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat 
     | [(k, v)] => f!"({k} : {v})"
     | (k, v) :: rest => f!"({k} : {v}) " ++ formatInputs rest
   let type := f!"{typeArgs} ({formatInputs f.inputs}) → {f.output}"
+  let preconds := f.preconditions.map (f!"  requires {·.expr}")
+  let precondsStr := if preconds.isEmpty then f!"" else Format.line ++ Format.joinSep preconds Format.line
   let sep := if f.body.isNone then f!";" else f!" :="
   let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
   f!"{attr}\
-     func {f.name} : {type}{sep}\
+     func {f.name} : {type}{precondsStr}{sep}\
      {body}"
 
 instance {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] : ToFormat (Func IdentT ExprT TyT MetadataT) where
@@ -129,6 +137,10 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
       getTyFreeVars ty ⊆ f.typeArgs
   output_typevars_in_typeArgs:
     getTyFreeVars f.output ⊆ f.typeArgs
+  -- Free variables of preconditions must be arguments.
+  precond_freevars:
+    ∀ p, p ∈ f.preconditions →
+      getVarNames p.expr ⊆ f.inputs.map (getName ·.1)
 
 instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String)
@@ -172,5 +184,14 @@ instance FuncWF.output_typevars_in_typeArgs_decidable
     (f : Func IdentT ExprT TyT MetadataT):
     Decidable (getTyFreeVars f.output ⊆ f.typeArgs) := by
   apply List.instDecidableRelSubsetOfDecidableEq
+
+instance FuncWF.precond_freevars_decidable
+    {IdentT ExprT TyT MetadataT : Type}
+    (getName : IdentT → String) (getVarNames : ExprT → List String)
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (∀ p, p ∈ f.preconditions →
+      getVarNames p.expr ⊆ f.inputs.map (getName ·.1)) := by
+  exact List.decidableBAll (fun x => getVarNames x.expr ⊆ f.inputs.map (getName ·.1))
+    f.preconditions
 
 end Strata.DL.Util
