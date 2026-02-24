@@ -17,7 +17,7 @@ procedure stringConcatWithAssignment()
 requires true
 {
   var x: string := "Hello";
-  var y: string := x + (x := " World";);
+  var y: string := x ++ (x := " World";);
   assert y == "Hello World";
   assert x == " World";
 }
@@ -27,7 +27,7 @@ requires true
 {
   var a: string := "Hello";
   var b: string := " World";
-  var c: string := a + b;
+  var c: string := a ++ b;
   assert c == "Hello World";
 }
 
@@ -36,7 +36,7 @@ requires true
 {
   var a: string := "Hello";
   var b: string := " World";
-  var c: string := a + b;
+  var c: string := a ++ b;
   assert c == "Goodbye";
 //^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
