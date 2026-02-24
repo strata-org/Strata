@@ -3,10 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+import Strata.DDM.BuiltinDialects.Init
 import Strata.DDM.Elab
-import Strata.DDM.Parser
-import Strata.DDM.Format
 
 /-
 Allows testing whether a DDM dialect can parse and print a given program without losing information.

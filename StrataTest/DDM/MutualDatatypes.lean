@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Integration.Lean
 
@@ -79,7 +80,7 @@ forward type Tree;
 forward type Forest;
 mutual
    datatype Tree { Node(val:int, children:Forest) };
-   datatype Forest { FNil(), FCons(head:Tree, tail:Forest) };
+   datatype Forest { (FNil()), (FCons(head:Tree, tail:Forest)) };
 end;
 -/
 #guard_msgs in
@@ -102,7 +103,7 @@ end;
 info: program TestMutual;
 forward type List;
 mutual
-   datatype List { Nil(), Cons(head:int, tail:List) };
+   datatype List { (Nil()), (Cons(head:int, tail:List)) };
 end;
 -/
 #guard_msgs in
@@ -133,7 +134,7 @@ forward type C;
 mutual
    datatype A { MkA(toB:B) };
    datatype B { MkB(toC:C) };
-   datatype C { MkC(toA:A), CBase() };
+   datatype C { (MkC(toA:A)), (CBase()) };
 end;
 -/
 #guard_msgs in

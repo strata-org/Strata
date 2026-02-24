@@ -22,12 +22,12 @@ bool procedure trivial ()
 
 /--
 info: program C_Simp;
-bool procedure trivial()
-  //@pre true;
-  //@post true;
-{
-  return true;
-}
+bool procedure trivial()//@pre true;
+//@post true;
+  ({
+  returntrue;
+  }
+  )
 -/
 #guard_msgs in
 #eval IO.println TrivialPgm
@@ -53,11 +53,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: post
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:

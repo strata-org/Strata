@@ -94,6 +94,7 @@ def translateType (ty : HighType) : LMonoTy :=
     | .UserDefined "Array" => .tcons "Array" [translateType elemTy.val]
     | _ => panic s!"unsupported applied type {repr ty}"
   | .UserDefined _ => .tcons "Composite" []
+  | .TCore s => .tcons s []
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by sizeOf ty
 decreasing_by all_goals simp_wf; have := WithMetadata.sizeOf_val_lt ‹_›; omega
@@ -309,7 +310,7 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
       | none =>
           -- Check if this is a constant (field constant) or local variable
           if isConstant constants name then
-            let ident := Core.CoreIdent.glob name
+            let ident := Core.CoreIdent.unres name
             pure $ .op () ident none
           else
             let ident := Core.CoreIdent.locl name
@@ -395,6 +396,11 @@ def translateExpr (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
       let closedBody := varCloseByName 0 coreIdent bodyExpr
       let finalBody := injectQuantifierConstraint ctMap tcMap false ty coreIdent closedBody
       pure (LExpr.quant () .exist (some coreType) (LExpr.noTrigger ()) finalBody)
+  | .FieldSelect target fieldName =>
+      -- Field selects should have been eliminated by heap parameterization
+      -- If we see one here, it's an error in the pipeline
+      throw s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
+  | .Hole => pure (.fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none)
   | .Return (some e) => translateExpr ctMap tcMap constants env e
   | _ => throw s!"translateExpr: unsupported {Std.Format.pretty (Std.ToFormat.format expr.val)}"
 termination_by sizeOf expr
@@ -605,8 +611,11 @@ def translateStmt (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap)
               let invExpr ← translateExpr ctMap tcMap constants env inv
               pure (LExpr.mkApp () boolAndOp [acc, invExpr])) firstExpr
             pure (some combined)
+      let decExpr ← match _decOpt with
+        | some dec => do let e ← translateExpr ctMap tcMap constants env dec; pure (some e)
+        | none => pure none
       let (_, bodyStmts) ← translateStmt ctMap tcMap constants env outputParams postconds body
-      pure (env, arrayElemAssumes ++ [Imperative.Stmt.loop condExpr none invExpr bodyStmts stmt.md])
+      pure (env, arrayElemAssumes ++ [Imperative.Stmt.loop condExpr decExpr invExpr bodyStmts stmt.md])
   | .StaticCall name args => do
       if isHeapFunction (normalizeCallee name) then pure (env, arrayElemAssumes)
       else do
@@ -787,7 +796,7 @@ def translateConstant (c : Constant) : Core.Decl :=
   match c.type.val with
   | .TTypedField _ =>
       .func {
-        name := Core.CoreIdent.glob c.name
+        name := Core.CoreIdent.unres c.name
         typeArgs := []
         inputs := []
         output := .tcons "Field" []
@@ -796,7 +805,7 @@ def translateConstant (c : Constant) : Core.Decl :=
   | _ =>
       let ty := translateType c.type.val
       .func {
-        name := Core.CoreIdent.glob c.name
+        name := Core.CoreIdent.unres c.name
         typeArgs := []
         inputs := []
         output := ty
@@ -878,9 +887,9 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
   let program := liftExpressionAssignments program
-  dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  dbg_trace "================================="
+  -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   -- Build constrained type maps
   let ctMap := buildConstrainedTypeMap program.types
   let tcMap ← buildTranslatedConstraintMap ctMap |>.mapError fun e => #[{ fileRange := default, message := e }]
@@ -909,7 +918,7 @@ def verifyToVcResults (program : Program)
   let options := { options with removeIrrelevantAxioms := true }
   -- Debug: Print the generated Strata Core program
   dbg_trace "=== Generated Strata Core Program ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format strataCoreProgram) 100))
+  dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram strataCoreProgram) 100))
   dbg_trace "================================="
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))

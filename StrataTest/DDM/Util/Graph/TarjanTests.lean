@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Util.Graph.Tarjan
+meta import Strata.DDM.Util.Graph.Tarjan
 
 namespace Strata.OutGraph.Tests
 

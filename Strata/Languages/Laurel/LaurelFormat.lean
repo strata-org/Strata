@@ -53,6 +53,7 @@ def formatHighTypeVal : HighType → Format
   | .Pure base => "pure(" ++ formatHighType base ++ ")"
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
+  | .TCore s => s!"Core({s})"
   termination_by t => sizeOf t
   decreasing_by all_goals term_by_mem
 end
