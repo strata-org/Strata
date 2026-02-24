@@ -127,6 +127,22 @@ theorem eval_stmts_singleton
     | .normal => exact EvalBlock.stmts_some_sem Heval EvalBlock.stmts_none_sem
     | .exiting l => exact EvalBlock.stmts_exit_sem Heval
 
+theorem eval_stmts_concat
+  [DecidableEq P.Ident]
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ cmds1 σ' δ' .normal →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ' σ' cmds2 σ'' δ'' exit →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (cmds1 ++ cmds2) σ'' δ'' exit := by
+  intro Heval1 Heval2
+  induction cmds1 generalizing cmds2 σ δ
+  · simp only [List.nil_append]
+    cases Heval1; exact Heval2
+  · rename_i cmd cmds ind
+    cases Heval1 with
+    | stmts_some_sem Heval1 Hrest =>
+      apply EvalBlock.stmts_some_sem (by assumption)
+      apply ind (by assumption) (by assumption)
+
 theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   isDefined σ v →
   EvalCmd P δ σ c σ' →
@@ -193,21 +209,5 @@ theorem EvalBlockDefMonotone
     | stmts_exit_sem Heval1 =>
       apply EvalStmtDefMonotone <;> assumption
 end
-
-theorem eval_stmts_concat
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ cmds1 σ' δ' .normal →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ' σ' cmds2 σ'' δ'' exit →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (cmds1 ++ cmds2) σ'' δ'' exit := by
-  intro Heval1 Heval2
-  induction cmds1 generalizing cmds2 σ δ
-  · simp only [List.nil_append]
-    cases Heval1; exact Heval2
-  · rename_i cmd cmds ind
-    cases Heval1 with
-    | stmts_some_sem Heval1 Hrest =>
-      apply EvalBlock.stmts_some_sem (by assumption)
-      apply ind (by assumption) (by assumption)
 
 end Imperative
