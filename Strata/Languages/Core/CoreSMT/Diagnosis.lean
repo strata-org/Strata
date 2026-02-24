@@ -46,9 +46,9 @@ def splitConjunction (e : Core.Expression.Expr) : Option (Core.Expression.Expr �
 /-- Check if an expression is provably false (refuted) using push/pop -/
 def checkRefuted (state : CoreSMTState) (E : Core.Env) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) : IO Bool := do
-  match ExprTranslator.translateExpr E smtCtx expr with
-  | .error _ => return false
-  | .ok (term, _) =>
+  match translateExpr E expr smtCtx with
+  | Except.error _ => return false
+  | Except.ok (term, _) =>
     state.solver.push
     state.solver.assert term
     let decision ← state.solver.checkSat
@@ -72,10 +72,10 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
       if leftRefuted then
         return { originalLabel := "", diagnosedFailures := leftResult.diagnosedFailures }
     -- Push, assert left as context, diagnose right conjunct, pop
-    match ExprTranslator.translateExpr E smtCtx lhs with
-    | .error _ =>
+    match translateExpr E lhs smtCtx with
+    | Except.error _ =>
       return { originalLabel := "", diagnosedFailures := leftResult.diagnosedFailures }
-    | .ok (lhsTerm, _) =>
+    | Except.ok (lhsTerm, _) =>
       state.solver.push
       state.solver.assert lhsTerm
       let rightResult ← diagnoseFailure state E rhs isReachCheck smtCtx
