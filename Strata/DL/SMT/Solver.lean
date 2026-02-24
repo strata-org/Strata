@@ -20,6 +20,12 @@ process. The core typed commands (`assert`, `defineFun`, `declareFun`,
 Less critical commands (`comment`, `setInfo`, `setOption`, `setLogic`,
 `declareSort`, `declareDatatype`, `declareDatatypes`, `getValue`, `checkSat`)
 keep their raw-string interfaces.
+
+## String formatting
+
+All `Term → SMT-LIB string` conversion lives in this module. The Encoder layer
+works purely with `Term` values and delegates string rendering to the Solver via
+`termToSMTString`, `typeToSMTString`, and the typed command API.
 -/
 
 namespace Strata.SMT
@@ -194,6 +200,14 @@ def assert (t : Term) : SolverM Unit := do
 def assertId (id : String) : SolverM Unit :=
   emitln s!"(assert {id})"
 
+/-- Assert a `Term` that may be either a variable (assert its name directly) or
+    a complex term (convert via `termToSMTString`). This is the primary assertion
+    entry point for the Encoder's ANF-decomposed results. -/
+def assertTerm (t : Term) : SolverM Unit := do
+  match t with
+  | .var v => assertId v.id
+  | _ => assert t
+
 /-- Declare a constant with a typed `TermType`. -/
 def declareConst (id : String) (ty : TermType) : SolverM Unit := do
   let tyStr ← typeToSMTString ty
@@ -209,9 +223,8 @@ def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : Solve
     let inline := String.intercalate " " argStrs
     emitln s!"(declare-fun {id} ({inline}) {retStr})"
 
-/-- Define a function with typed return type and body. The `args` carry
-    `(name, TermType)` pairs; the `body` is a raw SMT-LIB string (already
-    built by the encoder's ANF decomposition). -/
+/-- Define a function with typed return type and a raw SMT-LIB string body.
+    This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
 def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType)
     (body : String) : SolverM Unit := do
   let typedArgs ← args.mapM fun (name, ty) => do

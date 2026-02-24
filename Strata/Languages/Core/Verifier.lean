@@ -35,11 +35,11 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term
   let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
-  for id in _axms do
-    Solver.assertId id
-  let (ids, estate) ← ts.mapM (encodeTerm False) |>.run estate
-  for id in ids do
-    Solver.assertId id
+  for t in _axms do
+    Solver.assertTerm t
+  let (termEncs, estate) ← ts.mapM (encodeTerm False) |>.run estate
+  for t in termEncs do
+    Solver.assertTerm t
   let ids := estate.ufs.values
   return (ids, estate)
 

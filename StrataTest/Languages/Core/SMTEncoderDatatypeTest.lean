@@ -260,7 +260,7 @@ info: (declare-datatype TestOption (par (α) (
 ; x
 (declare-const f0 (TestOption Int))
 (define-fun t0 () (TestOption Int) f0)
-(define-fun t1 () Bool (is-None t0))
+(define-fun t1 () Bool (|is-None| t0))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -276,7 +276,7 @@ info: (declare-datatype TestList (par (α) (
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
-(define-fun t1 () Bool (is-Cons t0))
+(define-fun t1 () Bool (|is-Cons| t0))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes

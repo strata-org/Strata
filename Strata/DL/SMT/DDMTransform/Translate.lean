@@ -140,7 +140,7 @@ def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange :=
   | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
   decreasing_by cases args; term_by_mem
 
-def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
+partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
   let srnone := SourceRange.none
   match t with
   | .prim p => translateFromTermPrim p
@@ -148,14 +148,45 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
     return .qual_identifier srnone (.qi_ident srnone (.iden_simple srnone
       (.symbol srnone (mkSimpleSymbol v.id))))
   | .none _ | .some _ => throw "don't know how to translate none and some"
-  | .app op args _ =>
+  | .app op args retTy =>
     let args' <- args.mapM translateFromTerm
     let args_array := args'.toArray
-    if args_array.isEmpty then
-      return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier op.mkName)))
-    else
-      return (.qual_identifier_args srnone
-        (.qi_ident srnone (mkIdentifier op.mkName)) (Ann.mk srnone args_array))
+    -- Datatype constructors need (as Name RetType) qualification for SMT-LIB
+    match op with
+    | .datatype_op .constructor name =>
+      let retSort ← translateFromTermType retTy
+      let qi := QualIdentifier.qi_isort srnone (mkIdentifier name) retSort
+      if args_array.isEmpty then
+        return (.qual_identifier srnone qi)
+      else
+        return (.qual_identifier_args srnone qi (Ann.mk srnone args_array))
+    | .bv (.zero_extend n) =>
+      let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "zero_extend")
+        (Ann.mk srnone #[.ind_numeral srnone n])
+      if args_array.isEmpty then
+        return (.qual_identifier srnone (.qi_ident srnone iden))
+      else
+        return (.qual_identifier_args srnone (.qi_ident srnone iden) (Ann.mk srnone args_array))
+    | .str (.re_index n) =>
+      let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "re.^")
+        (Ann.mk srnone #[.ind_numeral srnone n])
+      if args_array.isEmpty then
+        return (.qual_identifier srnone (.qi_ident srnone iden))
+      else
+        return (.qual_identifier_args srnone (.qi_ident srnone iden) (Ann.mk srnone args_array))
+    | .str (.re_loop n₁ n₂) =>
+      let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "re.loop")
+        (Ann.mk srnone #[.ind_numeral srnone n₁, .ind_numeral srnone n₂])
+      if args_array.isEmpty then
+        return (.qual_identifier srnone (.qi_ident srnone iden))
+      else
+        return (.qual_identifier_args srnone (.qi_ident srnone iden) (Ann.mk srnone args_array))
+    | _ =>
+      if args_array.isEmpty then
+        return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier op.mkName)))
+      else
+        return (.qual_identifier_args srnone
+          (.qi_ident srnone (mkIdentifier op.mkName)) (Ann.mk srnone args_array))
   | .quant qkind args tr body =>
     let args_sorted:List (SMTDDM.SortedVar SourceRange) <-
       args.mapM
@@ -176,19 +207,26 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
             -- No patterns - return body as-is
             pure body
           else
-            -- Convert each trigger term to a SMTDDM.Term, then to SExpr
-            let triggerDDMTerms <- triggerTerms.mapM translateFromTerm
-            let triggerSExprs := triggerDDMTerms.map termToSExpr
-
-            -- Create the :pattern attribute
-            -- av_sel wraps the SExprs in parens, so we pass the array directly
-            let patternAttr : SMTDDM.Attribute SourceRange :=
-              .att_kw srnone
-                (.kw_symbol srnone (mkSimpleSymbol "pattern"))
-                (Ann.mk srnone (some (.av_sel srnone (Ann.mk srnone triggerSExprs.toArray))))
-
-            -- Wrap body with bang operator and pattern attribute
-            pure (.bang srnone body (Ann.mk srnone #[patternAttr]))
+            -- Extract trigger groups. The Encoder builds:
+            --   .app .triggers [.app .triggers group₁ .trigger, .app .triggers group₂ .trigger, ...] .trigger
+            -- Each inner .app .triggers represents one :pattern group.
+            -- If a trigger term is NOT .app .triggers, treat it as a single-term group.
+            let mut patternAttrs : Array (SMTDDM.Attribute SourceRange) := #[]
+            for trigTerm in triggerTerms do
+              let sexprs ← match trigTerm with
+                | .app .triggers its _ => do
+                  let ddmTerms ← its.mapM translateFromTerm
+                  pure (ddmTerms.map termToSExpr)
+                | other => do
+                  let ddmTerm ← translateFromTerm other
+                  pure [termToSExpr ddmTerm]
+              let attr : SMTDDM.Attribute SourceRange :=
+                .att_kw srnone
+                  (.kw_symbol srnone (mkSimpleSymbol "pattern"))
+                  (Ann.mk srnone (some (.av_sel srnone (Ann.mk srnone sexprs.toArray))))
+              patternAttrs := patternAttrs.push attr
+            -- Wrap body with bang operator and pattern attributes
+            pure (.bang srnone body (Ann.mk srnone patternAttrs))
         | _ =>
           -- Unexpected trigger format - return body as-is
           pure body
