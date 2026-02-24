@@ -19,6 +19,11 @@ with the solver.
 
 The interface is a structure (not a type class) to allow runtime selection of
 different solver backends.
+
+## TODO: File Organization
+This file deals with SMT terms (not CoreSMT-specific), so it should be moved
+closer to the SMT dialect (e.g., `Strata/DL/SMT/SolverInterface.lean`).
+CoreSMT is a subset of Core; this interface is about SMT terms in general.
 -/
 
 namespace Strata.Core.CoreSMT

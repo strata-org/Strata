@@ -9,12 +9,25 @@ import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Factory
 
 /-!
-# B3 AST to Strata Core Conversion
+# B3 to Core Conversion
 
 Converts B3 abstract syntax trees to Strata Core statements for the CoreSMT
 verifier pipeline. B3 uses de Bruijn indices for variable references while
 Core uses free variables, so the converter maintains a context mapping indices
 to Core identifiers.
+
+## TODO: Architectural Improvements
+
+1. **B3 → Core.Decl instead of Core.Statement**
+   - Currently converts to `Imperative.Stmt.funcDecl` (statement)
+   - Should convert to `Core.Decl.func` (declaration)
+   - Then add a phase: Core.Decl → CoreSMT statements (subset validation)
+   - This separates parsing from verification subset validation
+
+2. **Procedure Support**
+   - Currently only supports parameterless procedures
+   - Should convert B3 procedures to `Core.Decl.proc`
+   - Verification of each procedure done via CoreSMT on statements only
 -/
 
 namespace Strata.B3.ToCore
