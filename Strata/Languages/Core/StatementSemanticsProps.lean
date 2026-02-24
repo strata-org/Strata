@@ -45,15 +45,15 @@ theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cm
   { σ σ': SemanticStore P } { δ δ' : SemanticEval P }
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P Cmd EvalCmd extendEval δ σ ([]: (List (Stmt P Cmd))) σ' δ' → σ = σ' := by
+  EvalBlock P Cmd EvalCmd extendEval δ σ ([]: (List (Stmt P Cmd))) σ' δ' exit → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem EvalStatementsEmpty :
-  EvalStatements π extendEval δ σ [] σ' δ' → σ = σ' := by
+  EvalStatements π extendEval δ σ [] σ' δ' .normal → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem EvalStatementsContractEmpty :
-  EvalStatementsContract π extendEval δ σ [] σ' δ' → σ = σ' := by
+  EvalStatementsContract π extendEval δ σ [] σ' δ' .normal → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem UpdateStateNotDefMonotone
@@ -1314,10 +1314,10 @@ theorem ReadValuesSubstStores :
     . exact ih Ht Ht'
 
 theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ'' : CoreEval} :
-  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' →
+  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' .normal →
   ∃ σ' δ',
-    EvalStatementsContract π φ δ σ ss₁ σ' δ' ∧
-    EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' := by
+    EvalStatementsContract π φ δ σ ss₁ σ' δ' .normal ∧
+    EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' .normal := by
   intros Heval
   induction ss₁ generalizing σ δ <;> simp_all
   case nil =>
@@ -1337,9 +1337,9 @@ theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → Co
     exact EvalBlock.stmts_some_sem Hh Heval.1
 
 theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ' δ'' : CoreEval} :
-  EvalStatementsContract π φ δ σ ss₁ σ' δ' →
-  EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' →
-  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' := by
+  EvalStatementsContract π φ δ σ ss₁ σ' δ' .normal →
+  EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' .normal →
+  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' .normal := by
   intros Heval1 Heval2
   induction ss₁ generalizing σ σ' δ δ' <;> simp_all
   case nil =>
@@ -1355,9 +1355,9 @@ theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → Cor
     . exact ih Heval' Heval2
 
 theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ' δ'' : CoreEval} :
-  EvalStatements π φ δ σ ss₁ σ' δ' →
-  EvalStatements π φ δ' σ' ss₂ σ'' δ'' →
-  EvalStatements π φ δ σ (ss₁ ++ ss₂) σ'' δ'' := by
+  EvalStatements π φ δ σ ss₁ σ' δ' .normal →
+  EvalStatements π φ δ' σ' ss₂ σ'' δ'' .normal →
+  EvalStatements π φ δ σ (ss₁ ++ ss₂) σ'' δ'' .normal := by
   intros Heval1 Heval2
   induction ss₁ generalizing σ σ' δ δ' with
   | nil =>
@@ -2047,24 +2047,27 @@ mutual
 /-- Proof that `EvalStmt` with concrete semantics refines contract semantics,
     by structural recursion on the derivation. -/
 theorem EvalStmtRefinesContract
-  (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ') :
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
+  (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ' exit) :
+  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' exit :=
   match H with
   | .cmd_sem Heval Hdef => .cmd_sem (EvalCommandRefinesContract Heval) Hdef
   | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
   | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .funcDecl_sem => .funcDecl_sem
+  | .exit_sem => .exit_sem
 
 /-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
     by structural recursion on the derivation. -/
 theorem EvalBlockRefinesContract
-  (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ') :
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
+  (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ' exit) :
+  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' exit :=
   match H with
   | .stmts_none_sem => .stmts_none_sem
   | .stmts_some_sem Hstmt Hrest =>
     .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
+  | .stmts_exit_sem Hstmt =>
+    .stmts_exit_sem (EvalStmtRefinesContract Hstmt)
 end
 
 /-- Currently we cannot prove this theorem,
