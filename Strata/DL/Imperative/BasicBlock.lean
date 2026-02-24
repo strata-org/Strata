@@ -92,12 +92,23 @@ def formatNondetTransferCmd (P : PureExpr) (c : NondetTransferCmd Label P)
 
 def formatBasicBlock (b : BasicBlock TransferCmd TCmd)
   [ToFormat TransferCmd] [ToFormat TCmd] : Format :=
-  f!"{Format.line}  {b.cmds}{Format.line}  {b.transfer}"
+  f!"{Format.line}   {b.cmds}{Format.line}   {b.transfer}"
 
 def formatCFG (cfg : CFG Label Blk)
   [ToFormat Label] [ToFormat Blk] : Format :=
-  -- TODO: fix to match test case format
-  f!"Entry: {cfg.entry}{Format.line}{Format.line}{cfg.blocks}"
+  match cfg.blocks with
+  | [] => f!"Entry: {cfg.entry}{Format.line}{Format.line}[]"
+  | blocks =>
+    let blocksFormatted := blocks.map fun (lbl, blk) =>
+      f!"{lbl}:{format blk}"
+    -- Join all but the last with comma, then add the last without comma
+    let allButLast := blocksFormatted.dropLast
+    let last := blocksFormatted.getLast!
+    let joined := if allButLast.isEmpty then
+      last
+    else
+      Format.joinSep allButLast ("," ++ Format.line ++ " ") ++ "," ++ Format.line ++ " " ++ last
+    f!"Entry: {cfg.entry}{Format.line}{Format.line}[{joined}]"
 
 instance [ToFormat Label] [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
     : ToFormat (DetTransferCmd Label P) where
