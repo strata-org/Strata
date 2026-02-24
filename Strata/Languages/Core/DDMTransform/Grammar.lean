@@ -228,7 +228,7 @@ op goto_statement (label : Ident) : Statement => "goto " label ";\n";
 category SpecElt;
 category Free;
 op free () : Free => "free ";
-op modifies_spec (nm : Ident) : SpecElt => "modifies " nm ";\n";
+op modifies_spec (nms : CommaSepBy Ident) : SpecElt => "modifies " nms ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
   free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
