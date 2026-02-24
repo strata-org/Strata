@@ -129,14 +129,7 @@ def main (args : List String) : IO UInt32 := do
             -- Create a files map with the single input file
             let uri := Strata.Uri.file file
             let files := Map.empty.insert uri inputCtx.fileMap
-            let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
-            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
-            let sarifFile := file ++ ".sarif"
-            try
-              IO.FS.writeFile sarifFile sarifJson
-              println! f!"SARIF output written to {sarifFile}"
-            catch e =>
-              println! f!"Error writing SARIF output to {sarifFile}: {e.toString}"
+            Core.Sarif.writeSarifOutput files vcResults (file ++ ".sarif")
 
         -- Also output standard format
         for vcResult in vcResults do
