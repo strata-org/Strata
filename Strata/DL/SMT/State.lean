@@ -10,9 +10,8 @@ import Strata.Languages.Core.Expressions
 /-!
 # SMT State and Context Management
 
-Defines the verification state, configuration, and context tracking for SMT-based
-verification. The state is returned from verify calls to enable reuse across
-multiple verification sessions.
+Defines the SMT solver state and context tracking. The state is returned from
+verify calls to enable reuse across multiple verification sessions.
 -/
 
 namespace Strata.SMT
