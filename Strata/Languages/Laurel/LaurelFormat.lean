@@ -162,7 +162,7 @@ def formatBody : Body → Format
   | .Abstract post => "abstract ensures " ++ formatStmtExpr post
 
 def formatProcedure (proc : Procedure) : Format :=
-  "procedure " ++ Format.text proc.name ++
+  (if proc.isFunctional then "function " else "procedure ") ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
   "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++

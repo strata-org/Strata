@@ -19,7 +19,7 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-procedure syntacticallyABoogieFunction(x: int): int {
+function aFunction(x: int): int {
   x + 1
 }
 
@@ -35,7 +35,7 @@ procedure noFunctionBecauseStatements(): int {
 }
 
 procedure caller() {
-  assert syntacticallyABoogieFunction(1) == 2;
+  assert aFunction(1) == 2;
   var x: int := noFunctionBecauseContract();
   assert x > 0;
   var y: int := noFunctionBecauseStatements();

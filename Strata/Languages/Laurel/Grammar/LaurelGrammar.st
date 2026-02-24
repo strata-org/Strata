@@ -143,6 +143,15 @@ op datatypeConstructorWithArgs (name: Ident, args: CommaSepBy Parameter): Dataty
 category Datatype;
 op datatype (name: Ident, constructors: CommaSepBy DatatypeConstructor): Datatype =>
   "datatype " name "{" constructors "}";
+  
+op function (name : Ident, parameters: CommaSepBy Parameter,
+  returnType: Option OptionalReturnType,
+  returnParameters: Option ReturnParameters,
+  requires: Option OptionalRequires,
+  ensures: Seq EnsuresClause,
+  modifies: Seq ModifiesClause,
+  body : Option OptionalBody) : Procedure =>
+  "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
 
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
