@@ -436,7 +436,7 @@ def elimFuncs [Inhabited T.IDMeta] [BEq T.Identifier] (block : MutualDatatype T.
       inputs := List.zip (genArgNames (allConstrs.length + 1)) (dataDefault d :: caseTypes)
       output := .ftvar outputTyVar
       concreteEval := elimConcreteEval block m
-      attr := #[eval_if_constr_attr] }
+      attr := #[.evalIfConstr 0] }
 
 ---------------------------------------------------------------------
 
@@ -465,7 +465,7 @@ def testerFunc {T} [Inhabited T.IDMeta] (block: MutualDatatype T.IDMeta)
    inputs := [(arg, dataDefault d)],
    output := .bool,
    body := testerFuncBody block d c (.fvar m arg .none) m,
-   attr := #[inline_if_constr_attr]
+   attr := #[.inlineIfConstr 0]
   }
 
 /--
@@ -500,7 +500,7 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T
       inputs := [(arg, dataDefault d)],
       output := ty,
       concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[eval_if_constr_attr]})
+      attr := #[.evalIfConstr 0]})
 
 
 ---------------------------------------------------------------------
