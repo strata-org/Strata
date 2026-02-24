@@ -438,9 +438,9 @@ Translate Laurel Program to Core Program
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := heapParameterization program
   let (program, modifiesDiags) := modifiesClausesTransform program
-  dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  dbg_trace "================================="
+  -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   let program := liftExpressionAssignments program
   -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform + liftExpressionAssignments ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
