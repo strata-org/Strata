@@ -463,7 +463,6 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .repeat "ion_file" },
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
->>>>>>> origin/main
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
     let outputSarif := pflags.getBool "sarif"
