@@ -43,7 +43,7 @@ def isCoreSMTCmd : Core.Command → Bool
   | .cmd (.cover _ e _)   => isCoreSMTExpr e
   | .cmd (.init _ _ e _)  => e.all isCoreSMTExpr
   | .cmd (.havoc _ _)     => false  -- Havoc not in CoreSMT subset
-  | .cmd (.set _ _ _)     => false  -- Assignment requires symbolic execution
+  | .cmd (.set _ _ _)     => false  -- Assignment requires conversion to single-state assignments
   | .call _ _ _ _         => false  -- Procedure calls not in CoreSMT subset
 
 mutual

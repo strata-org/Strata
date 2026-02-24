@@ -30,71 +30,71 @@ open Strata.SMT
 open Lambda
 open Imperative
 
-/-- Helper: translate an expression to SMT term, throwing IO error on failure -/
-private def translateOrThrow (E : Core.Env) (e : Core.Expression.Expr)
-    (ctx : Core.SMT.Context) : IO (Term × Core.SMT.Context) := do
-  match translateExpr E e ctx with
-  | .ok r => return r
-  | .error msg => throw (IO.userError s!"Translation error: {msg}")
+/-- Helper: translate an expression to SMT term, returning error on failure -/
+private def translateExprSafe (E : Core.Env) (e : Core.Expression.Expr)
+    (ctx : Core.SMT.Context) : Except String (Term × Core.SMT.Context) :=
+  translateExpr E e ctx
 
-/-- Helper: translate a type to SMT TermType, throwing IO error on failure -/
-private def translateTypeOrThrow (E : Core.Env) (ty : Core.Expression.Ty)
-    (ctx : Core.SMT.Context) : IO (TermType × Core.SMT.Context) := do
-  match translateType E ty ctx with
-  | .ok r => return r
-  | .error msg => throw (IO.userError s!"Type translation error: {msg}")
+/-- Helper: translate a type to SMT TermType, returning error on failure -/
+private def translateTypeSafe (E : Core.Env) (ty : Core.Expression.Ty)
+    (ctx : Core.SMT.Context) : Except String (TermType × Core.SMT.Context) :=
+  translateType E ty ctx
 
 /-- Proof check: check-sat of negation using push/pop -/
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
-  let (term, smtCtx) ← translateOrThrow E expr smtCtx
-  state.solver.push
-  state.solver.assert (Factory.not term)
-  let decision ← state.solver.checkSat
-  state.solver.pop
-  let outcome := match decision with
-    | .unsat   => Core.Outcome.pass
-    | .sat     => Core.Outcome.fail
-    | .unknown => Core.Outcome.unknown
-  let obligation : Imperative.ProofObligation Core.Expression := {
-    label
-    property := .assert
-    assumptions := []
-    obligation := expr
-    metadata := .empty
-  }
-  let smtResult := match decision with
-    | .unsat => SMT.Result.unsat
-    | .sat => SMT.Result.unknown
-    | .unknown => SMT.Result.unknown
-  return ({ obligation, smtResult, result := outcome }, smtCtx)
+  match translateExprSafe E expr smtCtx with
+  | .error msg =>
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label, property := .assert, assumptions := [], obligation := expr, metadata := .empty
+    }
+    return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
+  | .ok (term, smtCtx) =>
+    state.solver.push
+    state.solver.assert (Factory.not term)
+    let decision ← state.solver.checkSat
+    state.solver.pop
+    let outcome := match decision with
+      | .unsat   => Core.Outcome.pass
+      | .sat     => Core.Outcome.fail
+      | .unknown => Core.Outcome.unknown
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label, property := .assert, assumptions := [], obligation := expr, metadata := .empty
+    }
+    let smtResult := match decision with
+      | .unsat => SMT.Result.unsat
+      | .sat => SMT.Result.unknown
+      | .unknown => SMT.Result.unknown
+    return ({ obligation, smtResult, result := outcome }, smtCtx)
 
 /-- Cover check: check-sat of expression using push/pop -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
-  let (term, smtCtx) ← translateOrThrow E expr smtCtx
-  state.solver.push
-  state.solver.assert term
-  let decision ← state.solver.checkSat
-  state.solver.pop
-  let outcome := match decision with
-    | .sat     => Core.Outcome.pass      -- Reachable
-    | .unsat   => Core.Outcome.fail      -- Unreachable
-    | .unknown => Core.Outcome.unknown
-  let obligation : Imperative.ProofObligation Core.Expression := {
-    label
-    property := .cover
-    assumptions := []
-    obligation := expr
-    metadata := .empty
-  }
-  let smtResult := match decision with
-    | .sat => SMT.Result.unknown
-    | .unsat => SMT.Result.unsat
-    | .unknown => SMT.Result.unknown
-  return ({ obligation, smtResult, result := outcome }, smtCtx)
+  match translateExprSafe E expr smtCtx with
+  | .error msg =>
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label, property := .cover, assumptions := [], obligation := expr, metadata := .empty
+    }
+    return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
+  | .ok (term, smtCtx) =>
+    state.solver.push
+    state.solver.assert term
+    let decision ← state.solver.checkSat
+    state.solver.pop
+    let outcome := match decision with
+      | .sat     => Core.Outcome.pass      -- Reachable
+      | .unsat   => Core.Outcome.fail      -- Unreachable
+      | .unknown => Core.Outcome.unknown
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label, property := .cover, assumptions := [], obligation := expr, metadata := .empty
+    }
+    let smtResult := match decision with
+      | .sat => SMT.Result.unknown
+      | .unsat => SMT.Result.unsat
+      | .unknown => SMT.Result.unknown
+    return ({ obligation, smtResult, result := outcome }, smtCtx)
 
 mutual
 /-- Process a single CoreSMT statement. Returns updated state, SMT context,

@@ -176,7 +176,7 @@ private def testProgram1 : Cmds PureExpr :=
 
 /--
 info: Commands:
-init (x : Num) := some 0
+init (x : Num) := 0
 x := 100
 assert [x_value_eq] true
 
@@ -204,7 +204,7 @@ private def testProgram2 : Cmds PureExpr :=
 
 /--
 info: Commands:
-init (x : Num) := some y
+init (x : Num) := y
 havoc x
 assert [x_value_eq] ($__x0 : Num) = 100
 
