@@ -346,23 +346,23 @@ spec {
   xs := Cons(42, Nil());
 
   // Extract the head using the destructor function
-  h := List..head(xs);
+  h := List..head!(xs);
 
   // Assert the extracted head is correct
   assert [headIs42]: h == 42;
 
   // Extract the tail using the destructor function
-  t := List..tail(xs);
+  t := List..tail!(xs);
 
   // Assert the tail is Nil
   assert [tailIsNil]: List..isNil(t);
 
   // Test with a longer list
   xs := Cons(10, Cons(20, Nil()));
-  h := List..head(xs);
+  h := List..head!(xs);
   assert [headIs10]: h == 10;
 
-  t := List..tail(xs);
+  t := List..tail!(xs);
   assert [tailIsCons]: List..isCons(t);
 };
 #end
@@ -431,6 +431,14 @@ spec {
 
 /--
 info:
+Obligation: set_second_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
+Obligation: set_second_calls_List..tail_1
+Property: assert
+Result: ✅ pass
+
 Obligation: secondIs2
 Property: assert
 Result: ✅ pass
@@ -481,6 +489,10 @@ spec {
 
 /--
 info:
+Obligation: set_h_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIs100
 Property: assert
 Result: ✅ pass

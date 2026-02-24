@@ -165,11 +165,11 @@ def lookupFieldType (name : Identifier) : TransformM (Option HighTypeMd) := do
 /-- Get the Box destructor name for a given Laurel HighType -/
 def boxDestructorName (ty : HighType) : Identifier :=
   match ty with
-  | .TInt => "Box..intVal"
-  | .TBool => "Box..boolVal"
-  | .TFloat64 => "Box..float64Val"
-  | .UserDefined _ => "Box..compositeVal"
-  | _ => "Box..intVal"  -- fallback
+  | .TInt => "Box..intVal!"
+  | .TBool => "Box..boolVal!"
+  | .TFloat64 => "Box..float64Val!"
+  | .UserDefined _ => "Box..compositeVal!"
+  | _ => "Box..intVal!"  -- fallback
 
 /-- Get the Box constructor name for a given Laurel HighType -/
 def boxConstructorName (ty : HighType) : Identifier :=
@@ -296,7 +296,7 @@ where
         -- 2. Update the heap with incremented nextReference: heapVar := increment(heapVar)
         -- 3. Result is $freshVar (the old nextReference value, which is the new Composite reference)
         let freshVar ← freshVarName
-        let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
+        let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
         let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
         let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
         let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)

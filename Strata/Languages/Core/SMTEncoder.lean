@@ -72,10 +72,11 @@ def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
 def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx
   else
-    let (c, i, s) := d.genFunctionMaps
+    let (c, i, s, u) := d.genFunctionMaps
     let m := Map.union ctx.datatypeFuns (c.fmap (fun (_, x) => (.constructor, x)))
     let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
     let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
+    let m := Map.union m (u.fmap (fun (_, x) => (.selector, x)))
     { ctx with seenDatatypes := ctx.seenDatatypes.insert d.name, datatypeFuns := m }
 
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
@@ -333,10 +334,11 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
         Note: testers use constructor, translated in `Op.mkName` to is-foo
-        Selectors use full function name (Datatype..fieldName) for uniqueness
+        Selectors use full function name (Datatype..fieldName) for uniqueness.
+        Unsafe selectors (e.g. List..head!) use the safe name (List..head).
         -/
         let name := match kind with
-          | .selector => fn.name
+          | .selector => if fn.name.endsWith "!" then (fn.name.dropEnd 1).toString else fn.name
           | _ => c.name.name
         Term.app (.datatype_op kind name) args retty
     .ok (adtApp, smt_outty, ctx)

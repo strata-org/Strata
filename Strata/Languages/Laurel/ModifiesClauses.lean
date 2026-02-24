@@ -94,7 +94,7 @@ def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
   let heapIn := mkMd <| .Identifier heapInName
   let heapOut := mkMd <| .Identifier heapOutName
   -- Build the "obj is allocated" condition: $obj < $heap_in.nextReference
-  let heapCounter := mkMd <| .StaticCall "Heap..nextReference" [heapIn]
+  let heapCounter := mkMd <| .StaticCall "Heap..nextReference!" [heapIn]
   let objAllocated := mkMd <| .PrimitiveOp .Lt [obj, heapCounter]
   let antecedent := if entries.isEmpty
     then objAllocated
