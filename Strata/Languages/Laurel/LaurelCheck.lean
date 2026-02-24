@@ -44,7 +44,7 @@ partial def synth (env : TypeEnv) (expr : StmtExprMd) : Option HighTypeMd :=
     | .Not, [e] =>
       if check env e (mkTy .TBool) then .some (mkTy .TBool) else .none
     | .Neg, [e] => if check env e (mkTy .TInt) then .some (mkTy .TInt) else .none
-    | _, _ => panic! s!"Unsupported operation: {repr op}({repr args})"
+    | _, _ => panic! s!"Unsupported operation: {repr op}"
   | _ => .none
 
 /-- Check that an expression has the expected type -/
