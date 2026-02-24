@@ -57,7 +57,6 @@ def run(test_file: str, *, laurel: bool) -> bool:
         ["lake", "exe", "strata", cmd_name, "--sarif", ion_rel, "0"],
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
     )
 
     ok = True
