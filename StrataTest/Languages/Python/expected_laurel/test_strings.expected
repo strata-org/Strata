@@ -1,5 +1,4 @@
 
-<<<<<<< str-concat-static-dispatch
 ==== Verification Results ====
 datetime_now_ensures_0: ✅ pass (at byte 7131)
 datetime_utcnow_ensures_0: ✅ pass (at byte 7369)
@@ -11,4 +10,3 @@ ensures_maybe_except_none: ✅ pass (at byte 10980)
 assert(114): ✅ pass (at byte 114)
 assert(264): ✅ pass (at byte 264)
 =======
->>>>>>> main
