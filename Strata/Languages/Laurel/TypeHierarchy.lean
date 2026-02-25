@@ -17,28 +17,40 @@ open Strata
 Compute the flattened set of ancestors for a composite type, including itself.
 Traverses the `extending` list transitively.
 -/
-def computeAncestors (types : List TypeDefinition) (name : Identifier) : List Identifier :=
-  let rec go (fuel : Nat) (current : Identifier) : List Identifier :=
+def computeAncestors (types : List TypeDefinition) (name : Identifier) : List CompositeType :=
+  let rec go (fuel : Nat) (current : Identifier) : List CompositeType :=
     match fuel with
-    | 0 => [current]
+    | 0 =>
+      types.filterMap fun td => match td with
+        | .Composite ct => if ct.name == current then some ct else none
+        | _ => none
     | fuel' + 1 =>
-      current :: (types.foldl (fun acc td =>
+      let self := types.filterMap fun td => match td with
+        | .Composite ct => if ct.name == current then some ct else none
+        | _ => none
+      self ++ (types.foldl (fun acc td =>
         match td with
         | .Composite ct =>
           if ct.name == current then
             ct.extending.foldl (fun acc2 parent => acc2 ++ go fuel' parent) acc
           else acc
         | _ => acc) [])
-  (go types.length name).eraseDups
+  let seen : List Identifier := []
+  (go types.length name).foldl (fun (acc, seen) ct =>
+    if seen.contains ct.name then (acc, seen)
+    else (acc ++ [ct], seen ++ [ct.name])) ([], seen) |>.1
 
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 /--
 Generate Laurel constant definitions for the type hierarchy:
-- A `ancestorsFor<Type>` constant per composite type with the inner ancestor map
-- A `ancestorsPerType` constant combining the per-type constants
+- A `ancestorsFor<Type>` constant per composite type.
+It enables checking for `<Type>` whether it is assignable to another type using a Map lookup.
+- A `ancestorsPerType` constant combining the per-type constants.
+It enables checking for any type whether it is assignable to any other type using two Map lookups.
+We use this to translate `<value> is <Type>`.
+The runtime type of `<value>` is used for the outer Map lookup while `<Type>` for the inner one.
 
-Uses `StaticCall` to reference map operations (`Map.const`, `update`) and TypeTag constructors.
 -/
 def generateTypeHierarchyDecls (types : List TypeDefinition) : List Constant :=
   let composites := types.filterMap fun td => match td with
@@ -57,7 +69,7 @@ def generateTypeHierarchyDecls (types : List TypeDefinition) : List Constant :=
     let emptyInner := mkMd (.StaticCall "Map.const" [falseConst])
     composites.foldl (fun acc otherCt =>
       let otherConst := mkMd (.StaticCall (otherCt.name ++ "_TypeTag") [])
-      let isAncestor := ancestors.contains otherCt.name
+      let isAncestor := ancestors.any (·.name == otherCt.name)
       let boolVal := mkMd (.LiteralBool isAncestor)
       mkMd (.StaticCall "update" [acc, otherConst, boolVal])
     ) emptyInner
@@ -121,11 +133,11 @@ def isDiamondInheritedField (types : List TypeDefinition) (typeName : Identifier
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
 -/
-def collectDiamondFieldErrors (uri : Uri) (types : List TypeDefinition) (env : TypeEnv)
+def validateDiamondFieldAccessesForStmtExpr (uri : Uri) (types : List TypeDefinition) (env : TypeEnv)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
   | .FieldSelect target fieldName =>
-    let targetErrors := collectDiamondFieldErrors uri types env target
+    let targetErrors := validateDiamondFieldAccessesForStmtExpr uri types env target
     let fieldError := match (computeExprType env types target).val with
       | .UserDefined typeName =>
         if isDiamondInheritedField types typeName fieldName then
@@ -139,29 +151,29 @@ def collectDiamondFieldErrors (uri : Uri) (types : List TypeDefinition) (env : T
       let env'' := match s.val with
         | .LocalVariable name ty _ => (name, ty) :: env'
         | _ => env'
-      (acc ++ collectDiamondFieldErrors uri types env' s, env'')) ([], env)).1
+      (acc ++ validateDiamondFieldAccessesForStmtExpr uri types env' s, env'')) ([], env)).1
   | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ => acc ++ collectDiamondFieldErrors uri types env t) []
-    targetErrors ++ collectDiamondFieldErrors uri types env value
+    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri types env t) []
+    targetErrors ++ validateDiamondFieldAccessesForStmtExpr uri types env value
   | .IfThenElse c t e =>
-    let errs := collectDiamondFieldErrors uri types env c ++
-                collectDiamondFieldErrors uri types env t
+    let errs := validateDiamondFieldAccessesForStmtExpr uri types env c ++
+                validateDiamondFieldAccessesForStmtExpr uri types env t
     match e with
-    | some eb => errs ++ collectDiamondFieldErrors uri types env eb
+    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr uri types env eb
     | none => errs
   | .LocalVariable _ _ (some init) =>
-    collectDiamondFieldErrors uri types env init
+    validateDiamondFieldAccessesForStmtExpr uri types env init
   | .While c invs _ b =>
-    let errs := collectDiamondFieldErrors uri types env c ++
-                collectDiamondFieldErrors uri types env b
-    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ collectDiamondFieldErrors uri types env inv) errs
-  | .Assert cond => collectDiamondFieldErrors uri types env cond
-  | .Assume cond => collectDiamondFieldErrors uri types env cond
+    let errs := validateDiamondFieldAccessesForStmtExpr uri types env c ++
+                validateDiamondFieldAccessesForStmtExpr uri types env b
+    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri types env inv) errs
+  | .Assert cond => validateDiamondFieldAccessesForStmtExpr uri types env cond
+  | .Assume cond => validateDiamondFieldAccessesForStmtExpr uri types env cond
   | .PrimitiveOp _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ collectDiamondFieldErrors uri types env a) []
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri types env a) []
   | .StaticCall _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ collectDiamondFieldErrors uri types env a) []
-  | .Return (some v) => collectDiamondFieldErrors uri types env v
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri types env a) []
+  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr uri types env v
   | _ => []
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
@@ -175,14 +187,14 @@ def validateDiamondFieldAccesses (uri : Uri) (program : Program) : Array Diagnos
     let env : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                          proc.outputs.map (fun p => (p.name, p.type))
     let bodyErrors := match proc.body with
-      | .Transparent bodyExpr => collectDiamondFieldErrors uri program.types env bodyExpr
+      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr uri program.types env bodyExpr
       | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ collectDiamondFieldErrors uri program.types env pc) []
+        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr uri program.types env pc) []
         let implErrors := match impl with
-          | some implExpr => collectDiamondFieldErrors uri program.types env implExpr
+          | some implExpr => validateDiamondFieldAccessesForStmtExpr uri program.types env implExpr
           | none => []
         postErrors ++ implErrors
-      | .Abstract postcond => collectDiamondFieldErrors uri program.types env postcond
+      | .Abstract postcond => validateDiamondFieldAccessesForStmtExpr uri program.types env postcond
     acc ++ bodyErrors) []
   errors.toArray
 
