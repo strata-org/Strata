@@ -44,13 +44,7 @@ def singleCFG (p : Program) : Imperative.CFG String (Imperative.DetBlock String 
 info: Entry: l_6
 
 [l_6:
-   [init (i : int)]
-   cgoto #true l_5 l_5,
- l_5:
-   [i := #0]
-   cgoto #true l_4 l_4,
- l_4:
-   [s := #0]
+   [init (i : int), i := #0, s := #0]
    cgoto #true loop_entry_1 loop_entry_1,
  loop_entry_1:
    [assert [inv] ((~Bool.And : (arrow bool (arrow bool bool)))
@@ -62,10 +56,8 @@ info: Entry: l_6
     #2)))]
    cgoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l_3 end_0,
  l_3:
-   [i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1)]
-   cgoto #true l_2 l_2,
- l_2:
-   [s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))]
+   [i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1),
+ s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))]
    cgoto #true loop_entry_1 loop_entry_1,
  end_0:
    []
@@ -160,13 +152,7 @@ spec {
 info: Entry: l_8
 
 [l_8:
-   [init (x : int)]
-   cgoto #true l_7 l_7,
- l_7:
-   [init (y : int)]
-   cgoto #true l_6 l_6,
- l_6:
-   [x := #0]
+   [init (x : int), init (y : int), x := #0]
    cgoto #true loop_entry_1 loop_entry_1,
  loop_entry_1:
    [assert [inv] ((~Bool.And : (arrow bool (arrow bool bool)))
