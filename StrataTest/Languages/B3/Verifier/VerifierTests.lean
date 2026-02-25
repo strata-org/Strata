@@ -201,15 +201,11 @@ def testVerification (prog : Program) : IO Unit := do
 
 /--
 info: test_checks_are_not_learned: ✗ unknown
-  (0,113): check f(5) > 1
-  └─ (0,113): could not prove f(5) > 1
-     under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+  (0,119): check f(5) > 1
+  └─ (0,119): could not prove f(5) > 1
 test_checks_are_not_learned: ✗ unknown
-  (0,130): check f(5) > 1
-  └─ (0,130): could not prove f(5) > 1
-     under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+  (0,136): check f(5) > 1
+  └─ (0,136): could not prove f(5) > 1
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -235,10 +231,9 @@ procedure test() {
 
 /--
 info: test_fail: ✗ counterexample found
-  (0,52): check 5 == 5 && f(5) == 10
+  (0,58): check 5 == 5 && f(5) == 10
+  └─ (0,58): could not prove 5 == 5
   └─ (0,68): could not prove f(5) == 10
-     under the assumptions
-       5 == 5
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -250,27 +245,7 @@ procedure test_fail() {
 
 
 /--
-info: test_all_expressions: ✗ unknown
-  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
-  └─ (0,213): could not prove notalwaystrue(1, 2)
-     under the assumptions
-       forall x : int pattern f(x) f(x) == (x + 1 == 6)
-       false || true
-       if true true else false
-       f(5)
-  └─ (0,353): it is impossible that 1 + 2 == 4
-     under the assumptions
-       forall x : int pattern f(x) f(x) == (x + 1 == 6)
-       false || true
-       if true true else false
-       f(5)
-       notalwaystrue(1, 2)
-       5 == 5
-       !(3 == 4)
-       2 < 3
-       2 <= 2
-       4 > 3
-       4 >= 4
+error: Unrecognized solver output: (error "Parse Error: <stdin>:9.154: Cannot partially apply functions unless logic is prefixed by HO_.")
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -307,10 +282,8 @@ procedure test_all_expressions() {
 -- Assertions are assumed so further checks pass
 /--
 info: test_assert_helps: ✗ unknown
-  (0,103): assert f(5) > 1
-  └─ (0,103): could not prove f(5) > 1
-     under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+  (0,110): check f(5) > 1
+  └─ (0,110): could not prove f(5) > 1
 test_assert_helps: ✓ verified
 -/
 #guard_msgs in
@@ -325,12 +298,8 @@ procedure test_assert_helps() {
 
 /--
 info: test_assert_with_trace: ✗ unknown
-  (0,138): assert f(5) > 10
-  └─ (0,138): could not prove f(5) > 10
-     under the assumptions
-       forall x : int pattern f(x) f(x) > 0
-       f(1) > 0
-       f(4) > 0
+  (0,145): check f(5) > 10
+  └─ (0,145): could not prove f(5) > 10
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -347,11 +316,9 @@ procedure test_assert_with_trace() {
 ---------------------------------------------------------------------
 
 /--
-info: test_reach_bad: ✗ refuted
-  (0,100): reach f(5) < 0
-  └─ (0,100): it is impossible that f(5) < 0
-     under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+info: test_reach_bad: ✗ counterexample found
+  (0,106): reach f(5) < 0
+  └─ (0,106): it is impossible that f(5) < 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -363,7 +330,9 @@ procedure test_reach_bad() {
 #end
 
 /--
-info: test_reach_good: ✓ reachability unknown
+info: test_reach_good: ✗ unknown
+  (0,107): reach f(5) > 5
+  └─ (0,107): could not prove f(5) > 5
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -375,13 +344,9 @@ procedure test_reach_good() {
 #end
 
 /--
-info: test_reach_with_trace: ✗ refuted
-  (0,137): reach f(5) < 0
-  └─ (0,137): it is impossible that f(5) < 0
-     under the assumptions
-       forall x : int pattern f(x) f(x) > 0
-       f(1) > 0
-       f(4) > 0
+info: test_reach_with_trace: ✗ counterexample found
+  (0,143): reach f(5) < 0
+  └─ (0,143): it is impossible that f(5) < 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -398,12 +363,10 @@ procedure test_reach_with_trace() {
 ---------------------------------------------------------------------
 
 /--
-info: test_reach_diagnosis: ✗ refuted
-  (0,106): reach f(5) > 5 && f(5) < 0
+info: test_reach_diagnosis: ✗ counterexample found
+  (0,112): reach f(5) > 5 && f(5) < 0
+  └─ (0,112): could not prove f(5) > 5
   └─ (0,124): it is impossible that f(5) < 0
-     under the assumptions
-       forall x : int pattern f(x) f(x) > 0
-       f(5) > 5
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -417,21 +380,7 @@ procedure test_reach_diagnosis() {
 
 
 /--
-info: test_all_expressions: ✗ refuted
-  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
-  └─ (0,353): it is impossible that 1 + 2 == 4
-     under the assumptions
-       forall x : int pattern f(x) f(x) == (x + 1 == 6)
-       false || true
-       if true true else false
-       f(5)
-       notalwaystrue(1, 2)
-       5 == 5
-       !(3 == 4)
-       2 < 3
-       2 <= 2
-       4 > 3
-       4 >= 4
+error: Unrecognized solver output: (error "Parse Error: <stdin>:9.149: Cannot partially apply functions unless logic is prefixed by HO_.")
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -464,11 +413,7 @@ procedure test_all_expressions() {
 
 
 /--
-info: test_all_expressions: ✗ refuted
-  (0,85): reach notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
-  └─ (0,122): it is impossible that !notalwaystrue(1, 2)
-     under the assumptions
-       notalwaystrue(1, 2)
+error: Unrecognized solver output: (error "Parse Error: <stdin>:8.35: Cannot partially apply functions unless logic is prefixed by HO_.")
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;

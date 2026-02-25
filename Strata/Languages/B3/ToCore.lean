@@ -192,7 +192,8 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     { value := [Core.Statement.assert procName exprResult.value], errors := exprResult.errors }
   | .assert _ expr, procName =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.assert procName exprResult.value], errors := exprResult.errors }
+    { value := [Core.Statement.assert procName exprResult.value,
+                Core.Statement.assume "assert-assume" exprResult.value], errors := exprResult.errors }
   | .assume _ expr, _ =>
     let exprResult := convertExpr ctx expr
     { value := [Core.Statement.assume "assume" exprResult.value], errors := exprResult.errors }
