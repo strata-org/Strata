@@ -61,6 +61,12 @@ abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
 def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
   ReaderT.run (StateT.run x state) solver
 
+/-- A typed SMT-LIB datatype constructor: name + typed fields. -/
+structure SMTConstructor where
+  name : String
+  args : List (String × TermType)
+deriving Repr, Inhabited
+
 namespace Solver
 
 /--
@@ -157,24 +163,35 @@ def getValue (ids : List String) : SolverM Unit :=
 def declareSort (id : String) (arity : Nat) : SolverM Unit :=
   emitln s!"(declare-sort {id} {arity})"
 
-def declareDatatype (id : String) (params : List String) (constructors : List String) : SolverM Unit :=
-  let cInline := "\n  " ++ String.intercalate "\n  " constructors
+/-- Convert a single constructor to its SMT-LIB string representation. -/
+private def constructorToSMTString (c : SMTConstructor) : SolverM String := do
+  if c.args.isEmpty then return s!"({c.name})"
+  else
+    let fieldStrs ← c.args.mapM fun (name, ty) => do
+      let tyStr ← typeToSMTString ty
+      return s!"({name} {tyStr})"
+    return s!"({c.name} {String.intercalate " " fieldStrs})"
+
+def declareDatatype (id : String) (params : List String) (constructors : List SMTConstructor) : SolverM Unit := do
+  let cStrs ← constructors.mapM constructorToSMTString
+  let cInline := "\n  " ++ String.intercalate "\n  " cStrs
   let pInline := String.intercalate " " params
   if params.isEmpty
   then emitln s!"(declare-datatype {id} ({cInline}))"
   else emitln s!"(declare-datatype {id} (par ({pInline}) ({cInline})))"
 
 /-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
-def declareDatatypes (dts : List (String × List String × List String)) : SolverM Unit := do
+def declareDatatypes (dts : List (String × List String × List SMTConstructor)) : SolverM Unit := do
   if dts.isEmpty then return
   let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
   let sortDeclStr := String.intercalate " " sortDecls
-  let bodies := dts.map fun (_, params, constrs) =>
-    let cInline := String.intercalate " " constrs
-    if params.isEmpty then s!"({cInline})"
+  let bodies ← dts.mapM fun (_, params, constrs) => do
+    let cStrs ← constrs.mapM constructorToSMTString
+    let cInline := String.intercalate " " cStrs
+    if params.isEmpty then return s!"({cInline})"
     else
       let pInline := String.intercalate " " params
-      s!"(par ({pInline}) ({cInline}))"
+      return s!"(par ({pInline}) ({cInline}))"
   let bodyStr := String.intercalate "\n  " bodies
   emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
 

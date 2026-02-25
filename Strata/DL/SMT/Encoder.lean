@@ -91,7 +91,8 @@ def termNum : EncoderM Nat := do return (← get).terms.size
 def ufNum   : EncoderM Nat := do return (← get).ufs.size
 
 def declareType (id : String) (mks : List String) : EncoderM String := do
-  declareDatatype id [] mks
+  let constrs := mks.map fun name => SMTConstructor.mk name []
+  declareDatatype id [] constrs
   return id
 
 /-- Emit a `define-fun` for a term in ANF. When not in a binder, emits a
@@ -277,7 +278,8 @@ etc.
 def encode (ts : List Term) : SolverM Unit := do
   Solver.reset
   Solver.setLogic "ALL"
-  Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]
+  Solver.declareDatatype "Option" ["X"]
+    [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]
   let (termEncs, _) ← ts.mapM (encodeTerm False) |>.run EncoderState.init
   for t in termEncs do
     Solver.assert t

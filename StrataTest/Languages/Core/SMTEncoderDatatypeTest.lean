@@ -111,7 +111,7 @@ def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDa
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption..val α)))))
+  (Some (TestOption..val |α|)))))
 ; x
 (declare-const f0 (TestOption Int))
 (define-fun t0 () (TestOption Int) f0)
@@ -125,7 +125,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -139,7 +139,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestTree (par (α) (
   (Leaf)
-  (Node (TestTree..value α) (TestTree..left (TestTree α)) (TestTree..right (TestTree α))))))
+  (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; tree
 (declare-const f0 (TestTree Bool))
 (define-fun t0 () (TestTree Bool) f0)
@@ -153,7 +153,7 @@ info: (declare-datatype TestTree (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; intList
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -167,7 +167,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; boolList
 (declare-const f0 (TestList Bool))
 (define-fun t0 () (TestList Bool) f0)
@@ -181,7 +181,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestTree (par (α) (
   (Leaf)
-  (Node (TestTree..value α) (TestTree..left (TestTree α)) (TestTree..right (TestTree α))))))
+  (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; intTree
 (declare-const f0 (TestTree Int))
 (define-fun t0 () (TestTree Int) f0)
@@ -195,10 +195,10 @@ info: (declare-datatype TestTree (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption..val α)))))
+  (Some (TestOption..val |α|)))))
 (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; listOfOption
 (declare-const f0 (TestList (TestOption Int)))
 (define-fun t0 () (TestList (TestOption Int)) f0)
@@ -214,7 +214,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption..val α)))))
+  (Some (TestOption..val |α|)))))
 (define-fun t0 () (TestOption Int) (as None (TestOption Int)))
 -/
 #guard_msgs in
@@ -226,7 +226,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption..val α)))))
+  (Some (TestOption..val |α|)))))
 (define-fun t0 () (TestOption Int) ((as Some (TestOption Int)) 42))
 -/
 #guard_msgs in
@@ -238,7 +238,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 (define-fun t0 () (TestList Int) (as Nil (TestList Int)))
 (define-fun t1 () (TestList Int) ((as Cons (TestList Int)) 1 t0))
 -/
@@ -256,7 +256,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption..val α)))))
+  (Some (TestOption..val |α|)))))
 ; x
 (declare-const f0 (TestOption Int))
 (define-fun t0 () (TestOption Int) f0)
@@ -272,7 +272,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -290,7 +290,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption..val α)))))
+  (Some (TestOption..val |α|)))))
 ; x
 (declare-const f0 (TestOption Int))
 (define-fun t0 () (TestOption Int) f0)
@@ -306,7 +306,7 @@ info: (declare-datatype TestOption (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -322,7 +322,7 @@ info: (declare-datatype TestList (par (α) (
 /--
 info: (declare-datatype TestList (par (α) (
   (Nil)
-  (Cons (TestList..head α) (TestList..tail (TestList α))))))
+  (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const f0 (TestList Int))
 (define-fun t0 () (TestList Int) f0)
@@ -428,8 +428,8 @@ def forestDatatype : LDatatype Visibility :=
 
 /--
 info: (declare-datatypes ((RoseTree 1) (Forest 1))
-  ((par (α) ((Node (RoseTree..node α) (RoseTree..children (Forest α)))))
-  (par (α) ((FNil) (FCons (Forest..hd (RoseTree α)) (Forest..tl (Forest α)))))))
+  ((par (α) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
+  (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; tree
 (declare-const f0 (RoseTree Int))
 (define-fun t0 () (RoseTree Int) f0)
@@ -444,10 +444,10 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
 /--
 info: (declare-datatype TestOption (par (α) (
   (None)
-  (Some (TestOption..val α)))))
+  (Some (TestOption..val |α|)))))
 (declare-datatypes ((RoseTree 1) (Forest 1))
-  ((par (α) ((Node (RoseTree..node α) (RoseTree..children (Forest α)))))
-  (par (α) ((FNil) (FCons (Forest..hd (RoseTree α)) (Forest..tl (Forest α)))))))
+  ((par (α) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
+  (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; optionTree
 (declare-const f0 (TestOption (RoseTree Int)))
 (define-fun t0 () (TestOption (RoseTree Int)) f0)
