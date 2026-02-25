@@ -859,12 +859,13 @@ partial def elseToCST {M} [Inhabited M] (stmts : List Core.Statement)
     pure (.else1 default blockCST)
 
 partial def invariantsToCST {M} [Inhabited M]
-    (inv : Option (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
+    (inv : List (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
   match inv with
-  | none => pure (.nilInvariants default)
-  | some expr => do
+  | [] => pure (.nilInvariants default)
+  | expr :: rest => do
     let exprCST ← lexprToExpr expr 0
-    pure (.consInvariants default exprCST (.nilInvariants default))
+    let restCST ← invariantsToCST rest
+    pure (.consInvariants default exprCST restCST)
 end
 
 /-- Convert a procedure to CST

@@ -396,14 +396,11 @@ spec {
   max := (nums[bv{64}(0)]);
   i := bv{64}(1);
   while ((i < nums_len))
-    invariant (((((nums_len > bv{64}(0)) && ((bv{64}(0) <= i) && (i <= nums_len)))
-                && forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) ==> (max >=s (nums[x0]))))
-                && exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) && (max == (nums[x0])))))
-    // invariant (nums_len > bv{64}(0))
-    // invariant (bv{64}(0) <= i)
-    // invariant (i <= nums_len)
-    // invariant (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) ==> (max >=s (nums[x0]))))
-    // invariant (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) && (max == (nums[x0]))))
+    invariant (nums_len > bv{64}(0))
+    invariant (bv{64}(0) <= i)
+    invariant (i <= nums_len)
+    invariant (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) ==> (max >=s (nums[x0]))))
+    invariant (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) && (max == (nums[x0]))))
   {
     if (((nums[i]) >s max)) {
       max := (nums[i]);
@@ -427,7 +424,11 @@ spec {
   max := nums[bv{64}(0)];
   i := bv{64}(1);
   while (i < nums_len)
-  invariant nums_len > bv{64}(0) && (bv{64}(0) <= i && i <= nums_len) && forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i ==> max >=s nums[__q0] && exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i && max == nums[__q0]
+  invariant nums_len > bv{64}(0)
+  invariant bv{64}(0) <= i
+  invariant i <= nums_len
+  invariant forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i ==> max >=s nums[__q0]
+  invariant exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i && max == nums[__q0]
   {
     if (nums[i] >s max) {
       max := nums[i];
