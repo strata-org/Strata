@@ -6,6 +6,7 @@
 
 import Strata.Languages.B3.Verifier
 import Strata.Languages.B3.Format
+import Strata.Languages.B3.FromCore
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
 import Strata.DL.SMT.Solver
@@ -151,19 +152,17 @@ def testVerification (prog : Program) : IO Unit := do
       match result.diagnosis with
       | some diag =>
         for failure in diag.diagnosedFailures do
-          -- Format Core expression directly (no B3 conversion available here)
           let diagnosisPrefix := match failure.report.result with
             | .error .refuted => MSG_IMPOSSIBLE
             | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
-            | .ok _ => MSG_COULD_NOT_PROVE  -- Shouldn't happen
-
-          IO.println s!"  └─ {diagnosisPrefix} {failure.expression}"
-
-          -- Show assumptions for this failure (from report context)
-          if !failure.report.context.pathCondition.isEmpty then
-            IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-            for expr in failure.report.context.pathCondition.reverse do
-              IO.println s!"       {expr}"
+            | .ok _ => MSG_COULD_NOT_PROVE
+          match B3.FromCore.exprFromCore failure.expression with
+          | .ok b3Expr =>
+            let exprLoc := formatExpressionLocation prog b3Expr
+            let exprFormatted := formatExpressionOnly prog b3Expr
+            IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
+          | .error _ =>
+            IO.println s!"  └─ {diagnosisPrefix} <expression>"
       | none => pure ()  -- No diagnosis available
 
 ---------------------------------------------------------------------
