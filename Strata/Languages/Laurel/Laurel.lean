@@ -66,6 +66,9 @@ inductive Operation : Type where
   | Geq
   deriving Repr
 
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -77,6 +80,7 @@ structure WithMetadata (t : Type) : Type where
   val : t
   /-- Source-level metadata (locations, annotations). -/
   md : Imperative.MetaData Core.Expression
+  deriving Repr
 
 /--
 The type system for Laurel programs.
@@ -115,6 +119,7 @@ inductive HighType : Type where
   /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
   Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
   | TCore (s: String)
+  deriving Repr
 
 mutual
 
@@ -130,8 +135,8 @@ structure Procedure : Type where
   inputs : List Parameter
   /-- Output parameters with their types. Multiple outputs are supported. -/
   outputs : List Parameter
-  /-- The precondition that callers must satisfy. -/
-  precondition : WithMetadata StmtExpr
+  /-- The preconditions that callers must satisfy. -/
+  preconditions : List (WithMetadata StmtExpr)
   /-- Whether the procedure is deterministic or nondeterministic. -/
   determinism : Determinism
   /-- Optional termination measure for recursive procedures. -/
@@ -140,6 +145,15 @@ structure Procedure : Type where
   body : Body
   /-- Source-level metadata. -/
   md : Imperative.MetaData Core.Expression
+
+/--
+A typed parameter for a procedure.
+-/
+structure Parameter where
+  /-- The parameter name. -/
+  name : Identifier
+  /-- The parameter type. -/
+  type : WithMetadata HighType
 
 /--
 Specifies whether a procedure is deterministic or nondeterministic.
@@ -154,15 +168,6 @@ inductive Determinism where
   | nondeterministic
 
 /--
-A typed parameter for a procedure.
--/
-structure Parameter where
-  /-- The parameter name. -/
-  name : Identifier
-  /-- The parameter type. -/
-  type : WithMetadata HighType
-
-/--
 The body of a procedure. A body can be transparent (with a visible
 implementation), opaque (with a postcondition and optional implementation),
 or abstract (requiring overriding in extending types).
@@ -172,11 +177,11 @@ inductive Body where
   | Transparent (body : WithMetadata StmtExpr)
   /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
   | Opaque
-      (postcondition : List (WithMetadata StmtExpr))
+      (postconditions : List (WithMetadata StmtExpr))
       (implementation : Option (WithMetadata StmtExpr))
       (modifies : List (WithMetadata StmtExpr))
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
-  | Abstract (postcondition : WithMetadata StmtExpr)
+  | Abstract (postconditions : List (WithMetadata StmtExpr))
 
 /--
 The unified statement-expression type for Laurel programs.
