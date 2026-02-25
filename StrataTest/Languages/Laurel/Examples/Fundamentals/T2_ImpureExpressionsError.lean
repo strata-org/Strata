@@ -19,16 +19,21 @@ procedure impure(): int {
   x
 }
 
-function impureFunction(x: int): int
+function impureFunction1(x: int): int
 {
-  var y: int := x;
-  y := y + 1;
-//^^^^^^^^^^ error: destructive assignments are not supported in functions or contracts
+  x := x + 1;
+//^^^^^^^^^^^ error: destructive assignments are not supported in functions or contracts
+}
+
+function impureFunction2(x: int): int
+{
   while(false) {}
-//^^^^^ error: loops are not supported in functions or contracts
-  var z: int := impure();
-//              ^^^^^^^^ error: calls to procedures are not supported in functions or contracts
-  y
+//^^^^^^^^^^^^^^^ error: loops are not supported in functions or contracts
+}
+function impureFunction3(x: int): int
+{
+  impure()
+//^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 }
 
 procedure impureContractIsNotLegal1(x: int)
@@ -40,15 +45,15 @@ procedure impureContractIsNotLegal1(x: int)
 }
 
 procedure impureContractIsNotLegal2(x: int)
-  requires (var y: iInt := 1;) (y := 2;) == 2
-//                             ^^^^^^^ error: destructive assignments are not supported in functions or contracts
+  requires (x := 2;) == 2
+//          ^^^^^^^ error: destructive assignments are not supported in functions or contracts
 {
-  assert (var z: int := 1;) (z := 2;) == 2;
-//                           ^^^^^^^ error: destructive assignments are not supported in functions or contracts
+  assert (x := 2;) == 2;
+//        ^^^^^^^ error: destructive assignments are not supported in functions or contracts
 }
 "
 
-#guard_msgs in -- (error, drop all) in
+#guard_msgs (error, drop all) in
 #eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
 
 

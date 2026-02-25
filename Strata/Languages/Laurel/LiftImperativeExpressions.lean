@@ -345,14 +345,13 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | WithMetadata.mk val md =>
   match val with
   | .Assert cond =>
-      let seqCond ← transformExpr cond
-      let prepends ← takePrepends
-      return prepends ++ [⟨.Assert seqCond, md⟩]
+      -- Do not transform assert conditions: impure expressions inside contracts
+      -- must be rejected by the translator, not silently lifted.
+      return [stmt]
 
   | .Assume cond =>
-      let seqCond ← transformExpr cond
-      let prepends ← takePrepends
-      return prepends ++ [⟨.Assume seqCond, md⟩]
+      -- Do not transform assume conditions: same reasoning as assert.
+      return [stmt]
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
