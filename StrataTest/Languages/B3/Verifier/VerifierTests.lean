@@ -178,6 +178,15 @@ def testVerification (prog : Program) : IO Unit := do
               IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
             | .error _ =>
               IO.println s!"  └─ {diagnosisPrefix} <expression>"
+            -- Show assumptions
+            if !failure.report.context.pathCondition.isEmpty then
+              IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
+              for assumption in failure.report.context.pathCondition.reverse do
+                match B3.FromCore.exprFromCore assumption with
+                | .ok b3Assumption =>
+                  let formatted := formatExpressionOnly prog b3Assumption
+                  IO.println s!"       {formatted}"
+                | .error _ => IO.println s!"       <assumption>"
         | none => pure ()
 
 ---------------------------------------------------------------------
@@ -207,9 +216,13 @@ def testVerification (prog : Program) : IO Unit := do
 info: test_checks_are_not_learned: ✗ unknown
   (0,113): check f(5) > 1
   └─ (0,119): could not prove f(5) > 1
+     under the assumptions
+       forall x0 : int f(x0) > 0
 test_checks_are_not_learned: ✗ unknown
   (0,130): check f(5) > 1
   └─ (0,136): could not prove f(5) > 1
+     under the assumptions
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -249,7 +262,28 @@ procedure test_fail() {
 
 
 /--
-error: Unrecognized solver output: (error "Parse Error: <stdin>:9.154: Cannot partially apply functions unless logic is prefixed by HO_.")
+info: test_all_expressions: ✗ counterexample found
+  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  └─ (0,134): could not prove false || true
+  └─ (0,161): could not prove if true true else false
+  └─ (0,197): could not prove f(5)
+  └─ (0,213): could not prove notalwaystrue(1, 2)
+  └─ (0,244): could not prove 5 == 5
+  └─ (0,262): could not prove !(3 == 4)
+  └─ (0,283): could not prove 2 < 3
+  └─ (0,300): could not prove 2 <= 2
+  └─ (0,318): could not prove 4 > 3
+  └─ (0,335): could not prove 4 >= 4
+  └─ (0,353): it is impossible that 1 + 2 == 4
+  └─ (0,415): it is impossible that 5 - 2 == 3
+  └─ (0,437): it is impossible that 3 * 4 == 12
+  └─ (0,460): it is impossible that 10 div 2 == 5
+  └─ (0,485): it is impossible that 7 mod 3 == 1
+  └─ (0,509): it is impossible that -5 == 0 - 5
+  └─ (0,532): it is impossible that notalwaystrue(3, 4)
+  └─ (0,605): it is impossible that true ==> true
+  └─ (0,632): it is impossible that forall x0 : int f(x0) || !f(x0)
+  └─ (0,687): it is impossible that forall x0 : int x0 > 0 || x0 <= 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -288,6 +322,8 @@ procedure test_all_expressions() {
 info: test_assert_helps: ✗ unknown
   (0,103): check f(5) > 1
   └─ (0,110): could not prove f(5) > 1
+     under the assumptions
+       forall x0 : int f(x0) > 0
 test_assert_helps: ✓ verified
 -/
 #guard_msgs in
@@ -304,6 +340,9 @@ procedure test_assert_helps() {
 info: test_assert_with_trace: ✗ unknown
   (0,138): check f(5) > 10
   └─ (0,145): could not prove f(5) > 10
+     under the assumptions
+       forall x0 : int f(x0) > 0
+       f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -323,6 +362,8 @@ procedure test_assert_with_trace() {
 info: test_reach_bad: ✗ counterexample found
   (0,100): reach f(5) < 0
   └─ (0,106): it is impossible that f(5) < 0
+     under the assumptions
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -337,6 +378,8 @@ procedure test_reach_bad() {
 info: test_reach_good: ✗ unknown
   (0,101): reach f(5) > 5
   └─ (0,107): could not prove f(5) > 5
+     under the assumptions
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -351,6 +394,9 @@ procedure test_reach_good() {
 info: test_reach_with_trace: ✗ counterexample found
   (0,137): reach f(5) < 0
   └─ (0,143): it is impossible that f(5) < 0
+     under the assumptions
+       forall x0 : int f(x0) > 0
+       f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -370,7 +416,11 @@ procedure test_reach_with_trace() {
 info: test_reach_diagnosis: ✗ counterexample found
   (0,106): reach f(5) > 5 && f(5) < 0
   └─ (0,112): could not prove f(5) > 5
+     under the assumptions
+       forall x0 : int f(x0) > 0
   └─ (0,124): it is impossible that f(5) < 0
+     under the assumptions
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -384,7 +434,19 @@ procedure test_reach_diagnosis() {
 
 
 /--
-error: Unrecognized solver output: (error "Parse Error: <stdin>:9.149: Cannot partially apply functions unless logic is prefixed by HO_.")
+info: test_all_expressions: ✗ counterexample found
+  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  └─ (0,134): could not prove false || true
+  └─ (0,161): could not prove if true true else false
+  └─ (0,197): could not prove f(5)
+  └─ (0,213): could not prove notalwaystrue(1, 2)
+  └─ (0,244): could not prove 5 == 5
+  └─ (0,262): could not prove !(3 == 4)
+  └─ (0,283): could not prove 2 < 3
+  └─ (0,300): could not prove 2 <= 2
+  └─ (0,318): could not prove 4 > 3
+  └─ (0,335): could not prove 4 >= 4
+  └─ (0,353): it is impossible that 1 + 2 == 4
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -417,7 +479,10 @@ procedure test_all_expressions() {
 
 
 /--
-error: Unrecognized solver output: (error "Parse Error: <stdin>:8.35: Cannot partially apply functions unless logic is prefixed by HO_.")
+info: test_all_expressions: ✗ counterexample found
+  (0,85): reach notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
+  └─ (0,91): could not prove notalwaystrue(1, 2)
+  └─ (0,122): it is impossible that !notalwaystrue(1, 2)
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;

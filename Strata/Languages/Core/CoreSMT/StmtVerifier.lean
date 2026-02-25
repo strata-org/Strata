@@ -71,9 +71,13 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
     -- Add diagnosis for failures
     let diagnosis ← if outcome != .pass then
       let diagResult ← diagnoseFailure state E expr false smtCtx
-      let failedExprs := diagResult.diagnosedFailures.map (·.expression)
-      let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
-      pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := diagResult.diagnosedFailures })
+      let pathCond := state.pathCondition
+      -- Add path condition to each failure's report context
+      let failures := diagResult.diagnosedFailures.map fun f =>
+        { f with report := { f.report with context := { pathCondition := pathCond } } }
+      let failedExprs := failures.map (·.expression)
+      let isRefuted := failures.any (·.isRefuted)
+      pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := failures })
     else
       pure none
     
@@ -108,9 +112,12 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
     -- Add diagnosis for failures (reach checks)
     let diagnosis ← if outcome != .pass then
       let diagResult ← diagnoseFailure state E expr true smtCtx  -- true for reach check
-      let failedExprs := diagResult.diagnosedFailures.map (·.expression)
-      let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
-      pure (some { isRefuted, failedSubExpressions := failedExprs })
+      let pathCond := state.pathCondition
+      let failures := diagResult.diagnosedFailures.map fun f =>
+        { f with report := { f.report with context := { pathCondition := pathCond } } }
+      let failedExprs := failures.map (·.expression)
+      let isRefuted := failures.any (·.isRefuted)
+      pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := failures })
     else
       pure none
     
@@ -144,6 +151,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let solver : SMT.SolverInterface := state.solver
       solver.assert term
       let state := state.addItem (.assumption term)
+      let state := state.addAssumption expr
       return (state, smtCtx, [])
 
   | Core.Statement.init name ty (some expr) _ =>

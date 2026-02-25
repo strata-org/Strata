@@ -20,13 +20,16 @@ namespace Strata.Core.CoreSMT
 /-- Add diagnosis to a failed verification result -/
 def addDiagnosis (state : CoreSMTState) (E : Core.Env) (result : Core.VCResult)
     (smtCtx : Core.SMT.Context) : IO Core.VCResult := do
-  if result.result == .pass then
+  if result.result == .pass || result.diagnosis.isSome then
     return result
   else
     let diagResult ← diagnoseFailure state E result.obligation.obligation false smtCtx
-    let failedExprs := diagResult.diagnosedFailures.map (·.expression)
-    let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
-    return { result with diagnosis := some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := diagResult.diagnosedFailures } }
+    let pathCond := state.pathCondition
+    let failures := diagResult.diagnosedFailures.map fun f =>
+      { f with report := { f.report with context := { pathCondition := pathCond } } }
+    let failedExprs := failures.map (·.expression)
+    let isRefuted := failures.any (·.isRefuted)
+    return { result with diagnosis := some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := failures } }
 
 /-- Verify a list of CoreSMT statements. Returns updated state and check results. -/
 def verify (state : CoreSMTState) (E : Core.Env) (stmts : List Core.Statement)

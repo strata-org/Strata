@@ -21,6 +21,14 @@ open Strata.B3AST
 open Core
 open Lambda
 
+/-- Convert Core type to B3 type string -/
+private def coreTypeToB3Type : LMonoTy → String
+  | .tcons "int" _ => "int"
+  | .tcons "bool" _ => "bool"
+  | .tcons "string" _ => "string"
+  | .tcons name _ => name
+  | _ => "int"
+
 /-- Conversion errors -/
 inductive ConversionError where
   | unsupportedCoreExpr (expr : String)
@@ -114,9 +122,37 @@ partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3
     (exprFromCore lhs).bind fun lhsB3 =>
     (exprFromCore rhs).bind fun rhsB3 =>
     Except.ok (.binaryOp sr (.eq sr) lhsB3 rhsB3)
-  | Lambda.LExpr.quant _ kind vars _trigger body =>
-    (exprFromCore body).bind fun bodyB3 =>
-    Except.error (.unsupportedCoreExpr "quantifier conversion not yet implemented")
+  | Lambda.LExpr.quant _ kind tyOpt trigger body =>
+    let qk := match kind with
+      | .all => B3AST.QuantifierKind.forall sr
+      | .exist => B3AST.QuantifierKind.exists sr
+    -- Collect all nested quantifiers of the same kind into a var list
+    let rec collectVars (e : Core.Expression.Expr) (idx : Nat) (acc : List (B3AST.VarDecl SourceRange)) :
+        List (B3AST.VarDecl SourceRange) × Core.Expression.Expr :=
+      match e with
+      | Lambda.LExpr.quant _ k innerTyOpt _ innerBody =>
+        if k == kind then
+          let tyStr := match innerTyOpt with
+            | some ty => coreTypeToB3Type ty
+            | none => "int"
+          let varDecl := B3AST.VarDecl.quantVarDecl sr ⟨sr, s!"x{idx}"⟩ ⟨sr, tyStr⟩
+          collectVars innerBody (idx + 1) (acc ++ [varDecl])
+        else (acc, e)
+      | _ => (acc, e)
+    let tyStr := match tyOpt with
+      | some ty => coreTypeToB3Type ty
+      | none => "int"
+    let outerVar := B3AST.VarDecl.quantVarDecl sr ⟨sr, s!"x0"⟩ ⟨sr, tyStr⟩
+    let (allVars, innerBody) := collectVars body 1 [outerVar]
+    -- Convert trigger to patterns
+    let patterns := match trigger with
+      | Lambda.LExpr.boolConst _ true => #[]
+      | _ =>
+        match exprFromCore trigger with
+        | .ok trigB3 => #[B3AST.Pattern.pattern sr ⟨sr, #[trigB3]⟩]
+        | .error _ => #[]
+    (exprFromCore innerBody).bind fun bodyB3 =>
+    Except.ok (.quantifierExpr sr qk ⟨sr, allVars.toArray⟩ ⟨sr, patterns⟩ bodyB3)
   | _ => Except.error (.unsupportedCoreExpr "unsupported expression")
 
 end
