@@ -47,6 +47,7 @@ def formatHighTypeVal : HighType → Format
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
+  | .TMap keyType valueType => "Map[" ++ formatHighType keyType ++ ", " ++ formatHighType valueType ++ "]"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
@@ -59,6 +60,8 @@ def formatHighTypeVal : HighType → Format
   decreasing_by all_goals term_by_mem
 end
 
+instance : Std.ToFormat HighTypeMd where
+  format := formatHighType
 
 mutual
 def formatStmtExpr (s : StmtExprMd) : Format := formatStmtExprVal s.val
@@ -181,9 +184,21 @@ def formatConstrainedType (ct : ConstrainedType) : Format :=
   " = " ++ Format.text ct.valueName ++ ": " ++ formatHighType ct.base ++
   " | " ++ formatStmtExpr ct.constraint
 
+def formatDatatypeConstructor (c : DatatypeConstructor) : Format :=
+  Format.text c.name ++
+  if c.args.isEmpty then Format.nil
+  else "(" ++ Format.joinSep (c.args.map fun (n, ty) => Format.text n ++ ": " ++ formatHighType ty) ", " ++ ")"
+
+def formatDatatypeDefinition (dt : DatatypeDefinition) : Format :=
+  "datatype " ++ Format.text dt.name ++
+  (if dt.typeArgs.isEmpty then Format.nil
+   else "(" ++ Format.joinSep (dt.typeArgs.map Format.text) ", " ++ ")") ++
+  " { " ++ Format.joinSep (dt.constructors.map formatDatatypeConstructor) ", " ++ " }"
+
 def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
   | .Constrained ty => formatConstrainedType ty
+  | .Datatype ty => formatDatatypeDefinition ty
 
 def formatProgram (prog : Program) : Format :=
   Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
@@ -223,6 +238,12 @@ instance : Std.ToFormat CompositeType where
 
 instance : Std.ToFormat ConstrainedType where
   format := formatConstrainedType
+
+instance : Std.ToFormat DatatypeConstructor where
+  format := formatDatatypeConstructor
+
+instance : Std.ToFormat DatatypeDefinition where
+  format := formatDatatypeDefinition
 
 instance : Std.ToFormat TypeDefinition where
   format := formatTypeDefinition

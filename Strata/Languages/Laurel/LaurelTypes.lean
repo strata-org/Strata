@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 /-
@@ -19,16 +20,23 @@ namespace Strata.Laurel
 abbrev TypeEnv := List (Identifier × HighTypeMd)
 
 /--
-Look up a field's type in a composite type by name.
+Look up a field's type in a composite type by name, walking the inheritance chain.
 -/
 def lookupFieldInTypes (types : List TypeDefinition) (typeName : Identifier) (fieldName : Identifier) : Option HighTypeMd :=
-  types.findSome? fun td =>
-    match td with
-    | .Composite ct =>
-        if ct.name == typeName then ct.fields.findSome? fun f =>
-          if f.name == fieldName then some f.type else none
-        else none
-    | _ => none
+  let rec go (fuel : Nat) (current : Identifier) : Option HighTypeMd :=
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
+      types.findSome? fun td =>
+        match td with
+        | .Composite ct =>
+          if ct.name == current then
+            match ct.fields.findSome? fun f => if f.name == fieldName then some f.type else none with
+            | some ty => some ty
+            | none => ct.extending.findSome? (go fuel')
+          else none
+        | _ => none
+  go types.length typeName
 
 /--
 Compute the HighType of a StmtExpr given a type environment, type definitions, and procedure list.
@@ -48,14 +56,14 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
       | some (_, ty) => ty
-      | none => panic s!"Could not find variable {name} in environment"
+      | none => panic s!"Could not find variable {name} in environment '{Std.format env}'"
   -- Field access
   | .FieldSelect target fieldName =>
       match computeExprType env types target procedures with
       | WithMetadata.mk (.UserDefined typeName) _ =>
           match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
-          | none => panic s!"Could not find field in type"
+          | none => panic s!"Could not find field {fieldName} in type {typeName} or its ancestors"
       | _ => panic s!"Selecting from a type that's not a composite"
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType env types target procedures
