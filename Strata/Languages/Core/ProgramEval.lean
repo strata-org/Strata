@@ -74,12 +74,8 @@ def eval (E : Env) : List (Program × Env) :=
       go rest declsE
 
     | .proc proc _ =>
-      let pEs := Procedure.eval declsE.env proc
-      pEs.flatMap (fun (p, E) =>
-                      let declsE := { declsE with xdecls := declsE.xdecls ++ [.proc p],
-                                                  env := E }
-                      go rest declsE)
-
+      let procedureResult := Procedure.evalOne declsE.env proc
+      go rest { xdecls := declsE.xdecls ++ [.proc procedureResult.fst], env := procedureResult.snd }
     | .func func _ =>
       match declsE.env.addFactoryFunc func with
       | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]

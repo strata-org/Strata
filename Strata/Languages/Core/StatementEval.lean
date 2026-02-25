@@ -375,6 +375,10 @@ structure EnvWithNext where
   env  : Env
   nextLabel : Option String := .none
   stk : StmtsStack := []
+  /-- Optional branch condition for merging paths from if-then-else.
+      When set, this result can be merged with another result that has
+      the same nextLabel using Env.merge with this condition. -/
+  branchCond : Option Expression.Expr := .none
 
 /--
 Drop statements up to the given label, and indicate whether goto
@@ -388,6 +392,40 @@ def processGoto : Statements → Option String → (Statements × Option String)
   match rest.dropWhile (fun s => !s.hasLabel l) with
   | [] => ([], .some l) -- Not found, so propagate goto
   | (rest') => (rest', .none) -- Found, so we're done
+
+/--
+Merge `EnvWithNext` results that originated from different branches of the same
+if-then-else and have reconverged to the same `nextLabel`.
+This prevents a procedure from returning multiple paths when gotos cause branches to reconverge at
+different points than the original ite.
+
+Results are grouped by `nextLabel`. Within each group, if there is exactly one
+result tagged with `branchCond = some cond` (from the then-branch) and exactly
+one tagged with `branchCond = some (not cond)` (from the else-branch), they are
+merged using `Env.merge`. The merged result has `branchCond = none`.
+-/
+def mergeByBranchCond (results : List EnvWithNext) : List EnvWithNext :=
+  if results.length <= 1 then results
+  else
+    -- Collect distinct nextLabel values, preserving order
+    let labels := results.foldl (fun acc ewn =>
+      if acc.contains ewn.nextLabel then acc else acc ++ [ewn.nextLabel]) ([] : List (Option String))
+    labels.flatMap (fun label =>
+      let members := results.filter (fun ewn => ewn.nextLabel == label)
+      match members with
+      | [e1, e2] =>
+        -- Try to merge if they have complementary branch conditions
+        match e1.branchCond, e2.branchCond with
+        | .some c1, .some _ =>
+          -- e1 is the then-branch (cond), e2 is the else-branch (not cond).
+          -- Use c1 as the merge condition: Env.merge c1 e1.env e2.env
+          -- produces ite(c1, val_from_e1, val_from_e2) for each variable.
+          [{ env := Env.merge c1 e1.env e2.env,
+             nextLabel := label,
+             stk := e1.stk,
+             branchCond := .none }]
+        | _, _ => members
+      | _ => members)
 
 mutual
 def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optLabel : Option String) :
@@ -433,36 +471,25 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             match cond' with
             | .true _ | .false _ =>
               let (ss_t, ss_f) := if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let Ewns_f :=
-                -- Check if `ss_f` contains covers and asserts whose
-                -- verification status needs to be reported.
-                -- All covers in `ss_f` will fail (unreachable). For now, we
-                -- don't distinguish between unreachable and unsatisfiable
-                -- covers.
-                -- All asserts in `ss_f` will succeed (unsatisfiable path
-                -- conditions).
+              -- Collect deferred obligations from the dead branch (covers fail,
+              -- asserts pass) and add them to the environment before processing
+              -- the live branch, so they appear first in the output.
+              let Ewn :=
                 if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
                   let ss_f_covers := Statements.collectCovers ss_f
                   let ss_f_asserts := Statements.collectAsserts ss_f
                   let deferred := createFailingCoverObligations ss_f_covers
                   let deferred := deferred ++ createPassingAssertObligations ss_f_asserts
-                  [{ Ewn with env.deferred := Ewn.env.deferred ++ deferred }]
+                  { Ewn with env.deferred := Ewn.env.deferred ++ deferred }
                 else
-                  []
-              let Ewns_t :=
-                -- Process `ss_t`.
-                let Ewns := go' Ewn ss_t .none
-                let Ewns := Ewns.map
-                                (fun (ewn : EnvWithNext) =>
-                                     let ss' := ewn.stk.top
-                                     let s' := Imperative.Stmt.ite cond' ss' [] md
-                                     { ewn with stk := orig_stk.appendToTop [s']})
-                Ewns
-              -- Keep the environment order corresponding to program order.
-              if cond'.isTrue then
-                Ewns_t ++ Ewns_f
-              else
-                Ewns_f ++ Ewns_t
+                  Ewn
+              -- Process the live branch `ss_t`.
+              let Ewns := go' Ewn ss_t .none
+              Ewns.map
+                  (fun (ewn : EnvWithNext) =>
+                       let ss' := ewn.stk.top
+                       let s' := Imperative.Stmt.ite cond' ss' [] md
+                       { ewn with stk := orig_stk.appendToTop [s'] })
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
@@ -494,7 +521,8 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 
-      List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.nextLabel) EAndNexts
+      let results := List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.nextLabel) EAndNexts
+      mergeByBranchCond results
   termination_by (steps, Imperative.Block.sizeOf ss)
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
@@ -526,37 +554,70 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
                                                  deferred := #[]}}
                   else_ss .none
-  match Ewns_t, Ewns_f with
-  -- Special case: if there's only one result from each path,
-  -- with no next label, we can merge both states into one.
-  | [{ stk := stk_t, env := E_t, nextLabel := .none}],
-    [{ stk := stk_f, env := E_f, nextLabel := .none}] =>
-    let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
-    [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
-                    .none
-                    (orig_stk.appendToTop [s'])]
-  | _, _ =>
-    let Ewns_t := Ewns_t.map
-                      (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
-    let Ewns_f := Ewns_f.map
-                      (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
-  Ewns_t ++ Ewns_f
+  -- Group results by nextLabel and merge environments within each group.
+  -- This ensures an ite with gotos produces at most one result per distinct
+  -- target label (+ one for fall-through), not a product of branch paths.
+  -- Results that cannot be merged here (different nextLabels) are tagged with
+  -- branchCond so they can be merged later when their paths reconverge.
+  --
+  -- Tag each result: `true` = from then-branch, `false` = from else-branch.
+  let taggedT := Ewns_t.map (fun ewn => (Bool.true, ewn))
+  let taggedF := Ewns_f.map (fun ewn => (Bool.false, ewn))
+  let all := taggedT ++ taggedF
+  -- Collect distinct nextLabel values
+  let labels := all.foldl (fun acc (_, ewn) =>
+    if acc.contains ewn.nextLabel then acc else acc ++ [ewn.nextLabel]) ([] : List (Option String))
+  -- For each distinct label, collect members and merge
+  labels.flatMap (fun label =>
+    let members := all.filter (fun (_, ewn) => ewn.nextLabel == label)
+    match members with
+    | [] => []
+    | [(fromThen, ewn)] =>
+      -- Single result in this group: wrap in ite with the appropriate branch.
+      -- Tag with branchCond so it can be merged later when paths reconverge.
+      let s' := if fromThen then
+                  Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+                else
+                  Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+      let bc := if fromThen then cond' else (.ite () cond' (LExpr.false ()) (LExpr.true ()))
+      [{ ewn with env := ewn.env.popScope,
+                  stk := orig_stk.appendToTop [s'],
+                  nextLabel := label,
+                  branchCond := .some bc }]
+    | _ =>
+      -- Multiple results targeting the same label: merge them.
+      -- Partition into then-branch and else-branch results.
+      let thenMembers := members.filterMap (fun (ft, ewn) => if ft then .some ewn else .none)
+      let elseMembers := members.filterMap (fun (ft, ewn) => if ft then .none else .some ewn)
+      match thenMembers, elseMembers with
+      | [ewn_t], [ewn_f] =>
+        -- One from each branch: merge using Env.merge
+        let s' := Imperative.Stmt.ite cond' ewn_t.stk.top ewn_f.stk.top md
+        [{ env := (Env.merge cond' ewn_t.env ewn_f.env).popScope,
+           nextLabel := label,
+           stk := orig_stk.appendToTop [s'] }]
+      | _, _ =>
+        -- Fallback for unusual cases: return all members separately with tags.
+        members.map (fun (fromThen, ewn) =>
+          let s' := if fromThen then
+                      Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+                    else
+                      Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+          let bc := if fromThen then cond' else (.ite () cond' (LExpr.false ()) (LExpr.true ()))
+          { ewn with env := ewn.env.popScope,
+                     stk := orig_stk.appendToTop [s'],
+                     nextLabel := label,
+                     branchCond := .some bc }))
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 end
 
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
   List EnvWithNext :=
-  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optLabel
+  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst { env := E } ss optLabel
 
 def gotoToError : EnvWithNext → Statements × Env
-  | { stk, env, nextLabel := .none } => (stk.flatten, env)
-  | { stk, env, nextLabel := .some l } => (stk.flatten, { env with error := some (.LabelNotExists l) })
+  | { stk, env, nextLabel := .none, .. } => (stk.flatten, env)
+  | { stk, env, nextLabel := .some l, .. } => (stk.flatten, { env with error := some (.LabelNotExists l) })
 
 /--
 Partial evaluator for statements yielding a list of environments and transformed
