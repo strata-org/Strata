@@ -344,12 +344,12 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmt with
   | WithMetadata.mk val md =>
   match val with
-  | .Assert cond =>
+  | .Assert _ =>
       -- Do not transform assert conditions: impure expressions inside contracts
       -- must be rejected by the translator, not silently lifted.
       return [stmt]
 
-  | .Assume cond =>
+  | .Assume _ =>
       -- Do not transform assume conditions: same reasoning as assert.
       return [stmt]
 
