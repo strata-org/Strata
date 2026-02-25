@@ -40,7 +40,7 @@ procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: i
 -- #eval! testInput "LoopJumps" program processLaurelFile
 
 /-
-Translation towards SMT (TODO: update to use exit semantics):
+Translation towards SMT:
 
 proof whileWithBreakAndContinue_body() {
   var steps: int;

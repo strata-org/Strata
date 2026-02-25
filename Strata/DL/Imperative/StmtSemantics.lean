@@ -35,9 +35,7 @@ def ExitStatus.consumedBy : ExitStatus → String → ExitStatus
 mutual
 
 /-
-Theorem: exit semantics are well-defined and compositional.
-
-The key properties we want:
+Intended properties of exit semantics:
 1. `exit` with no label exits the nearest enclosing block
 2. `exit l` exits the nearest enclosing block labeled `l`
 3. When an exit is active, remaining statements in a block are skipped
@@ -47,9 +45,18 @@ The key properties we want:
 -/
 
 /--
-An inductively-defined operational semantics with exit support.
+An inductively-defined operational semantics that depends on
+environment lookup and evaluation functions for expressions.
 
-Each evaluation produces an `ExitStatus`:
+Note that `EvalStmt` is parameterized by commands `Cmd` as well as their
+evaluation relation `EvalCmd`, and by `extendEval` which specifies how
+`funcDecl` statements extend the evaluator.
+
+The expression evaluator `δ` is threaded as state to support `funcDecl`,
+which extends the evaluator with new function definitions. Commands do not
+modify the evaluator, only `funcDecl` statements do.
+
+Each evaluation also produces an `ExitStatus`:
 - `normal` means execution completed normally
 - `exiting label` means an exit statement was encountered
 
@@ -68,9 +75,9 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalStmt P Cmd EvalCmd extendEval δ σ (Stmt.cmd c) σ' δ .normal
 
   | block_sem :
-    EvalBlock P Cmd EvalCmd extendEval δ σ b σ' δ' exit →
+    EvalBlock P Cmd EvalCmd extendEval δ σ b σ' δ' e →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.block label b) σ' δ' (exit.consumedBy label)
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.block label b) σ' δ' (e.consumedBy label)
 
   | ite_true_sem :
     δ σ c = .some HasBool.tt →
@@ -105,8 +112,8 @@ inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalBlock P _ _ _ δ σ [] σ δ .normal
   | stmts_some_sem :
     EvalStmt P Cmd EvalCmd extendEval δ σ s σ' δ' .normal →
-    EvalBlock P Cmd EvalCmd extendEval δ' σ' ss σ'' δ'' exit →
-    EvalBlock P Cmd EvalCmd extendEval δ σ (s :: ss) σ'' δ'' exit
+    EvalBlock P Cmd EvalCmd extendEval δ' σ' ss σ'' δ'' e →
+    EvalBlock P Cmd EvalCmd extendEval δ σ (s :: ss) σ'' δ'' e
   | stmts_exit_sem :
     EvalStmt P Cmd EvalCmd extendEval δ σ s σ' δ' (.exiting label) →
     ----
