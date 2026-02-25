@@ -153,11 +153,20 @@ def formatBody : Body → Format
       | some e => " := " ++ formatStmtExpr e
   | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
 
+def formatDeterminism : Determinism → Format
+  | .deterministic none => "deterministic"
+  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
+  | .nondeterministic => "nondeterministic"
+
+instance : Std.ToFormat Determinism where
+  format := formatDeterminism
+
 def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
   Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
+  formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 
 def formatField (f : Field) : Format :=
