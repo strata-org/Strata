@@ -302,13 +302,21 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono
       let (op, retty, ctx) ← toSMTOp E fn fnty ctx useArrayTheory
       let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
       .ok (op (e1t :: acc) retty, ctx)
-  | .app _ (.fvar _ fn (.some (.arrow intty outty))) e1 => do
+  | .app _ (.fvar _ fn (.some fnty)) e1 => do
+    let tys := LMonoTy.destructArrow fnty
+    let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
+    let intys := tys.take (tys.length - 1)
     let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
-    let (smt_intty, ctx) ← LMonoTy.toSMTType E intty ctx useArrayTheory
-    let argvars := [TermVar.mk (toString $ format intty) smt_intty]
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
+    let allArgs := e1t :: acc
+    let mut argvars : List TermVar := []
+    let mut ctx := ctx
+    for inty in intys do
+      let (smt_inty, ctx') ← LMonoTy.toSMTType E inty ctx useArrayTheory
+      ctx := ctx'
+      argvars := argvars ++ [TermVar.mk (toString $ format inty) smt_inty]
     let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
-    .ok (((Term.app (.uf uf) [e1t] smt_outty)), ctx)
+    .ok (Term.app (.uf uf) allArgs smt_outty, ctx)
   | .app _ _ _ =>
     .error f!"Cannot encode expression {e}"
 
@@ -573,9 +581,9 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
           | some body =>
             -- Substitute the formals in the function body with appropriate
-            -- `.bvar`s.
+            -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
             let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
-            let body := LExpr.substFvars body (formals.zip bvars)
+            let body := LExpr.substFvarsLifting body (formals.zip bvars)
             let (term, ctx) ← toSMTTerm E bvs body ctx
             .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
         if isNew then
