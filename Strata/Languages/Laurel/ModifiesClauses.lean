@@ -16,7 +16,7 @@ and conjoining it with the postcondition. After this pass, the modifies list
 is cleared since its semantics have been absorbed into the postcondition.
 
 This pass should run after heap parameterization, which has already:
-- Added explicit heap parameters ($heap_in, $heap_out)
+- Added explicit heap parameters ($heap_in, $heap)
 - Transformed field accesses to readField/updateField calls
 - Collected field constants
 
@@ -25,7 +25,7 @@ all field values are preserved between the input and output heaps.
 
 Generates:
   forall $obj: Composite, $fld: Field =>
-    $obj < $heap_in.nextReference && notModified($obj) ==> readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)
+    $obj < $heap_in.nextReference && notModified($obj) ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
 
 where `notModified($obj)` is the conjunction of `$obj != e` for each single entry `e`,
 and `!(select(s, $obj))` for each set entry `s`.
@@ -79,7 +79,7 @@ Build the modifies frame condition as a Laurel StmtExpr.
 Generates a single quantified formula:
 
   forall $obj: Composite, $fld: Field =>
-    notModified($obj) && $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)
+    notModified($obj) && $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
 
 Returns `none` if there are no entries.
 -/
@@ -93,9 +93,10 @@ def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
   let fld := mkMd <| .Identifier fldName
   let heapIn := mkMd <| .Identifier heapInName
   let heapOut := mkMd <| .Identifier heapOutName
-  -- Build the "obj is allocated" condition: $obj < $heap_in.nextReference
+      -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.nextReference
   let heapCounter := mkMd <| .StaticCall "Heap..nextReference" [heapIn]
-  let objAllocated := mkMd <| .PrimitiveOp .Lt [obj, heapCounter]
+  let objRef := mkMd <| .StaticCall "Composite..ref" [obj]
+  let objAllocated := mkMd <| .PrimitiveOp .Lt [objRef, heapCounter]
   let antecedent := if entries.isEmpty
     then objAllocated
     else
@@ -103,7 +104,7 @@ def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
       -- Combine: $obj < $heap_in.nextReference && notModified($obj)
       let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
       mkMd <| .PrimitiveOp .And [objAllocated, notModified]
-  -- Build: readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)
+  -- Build: readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
   let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
   let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
   let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
@@ -115,19 +116,19 @@ def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
   some outerForall
 
 /--
-Check whether a procedure has a `$heap_out` output parameter,
+Check whether a procedure has a `$heap` output parameter,
 indicating it mutates the heap.
 -/
 def hasHeapOut (proc : Procedure) : Bool :=
-  proc.outputs.any (fun p => p.name == "$heap_out")
+  proc.outputs.any (fun p => p.name == "$heap")
 
 /--
 Transform a single procedure: if it has modifies clauses, generate the frame
 condition and conjoin it with the postcondition, then clear the modifies list.
 
-If the procedure has a `$heap_out` but no modifies clause, adds a postcondition
+If the procedure has a `$heap` but no modifies clause, adds a postcondition
 that all allocated objects are preserved between heaps:
-  `forall $obj: Composite, $fld: Field => $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap_out, $obj, $fld)`
+  `forall $obj: Composite, $fld: Field => $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)`
 -/
 def transformModifiesClauses (constants : List Constant) (types : List TypeDefinition)
     (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
@@ -138,8 +139,8 @@ def transformModifiesClauses (constants : List Constant) (types : List TypeDefin
                               proc.outputs.map (fun p => (p.name, p.type)) ++
                               constants.map (fun c => (c.name, c.type))
         let heapInName := "$heap_in"
-        let heapOutName := "$heap_out"
-        let frameCondition := buildModifiesEnsures proc env types modifiesExprs heapInName heapOutName
+        let heapName := "$heap"
+        let frameCondition := buildModifiesEnsures proc env types modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
           | some frame => postconds ++ [frame]
           | none => postconds
