@@ -15,17 +15,17 @@ namespace Core
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const () _)
-  | bvar  :  Value (.bvar () _)
-  | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () _ _)
+  | const : ∀ m, Value (.const m _)
+  | bvar  : ∀ m, Value (.bvar m _)
+  | op    : ∀ m, Value (.op m _ _)
+  | abs   : ∀ m, Value (.abs m _ _)
 
 open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar () · none)
+  mkFvar := (.fvar Strata.SourceRange.none · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -34,9 +34,9 @@ instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
 
 @[match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst () Bool.true
+def Core.true : Core.Expression.Expr := .boolConst Strata.SourceRange.none Bool.true
 @[match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst () Bool.false
+def Core.false : Core.Expression.Expr := .boolConst Strata.SourceRange.none Bool.false
 
 instance : HasBool Core.Expression where
   tt := Core.true
@@ -46,7 +46,7 @@ instance : HasNot Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.LFunc.opExpr (T:=CoreLParams) Lambda.boolNotFunc) e
+  | e => Lambda.LExpr.app Strata.SourceRange.none (Lambda.LFunc.opExpr (T:=CoreLParams) Lambda.boolNotFunc) e
 
 abbrev CoreEval := SemanticEval Expression
 abbrev CoreStore := SemanticStore Expression

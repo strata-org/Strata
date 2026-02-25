@@ -15,7 +15,7 @@ open Imperative
 open Strata
 
 instance : ToFormat ExpressionMetadata :=
-  show ToFormat Unit from inferInstance
+  inferInstanceAs (ToFormat Strata.SourceRange)
 
 -- ToFormat instance for Expression.Expr
 instance : ToFormat Expression.Expr := by
@@ -38,13 +38,13 @@ instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) w
   format := formatScope
 
 instance : Inhabited ExpressionMetadata :=
-  show Inhabited Unit from inferInstance
+  inferInstanceAs (Inhabited Strata.SourceRange)
 
 instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
-  combine _ := ()
+  combine _ := Strata.SourceRange.none
 
 instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩) :=
-  show Inhabited (Lambda.LExpr ⟨⟨Unit, CoreIdent⟩, LMonoTy⟩) from inferInstance
+  inferInstanceAs (Inhabited (Lambda.LExpr ⟨⟨Strata.SourceRange, CoreIdent⟩, LMonoTy⟩))
 
 ---------------------------------------------------------------------
 
@@ -256,8 +256,8 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
-            | none => .fvar () xid none
-            | some xty => .fvar () xid xty
+            | none => .fvar Strata.SourceRange.none xid none
+            | some xty => .fvar Strata.SourceRange.none xid xty
   (xe, E)
 
 /--
@@ -284,7 +284,7 @@ def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
-      (x.fst :: acc_ids, (x.snd, .fvar () x.fst x.snd) :: acc_pairs))
+      (x.fst :: acc_ids, (x.snd, .fvar Strata.SourceRange.none x.fst x.snd) :: acc_pairs))
     ([], [])
   let state' := Maps.addInOldest E.exprEnv.state xis xtyei
   { E with exprEnv := { E.exprEnv with state := state' }}
@@ -293,10 +293,10 @@ def Env.insertFreeVarsInOldestScope
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
   let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))
-  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite () cond (LExpr.false ()) (LExpr.true ())) e))
+  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite Strata.SourceRange.none cond (LExpr.false Strata.SourceRange.none) (LExpr.true Strata.SourceRange.none)) e))
   pc1' ++ pc2'
   where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
-  LExpr.ite () ant con (LExpr.true ())
+  LExpr.ite Strata.SourceRange.none ant con (LExpr.true Strata.SourceRange.none)
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
     (_h1 : E1.error.isNone) (_h2 : E2.error.isNone) : Env :=
