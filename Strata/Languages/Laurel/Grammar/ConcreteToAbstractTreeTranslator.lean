@@ -74,9 +74,11 @@ def translateBool (arg : Arg) : TransM Bool := do
 instance : Inhabited Parameter where
   default := { name := "", type := ⟨.TVoid, #[]⟩ }
 
+/-- Create a HighTypeMd with the given metadata -/
 def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := ⟨t, md⟩
+
+/-- Create a StmtExprMd with the given metadata -/
 def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
-def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
   let md ← getArgMetaData arg
@@ -86,10 +88,13 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.intType, _ => return mkHighTypeMd .TInt md
     | q`Laurel.boolType, _ => return mkHighTypeMd .TBool md
     | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
+    | q`Laurel.arrayType, #[elemArg] =>
+      let elemType ← translateHighType elemArg
+      return mkHighTypeMd (.Applied (mkHighTypeMd (.UserDefined "Array") md) [elemType]) md
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md
-    | _, _ => TransM.error s!"translateHighType expects intType, boolType, arrayType or compositeType, got {repr op.name}"
+    | _, _ => TransM.error s!"translateHighType expects intType, boolType, stringType, arrayType or compositeType, got {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
 def translateNat (arg : Arg) : TransM Nat := do
@@ -126,8 +131,8 @@ instance : Inhabited Procedure where
     name := ""
     inputs := []
     outputs := []
-    precondition := mkStmtExprMdEmpty <| .LiteralBool true
-    determinism := .deterministic none
+    preconditions := []
+    determinism := .nondeterministic
     decreases := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
     md := .empty
@@ -231,6 +236,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
       return mkStmtExprMd (.FieldSelect obj field) md
+    | q`Laurel.arrayIndex, #[arrArg, idxArg] =>
+      let arr ← translateStmtExpr arrArg
+      let idx ← translateStmtExpr idxArg
+      return mkStmtExprMd (.StaticCall "Array.Get" [arr, idx]) md
     | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
       let cond ← translateStmtExpr condArg
       let invariants ← match invSeqArg with
@@ -242,6 +251,11 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => pure []
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.While cond invariants none body) md
+    | _, #[arg0] => match getUnaryOp? op.name with
+      | some primOp =>
+        let inner ← translateStmtExpr arg0
+        return mkStmtExprMd (.PrimitiveOp primOp [inner]) md
+      | none => TransM.error s!"Unknown unary operation: {op.name}"
     | q`Laurel.forallExpr, #[nameArg, tyArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
@@ -252,11 +266,6 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let ty ← translateHighType tyArg
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.Exists name ty body) md
-    | _, #[arg0] => match getUnaryOp? op.name with
-      | some primOp =>
-        let inner ← translateStmtExpr arg0
-        return mkStmtExprMd (.PrimitiveOp primOp [inner]) md
-      | none => TransM.error s!"Unknown unary operation: {op.name}"
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0
@@ -267,8 +276,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
   | _ => TransM.error s!"translateStmtExpr expects operation"
 
 partial def translateSeqCommand (arg : Arg) : TransM (List StmtExprMd) := do
-  let .seq _ .none args := arg
-    | TransM.error s!"translateSeqCommand expects seq"
+  let args ← match arg with
+    | .seq _ .none args => pure args
+    | .seq _ .newline args => pure args  -- NewlineSepBy for block statements
+    | _ => TransM.error s!"translateSeqCommand expects seq or newlineSepBy"
   let mut stmts : List StmtExprMd := []
   for arg in args do
     let stmt ← translateStmtExpr arg
@@ -343,13 +354,14 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | .option _ none => pure []
         | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
-    -- Parse precondition (requires clause)
-    let precondition ← match requiresArg with
-      | .option _ (some (.op requiresOp)) => match requiresOp.name, requiresOp.args with
-        | q`Laurel.optionalRequires, #[exprArg] => translateStmtExpr exprArg
-        | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
-      | .option _ none => pure (mkStmtExprMdEmpty <| .LiteralBool true)
-      | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"
+    -- Parse preconditions (requires clauses)
+    let preconditions ← match requiresArg with
+      | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+          | .op reqOp => match reqOp.name, reqOp.args with
+            | q`Laurel.requiresClause, #[exprArg] => translateStmtExpr exprArg
+            | _, _ => TransM.error "Expected requiresClause"
+          | _ => TransM.error "Expected operation"
+      | _ => pure []
     -- Parse postconditions (ensures clauses - zero or more)
     let postconditions ← translateEnsuresClauses ensuresArg
     -- Parse modifies clauses (zero or more)
@@ -370,8 +382,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       name := name
       inputs := parameters
       outputs := returnParameters
-      precondition := precondition
-      determinism := .deterministic none
+      preconditions := preconditions
+      determinism := .nondeterministic
       decreases := none
       body := procBody
       md := nameMd
@@ -380,6 +392,20 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
+
+def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
+  let .op op := arg
+    | TransM.error s!"parseConstrainedType expects operation"
+  match op.name, op.args with
+  | q`Laurel.constrainedType, #[nameArg, valueNameArg, baseArg, constraintArg, witnessArg] =>
+    let name ← translateIdent nameArg
+    let valueName ← translateIdent valueNameArg
+    let base ← translateHighType baseArg
+    let constraint ← translateStmtExpr constraintArg
+    let witness ← translateStmtExpr witnessArg
+    return { name, base, valueName, constraint, witness }
+  | _, _ =>
+    TransM.error s!"parseConstrainedType expects constrainedType, got {repr op.name}"
 
 def parseField (arg : Arg) : TransM Field := do
   let .op op := arg
@@ -409,19 +435,26 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 
-def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
+inductive TopLevelItem where
+  | proc (p : Procedure)
+  | typeDef (t : TypeDefinition)
+
+def parseTopLevel (arg : Arg) : TransM (Option TopLevelItem) := do
   let .op op := arg
     | TransM.error s!"parseTopLevel expects operation"
 
   match op.name, op.args with
   | q`Laurel.topLevelProcedure, #[procArg] =>
     let proc ← parseProcedure procArg
-    return (some proc, none)
+    return some (.proc proc)
   | q`Laurel.topLevelComposite, #[compositeArg] =>
     let typeDef ← parseComposite compositeArg
-    return (none, some typeDef)
+    return some (.typeDef typeDef)
+  | q`Laurel.topLevelConstrainedType, #[ctArg] =>
+    let ct ← parseConstrainedType ctArg
+    return some (.typeDef (.Constrained ct))
   | _, _ =>
-    TransM.error s!"parseTopLevel expects topLevelProcedure or topLevelComposite, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects topLevelProcedure, topLevelComposite, or topLevelConstrainedType, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
@@ -445,13 +478,11 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
   for op in commands do
-    let (procOpt, typeOpt) ← parseTopLevel (.op op)
-    match procOpt with
-    | some proc => procedures := procedures ++ [proc]
-    | none => pure ()
-    match typeOpt with
-    | some typeDef => types := types ++ [typeDef]
-    | none => pure ()
+    let result ← parseTopLevel (.op op)
+    match result with
+    | some (.proc proc) => procedures := procedures ++ [proc]
+    | some (.typeDef td) => types := types ++ [td]
+    | none => pure () -- composite types are skipped for now
   return {
     staticProcedures := procedures
     staticFields := []

@@ -551,8 +551,8 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
       name := funcName
       inputs := inputs
       outputs := outputs
-      precondition := mkStmtExprMd (StmtExpr.LiteralBool true)
-      determinism := .deterministic none -- TODO: need to set reads
+      preconditions := []
+      determinism := .nondeterministic
       decreases := none
       body := Body.Transparent bodyBlock
       md := default
@@ -634,9 +634,9 @@ def pythonToLaurel (prelude: Core.Program)
       name := "__main__",
       inputs := [],
       outputs := [],
-      precondition := mkStmtExprMd (StmtExpr.LiteralBool true),
+      preconditions := [],
+      determinism := .nondeterministic,
       decreases := none,
-      determinism := .deterministic none --TODO: need to set reads
       body := .Transparent bodyBlock
       md := default
       }

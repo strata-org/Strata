@@ -48,6 +48,36 @@ procedure updatesAndAliasing()
   assert dAlias#intValue == d#intValue;
 }
 
+procedure foo(c: Container, d: Container) returns (r: int)
+//        ^^^ error: assertion could not be proved
+  requires c != d && d#intValue == 1
+  ensures d#intValue == 3
+//        ^^^^^^^^^^^^^^^ error: assertion could not be proved
+{
+  var x: int := c#intValue;
+  var initialDValue: int := d#intValue;
+  d#intValue := d#intValue + 1;
+  c#intValue := c#intValue + 1;
+  assert x + 1 == c#intValue;
+  assert initialDValue + 1 == d#intValue;
+}
+
+procedure caller(c: Container, d: Container) {
+  assume c != d;
+  assume d#intValue == 1;
+  assume c != d;
+  var x: int := foo(c, d);
+  assert d#intValue == 3;
+}
+
+procedure allowHeapMutatingCallerInExpression(c: Container, d: Container) {
+  assume c != d;
+  assume d#intValue == 1;
+  assume c != d;
+  var x: int := foo(c, d) + 1;
+  assert d#intValue == 3;
+}
+
 procedure subsequentHeapMutations(c: Container) {
   // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
   var sum: int := ((c#intValue := 1;) + c#intValue) + (c#intValue := 2;);

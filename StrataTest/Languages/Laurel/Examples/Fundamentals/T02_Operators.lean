@@ -12,7 +12,7 @@ open StrataTest.Util
 namespace Strata
 namespace Laurel
 
-def operatorsProgram := r"
+def program := r"
 procedure testArithmetic() {
     var a: int := 10;
     var b: int := 3;
@@ -46,14 +46,16 @@ procedure testUnary() {
 }
 
 procedure testTruncatingDiv() {
+    // Truncating division rounds toward zero (Java/C semantics)
+    // For positive numbers, same as Euclidean
     assert 7 /t 3 == 2;
     assert 7 %t 3 == 1;
+    // For negative dividend, truncates toward zero (not floor)
+    // -7 /t 3 = -2 (not -3), -7 %t 3 = -1 (not 2)
     assert (0 - 7) /t 3 == 0 - 2;
     assert (0 - 7) %t 3 == 0 - 1;
 }
 "
 
 #guard_msgs(drop info, error) in
-#eval testInputWithOffset "Operators" operatorsProgram 14 processLaurelFile
-
-end Laurel
+#eval testInputWithOffset "Operators" program 14 processLaurelFile

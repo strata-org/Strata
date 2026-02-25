@@ -261,9 +261,12 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
             match val with
             | .LocalVariable name ty _ => addToEnv name ty
             | _ => pure ()
-          -- Process all-but-last right to left using transformExprDiscarded
-          for nonLastStatement in stmts.dropLast.reverse.attach do
-            transformExprDiscarded nonLastStatement
+          -- Process all-but-last as statements and prepend them in order
+          let mut blockStmts : List StmtExprMd := []
+          for nonLastStatement in stmts.dropLast.attach do
+            have := List.dropLast_subset stmts nonLastStatement.property
+            blockStmts := blockStmts ++ (← transformStmt nonLastStatement)
+          for s in blockStmts.reverse do addPrepend s
           -- Last element is the expression value
           transformExpr last
 
@@ -289,11 +292,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   termination_by (sizeOf expr, 0)
   decreasing_by
     all_goals (simp_all; try term_by_mem)
-    have := List.dropLast_subset stmts
-    have stmtInStmts : nonLastStatement.val ∈ stmts := by grind
-    -- term_by_mem gets a type error here, so we do it manually
-    have xSize := List.sizeOf_lt_of_mem stmtInStmts
-    omega
 
 /--
 Transform an expression whose result value is discarded (e.g. non-last elements in a block). All side-effects in Laurel are represented as assignments, so we only need to lift assignments, anything else can be forgotten.
@@ -310,10 +308,6 @@ def transformExprDiscarded (expr2 : StmtExprMd) : LiftM Unit := do
   | _ =>
       let result ← transformExpr expr2
       addPrepend result
-  termination_by (sizeOf expr2, 1)
-  decreasing_by
-    simp_all; omega
-    rw [<- _hExpr]; omega
 
 /--
 Process a statement, handling any assignments in its sub-expressions.
@@ -367,13 +361,13 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         | none => pure none
       return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, md⟩]
 
-  | .While cond invs dec body =>
+  | .While cond inv dec body =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
       let seqBody ← do
         let stmts ← transformStmt body
         pure (bare (.Block stmts none))
-      return condPrepends ++ [⟨.While seqCond invs dec seqBody, md⟩]
+      return condPrepends ++ [⟨.While seqCond inv dec seqBody, md⟩]
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr

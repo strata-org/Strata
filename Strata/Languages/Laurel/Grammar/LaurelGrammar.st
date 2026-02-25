@@ -1,5 +1,3 @@
-// Changes in this file are not automatically discovered by the build. 
-// Touch LaurelGrammar.lean to trigger the build
 dialect Laurel;
 
 // Types
@@ -7,6 +5,7 @@ category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
 op stringType : LaurelType => "string";
+op arrayType (elemType: LaurelType): LaurelType => "Array" "<" elemType ">";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
@@ -16,15 +15,15 @@ op string (s: Str): StmtExpr => s;
 
 // Variable declarations
 category OptionalType;
-op optionalType(varType: LaurelType): OptionalType => ":" varType;
+op optionalType(varType: LaurelType): OptionalType => ": " varType;
 
 category OptionalAssignment;
-op optionalAssignment(value: StmtExpr): OptionalAssignment => ":=" value:0;
+op optionalAssignment(value: StmtExpr): OptionalAssignment => " := " value:0;
 
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
   => @[prec(0)] "var " name varType assignment ";";
 
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => @[prec(95)] callee:85 "(" args ")";
 
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
@@ -32,12 +31,15 @@ op new(name: Ident): StmtExpr => "new " name;
 // Field access
 op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
 
+// Array indexing
+op arrayIndex (arr: StmtExpr, idx: StmtExpr): StmtExpr => @[prec(90)] arr "[" idx "]";
+
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
 op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
-op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value ";";
+op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value ";";
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
@@ -69,15 +71,15 @@ op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
 
 // If-else
 category OptionalElse;
-op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
+op optionalElse(stmts : StmtExpr) : OptionalElse => "else " stmts:0;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
-  @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
+  @[prec(20)] "if (" cond ") " thenBranch:0 " " elseBranch:0;
 
 op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
 op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";
 op return (value : StmtExpr) : StmtExpr => "return " value ";";
-op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
+op block (stmts : NewlineSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" indent(2, "\n" stmts) "\n}";
 
 // While loops
 category InvariantClause;
@@ -87,7 +89,7 @@ op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): Stmt
   => "while" "(" cond ")" invariants body:0;
 
 category Parameter;
-op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;
+op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
 
 // Composite types
 category Field;
@@ -101,11 +103,11 @@ op composite (name: Ident, fields: Seq Field): Composite => "composite " name "{
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
-category OptionalRequires;
-op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
+category RequiresClause;
+op requiresClause(cond: StmtExpr): RequiresClause => "requires " cond:0;
 
 category EnsuresClause;
-op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures" cond:0;
+op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures " cond:0;
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "modifies" refs;
@@ -120,14 +122,22 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
-  ensures: Seq EnsuresClause,
+  requires: NewlineSepBy RequiresClause,
+  ensures: NewlineSepBy EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
+  "procedure " name "(" parameters ")" returnType returnParameters indent(2, "\n" requires "\n" ensures) modifies "\n" body;
+
+// Constrained types
+category ConstrainedType;
+op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
+                    constraint: StmtExpr, witness: StmtExpr): ConstrainedType
+  => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
 
 category TopLevel;
-op topLevelComposite(composite: Composite): TopLevel => composite;
-op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
+op topLevelComposite(composite: Composite): TopLevel => composite "\n";
+op topLevelProcedure(procedure: Procedure): TopLevel => procedure "\n";
+op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct "\n";
 
 op program (items: Seq TopLevel): Command => items;
+
