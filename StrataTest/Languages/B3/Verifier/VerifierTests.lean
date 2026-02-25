@@ -147,23 +147,34 @@ def testVerification (prog : Program) : IO Unit := do
         | .implementationError msg => s!"error: {msg}"
 
       IO.println s!"{result.label}: {marker} {description}"
-      
-      -- Show diagnosis if available
-      match result.diagnosis with
-      | some diag =>
-        for failure in diag.diagnosedFailures do
-          let diagnosisPrefix := match failure.report.result with
-            | .error .refuted => MSG_IMPOSSIBLE
-            | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
-            | .ok _ => MSG_COULD_NOT_PROVE
-          match B3.FromCore.exprFromCore failure.expression with
-          | .ok b3Expr =>
-            let exprLoc := formatExpressionLocation prog b3Expr
-            let exprFormatted := formatExpressionOnly prog b3Expr
-            IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
-          | .error _ =>
-            IO.println s!"  └─ {diagnosisPrefix} <expression>"
-      | none => pure ()  -- No diagnosis available
+      if result.outcome != .pass then
+        -- Show the statement (obligation expression converted to B3)
+        match result.obligation with
+        | some obl =>
+          match B3.FromCore.exprFromCore obl.obligation with
+          | .ok b3Stmt =>
+            let stmtLoc := formatExpressionLocation prog b3Stmt
+            let stmtFormatted := formatExpressionOnly prog b3Stmt
+            let stmtKind := if obl.property == .cover then "reach" else "check"
+            IO.println s!"  {stmtLoc}: {stmtKind} {stmtFormatted}"
+          | .error _ => pure ()
+        | none => pure ()
+        -- Show diagnosis if available
+        match result.diagnosis with
+        | some diag =>
+          for failure in diag.diagnosedFailures do
+            let diagnosisPrefix := match failure.report.result with
+              | .error .refuted => MSG_IMPOSSIBLE
+              | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
+              | .ok _ => MSG_COULD_NOT_PROVE
+            match B3.FromCore.exprFromCore failure.expression with
+            | .ok b3Expr =>
+              let exprLoc := formatExpressionLocation prog b3Expr
+              let exprFormatted := formatExpressionOnly prog b3Expr
+              IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
+            | .error _ =>
+              IO.println s!"  └─ {diagnosisPrefix} <expression>"
+        | none => pure ()
 
 ---------------------------------------------------------------------
 -- Example from Verifier.lean Documentation
