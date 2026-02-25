@@ -186,24 +186,24 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
 
 
 /-- Convert a B3 statement to a list of Core statements. -/
-partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → ConvResult (List Core.Statement)
-  | .check _ expr =>
+partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → String → ConvResult (List Core.Statement)
+  | .check _ expr, procName =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.assert "check" exprResult.value], errors := exprResult.errors }
-  | .assert _ expr =>
+    { value := [Core.Statement.assert procName exprResult.value], errors := exprResult.errors }
+  | .assert _ expr, procName =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.assert "assert" exprResult.value], errors := exprResult.errors }
-  | .assume _ expr =>
+    { value := [Core.Statement.assert procName exprResult.value], errors := exprResult.errors }
+  | .assume _ expr, _ =>
     let exprResult := convertExpr ctx expr
     { value := [Core.Statement.assume "assume" exprResult.value], errors := exprResult.errors }
-  | .reach _ expr =>
+  | .reach _ expr, procName =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.cover "reach" exprResult.value], errors := exprResult.errors }
-  | .blockStmt _ stmts =>
-    let results := stmts.val.toList.map (convertStmt ctx)
+    { value := [Core.Statement.cover procName exprResult.value], errors := exprResult.errors }
+  | .blockStmt _ stmts, procName =>
+    let results := stmts.val.toList.map (convertStmt ctx · procName)
     { value := [Imperative.Stmt.block "block" (results.flatMap (·.value))],
       errors := results.flatMap (·.errors) }
-  | .varDecl _ name ty _autoinv init =>
+  | .varDecl _ name ty _autoinv init, _ =>
     let coreTy := match ty.val with
       | some tyAnn => b3TypeToCoreLTy tyAnn.val
       | none => b3TypeToCoreLTy "int"
@@ -214,7 +214,7 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → Co
         errors := initResult.errors }
     | none =>
       .ok [Core.Statement.init (CoreIdent.unres name.val) coreTy none]
-  | .assign _ lhs rhs =>
+  | .assign _ lhs rhs, _ =>
     let rhsResult := convertExpr ctx rhs
     match ctx.vars[lhs.val]? with
     | some (name, _) =>
@@ -222,15 +222,15 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → Co
         errors := rhsResult.errors }
     | none =>
       .withError [] (.unsupportedFeature s!"unbound variable at index {lhs.val}" "assignment")
-  | .ifStmt _ cond thenBranch elseBranch =>
+  | .ifStmt _ cond thenBranch elseBranch, procName =>
     let condResult := convertExpr ctx cond
-    let thenResult := convertStmt ctx thenBranch
+    let thenResult := convertStmt ctx thenBranch procName
     let elseResult := match elseBranch.val with
-      | some s => convertStmt ctx s
+      | some s => convertStmt ctx s procName
       | none => .ok []
     { value := [Imperative.Stmt.ite condResult.value thenResult.value elseResult.value],
       errors := condResult.errors ++ thenResult.errors ++ elseResult.errors }
-  | .loop sr invariants body =>
+  | .loop sr invariants body, procName =>
     let guard : Core.Expression.Expr := .boolConst sr true
     let invResults := invariants.val.toList.map (convertExpr ctx)
     let invariant := match invResults with
@@ -239,15 +239,15 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → Co
       | invRes :: rest => some (rest.foldl (fun acc res =>
           .app sr (.app sr (.op sr (CoreIdent.unres "Bool.And") none) acc) res.value
         ) invRes.value)
-    let bodyResult := convertStmt ctx body
+    let bodyResult := convertStmt ctx body procName
     { value := [Imperative.Stmt.loop guard none invariant bodyResult.value],
       errors := invResults.flatMap (·.errors) ++ bodyResult.errors }
-  | .choose _ branches =>
-    let results := branches.val.toList.map (convertStmt ctx)
+  | .choose _ branches, procName =>
+    let results := branches.val.toList.map (convertStmt ctx · procName)
     { value := [Imperative.Stmt.block "choose" (results.flatMap (·.value))],
       errors := results.flatMap (·.errors) }
-  | .labeledStmt _ _label stmt => convertStmt ctx stmt
-  | _ => .withError [] (.unsupportedFeature "unknown statement type" "statement")
+  | .labeledStmt _ _label stmt, procName => convertStmt ctx stmt procName
+  | _, _ => .withError [] (.unsupportedFeature "unknown statement type" "statement")
 
 
 /-- Convert a B3 function declaration to a Core funcDecl statement. -/
@@ -311,9 +311,9 @@ def convertProgram : B3AST.Program SourceRange → ConvResult (List Core.Stateme
       | .axiom _ _vars expr =>
         let exprResult := convertExpr ctx expr
         { value := [Core.Statement.assume "axiom" exprResult.value], errors := exprResult.errors }
-      | .procedure _ _name _params _specs body =>
+      | .procedure _ name _params _specs body =>
         match body.val with
-        | some bodyStmt => convertStmt ctx bodyStmt
+        | some bodyStmt => convertStmt ctx bodyStmt name.val
         | none => .ok []
       | _ => .withError [] (.unsupportedFeature "unknown declaration type" "program")
     { value := results.flatMap (·.value), errors := results.flatMap (·.errors) }
