@@ -25,8 +25,11 @@ open Strata.SMT.Encoder
 open Strata
 
 -- Derived from Strata.SMT.Encoder.encode.
-def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
-  SolverM (List String × EncoderState) := do
+def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
+    (assumptionTerms : List Term) (obligationTerm : Term)
+    (md : Imperative.MetaData Core.Expression)
+    (reachCheck : Bool := false) :
+    SolverM (List String × EncoderState) := do
   Solver.reset
   Solver.setLogic "ALL"
   prelude
@@ -37,9 +40,20 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
   for id in _axms do
     Solver.assert id
-  let (ids, estate) ← ts.mapM (encodeTerm False) |>.run estate
-  for id in ids do
+  -- Assert assumption terms
+  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
+  for id in assumptionIds do
     Solver.assert id
+  -- Optional reachability check-sat
+  if reachCheck then
+    Solver.comment "Reachability check"
+    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+      (message := ("unsat-message", s!"\"Path condition unreachable\""))
+    let _ ← Solver.checkSat []
+  -- Assert obligation term
+  let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
+  Solver.assert obligationId
+  Solver.comment "Proof check"
   let ids := estate.ufs.values
   return (ids, estate)
 
@@ -89,18 +103,29 @@ def dischargeObligation
   (vars : List Expression.TypedIdent)
   (md : Imperative.MetaData Expression)
   (filename : String)
-  (terms : List Term)
+  (assumptionTerms : List Term)
+  (obligationTerm : Term)
   (ctx : SMT.Context)
-  : IO (Except Format (SMT.Result × EncoderState)) := do
+  (reachCheck : Bool := false)
+  : IO (Except Format (Option SMT.Result × SMT.Result × EncoderState)) := do
+  -- CVC5 requires --incremental for multiple (check-sat) commands
+  let baseFlags := getSolverFlags options
+  let solverFlags :=
+    if reachCheck && options.solver == "cvc5" && !baseFlags.contains "--incremental" then
+      baseFlags ++ #["--incremental"]
+    else
+      baseFlags
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
-    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver) terms)
+    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
+      assumptionTerms obligationTerm md (reachCheck := reachCheck))
     (typedVarToSMTFn ctx)
     vars
     md
     options.solver
     filename
-    (getSolverFlags options) (options.verbose > .normal)
+    solverFlags (options.verbose > .normal)
+    (reachCheck := reachCheck)
 
 end Core.SMT
 ---------------------------------------------------------------------
@@ -133,7 +158,8 @@ analysis.
 -/
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
-  smtResult : SMT.Result := .unknown
+  smtObligationResult : SMT.Result := .unknown
+  smtReachResult : Option SMT.Result := none
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
@@ -153,8 +179,8 @@ def smtResultToOutcome (r : SMT.Result) (isCover : Bool) : Outcome :=
 instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
                  Property: {r.obligation.property}\n\
-                 Result: {r.result}\
-                 {r.smtResult.formatModelIfSat (r.verbose >= .models)}"
+                 Result: {r.result}{if r.smtReachResult == some .unsat then " (❗path unreachable)" else ""}\
+                 {r.smtObligationResult.formatModelIfSat (r.verbose >= .models)}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.result with | .pass => true | _ => false
@@ -170,6 +196,15 @@ def VCResult.isImplementationError (vr : VCResult) : Bool :=
 
 def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
   !Core.VCResult.isSuccess vcResult
+
+/--
+True when the reachability check determined that the path leading to this
+obligation is unreachable (the SMT reachability check returned `unsat`).
+`unreachable` is a diagnosis rather than an outcome: an unreachable assertion
+counts as `pass` (vacuously true) and an unreachable cover counts as `fail`.
+-/
+def VCResult.isUnreachable (vr : VCResult) : Bool :=
+  vr.smtReachResult == some .unsat
 
 abbrev VCResults := Array VCResult
 
@@ -188,19 +223,22 @@ Preprocess a proof obligation before handing it off to a backend engine.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : Options) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
+  let needsReachCheck := options.reachCheck || Imperative.MetaData.hasReachCheck obligation.metadata
   match obligation.property with
   | .cover =>
-    if obligation.obligation.isFalse then
+    if obligation.obligation.isFalse && !needsReachCheck then
       -- If PE determines that the consequent is false, then we can immediately
-      -- report a failure.
+      -- report a failure. Skip the shortcut when reachCheck is active so that
+      -- the SMT solver can determine whether the path is reachable.
       let result := { obligation, result := .fail, verbose :=  options.verbose }
       return (obligation, some result)
     else
       return (obligation, none)
   | .assert =>
-    if obligation.obligation.isTrue then
+    if obligation.obligation.isTrue && !needsReachCheck then
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
-      -- reduce the consequent to true.
+      -- reduce the consequent to true. Skip the shortcut when reachCheck is
+      -- active so that the SMT solver can determine whether the path is reachable.
       let result := { obligation, result := .pass, verbose := options.verbose }
       return (obligation, some result)
     else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
@@ -232,10 +270,12 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
 -/
-def getObligationResult (terms : List Term) (ctx : SMT.Context)
+def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
+    (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
     (options : Options) (counter : IO.Ref Nat)
-    (tempDir : System.FilePath) : EIO DiagnosticModel VCResult := do
+    (tempDir : System.FilePath) (reachCheck : Bool := false)
+    : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
@@ -254,17 +294,19 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
             typedVarsInObligation
             obligation.metadata
             filename.toString
-          terms ctx)
+          assumptionTerms obligationTerm ctx (reachCheck := reachCheck))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
                  {if options.verbose >= .normal then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
-  | .ok (smt_result, estate) =>
+  | .ok (reachResult?, smt_result, estate) =>
+    let outcome := smtResultToOutcome smt_result (obligation.property == .cover)
     let result :=  { obligation,
-                     result := smtResultToOutcome smt_result (obligation.property == .cover)
-                     smtResult := smt_result,
+                     result := outcome,
+                     smtReachResult := reachResult?
+                     smtObligationResult := smt_result,
                      estate,
                      verbose := options.verbose }
     return result
@@ -306,9 +348,10 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
         if options.stopOnFirstError then break
-      | .ok (terms, ctx) =>
-        let result ← getObligationResult terms ctx obligation p options
-                      counter tempDir
+      | .ok (assumptionTerms, obligationTerm, ctx) =>
+        let needsReachCheck := options.reachCheck || Imperative.MetaData.hasReachCheck obligation.metadata
+        let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
+                      counter tempDir (reachCheck := needsReachCheck)
         results := results.push result
         if result.isNotSuccess then
         if options.verbose >= .normal then
@@ -406,30 +449,29 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
-  let isCover := vcr.obligation.property == .cover
-  match vcr.result with
-  | .pass => none  -- Verification succeeded, no diagnostic
-  | .unknown =>
-    -- For unknown results on cover statements, only report in debug/verbose mode
-    -- (it's informational, not an error). For asserts, unknown is always a problem.
-    if isCover && vcr.verbose ≤ .normal then
-      none
-    else
-      let message := if isCover then "cover property could not be checked"
-                     else "assertion could not be proved"
-      let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
-      some { fileRange := fileRange, message := message }
-  | result =>
-    let message := match result with
+def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
+  let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+  let message? : Option String :=
+    if vcr.obligation.property == .cover then
+      match vcr.result with
+      | .pass => none
       | .fail =>
-        if isCover then "cover property is not satisfiable"
-        else "assertion does not hold"
-      | .implementationError msg => s!"verification error: {msg}"
-      | _ => panic "impossible"
-
-    let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
-    some { fileRange := fileRange, message := message }
+        if vcr.isUnreachable then some "cover property is unreachable"
+        else some "cover property is not satisfiable"
+      | .unknown =>
+        -- Cover unknown is only reported in verbose mode (informational, not an error).
+        if vcr.verbose ≤ .normal then none
+        else some "cover property could not be checked"
+      | .implementationError msg => some s!"analysis error: {msg}"
+    else
+      match vcr.result with
+      | .pass =>
+        if vcr.isUnreachable then some "assertion holds vacuously (path unreachable)"
+        else none
+      | .fail => some "assertion does not hold"
+      | .unknown => some "assertion could not be proved"
+      | .implementationError msg => some s!"analysis error: {msg}"
+  message?.map fun message => { fileRange, message }
 
 structure Diagnostic where
   start : Lean.Position

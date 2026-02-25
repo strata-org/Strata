@@ -145,6 +145,11 @@ inductive SpecValue
 | tuple (elts : Array SpecValue)
 | typingOverload
 | typingTypedDict
+| typingRequired
+| typingNotRequired
+| typingUnpack
+| requiredType (type : SpecType)
+| notRequiredType (type : SpecType)
 | typeValue (type : SpecType)
 deriving Inhabited, Repr
 
@@ -198,6 +203,9 @@ def preludeSig :=
     .mk .typingSequence (.metaType .typingSequence),
     .mk .typingTypedDict .typingTypedDict,
     .mk .typingUnion (.metaType .typingUnion),
+    .mk .typingRequired .typingRequired,
+    .mk .typingNotRequired .typingNotRequired,
+    .mk .typingUnpack .typingUnpack,
   ]
 
 inductive ClassRef where
@@ -307,6 +315,8 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
     pure itp
   | .noneConst =>
     return .ofAtom loc .noneType
+  | .requiredType tp => return tp
+  | .notRequiredType tp => return tp
   | .stringConst loc val =>
     -- Check if this is a known built-in type first
     match ← getNameValue? val with
@@ -377,20 +387,40 @@ def translateCall (loc : SourceRange) (func : SpecValue)
   | .typingTypedDict =>
     let .isTrue argsSizep := decideProp (args.size = 2)
       | specError loc "TypedDict expects two arguments"; return default
-    let .isTrue kwargsSizep := decideProp (kwargs.size = 1)
-      | specError loc "TypedDict expects one keyword"; return default
-    let (some "total", totalValue) := kwargs[0]
-      | specError loc "TypedDict expects total"; return default
-    let .boolConst total := totalValue
-      | specError loc "TypedDict expects total bool"; return default
     let .stringConst _ name := args[0]
-      | specError loc "TypedDict expects string contant"; return default
+      | specError loc "TypedDict expects string constant"; return default
     let .dictValue fieldsPairs := args[1]
       | specError loc "TypedDict expects dictionary fields"; return default
     let fields := fieldsPairs |>.map (·.fst)
-    let values ← fieldsPairs |>.mapM fun (_name, v) => do
-      valueAsType loc v
-    return .typeValue <| .ofAtom loc <| .typedDict fields values total
+    -- Determine per-field required status
+    if kwargs.size = 0 then
+      -- New style: Required[T] / NotRequired[T] per field
+      let mut fieldTypes : Array SpecType := #[]
+      let mut fieldRequired : Array Bool := #[]
+      for (_, v) in fieldsPairs do
+        match v with
+        | .requiredType tp =>
+          fieldTypes := fieldTypes.push tp
+          fieldRequired := fieldRequired.push true
+        | .notRequiredType tp =>
+          fieldTypes := fieldTypes.push tp
+          fieldRequired := fieldRequired.push false
+        | _ =>
+          -- Bare type (no Required/NotRequired wrapper) — treat as required
+          fieldTypes := fieldTypes.push (← valueAsType loc v)
+          fieldRequired := fieldRequired.push true
+      return .typeValue <| .ofAtom loc <| .typedDict fields fieldTypes fieldRequired
+    else
+      let .isTrue kwargsSizep := decideProp (kwargs.size = 1)
+        | specError loc "TypedDict expects 0 or 1 keywords"; return default
+      -- Old style: total= keyword
+      let (some "total", totalValue) := kwargs[0]
+        | specError loc "TypedDict expects total"; return default
+      let .boolConst total := totalValue
+        | specError loc "TypedDict expects total bool"; return default
+      let values ← fieldsPairs |>.mapM fun (_name, v) => valueAsType loc v
+      let fieldRequired := values.map fun _ => total
+      return .typeValue <| .ofAtom loc <| .typedDict fields values fieldRequired
   | _ =>
     specError loc s!"Unknown call {repr func}."
     return default
@@ -434,6 +464,12 @@ def translateSubscript (paramLoc : SourceRange) (paramType : String) (sargs  : S
   | some (.metaType tpId) =>
     let t := metadataProcessor tpId
     .typeValue <$> t.callback paramLoc sargs
+  | some .typingRequired =>
+    .requiredType <$> valueAsType paramLoc sargs
+  | some .typingNotRequired =>
+    .notRequiredType <$> valueAsType paramLoc sargs
+  | some .typingUnpack =>
+    .typeValue <$> valueAsType paramLoc sargs
   | some _ =>
     specError paramLoc s!"Expected {paramType} to be a type."
     return default
@@ -697,7 +733,6 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
   let .isTrue kw_bnd := inferInstanceAs (Decidable (kwonly.val.size = kw_defaults.val.size))
     | specError fnLoc s!"Keyword only arguments must have defaults."; return default
   assert! vararg.val.isNone
-  assert! kwarg.val.isNone
   let min_default := argc - defaults.val.size
   let isMethod := className.isSome
   if isMethod ∧ argc = 0 then
@@ -730,6 +765,25 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     let ba ← pySpecArg usedNames none a d
     usedNames := usedNames.insert ba.name
     kwSpecArgs := kwSpecArgs.push ba
+  -- Handle **kwargs: Unpack[TypedDict] expansion
+  match kwarg.val with
+  | none => pure ()
+  | some kwargArg =>
+    let .mk_arg kwargLoc _kwargName ⟨_, kwargType⟩ _ := kwargArg
+    match kwargType with
+    | some typeExpr =>
+      let tp ← pySpecType typeExpr
+      match tp.asSingleton with
+      | some (.typedDict tdFields tdTypes tdRequired) =>
+        for ⟨i, _⟩ in Fin.range tdFields.size do
+          let arg : Arg := {
+            name := tdFields[i]!
+            type := tdTypes[i]!
+            hasDefault := !(tdRequired[i]!)
+          }
+          kwSpecArgs := kwSpecArgs.push arg
+      | _ => specError kwargLoc s!"**kwargs type must resolve to a TypedDict"
+    | none => specError kwargLoc s!"**kwargs requires type annotation"
   let argDecls : ArgDecls := { args := specArgs, kwonly := kwSpecArgs }
   let returnType : SpecType ←
         match returns with

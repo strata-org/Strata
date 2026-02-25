@@ -37,6 +37,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
+      | opts, "--reach-check" :: rest, procs => go {opts with reachCheck := true} rest procs
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -55,7 +56,8 @@ def usageMessage : Std.Format :=
   --sarif                     Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
-  --solver <name>             SMT solver executable to use (default: {defaultSolver})"
+  --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
+  --reach-check               Enable reachability checks for all asserts and covers."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -129,14 +131,7 @@ def main (args : List String) : IO UInt32 := do
             -- Create a files map with the single input file
             let uri := Strata.Uri.file file
             let files := Map.empty.insert uri inputCtx.fileMap
-            let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
-            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
-            let sarifFile := file ++ ".sarif"
-            try
-              IO.FS.writeFile sarifFile sarifJson
-              println! f!"SARIF output written to {sarifFile}"
-            catch e =>
-              println! f!"Error writing SARIF output to {sarifFile}: {e.toString}"
+            Core.Sarif.writeSarifOutput files vcResults (file ++ ".sarif")
 
         -- Also output standard format
         for vcResult in vcResults do
