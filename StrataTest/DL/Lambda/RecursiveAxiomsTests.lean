@@ -61,7 +61,7 @@ private def peState : LState TP :=
     | .ok s => s
 private def pe (e : LExpr TP.mono) : LExpr TP.mono := e.eval 100 peState
 
-private def listLenAxioms := genRecursiveAxioms listLenFunc tf pe
+private def listLenAxioms := genRecursiveAxioms listLenFunc tf pe ()
 
 -- Nil axiom: ground equation, no quantifier
 /-- info: (((~listLen : (arrow IntList int)) ~Nil) == #0) -/
@@ -137,7 +137,7 @@ private def testDestrReduce : LExpr TP.mono :=
 #guard_msgs in
 #eval format (pe2 testDestrReduce)
 
-private def lookupAxioms := genRecursiveAxioms lookupFunc tf pe2
+private def lookupAxioms := genRecursiveAxioms lookupFunc tf pe2 ()
 
 -- Nil axiom: ∀ key:int. lookup(key, Nil) = false
 /--
@@ -213,7 +213,7 @@ private def peState3 : LState TP :=
     | .ok s => s
 private def pe3 (e : LExpr TP.mono) : LExpr TP.mono := e.eval 100 peState3
 
-private def replaceAxioms := genRecursiveAxioms replaceFunc tf pe3
+private def replaceAxioms := genRecursiveAxioms replaceFunc tf pe3 ()
 
 -- Nil axiom: ∀ key:int, val:int. replace(key, Nil, val) = Nil
 /--
