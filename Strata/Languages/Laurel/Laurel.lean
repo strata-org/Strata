@@ -378,7 +378,7 @@ structure DatatypeDefinition where
   constructors : List DatatypeConstructor
 
 /--
-A user-defined type, either a composite type, a constrained type, or an algebriac datatype.
+A user-defined type, either a composite type, a constrained type, or an algebraic datatype.
 
 Algebriac datatypes can also be encoded uses composite and constrained types. Here are two examples:
 
