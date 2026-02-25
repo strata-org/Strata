@@ -95,15 +95,18 @@ spec {
     first_iter_asserts: {
       assert [entry_invariant]: true;
       assert [assert_measure_pos]: Array.Len(arr) - idx >= 0;
-      }|arbitrary iter facts|: {
+      }
+    |arbitrary iter facts|: {
       |loop havoc|: {
         havoc return;
         havoc idx;
-        }arbitrary_iter_assumes: {
+        }
+      arbitrary_iter_assumes: {
         assume [assume_guard]: idx < Array.Len(arr);
         assume [assume_invariant]: true;
         assume [assume_measure_pos]: Array.Len(arr) - idx >= 0;
-        }var |special-name-for-old-measure-value| : int := Array.Len(arr) - idx;
+        }
+      var |special-name-for-old-measure-value| : int := Array.Len(arr) - idx;
       if (e == Array.Get(arr, idx)) {
         return := true;
         }
@@ -111,10 +114,12 @@ spec {
       assert [measure_decreases]: Array.Len(arr) - idx < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if Array.Len(arr) - idx <= 0 then !(idx < Array.Len(arr)) else true;
       assert [arbitrary_iter_maintain_invariant]: true;
-      }|loop havoc|: {
+      }
+    |loop havoc|: {
       havoc return;
       havoc idx;
-      }assume [not_guard]: !(idx < Array.Len(arr));
+      }
+    assume [not_guard]: !(idx < Array.Len(arr));
     assume [invariant]: true;
     }
   return := false;

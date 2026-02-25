@@ -107,15 +107,18 @@ spec {
     first_iter_asserts: {
       assert [entry_invariant]: true;
       assert [assert_measure_pos]: i >= 0;
-      }|arbitrary iter facts|: {
+      }
+    |arbitrary iter facts|: {
       |loop havoc|: {
         havoc return;
         havoc i;
-        }arbitrary_iter_assumes: {
+        }
+      arbitrary_iter_assumes: {
         assume [assume_guard]: i > 1;
         assume [assume_invariant]: true;
         assume [assume_measure_pos]: i >= 0;
-        }var |special-name-for-old-measure-value| : int := i;
+        }
+      var |special-name-for-old-measure-value| : int := i;
       if (b mod i == 0 && a mod i == 0) {
         return := false;
         }
@@ -123,10 +126,12 @@ spec {
       assert [measure_decreases]: i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if i <= 0 then !(i > 1) else true;
       assert [arbitrary_iter_maintain_invariant]: true;
-      }|loop havoc|: {
+      }
+    |loop havoc|: {
       havoc return;
       havoc i;
-      }assume [not_guard]: !(i > 1);
+      }
+    assume [not_guard]: !(i > 1);
     assume [invariant]: true;
     }
   return := true;
