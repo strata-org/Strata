@@ -24,7 +24,7 @@ def addDiagnosis (state : CoreSMTState) (E : Core.Env) (result : Core.VCResult)
     return result
   else
     -- Diagnose the failure
-    let diagResult ← Diagnosis.diagnoseFailure state E result.obligation.obligation false smtCtx
+    let diagResult ← diagnoseFailure state E result.obligation.obligation false smtCtx
     let failedExprs := diagResult.diagnosedFailures.map (·.expression)
     let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
     return { result with diagnosis := some { isRefuted, failedSubExpressions := failedExprs } }

@@ -69,7 +69,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
     
     -- Add diagnosis for failures
     let diagnosis ← if outcome != .pass then
-      let diagResult ← Diagnosis.diagnoseFailure state E expr false smtCtx
+      let diagResult ← diagnoseFailure state E expr false smtCtx
       let failedExprs := diagResult.diagnosedFailures.map (·.expression)
       let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
       pure (some { isRefuted, failedSubExpressions := failedExprs })
@@ -105,7 +105,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
     
     -- Add diagnosis for failures (reach checks)
     let diagnosis ← if outcome != .pass then
-      let diagResult ← Diagnosis.diagnoseFailure state E expr true smtCtx  -- true for reach check
+      let diagResult ← diagnoseFailure state E expr true smtCtx  -- true for reach check
       let failedExprs := diagResult.diagnosedFailures.map (·.expression)
       let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
       pure (some { isRefuted, failedSubExpressions := failedExprs })
@@ -125,7 +125,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       label := "non-CoreSMT"
       property := .assert
       assumptions := []
-      obligation := .fvar () (Core.CoreIdent.unres "error") none
+      obligation := .fvar Strata.SourceRange.none (Core.CoreIdent.unres "error") none
       metadata := .empty
     }
     let result : Core.VCResult := { obligation, result := .implementationError "Statement not in CoreSMT subset" }
@@ -168,7 +168,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     match translateTypeSafe E ty smtCtx with
     | .error msg =>
       -- Use a dummy expression for error reporting
-      let dummyExpr : Core.Expression.Expr := .const () (.boolConst true)
+      let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
       let obligation : Imperative.ProofObligation Core.Expression := {
         label := s!"init {name.name}", property := .assert, assumptions := [], 
         obligation := dummyExpr, metadata := .empty
@@ -208,7 +208,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     
     match result with
     | .error msg =>
-      let dummyExpr : Core.Expression.Expr := .const () (.boolConst true)
+      let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
       let obligation : Imperative.ProofObligation Core.Expression := {
         label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
         obligation := dummyExpr, metadata := .empty
@@ -217,7 +217,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     | .ok inputTypes =>
       match translateTypeSafe E decl.output smtCtx with
       | .error msg =>
-        let dummyExpr : Core.Expression.Expr := .const () (.boolConst true)
+        let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
         let obligation : Imperative.ProofObligation Core.Expression := {
           label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
           obligation := dummyExpr, metadata := .empty
@@ -255,7 +255,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       label := "unknown"
       property := .assert
       assumptions := []
-      obligation := .fvar () (Core.CoreIdent.unres "error") none
+      obligation := .fvar Strata.SourceRange.none (Core.CoreIdent.unres "error") none
       metadata := .empty
     }
     return (state, smtCtx, some { obligation, result := .implementationError "Unexpected statement" })
