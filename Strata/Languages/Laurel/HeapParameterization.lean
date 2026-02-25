@@ -150,7 +150,8 @@ structure TransformState where
   fieldConstants : List Constant := []
   heapReaders : List Identifier
   heapWriters : List Identifier
-  fieldTypes : List (Identifier × HighTypeMd) := []  -- Maps field names to their value types
+  fieldTypes : List (Identifier × HighTypeMd) := []  -- Maps "TypeName.fieldName" to their value types
+  types : List TypeDefinition := []  -- Type definitions for resolving field owners
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
 
 abbrev TransformM := StateM TransformState
@@ -195,25 +196,58 @@ def freshVarName : TransformM Identifier := do
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 /--
+Find the composite type that actually declares a given field, walking up the inheritance chain.
+Returns the declaring type's name, or falls back to the given type name.
+-/
+def findFieldOwner (types : List TypeDefinition) (typeName : Identifier) (fieldName : Identifier) : Identifier :=
+  let rec go (fuel : Nat) (current : Identifier) : Option Identifier :=
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
+      types.findSome? fun td =>
+        match td with
+        | .Composite ct =>
+          if ct.name == current then
+            if ct.fields.any (·.name == fieldName) then some ct.name
+            else ct.extending.findSome? (go fuel')
+          else none
+        | _ => none
+  (go types.length typeName).getD (panic "type inheritance forms a cycle")
+
+/--
+Resolve the owning composite type name for a field access by computing the target expression's type.
+Returns the qualified field name "DeclaringType.fieldName".
+-/
+def resolveQualifiedFieldName (env : TypeEnv) (types : List TypeDefinition) (target : StmtExprMd) (fieldName : Identifier) : Identifier :=
+  match (computeExprType env types target).val with
+  | .UserDefined typeName =>
+    let owner := findFieldOwner types typeName fieldName
+    owner ++ "." ++ fieldName
+  | _ => panic "assigning to a target that's not a composite type"
+
+/--
 Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
+- `env`: the type environment for resolving field owners
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
-def heapTransformExpr (heapVar : Identifier) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
-  recurse expr valueUsed
+def heapTransformExpr (heapVar : Identifier) (env : TypeEnv) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
+  recurse env expr valueUsed
 where
-  recurse (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
+  recurse (env : TypeEnv) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
     let md := expr.md
+    let types := (← get).types
     match _h : expr.val with
     | .FieldSelect selectTarget fieldName =>
-        let fieldType ← lookupFieldType fieldName
-        let valTy := fieldType.getD (panic "could not find field type")
-        addFieldConstant fieldName valTy
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.Identifier fieldName)], md ⟩
+        let qualifiedName := resolveQualifiedFieldName env types selectTarget fieldName
+        let fieldType ← lookupFieldType qualifiedName
+        let valTy := fieldType.getD (panic s!"could not find field type for {qualifiedName}")
+        addFieldConstant qualifiedName valTy
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.Identifier qualifiedName)], md ⟩
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
     | .StaticCall callee args =>
-        let args' ← args.mapM (recurse ·)
+        let args' ← args.mapM (recurse env ·)
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -231,88 +265,105 @@ where
         else
           return ⟨ .StaticCall callee args', md ⟩
     | .InstanceCall callTarget callee args =>
-        let t ← recurse callTarget
-        let args' ← args.mapM (recurse ·)
+        let t ← recurse env callTarget
+        let args' ← args.mapM (recurse env ·)
         return ⟨ .InstanceCall t callee args', md ⟩
     | .IfThenElse c t e =>
-        let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
-        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', md ⟩
+        let e' ← match e with | some x => some <$> recurse env x valueUsed | none => pure none
+        return ⟨ .IfThenElse (← recurse env c) (← recurse env t valueUsed) e', md ⟩
     | .Block stmts label =>
         let n := stmts.length
-        let rec processStmts (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
+        let rec processStmts (env : TypeEnv) (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
           match remaining with
           | [] => pure []
           | s :: rest =>
               let isLast := idx == n - 1
-              let s' ← recurse s (isLast && valueUsed)
-              let rest' ← processStmts (idx + 1) rest
+              -- Extend env for LocalVariable declarations
+              let env' := match s.val with
+                | .LocalVariable name ty _ => (name, ty) :: env
+                | _ => env
+              let s' ← recurse env s (isLast && valueUsed)
+              let rest' ← processStmts env' (idx + 1) rest
               pure (s' :: rest')
           termination_by sizeOf remaining
-        let stmts' ← processStmts 0 stmts
+        let stmts' ← processStmts env 0 stmts
         return ⟨ .Block stmts' label, md ⟩
     | .LocalVariable n ty i =>
-        let i' ← match i with | some x => some <$> recurse x | none => pure none
+        let i' ← match i with | some x => some <$> recurse env x | none => pure none
         return ⟨ .LocalVariable n ty i', md ⟩
     | .While c invs d b =>
-        let invs' ← invs.mapM (recurse ·)
-        return ⟨ .While (← recurse c) invs' d (← recurse b false), md ⟩
+        let invs' ← invs.mapM (recurse env ·)
+        return ⟨ .While (← recurse env c) invs' d (← recurse env b false), md ⟩
     | .Return v =>
-        let v' ← match v with | some x => some <$> recurse x | none => pure none
+        let v' ← match v with | some x => some <$> recurse env x | none => pure none
         return ⟨ .Return v', md ⟩
     | .Assign targets v =>
         match targets with
         | [fieldSelectMd] =>
           match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
-            let fieldType ← lookupFieldType fieldName
-            let valTy := fieldType.getD (panic "could not find field type")
-            addFieldConstant fieldName valTy
-            let target' ← recurse target
-            let v' ← recurse v
+            let qualifiedName := resolveQualifiedFieldName env types target fieldName
+            let fieldType ← lookupFieldType qualifiedName
+            let valTy := fieldType.getD (panic s!"could not find field type for {qualifiedName}")
+            addFieldConstant qualifiedName valTy
+            let target' ← recurse env target
+            let v' ← recurse env v
             -- Wrap value in Box constructor
             let boxedVal := mkMd <| .StaticCall (boxConstructorName valTy.val) [v']
             let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.Identifier fieldName), boxedVal])), md ⟩
+              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.Identifier qualifiedName), boxedVal])), md ⟩
             if valueUsed then
               return ⟨ .Block [heapAssign, v'] none, md ⟩
             else
               return heapAssign
           | _ =>
-            let tgt' ← recurse fieldSelectMd
-            return ⟨ .Assign [tgt'] (← recurse v), md ⟩
+            let tgt' ← recurse env fieldSelectMd
+            return ⟨ .Assign [tgt'] (← recurse env v), md ⟩
         | [] =>
-            return ⟨ .Assign [] (← recurse v), md ⟩
+            return ⟨ .Assign [] (← recurse env v), md ⟩
         | tgt :: rest =>
-            let tgt' ← recurse tgt
-            let targets' ← rest.mapM (recurse ·)
-            return ⟨ .Assign (tgt' :: targets') (← recurse v), md ⟩
-    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), md ⟩
+            let tgt' ← recurse env tgt
+            let targets' ← rest.mapM (recurse env ·)
+            return ⟨ .Assign (tgt' :: targets') (← recurse env v), md ⟩
+    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse env t) f (← recurse env v), md ⟩
     | .PrimitiveOp op args =>
-      let args' ← args.mapM (recurse ·)
-      return ⟨ .PrimitiveOp op args', md ⟩
-    | .New _name =>
-        -- Allocate a new object: get the current nextReference, increment it, return the old value
-        -- 1. Save the current nextReference: $freshVar := Heap..nextReference(heapVar)
-        -- 2. Update the heap with incremented nextReference: heapVar := increment(heapVar)
-        -- 3. Result is $freshVar (the old nextReference value, which is the new Composite reference)
-        let freshVar ← freshVarName
-        let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
-        let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
-        let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
-        let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-        return ⟨ .Block [saveCounter, updateHeap, mkMd (.Identifier freshVar)] none, md ⟩
-    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
-    | .AsType t ty => return ⟨ .AsType (← recurse t) ty, md ⟩
-    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
-    | .Forall n ty b => return ⟨ .Forall n ty (← recurse b), md ⟩
-    | .Exists n ty b => return ⟨ .Exists n ty (← recurse b), md ⟩
-    | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
-    | .Old v => return ⟨ .Old (← recurse v), md ⟩
-    | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
-    | .Assert c => return ⟨ .Assert (← recurse c), md ⟩
-    | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
-    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
-    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
+      let args' ← args.mapM (recurse env ·)
+      -- For == and != on Composite types, compare refs instead
+      match op, args with
+      | .Eq, [e1, _e2] =>
+        let ty := (computeExprType env types e1).val
+        match ty with
+        | .UserDefined _ =>
+          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
+          return ⟨ .PrimitiveOp .Eq [ref1, ref2], md ⟩
+        | _ => return ⟨ .PrimitiveOp op args', md ⟩
+      | .Neq, [e1, _e2] =>
+        let ty := (computeExprType env types e1).val
+        match ty with
+        | .UserDefined _ =>
+          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
+          return ⟨ .PrimitiveOp .Neq [ref1, ref2], md ⟩
+        | _ => return ⟨ .PrimitiveOp op args', md ⟩
+      | _, _ => return ⟨ .PrimitiveOp op args', md ⟩
+    | .New _ => return expr
+    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse env l) (← recurse env r), md ⟩
+    | .AsType t ty =>
+        let t' ← recurse env t valueUsed
+        let isCheck := ⟨ .IsType t' ty, md ⟩
+        let assertStmt := ⟨ .Assert isCheck, md ⟩
+        return ⟨ .Block [assertStmt, t'] none, md ⟩
+    | .IsType t ty => return ⟨ .IsType (← recurse env t) ty, md ⟩
+    | .Forall n ty b => return ⟨ .Forall n ty (← recurse env b), md ⟩
+    | .Exists n ty b => return ⟨ .Exists n ty (← recurse env b), md ⟩
+    | .Assigned n => return ⟨ .Assigned (← recurse env n), md ⟩
+    | .Old v => return ⟨ .Old (← recurse env v), md ⟩
+    | .Fresh v => return ⟨ .Fresh (← recurse env v), md ⟩
+    | .Assert c => return ⟨ .Assert (← recurse env c), md ⟩
+    | .Assume c => return ⟨ .Assume (← recurse env c), md ⟩
+    | .ProveBy v p => return ⟨ .ProveBy (← recurse env v) (← recurse env p), md ⟩
+    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse env f), md ⟩
     | _ => return expr
     termination_by sizeOf expr
     decreasing_by
@@ -326,42 +377,47 @@ where
             (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; term_by_mem)
 
 def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
+  let heapName := "$heap"
   let heapInName := "$heap_in"
-  let heapOutName := "$heap_out"
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
+  -- Build the type environment from procedure parameters and constants
+  let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
+                           proc.outputs.map (fun p => (p.name, p.type))
+
   if writesHeap then
-    -- This procedure writes the heap - add heap_in as input and heap_out as output
-    -- At the start, assign heap_in to heap_out, then use heap_out throughout
+    -- This procedure writes the heap - add $heap_in as input and $heap as output
+    -- At the start, assign $heap_in to $heap, then use $heap throughout
     let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, #[]⟩ }
-    let heapOutParam : Parameter := { name := heapOutName, type := ⟨.THeap, #[]⟩ }
+    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, #[]⟩ }
 
     let inputs' := heapInParam :: proc.inputs
     let outputs' := heapOutParam :: proc.outputs
 
-    -- Precondition uses heap_in (the input state)
-    let precondition' ← heapTransformExpr heapInName proc.precondition
+    -- Precondition uses $heap_in (the input state)
+    let precondition' ← heapTransformExpr heapInName initEnv proc.precondition
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          -- First assign heap_in to heap_out, then transform body using heap_out
-          let assignHeapOut := mkMd (.Assign [mkMd (.Identifier heapOutName)] (mkMd (.Identifier heapInName)))
-          let bodyExpr' ← heapTransformExpr heapOutName bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeapOut, bodyExpr'] none)))
+          -- First assign $heap_in to $heap, then transform body using $heap
+          let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
+          let bodyExpr' ← heapTransformExpr heapName initEnv bodyExpr bodyValueIsUsed
+          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
       | .Opaque postconds impl modif =>
-          -- Postconditions use heap_out (the output state)
-          let postconds' ← postconds.mapM (heapTransformExpr heapOutName)
+          -- Postconditions use $heap (the output state)
+          let postconds' ← postconds.mapM (heapTransformExpr heapName initEnv ·)
           let impl' ← match impl with
             | some implExpr =>
-                let assignHeapOut := mkMd (.Assign [mkMd (.Identifier heapOutName)] (mkMd (.Identifier heapInName)))
-                let implExpr' ← heapTransformExpr heapOutName implExpr bodyValueIsUsed
-                pure (some (mkMd (.Block [assignHeapOut, implExpr'] none)))
+                let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
+                let implExpr' ← heapTransformExpr heapName initEnv implExpr bodyValueIsUsed
+                pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
             | none => pure none
-          let modif' ← modif.mapM (heapTransformExpr heapOutName)
-          pure (.Opaque postconds' impl' modif')      | .Abstract postcond =>
-          let postcond' ← heapTransformExpr heapOutName postcond
+          let modif' ← modif.mapM (heapTransformExpr heapName initEnv ·)
+          pure (.Opaque postconds' impl' modif')
+      | .Abstract postcond =>
+          let postcond' ← heapTransformExpr heapName initEnv postcond
           pure (.Abstract postcond')
 
     return { proc with
@@ -371,23 +427,23 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
       body := body' }
 
   else if readsHeap then
-    -- This procedure only reads the heap - add heap_in as input only
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, #[]⟩ }
-    let inputs' := heapInParam :: proc.inputs
+    -- This procedure only reads the heap - add $heap as input only
+    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, #[]⟩ }
+    let inputs' := heapParam :: proc.inputs
 
-    let precondition' ← heapTransformExpr heapInName proc.precondition
+    let precondition' ← heapTransformExpr heapName initEnv proc.precondition
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          let bodyExpr' ← heapTransformExpr heapInName bodyExpr
+          let bodyExpr' ← heapTransformExpr heapName initEnv bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM (heapTransformExpr heapInName)
-          let impl' ← impl.mapM (heapTransformExpr heapInName)
-          let modif' ← modif.mapM (heapTransformExpr heapInName)
+          let postconds' ← postconds.mapM (heapTransformExpr heapName initEnv ·)
+          let impl' ← impl.mapM (heapTransformExpr heapName initEnv ·)
+          let modif' ← modif.mapM (heapTransformExpr heapName initEnv ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postcond =>
-          let postcond' ← heapTransformExpr heapInName postcond
+          let postcond' ← heapTransformExpr heapName initEnv postcond
           pure (.Abstract postcond')
 
     return { proc with
@@ -402,12 +458,23 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
 def heapParameterization (program : Program) : Program :=
   let heapReaders := computeReadsHeap program.staticProcedures
   let heapWriters := computeWritesHeap program.staticProcedures
-  -- Extract field types from composite type definitions
+  -- Extract field types from composite type definitions, qualified with composite type name
   let fieldTypes := program.types.foldl (fun acc typeDef =>
     match typeDef with
-    | .Composite ct => acc ++ ct.fields.map (fun f => (f.name, f.type))
-    | .Constrained _ => acc) []
-  let (procs', finalState) := (program.staticProcedures.mapM heapTransformProcedure).run { heapReaders, heapWriters, fieldTypes }
-  { program with staticProcedures := procs', constants := program.constants ++ finalState.fieldConstants }
+    | .Composite ct => acc ++ ct.fields.map (fun f => (ct.name ++ "." ++ f.name, f.type))
+    | .Constrained _ => acc
+    | .Datatype _ => acc) []
+  let (procs', _) := (program.staticProcedures.mapM heapTransformProcedure).run
+    { heapReaders, heapWriters, fieldTypes, types := program.types }
+  -- Collect all qualified field names and generate a Field datatype
+  let fieldNames := program.types.foldl (fun acc td =>
+    match td with
+    | .Composite ct => acc ++ ct.fields.map (fun f => ct.name ++ "." ++ f.name)
+    | _ => acc) ([] : List Identifier)
+  let fieldDatatype : TypeDefinition :=
+    .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
+  { program with
+    staticProcedures := procs',
+    types := program.types ++ [fieldDatatype] }
 
 end Strata.Laurel
