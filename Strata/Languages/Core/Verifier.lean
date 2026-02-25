@@ -9,6 +9,7 @@ import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder
+import Strata.Languages.Core.CoreSMT.Diagnosis
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
@@ -23,6 +24,7 @@ namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
 open Strata
+open Strata.Core.CoreSMT
 
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
@@ -131,6 +133,7 @@ instance : ToFormat Outcome where
 structure DiagnosisInfo where
   isRefuted : Bool := false
   failedSubExpressions : List Expression.Expr := []
+  diagnosedFailures : List Strata.Core.CoreSMT.DiagnosedFailure := []
   deriving Repr, Inhabited
 
 /--

@@ -41,6 +41,7 @@ def programToB3AST (prog : Program) : Except String (B3AST.Program SourceRange) 
 structure VerificationReport where
   label : String
   outcome : Core.Outcome
+  diagnosis : Option Core.DiagnosisInfo := none
   deriving Repr
 
 structure ProcedureReport where
@@ -51,7 +52,8 @@ structure ProcedureReport where
 /-- Convert Core VCResult to B3 VerificationReport -/
 private def vcResultToVerificationReport (vcResult : Core.VCResult) : VerificationReport :=
   { label := vcResult.obligation.label
-    outcome := vcResult.result }
+    outcome := vcResult.result
+    diagnosis := vcResult.diagnosis }
 
 /-- Convert B3 program to Core and verify via CoreSMT pipeline -/
 def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do

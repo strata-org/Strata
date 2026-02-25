@@ -21,11 +21,30 @@ open Core
 open Strata.SMT
 open Lambda
 
+/-- Verification result for diagnosis -/
+inductive DiagnosisResultType
+  | refuted
+  | counterexample
+  | unknown
+  deriving Repr, Inhabited
+
+/-- Context for a diagnosed failure -/
+structure DiagnosisContext where
+  pathCondition : List Core.Expression.Expr := []
+  deriving Repr, Inhabited
+
+/-- Report for a diagnosed failure -/
+structure DiagnosisReport where
+  result : Except DiagnosisResultType Unit
+  context : DiagnosisContext
+  deriving Repr, Inhabited
+
 /-- Result of diagnosing a single sub-expression -/
 structure DiagnosedFailure where
   expression : Core.Expression.Expr
   isRefuted : Bool
   label : String
+  report : DiagnosisReport
   deriving Repr, Inhabited
 
 /-- Full diagnosis result -/
@@ -62,7 +81,9 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
   match splitConjunction expr with
   | none =>
     let refuted ← checkRefuted state E expr smtCtx
-    return { originalLabel := "", diagnosedFailures := [{ expression := expr, isRefuted := refuted, label := "" }] }
+    let resultType := if refuted then DiagnosisResultType.refuted else DiagnosisResultType.unknown
+    let report : DiagnosisReport := { result := .error resultType, context := { pathCondition := [] } }
+    return { originalLabel := "", diagnosedFailures := [{ expression := expr, isRefuted := refuted, label := "", report }] }
   | some (lhs, rhs) =>
     -- Diagnose left conjunct
     let leftResult ← diagnoseFailure state E lhs isReachCheck smtCtx

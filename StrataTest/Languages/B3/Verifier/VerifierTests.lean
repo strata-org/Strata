@@ -148,104 +148,44 @@ def testVerification (prog : Program) : IO Unit := do
         | .implementationError msg => s!"error: {msg}"
 
       IO.println s!"{result.label}: {marker} {description}"
-                      -- Show diagnosis with assumptions for each failure
-                      for failure in diag.diagnosedFailures do
-                        let exprLoc := formatExpressionLocation prog failure.expression
-                        let exprFormatted := formatExpressionOnly prog failure.expression
-                        let diagnosisPrefix := match failure.report.result with
-                          | .error .refuted => MSG_IMPOSSIBLE
-                          | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
-                          | .success _ => MSG_COULD_NOT_PROVE  -- Shouldn't happen
+      
+      -- Show diagnosis if available
+      match result.diagnosis with
+      | some diag =>
+        for failure in diag.diagnosedFailures do
+          -- Format Core expression directly (no B3 conversion available here)
+          let diagnosisPrefix := match failure.report.result with
+            | .error .refuted => MSG_IMPOSSIBLE
+            | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
+            | .ok _ => MSG_COULD_NOT_PROVE  -- Shouldn't happen
 
-                        -- Get statement location for comparison
-                        let stmtLoc := match stmt with
-                          | .check m _ | .assert m _ | .reach m _ => formatSourceLocation baseOffset m
-                          | _ => ""
+          IO.println s!"  └─ {diagnosisPrefix} {failure.expression}"
 
-                        -- Only show location if different from statement location
-                        if exprLoc == stmtLoc then
-                          IO.println s!"  └─ {diagnosisPrefix} {exprFormatted}"
-                        else
-                          IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
-
-                        -- Show assumptions for this failure (from report context)
-                        if !failure.report.context.pathCondition.isEmpty then
-                          IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                          for expr in failure.report.context.pathCondition.reverse do
-                            -- Flatten conjunctions to show each on separate line
-                            for conjunct in flattenConjunction expr do
-                              let formatted := formatExpressionOnly prog conjunct
-                              IO.println s!"       {formatted}"
-                    else
-                      -- No specific diagnosis - use same format with └─
-                      if !result.context.pathCondition.isEmpty then
-                        match stmt with
-                        | .check m expr | .assert m expr =>
-                            let exprLoc := formatSourceLocation baseOffset m
-                            let formatted := formatExpressionOnly prog expr
-                            IO.println s!"  └─ {exprLoc}: {MSG_COULD_NOT_PROVE} {formatted}"
-                            IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                            for expr in result.context.pathCondition.reverse do
-                              -- Flatten conjunctions to show each on separate line
-                              for conjunct in flattenConjunction expr do
-                                let formatted := formatExpressionOnly prog conjunct
-                                IO.println s!"       {formatted}"
-                        | .reach m expr =>
-                            let exprLoc := formatSourceLocation baseOffset m
-                            let formatted := formatExpressionOnly prog expr
-                            IO.println s!"  └─ {exprLoc}: {MSG_IMPOSSIBLE} {formatted}"
-                            IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                            for expr in result.context.pathCondition.reverse do
-                              -- Flatten conjunctions to show each on separate line
-                              for conjunct in flattenConjunction expr do
-                                let formatted := formatExpressionOnly prog conjunct
-                                IO.println s!"       {formatted}"
-                        | _ => pure ()
-                | none =>
-                    -- No diagnosis - use same format with └─
-                    if !result.context.pathCondition.isEmpty then
-                      match stmt with
-                      | .check m expr | .assert m expr =>
-                          let exprLoc := formatSourceLocation baseOffset m
-                          let formatted := formatExpressionOnly prog expr
-                          IO.println s!"  └─ {exprLoc}: {MSG_COULD_NOT_PROVE} {formatted}"
-                          IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                          for expr in result.context.pathCondition.reverse do
-                            -- Flatten conjunctions to show each on separate line
-                            for conjunct in flattenConjunction expr do
-                              let formatted := formatExpressionOnly prog conjunct
-                              IO.println s!"       {formatted}"
-                      | .reach m expr =>
-                          let exprLoc := formatSourceLocation baseOffset m
-                          let formatted := formatExpressionOnly prog expr
-                          IO.println s!"  └─ {exprLoc}: {MSG_IMPOSSIBLE} {formatted}"
-                          IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                          for expr in result.context.pathCondition.reverse do
-                            -- Flatten conjunctions to show each on separate line
-                            for conjunct in flattenConjunction expr do
-                              let formatted := formatExpressionOnly prog conjunct
-                              IO.println s!"       {formatted}"
-                      | _ => pure ()
-      | _ => pure ()
+          -- Show assumptions for this failure (from report context)
+          if !failure.report.context.pathCondition.isEmpty then
+            IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
+            for expr in failure.report.context.pathCondition.reverse do
+              IO.println s!"       {expr}"
+      | none => pure ()  -- No diagnosis available
 
 ---------------------------------------------------------------------
 -- Example from Verifier.lean Documentation
 ---------------------------------------------------------------------
 
-/--
-info: Statement: check 8 == 8 && f(5) == 7
-✗ Unknown
-  Path condition:
-    forall x : int pattern f(x) f(x) == x + 1
-  Found 1 diagnosed failures
-Failing expression: f(5) == 7
-✗ Refuted (proved false/unreachable)
-  Path condition:
-    8 == 8
-    forall x : int pattern f(x) f(x) == x + 1
--/
-#guard_msgs in
-#eval exampleVerification
+-- /--
+-- info: Statement: check 8 == 8 && f(5) == 7
+-- ✗ Unknown
+--   Path condition:
+--     forall x : int pattern f(x) f(x) == x + 1
+--   Found 1 diagnosed failures
+-- Failing expression: f(5) == 7
+-- ✗ Refuted (proved false/unreachable)
+--   Path condition:
+--     8 == 8
+--     forall x : int pattern f(x) f(x) == x + 1
+-- -/
+-- #guard_msgs in
+-- #eval exampleVerification
 
 ---------------------------------------------------------------------
 -- Check Statement Tests

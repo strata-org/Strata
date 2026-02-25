@@ -72,7 +72,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
       let diagResult ← diagnoseFailure state E expr false smtCtx
       let failedExprs := diagResult.diagnosedFailures.map (·.expression)
       let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
-      pure (some { isRefuted, failedSubExpressions := failedExprs })
+      pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := diagResult.diagnosedFailures })
     else
       pure none
     
