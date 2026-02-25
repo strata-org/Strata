@@ -499,6 +499,7 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
       inputs := inputs
       outputs := outputs
       preconditions := []
+      determinism := .nondeterministic
       decreases := none
       body := Body.Transparent bodyBlock
       md := default
@@ -576,6 +577,7 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       inputs := [],
       outputs := [],
       preconditions := [],
+      determinism := .nondeterministic,
       decreases := none,
       body := .Transparent bodyBlock
       md := default

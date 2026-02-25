@@ -132,6 +132,7 @@ instance : Inhabited Procedure where
     inputs := []
     outputs := []
     preconditions := []
+    determinism := .nondeterministic
     decreases := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
     md := .empty
@@ -382,6 +383,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       inputs := parameters
       outputs := returnParameters
       preconditions := preconditions
+      determinism := .nondeterministic
       decreases := none
       body := procBody
       md := nameMd
