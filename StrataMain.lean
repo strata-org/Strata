@@ -244,7 +244,7 @@ def pySpecsCommand : Command where
   args := [ "python_path", "strata_path" ]
   help := "Translate a Python specification (.py) file into Strata DDM Ion format. Creates the output directory if needed. (Experimental)"
   callback := fun v _ => do
-    -- Write embedded Python dialect to a temp file for the Python subprocess
+    -- Serialize embedded dialect for Python subprocess
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
       let pythonFile : System.FilePath := v[0]

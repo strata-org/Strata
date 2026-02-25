@@ -479,9 +479,11 @@ class MetadataCat:
     def to_ion(self):
         return ion_sexp(self.categorySym, self.index)
 
+MetadataArg = Union[None, bool, int, 'MetadataCat', 'MetadataSome']
+
 @dataclass
 class MetadataSome:
-    value: object
+    value: MetadataArg
 
     someSym = ion_symbol("some")
     def to_ion(self):
@@ -490,7 +492,7 @@ class MetadataSome:
 @dataclass
 class MetadataAttr:
     ident : QualifiedIdent
-    args : list[object]
+    args : list[MetadataArg]
 
     def to_ion(self):
         return ion_sexp(self.ident.to_ion(), *(metadata_arg_to_ion(a) for a in self.args))
@@ -988,12 +990,6 @@ def read_syntaxdef_atom(reader, event) -> SyntaxDefAtom:
         case "ident":
             level = read_int(reader)
             prec = read_int(reader)
-            # unwrap field is optional (added later)
-            event = read_event(reader)
-            if is_sexp_end(event):
-                return SyntaxDefIdent(level, prec)
-            # Read the unwrap bool then sexp end
-            assert is_scalar(event, IonType.BOOL), f"Expected bool for unwrap, got {repr(event)}"
             read_sexp_end(reader)
             return SyntaxDefIdent(level, prec)
         case "indent":
@@ -1003,7 +999,7 @@ def read_syntaxdef_atom(reader, event) -> SyntaxDefAtom:
         case _:
             raise Exception(f"Unknown SyntaxDefAtom kind {kind.text}")
 
-def read_metadata_arg(reader, event):
+def read_metadata_arg(reader, event) -> MetadataArg:
     """Read a MetadataArg value."""
     if is_scalar(event, IonType.NULL):
         return None
@@ -1185,14 +1181,18 @@ class Dialect:
                     event = read_event(reader)
                     syntax : SyntaxDef|None = None
                     if has_field_symbol(event, "syntax"):
-                        assert is_struct_start(event), f"Expected struct for syntax, got {repr(event)}"
+                        assert is_struct_start(event), (
+                            f"Expected struct for syntax, got {repr(event)}"
+                        )
                         # Read the syntax struct inline (fields: atoms, prec)
                         field = read_field_list_start(reader)
                         assert field == "atoms", f"Expected 'atoms' field, got '{field}'"
                         atoms = list(read_list(reader, read_syntaxdef_atom))
                         event = read_event(reader)
                         assert has_field_symbol(event, "prec"), f"Expected 'prec' field"
-                        assert is_scalar(event, IonType.INT), f"Expected int for prec, got {repr(event)}"
+                        assert is_scalar(event, IonType.INT), (
+                            f"Expected int for prec, got {repr(event)}"
+                        )
                         prec = event.value
                         assert isinstance(prec, int)
                         read_struct_end(reader)
@@ -1201,7 +1201,9 @@ class Dialect:
 
                     metadata : Metadata = []
                     if has_field_symbol(event, "metadata"):
-                        assert is_list_start(event), f"Expected list for metadata, got {repr(event)}"
+                        assert is_list_start(event), (
+                            f"Expected list for metadata, got {repr(event)}"
+                        )
                         metadata = list(read_list(reader, read_metadata_attr))
                         event = read_event(reader)
 

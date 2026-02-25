@@ -93,7 +93,7 @@ def testCase : IO Unit := do
     if ← pythonTestRequired then
       throw <| .userError s!"Python Strata libraries not installed in {pythonCmd}."
     return ()
-  -- Write embedded Python dialect to a temp file for the Python subprocess
+  -- Serialize embedded dialect for Python subprocess
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/main.py"
