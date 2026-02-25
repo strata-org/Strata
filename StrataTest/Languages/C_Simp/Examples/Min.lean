@@ -47,7 +47,7 @@ info: function min {
   post: #true
   body:
 {
-  #[<[fileRange]: :271-326>] if (~Int.Lt a b) {
+  if (~Int.Lt a b) {
     return := a
   }
   else {
@@ -59,7 +59,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run Inhabited.default (translateProgram (MinPgm.commands))
+#eval TransM.run Inhabited.default ((translateProgram (MinPgm.commands)).map (·.stripMetaData))
 
 /--
 info: [Strata.Core] Type checking succeeded.

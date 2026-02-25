@@ -65,7 +65,7 @@ info: function loopSimple {
   init (i : int)
   sum := #0
   i := #0
-  #[<[fileRange]: :334-459>] while
+  while
     (~Int.Lt i n)
     (some (~Int.Sub n i))
     (some (~Bool.And (~Int.Le i n) ((~Int.Div (~Int.Mul i (~Int.Sub i #1)) #2) == sum)))
@@ -79,7 +79,7 @@ info: function loopSimple {
 }
 -/
 #guard_msgs in
-#eval Strata.C_Simp.get_program LoopSimplePgm
+#eval (Strata.C_Simp.get_program LoopSimplePgm).stripMetaData
 
 /--
 info: procedure loopSimple (n : int) returns (return : int)
