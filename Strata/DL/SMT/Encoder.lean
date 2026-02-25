@@ -280,7 +280,7 @@ def encode (ts : List Term) : SolverM Unit := do
   Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]
   let (termEncs, _) ← ts.mapM (encodeTerm False) |>.run EncoderState.init
   for t in termEncs do
-    Solver.assertTerm t
+    Solver.assert t
 
 end Encoder
 namespace Strata.SMT

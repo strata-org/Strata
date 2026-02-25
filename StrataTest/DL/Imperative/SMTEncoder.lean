@@ -76,7 +76,7 @@ def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderStat
   let estate := EncoderState.init
   let (termEncs, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm False) |>.run estate
   for t in termEncs do
-    Solver.assertTerm t
+    Solver.assert t
   let ids := estate.ufs.values
   return (ids, estate)
 

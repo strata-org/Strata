@@ -191,14 +191,6 @@ def assert (t : Term) : SolverM Unit := do
 def assertId (id : String) : SolverM Unit :=
   emitln s!"(assert {id})"
 
-/-- Assert a `Term` that may be either a variable (assert its name directly) or
-    a complex term (convert via `termToSMTString`). This is the primary assertion
-    entry point for the Encoder's ANF-decomposed results. -/
-def assertTerm (t : Term) : SolverM Unit := do
-  match t with
-  | .var v => assertId v.id
-  | _ => assert t
-
 /-- Declare a constant with a typed `TermType`. -/
 def declareConst (id : String) (ty : TermType) : SolverM Unit := do
   let tyStr ← typeToSMTString ty
