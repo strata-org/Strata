@@ -661,6 +661,7 @@ partial def lquantToExpr {M} [Inhabited M]
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
   let name : Ann String M := ⟨default, mkQuantVarName (qLevel - 1)⟩
+  modify ToCSTContext.pushScope
   modify (·.addScopedBoundVars #[name.val])
   let tyExpr ← match ty with
     | some t => lmonoTyToCoreType t
@@ -668,20 +669,23 @@ partial def lquantToExpr {M} [Inhabited M]
   let bind := Bind.bind_mk default name ⟨default, none⟩ tyExpr
   let dl := DeclList.declAtom default bind
   let hasNoTrigger := trigger matches .bvar _ 0
-  if hasNoTrigger then
-    let bodyExpr ← lexprToExpr body qLevel
-    match qkind with
-    | .all => pure (.forall default dl bodyExpr)
-    | .exist => pure (.exists default dl bodyExpr)
-  else
-    let triggerExprs ← extractTriggerPatterns trigger qLevel
-    let bodyExpr ← lexprToExpr body qLevel
-    let trigAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, triggerExprs.reverse⟩
-    let tg := TriggerGroup.trigger default trigAnn
-    let tl := Triggers.triggersAtom default tg
-    match qkind with
-    | .all => pure (.forallT default dl tl bodyExpr)
-    | .exist => pure (.existsT default dl tl bodyExpr)
+  let result ←
+    if hasNoTrigger then
+      let bodyExpr ← lexprToExpr body qLevel
+      match qkind with
+      | .all => pure (.forall default dl bodyExpr)
+      | .exist => pure (.exists default dl bodyExpr)
+    else
+      let triggerExprs ← extractTriggerPatterns trigger qLevel
+      let bodyExpr ← lexprToExpr body qLevel
+      let trigAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, triggerExprs.reverse⟩
+      let tg := TriggerGroup.trigger default trigAnn
+      let tl := Triggers.triggersAtom default tg
+      match qkind with
+      | .all => pure (.forallT default dl tl bodyExpr)
+      | .exist => pure (.existsT default dl tl bodyExpr)
+  modify ToCSTContext.popScope
+  pure result
 
 partial def liteToExpr {M} [Inhabited M]
     (c t f : Lambda.LExpr CoreLParams.mono)

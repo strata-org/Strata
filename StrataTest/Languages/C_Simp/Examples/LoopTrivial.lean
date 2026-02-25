@@ -84,7 +84,7 @@ spec {
   } {
   var i : int;
   i := 0;
-  if(i < n){
+  if (i < n) {
     first_iter_asserts: {
       assert [entry_invariant]: i <= n;
       assert [assert_measure_pos]: n - i >= 0;
@@ -104,7 +104,8 @@ spec {
       havoc i;
       }assume [not_guard]: !(i < n);
     assume [invariant]: i <= n;
-    }assert [i_eq_n]: i == n;
+    }
+  assert [i_eq_n]: i == n;
   return := i;
   };
 -/

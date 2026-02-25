@@ -91,7 +91,7 @@ spec {
   var i : int;
   sum := 0;
   i := 0;
-  if(i < n){
+  if (i < n) {
     first_iter_asserts: {
       assert [entry_invariant]: i <= n && i * (i - 1) div 2 == sum;
       assert [assert_measure_pos]: n - i >= 0;
@@ -114,7 +114,8 @@ spec {
       havoc i;
       }assume [not_guard]: !(i < n);
     assume [invariant]: i <= n && i * (i - 1) div 2 == sum;
-    }assert [sum_assert]: n * (n - 1) div 2 == sum;
+    }
+  assert [sum_assert]: n * (n - 1) div 2 == sum;
   return := sum;
   };
 -/

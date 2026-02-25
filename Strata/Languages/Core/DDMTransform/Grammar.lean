@@ -199,9 +199,9 @@ op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";\n";
 op assume (label : Option Label, c : bool) : Statement => "assume " label c ";\n";
 op assert (label : Option Label, c : bool) : Statement => "assert " label c ";\n";
 op cover (label : Option Label, c : bool) : Statement => "cover " label c ";\n";
-op if_statement (c : bool, t : Block, f : Else) : Statement => "if" "(" c ")" t:0 f:0;
+op if_statement (c : bool, t : Block, f : Else) : Statement => "if " "(" c ") " t:0 f:0 "\n";
 op else0 () : Else =>;
-op else1 (f : Block) : Else => "else" f:0;
+op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
 
 category Invariant;
@@ -210,10 +210,10 @@ op invariant (e : Expr) : Invariant => "invariant" e ";";
 category Invariants;
 op nilInvariants : Invariants => ;
 op consInvariants(e : Expr, is : Invariants) : Invariants =>
-  "invariant" e is;
+  "invariant " e "\n" is:0;
 
 op while_statement (c : bool, is : Invariants, body : Block) : Statement =>
-  "while" "(" c ")" is body;
+  "while " "(" c ")\n" is body "\n";
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " vs " := " f "(" expr ")" ";\n";
@@ -222,7 +222,7 @@ op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
 
 @[scope(c)]
 op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
-op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
+op block_statement (label : Ident, b : Block) : Statement => label ": " b:0 "\n";
 op goto_statement (label : Ident) : Statement => "goto " label ";\n";
 
 category SpecElt;
