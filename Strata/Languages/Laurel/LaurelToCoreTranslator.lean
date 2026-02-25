@@ -212,9 +212,9 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
 
-  | .Block _ _ => panic "block expression not yet implemented"
-  | .LocalVariable _ _ _ => panic "local variable expression not yet implemented"
-  | .Return _ => disallowed expr "return expression not yet implemented"
+  | .Block _ _ => panic "block expression not yet implemented (should be lowered in a separate pass)"
+  | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
+  | .Return _ => disallowed expr "return expression not yet implemented (should be lowered in a separate pass)"
 
   | .AsType target _ => panic "AsType expression not implemented"
   | .Assigned _ => panic "assigned expression not implemented"
