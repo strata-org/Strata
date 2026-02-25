@@ -286,7 +286,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _ δ σAO p.body σR δ' .normal →
+    @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _ δ σAO p.body σR δ' →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
@@ -298,11 +298,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     EvalCommand π φ δ σ (CmdExt.call lhs n args) σ'
 
 abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → Statement → CoreStore → CoreEval → Imperative.ExitStatus → Prop :=
+    CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
 abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → List Statement → CoreStore → CoreEval → Imperative.ExitStatus → Prop :=
+    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
@@ -347,9 +347,9 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     EvalCommandContract π δ σ (.call lhs n args) σ'
 
 abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → Statement → CoreStore → CoreEval → Imperative.ExitStatus → Prop :=
+    CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ)
 
 abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → List Statement → CoreStore → CoreEval → Imperative.ExitStatus → Prop :=
+    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ)

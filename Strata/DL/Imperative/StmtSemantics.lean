@@ -17,32 +17,7 @@ namespace Imperative
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
-/-- Exit status after evaluating a statement or block.
-- `normal`: execution continues normally
-- `exiting label`: an `exit label` was encountered and is propagating upward -/
-inductive ExitStatus where
-  | normal : ExitStatus
-  | exiting : Option String → ExitStatus
-  deriving Repr, BEq, Inhabited
-
-/-- Does the exit status match a block label? An `exit` with no label matches
-any block. An `exit l` matches a block labeled `l`. -/
-def ExitStatus.consumedBy : ExitStatus → String → ExitStatus
-  | .normal, _ => .normal
-  | .exiting .none, _ => .normal
-  | .exiting (.some l), blockLabel => if l == blockLabel then .normal else .exiting (.some l)
-
 mutual
-
-/-
-Intended properties of exit semantics:
-1. `exit` with no label exits the nearest enclosing block
-2. `exit l` exits the nearest enclosing block labeled `l`
-3. When an exit is active, remaining statements in a block are skipped
-4. A block consumes the exit if the label matches (or exit has no label)
-5. Exit does not modify the store or evaluator
-6. Non-exit statements produce `normal` exit status
--/
 
 /--
 An inductively-defined operational semantics that depends on
@@ -55,100 +30,84 @@ evaluation relation `EvalCmd`, and by `extendEval` which specifies how
 The expression evaluator `δ` is threaded as state to support `funcDecl`,
 which extends the evaluator with new function definitions. Commands do not
 modify the evaluator, only `funcDecl` statements do.
-
-Each evaluation also produces an `ExitStatus`:
-- `normal` means execution completed normally
-- `exiting label` means an exit statement was encountered
-
-The exit status propagates through blocks: when a statement produces
-`exiting`, the remaining statements in the block are skipped.
 -/
 inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   (extendEval : ExtendEval P)
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → Stmt P Cmd → SemanticStore P → SemanticEval P → ExitStatus → Prop where
+  SemanticEval P → SemanticStore P → Stmt P Cmd → SemanticStore P → SemanticEval P → Prop where
   | cmd_sem :
     EvalCmd δ σ c σ' →
+    -- We only require definedness on the statement level so that the requirement is fine-grained
+    -- For example, if we require definedness on a block, then we won't be able to evaluate
+    -- a block containing init x; havoc x, because it will require x to exist prior to the block
     isDefinedOver (HasVarsImp.modifiedVars) σ c →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (Stmt.cmd c) σ' δ .normal
+    EvalStmt P Cmd EvalCmd extendEval δ σ (Stmt.cmd c) σ' δ
 
   | block_sem :
-    EvalBlock P Cmd EvalCmd extendEval δ σ b σ' δ' e →
+    EvalBlock P Cmd EvalCmd extendEval δ σ b σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.block label b) σ' δ' (e.consumedBy label)
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.block _ b) σ' δ'
 
   | ite_true_sem :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd extendEval δ σ t σ' δ' exit →
+    EvalBlock P Cmd EvalCmd extendEval δ σ t σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ' exit
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ'
 
   | ite_false_sem :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd extendEval δ σ e σ' δ' exit →
+    EvalBlock P Cmd EvalCmd extendEval δ σ e σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ' exit
-
-  | exit_sem :
-    ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.exit label) σ δ (.exiting label)
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ'
 
   | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
     EvalStmt P Cmd EvalCmd extendEval δ σ (.funcDecl decl md) σ
-      (extendEval δ σ decl) .normal
+      (extendEval δ σ decl)
 
-/-- Block evaluation with exit propagation.
-When a statement produces an exit, remaining statements are skipped. -/
+  -- (TODO): Define semantics of `exit`.
+
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   (extendEval : ExtendEval P)
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-    SemanticEval P → SemanticStore P → List (Stmt P Cmd) → SemanticStore P → SemanticEval P → ExitStatus → Prop where
+    SemanticEval P → SemanticStore P → List (Stmt P Cmd) → SemanticStore P → SemanticEval P → Prop where
   | stmts_none_sem :
-    EvalBlock P _ _ _ δ σ [] σ δ .normal
+    EvalBlock P _ _ _ δ σ [] σ δ
   | stmts_some_sem :
-    EvalStmt P Cmd EvalCmd extendEval δ σ s σ' δ' .normal →
-    EvalBlock P Cmd EvalCmd extendEval δ' σ' ss σ'' δ'' e →
-    EvalBlock P Cmd EvalCmd extendEval δ σ (s :: ss) σ'' δ'' e
-  | stmts_exit_sem :
-    EvalStmt P Cmd EvalCmd extendEval δ σ s σ' δ' (.exiting label) →
-    ----
-    EvalBlock P Cmd EvalCmd extendEval δ σ (s :: ss) σ' δ' (.exiting label)
+    EvalStmt P Cmd EvalCmd extendEval δ σ s σ' δ' →
+    EvalBlock P Cmd EvalCmd extendEval δ' σ' ss σ'' δ'' →
+    EvalBlock P Cmd EvalCmd extendEval δ σ (s :: ss) σ'' δ''
 
 end
 
 theorem eval_stmts_singleton
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ [cmd] σ' δ' exit ↔
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ cmd σ' δ' exit := by
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ [cmd] σ' δ' ↔
+  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ cmd σ' δ' := by
   constructor <;> intro Heval
-  · cases Heval with
-    | stmts_some_sem Heval Hempty => cases Hempty; exact Heval
-    | stmts_exit_sem Heval => exact Heval
-  · match exit with
-    | .normal => exact EvalBlock.stmts_some_sem Heval EvalBlock.stmts_none_sem
-    | .exiting l => exact EvalBlock.stmts_exit_sem Heval
+  · cases Heval with | stmts_some_sem Heval Hempty =>
+      cases Hempty; exact Heval
+  · exact EvalBlock.stmts_some_sem Heval EvalBlock.stmts_none_sem
 
 theorem eval_stmts_concat
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ cmds1 σ' δ' .normal →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ' σ' cmds2 σ'' δ'' exit →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (cmds1 ++ cmds2) σ'' δ'' exit := by
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ cmds1 σ' δ' →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ' σ' cmds2 σ'' δ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (cmds1 ++ cmds2) σ'' δ'' := by
   intro Heval1 Heval2
   induction cmds1 generalizing cmds2 σ δ
   · simp only [List.nil_append]
     cases Heval1; exact Heval2
   · rename_i cmd cmds ind
-    cases Heval1 with
-    | stmts_some_sem Heval1 Hrest =>
-      apply EvalBlock.stmts_some_sem (by assumption)
-      apply ind (by assumption) (by assumption)
+    cases Heval1
+    apply EvalBlock.stmts_some_sem (by assumption)
+    apply ind (by assumption) (by assumption)
 
 theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   isDefined σ v →
@@ -166,7 +125,7 @@ theorem EvalBlockEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd
   { σ σ': SemanticStore P } { δ δ' : SemanticEval P }
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P Cmd EvalCmd extendEval δ σ ([]: (List (Stmt P Cmd))) σ' δ' exit → σ = σ' ∧ δ = δ' ∧ exit = .normal := by
+  EvalBlock P Cmd EvalCmd extendEval δ σ ([]: (List (Stmt P Cmd))) σ' δ' → σ = σ' ∧ δ = δ' := by
   intros H; cases H <;> simp
 
 mutual
@@ -175,7 +134,7 @@ theorem EvalStmtDefMonotone
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' exit →
+  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
   match s with
@@ -190,7 +149,7 @@ theorem EvalStmtDefMonotone
       apply EvalBlockDefMonotone <;> assumption
     | ite_false_sem Hsome Hwf Heval =>
       apply EvalBlockDefMonotone <;> assumption
-  | .exit _ _ => cases Heval; assumption
+  | .exit _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
 
@@ -199,7 +158,7 @@ theorem EvalBlockDefMonotone
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' exit →
+  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases ss with
@@ -208,13 +167,9 @@ theorem EvalBlockDefMonotone
     simp [← Heq.1]
     assumption
   | cons h t =>
-    cases Heval with
-    | stmts_some_sem Heval1 Heval2 =>
-      apply EvalBlockDefMonotone (σ:=_) (δ:=_)
-      apply EvalStmtDefMonotone <;> assumption
-      assumption
-    | stmts_exit_sem Heval1 =>
-      apply EvalStmtDefMonotone <;> assumption
+    cases Heval <;> try assumption
+    next σ1 δ1 Heval1 Heval2 =>
+    apply EvalBlockDefMonotone (σ:=σ1) (δ:=δ1)
+    apply EvalStmtDefMonotone <;> assumption
+    assumption
 end
-
-end Imperative
