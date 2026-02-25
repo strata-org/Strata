@@ -153,7 +153,11 @@ def testVerification (prog : Program) : IO Unit := do
         | some obl =>
           match B3.FromCore.exprFromCore obl.obligation with
           | .ok b3Stmt =>
-            let stmtLoc := formatExpressionLocation prog b3Stmt
+            -- Use statement source range from metadata if available, else expression location
+            let stmtLoc := match Imperative.getFileRange obl.metadata with
+              | some fr => formatSourceLocation (match prog.commands.toList with
+                  | [op] => op.ann.start | _ => { byteIdx := 0 }) fr.range
+              | none => formatExpressionLocation prog b3Stmt
             let stmtFormatted := formatExpressionOnly prog b3Stmt
             let stmtKind := if obl.property == .cover then "reach" else "check"
             IO.println s!"  {stmtLoc}: {stmtKind} {stmtFormatted}"
@@ -201,10 +205,10 @@ def testVerification (prog : Program) : IO Unit := do
 
 /--
 info: test_checks_are_not_learned: ✗ unknown
-  (0,119): check f(5) > 1
+  (0,113): check f(5) > 1
   └─ (0,119): could not prove f(5) > 1
 test_checks_are_not_learned: ✗ unknown
-  (0,136): check f(5) > 1
+  (0,130): check f(5) > 1
   └─ (0,136): could not prove f(5) > 1
 -/
 #guard_msgs in
@@ -231,7 +235,7 @@ procedure test() {
 
 /--
 info: test_fail: ✗ counterexample found
-  (0,58): check 5 == 5 && f(5) == 10
+  (0,52): check 5 == 5 && f(5) == 10
   └─ (0,58): could not prove 5 == 5
   └─ (0,68): could not prove f(5) == 10
 -/
@@ -282,7 +286,7 @@ procedure test_all_expressions() {
 -- Assertions are assumed so further checks pass
 /--
 info: test_assert_helps: ✗ unknown
-  (0,110): check f(5) > 1
+  (0,103): check f(5) > 1
   └─ (0,110): could not prove f(5) > 1
 test_assert_helps: ✓ verified
 -/
@@ -298,7 +302,7 @@ procedure test_assert_helps() {
 
 /--
 info: test_assert_with_trace: ✗ unknown
-  (0,145): check f(5) > 10
+  (0,138): check f(5) > 10
   └─ (0,145): could not prove f(5) > 10
 -/
 #guard_msgs in
@@ -317,7 +321,7 @@ procedure test_assert_with_trace() {
 
 /--
 info: test_reach_bad: ✗ counterexample found
-  (0,106): reach f(5) < 0
+  (0,100): reach f(5) < 0
   └─ (0,106): it is impossible that f(5) < 0
 -/
 #guard_msgs in
@@ -331,7 +335,7 @@ procedure test_reach_bad() {
 
 /--
 info: test_reach_good: ✗ unknown
-  (0,107): reach f(5) > 5
+  (0,101): reach f(5) > 5
   └─ (0,107): could not prove f(5) > 5
 -/
 #guard_msgs in
@@ -345,7 +349,7 @@ procedure test_reach_good() {
 
 /--
 info: test_reach_with_trace: ✗ counterexample found
-  (0,143): reach f(5) < 0
+  (0,137): reach f(5) < 0
   └─ (0,143): it is impossible that f(5) < 0
 -/
 #guard_msgs in
@@ -364,7 +368,7 @@ procedure test_reach_with_trace() {
 
 /--
 info: test_reach_diagnosis: ✗ counterexample found
-  (0,112): reach f(5) > 5 && f(5) < 0
+  (0,106): reach f(5) > 5 && f(5) < 0
   └─ (0,112): could not prove f(5) > 5
   └─ (0,124): it is impossible that f(5) < 0
 -/

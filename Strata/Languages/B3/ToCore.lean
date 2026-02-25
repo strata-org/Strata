@@ -187,19 +187,25 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
 
 /-- Convert a B3 statement to a list of Core statements. -/
 partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → String → ConvResult (List Core.Statement)
-  | .check _ expr, procName =>
+  | .check sr expr, procName =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.assert procName exprResult.value], errors := exprResult.errors }
-  | .assert _ expr, procName =>
+    let md : Imperative.MetaData Core.Expression :=
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
+    { value := [Core.Statement.assert procName exprResult.value md], errors := exprResult.errors }
+  | .assert sr expr, procName =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.assert procName exprResult.value,
+    let md : Imperative.MetaData Core.Expression :=
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
+    { value := [Core.Statement.assert procName exprResult.value md,
                 Core.Statement.assume "assert-assume" exprResult.value], errors := exprResult.errors }
   | .assume _ expr, _ =>
     let exprResult := convertExpr ctx expr
     { value := [Core.Statement.assume "assume" exprResult.value], errors := exprResult.errors }
-  | .reach _ expr, procName =>
+  | .reach sr expr, procName =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.cover procName exprResult.value], errors := exprResult.errors }
+    let md : Imperative.MetaData Core.Expression :=
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
+    { value := [Core.Statement.cover procName exprResult.value md], errors := exprResult.errors }
   | .blockStmt _ stmts, procName =>
     let results := stmts.val.toList.map (convertStmt ctx · procName)
     { value := [Imperative.Stmt.block "block" (results.flatMap (·.value))],

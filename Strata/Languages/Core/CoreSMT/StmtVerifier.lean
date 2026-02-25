@@ -45,11 +45,12 @@ private def translateTypeSafe (E : Core.Env) (ty : Core.Expression.Ty)
 /-- Proof check: check-sat of negation using check-sat-assuming -/
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
+    (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
+    : IO (Core.VCResult × Core.SMT.Context) := do
   match translateExprSafe E expr smtCtx with
   | .error msg =>
     let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .assert, assumptions := [], obligation := expr, metadata := .empty
+      label, property := .assert, assumptions := [], obligation := expr, metadata := md
     }
     return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
@@ -60,7 +61,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
       | SMT.Decision.sat     => Core.Outcome.fail
       | SMT.Decision.unknown => Core.Outcome.unknown
     let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .assert, assumptions := [], obligation := expr, metadata := .empty
+      label, property := .assert, assumptions := [], obligation := expr, metadata := md
     }
     let smtResult := match decision with
       | SMT.Decision.unsat => SMT.Result.unsat
@@ -81,11 +82,12 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
 /-- Cover check: check-sat of expression using check-sat-assuming -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) : IO (Core.VCResult × Core.SMT.Context) := do
+    (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
+    : IO (Core.VCResult × Core.SMT.Context) := do
   match translateExprSafe E expr smtCtx with
   | .error msg =>
     let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .cover, assumptions := [], obligation := expr, metadata := .empty
+      label, property := .cover, assumptions := [], obligation := expr, metadata := md
     }
     return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
@@ -96,7 +98,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
       | SMT.Decision.unsat   => Core.Outcome.fail      -- Unreachable
       | SMT.Decision.unknown => Core.Outcome.unknown
     let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .cover, assumptions := [], obligation := expr, metadata := .empty
+      label, property := .cover, assumptions := [], obligation := expr, metadata := md
     }
     let smtResult := match decision with
       | SMT.Decision.sat => SMT.Result.unknown
@@ -180,12 +182,12 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let state := state.addItem (.varDecl name.name smtTy)
       return (state, smtCtx, [])
 
-  | Core.Statement.assert label expr _ =>
-    let (result, smtCtx) ← proveCheck state E label expr smtCtx
+  | Core.Statement.assert label expr md =>
+    let (result, smtCtx) ← proveCheck state E label expr smtCtx md
     return (state, smtCtx, [result])
 
-  | Core.Statement.cover label expr _ =>
-    let (result, smtCtx) ← coverCheck state E label expr smtCtx
+  | Core.Statement.cover label expr md =>
+    let (result, smtCtx) ← coverCheck state E label expr smtCtx md
     return (state, smtCtx, [result])
 
   | .block _label stmts _ =>
