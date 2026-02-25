@@ -193,20 +193,19 @@ def testVerification (prog : Program) : IO Unit := do
 -- Example from Verifier.lean Documentation
 ---------------------------------------------------------------------
 
--- /--
--- info: Statement: check 8 == 8 && f(5) == 7
--- ✗ Unknown
---   Path condition:
---     forall x : int pattern f(x) f(x) == x + 1
---   Found 1 diagnosed failures
--- Failing expression: f(5) == 7
--- ✗ Refuted (proved false/unreachable)
---   Path condition:
---     8 == 8
---     forall x : int pattern f(x) f(x) == x + 1
--- -/
--- #guard_msgs in
--- #eval exampleVerification
+/--
+info: test: ✗ counterexample found
+  (0,61): check 8 == 8 && f(5) == 7
+  └─ (0,67): could not prove 8 == 8
+  └─ (0,77): it is impossible that f(5) == 7
+-/
+#guard_msgs in
+#eval testVerification $ #strata program B3CST;
+  function f(x : int) : int { x + 1 }
+  procedure test() {
+    check 8 == 8 && f(5) == 7
+  }
+#end
 
 ---------------------------------------------------------------------
 -- Check Statement Tests
