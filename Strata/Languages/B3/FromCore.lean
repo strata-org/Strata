@@ -75,6 +75,15 @@ partial def convertApp (sr : SourceRange) (fn arg : Core.Expression.Expr) : Exce
     if opName == "Bool.Not" then Except.ok (.unaryOp sr (.not sr) argB3)
     else if opName == "Int.Neg" then Except.ok (.unaryOp sr (.neg sr) argB3)
     else Except.error (.unsupportedCoreExpr s!"unary operator {opName}")
+  | Lambda.LExpr.fvar _ name _ =>
+    -- Function call: f(arg)
+    (exprFromCore arg).bind fun argB3 =>
+    Except.ok (.functionCall sr ⟨sr, name.name⟩ ⟨sr, #[argB3]⟩)
+  | Lambda.LExpr.app _ (Lambda.LExpr.fvar _ name _) firstArg =>
+    -- Multi-arg function call: f(arg1, arg2, ...)
+    (exprFromCore firstArg).bind fun firstB3 =>
+    (exprFromCore arg).bind fun argB3 =>
+    Except.ok (.functionCall sr ⟨sr, name.name⟩ ⟨sr, #[firstB3, argB3]⟩)
   | _ => Except.error (.unsupportedCoreExpr "unsupported function application")
 
 /-- Convert Core expression to B3 expression, preserving source locations from Core metadata -/
@@ -98,6 +107,16 @@ partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3
     (exprFromCore thn).bind fun thnB3 =>
     (exprFromCore els).bind fun elsB3 =>
     Except.ok (.ite sr condB3 thnB3 elsB3)
+  | Lambda.LExpr.fvar _ name _ =>
+    -- Free variable reference - represent as 0-arg function call
+    Except.ok (.functionCall sr ⟨sr, name.name⟩ ⟨sr, #[]⟩)
+  | Lambda.LExpr.eq _ lhs rhs =>
+    (exprFromCore lhs).bind fun lhsB3 =>
+    (exprFromCore rhs).bind fun rhsB3 =>
+    Except.ok (.binaryOp sr (.eq sr) lhsB3 rhsB3)
+  | Lambda.LExpr.quant _ kind vars _trigger body =>
+    (exprFromCore body).bind fun bodyB3 =>
+    Except.error (.unsupportedCoreExpr "quantifier conversion not yet implemented")
   | _ => Except.error (.unsupportedCoreExpr "unsupported expression")
 
 end
