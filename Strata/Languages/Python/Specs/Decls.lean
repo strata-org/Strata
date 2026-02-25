@@ -17,7 +17,7 @@ For example, `typing.List` has module "typing" and name "List".
 structure PythonIdent where
   pythonModule : String
   name : String
-  deriving DecidableEq, Hashable, Ord, Repr
+  deriving DecidableEq, Hashable, Inhabited, Ord, Repr
 
 namespace PythonIdent
 
@@ -53,6 +53,9 @@ def typingOverload := mk "typing" "overload"
 def typingSequence := mk "typing" "Sequence"
 def typingTypedDict := mk "typing" "TypedDict"
 def typingUnion := mk "typing" "Union"
+def typingRequired := mk "typing" "Required"
+def typingNotRequired := mk "typing" "NotRequired"
+def typingUnpack := mk "typing" "Unpack"
 
 end PythonIdent
 
@@ -98,12 +101,12 @@ inductive SpecAtomType where
 /-
 A typed dictionary with an array of fields and their types.  The arrays
 must be of the same length.
-If the `isTotal` flag is set, then all fields are required, and if not the
-fields are optional.
+The `fieldRequired` array is parallel to `fields`/`fieldTypes`.
+`true` = Required, `false` = NotRequired.
 -/
 | typedDict (fields : Array String)
             (fieldTypes : Array SpecType)
-            (isTotal : Bool)
+            (fieldRequired : Array Bool)
 deriving Inhabited, Repr
 
 /--
