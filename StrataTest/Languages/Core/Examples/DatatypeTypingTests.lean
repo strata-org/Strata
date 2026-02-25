@@ -29,10 +29,10 @@ datatype Bad () { MkBad(f: Bad -> int) };
 #end
 
 /--
-info: error: (611-652) Error in constructor MkBad: Non-strictly positive occurrence of Bad in type (arrow Bad int)
+info: error: Error in constructor MkBad: Non-strictly positive occurrence of Bad in type (arrow Bad int)
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonPositiveDirectPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonPositiveDirectPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 2: Non-Strictly Positive (nested under two arrows)
@@ -46,10 +46,10 @@ datatype Bad (a : Type) { Base(), C(x: (Bad a -> int) -> int) };
 #end
 
 /--
-info: error: (1166-1230) Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (arrow (Bad a) int) int)
+info: error: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (arrow (Bad a) int) int)
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonPositiveNestedPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonPositiveNestedPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 3: Non-Strictly Positive (not in outermost arrow)
@@ -63,10 +63,10 @@ datatype Bad (a : Type) { Base(), C(x: int -> (Bad a -> int)) };
 #end
 
 /--
-info: error: (1756-1820) Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (Bad a) int)
+info: error: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (Bad a) int)
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonPositiveInnerPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonPositiveInnerPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 4: Strictly Positive (should pass)
@@ -97,10 +97,10 @@ datatype Nonunif (a : Type) { Base(), C(x: int -> Nonunif (List a)) };
 #end
 
 /--
-info: error: (2816-2886) Error in constructor C: Non-uniform occurrence of Nonunif, which is applied to [(List a)] when it should be applied to [a]
+info: error: Error in constructor C: Non-uniform occurrence of Nonunif, which is applied to [(List a)] when it should be applied to [a]
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonUniformPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nonUniformPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 6: Nested Datatype
@@ -116,10 +116,10 @@ datatype Nest (a : Type) { Base(), MkNest(xs: List (Nest a)) };
 #end
 
 /--
-info: error: (3453-3516) Error in constructor MkNest: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata Core.
+info: error: Error in constructor MkNest: Datatype Nest appears nested inside (List (Nest a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedDatatypePgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedDatatypePgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 7: Type Depending on Previously Defined Type
@@ -145,7 +145,7 @@ datatype Wrapper {
   (MkWrapper(xs : (List int)))
 }; -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram previouslyDefinedTypePgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram previouslyDefinedTypePgm) |>.fst).stripMetaData
 ---------------------------------------------------------------------
 -- Test 8: Nested Datatype with Map
 ---------------------------------------------------------------------
@@ -158,10 +158,10 @@ datatype Nest2 (a : Type) { Base(), MkNest2(xs: Map int (Nest2 a)) };
 #end
 
 /--
-info: error: (4737-4806) Error in constructor MkNest2: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
+info: error: Error in constructor MkNest2: Datatype Nest2 appears nested inside (Map int (Nest2 a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedMapPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram nestedMapPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 9: Mutually Recursive Nesting
@@ -182,10 +182,10 @@ end;
 #end
 
 /--
-info: error: (5465-5602) Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
+info: error: Error in constructor MkA: Datatype MutNestB appears nested inside (List (MutNestB a)). Nested datatypes are not supported in Strata Core.
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNestedPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNestedPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 10: Constructor Name Clashes with Built-in Function
@@ -199,12 +199,12 @@ datatype Bad () { select(x: int) };
 #end
 
 /--
-info: error: (6154-6189) A function of name select already exists! Redefinitions are not allowed.
+info: error: A function of name select already exists! Redefinitions are not allowed.
 Existing Function: func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 New Function:func select :  ((x : int)) → Bad;
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram constrClashPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram constrClashPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 11: Non-Strictly Positive in Mutual Block
@@ -223,10 +223,10 @@ end;
 #end
 
 /--
-info: error: (6835-6939) Error in constructor MkA: Non-strictly positive occurrence of BadB in type (arrow BadB int)
+info: error: Error in constructor MkA: Non-strictly positive occurrence of BadB in type (arrow BadB int)
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNonPositivePgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualNonPositivePgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 12: Uninhabited Datatype
@@ -240,10 +240,10 @@ datatype Void () { MkVoid(x: Void) };
 #end
 
 /--
-info: error: (7423-7460) Error: datatype Void not inhabited
+info: error: Error: datatype Void not inhabited
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram uninhabitedPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram uninhabitedPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 13: Mutually Uninhabited Datatypes
@@ -262,10 +262,10 @@ end;
 #end
 
 /--
-info: error: (7935-8018) Error: datatype Bad1 not inhabited
+info: error: Error: datatype Bad1 not inhabited
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualUninhabitedPgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualUninhabitedPgm) |>.fst).stripMetaData
 
 ---------------------------------------------------------------------
 -- Test 14: Three-Way Mutual Uninhabited Cycle
@@ -286,9 +286,9 @@ end;
 #end
 
 /--
-info: error: (8524-8655) Error: datatype Cycle1 not inhabited
+info: error: Error: datatype Cycle1 not inhabited
 -/
 #guard_msgs in
-#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram threeWayCyclePgm) |>.fst)
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram threeWayCyclePgm) |>.fst).stripMetaData
 
 end Strata.DatatypeTypingTests
