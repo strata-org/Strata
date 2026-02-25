@@ -67,129 +67,139 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal" ||
   funcNames.contains name
 
+/-- State threaded through expression and statement translation -/
+structure TranslateState where
+  /-- Diagnostics accumulated during translation -/
+  diagnostics : List DiagnosticModel := []
+  /-- Constants known to the program (field constants, etc.) -/
+  constants : List Constant := []
+  /-- Names of procedures that are translated as Core functions -/
+  funcNames : FunctionNames := []
+
+/-- The translation monad: state over Id -/
+abbrev TranslateM := StateT TranslateState Id
+
+/-- Emit a diagnostic into the translation state -/
+def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
+  modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
+
+/-- Run a `TranslateM` action, returning the result and final state -/
+def runTranslateM (s : TranslateState) (m : TranslateM α) : α × TranslateState :=
+  m s
+
 /--
-Translate Laurel StmtExpr to Core Expression, also returning any diagnostics for disallowed
-constructs (assignments, loops, procedure calls) that are not valid in expression position.
+Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
+Diagnostics for disallowed constructs are emitted into the monad state.
 
 `isPureContext` should be `true` when translating function bodies or contract expressions.
-In that case, disallowed constructs emit `DiagnosticModel`
-errors. When `false` (inside a procedure body statement), disallowed constructs `panic!`
+In that case, disallowed constructs emit `DiagnosticModel` errors into the state.
+When `false` (inside a procedure body statement), disallowed constructs `panic!`
 because `liftImperativeExpressions` should have already removed them.
 
 `boundVars` tracks names bound by enclosing Forall/Exists quantifiers (innermost first).
 When an Identifier matches a bound name at index `i`, it becomes `bvar i` (de Bruijn index)
 instead of `fvar`.
 -/
-def translateExpr (constants : List Constant) (funcNames : FunctionNames) (env : TypeEnv) (expr : StmtExprMd)
+def translateExpr (env : TypeEnv) (expr : StmtExprMd)
     (boundVars : List Identifier := []) (isPureContext : Bool := false)
-    : Core.Expression.Expr × List DiagnosticModel :=
+    : TranslateM Core.Expression.Expr := do
+  let s ← get
+  let constants := s.constants
+  let funcNames := s.funcNames
   -- Dummy expression used as placeholder when an error is emitted in pure context
   let dummy := .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
-  let disallowed (e : StmtExprMd) (msg : String) : Core.Expression.Expr × List DiagnosticModel :=
+  let disallowed (e : StmtExprMd) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
-      (dummy, [e.md.toDiagnostic msg])
+      emitDiagnostic (e.md.toDiagnostic msg)
+      return dummy
     else
       panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format e)}"
-  -- Helper: combine diagnostics from two translated sub-expressions
-  let combine2 (r1 r2 : Core.Expression.Expr × List DiagnosticModel)
-      (f : Core.Expression.Expr → Core.Expression.Expr → Core.Expression.Expr)
-      : Core.Expression.Expr × List DiagnosticModel :=
-    (f r1.1 r2.1, r1.2 ++ r2.2)
   match h: expr.val with
-  | .LiteralBool b => (.const () (.boolConst b), [])
-  | .LiteralInt i => (.const () (.intConst i), [])
-  | .LiteralString s => (.const () (.strConst s), [])
+  | .LiteralBool b => return .const () (.boolConst b)
+  | .LiteralInt i => return .const () (.intConst i)
+  | .LiteralString s => return .const () (.strConst s)
   | .Identifier name =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
       | some idx =>
           -- Bound variable: use de Bruijn index
-          (.bvar () idx, [])
+          return .bvar () idx
       | none =>
           -- Check if this is a constant (field constant) or local variable
           if isConstant constants name then
-            let ident := Core.CoreIdent.unres name
-            (.op () ident none, [])
+            return .op () (Core.CoreIdent.unres name) none
           else
-            let ident := Core.CoreIdent.locl name
-            (.fvar () ident (some (lookupType env name)), [])
+            return .fvar () (Core.CoreIdent.locl name) (some (lookupType env name))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
-      let (re, ds) := translateExpr constants funcNames env e boundVars isPureContext
-      (.app () boolNotOp re, ds)
+      let re ← translateExpr env e boundVars isPureContext
+      return .app () boolNotOp re
     | .Neg =>
-      let (re, ds) := translateExpr constants funcNames env e boundVars isPureContext
-      (.app () intNegOp re, ds)
+      let re ← translateExpr env e boundVars isPureContext
+      return .app () intNegOp re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
-    let (re1, ds1) := translateExpr constants funcNames env e1 boundVars isPureContext
-    let (re2, ds2) := translateExpr constants funcNames env e2 boundVars isPureContext
-    let ds := ds1 ++ ds2
-    let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr × List DiagnosticModel :=
-      (LExpr.mkApp () bop [re1, re2], ds)
+    let re1 ← translateExpr env e1 boundVars isPureContext
+    let re2 ← translateExpr env e2 boundVars isPureContext
+    let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
+      LExpr.mkApp () bop [re1, re2]
     match op with
-    | .Eq => (.eq () re1 re2, ds)
-    | .Neq => (.app () boolNotOp (.eq () re1 re2), ds)
-    | .And => binOp boolAndOp
-    | .Or => binOp boolOrOp
-    | .Implies => binOp boolImpliesOp
-    | .Add => binOp intAddOp
-    | .Sub => binOp intSubOp
-    | .Mul => binOp intMulOp
-    | .Div => binOp intDivOp
-    | .Mod => binOp intModOp
-    | .DivT => binOp intDivTOp
-    | .ModT => binOp intModTOp
-    | .Lt => binOp intLtOp
-    | .Leq => binOp intLeOp
-    | .Gt => binOp intGtOp
-    | .Geq => binOp intGeOp
+    | .Eq => return .eq () re1 re2
+    | .Neq => return .app () boolNotOp (.eq () re1 re2)
+    | .And => return binOp boolAndOp
+    | .Or => return binOp boolOrOp
+    | .Implies => return binOp boolImpliesOp
+    | .Add => return binOp intAddOp
+    | .Sub => return binOp intSubOp
+    | .Mul => return binOp intMulOp
+    | .Div => return binOp intDivOp
+    | .Mod => return binOp intModOp
+    | .DivT => return binOp intDivTOp
+    | .ModT => return binOp intModTOp
+    | .Lt => return binOp intLtOp
+    | .Leq => return binOp intLeOp
+    | .Gt => return binOp intGtOp
+    | .Geq => return binOp intGeOp
     | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
     panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
   | .IfThenElse cond thenBranch elseBranch =>
-      let (bcond, ds0) := translateExpr constants funcNames env cond boundVars isPureContext
-      let (bthen, ds1) := translateExpr constants funcNames env thenBranch boundVars isPureContext
-      let (belse, ds2) : Core.Expression.Expr × List DiagnosticModel :=
-        match elseBranch with
+      let bcond ← translateExpr env cond boundVars isPureContext
+      let bthen ← translateExpr env thenBranch boundVars isPureContext
+      let belse ← match elseBranch with
         | none => panic "if-then without else expression not yet implemented"
         | some e =>
             have : sizeOf e < sizeOf expr := by
               have := WithMetadata.sizeOf_val_lt expr
               cases expr; simp_all; omega
-            translateExpr constants funcNames env e boundVars isPureContext
-      (.ite () bcond bthen belse, ds0 ++ ds1 ++ ds2)
+            translateExpr env e boundVars isPureContext
+      return .ite () bcond bthen belse
   | .StaticCall name args =>
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && !isCoreFunction funcNames name then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
-        let ident := Core.CoreIdent.unres name
-        let fnOp := .op () ident none
-        let (result, ds) := args.attach.foldl (fun (acc, accDs) ⟨arg, _⟩ =>
-          let (re, ds) := translateExpr constants funcNames env arg boundVars isPureContext
-          (.app () acc re, accDs ++ ds)) (fnOp, [])
-        (result, ds)
-  | .Block [single] _ => translateExpr constants funcNames env single boundVars isPureContext
-  | .Block _ _ => panic "block expression not yet implemented"
-  | .LocalVariable _ _ _ => panic "local variable expression not yet implemented"
-  | .Return _ => disallowed expr "return expression not yet implemented"
+        let fnOp : Core.Expression.Expr := .op () (Core.CoreIdent.unres name) none
+        args.attach.foldlM (fun acc ⟨arg, _⟩ => do
+          let re ← translateExpr env arg boundVars isPureContext
+          return .app () acc re) fnOp
+  | .Block [single] _ => translateExpr env single boundVars isPureContext
 
   | .Forall name ty body =>
       let coreTy := translateType ty
-      let (coreBody, ds) := translateExpr constants funcNames env body (name :: boundVars) isPureContext
-      (LExpr.all () (some coreTy) coreBody, ds)
+      let coreBody ← translateExpr env body (name :: boundVars) isPureContext
+      return LExpr.all () (some coreTy) coreBody
   | .Exists name ty body =>
       let coreTy := translateType ty
-      let (coreBody, ds) := translateExpr constants funcNames env body (name :: boundVars) isPureContext
-      (LExpr.exist () (some coreTy) coreBody, ds)
-  | .Hole => (dummy, [])
+      let coreBody ← translateExpr env body (name :: boundVars) isPureContext
+      return LExpr.exist () (some coreTy) coreBody
+  | .Hole => return dummy
   | .ReferenceEquals e1 e2 =>
-      combine2 (translateExpr constants funcNames env e1 boundVars isPureContext)
-               (translateExpr constants funcNames env e2 boundVars isPureContext)
-               (fun l r => .eq () l r)
+      let re1 ← translateExpr env e1 boundVars isPureContext
+      let re2 ← translateExpr env e2 boundVars isPureContext
+      return .eq () re1 re2
   | .Assign _ _ =>
       disallowed expr "destructive assignments are not supported in functions or contracts"
   | .While _ _ _ _ =>
@@ -201,6 +211,10 @@ def translateExpr (constants : List Constant) (funcNames : FunctionNames) (env :
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
+
+  | .Block _ _ => panic "block expression not yet implemented"
+  | .LocalVariable _ _ _ => panic "local variable expression not yet implemented"
+  | .Return _ => disallowed expr "return expression not yet implemented"
 
   | .AsType target _ => panic "AsType expression not implemented"
   | .Assigned _ => panic "assigned expression not implemented"
@@ -237,25 +251,27 @@ def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
     .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
 
 /--
-Translate Laurel StmtExpr to Core Statements
-Takes the constants list, type environment, output parameter names, and set of function names
+Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
+Diagnostics are emitted into the monad state.
 -/
-def translateStmt (constants : List Constant) (functionNames : FunctionNames) (env : TypeEnv)
-  (outputParams : List Parameter) (stmt : StmtExprMd) : TypeEnv × List Core.Statement :=
+def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtExprMd)
+    : TranslateM (TypeEnv × List Core.Statement) := do
+  let s ← get
+  let functionNames := s.funcNames
   let md := stmt.md
-  match h : stmt.val with
+  match _h : stmt.val with
   | @StmtExpr.Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
-      let (coreExpr, _) := translateExpr constants functionNames env cond [] (isPureContext := true)
-      (env, [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md])
+      let coreExpr ← translateExpr env cond [] (isPureContext := true)
+      return (env, [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md])
   | @StmtExpr.Assume cond =>
-      let (coreExpr, _) := translateExpr constants functionNames env cond [] (isPureContext := true)
-      (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md])
+      let coreExpr ← translateExpr env cond [] (isPureContext := true)
+      return (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md])
   | .Block stmts _ =>
-      let (env', stmtsList) := stmts.attach.foldl (fun (e, acc) ⟨s, _hs⟩ =>
-        let (e', ss) := translateStmt constants functionNames e outputParams s
-        (e', acc ++ ss)) (env, [])
-      (env', stmtsList)
+      let (env', stmtsList) ← stmts.attach.foldlM (fun (e, acc) ⟨s, _hs⟩ => do
+        let (e', ss) ← translateStmt e outputParams s
+        return (e', acc ++ ss)) (env, [])
+      return (env', stmtsList)
   | .LocalVariable name ty initializer =>
       let env' := (name, ty) :: env
       let boogieMonoType := translateType ty
@@ -266,21 +282,21 @@ def translateStmt (constants : List Constant) (functionNames : FunctionNames) (e
           -- Check if this is a function or a procedure call
           if isCoreFunction functionNames callee then
             -- Translate as expression (function application)
-            let (boogieExpr, _) := translateExpr constants functionNames env (⟨ .StaticCall callee args, callMd ⟩)
-            (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
+            let boogieExpr ← translateExpr env (⟨ .StaticCall callee args, callMd ⟩)
+            return (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
           else
             -- Translate as: var name; call name := callee(args)
-            let coreArgs := args.map (fun a => (translateExpr constants functionNames env a).1)
+            let coreArgs ← args.mapM (fun a => translateExpr env a)
             let defaultExpr := defaultExprForType ty
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
             let callStmt := Core.Statement.call [ident] callee coreArgs
-            (env', [initStmt, callStmt])
+            return (env', [initStmt, callStmt])
       | some initExpr =>
-          let (coreExpr, _) := translateExpr constants functionNames env initExpr
-          (env', [Core.Statement.init ident boogieType (some coreExpr)])
+          let coreExpr ← translateExpr env initExpr
+          return (env', [Core.Statement.init ident boogieType (some coreExpr)])
       | none =>
           let defaultExpr := defaultExprForType ty
-          (env', [Core.Statement.init ident boogieType (some defaultExpr)])
+          return (env', [Core.Statement.init ident boogieType (some defaultExpr)])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -290,68 +306,68 @@ def translateStmt (constants : List Constant) (functionNames : FunctionNames) (e
           | .StaticCall callee args =>
               if isCoreFunction functionNames callee then
                 -- Functions are translated as expressions
-                let (boogieExpr, _) := translateExpr constants functionNames env value
-                (env, [Core.Statement.set ident boogieExpr])
+                let boogieExpr ← translateExpr env value
+                return (env, [Core.Statement.set ident boogieExpr])
               else
                 -- Procedure calls need to be translated as call statements
-                let coreArgs := args.map (fun a => (translateExpr constants functionNames env a).1)
-                (env, [Core.Statement.call [ident] callee coreArgs])
+                let coreArgs ← args.mapM (fun a => translateExpr env a)
+                return (env, [Core.Statement.call [ident] callee coreArgs])
           | _ =>
-              let (boogieExpr, _) := translateExpr constants functionNames env value
-              (env, [Core.Statement.set ident boogieExpr])
+              let boogieExpr ← translateExpr env value
+              return (env, [Core.Statement.set ident boogieExpr])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
           match value.val with
           | .StaticCall callee args =>
-              let coreArgs := args.map (fun a => (translateExpr constants functionNames env a).1)
+              let coreArgs ← args.mapM (fun a => translateExpr env a)
               let lhsIdents := targets.filterMap fun t =>
                 match t.val with
                 | .Identifier name => some (Core.CoreIdent.locl name)
                 | _ => none
-              (env, [Core.Statement.call lhsIdents callee coreArgs value.md])
+              return (env, [Core.Statement.call lhsIdents callee coreArgs value.md])
           | _ =>
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
-      let (bcond, _) := translateExpr constants functionNames env cond
-      let (_, bthen) := translateStmt constants functionNames env outputParams thenBranch
-      let belse := match elseBranch with
-                  | some e => (translateStmt constants functionNames env outputParams e).2
-                  | none => []
-      (env, [Imperative.Stmt.ite bcond bthen belse .empty])
+      let bcond ← translateExpr env cond
+      let (_, bthen) ← translateStmt env outputParams thenBranch
+      let belse ← match elseBranch with
+                  | some e => (·.2) <$> translateStmt env outputParams e
+                  | none => pure []
+      return (env, [Imperative.Stmt.ite bcond bthen belse .empty])
   | .StaticCall name args =>
       -- Check if this is a function or procedure
       if isCoreFunction functionNames name then
         -- Functions as statements have no effect (shouldn't happen in well-formed programs)
-        (env, [])
+        return (env, [])
       else
-        let boogieArgs := args.map (fun a => (translateExpr constants functionNames env a).1)
-        (env, [Core.Statement.call [] name boogieArgs])
+        let boogieArgs ← args.mapM (fun a => translateExpr env a)
+        return (env, [Core.Statement.call [] name boogieArgs])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           let ident := Core.CoreIdent.locl outParam.name
-          let (coreExpr, _) := translateExpr constants functionNames env value
+          let coreExpr ← translateExpr env value
           let assignStmt := Core.Statement.set ident coreExpr
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          (env, [assignStmt, noFallThrough])
+          return (env, [assignStmt, noFallThrough])
       | none, _ =>
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          (env, [noFallThrough])
+          return (env, [noFallThrough])
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
-      let (condExpr, _) := translateExpr constants functionNames env cond
+      let condExpr ← translateExpr env cond
       -- Combine multiple invariants with && for Core (which expects single invariant)
-      let translatedInvariants := invariants.map (fun inv => (translateExpr constants functionNames env inv).1)
+      let translatedInvariants ← invariants.mapM (fun inv => translateExpr env inv)
       let invExpr := match translatedInvariants with
         | [] => none
         | [single] => some single
         | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
-      let decreasingExprCore := decreasesExpr.map (fun d => (translateExpr constants functionNames env d).1)
-      let (_, bodyStmts) := translateStmt constants functionNames env outputParams body
-      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
-  | _ => (env, [])
+      let decreasingExprCore ← decreasesExpr.mapM (fun d => translateExpr env d)
+      let (_, bodyStmts) ← translateStmt env outputParams body
+      return (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
+  | _ => return (env, [])
   termination_by sizeOf stmt
   decreasing_by
     all_goals
@@ -367,16 +383,16 @@ def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :
   (ident, ty)
 
 /--
-Translate Laurel Procedure to Core Procedure, also returning any diagnostics from
-disallowed constructs in preconditions or postconditions.
+Translate Laurel Procedure to Core Procedure using `TranslateM`.
+Diagnostics from disallowed constructs in preconditions, postconditions, and body
+are emitted into the monad state.
 -/
-def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (proc : Procedure)
-    : Core.Procedure × List DiagnosticModel :=
+def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
+  let s ← get
+  let constants := s.constants
   let inputPairs := proc.inputs.map translateParameterToCore
   let inputs := inputPairs
-
   let outputs := proc.outputs.map translateParameterToCore
-
   let header : Core.Procedure.Header := {
     name := proc.name
     typeArgs := []
@@ -387,40 +403,31 @@ def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (
                            proc.outputs.map (fun p => (p.name, p.type)) ++
                            constants.map (fun c => (c.name, c.type))
   -- Translate precondition if it's not just LiteralBool true
-  let (preconditions, precondDiags) : ListMap Core.CoreLabel Core.Procedure.Check × List DiagnosticModel :=
+  let preconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.precondition with
-    | ⟨ .LiteralBool true, _ ⟩ => ([], [])
+    | ⟨ .LiteralBool true, _ ⟩ => pure []
     | precond =>
-        let (e, ds) := translateExpr constants funcNames initEnv precond [] (isPureContext := true)
+        let e ← translateExpr initEnv precond [] (isPureContext := true)
         let check : Core.Procedure.Check := { expr := e, md := precond.md }
-        ([("requires", check)], ds)
+        pure [("requires", check)]
   -- Translate postconditions for Opaque bodies
-  let (postconditions, postcondDiags) : ListMap Core.CoreLabel Core.Procedure.Check × List DiagnosticModel :=
+  let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ =>
-        let (_, result, diags) := postconds.foldl (fun (i, acc, accDs) postcond =>
+        postconds.mapIdxM (fun i postcond => do
           let label := if postconds.length == 1 then "postcondition" else s!"postcondition_{i}"
-          let (e, ds) := translateExpr constants funcNames initEnv postcond [] (isPureContext := true)
+          let e ← translateExpr initEnv postcond [] (isPureContext := true)
           let check : Core.Procedure.Check := { expr := e, md := postcond.md }
-          (i + 1, acc ++ [(label, check)], accDs ++ ds)) (0, [], [])
-        (result, diags)
-    | _ => ([], [])
+          pure (label, check))
+    | _ => pure []
   let modifies : List Core.Expression.Ident := []
-  let body : List Core.Statement :=
+  let body : List Core.Statement ←
     match proc.body with
-    | .Transparent bodyExpr => (translateStmt constants funcNames initEnv proc.outputs bodyExpr).2
-    | .Opaque _postconds (some impl) _ => (translateStmt constants funcNames initEnv proc.outputs impl).2
-    | _ => [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
-  let spec : Core.Procedure.Spec := {
-    modifies,
-    preconditions,
-    postconditions,
-  }
-  ({
-    header := header
-    spec := spec
-    body := body
-  }, precondDiags ++ postcondDiags)
+    | .Transparent bodyExpr => (·.2) <$> translateStmt initEnv proc.outputs bodyExpr
+    | .Opaque _postconds (some impl) _ => (·.2) <$> translateStmt initEnv proc.outputs impl
+    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+  let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
+  return { header, spec, body }
 
 def translateConstant (c : Constant) : Core.Decl :=
   match c.type.val with
@@ -477,41 +484,38 @@ private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
   | _ => false
 
 /--
-Translate a Laurel Procedure to a Core Function (when applicable), also returning any
-diagnostics emitted for disallowed constructs in the function body.
+Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
+Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
-def translateProcedureToFunction (constants : List Constant) (funcNames : FunctionNames) (proc : Procedure)
-    : Core.Decl × List DiagnosticModel :=
+def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
   let inputs := proc.inputs.map translateParameterToCore
   let outputTy := match proc.outputs.head? with
     | some p => translateType p.type
     | none => LMonoTy.int
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type))
-  let (body, bodyDiags) := match proc.body with
-    | .Transparent bodyExpr =>
-      let (e, ds) := translateExpr constants funcNames initEnv bodyExpr [] (isPureContext := true)
-      (some e, ds)
-    | _ => (none, [])
-  (.func {
+  let body ← match proc.body with
+    | .Transparent bodyExpr => some <$> translateExpr initEnv bodyExpr [] (isPureContext := true)
+    | _ => pure none
+  return .func {
     name := Core.CoreIdent.unres proc.name
     typeArgs := []
     inputs := inputs
     output := outputTy
     body := body
-  }, bodyDiags)
+  }
 
 /--
 Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
 Returns `.error` with diagnostics if the procedure body contains disallowed constructs
 (destructive assignments, loops, or procedure calls).
 -/
-def tryTranslatePureToFunction (constants : List Constant) (funcNames : FunctionNames) (proc : Procedure)
+def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
     : Except (Array DiagnosticModel) Core.Decl :=
-  let (decl, diags) := translateProcedureToFunction constants funcNames proc
-  if diags.isEmpty then
+  let (decl, finalState) := runTranslateM initState (translateProcedureToFunction proc)
+  if finalState.diagnostics.isEmpty then
     .ok decl
   else
-    .error diags.toArray
+    .error finalState.diagnostics.toArray
 
 /--
 Translate Laurel Program to Core Program
@@ -525,16 +529,18 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let program := liftImperativeExpressions program
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
-  -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
+  -- Build the shared initial state with constants and function names
   let funcNames : FunctionNames := markedPure.map (·.name)
+  let initState : TranslateState := { constants := program.constants, funcNames }
+  -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
   let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
-    match tryTranslatePureToFunction program.constants funcNames p with
+    match tryTranslatePureToFunction p initState with
     | .error es => (errs ++ es.toList, decls)
     | .ok d     => (errs, decls.push d)) ([], #[])
-  -- Translate procedures, collecting any diagnostics from preconditions/postconditions
-  let (procedures, procDiags) := procProcs.foldl (fun (procs, diags) p =>
-    let (proc, ds) := translateProcedure program.constants funcNames p
-    (procs ++ [proc], diags ++ ds)) ([], [])
+  -- Translate procedures using the monad, collecting diagnostics from the final state
+  let (procedures, procState) := runTranslateM initState do
+    procProcs.mapM translateProcedure
+  let procDiags := procState.diagnostics
   -- Collect ALL errors from both functions and procedures before deciding whether to fail
   let allErrors := pureErrors ++ procDiags
   if !allErrors.isEmpty then
