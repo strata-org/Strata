@@ -149,7 +149,7 @@ def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solver : Solver
 /-- Generate SMT commands for a B3 program -/
 def programToSMTCommands (prog : Strata.B3AST.Program SourceRange) : IO String := do
   let (solver, buffer) ← createBufferSolver
-  let _ ← (Solver.setLogic "ALL").run' solver
+  let _ ← (Solver.setLogic "ALL").run solver
   let _ ← programToSMTWithoutDiagnosis prog solver
   let contents ← buffer.get
   if h: contents.data.IsValidUTF8
@@ -180,7 +180,7 @@ The solver is reset at the beginning to ensure clean state.
 -/
 def programToSMT (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
   -- Reset solver to clean state
-  let _ ← (Solver.reset).run' solver
+  let _ ← (Solver.reset).run solver
   let state ← buildProgramState prog solver
   let mut reportsRev := []
 

@@ -97,8 +97,8 @@ structure B3VerificationState where
   pathCondition : List (B3AST.Expression SourceRange)  -- Accumulated assertions for debugging
 
 def initVerificationState (solver : Solver) : IO B3VerificationState := do
-  let _ ← (Solver.setLogic "ALL").run' solver
-  let _ ← (Solver.setOption "produce-models" "true").run' solver
+  let _ ← (Solver.setLogic "ALL").run solver
+  let _ ← (Solver.setOption "produce-models" "true").run solver
   return {
     smtState := {
       solver := solver
@@ -110,11 +110,11 @@ def initVerificationState (solver : Solver) : IO B3VerificationState := do
   }
 
 def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List TermType) (returnType : TermType) : IO B3VerificationState := do
-  let _ ← (Solver.declareFun name argTypes returnType).run' state.smtState.solver
+  let _ ← (Solver.declareFun name argTypes returnType).run state.smtState.solver
   return { state with smtState := { state.smtState with declaredFunctions := (name, argTypes, returnType) :: state.smtState.declaredFunctions } }
 
 def addPathCondition (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (term : Term) : IO B3VerificationState := do
-  let _ ← (Solver.assert term).run' state.smtState.solver
+  let _ ← (Solver.assert term).run state.smtState.solver
   return {
     state with
     smtState := { state.smtState with assertions := term :: state.smtState.assertions }
@@ -166,7 +166,7 @@ def reach (state : B3VerificationState) (term : Term) (ctx : VerificationContext
   }
 
 def closeVerificationState (state : B3VerificationState) : IO Unit := do
-  let _ ← (Solver.exit).run' state.smtState.solver
+  let _ ← (Solver.exit).run state.smtState.solver
   pure ()
 
 ---------------------------------------------------------------------

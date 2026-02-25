@@ -14,12 +14,7 @@ import Std.Data.HashMap
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Solver.lean)
 This file defines a simple interface to an SMT solver running in a separate
-process. The core typed commands (`assert`, `defineFun`, `declareFun`,
-`declareConst`) accept `Term`/`TermType` values and internally cache the
-`Term → String` and `TermType → String` conversions to avoid redundant work.
-Less critical commands (`comment`, `setInfo`, `setOption`, `setLogic`,
-`declareSort`, `declareDatatype`, `declareDatatypes`, `getValue`, `checkSat`)
-keep their raw-string interfaces.
+process.
 
 ## String formatting
 
@@ -65,10 +60,6 @@ abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
 
 def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
   ReaderT.run (StateT.run x state) solver
-
-def SolverM.run' (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO α := do
-  let (a, _) ← x.run solver state
-  return a
 
 namespace Solver
 

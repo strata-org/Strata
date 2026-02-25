@@ -27,8 +27,8 @@ The encoding pipeline has two layers:
    and caches `Term → SMT-LIB string` and `TermType → SMT-LIB string`
    conversions. All string formatting lives in the Solver layer.
 
-2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages ANF
-   decomposition purely in the `Term` domain:
+2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages
+   A-normal form decomposition purely in the `Term` domain:
    - **Term → abbreviated Term cache** (`terms`): Maps each `Term` to its
      abbreviated `Term.var` reference (e.g., a variable named `t0`, `t1`).
      Large terms are broken into small `define-fun` definitions with short
