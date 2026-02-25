@@ -70,7 +70,7 @@ open Solver
 
 structure EncoderState where
   /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `t0`).
-      This is the ANF decomposition cache. -/
+      This is a cache after converting terms to A-Normal From. -/
   terms : Std.HashMap Term Term
   /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f0`, `f1`). -/
   ufs   : Std.HashMap UF String
@@ -142,6 +142,28 @@ def extractTriggers : Term -> List (List Term)
 | .app .triggers ts .trigger => ts.map extractTriggerGroup
 | e => [[e]]
 
+/-- Every term in `extractTriggerGroup t` has `sizeOf ≤ sizeOf t`. -/
+private theorem extractTriggerGroup_sizeOf (t ti : Term) (h : ti ∈ extractTriggerGroup t) :
+    sizeOf ti ≤ sizeOf t := by
+  unfold extractTriggerGroup at h
+  split at h
+  · have := List.sizeOf_lt_of_mem h; simp_all; omega
+  · simp_all
+
+/-- Every term nested in `extractTriggers t` has `sizeOf ≤ sizeOf t`. -/
+private theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
+    (hts : ts ∈ extractTriggers t) (hti : ti ∈ ts) :
+    sizeOf ti ≤ sizeOf t := by
+  unfold extractTriggers at hts
+  split at hts
+  · rw [List.mem_map] at hts
+    obtain ⟨t_elem, h_mem, h_eq⟩ := hts
+    subst h_eq
+    have h1 := extractTriggerGroup_sizeOf t_elem ti hti
+    have h2 := List.sizeOf_lt_of_mem h_mem
+    simp_all; omega
+  · simp_all
+
 -- Helper function for quantifier generation
 def defineQuantifierHelper (inBinder : Bool) (qk : QuantifierKind) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term := do
   let tr : Term := match trEncs with
@@ -170,7 +192,6 @@ def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
   xs.attach.mapM f
 
-partial
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
   if let (.some enc) := (← get).terms.get? t then return enc
   let ty := t.typeOf
@@ -194,18 +215,31 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
       | _ =>
         return Term.bool false
     | .app op ts _         => defineApp inBinder ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
-    | .quant qk args tr t =>
+    | .quant qk qargs tr body =>
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨t, _⟩ => encodeTerm True t))
-      let bodyEnc ← encodeTerm True t
-      match qk, args with
+      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm True ti))
+      let bodyEnc ← encodeTerm True body
+      match qk, qargs with
       | .all, [⟨x, xty⟩] => defineAll inBinder x xty trEncs bodyEnc
-      | .all, _ => defineMultiAll inBinder args trEncs bodyEnc
+      | .all, _ => defineMultiAll inBinder qargs trEncs bodyEnc
       | .exist, [⟨x, xty⟩] => defineExist inBinder x xty trEncs bodyEnc
-      | .exist, _ => defineMultiExist inBinder args trEncs bodyEnc
+      | .exist, _ => defineMultiExist inBinder qargs trEncs bodyEnc
   if inBinder
   then pure enc
   else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
+termination_by sizeOf t
+decreasing_by
+  all_goals first
+    | term_by_mem
+    | -- Trigger case: ti ∈ ts, ts ∈ trExprs, trExprs from extractTriggers tr
+      -- Grab the membership hypotheses via ‹›, inline the let-binding
+      -- (trExprs is definitionally the if-then-else), split, and apply our lemma.
+      add_mem_size_lemmas
+      have hmem : _ ∈ (if Factory.isSimpleTrigger tr then ([] : List (List Term)) else extractTriggers tr) := ‹_ ∈ trExprs›
+      split at hmem
+      · simp at hmem
+      · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
+        simp_all; omega
 
 def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
