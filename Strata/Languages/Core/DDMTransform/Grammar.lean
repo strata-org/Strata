@@ -188,8 +188,10 @@ category Statement;
 category Block;
 category Else;
 category Label;
+category ReachCheck;
 
 op label (l : Ident) : Label => "[" l "]: ";
+op reachCheck () : ReachCheck => "@[reachCheck] ";
 
 @[scope(dl)]
 op varStatement (dl : DeclList) : Statement => "var " dl ";\n";
@@ -197,8 +199,10 @@ op varStatement (dl : DeclList) : Statement => "var " dl ";\n";
 op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";\n";
 op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";\n";
 op assume (label : Option Label, c : bool) : Statement => "assume " label c ";\n";
-op assert (label : Option Label, c : bool) : Statement => "assert " label c ";\n";
-op cover (label : Option Label, c : bool) : Statement => "cover " label c ";\n";
+op assert (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
+  reachCheck?:0 "assert " label c ";\n";
+op cover (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
+  reachCheck?:0 "cover " label c ";\n";
 op if_statement (c : bool, t : Block, f : Else) : Statement => "if" "(" c ")" t:0 f:0;
 op else0 () : Else =>;
 op else1 (f : Block) : Else => "else" f:0;

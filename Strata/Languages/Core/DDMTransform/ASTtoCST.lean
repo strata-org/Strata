@@ -802,18 +802,28 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
   | .havoc name _md => do
     let nameAnn : Ann String M := ⟨default, name.name⟩
     pure (.havoc_statement default nameAnn)
-  | .assert label expr _md => do
+  | .assert label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.assert default labelAnn exprCST)
+    let rcAnn : Ann (Option (ReachCheck M)) M :=
+      if Imperative.MetaData.hasReachCheck md then
+        ⟨default, some (.reachCheck default)⟩
+      else
+        ⟨default, none⟩
+    pure (.assert default rcAnn labelAnn exprCST)
   | .assume label expr _md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
     pure (.assume default labelAnn exprCST)
-  | .cover label expr _md => do
+  | .cover label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.cover default labelAnn exprCST)
+    let rcAnn : Ann (Option (ReachCheck M)) M :=
+      if Imperative.MetaData.hasReachCheck md then
+        ⟨default, some (.reachCheck default)⟩
+      else
+        ⟨default, none⟩
+    pure (.cover default rcAnn labelAnn exprCST)
   | .call lhs pname args _md => do
     let lhsAnn := ⟨default, lhs.toArray.map fun id => ⟨default, id.name⟩⟩
     let pnameAnn : Ann String M := ⟨default, pname⟩
