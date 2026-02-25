@@ -129,10 +129,8 @@ def testVerification (prog : Program) : IO Unit := do
   let ast ← match result with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Parse error: {msg}")
-  -- Create a fresh solver for each test to avoid state issues
-  let solver ← Solver.spawn "cvc5" #[]
+  let solver ← Solver.spawn "cvc5" #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
   let reports ← B3.Verifier.programToSMT ast solver
-  -- Don't call exit - let the solver process terminate naturally
   for report in reports do
     for (result, _) in report.results do
       let marker := match result.outcome with

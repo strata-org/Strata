@@ -62,7 +62,10 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
     let msg := convResult.errors.map toString |> String.intercalate "\n"
     throw (IO.userError s!"Conversion errors:\n{msg}")
   let coreStmts := convResult.value
-  let solverInterface ← SMT.mkCvc5Solver
+  -- Initialize solver and wrap in SolverInterface
+  (Solver.setLogic "ALL").run solver
+  (Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]).run solver
+  let solverInterface ← mkSolverInterfaceFromSolver solver
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
   let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts

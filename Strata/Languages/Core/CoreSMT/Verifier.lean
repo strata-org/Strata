@@ -23,11 +23,10 @@ def addDiagnosis (state : CoreSMTState) (E : Core.Env) (result : Core.VCResult)
   if result.result == .pass then
     return result
   else
-    -- Diagnose the failure
     let diagResult ← diagnoseFailure state E result.obligation.obligation false smtCtx
     let failedExprs := diagResult.diagnosedFailures.map (·.expression)
     let isRefuted := diagResult.diagnosedFailures.any (·.isRefuted)
-    return { result with diagnosis := some { isRefuted, failedSubExpressions := failedExprs } }
+    return { result with diagnosis := some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := diagResult.diagnosedFailures } }
 
 /-- Verify a list of CoreSMT statements. Returns updated state and check results. -/
 def verify (state : CoreSMTState) (E : Core.Env) (stmts : List Core.Statement)

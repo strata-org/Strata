@@ -66,7 +66,7 @@ private def termToString (t : Term) : Except String String :=
   SMTDDM.toString t
 
 /-- Helper to create an SMTSolverInterface from an initialized Solver -/
-private def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
+def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
   let solverRef ← IO.mkRef solver
   return {
     push := do
