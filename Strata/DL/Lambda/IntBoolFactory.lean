@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Lambda.LState
+import Strata.DL.Lambda.FactoryWF
 
 /-! ## A Minimal Factory with Support for Unbounded Integer and Boolean Operations
 
@@ -19,193 +20,282 @@ open LExpr LTy
 
 section IntBoolFactory
 
-variable {T : LExprParams} [Coe String T.Identifier]
+-- Inhabited T.IDMeta is needed for the arg_nodup proofs in WFLFunc.
+variable {T : LExprParams} [Inhabited T.IDMeta]
 
+open Strata.DL.Util (Func FuncWF FuncPrecondition TyIdentifier)
+
+/--
+A typeclass that bundles `mkConst` and `cevalTy` for a given
+`(LMonoTy, ValTy)` pair, allowing eval combinators to infer them
+automatically.
+-/
+class LambdaLeanType (ty : outParam LMonoTy) (ValTy : Type) where
+  mkConst : ∀(T : LExprParams), T.Metadata → ValTy → LExpr T.mono
+  cevalTy : ∀(T : LExprParams), LExpr T.mono → Option ValTy
+
+instance : LambdaLeanType .int Int where
+  mkConst T := @intConst T.mono
+  cevalTy _ := LExpr.denoteInt
+
+instance : LambdaLeanType .bool Bool where
+  mkConst T := @boolConst T.mono
+  cevalTy _ := LExpr.denoteBool
+
+instance : LambdaLeanType .string String where
+  mkConst T := @LExpr.strConst T.mono
+  cevalTy _ := LExpr.denoteString
+
+instance (n : Nat) : LambdaLeanType (.bitvec n) (BitVec n) where
+  mkConst _ m v := LExpr.bitvecConst m n v
+  cevalTy _ := LExpr.denoteBitVec n
+
+/-! ### Uneval combinators (no concrete evaluation)
+
+These build well-formed `WFLFunc`s that have no `concreteEval` or `body`. -/
+
+/-- General polymorphic unevaluated function with optional axioms.
+    Handles any arity and any number of type arguments. -/
+@[inline]
+def polyUneval (n : T.Identifier) (typeArgs : List String)
+    (inputs : List (T.Identifier × LMonoTy)) (output : LMonoTy)
+    (axioms : List (LExpr T.mono) := [])
+    (h_nodup : List.Nodup (inputs.map (·.1.name)) := by first | decide | grind)
+    (h_ta_nodup : List.Nodup typeArgs := by grind)
+    (h_inputs : ∀ ty, ty ∈ ListMap.values inputs →
+      ty.freeVars ⊆ typeArgs := by first | decide | grind)
+    (h_output : output.freeVars ⊆ typeArgs
+      := by first | decide | grind) : WFLFunc T :=
+  ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
+     axioms := axioms }, {
+    arg_nodup := h_nodup
+    body_freevars := by intro b hb; simp at hb
+    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    body_or_concreteEval := by simp
+    typeArgs_nodup := h_ta_nodup
+    inputs_typevars_in_typeArgs := h_inputs
+    output_typevars_in_typeArgs := h_output
+    precond_freevars := by intro p hp; simp at hp
+  }⟩
+
+/-- Nullary unevaluated function (0 inputs). -/
+@[inline]
+def nullaryUneval (n : T.Identifier) (ty : LMonoTy)
+    (hty : ty.freeVars = [] := by decide) : WFLFunc T :=
+  polyUneval n [] [] ty
+    (h_inputs := by intro _ h; simp [ListMap.values] at h)
+
+/-- Unary unevaluated function with mixed input/output types. -/
+@[inline]
+def unaryFuncUneval (n : T.Identifier) (inTy outTy : LMonoTy)
+    (hInTy : inTy.freeVars = [] := by decide)
+    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
+  polyUneval n [] [("x", inTy)] outTy
+    (h_inputs := by
+      intro ty hty; simp [ListMap.values] at hty
+      subst hty; simp [hInTy])
+
+
+/-- Binary unevaluated function with heterogeneous input types. -/
+@[inline]
+def binaryFuncUneval (n : T.Identifier) (inTy1 inTy2 outTy : LMonoTy)
+    (hInTy1 : inTy1.freeVars = [] := by decide)
+    (hInTy2 : inTy2.freeVars = [] := by decide)
+    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
+  polyUneval n [] [("x", inTy1), ("y", inTy2)] outTy
+    (h_inputs := by
+      intro ty hty; simp [ListMap.values] at hty
+      rcases hty with rfl | rfl <;> simp [*])
+
+
+/-- Ternary unevaluated function with mixed input types.
+    First input has type `inTy1`; second and third share type `inTy2`. -/
+@[inline]
+def ternaryFuncUneval (n : T.Identifier) (inTy1 inTy2 outTy : LMonoTy)
+    (hInTy1 : inTy1.freeVars = [] := by decide)
+    (hInTy2 : inTy2.freeVars = [] := by decide)
+    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
+  polyUneval n [] [("x", inTy1), ("y", inTy2), ("z", inTy2)] outTy
+    (h_inputs := by
+      intro ty hty; simp [ListMap.values] at hty
+      rcases hty with rfl | rfl | rfl <;> simp [*])
+
+/-! ### Eval combinators (with concrete evaluation)
+
+These build well-formed `WFLFunc`s with a `concreteEval` for constant folding.
+Types are resolved via `LambdaLeanType` instances. -/
+
+/-! #### Unary -/
+
+/-- Unary operation with mixed input/output types and concrete evaluation.
+    Types are resolved via `LambdaLeanType` instances. -/
+@[inline]
 def unaryOp (n : T.Identifier)
-            (ty : LMonoTy)
-            (ceval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) : LFunc T :=
-  { name := n,
-    inputs := [("x", ty)],
-    output := ty,
-    concreteEval := ceval }
+    {inTy outTy InValTy OutValTy} [ToString OutValTy]
+    [hIn : LambdaLeanType inTy InValTy] [hOut : LambdaLeanType outTy OutValTy]
+    (op : InValTy → OutValTy)
+    (hInTy : inTy.freeVars = [] := by decide)
+    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
+  let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
+  let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
+  ⟨{ name := n,
+     inputs := [("x", inTy)],
+     output := outTy,
+     concreteEval := some (fun md args => match args with
+       | [x] => match cevalInTy x with
+         | some a => .some (mkConst md (op a))
+         | _ => .none
+       | _ => none) }, {
+    arg_nodup := by simp
+    body_freevars := by intro b hb; simp at hb
+    concreteEval_argmatch := by
+      intro fn md args res hfn heval
+      simp at hfn; subst hfn
+      match args with
+      | [] | _ :: _ :: _ => simp at heval
+      | [_] => rfl
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by
+      intro ity hity; simp [ListMap.values] at hity; subst hity; simp [hInTy]
+    output_typevars_in_typeArgs := by simp [hOutTy]
+    precond_freevars := by intro p hp; simp at hp
+  }⟩
 
+/-! #### Binary -/
+
+/-- Binary operation with mixed input/output types, optional guard,
+    optional preconditions, and concrete evaluation. The guard is
+    checked on the second argument; `none` is returned if it
+    fails. -/
+@[inline]
 def binaryOp (n : T.Identifier)
-             (ty : LMonoTy)
-             (ceval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) : LFunc T :=
-  { name := n,
-    inputs := [("x", ty), ("y", ty)],
-    output := ty,
-    concreteEval := ceval }
+    {inTy outTy InValTy OutValTy} [ToString OutValTy]
+    [hIn : LambdaLeanType inTy InValTy]
+    [hOut : LambdaLeanType outTy OutValTy]
+    (op : InValTy → InValTy → OutValTy)
+    (guard : InValTy → Bool := fun _ => true)
+    (preconditions :
+      List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
+    (hInTy : inTy.freeVars = [] := by decide)
+    (hOutTy : outTy.freeVars = [] := by decide)
+    (h_precond : ∀ p, p ∈ preconditions →
+      (LExpr.freeVars p.expr).map (·.1.name) ⊆ ["x", "y"]
+      := by simp) : WFLFunc T :=
+  let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
+  let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
+  ⟨{ name := n,
+     inputs := [("x", inTy), ("y", inTy)],
+     output := outTy,
+     preconditions := preconditions,
+     concreteEval := some (fun md args => match args with
+       | [x, y] => match cevalInTy x, cevalInTy y with
+         | some a, some b =>
+           if guard b then mkConst md (op a b) else .none
+         | _, _ => .none
+       | _ => none) }, {
+    arg_nodup := by simp
+    body_freevars := by intro b hb; simp at hb
+    concreteEval_argmatch := by
+      intro fn md args res hfn heval
+      simp at hfn; subst hfn
+      match args with
+      | [] | [_] | _ :: _ :: _ :: _ => simp at heval
+      | [_, _] => rfl
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by
+      intro ity hity; simp [ListMap.values] at hity
+      rcases hity with rfl | rfl <;> simp [hInTy]
+    output_typevars_in_typeArgs := by simp [hOutTy]
+    precond_freevars := h_precond
+  }⟩
 
-def binaryPredicate (n : T.Identifier)
-                    (ty : LMonoTy)
-                    (ceval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) : LFunc T :=
-  { name := n,
-    inputs := [("x", ty), ("y", ty)],
-    output := .bool,
-    concreteEval := ceval }
+/-! ### Integer Arithmetic Operations -/
 
-def unOpCeval (InTy OutTy : Type) [ToString OutTy]
-                (mkConst : T.Metadata → OutTy → LExpr T.mono)
-                (cevalInTy : (LExpr T.mono) → Option InTy) (op : InTy → OutTy) :
-                T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
-  (fun m args => match args with
-   | [e1] =>
-     let e1i := cevalInTy e1
-     match e1i with
-     | some x => .some (mkConst m (op x))
-     | _ => .none
-   | _ => .none)
+def intAddFunc : WFLFunc T :=
+  binaryOp "Int.Add" Int.add
 
-def binOpCeval (InTy OutTy : Type) [ToString OutTy]
-                (mkConst : T.Metadata → OutTy → LExpr T.mono)
-                (cevalInTy : LExpr T.mono → Option InTy) (op : InTy → InTy → OutTy) :
-                T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
-  (fun m args => match args with
-   | [e1, e2] =>
-     let e1i := cevalInTy e1
-     let e2i := cevalInTy e2
-     match e1i, e2i with
-     | some x, some y => mkConst m (op x y)
-     | _, _ => .none
-   | _ => .none)
+def intSubFunc : WFLFunc T :=
+  binaryOp "Int.Sub" Int.sub
 
--- We hand-code a denotation for `Int.Div` to leave the expression
--- unchanged if we have `0` for the denominator.
-def cevalIntDiv (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
-  match args with
-  | [e1, e2] =>
-    let e1i := LExpr.denoteInt e1
-    let e2i := LExpr.denoteInt e2
-    match e1i, e2i with
-    | some x, some y =>
-      if y == 0 then .none else .some (.intConst m (x / y))
-    | _, _ => .none
-  | _ => .none
+def intMulFunc : WFLFunc T :=
+  binaryOp "Int.Mul" Int.mul
 
--- We hand-code a denotation for `Int.Mod` to leave the expression
--- unchanged if we have `0` for the denominator.
-def cevalIntMod (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
-  match args with
-  | [e1, e2] =>
-    let e1i := LExpr.denoteInt e1
-    let e2i := LExpr.denoteInt e2
-    match e1i, e2i with
-    | some x, some y =>
-      if y == 0 then .none else .some (.intConst m (x % y))
-    | _, _ => .none
-  | _ => .none
+def intDivFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.Div" (· / ·) (· != 0)
 
--- Truncating division: rounds toward zero (unlike Euclidean division which floors)
--- Int.tdiv in Lean4
-def cevalIntDivT (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
-  match args with
-  | [e1, e2] =>
-    let e1i := LExpr.denoteInt e1
-    let e2i := LExpr.denoteInt e2
-    match e1i, e2i with
-    | some x, some y =>
-      if y == 0 then .none else .some (.intConst m (x.tdiv y))
-    | _, _ => .none
-  | _ => .none
+def intModFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.Mod" (· % ·) (· != 0)
 
-def cevalIntModT (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
-  match args with
-  | [e1, e2] =>
-    let e1i := LExpr.denoteInt e1
-    let e2i := LExpr.denoteInt e2
-    match e1i, e2i with
-    | some x, some y =>
-      if y == 0 then .none else .some (.intConst m (x.tmod y))
-    | _, _ => .none
-  | _ => .none
+def intDivTFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.DivT" Int.tdiv (· != 0)
 
-/- Boolean Operations -/
-def boolAndFunc : LFunc T :=
-  binaryOp "Bool.And" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.and))
+def intModTFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.ModT" Int.tmod (· != 0)
 
-def boolOrFunc : LFunc T :=
-  binaryOp "Bool.Or" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.or))
+def intNegFunc : WFLFunc T :=
+  unaryOp "Int.Neg" Int.neg
 
-def boolImpliesFunc : LFunc T :=
-  binaryOp "Bool.Implies" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool (fun x y => ((not x) || y))))
+def intLtFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) (OutValTy := Bool) "Int.Lt" (· < ·)
 
-def boolEquivFunc : LFunc T :=
-  binaryOp "Bool.Equiv" .bool
-  (some (binOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool (fun x y => (x == y))))
+def intLeFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) (OutValTy := Bool) "Int.Le" (· ≤ ·)
 
-def boolNotFunc : LFunc T :=
-  unaryOp "Bool.Not" .bool
-  (some (unOpCeval Bool Bool (@boolConst T.mono) LExpr.denoteBool Bool.not))
+def intGtFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) (OutValTy := Bool) "Int.Gt" (· > ·)
 
-/- Integer Arithmetic Operations -/
+def intGeFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) (OutValTy := Bool) "Int.Ge" (· ≥ ·)
 
-def intAddFunc : LFunc T :=
-  binaryOp "Int.Add" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.add))
+/-! ### Boolean Operations -/
 
-def intSubFunc : LFunc T :=
-  binaryOp "Int.Sub" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.sub))
+def boolAndFunc : WFLFunc T :=
+  binaryOp "Bool.And" Bool.and
 
-def intMulFunc : LFunc T :=
-  binaryOp "Int.Mul" .int
-  (some (binOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.mul))
+def boolOrFunc : WFLFunc T :=
+  binaryOp "Bool.Or" Bool.or
 
-def intDivFunc : LFunc T :=
-  binaryOp "Int.Div" .int (some cevalIntDiv)
+def boolImpliesFunc : WFLFunc T :=
+  binaryOp (InValTy := Bool) "Bool.Implies" (!· || ·)
 
-def intSafeDivFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
+def boolEquivFunc : WFLFunc T :=
+  binaryOp (InValTy := Bool) "Bool.Equiv" (· == ·)
+
+def boolNotFunc : WFLFunc T :=
+  unaryOp "Bool.Not" Bool.not
+
+/-! ### Safe (preconditioned) operations -/
+
+section
+
+variable [Inhabited T.mono.base.Metadata]
+
+private def yNeZeroPrecond :
+    FuncPrecondition (LExpr T.mono) T.Metadata :=
   let yVar : LExpr T.mono := .fvar default "y" (some .int)
   let zero : LExpr T.mono := .intConst default 0
-  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
-  { binaryOp "Int.SafeDiv" .int (some cevalIntDiv) with
-    preconditions := [⟨yNeZero, default⟩] }
+  ⟨.app default boolNotFunc.func.opExpr
+      (.eq default yVar zero), default⟩
 
-def intModFunc : LFunc T :=
-  binaryOp "Int.Mod" .int (some cevalIntMod)
+@[simp]
+private theorem yNeZeroPrecond_freeVars :
+    (yNeZeroPrecond (T := T)).expr.freeVars = [(⟨"y", default⟩, some LMonoTy.int)] := by
+  simp [yNeZeroPrecond, LExpr.freeVars,
+    LFunc.opExpr, boolNotFunc, unaryOp]
 
-def intSafeModFunc [Inhabited T.mono.base.Metadata] : LFunc T :=
-  let yVar : LExpr T.mono := .fvar default "y" (some .int)
-  let zero : LExpr T.mono := .intConst default 0
-  let yNeZero : LExpr T.mono := .app default boolNotFunc.opExpr (.eq default yVar zero)
-  { binaryOp "Int.SafeMod" .int (some cevalIntMod) with
-    preconditions := [⟨yNeZero, default⟩] }
+def intSafeDivFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.SafeDiv" (· / ·) (· != 0)
+    (preconditions := [yNeZeroPrecond])
 
-def intDivTFunc : LFunc T :=
-  binaryOp "Int.DivT" .int
-  (some cevalIntDivT)
+def intSafeModFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.SafeMod" (· % ·) (· != 0)
+    (preconditions := [yNeZeroPrecond])
 
-def intModTFunc : LFunc T :=
-  binaryOp "Int.ModT" .int
-  (some cevalIntModT)
+end
 
-def intNegFunc : LFunc T :=
-  unaryOp "Int.Neg" .int
-  (some (unOpCeval Int Int (@intConst T.mono) LExpr.denoteInt Int.neg))
-
-def intLtFunc : LFunc T :=
-  binaryPredicate "Int.Lt" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x < y)))
-
-def intLeFunc : LFunc T :=
-  binaryPredicate "Int.Le" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x <= y)))
-
-def intGtFunc : LFunc T :=
-  binaryPredicate "Int.Gt" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x > y)))
-
-def intGeFunc : LFunc T :=
-  binaryPredicate "Int.Ge" .int
-  (some (binOpCeval Int Bool (@boolConst T.mono) LExpr.denoteInt (fun x y => x >= y)))
-
-
-def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T :=
-  open LTy.Syntax in #[
+def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
     intAddFunc,
     intSubFunc,
     intMulFunc,
@@ -226,7 +316,7 @@ def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T :=
     boolImpliesFunc,
     boolEquivFunc,
     boolNotFunc,
-  ]
+  ] : Array (WFLFunc T)).map (·.func)
 
 end IntBoolFactory
 

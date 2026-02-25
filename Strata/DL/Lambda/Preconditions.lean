@@ -17,7 +17,7 @@ from expressions that call functions with preconditions.
 namespace Lambda
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [DecidableEq T.IDMeta] [BEq T.IDMeta]
+variable {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
 
 /-- A well-formedness obligation generated from a function call -/
 structure WFObligation (T : LExprParams) where
