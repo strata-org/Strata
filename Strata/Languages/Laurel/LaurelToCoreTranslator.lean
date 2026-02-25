@@ -77,34 +77,34 @@ instead of `fvar`.
 def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd)
     (boundVars : List Identifier := []) : Core.Expression.Expr :=
   match h: expr.val with
-  | .LiteralBool b => .const () (.boolConst b)
-  | .LiteralInt i => .const () (.intConst i)
-  | .LiteralString s => .const () (.strConst s)
+  | .LiteralBool b => .const Strata.SourceRange.none (.boolConst b)
+  | .LiteralInt i => .const Strata.SourceRange.none (.intConst i)
+  | .LiteralString s => .const Strata.SourceRange.none (.strConst s)
   | .Identifier name =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
       | some idx =>
           -- Bound variable: use de Bruijn index
-          .bvar () idx
+          .bvar Strata.SourceRange.none idx
       | none =>
           -- Check if this is a constant (field constant) or local variable
           if isConstant constants name then
             let ident := Core.CoreIdent.unres name
-            .op () ident none
+            .op Strata.SourceRange.none ident none
           else
             let ident := Core.CoreIdent.locl name
-            .fvar () ident (some (lookupType env name))
+            .fvar Strata.SourceRange.none ident (some (lookupType env name))
   | .PrimitiveOp op [e] =>
     match op with
-    | .Not => .app () boolNotOp (translateExpr constants env e boundVars)
-    | .Neg => .app () intNegOp (translateExpr constants env e boundVars)
+    | .Not => .app Strata.SourceRange.none boolNotOp (translateExpr constants env e boundVars)
+    | .Neg => .app Strata.SourceRange.none intNegOp (translateExpr constants env e boundVars)
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let binOp (bop : Core.Expression.Expr): Core.Expression.Expr :=
-      LExpr.mkApp () bop [translateExpr constants env e1 boundVars, translateExpr constants env e2 boundVars]
+      LExpr.mkApp Strata.SourceRange.none bop [translateExpr constants env e1 boundVars, translateExpr constants env e2 boundVars]
     match op with
-    | .Eq => .eq () (translateExpr constants env e1 boundVars) (translateExpr constants env e2 boundVars)
-    | .Neq => .app () boolNotOp (.eq () (translateExpr constants env e1 boundVars) (translateExpr constants env e2 boundVars))
+    | .Eq => .eq Strata.SourceRange.none (translateExpr constants env e1 boundVars) (translateExpr constants env e2 boundVars)
+    | .Neq => .app Strata.SourceRange.none boolNotOp (.eq Strata.SourceRange.none (translateExpr constants env e1 boundVars) (translateExpr constants env e2 boundVars))
     | .And => binOp boolAndOp
     | .Or => binOp boolOrOp
     | .Implies => binOp boolImpliesOp
@@ -127,27 +127,27 @@ def translateExpr (constants : List Constant) (env : TypeEnv) (expr : StmtExprMd
       let bthen := translateExpr constants env thenBranch boundVars
       let belse := match elseBranch with
                   | some e => translateExpr constants env e boundVars
-                  | none => .const () (.intConst 0)
-      .ite () bcond bthen belse
+                  | none => .const Strata.SourceRange.none (.intConst 0)
+      .ite Strata.SourceRange.none bcond bthen belse
   | .Assign _ value => translateExpr constants env value boundVars
   | .StaticCall name args =>
       let ident := Core.CoreIdent.unres name
-      let fnOp := .op () ident none
-      args.foldl (fun acc arg => .app () acc (translateExpr constants env arg boundVars)) fnOp
+      let fnOp := .op Strata.SourceRange.none ident none
+      args.foldl (fun acc arg => .app Strata.SourceRange.none acc (translateExpr constants env arg boundVars)) fnOp
   | .Block [single] _ => translateExpr constants env single boundVars
   | .Forall name ty body =>
       let coreTy := translateType ty
       let coreBody := translateExpr constants env body (name :: boundVars)
-      LExpr.all () (some coreTy) coreBody
+      LExpr.all Strata.SourceRange.none (some coreTy) coreBody
   | .Exists name ty body =>
       let coreTy := translateType ty
       let coreBody := translateExpr constants env body (name :: boundVars)
-      LExpr.exist () (some coreTy) coreBody
+      LExpr.exist Strata.SourceRange.none (some coreTy) coreBody
   | .FieldSelect target fieldName =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
-  | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none -- TODO: don't do this
+  | .Hole => .fvar Strata.SourceRange.none (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none -- TODO: don't do this
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
   decreasing_by
@@ -159,15 +159,15 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
 
 def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
   match ty.val with
-  | .TInt => .const () (.intConst 0)
-  | .TBool => .const () (.boolConst false)
-  | .TString => .const () (.strConst "")
+  | .TInt => .const Strata.SourceRange.none (.intConst 0)
+  | .TBool => .const Strata.SourceRange.none (.boolConst false)
+  | .TString => .const Strata.SourceRange.none (.strConst "")
   | _ =>
     -- For types without a natural default (arrays, composites, etc.),
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
     let coreTy := translateType ty
-    .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
+    .fvar Strata.SourceRange.none (Core.CoreIdent.locl "$default") (some coreTy)
 
 /--
 Translate Laurel StmtExpr to Core Statements
@@ -265,10 +265,10 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
           let ident := Core.CoreIdent.locl outParam.name
           let boogieExpr := translateExpr constants env value
           let assignStmt := Core.Statement.set ident boogieExpr
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
+          let noFallThrough := Core.Statement.assume "return" (.const Strata.SourceRange.none (.boolConst false)) .empty
           (env, [assignStmt, noFallThrough])
       | none, _ =>
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
+          let noFallThrough := Core.Statement.assume "return" (.const Strata.SourceRange.none (.boolConst false)) .empty
           (env, [noFallThrough])
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
@@ -279,7 +279,7 @@ def translateStmt (constants : List Constant) (funcNames : FunctionNames) (env :
       let invExpr := match translatedInvariants with
         | [] => none
         | [single] => some single
-        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
+        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp Strata.SourceRange.none boolAndOp [acc, inv]) first)
       let decreasingExprCore := decreasesExpr.map (translateExpr constants env)
       let (_, bodyStmts) := translateStmt constants funcNames env outputParams body
       (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
@@ -342,7 +342,7 @@ def translateProcedure (constants : List Constant) (funcNames : FunctionNames) (
     | .Transparent bodyExpr => (translateStmt constants funcNames initEnv proc.outputs bodyExpr).2
     | .Opaque _postconds (some impl) _ => (translateStmt constants funcNames initEnv proc.outputs impl).2
     -- because Core does not support procedures without a body, we add an assume false
-    | _ => [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+    | _ => [Core.Statement.assume "no_body" (.const Strata.SourceRange.none (.boolConst false)) .empty]
   let spec : Core.Procedure.Spec := {
     modifies,
     preconditions,
