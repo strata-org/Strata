@@ -43,6 +43,9 @@ instance : Inhabited ExpressionMetadata :=
 instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
   combine _ := Strata.SourceRange.none
 
+instance : Lambda.Traceable Lambda.LExpr.EvalProvenance CoreExprMetadata where
+  combine _ := Strata.SourceRange.none
+
 instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩) :=
   inferInstanceAs (Inhabited (Lambda.LExpr ⟨⟨Strata.SourceRange, CoreIdent⟩, LMonoTy⟩))
 

@@ -139,17 +139,17 @@ def test1_constructorApplication : IO String := do
   let statements : List Statement := [
     -- Create None value
     Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
+      (some (LExpr.op Strata.SourceRange.none (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Create Some value
     Statement.init (CoreIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.intConst () 42))),
+        (LExpr.intConst Strata.SourceRange.none 42))),
 
     -- Trivial assertion to verify the program
-    Statement.assert "trivial" (LExpr.boolConst () true)
+    Statement.assert "trivial" (LExpr.boolConst Strata.SourceRange.none true)
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testConstructors" statements with
@@ -177,28 +177,28 @@ def test2_testerFunctions : IO String := do
   let statements : List Statement := [
     -- Create None value
     Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
+      (some (LExpr.op Strata.SourceRange.none (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert that x is None
     Statement.assert "x_is_none"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isNone")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isNone")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Create Some value
     Statement.init (CoreIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.intConst () 42))),
+        (LExpr.intConst Strata.SourceRange.none 42))),
 
     -- Assert that y is Some
     Statement.assert "y_is_some"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isSome")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isSome")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "y") (.some (LMonoTy.tcons "Option" [.int]))))
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "y") (.some (LMonoTy.tcons "Option" [.int]))))
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testTesters" statements with
@@ -230,45 +230,45 @@ def test3_destructorFunctions : IO String := do
   let statements : List Statement := [
     -- Create Some(42)
     Statement.init (CoreIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.intConst () 42))),
+        (LExpr.intConst Strata.SourceRange.none 42))),
 
     -- Extract value from Some
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert that val == 42
     Statement.assert "val_is_42"
-      (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
-        (LExpr.intConst () 42)),
+      (LExpr.eq Strata.SourceRange.none
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "value") (.some .int))
+        (LExpr.intConst Strata.SourceRange.none 42)),
 
     -- Create Cons(1, Nil)
     Statement.init (CoreIdent.unres "list") (.forAll [] (LMonoTy.tcons "List" [.int]))
-      (some (LExpr.app ()
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Cons")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Cons")
             (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) (LMonoTy.tcons "List" [.int])))))
-          (LExpr.intConst () 1))
-        (LExpr.op () (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int]))))),
+          (LExpr.intConst Strata.SourceRange.none 1))
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int]))))),
 
     -- Extract head
     Statement.init (CoreIdent.unres "head") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "List..hd")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "List..hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int]))))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int]))))),
 
     -- Assert head == 1
     Statement.assert "head_is_1"
-      (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "head") (.some .int))
-        (LExpr.intConst () 1))
+      (LExpr.eq Strata.SourceRange.none
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "head") (.some .int))
+        (LExpr.intConst Strata.SourceRange.none 1))
   ]
 
   match mkProgramWithDatatypes [optionDatatype, listDatatype] "testDestructors" statements with
@@ -299,48 +299,48 @@ def test4_nestedDatatypes : IO String := do
     -- Create a List of Option: Cons(Some(42), Nil)
     Statement.init (CoreIdent.unres "listOfOpt")
       (.forAll [] (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))
-      (some (LExpr.app ()
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Cons")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Cons")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int])
               (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])
                 (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))))
-          (LExpr.app ()
-            (LExpr.op () (CoreIdent.unres "Some")
+          (LExpr.app Strata.SourceRange.none
+            (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Some")
               (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
-            (LExpr.intConst () 42)))
-        (LExpr.op () (CoreIdent.unres "Nil")
+            (LExpr.intConst Strata.SourceRange.none 42)))
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Nil")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))))),
 
     -- Assert that the list is Cons
     Statement.assert "list_is_cons"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isCons")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isCons")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "listOfOpt")
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "listOfOpt")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
 
     -- Extract the head of the list (which is an Option)
     Statement.init (CoreIdent.unres "headOpt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "List..hd")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "List..hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.fvar () (CoreIdent.unres "listOfOpt")
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "listOfOpt")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))))),
 
     -- Extract the value from the Option
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "headOpt")
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "headOpt")
           (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert that the extracted value is 42
     Statement.assert "value_is_42"
-      (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
-        (LExpr.intConst () 42))
+      (LExpr.eq Strata.SourceRange.none
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "value") (.some .int))
+        (LExpr.intConst Strata.SourceRange.none 42))
   ]
 
   match mkProgramWithDatatypes [listDatatype, optionDatatype] "testNested" statements with
@@ -369,25 +369,25 @@ def test5_testerWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value (non-deterministic)
     Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
+      (some (LExpr.op Strata.SourceRange.none (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
     Statement.havoc (CoreIdent.unres "x"),
 
     -- Assume x is Some
     Statement.assume "x_is_some"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isSome")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isSome")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert x is not None (should follow from assumption)
     Statement.assert "x_not_none"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Bool.Not")
           (.some (LMonoTy.arrow .bool .bool)))
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isNone")
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isNone")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))))
+          (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))))
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testTesterHavoc" statements with
@@ -416,33 +416,33 @@ def test6_destructorWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value
     Statement.init (CoreIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.intConst () 0))),
+        (LExpr.intConst Strata.SourceRange.none 0))),
     Statement.havoc (CoreIdent.unres "opt"),
 
     -- Assume opt is Some(42)
     Statement.assume "opt_is_some_42"
-      (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Some")
+      (LExpr.eq Strata.SourceRange.none
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Some")
             (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
-          (LExpr.intConst () 42))),
+          (LExpr.intConst Strata.SourceRange.none 42))),
 
     -- Extract value
     Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Option..OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert val == 42
     Statement.assert "val_is_42"
-      (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
-        (LExpr.intConst () 42))
+      (LExpr.eq Strata.SourceRange.none
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "value") (.some .int))
+        (LExpr.intConst Strata.SourceRange.none 42))
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testDestructorHavoc" statements with
@@ -470,25 +470,25 @@ def test7_listWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc a list
     Statement.init (CoreIdent.unres "xs") (.forAll [] (LMonoTy.tcons "List" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int])))),
+      (some (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int])))),
     Statement.havoc (CoreIdent.unres "xs"),
 
     -- Assume xs is Cons
     Statement.assume "xs_is_cons"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isCons")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isCons")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))),
 
     -- Assert xs is not Nil
     Statement.assert "xs_not_nil"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Bool.Not")
           (.some (LMonoTy.arrow .bool .bool)))
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isNil")
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isNil")
             (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))))
+          (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))))
   ]
 
   match mkProgramWithDatatypes [listDatatype] "testListHavoc" statements with
@@ -522,40 +522,40 @@ def test8_hiddenTypeRecursion : IO String := do
     -- Initialize with Empty Container - note we NEVER use Hidden directly
     Statement.init (CoreIdent.unres "container")
       (.forAll [] (LMonoTy.tcons "Container" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int])))),
+      (some (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int])))),
 
     -- Havoc the container to make it non-deterministic
     Statement.havoc (CoreIdent.unres "container"),
 
     -- Assume container is not Empty (so it must be WithHidden)
     Statement.assume "container_not_empty"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Bool.Not")
           (.some (LMonoTy.arrow .bool .bool)))
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isEmpty")
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isEmpty")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
+          (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Extract the visible part
     Statement.init (CoreIdent.unres "Container..visiblePart") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Container..visiblePart")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Container..visiblePart")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Assume the visible part has a specific value
     Statement.assume "visible_part_is_42"
-      (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "Container..visiblePart") (.some .int))
-        (LExpr.intConst () 42)),
+      (LExpr.eq Strata.SourceRange.none
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "Container..visiblePart") (.some .int))
+        (LExpr.intConst Strata.SourceRange.none 42)),
 
     -- Assert that container is WithHidden
     Statement.assert "container_is_with_hidden"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isWithHidden")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isWithHidden")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))
   ]
 
   match mkProgramWithDatatypes [hiddenDatatype, containerDatatype] "testHiddenTypeRecursion" statements with
@@ -691,59 +691,59 @@ def test9_mutualRecursiveWithHavoc : IO String := do
   let statements : List Statement := [
     -- Create a tree: Node 1 FNil
     Statement.init (CoreIdent.unres "tree") (.forAll [] (LMonoTy.tcons "RoseTree" [.int]))
-      (some (LExpr.app ()
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Node")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Node")
             (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) (LMonoTy.tcons "RoseTree" [.int])))))
-          (LExpr.intConst () 1))
-        (LExpr.op () (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int]))))),
+          (LExpr.intConst Strata.SourceRange.none 1))
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int]))))),
 
     -- Havoc the tree
     Statement.havoc (CoreIdent.unres "tree"),
 
     -- Extract nodeVal
     Statement.init (CoreIdent.unres "val") (.forAll [] LMonoTy.int)
-      (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "RoseTree..nodeVal")
+      (some (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "RoseTree..nodeVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int]))))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int]))))),
 
     -- Assume val == 42
     Statement.assume "val_is_42"
-      (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "val") (.some .int))
-        (LExpr.intConst () 42)),
+      (LExpr.eq Strata.SourceRange.none
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "val") (.some .int))
+        (LExpr.intConst Strata.SourceRange.none 42)),
 
     -- Assert tree is a Node (always true for RoseTree)
     Statement.assert "tree_is_node"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isNode")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isNode")
           (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
 
     -- Create a forest: FNil
     Statement.init (CoreIdent.unres "forest") (.forAll [] (LMonoTy.tcons "Forest" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int])))),
+      (some (LExpr.op Strata.SourceRange.none (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int])))),
 
     -- Havoc the forest
     Statement.havoc (CoreIdent.unres "forest"),
 
     -- Assume forest is FCons
     Statement.assume "forest_is_fcons"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isFCons")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isFCons")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))),
+        (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))),
 
     -- Assert forest is not FNil
     Statement.assert "forest_not_fnil"
-      (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+      (LExpr.app Strata.SourceRange.none
+        (LExpr.op Strata.SourceRange.none (CoreIdent.unres "Bool.Not")
           (.some (LMonoTy.arrow .bool .bool)))
-        (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isFNil")
+        (LExpr.app Strata.SourceRange.none
+          (LExpr.op Strata.SourceRange.none (CoreIdent.unres "isFNil")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))))
+          (LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))))
   ]
 
   match mkProgramWithMutualDatatypes [roseTreeDatatype, forestDatatype] "testMutualRecursive" statements with

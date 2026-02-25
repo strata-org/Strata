@@ -118,7 +118,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 2: Recursive datatype (List) - using List type
@@ -132,7 +132,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 3: Multiple constructors - Tree with Leaf and Node
@@ -146,7 +146,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "tree") (.some (.tcons "TestTree" [.bool])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "tree") (.some (.tcons "TestTree" [.bool])))
   [treeDatatype]
 
 -- Test 4: Parametric datatype instantiation - List Int
@@ -160,7 +160,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "intList") (.some (.tcons "TestList" [.int])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "intList") (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 5: Parametric datatype instantiation - List Bool (should reuse same datatype)
@@ -174,7 +174,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "boolList") (.some (.tcons "TestList" [.bool])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "boolList") (.some (.tcons "TestList" [.bool])))
   [listDatatype]
 
 -- Test 6: Multi-field constructor - Tree with 3 fields
@@ -188,7 +188,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "intTree") (.some (.tcons "TestTree" [.int])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "intTree") (.some (.tcons "TestTree" [.int])))
   [treeDatatype]
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
@@ -205,7 +205,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
   [optionDatatype, listDatatype]
 
 /-! ## Constructor Application Tests -/
@@ -219,7 +219,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.op () (CoreIdent.unres "None") (.some (.tcons "TestOption" [.int])))
+  (.op Strata.SourceRange.none (CoreIdent.unres "None") (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 9: Some constructor (single-argument)
@@ -231,7 +231,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "Some") (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst () 42))
+  (.app Strata.SourceRange.none (.op Strata.SourceRange.none (CoreIdent.unres "Some") (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst Strata.SourceRange.none 42))
   [optionDatatype]
 
 -- Test 10: Cons constructor (multi-argument)
@@ -244,10 +244,10 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app ()
-    (.app () (.op () (CoreIdent.unres "Cons") (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
-      (.intConst () 1))
-    (.op () (CoreIdent.unres "Nil") (.some (.tcons "TestList" [.int]))))
+  (.app Strata.SourceRange.none
+    (.app Strata.SourceRange.none (.op Strata.SourceRange.none (CoreIdent.unres "Cons") (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
+      (.intConst Strata.SourceRange.none 1))
+    (.op Strata.SourceRange.none (CoreIdent.unres "Nil") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Tester Function Tests  -/
@@ -264,8 +264,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestOption..isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
-    (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
+  (.app Strata.SourceRange.none (.op Strata.SourceRange.none (CoreIdent.unres "TestOption..isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
+    (.fvar Strata.SourceRange.none (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 12: isCons tester
@@ -280,8 +280,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList..isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
-    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app Strata.SourceRange.none (.op Strata.SourceRange.none (CoreIdent.unres "TestList..isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
+    (.fvar Strata.SourceRange.none (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Destructor Function Tests -/
@@ -298,8 +298,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestOption..val") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
-    (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
+  (.app Strata.SourceRange.none (.op Strata.SourceRange.none (CoreIdent.unres "TestOption..val") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
+    (.fvar Strata.SourceRange.none (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 14: Cons head destructor
@@ -314,8 +314,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList..head") (.some (.arrow (.tcons "TestList" [.int]) .int)))
-    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app Strata.SourceRange.none (.op Strata.SourceRange.none (CoreIdent.unres "TestList..head") (.some (.arrow (.tcons "TestList" [.int]) .int)))
+    (.fvar Strata.SourceRange.none (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 -- Test 15: Cons tail destructor
@@ -330,8 +330,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList..tail") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
-    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app Strata.SourceRange.none (.op Strata.SourceRange.none (CoreIdent.unres "TestList..tail") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
+    (.fvar Strata.SourceRange.none (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Dependency Order Tests -/
@@ -395,7 +395,7 @@ info: (declare-datatype Root (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
   [rootDatatype, rightDatatype, leftDatatype, diamondDatatype]
 
 -- Test 17: Mutually recursive datatypes (RoseTree/Forest)
@@ -436,7 +436,7 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
-  (.fvar () (CoreIdent.unres "tree") (.some (.tcons "RoseTree" [.int])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "tree") (.some (.tcons "RoseTree" [.int])))
   [[roseTreeDatatype, forestDatatype]]
 
 -- Test 19: Mix of mutual and non-mutual datatypes
@@ -454,7 +454,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
-  (.fvar () (CoreIdent.unres "optionTree") (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
+  (.fvar Strata.SourceRange.none (CoreIdent.unres "optionTree") (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
   [[optionDatatype], [roseTreeDatatype, forestDatatype]]
 
 end DatatypeTests

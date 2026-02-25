@@ -20,7 +20,7 @@ open LTy.Syntax LExpr.SyntaxMono
                         typeArgs := ["a", "b"],
                         inputs := [(CoreIdent.locl "w", mty[int]), (CoreIdent.locl "x", mty[%a]), (CoreIdent.locl "y", mty[%b]), (CoreIdent.locl "z", mty[%a])],
                         output := mty[%a],
-                        body := some (LExpr.fvar () (CoreIdent.locl "x") none) } : Function)
+                        body := some (LExpr.fvar Strata.SourceRange.none (CoreIdent.locl "x") none) } : Function)
          return format type
 
 end Core

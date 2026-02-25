@@ -20,7 +20,7 @@ open Strata.SMT
 Converts B3 programs to Core and verifies them using the CoreSMT verifier.
 -/
 
-namespace B3.Verifier
+namespace Strata.B3.Verifier
 
 /-- Parse DDM program to B3 AST -/
 def programToB3AST (prog : Program) : Except String (B3AST.Program SourceRange) := do
@@ -38,6 +38,13 @@ def programToB3AST (prog : Program) : Except String (B3AST.Program SourceRange) 
     .ok ast
 
 -- Minimal type stubs for B3 verifier API compatibility
+
+/-- Create a buffer-backed solver for capturing SMT output without running a solver -/
+def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
+  let buffer ← IO.mkRef {}
+  let solver ← Solver.bufferWriter buffer
+  return (solver, buffer)
+
 structure VerificationReport where
   label : String
   outcome : Core.Outcome
@@ -76,5 +83,5 @@ def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : So
   let reports ← programToSMT prog solver
   return reports.flatMap (fun r => r.results.map (fun (vr, _) => .ok vr))
 
-end B3.Verifier
+end Strata.B3.Verifier
 

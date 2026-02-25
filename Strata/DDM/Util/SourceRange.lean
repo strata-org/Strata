@@ -25,7 +25,12 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving DecidableEq, Inhabited, Repr
+deriving DecidableEq, Inhabited
+
+instance : Repr SourceRange where
+  reprPrec sr _ :=
+    if sr.start == 0 && sr.stop == 0 then "()"
+    else s!"\{start := {sr.start}, stop := {sr.stop}}"
 
 namespace SourceRange
 
