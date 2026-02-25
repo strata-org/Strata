@@ -142,8 +142,7 @@ abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcon
     let t ← Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
     IO.println s!"Generated {t}"
 
-/--
-info: Generating terms of type
+/-- info: Generating terms of type
 Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" [], Lambda.LMonoTy.tcons "bool" []])
 in context
 { types := [[]], aliases := [] }
@@ -161,8 +160,7 @@ in factory
       let .error e := annotate t | throw <| IO.Error.userError "Unreachable"
       IO.println s!"FAILED({i}): {e}\n{t}\n\nSHRUNK TO:\n{shrinkFun (not ∘ canAnnotate) t}\n\n"
 
-/--
-info: Generating terms of type
+/-- info: Generating terms of type
 Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" [], Lambda.LMonoTy.tcons "bool" []])
 in context
 { types := [[]], aliases := [] }

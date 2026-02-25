@@ -5,7 +5,6 @@
 -/
 
 import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.Verifier
 
 /-! ## Tests for SMTEncoder -/
 
@@ -80,7 +79,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
       config := { Env.init.exprEnv.config with
         factory :=
           Env.init.exprEnv.config.factory.push $
-          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
+          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
       }
    }})
 
@@ -98,113 +97,46 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
       config := { Env.init.exprEnv.config with
         factory :=
           Env.init.exprEnv.config.factory.push $
-          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
+          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
       }
    }})
 
-/-! ## Tests for Array Theory Support -/
+/-! ## Tests for multi-argument fvar application -/
 
-section ArrayTheory
-
--- Test map select with Array theory enabled
+-- Two-argument fvar: g(a, b) where g : int → int → bool
+-- The fix ensures all argument types are collected via destructArrow,
+-- not just the first arrow layer.
 /--
-info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int) f0)\n; i\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n(define-fun t2 () Int (select t0 t1))\n"
+info: "; a\n(declare-const f0 Int)\n(define-fun t0 () Int f0)\n; b\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; g\n(declare-fun f2 (Int Int) Bool)\n(define-fun t2 () Bool (f2 t0 t1))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
-  (useArrayTheory := true)
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+   (.app () (.app () (.fvar () "g" (.some (.arrow .int (.arrow .int .bool)))) (.fvar () "a" (.some .int))) (.fvar () "b" (.some .int)))
 
--- Test map update with Array theory enabled
+-- Three-argument fvar: h(a, b, c) where h : int → int → int → int
 /--
-info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int) f0)\n; i\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; v\n(declare-const f2 Int)\n(define-fun t2 () Int f2)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n"
+info: "; a\n(declare-const f0 Int)\n(define-fun t0 () Int f0)\n; b\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; c\n(declare-const f2 Int)\n(define-fun t2 () Int f2)\n; h\n(declare-fun f3 (Int Int Int) Int)\n(define-fun t3 () Int (f3 t0 t1 t2))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
-    (.fvar () "v" (.some .int)))
-  (useArrayTheory := true)
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+   (.app () (.app () (.app () (.fvar () "h" (.some (.arrow .int (.arrow .int (.arrow .int .int))))) (.fvar () "a" (.some .int))) (.fvar () "b" (.some .int))) (.fvar () "c" (.some .int)))
 
--- Test nested map operations with Array theory
+/-! ## Tests for Map type SMT encoding -/
+
+-- Map int bool should encode as (Array Int Bool)
 /--
-info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int) f0)\n; i\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; v\n(declare-const f2 Int)\n(define-fun t2 () Int f2)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n; j\n(declare-const f3 Int)\n(define-fun t4 () Int f3)\n(define-fun t5 () Int (select t3 t4))\n"
+info: "; m\n(declare-const f0 (Array Int Bool))\n(define-fun t0 () (Array Int Bool) f0)\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-      (.fvar () "m" (.some (mapTy .int .int))))
-      (.fvar () "i" (.some .int)))
-      (.fvar () "v" (.some .int))))
-    (.fvar () "j" (.some .int)))
-  (useArrayTheory := true)
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+   (.fvar () "m" (.some (.tcons "Map" [.int, .bool])))
 
-end ArrayTheory
+-- Nested Map: Map int (Map int bool) → (Array Int (Array Int Bool))
+/--
+info: "; m\n(declare-const f0 (Array Int (Array Int Bool)))\n(define-fun t0 () (Array Int (Array Int Bool)) f0)\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.fvar () "m" (.some (.tcons "Map" [.int, .tcons "Map" [.int, .bool]])))
 
 end Core
-
-/-! ## End-to-End Test with Complete Program -/
-
-namespace Strata
-
--- Simple program that uses maps
-def simpleMapProgram :=
-#strata
-program Core;
-
-var m : Map int int;
-
-procedure UpdateAndRead(k : int, v : int) returns (result : int)
-spec {
-    modifies m;
-    ensures result == v;
-}
-{
-    m := m[k := v];
-    result := m[k];
-};
-#end
-
--- Test verification with axiomatized maps (default)
-/--
-info:
-Obligation: UpdateAndRead_ensures_1
-Property: assert
-Result: ✅ pass
--/
-#guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
-
--- Test verification with Array theory
-/--
-info:
-Obligation: UpdateAndRead_ensures_1
-Property: assert
-Result: ✅ pass
--/
-#guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true})
-
-end Strata
