@@ -33,21 +33,6 @@ procedure invalidPostcondition(x: int)
 //          ^^^^^ error: assertion does not hold
 {
 }
-
-function opaqueFunction(x: int) returns (r: int)
-  requires x > 0
-  ensures r > 0
-{
-  x
-}
-
-procedure callerOfOpaqueFunction() {
-  var x: int := opaqueFunction(3);
-  assert x > 0;
-// The following assert should fail but it does not,
-// because Core does not support opaque functions
-//  assert x == 3;
-}
 "
 
 #guard_msgs (drop info, error) in

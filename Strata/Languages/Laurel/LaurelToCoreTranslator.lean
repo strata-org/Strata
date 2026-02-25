@@ -493,8 +493,18 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     | some p => translateType p.type
     | none => LMonoTy.int
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type))
+  -- Translate precondition to FuncPrecondition (skip trivial `true`)
+  let preconditions : List (Lambda.FuncPrecondition Core.Expression.Expr Core.ExpressionMetadata) ←
+    match proc.precondition with
+    | ⟨ .LiteralBool true, _ ⟩ => pure []
+    | precond =>
+        let e ← translateExpr initEnv precond [] (isPureContext := true)
+        pure [{ expr := e, md := () }]
   let body ← match proc.body with
     | .Transparent bodyExpr => some <$> translateExpr initEnv bodyExpr [] (isPureContext := true)
+    | .Opaque _ (some bodyExpr) _ =>
+      emitDiagnostic (proc.md.toDiagnostic "functions with postconditions are not yet supported")
+      some <$> translateExpr initEnv bodyExpr [] (isPureContext := true)
     | _ => pure none
   return .func {
     name := Core.CoreIdent.unres proc.name
@@ -502,6 +512,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     inputs := inputs
     output := outputTy
     body := body
+    preconditions := preconditions
   }
 
 /--
