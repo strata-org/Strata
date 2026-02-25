@@ -95,10 +95,9 @@ where
           .ok (Stmt.cmd c', Env, C)
 
         | .block label bss md => do
-          let Env := Env.pushEmptyContext
-          let (ss', Env, C) ← go C Env bss []
-          let s' := Stmt.block label ss' md
-          .ok (s', Env.popContext, C)
+          let (bss', Env, C) ← goBlock C Env bss []
+          let s' := Stmt.block label bss' md
+          .ok (s', Env, C)
 
         | .ite cond tss ess md => do try
           let _ ← Env.freeVarCheck cond f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
@@ -106,9 +105,9 @@ where
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
-            let (tb, Env, C) ← go C Env [(Stmt.block "$_then" tss  #[])] []
-            let (eb, Env, C) ← go C Env [(Stmt.block "$_else" ess  #[])] []
-            let s' := Stmt.ite conda.unresolved tb eb md
+            let (tss, Env, C) ← goBlock C Env tss []
+            let (ess, Env, C) ← goBlock C Env ess []
+            let s' := Stmt.ite conda.unresolved tss ess md
             .ok (s', Env, C)
           | _ => .error <| md.toDiagnosticF f!"[{s}]: If's condition {cond} is not of type `bool`!"
           catch e =>
@@ -138,7 +137,7 @@ where
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
-            let (tb, Env, C) ← go C Env [(Stmt.block "$_loop_body" bss #[])] []
+            let (tb, Env, C) ← goBlock C Env bss []
             let s' := Stmt.loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
             .ok (s', Env, C)
           | _ =>
@@ -177,8 +176,11 @@ where
             .error (errorWithSourceLoc e md)
 
       go C Env srest (s' :: acc)
-    termination_by Block.sizeOf ss
-    decreasing_by all_goals term_by_mem
+  goBlock (C : LContext CoreLParams) (Env : TEnv Visibility) (bss : Imperative.Block Core.Expression Core.Command) (acc : List Statement) :
+    Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) := do
+    let Env := Env.pushEmptyContext
+    let (ss', Env, C) ← go C Env bss acc
+    .ok (ss', Env.popContext, C)
 
 private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
   match oe with

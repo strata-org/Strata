@@ -16,6 +16,7 @@ See function `Lambda.LExpr.eval` for the implementation.
 
 namespace Lambda
 open Std (ToFormat Format format)
+open Strata.DL.Util (FuncAttr)
 
 namespace LExpr
 
@@ -154,9 +155,12 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
       match σ.config.factory.callOfLFunc e with
       | some (op_expr, args, lfunc) =>
         let args := args.map (fun a => eval n' σ a)
-        let firstArgIsConstr := (args.head?.map (isConstrApp σ.config.factory)).getD false
-        if h: lfunc.body.isSome && (inline_attr ∈ lfunc.attr ||
-          (inline_if_constr_attr ∈ lfunc.attr && firstArgIsConstr)) then
+        let constrArgAt (idx : Option Nat) :=
+          match idx with
+          | some i => (args[i]? |>.map (isConstrApp σ.config.factory)).getD false
+          | none => false
+        if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
+          constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr)) then
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           let input_map := lfunc.inputs.keys.zip args
@@ -164,13 +168,13 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           eval n' σ new_e
         else
           let new_e := @mkApp TBase.mono e.metadata op_expr args
-          if args.all (isCanonicalValue σ.config.factory) ||
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
-            (eval_if_constr_attr ∈ lfunc.attr && firstArgIsConstr) then
-            -- Other functions (e.g. Eliminators) only require the first arg
-            -- to be a constructor
+          if args.all (isCanonicalValue σ.config.factory) ||
+            -- Other functions (e.g. Eliminators) only require the designated
+            -- arg to be a constructor
+            constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) then
             match lfunc.concreteEval with
             | none => new_e
             | some ceval =>

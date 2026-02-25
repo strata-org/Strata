@@ -110,30 +110,26 @@ mutual
 
 def alphaEquivBlock (b1 b2: Core.Block) (map:IdMap)
     : Except Format IdMap := do
-  if b1.length ≠ b2.length then
-    .error "Block lengths do not match"
-  else
-    (b1.attach.zip b2).foldlM
-      (fun (map:IdMap) (st1,st2) => do
-        let newmap ← alphaEquivStatement st1.1 st2 map
-        return newmap)
-      map
-  termination_by b1.sizeOf
-  decreasing_by cases st1; term_by_mem [Stmt, Imperative.sizeOf_stmt_in_block]
+  match b1, b2 with
+  | [], [] => .ok map
+  | bs1 :: bss1, bs2 :: bss2 =>
+    let newmap ← alphaEquivStatement bs1 bs2 map
+    alphaEquivBlock bss1 bss2 newmap
+  | _, _ => .error "Block lengths do not match"
 
 def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     : Except Format IdMap := do
   let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
 
-  match _hs: (s1,s2) with
-  | (.block lbl1 b1 _, .block lbl2 b2 _) =>
+  match s1, s2 with
+  | .block lbl1 b1 _, .block lbl2 b2 _ =>
     -- Since 'goto lbl' can appear before 'lbl' is defined, update the label
     -- map here
     let map ← IdMap.updateLabel map lbl1 lbl2
     alphaEquivBlock b1 b2 map
 
-  | (.ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2 _) => do
+  | .ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2 _ => do
     if alphaEquivExprs cond1 cond2 map then
       let map' <- alphaEquivBlock thenb1 thenb2 map
       let map'' <- alphaEquivBlock elseb1 elseb2 map'
@@ -141,7 +137,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     else
       .error "if conditions do not match"
 
-  | (.loop g1 m1 i1 b1 _, .loop g2 m2 i2 b2 _) =>
+  | .loop g1 m1 i1 b1 _, .loop g2 m2 i2 b2 _ =>
     if ¬ alphaEquivExprs g1 g2 map then
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
@@ -150,12 +146,12 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "invariant does not match"
     else alphaEquivBlock b1 b2 map
 
-  | (.goto lbl1 _, .goto lbl2 _) =>
+  | .goto lbl1 _, .goto lbl2 _ =>
     IdMap.updateLabel map lbl1 lbl2
 
-  | (.cmd c1, .cmd c2) =>
-    match (c1, c2) with
-    | (.call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _) =>
+  | .cmd c1, .cmd c2 =>
+    match c1, c2 with
+    | .call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _ =>
       if procName1 ≠ procName2 then
         .error "Procedure name does not match"
       else if lhs1.length ≠ lhs2.length then
@@ -170,12 +166,12 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
         .error "Call args do not map"
       else
         return map
-    | (.cmd (.init n1 _ _e1 _), .cmd (.init n2 _ _e2 _)) =>
+    | .cmd (.init n1 _ _e1 _), .cmd (.init n2 _ _e2 _) =>
       -- Omit e1 and e2 check because init may use undeclared free vars
       -- The updateVars below must be the only place that updates the
       -- variable name mapping.
       IdMap.updateVars map [(n1.name,n2.name)]
-    | (.cmd (.set n1 e1 _), .cmd (.set n2 e2 _)) =>
+    | .cmd (.set n1 e1 _), .cmd (.set n2 e2 _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
         \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
@@ -184,27 +180,25 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
         mk_err "LHS of sets do not match"
       else
         return map
-    | (.cmd (.havoc n1 _), .cmd (.havoc n2 _)) =>
+    | .cmd (.havoc n1 _), .cmd (.havoc n2 _) =>
       if ¬ alphaEquivIdents n1 n2 map then
         mk_err "LHS of havocs do not match"
       else
         return map
-    | (.cmd (.assert _ e1 _), .cmd (.assert _ e2 _)) =>
+    | .cmd (.assert _ e1 _), .cmd (.assert _ e2 _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err "Expressions of asserts do not match"
       else
         return map
-    | (.cmd (.assume _ e1 _), .cmd (.assume _ e2 _)) =>
+    | .cmd (.assume _ e1 _), .cmd (.assume _ e2 _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err "Expressions of assumes do not match"
       else
         return map
-    | (_,_) =>
+    | _, _ =>
       mk_err "Commands do not match"
 
-  | (_,_) => mk_err "Statements do not match"
-  termination_by s1.sizeOf
-  decreasing_by all_goals(cases _hs; term_by_mem)
+  | _, _ => mk_err "Statements do not match"
 
 end
 
