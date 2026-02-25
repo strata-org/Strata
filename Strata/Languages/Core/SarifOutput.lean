@@ -57,7 +57,9 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
 def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
   let level := outcomeToLevel vcr.result
-  let messageText := outcomeToMessage vcr.result vcr.smtResult
+  let messageText :=
+    if vcr.isUnreachable then "Path is unreachable"
+    else outcomeToMessage vcr.result vcr.smtObligationResult
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation files vcr.obligation.metadata with
@@ -85,3 +87,19 @@ def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResult
     runs := #[run] }
 
 end Core.Sarif
+
+/-- Write SARIF output for verification results to a file.
+    `files` maps source URIs to their file maps for location resolution.
+    `vcResults` are the verification results to encode.
+    `outputPath` is the path to write the SARIF JSON to. -/
+def Core.Sarif.writeSarifOutput
+    (files : Map Strata.Uri Lean.FileMap)
+    (vcResults : Core.VCResults)
+    (outputPath : String) : IO Unit := do
+  let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
+  let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
+  try
+    IO.FS.writeFile outputPath sarifJson
+    IO.println s!"SARIF output written to {outputPath}"
+  catch e =>
+    IO.eprintln s!"Error writing SARIF output to {outputPath}: {e.toString}"

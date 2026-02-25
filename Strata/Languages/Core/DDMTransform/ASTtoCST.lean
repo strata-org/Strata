@@ -815,18 +815,28 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
   | .havoc name _md => do
     let nameAnn : Ann String M := ⟨default, name.name⟩
     pure (.havoc_statement default nameAnn)
-  | .assert label expr _md => do
+  | .assert label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.assert default labelAnn exprCST)
+    let rcAnn : Ann (Option (ReachCheck M)) M :=
+      if Imperative.MetaData.hasReachCheck md then
+        ⟨default, some (.reachCheck default)⟩
+      else
+        ⟨default, none⟩
+    pure (.assert default rcAnn labelAnn exprCST)
   | .assume label expr _md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
     pure (.assume default labelAnn exprCST)
-  | .cover label expr _md => do
+  | .cover label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.cover default labelAnn exprCST)
+    let rcAnn : Ann (Option (ReachCheck M)) M :=
+      if Imperative.MetaData.hasReachCheck md then
+        ⟨default, some (.reachCheck default)⟩
+      else
+        ⟨default, none⟩
+    pure (.cover default rcAnn labelAnn exprCST)
   | .call lhs pname args _md => do
     let lhsAnn := ⟨default, lhs.toArray.map fun id => ⟨default, id.name⟩⟩
     let pnameAnn : Ann String M := ⟨default, pname⟩
@@ -918,9 +928,10 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   -- Build spec elements
   let mut specElts : Array (SpecElt M) := #[]
   -- Add modifies
-  for id in proc.spec.modifies do
-    let modSpec := SpecElt.modifies_spec default ⟨default, id.name⟩
-    specElts := specElts.push modSpec
+  if !proc.spec.modifies.isEmpty then
+    let ids : Ann (Array (Ann String M)) M :=
+      ⟨default, proc.spec.modifies.toArray.map fun id => ⟨default, id.name⟩⟩
+    specElts := specElts.push (SpecElt.modifies_spec default ids)
   -- Add requires
   for (label, check) in proc.spec.preconditions.toList do
     let labelAnn : Ann (Option (Label M)) M :=

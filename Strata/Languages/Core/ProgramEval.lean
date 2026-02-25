@@ -28,8 +28,8 @@ structure DeclsEnv where
 
 def initStmtToGlobalVarDecl (s : Statement) : Decl :=
   match s with
-  | .init x ty (some e) md => (.var x ty e md)
-  | _ => panic s!"Expected a variable initialization with expression; found {format s} instead."
+  | .init x ty e md => (.var x ty e md)
+  | _ => panic s!"Expected a variable initialization; found {format s} instead."
 
 def eval (E : Env) : List (Program × Env) :=
   -- Push a path condition scope to store axioms

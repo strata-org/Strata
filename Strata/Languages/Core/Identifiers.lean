@@ -144,6 +144,7 @@ def elabCoreIdent : Syntax → MetaM Expr
 instance : MkLExprParams ⟨CoreExprMetadata, Visibility⟩ where
   elabIdent := elabCoreIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (.const ``Visibility [])
+  defaultMetadata := return mkConst ``Strata.SourceRange.none
 
 elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Visibility⟩) e
 

@@ -48,14 +48,6 @@ instance : HasPassiveCmds Expression Command where
 instance : HasHavoc Expression Command where
   havoc x := .cmd (.havoc x)
 
-def CmdExt.sizeOf (c : CmdExt P) : Nat :=
-  match c with
-  | .cmd c => SizeOf.sizeOf c
-  | .call l p a _ => 3 + l.length + SizeOf.sizeOf p + a.length
-
-instance : SizeOf (CmdExt P) where
-  sizeOf := CmdExt.sizeOf
-
 instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
     [ToFormat (List P.Ident)] [ToFormat P.Expr] :
     ToFormat (CmdExt P) where
@@ -135,15 +127,11 @@ def Statement.eraseTypes (s : Statement) : Statement :=
       axioms := decl.axioms.map Lambda.LExpr.eraseTypes,
       preconditions := decl.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
     .funcDecl decl' md
-  termination_by (Stmt.sizeOf s)
-  decreasing_by all_goals simp[sizeOf] <;> term_by_mem
 
 def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
   | [] => []
   | s :: srest => Statement.eraseTypes s :: Statements.eraseTypes srest
-  termination_by (sizeOf ss)
-  decreasing_by all_goals simp [sizeOf] <;> term_by_mem
 end
 
 ---------------------------------------------------------------------
@@ -212,7 +200,6 @@ def Statement.modifiedVarsTrans
   | .loop _ _ _ bss _ =>
     Statements.modifiedVarsTrans π bss
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
-  termination_by (Stmt.sizeOf s)
 
 def Statements.modifiedVarsTrans
   {ProcType : Type}
@@ -221,7 +208,6 @@ def Statements.modifiedVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.modifiedVarsTrans π s ++ Statements.modifiedVarsTrans π ss
-  termination_by (Block.sizeOf ss)
 end
 
 def Command.getVarsTrans
@@ -258,7 +244,6 @@ def Statement.getVarsTrans
       let bodyVars := HasVarsPure.getVars body
       let formals := decl.inputs.map (·.1)
       bodyVars.filter (fun v => formals.all (fun f => v.name != f.name))
-  termination_by (Stmt.sizeOf s)
 
 def Statements.getVarsTrans
   {ProcType : Type}
@@ -267,7 +252,6 @@ def Statements.getVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.getVarsTrans π s ++ Statements.getVarsTrans π ss
-  termination_by (Block.sizeOf ss)
 end
 
 -- don't need to transitively lookup for procedures
@@ -302,7 +286,6 @@ def Statement.touchedVarsTrans
   | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
   | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
   | .funcDecl decl _ => [decl.name]  -- Function declaration touches (defines) the function name
-  termination_by (Stmt.sizeOf s)
 
 def Statements.touchedVarsTrans
   {ProcType : Type}
@@ -312,7 +295,6 @@ def Statements.touchedVarsTrans
   match ss with
   | [] => []
   | s :: srest => Statement.touchedVarsTrans π s ++ Statements.touchedVarsTrans π srest
-  termination_by (Block.sizeOf ss)
 end
 
 def Statement.allVarsTrans
@@ -332,8 +314,6 @@ mutual
 def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
-  termination_by b.sizeOf
-  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
@@ -371,7 +351,6 @@ def Statement.substFvar (s : Core.Statement)
       body := decl.body.map (Lambda.LExpr.substFvar · fr to),
       axioms := decl.axioms.map (Lambda.LExpr.substFvar · fr to) }
     .funcDecl decl' md
-  termination_by s.sizeOf
 end
 
 ---------------------------------------------------------------------
@@ -380,8 +359,6 @@ mutual
 def Block.renameLhs (b : Block)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
-  termination_by b.sizeOf
-  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.renameLhs (s : Core.Statement)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
@@ -406,8 +383,6 @@ def Statement.renameLhs (s : Core.Statement)
     let decl' := if decl.name == fr then { decl with name := to } else decl
     .funcDecl decl' md
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
-  termination_by s.sizeOf
-  decreasing_by all_goals term_by_mem
 end
 
 ---------------------------------------------------------------------

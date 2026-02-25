@@ -16,25 +16,25 @@ open Strata.SMT
 /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
+  (.quant Strata.SourceRange.none .all (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
+   (.quant Strata.SourceRange.none .exist (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
+   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 1) (.bvar Strata.SourceRange.none 0))))
 
 /--
 info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (= $__bv0 f0)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+   (.quant Strata.SourceRange.none .exist (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
+   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 /--
 info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 f1) :pattern ((f0 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant ()  .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+   (.quant Strata.SourceRange.none  .exist (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0))
+   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 
 /--
@@ -42,23 +42,23 @@ info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+   (.quant Strata.SourceRange.none .exist (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0))
+   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 /-- info: "Cannot encode expression (f %0)" -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+   (.quant Strata.SourceRange.none .exist (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.none)) (.bvar Strata.SourceRange.none 0))
+   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 /--
 info: "; f\n(declare-const f0 (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\n; x\n(declare-const f2 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f1 $__bv0) f2) :pattern (f0))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int)
-   (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+   (.quant Strata.SourceRange.none .exist (.some .int)
+   (mkTriggerExpr [[.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))]])
+   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
    (ctx := SMT.Context.default)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -72,8 +72,8 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
+   (.quant Strata.SourceRange.none .all (.some .int) (.bvar Strata.SourceRange.none 0) (.quant Strata.SourceRange.none .all (.some .int) (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1))
+   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1)) (.fvar Strata.SourceRange.none "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -90,8 +90,8 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
+   (.quant Strata.SourceRange.none .all (.some .int) (.bvar Strata.SourceRange.none 0) (.quant Strata.SourceRange.none .all (.some .int) (.bvar Strata.SourceRange.none 0)
+   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1)) (.fvar Strata.SourceRange.none "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -112,9 +112,9 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
+  (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
+    (.fvar Strata.SourceRange.none "i" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -129,10 +129,10 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
-    (.fvar () "v" (.some .int)))
+  (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
+    (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
+    (.fvar Strata.SourceRange.none "i" (.some .int)))
+    (.fvar Strata.SourceRange.none "v" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -147,12 +147,12 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-      (.fvar () "m" (.some (mapTy .int .int))))
-      (.fvar () "i" (.some .int)))
-      (.fvar () "v" (.some .int))))
-    (.fvar () "j" (.some .int)))
+  (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
+      (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
+      (.fvar Strata.SourceRange.none "i" (.some .int)))
+      (.fvar Strata.SourceRange.none "v" (.some .int))))
+    (.fvar Strata.SourceRange.none "j" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with

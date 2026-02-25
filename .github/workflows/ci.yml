@@ -91,7 +91,10 @@ jobs:
       - name: Run pyAnalyze tests
         working-directory: StrataTest/Languages/Python
         shell: bash
-        run: ./run_py_analyze.sh
+        run: |
+          ./run_py_analyze.sh
+          python run_py_analyze_sarif.py
+          python run_py_analyze_sarif.py --laurel
 
   lint_checks:
     name: Run lint checks

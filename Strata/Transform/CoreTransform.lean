@@ -292,9 +292,6 @@ private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)
       | .goto _lbl _md =>
         return (false, [s]))
     return ⟨changed0 || changed, (sres ++ ss'')⟩
-termination_by sizeOf ss
-decreasing_by
-  all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
 
 /--
 Visit all procedures and run f. The returned Bool corresponds to whether the

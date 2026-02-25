@@ -63,7 +63,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property := .assert, assumptions := [], obligation := expr, metadata := md
     }
-    let smtResult := match decision with
+    let smtObligationResult := match decision with
       | SMT.Decision.unsat => SMT.Result.unsat
       | SMT.Decision.sat => SMT.Result.unknown
       | SMT.Decision.unknown => SMT.Result.unknown
@@ -81,7 +81,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
     else
       pure none
     
-    return ({ obligation, smtResult, result := outcome, diagnosis }, smtCtx)
+    return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
 
 /-- Cover check: check-sat of expression using check-sat-assuming -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
@@ -104,7 +104,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property := .cover, assumptions := [], obligation := expr, metadata := md
     }
-    let smtResult := match decision with
+    let smtObligationResult := match decision with
       | SMT.Decision.sat => SMT.Result.unknown
       | SMT.Decision.unsat => SMT.Result.unsat
       | SMT.Decision.unknown => SMT.Result.unknown
@@ -121,7 +121,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
     else
       pure none
     
-    return ({ obligation, smtResult, result := outcome, diagnosis }, smtCtx)
+    return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
 
 mutual
 /-- Process a single CoreSMT statement. Returns updated state, SMT context,
