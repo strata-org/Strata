@@ -33,6 +33,12 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
   | stmts : List (Stmt P CmdT) → SemanticStore P → SemanticEval P → Config P CmdT
   /-- A terminal configuration, indicating that execution has finished. -/
   | terminal : SemanticStore P → SemanticEval P → Config P CmdT
+  /-- An exiting configuration, indicating that an exit statement was encountered.
+      The optional label identifies which block to exit to. -/
+  | exiting : Option String → SemanticStore P → SemanticEval P → Config P CmdT
+  /-- A block context: execute the inner statement list, then consume matching exits.
+      The string is the block label. -/
+  | block : String → List (Stmt P CmdT) → SemanticStore P → SemanticEval P → Config P CmdT
 
 /--
 Small-step operational semantics for statements. The relation `StepStmt`
@@ -60,11 +66,11 @@ inductive StepStmt
       (.stmt (.cmd c) σ δ)
       (.terminal σ' δ)
 
-  /-- A labeled block steps to its statement list. -/
+  /-- A labeled block steps to a block context that tracks the label. -/
   | step_block :
     StepStmt P EvalCmd extendEval
-      (.stmt (.block _ ss _) σ δ)
-      (.stmts ss σ δ)
+      (.stmt (.block label ss _) σ δ)
+      (.block label ss σ δ)
 
   /-- If the condition of an `ite` statement evaluates to true, step to the then
   branch. -/
@@ -104,7 +110,11 @@ inductive StepStmt
       (.stmt (.loop g m inv body _) σ δ)
       (.terminal σ δ)
 
-  /- Exit: not yet implemented in small-step semantics. -/
+  /-- An exit statement produces an exiting configuration. -/
+  | step_exit :
+    StepStmt P EvalCmd extendEval
+      (.stmt (.exit label _) σ δ)
+      (.exiting label σ δ)
 
   /-- A function declaration extends the evaluator with the new function. -/
   | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr] :
@@ -126,6 +136,56 @@ inductive StepStmt
     StepStmt P EvalCmd extendEval
       (.stmts (s :: ss) σ δ)
       (.stmts ss σ' δ')
+
+  /-- If the first statement in a sequence exits, skip the remaining statements. -/
+  | step_stmt_cons_exit :
+    StepStmt P EvalCmd extendEval (.stmt s σ δ) (.exiting label σ' δ') →
+    ----
+    StepStmt P EvalCmd extendEval
+      (.stmts (s :: ss) σ δ)
+      (.exiting label σ' δ')
+
+  /-- A block context steps its body one step forward. -/
+  | step_block_body :
+    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.stmts ss' σ' δ') →
+    ----
+    StepStmt P EvalCmd extendEval
+      (.block label ss σ δ)
+      (.block label ss' σ' δ')
+
+  /-- When a block's body terminates normally, the block terminates normally. -/
+  | step_block_done :
+    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.terminal σ' δ') →
+    ----
+    StepStmt P EvalCmd extendEval
+      (.block label ss σ δ)
+      (.terminal σ' δ')
+
+  /-- When a block's body exits with no label, the block consumes the exit. -/
+  | step_block_exit_none :
+    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.exiting .none σ' δ') →
+    ----
+    StepStmt P EvalCmd extendEval
+      (.block label ss σ δ)
+      (.terminal σ' δ')
+
+  /-- When a block's body exits with a matching label, the block consumes the exit. -/
+  | step_block_exit_match :
+    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.exiting (.some l) σ' δ') →
+    l = label →
+    ----
+    StepStmt P EvalCmd extendEval
+      (.block label ss σ δ)
+      (.terminal σ' δ')
+
+  /-- When a block's body exits with a non-matching label, the exit propagates. -/
+  | step_block_exit_mismatch :
+    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.exiting (.some l) σ' δ') →
+    l ≠ label →
+    ----
+    StepStmt P EvalCmd extendEval
+      (.block label ss σ δ)
+      (.exiting (.some l) σ' δ')
 
 /--
 Multi-step execution: reflexive transitive closure of single steps.
