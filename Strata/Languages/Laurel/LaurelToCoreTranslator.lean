@@ -62,8 +62,7 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
 abbrev FunctionNames := List Identifier
 
 def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
-  -- readField, updateField, and Box constructors/destructors are always
-  -- functions
+  -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" || name == "increment" ||
   name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
   name == "MkComposite" || name == "Composite..ref" || name == "Composite..typeTag" ||
