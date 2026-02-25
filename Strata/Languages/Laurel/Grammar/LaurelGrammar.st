@@ -1,5 +1,5 @@
-// Changes in this file are not automatically discovered by the build. 
-// Touch LaurelGrammar.lean to trigger the build
+// Changes in this file are not automatically tracked by the build system.
+// Modify LaurelGrammar.lean (e.g. update its comment) to trigger a rebuild after changing this file.
 dialect Laurel;
 
 // Types

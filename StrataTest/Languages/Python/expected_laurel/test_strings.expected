@@ -7,6 +7,5 @@ assert_name_is_foo: ✅ pass (at byte 11077)
 assert_opt_name_none_or_str: ✅ pass (at byte 11127)
 assert_opt_name_none_or_bar: ✅ pass (at byte 11274)
 ensures_maybe_except_none: ✅ pass (at byte 10980)
-assert(114): ✅ pass (at byte 114)
-assert(264): ✅ pass (at byte 264)
-=======
+assert(114): ✅ pass (at line 6, col 4)
+assert(264): ✅ pass (at line 11, col 4)
