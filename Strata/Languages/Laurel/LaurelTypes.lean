@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 /-
@@ -47,7 +48,7 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .Identifier name =>
       match env.find? (fun (n, _) => n == name) with
       | some (_, ty) => ty
-      | none => panic s!"Could not find variable {name} in environment"
+      | none => panic s!"Could not find variable {name} in environment '{Std.format env}'"
   -- Field access
   | .FieldSelect target fieldName =>
       match computeExprType env types target with

@@ -220,6 +220,21 @@ def reNoneFunc : WFLFunc CoreLParams :=
 def polyOldFunc : WFLFunc CoreLParams :=
   polyUneval "old" ["a"] [("x", mty[%a])] mty[%a]
 
+/- A constant `Map` constructor with type `∀k, v. v → Map k v`.
+   `Map.const(d)` returns a map where every key maps to the value `d`. -/
+def mapConstFunc : WFLFunc CoreLParams :=
+  polyUneval "Map.const" ["k", "v"]
+    [("d", mty[%v])]
+    (mapTy mty[%k] mty[%v])
+    (axioms := [
+      ToCoreIdent esM[∀ (%v): -- %1 d
+          (∀ (%k): -- %0 kk
+            {(((~select : (Map %k %v) → %k → %v)
+                ((~Map.const : %v → (Map %k %v)) %1)) %0)}
+            (((~select : (Map %k %v) → %k → %v)
+                ((~Map.const : %v → (Map %k %v)) %1)) %0) == %1)]
+    ])
+
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
 def mapSelectFunc : WFLFunc CoreLParams :=
   polyUneval "select" ["k", "v"]
@@ -359,6 +374,7 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
 
   polyOldFunc,
 
+  mapConstFunc,
   mapSelectFunc,
   mapUpdateFunc,
 
@@ -464,6 +480,7 @@ def reInterOp : Expression.Expr := reInterFunc.opExpr
 def reCompOp : Expression.Expr := reCompFunc.opExpr
 def reNoneOp : Expression.Expr := reNoneFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
+def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 
