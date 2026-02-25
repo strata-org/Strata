@@ -75,9 +75,9 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let ans ← Core.SMT.dischargeObligation
         { Options.default with verbose := .quiet }
         e_fvs_typed Imperative.MetaData.empty filename.toString
-        [smt_term] ctx
+        [] smt_term ctx
       match ans with
-      | .ok (.sat _,_) => return true
+      | .ok (_, .sat _, _) => return true
       | _ =>
         IO.println s!"Test failed on {e}"
         IO.println s!"The query: {repr smt_term}"

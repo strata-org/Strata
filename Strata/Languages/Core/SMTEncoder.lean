@@ -642,7 +642,7 @@ cover is violated. If the result is `sat`, then the cover succeeds.
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false) :
-  Except Format ((List Term) × SMT.Context) := do
+  Except Format (List Term × Term × SMT.Context) := do
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
@@ -655,7 +655,7 @@ def ProofObligation.toSMTTerms (E : Env)
       obligation_pos_term
     else
       Factory.not obligation_pos_term
-  .ok ((distinct_assumptions ++ assumptions_terms ++ [obligation_term]), ctx)
+  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
 
 ---------------------------------------------------------------------
 
