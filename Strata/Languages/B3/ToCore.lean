@@ -100,18 +100,18 @@ def b3TypeToCoreLTy (typeName : String) : Lambda.LTy :=
 
 /-- Convert B3 binary operator to a Core expression builder.
     Uses factory operator expressions with proper type annotations. -/
-def convertBinaryOp (op : BinaryOp M) (lhs rhs : Core.Expression.Expr) : Core.Expression.Expr :=
+def convertBinaryOp (sr : SourceRange) (op : BinaryOp M) (lhs rhs : Core.Expression.Expr) : Core.Expression.Expr :=
   let mkBinApp (opExpr : Core.Expression.Expr) :=
-    .app () (.app () opExpr lhs) rhs
+    .app sr (.app sr opExpr lhs) rhs
   match op with
-  | .eq _ => .eq () lhs rhs
-  | .neq _ => .app () Core.boolNotOp (.eq () lhs rhs)
+  | .eq _ => .eq sr lhs rhs
+  | .neq _ => .app sr Core.boolNotOp (.eq sr lhs rhs)
   | .and _ => mkBinApp Core.boolAndOp
   | .or _ => mkBinApp Core.boolOrOp
   | .implies _ => mkBinApp Core.boolImpliesOp
   | .iff _ => mkBinApp Core.boolEquivOp
   | .impliedBy _ =>
-    .app () (.app () Core.boolImpliesOp rhs) lhs
+    .app sr (.app sr Core.boolImpliesOp rhs) lhs
   | .lt _ => mkBinApp Core.intLtOp
   | .le _ => mkBinApp Core.intLeOp
   | .gt _ => mkBinApp Core.intGtOp
@@ -123,53 +123,53 @@ def convertBinaryOp (op : BinaryOp M) (lhs rhs : Core.Expression.Expr) : Core.Ex
   | .mod _ => mkBinApp Core.intModOp
 
 /-- Convert B3 unary operator to a Core expression. -/
-def convertUnaryOp (op : UnaryOp M) (arg : Core.Expression.Expr) : Core.Expression.Expr :=
+def convertUnaryOp (sr : SourceRange) (op : UnaryOp M) (arg : Core.Expression.Expr) : Core.Expression.Expr :=
   let opExpr := match op with
     | .not _ => Core.boolNotOp
     | .neg _ => Core.intNegOp
-  .app () opExpr arg
+  .app sr opExpr arg
 
 
 /-- Convert B3 expression to Core expression.
     Uses de Bruijn indices from B3 AST, maps to free variables in Core. -/
 partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → ConvResult Core.Expression.Expr
-  | .literal _ (.intLit _ n) => .ok (.intConst () (Int.ofNat n))
-  | .literal _ (.boolLit _ b) => .ok (.boolConst () b)
-  | .literal _ (.stringLit _ s) => .ok (.strConst () s)
-  | .id _ idx =>
+  | .literal sr (.intLit _ n) => .ok (.intConst sr (Int.ofNat n))
+  | .literal sr (.boolLit _ b) => .ok (.boolConst sr b)
+  | .literal sr (.stringLit _ s) => .ok (.strConst sr s)
+  | .id sr idx =>
     if idx < ctx.boundDepth then
-      .ok (.bvar () idx)
+      .ok (.bvar sr idx)
     else
       match ctx.vars[idx]? with
-      | some (name, ty) => .ok (.fvar () (CoreIdent.unres name) (some ty))
-      | none => .withError (.intConst () 0) (.unsupportedFeature s!"unbound variable at index {idx}" "expression")
-  | .binaryOp _ op lhs rhs =>
+      | some (name, ty) => .ok (.fvar sr (CoreIdent.unres name) (some ty))
+      | none => .withError (.intConst sr 0) (.unsupportedFeature s!"unbound variable at index {idx}" "expression")
+  | .binaryOp sr op lhs rhs =>
     let lhsResult := convertExpr ctx lhs
     let rhsResult := convertExpr ctx rhs
-    { value := convertBinaryOp op lhsResult.value rhsResult.value,
+    { value := convertBinaryOp sr op lhsResult.value rhsResult.value,
       errors := lhsResult.errors ++ rhsResult.errors }
-  | .unaryOp _ op arg =>
+  | .unaryOp sr op arg =>
     let argResult := convertExpr ctx arg
-    { value := convertUnaryOp op argResult.value, errors := argResult.errors }
-  | .ite _ cond thn els =>
+    { value := convertUnaryOp sr op argResult.value, errors := argResult.errors }
+  | .ite sr cond thn els =>
     let condResult := convertExpr ctx cond
     let thnResult := convertExpr ctx thn
     let elsResult := convertExpr ctx els
-    { value := .ite () condResult.value thnResult.value elsResult.value,
+    { value := .ite sr condResult.value thnResult.value elsResult.value,
       errors := condResult.errors ++ thnResult.errors ++ elsResult.errors }
-  | .functionCall _ fnName args =>
+  | .functionCall sr fnName args =>
     let fnTy := ctx.lookupFuncType fnName.val
-    let base : Core.Expression.Expr := .fvar () (CoreIdent.unres fnName.val) fnTy
+    let base : Core.Expression.Expr := .fvar sr (CoreIdent.unres fnName.val) fnTy
     let argResults := args.val.toList.map (convertExpr ctx)
-    { value := argResults.foldl (fun acc argRes => .app () acc argRes.value) base,
+    { value := argResults.foldl (fun acc argRes => .app sr acc argRes.value) base,
       errors := argResults.flatMap (·.errors) }
-  | .letExpr _ varName value body =>
+  | .letExpr sr varName value body =>
     let valTy := LMonoTy.tcons "int" []
     let valueResult := convertExpr ctx value
     let bodyResult := convertExpr (ctx.pushBound varName.val valTy) body
-    { value := .app () (.abs () (some valTy) bodyResult.value) valueResult.value,
+    { value := .app sr (.abs sr (some valTy) bodyResult.value) valueResult.value,
       errors := valueResult.errors ++ bodyResult.errors }
-  | .quantifierExpr _ qk vars _patterns body =>
+  | .quantifierExpr sr qk vars _patterns body =>
     let qkind : Lambda.QuantifierKind := match qk with
       | .forall _ => .all
       | .exists _ => .exist
@@ -179,7 +179,7 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
     let ctx' := varList.foldl (fun c (name, ty) => c.pushBound name ty) ctx
     let bodyResult := convertExpr ctx' body
     { value := varList.foldr (fun (_, ty) acc =>
-        .quant () qkind (some ty) (.boolConst () true) acc
+        .quant sr qkind (some ty) (.boolConst sr true) acc
       ) bodyResult.value,
       errors := bodyResult.errors }
   | .labeledExpr _ _label expr => convertExpr ctx expr
@@ -230,14 +230,14 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → Co
       | none => .ok []
     { value := [Imperative.Stmt.ite condResult.value thenResult.value elseResult.value],
       errors := condResult.errors ++ thenResult.errors ++ elseResult.errors }
-  | .loop _ invariants body =>
-    let guard : Core.Expression.Expr := .boolConst () true
+  | .loop sr invariants body =>
+    let guard : Core.Expression.Expr := .boolConst sr true
     let invResults := invariants.val.toList.map (convertExpr ctx)
     let invariant := match invResults with
       | [] => none
       | [invRes] => some invRes.value
       | invRes :: rest => some (rest.foldl (fun acc res =>
-          .app () (.app () (.op () (CoreIdent.unres "Bool.And") none) acc) res.value
+          .app sr (.app sr (.op sr (CoreIdent.unres "Bool.And") none) acc) res.value
         ) invRes.value)
     let bodyResult := convertStmt ctx body
     { value := [Imperative.Stmt.loop guard none invariant bodyResult.value],

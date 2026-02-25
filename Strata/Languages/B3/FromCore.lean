@@ -77,9 +77,18 @@ partial def convertApp (sr : SourceRange) (fn arg : Core.Expression.Expr) : Exce
     else Except.error (.unsupportedCoreExpr s!"unary operator {opName}")
   | _ => Except.error (.unsupportedCoreExpr "unsupported function application")
 
-/-- Convert Core expression to B3 expression, using default source range since Core doesn't track locations -/
+/-- Convert Core expression to B3 expression, preserving source locations from Core metadata -/
 partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3AST.Expression SourceRange) :=
-  let sr := SourceRange.none
+  let sr := match e with
+    | Lambda.LExpr.const m _ => m
+    | Lambda.LExpr.bvar m _ => m
+    | Lambda.LExpr.app m _ _ => m
+    | Lambda.LExpr.ite m _ _ _ => m
+    | Lambda.LExpr.op m _ _ => m
+    | Lambda.LExpr.fvar m _ _ => m
+    | Lambda.LExpr.abs m _ _ => m
+    | Lambda.LExpr.quant m _ _ _ _ => m
+    | Lambda.LExpr.eq m _ _ => m
   match e with
   | Lambda.LExpr.const _ c => convertConst sr c
   | Lambda.LExpr.bvar _ idx => Except.ok (.id sr idx)
