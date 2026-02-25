@@ -57,7 +57,7 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
 def makeVCResult (label : String) (outcome : Outcome)
   (smtResult : Result := .unknown) (md : MetaData Expression := #[]) : VCResult :=
   { obligation := makeObligation label md
-    smtResult := smtResult
+    smtObligationResult := smtResult
     result := outcome
     verbose := .normal }
 
