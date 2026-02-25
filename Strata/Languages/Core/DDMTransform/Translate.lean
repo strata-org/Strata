@@ -843,19 +843,19 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapSelectOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op Strata.SourceRange.none "select" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
-     return .mkApp () fn [m, i]
+     return .mkApp Strata.SourceRange.none fn [m, i]
   | .fn _ q`Core.map_set, [_ktp, _vtp, ma, ia, xa] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapUpdateOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op Strata.SourceRange.none "update" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
-     return .mkApp () fn [m, i, x]
+     return .mkApp Strata.SourceRange.none fn [m, i, x]
   -- Quantifiers
   | .fn _ q`Core.forall, [xsa, ba] =>
     translateQuantifier .all p bindings xsa .none ba
@@ -949,10 +949,10 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     match decl with
     | .var name _ty _expr _md =>
       -- Global Variable
-      return (.fvar () name ty?)
+      return (.fvar Strata.SourceRange.none name ty?)
     | .func func _md =>
       -- 0-ary Function
-      return (.op () func.name ty?)
+      return (.op Strata.SourceRange.none func.name ty?)
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
   | .fvar _ i, argsa =>
@@ -1147,8 +1147,8 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- The function name is NOT in scope inside the body (declareFn adds it
     -- for subsequent statements only). So body bindings = outer + parameters.
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
-    let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
-    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+    let funcBinding : LExpr Core.CoreLParams.mono := .op Strata.SourceRange.none name (some funcType)
+    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
 
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
     -- Translate preconditions
