@@ -70,14 +70,7 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
     s!"True or false depending on inputs{models}"
   else if outcome.unreachable then "Unreachable: path condition is contradictory"
   else if outcome.satisfiableValidityUnknown then "Can be true, unknown if always true"
-  else if outcome.alwaysFalseReachabilityUnknown then
-    match outcome.validityProperty with
-    | .sat m =>
-      if m.isEmpty then
-        "Always false if reachable, reachability unknown"
-      else
-        s!"Always false if reachable, reachability unknown with counterexample: {Std.format m}"
-    | _ => "Always false if reachable, reachability unknown"
+  else if outcome.alwaysFalseReachabilityUnknown then "Always false if reachable, reachability unknown"
   else if outcome.canBeFalseAndReachable then
     match outcome.validityProperty with
     | .sat m =>
@@ -87,7 +80,19 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
         s!"Can be false and reachable, unknown if always false with counterexample: {Std.format m}"
     | _ => "Can be false and reachable, unknown if always false"
   else if outcome.passReachabilityUnknown then "Always true if reachable, reachability unknown"
-  else "Unknown (solver timeout or incomplete)"
+  else 
+    -- unknown outcome - can have models from either property
+    let models := match outcome.satisfiabilityProperty, outcome.validityProperty with
+      | .unknown m1, .unknown m2 =>
+        if !m1.isEmpty && !m2.isEmpty then
+          s!" (satisfiability: {Std.format m1}, validity: {Std.format m2})"
+        else if !m1.isEmpty then
+          s!" (satisfiability: {Std.format m1})"
+        else if !m2.isEmpty then
+          s!" (validity: {Std.format m2})"
+        else ""
+      | _, _ => ""
+    s!"Unknown (solver timeout or incomplete){models}"
 
 /-- Extract location information from metadata -/
 def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
