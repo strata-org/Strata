@@ -312,9 +312,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
     all_goals (simp_all; try term_by_mem)
     have := List.dropLast_subset stmts
     have stmtInStmts : nonLastStatement.val ∈ stmts := by grind
-    -- term_by_mem gets a type error here, so we do it manually
-    have xSize := List.sizeOf_lt_of_mem stmtInStmts
-    omega
+    term_by_mem
 
 /--
 Transform an expression whose result value is discarded (e.g. non-last elements in a block). All side-effects in Laurel are represented as assignments, so we only need to lift assignments, anything else can be forgotten.

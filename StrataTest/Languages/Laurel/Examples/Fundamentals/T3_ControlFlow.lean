@@ -40,20 +40,40 @@ procedure guards(a: int) returns (r: int)
 //  z
 // }
 
+function returnAtEnd(x: int) returns (r: int) {
+  if (x > 0) {
+    if (x == 1) {
+      return 1;
+    } else {
+      return 2;
+    }
+  } else {
+    return 3;
+  }
+}
+
 function guardInFunction(x: int) returns (r: int) {
   if (x > 0) {
-    return 1;
+    if (x == 1) {
+      return 1;
+    } else {
+      return 2;
+    }
   }
 
-  return 2;
+  return 3;
 }
 
 procedure testFunctions() {
   // assert letsInFunction() == 2;
   // assert letsInFunction() == 3; error: assertion does not hold
 
-  assert guardInFunction(5) == 1;
-  assert guardInFunction(5) == 2;
+  assert returnAtEnd(1) == 1;
+  assert returnAtEnd(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+
+  assert guardInFunction(1) == 1;
+  assert guardInFunction(1) == 2;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
 
