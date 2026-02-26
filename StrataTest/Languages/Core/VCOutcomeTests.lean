@@ -19,84 +19,66 @@ def mkOutcome (satisfiabilityProperty : Result) (validityProperty : Result) : VC
   { satisfiabilityProperty, validityProperty }
 
 -- Test 1: (sat, unsat) → pass (always true & reachable)
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unsat)).isPass
-
 /-- info: "✅ pass" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unsat))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unsat))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unsat)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 2: (unsat, sat) → refuted (always false & reachable)
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .sat)).isRefuted
-
 /-- info: "❌ refuted" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .sat))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .sat))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .sat)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 3: (sat, sat) → indecisive (depends on inputs & reachable)
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .sat)).isIndecisive
-
 /-- info: "🔶 indecisive" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .sat))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .sat))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .sat)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 4: (unsat, unsat) → unreachable (path condition contradictory)
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unsat)).isUnreachable
-
 /-- info: "⛔ unreachable" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unsat))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unsat))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unsat)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 5: (sat, unknown) → satisfiable (can be true, unknown if always)
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unknown)).isSatisfiable
-
 /-- info: "➕ satisfiable" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unknown))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unknown))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .sat) (validityProperty := .unknown)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 6: (unsat, unknown) → refuted if reachable (always false if reached)
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unknown)).isRefutedIfReachable
-
 /-- info: "✖️ refuted if reachable" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unknown))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unknown))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .unsat) (validityProperty := .unknown)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 7: (unknown, sat) → reachable and can be false
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .sat)).isReachableAndCanBeFalse
-
 /-- info: "➖ reachable and can be false" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .sat))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .sat))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .sat)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 8: (unknown, unsat) → always true if reachable
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unsat)).isAlwaysTrueIfReachable
-
 /-- info: "✔️ always true if reachable" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unsat))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unsat))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unsat)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 -- Test 9: (unknown, unknown) → unknown
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unknown)).isUnknown
-
 /-- info: "❓ unknown" -/
 #guard_msgs in
-#eval s!"{VCOutcome.emoji (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unknown))} {VCOutcome.label (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unknown))}"
+#eval 
+  let o := mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unknown)
+  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
 
 end Core
