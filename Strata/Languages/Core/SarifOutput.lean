@@ -47,40 +47,33 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=
-  if outcome.passAndReachable then "Always true and reachable"
-  else if outcome.alwaysFalseAndReachable then
-    match outcome.validityProperty with
-    | .sat m =>
-      if m.isEmpty then
-        "Always false and reachable"
-      else
-        s!"Always false and reachable with counterexample: {Std.format m}"
-    | _ => "Always false and reachable"
-  else if outcome.indecisiveAndReachable then
-    let models := match outcome.satisfiabilityProperty, outcome.validityProperty with
-      | .sat m1, .sat m2 =>
-        if !m1.isEmpty && !m2.isEmpty then
-          s!" (true: {Std.format m1}, false: {Std.format m2})"
-        else if !m1.isEmpty then
-          s!" (true: {Std.format m1})"
-        else if !m2.isEmpty then
-          s!" (false: {Std.format m2})"
-        else ""
-      | _, _ => ""
+  match outcome.satisfiabilityProperty, outcome.validityProperty with
+  | .sat _, .unsat => "Always true and reachable"
+  | .unsat, .sat m =>
+    if m.isEmpty then "Always false and reachable"
+    else s!"Always false and reachable with counterexample: {Std.format m}"
+  | .sat m1, .sat m2 =>
+    let models :=
+      if !m1.isEmpty && !m2.isEmpty then s!" (true: {Std.format m1}, false: {Std.format m2})"
+      else if !m1.isEmpty then s!" (true: {Std.format m1})"
+      else if !m2.isEmpty then s!" (false: {Std.format m2})"
+      else ""
     s!"True or false depending on inputs{models}"
-  else if outcome.unreachable then "Unreachable: path condition is contradictory"
-  else if outcome.satisfiableValidityUnknown then "Can be true, unknown if always true"
-  else if outcome.alwaysFalseReachabilityUnknown then "Always false if reachable, reachability unknown"
-  else if outcome.canBeFalseAndReachable then
-    match outcome.validityProperty with
-    | .sat m =>
-      if m.isEmpty then
-        "Can be false and reachable, unknown if always false"
-      else
-        s!"Can be false and reachable, unknown if always false with counterexample: {Std.format m}"
-    | _ => "Can be false and reachable, unknown if always false"
-  else if outcome.passReachabilityUnknown then "Always true if reachable, reachability unknown"
-  else "Unknown (solver timeout or incomplete)"
+  | .unsat, .unsat => "Unreachable: path condition is contradictory"
+  | .sat _, .unknown => "Can be true, unknown if always true"
+  | .unsat, .unknown => "Always false if reachable, reachability unknown"
+  | .unknown, .sat m =>
+    if m.isEmpty then "Can be false and reachable, unknown if always false"
+    else s!"Can be false and reachable, unknown if always false with counterexample: {Std.format m}"
+  | .unknown, .unsat => "Always true if reachable, reachability unknown"
+  | .unknown, .unknown => "Unknown (solver timeout or incomplete)"
+  | .sat _, .err msg => s!"Validity check error: {msg}"
+  | .unsat, .err msg => s!"Validity check error: {msg}"
+  | .unknown, .err msg => s!"Validity check error: {msg}"
+  | .err msg, .sat _ => s!"Satisfiability check error: {msg}"
+  | .err msg, .unsat => s!"Satisfiability check error: {msg}"
+  | .err msg, .unknown => s!"Satisfiability check error: {msg}"
+  | .err msg1, .err msg2 => s!"Both checks error: sat={msg1}, val={msg2}"
 
 /-- Extract location information from metadata -/
 def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
