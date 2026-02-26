@@ -57,9 +57,11 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
     -- Binding order (outermost → innermost): other params, then constructor fields.
     -- Example: lookup(key:int, xs:IntList) with recIdx=1, Cons(hd,tl):
     --   ∀ key:int. ∀ hd:int. ∀ tl:IntList. lookup(key=%2, Cons(hd=%1, tl=%0)) = ...
+    let dtTy : LMonoTy := .tcons dt.name []
+    let constrTy := c.args.foldr (fun (_, argTy) acc => .arrow argTy acc) dtTy
     let constrApp := c.args.foldlIdx (fun acc i _ =>
       .app m acc (.bvar m (numFields - 1 - i))
-    ) (.op m c.name none : LExpr T.mono)
+    ) (.op m c.name (.some constrTy) : LExpr T.mono)
     let otherIdx (idx : Nat) : Nat := if idx < recIdx then idx else idx - 1
     let formalExpr (idx : Nat) : LExpr T.mono :=
       if idx == recIdx then constrApp

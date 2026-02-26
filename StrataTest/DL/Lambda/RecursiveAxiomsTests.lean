@@ -32,11 +32,12 @@ private def intListTy : LDatatype Unit :=
     ], constrs_ne := rfl }
 
 private def listLenBody : LExpr TP.mono :=
-  let xs : LExpr TP.mono := LExpr.fvar () ("xs" : TP.Identifier) .none
-  let isNil_xs := LExpr.app () (LExpr.op () ("isNil" : TP.Identifier) .none) xs
-  let tl_xs := LExpr.app () (LExpr.op () ("IntList..tl" : TP.Identifier) .none) xs
-  let listLen_tl := LExpr.app () (LExpr.op () ("listLen" : TP.Identifier) .none) tl_xs
-  let one_plus := LExpr.app () (LExpr.app () (LExpr.op () ("Int.Add" : TP.Identifier) .none) (LExpr.intConst () 1)) listLen_tl
+  let intListTy := LMonoTy.tcons "IntList" []
+  let xs : LExpr TP.mono := LExpr.fvar () ("xs" : TP.Identifier) (.some intListTy)
+  let isNil_xs := LExpr.app () (LExpr.op () ("isNil" : TP.Identifier) (.some (LMonoTy.arrow intListTy .bool))) xs
+  let tl_xs := LExpr.app () (LExpr.op () ("IntList..tl" : TP.Identifier) (.some (LMonoTy.arrow intListTy intListTy))) xs
+  let listLen_tl := LExpr.app () (LExpr.op () ("listLen" : TP.Identifier) (.some (LMonoTy.arrow intListTy .int))) tl_xs
+  let one_plus := LExpr.app () (LExpr.app () (LExpr.op () ("Int.Add" : TP.Identifier) (.some (LMonoTy.arrow .int (LMonoTy.arrow .int .int)))) (LExpr.intConst () 1)) listLen_tl
   LExpr.ite () isNil_xs (LExpr.intConst () 0) one_plus
 
 private def listLenFunc : LFunc TP :=
@@ -64,7 +65,7 @@ private def pe (e : LExpr TP.mono) : LExpr TP.mono := e.eval 100 peState
 private def listLenAxioms := genRecursiveAxioms listLenFunc tf pe ()
 
 -- Nil axiom: ground equation, no quantifier
-/-- info: (((~listLen : (arrow IntList int)) ~Nil) == #0) -/
+/-- info: (((~listLen : (arrow IntList int)) (~Nil : IntList)) == #0) -/
 #guard_msgs in
 #eval do
   match listLenAxioms with
@@ -72,7 +73,10 @@ private def listLenAxioms := genRecursiveAxioms listLenFunc tf pe ()
   | .ok axs => return format axs[0]!
 
 -- Cons axiom: ∀ hd:int, tl:IntList with trigger on listLen(Cons(hd, tl))
-/-- info: (∀ (∀ (((~listLen : (arrow IntList int)) (~Cons %1 %0)) == (~Int.Add #1 (~listLen %0))))) -/
+/-- info: (∀ (∀ (((~listLen : (arrow IntList int))
+    ((~Cons : (arrow int (arrow IntList IntList)))
+     %1
+     %0)) == ((~Int.Add : (arrow int (arrow int int))) #1 ((~listLen : (arrow IntList int)) %0))))) -/
 #guard_msgs in
 #eval do
   match listLenAxioms with
@@ -84,7 +88,7 @@ private def extractInnerTrigger : LExpr TP.mono → Option (LExpr TP.mono)
   | .quant _ _ _ _ (.quant _ _ _ tr _) => some tr
   | _ => none
 
-/-- info: ((~listLen : (arrow IntList int)) (~Cons %1 %0)) -/
+/-- info: ((~listLen : (arrow IntList int)) ((~Cons : (arrow int (arrow IntList IntList))) %1 %0)) -/
 #guard_msgs in
 #eval do
   match listLenAxioms with
@@ -98,13 +102,14 @@ private def extractInnerTrigger : LExpr TP.mono → Option (LExpr TP.mono)
 --   else if hd(xs) == key then true
 --   else lookup(key, tl(xs))
 private def lookupBody : LExpr TP.mono :=
-  let key : LExpr TP.mono := LExpr.fvar () ("key" : TP.Identifier) .none
-  let xs : LExpr TP.mono := LExpr.fvar () ("xs" : TP.Identifier) .none
-  let isNil_xs := LExpr.app () (LExpr.op () ("isNil" : TP.Identifier) .none) xs
-  let hd_xs := LExpr.app () (LExpr.op () ("IntList..hd" : TP.Identifier) .none) xs
-  let tl_xs := LExpr.app () (LExpr.op () ("IntList..tl" : TP.Identifier) .none) xs
+  let intListTy := LMonoTy.tcons "IntList" []
+  let key : LExpr TP.mono := LExpr.fvar () ("key" : TP.Identifier) (.some .int)
+  let xs : LExpr TP.mono := LExpr.fvar () ("xs" : TP.Identifier) (.some intListTy)
+  let isNil_xs := LExpr.app () (LExpr.op () ("isNil" : TP.Identifier) (.some (LMonoTy.arrow intListTy .bool))) xs
+  let hd_xs := LExpr.app () (LExpr.op () ("IntList..hd" : TP.Identifier) (.some (LMonoTy.arrow intListTy .int))) xs
+  let tl_xs := LExpr.app () (LExpr.op () ("IntList..tl" : TP.Identifier) (.some (LMonoTy.arrow intListTy intListTy))) xs
   let hd_eq_key := LExpr.eq () hd_xs key
-  let rec_call := LExpr.app () (LExpr.app () (LExpr.op () ("lookup" : TP.Identifier) .none) key) tl_xs
+  let rec_call := LExpr.app () (LExpr.app () (LExpr.op () ("lookup" : TP.Identifier) (.some (LMonoTy.arrow .int (LMonoTy.arrow intListTy .bool)))) key) tl_xs
   LExpr.ite () isNil_xs (LExpr.boolConst () false)
     (LExpr.ite () hd_eq_key (LExpr.boolConst () true) rec_call)
 
@@ -141,7 +146,7 @@ private def lookupAxioms := genRecursiveAxioms lookupFunc tf pe2 ()
 
 -- Nil axiom: ∀ key:int. lookup(key, Nil) = false
 /--
-info: (∀ (((~lookup : (arrow int (arrow IntList bool))) %0 ~Nil) == #false))
+info: (∀ (((~lookup : (arrow int (arrow IntList bool))) %0 (~Nil : IntList)) == #false))
 -/
 #guard_msgs in
 #eval do
@@ -153,7 +158,9 @@ info: (∀ (((~lookup : (arrow int (arrow IntList bool))) %0 ~Nil) == #false))
 /--
 info: (∀ (∀ (∀ (((~lookup : (arrow int (arrow IntList bool)))
      %2
-     (~Cons %1 %0)) == (if (%1 == %2) then #true else (~lookup %2 %0))))))
+     ((~Cons : (arrow int (arrow IntList IntList)))
+      %1
+      %0)) == (if (%1 == %2) then #true else ((~lookup : (arrow int (arrow IntList bool))) %2 %0))))))
 -/
 #guard_msgs in
 #eval do
@@ -167,7 +174,7 @@ private def extractInnerTrigger3 : LExpr TP.mono → Option (LExpr TP.mono)
   | _ => none
 
 /--
-info: ((~lookup : (arrow int (arrow IntList bool))) %2 (~Cons %1 %0))
+info: ((~lookup : (arrow int (arrow IntList bool))) %2 ((~Cons : (arrow int (arrow IntList IntList))) %1 %0))
 -/
 #guard_msgs in
 #eval do
@@ -182,15 +189,17 @@ info: ((~lookup : (arrow int (arrow IntList bool))) %2 (~Cons %1 %0))
 --   else if hd(xs) == key then Cons(val, tl(xs))
 --   else Cons(hd(xs), replace(key, tl(xs), val))
 private def replaceBody : LExpr TP.mono :=
-  let key : LExpr TP.mono := .fvar () ("key" : TP.Identifier) .none
-  let xs  : LExpr TP.mono := .fvar () ("xs" : TP.Identifier) .none
-  let val : LExpr TP.mono := .fvar () ("val" : TP.Identifier) .none
-  let isNil_xs := LExpr.app () (.op () ("isNil" : TP.Identifier) .none) xs
-  let hd_xs := LExpr.app () (.op () ("IntList..hd" : TP.Identifier) .none) xs
-  let tl_xs := LExpr.app () (.op () ("IntList..tl" : TP.Identifier) .none) xs
-  let cons (a b : LExpr TP.mono) := LExpr.app () (LExpr.app () (.op () ("Cons" : TP.Identifier) .none) a) b
-  let rec_call := LExpr.app () (LExpr.app () (LExpr.app () (.op () ("replace" : TP.Identifier) .none) key) tl_xs) val
-  .ite () isNil_xs (.op () ("Nil" : TP.Identifier) .none)
+  let intListTy := LMonoTy.tcons "IntList" []
+  let consTy := LMonoTy.arrow .int (LMonoTy.arrow intListTy intListTy)
+  let key : LExpr TP.mono := .fvar () ("key" : TP.Identifier) (.some .int)
+  let xs  : LExpr TP.mono := .fvar () ("xs" : TP.Identifier) (.some intListTy)
+  let val : LExpr TP.mono := .fvar () ("val" : TP.Identifier) (.some .int)
+  let isNil_xs := LExpr.app () (.op () ("isNil" : TP.Identifier) (.some (LMonoTy.arrow intListTy .bool))) xs
+  let hd_xs := LExpr.app () (.op () ("IntList..hd" : TP.Identifier) (.some (LMonoTy.arrow intListTy .int))) xs
+  let tl_xs := LExpr.app () (.op () ("IntList..tl" : TP.Identifier) (.some (LMonoTy.arrow intListTy intListTy))) xs
+  let cons (a b : LExpr TP.mono) := LExpr.app () (LExpr.app () (.op () ("Cons" : TP.Identifier) (.some consTy)) a) b
+  let rec_call := LExpr.app () (LExpr.app () (LExpr.app () (.op () ("replace" : TP.Identifier) (.some (LMonoTy.arrow .int (LMonoTy.arrow intListTy (LMonoTy.arrow .int intListTy))))) key) tl_xs) val
+  .ite () isNil_xs (.op () ("Nil" : TP.Identifier) (.some intListTy))
     (.ite () (.eq () hd_xs key) (cons val tl_xs) (cons hd_xs rec_call))
 
 private def replaceFunc : LFunc TP :=
@@ -217,7 +226,7 @@ private def replaceAxioms := genRecursiveAxioms replaceFunc tf pe3 ()
 
 -- Nil axiom: ∀ key:int, val:int. replace(key, Nil, val) = Nil
 /--
-info: (∀ (∀ (((~replace : (arrow int (arrow IntList (arrow int IntList)))) %1 ~Nil %0) == ~Nil)))
+info: (∀ (∀ (((~replace : (arrow int (arrow IntList (arrow int IntList)))) %1 (~Nil : IntList) %0) == (~Nil : IntList))))
 -/
 #guard_msgs in
 #eval do
@@ -229,8 +238,12 @@ info: (∀ (∀ (((~replace : (arrow int (arrow IntList (arrow int IntList)))) %
 /--
 info: (∀ (∀ (∀ (∀ (((~replace : (arrow int (arrow IntList (arrow int IntList))))
       %3
-      (~Cons %1 %0)
-      %2) == (if (%1 == %3) then (~Cons %2 %0) else (~Cons %1 (~replace %3 %0 %2))))))))
+      ((~Cons : (arrow int (arrow IntList IntList))) %1 %0)
+      %2) == (if (%1 == %3) then ((~Cons : (arrow int (arrow IntList IntList)))
+       %2
+       %0) else ((~Cons : (arrow int (arrow IntList IntList)))
+       %1
+       ((~replace : (arrow int (arrow IntList (arrow int IntList)))) %3 %0 %2))))))))
 -/
 #guard_msgs in
 #eval do
