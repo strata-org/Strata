@@ -161,15 +161,12 @@ def isPass (o : VCOutcome) : Bool :=
   | .sat _, .unsat => true
   | _, _ => false
 
-def isRefuted (o : VCOutcome) : Bool :=
+def isRefutedAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unsat, .sat _ => true
   | _, _ => false
 
--- Alias for clarity: refuted means reachable and always false
-def isAlwaysFalseIfReachable (o : VCOutcome) : Bool := o.isRefuted
-
-def isIndecisive (o : VCOutcome) : Bool :=
+def isIndecisiveAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .sat _, .sat _ => true
   | _, _ => false
@@ -184,7 +181,7 @@ def isSatisfiable (o : VCOutcome) : Bool :=
   | .sat _, .unknown => true
   | _, _ => false
 
-def isRefutedIfReachable (o : VCOutcome) : Bool :=
+def isAlwaysFalseIfReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unsat, .unknown => true
   | _, _ => false
@@ -203,6 +200,22 @@ def isUnknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unknown, .unknown => true
   | _, _ => false
+
+-- Backward compatibility aliases
+def isRefuted := isRefutedAndReachable
+def isRefutedIfReachable := isAlwaysFalseIfReachable
+def isIndecisive := isIndecisiveAndReachable
+
+-- Cross-cutting predicates for filtering by properties
+
+def isAlwaysFalse (o : VCOutcome) : Bool :=
+  o.isRefutedAndReachable || o.isAlwaysFalseIfReachable
+
+def isAlwaysTrue (o : VCOutcome) : Bool :=
+  o.isPass || o.isAlwaysTrueIfReachable
+
+def isReachable (o : VCOutcome) : Bool :=
+  o.isPass || o.isRefutedAndReachable || o.isIndecisiveAndReachable
 
 def label (o : VCOutcome) : String :=
   if o.isPass then "pass"
