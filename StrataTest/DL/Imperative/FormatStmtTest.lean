@@ -121,13 +121,13 @@ else {}
 info: while
   ((x : int) == #0)
   (none)
-  (none)
+  []
 {
   x := #1
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop xEq0 none none
+#eval! format (Stmt.loop xEq0 none []
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 13. loop: with measure and invariant
@@ -135,13 +135,13 @@ info: while
 info: while
   ((x : int) == #0)
   (some (x : int))
-  (some #true)
+  [#true]
 {
   x := #1
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop xEq0 (some x) (some tt)
+#eval! format (Stmt.loop xEq0 (some x) [tt]
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 14. goto

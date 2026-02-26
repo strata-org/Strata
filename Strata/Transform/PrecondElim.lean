@@ -216,9 +216,7 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed || changed', [.ite c thenb' elseb' md])
   | .loop guard measure invariant body md => do
-    let invAsserts := match invariant with
-      | some inv => collectPrecondAsserts F inv "loop_invariant" md
-      | none => []
+    let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
     let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
     let savedF ← getFactory
     let (changed, body') ← transformStmts body

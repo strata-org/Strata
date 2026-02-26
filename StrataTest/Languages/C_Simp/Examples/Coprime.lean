@@ -75,7 +75,7 @@ info: function coprime {
   while
     (~Int.Gt i #1)
     (some i)
-    (some #true)
+    [#true]
   {
     if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
       return := #false
@@ -100,33 +100,41 @@ spec {
   } {
   var i : int;
   i := a;
-  if(b < a){
+  if (b < a) {
     i := b;
-    }if(i > 1){
+    }
+  if (i > 1) {
     first_iter_asserts: {
-      assert [entry_invariant]: true;
+      assert [entry_invariant_0]: true;
       assert [assert_measure_pos]: i >= 0;
-      }|arbitrary iter facts|: {
+      }
+    |arbitrary iter facts|: {
       |loop havoc|: {
         havoc return;
         havoc i;
-        }arbitrary_iter_assumes: {
+        }
+      arbitrary_iter_assumes: {
         assume [assume_guard]: i > 1;
-        assume [assume_invariant]: true;
+        assume [assume_invariant_0]: true;
         assume [assume_measure_pos]: i >= 0;
-        }var |special-name-for-old-measure-value| : int := i;
-      if(b mod i == 0 && a mod i == 0){
+        }
+      var |special-name-for-old-measure-value| : int := i;
+      if (b mod i == 0 && a mod i == 0) {
         return := false;
-        }i := i - 1;
+        }
+      i := i - 1;
       assert [measure_decreases]: i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if i <= 0 then !(i > 1) else true;
-      assert [arbitrary_iter_maintain_invariant]: true;
-      }|loop havoc|: {
+      assert [arbitrary_iter_maintain_invariant_0]: true;
+      }
+    |loop havoc|: {
       havoc return;
       havoc i;
-      }assume [not_guard]: !(i > 1);
-    assume [invariant]: true;
-    }return := true;
+      }
+    assume [not_guard]: !(i > 1);
+    assume [invariant_0]: true;
+    }
+  return := true;
   };
 -/
 #guard_msgs in
