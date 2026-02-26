@@ -64,6 +64,8 @@ inductive Operation : Type where
   | Gt
   /-- Greater than or equal. Works on `Int` and `Float64`. -/
   | Geq
+  /-- String concatenation. -/
+  | StrConcat
   deriving Repr
 
 /--
