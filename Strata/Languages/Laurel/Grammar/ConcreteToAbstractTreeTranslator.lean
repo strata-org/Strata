@@ -151,6 +151,7 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.and => some Operation.And
   | q`Laurel.or => some Operation.Or
   | q`Laurel.implies => some Operation.Implies
+  | q`Laurel.strConcat => some Operation.StrConcat
   | _ => none
 
 def getUnaryOp? (name : QualifiedIdent) : Option Operation :=
