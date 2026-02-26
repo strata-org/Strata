@@ -19,27 +19,61 @@ open Strata.Sarif Strata.SMT
 
 /-! ## Core-Specific Conversion Functions -/
 
-/-- Convert Core Outcome to SARIF Level -/
-def outcomeToLevel : Outcome → Level
-  | .pass => .none
-  | .fail => .error
-  | .unknown => .warning
-  | .implementationError _ => .error
+/-- Convert VCOutcome to SARIF Level -/
+def outcomeToLevel (outcome : VCOutcome) : Level :=
+  if outcome.isPass then .none
+  else if outcome.isRefuted then .error
+  else if outcome.isIndecisive then .warning
+  else if outcome.isUnreachable then .note
+  else if outcome.isSatisfiable then .note
+  else if outcome.isRefutedIfReachable then .warning
+  else if outcome.isReachableAndCanBeFalse then .warning
+  else if outcome.isAlwaysTrueIfReachable then .note
+  else .warning
 
-/-- Convert Core Outcome to a descriptive message -/
-def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
-  match outcome with
-  | .pass => "Verification succeeded"
-  | .fail =>
-    match smtResult with
+/-- Convert VCOutcome to a descriptive message -/
+def outcomeToMessage (outcome : VCOutcome) : String :=
+  if outcome.isPass then "Verification succeeded: always true and reachable"
+  else if outcome.isRefuted then
+    match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
-        "Verification failed"
+        "Verification failed: always false and reachable"
       else
-        s!"Verification failed with counterexample: {Std.format m}"
-    | _ => "Verification failed"
-  | .unknown => "Verification result unknown (solver timeout or incomplete)"
-  | .implementationError msg => s!"Verification error: {msg}"
+        s!"Verification failed: always false and reachable with counterexample: {Std.format m}"
+    | _ => "Verification failed: always false and reachable"
+  else if outcome.isIndecisive then
+    let models := match outcome.satisfiabilityProperty, outcome.validityProperty with
+      | .sat m1, .sat m2 =>
+        if !m1.isEmpty && !m2.isEmpty then
+          s!" (true: {Std.format m1}, false: {Std.format m2})"
+        else if !m1.isEmpty then
+          s!" (true: {Std.format m1})"
+        else if !m2.isEmpty then
+          s!" (false: {Std.format m2})"
+        else ""
+      | _, _ => ""
+    s!"Verification inconclusive: true or false depending on inputs{models}"
+  else if outcome.isUnreachable then "Path unreachable: path condition is contradictory"
+  else if outcome.isSatisfiable then "Reachable and can be true, unknown if always true"
+  else if outcome.isRefutedIfReachable then
+    match outcome.validityProperty with
+    | .sat m =>
+      if m.isEmpty then
+        "Always false if reached, reachability unknown"
+      else
+        s!"Always false if reached, reachability unknown with counterexample: {Std.format m}"
+    | _ => "Always false if reached, reachability unknown"
+  else if outcome.isReachableAndCanBeFalse then
+    match outcome.validityProperty with
+    | .sat m =>
+      if m.isEmpty then
+        "Reachable and can be false, unknown if always false"
+      else
+        s!"Reachable and can be false, unknown if always false with counterexample: {Std.format m}"
+    | _ => "Reachable and can be false, unknown if always false"
+  else if outcome.isAlwaysTrueIfReachable then "Always true if reached, reachability unknown"
+  else "Verification result unknown (solver timeout or incomplete)"
 
 /-- Extract location information from metadata -/
 def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
@@ -56,17 +90,23 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
-  let level := outcomeToLevel vcr.result
-  let messageText :=
-    if vcr.isUnreachable then "Path is unreachable"
-    else outcomeToMessage vcr.result vcr.smtObligationResult
-  let message : Strata.Sarif.Message := { text := messageText }
-
-  let locations := match extractLocation files vcr.obligation.metadata with
-    | some loc => #[locationToSarif loc]
-    | none => #[]
-
-  { ruleId, level, message, locations }
+  match vcr.outcome with
+  | .error msg =>
+    let level := .error
+    let messageText := s!"Verification error: {msg}"
+    let message : Strata.Sarif.Message := { text := messageText }
+    let locations := match extractLocation files vcr.obligation.metadata with
+      | some loc => #[locationToSarif loc]
+      | none => #[]
+    { ruleId, level, message, locations }
+  | .ok outcome =>
+    let level := outcomeToLevel outcome
+    let messageText := outcomeToMessage outcome
+    let message : Strata.Sarif.Message := { text := messageText }
+    let locations := match extractLocation files vcr.obligation.metadata with
+      | some loc => #[locationToSarif loc]
+      | none => #[]
+    { ruleId, level, message, locations }
 
 /-- Convert VCResults to a SARIF document -/
 def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=

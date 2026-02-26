@@ -174,6 +174,22 @@ def checkSat (vars : List String) : SolverM Decision := do
     return Decision.unknown
   | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
 
+def checkSatAssuming (assumptions : List String) (vars : List String) : SolverM Decision := do
+  let assumptionsStr := String.intercalate " " assumptions
+  emitln s!"(check-sat-assuming ({assumptionsStr}))"
+  let result := (← readlnD "unknown").trimAscii.toString
+  match result with
+  | "sat"     =>
+    if !vars.isEmpty then
+      getValue vars
+    return Decision.sat
+  | "unsat"   => return Decision.unsat
+  | "unknown" =>
+    if !vars.isEmpty then
+      getValue vars
+    return Decision.unknown
+  | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
+
 def reset : SolverM Unit :=
   emitln "(reset)"
 
