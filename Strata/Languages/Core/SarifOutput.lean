@@ -36,10 +36,10 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
       .none
     else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then
       .error
-    else if outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then
-      .warning
+    else if outcome.unreachable then
+      .warning -- Proved something that could indicate an issue
     else
-      .note -- unreachable, satisfiableValidityUnknown
+      .note -- indecisiveAndReachable, canBeFalseAndReachable, unknown, satisfiableValidityUnknown
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=

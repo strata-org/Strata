@@ -44,7 +44,7 @@ info: Emoji: ❌, Label: refuted, Predicate: true, Message: Always false and rea
 /-! ### Outcome: (sat, sat) - true or false depending on inputs -/
 
 /--
-info: Emoji: 🔶, Label: indecisive, Predicate: true, Message: True or false depending on inputs, Deductive: error, BugFinding: warning
+info: Emoji: 🔶, Label: indecisive, Predicate: true, Message: True or false depending on inputs, Deductive: error, BugFinding: note
 -/
 #guard_msgs in
 #eval do
@@ -54,7 +54,7 @@ info: Emoji: 🔶, Label: indecisive, Predicate: true, Message: True or false de
 /-! ### Outcome: (unsat, unsat) - unreachable -/
 
 /--
-info: Emoji: ⛔, Label: unreachable, Predicate: true, Message: Unreachable: path condition is contradictory, Deductive: warning, BugFinding: note
+info: Emoji: ⛔, Label: unreachable, Predicate: true, Message: Unreachable: path condition is contradictory, Deductive: warning, BugFinding: warning
 -/
 #guard_msgs in
 #eval do
@@ -84,7 +84,7 @@ info: Emoji: ✖️, Label: refuted if reachable, Predicate: true, Message: Alwa
 /-! ### Outcome: (unknown, sat) - can be false and reachable -/
 
 /--
-info: Emoji: ➖, Label: reachable and can be false, Predicate: true, Message: Can be false and reachable, unknown if always false, Deductive: error, BugFinding: warning
+info: Emoji: ➖, Label: reachable and can be false, Predicate: true, Message: Can be false and reachable, unknown if always false, Deductive: error, BugFinding: note
 -/
 #guard_msgs in
 #eval do
@@ -104,7 +104,7 @@ info: Emoji: ✔️, Label: pass if reachable, Predicate: true, Message: Always 
 /-! ### Outcome: (unknown, unknown) - solver timeout or incomplete -/
 
 /--
-info: Emoji: ❓, Label: unknown, Predicate: true, Message: Unknown (solver timeout or incomplete), Deductive: error, BugFinding: warning
+info: Emoji: ❓, Label: unknown, Predicate: true, Message: Unknown (solver timeout or incomplete), Deductive: error, BugFinding: note
 -/
 #guard_msgs in
 #eval do
