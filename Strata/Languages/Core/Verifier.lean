@@ -46,21 +46,21 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     Solver.assert id
   -- Encode the obligation term (but don't assert it)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
-  
+
   -- Two-sided check: emit check-sat-assuming for both Q and ¬Q
   if satisfiabilityCheck then
     Solver.comment "Satisfiability check (can property be true?)"
     Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
       (message := ("sat-message", s!"\"Property can be satisfied\""))
     let _ ← Solver.checkSatAssuming [obligationId] []
-  
+
   if validityCheck then
     Solver.comment "Validity check (can property be false?)"
     Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
       (message := ("unsat-message", s!"\"Property is always true\""))
     let negObligationId := s!"(not {obligationId})"
     let _ ← Solver.checkSatAssuming [negObligationId] []
-  
+
   let ids := estate.ufs.values
   return (ids, estate)
 
@@ -280,7 +280,7 @@ structure VCResult where
   verbose : VerboseMode := .normal
 
 instance : ToFormat VCResult where
-  format r := 
+  format r :=
     match r.outcome with
     | .error e => f!"Obligation: {r.obligation.label}\nImplementation Error: {e}"
     | .ok outcome =>
@@ -476,7 +476,7 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx) =>
         -- Determine which checks to perform based on metadata annotations or global check mode
-        let checkMode := 
+        let checkMode :=
           if Imperative.MetaData.hasFullCheck obligation.metadata then
             CheckMode.full
           else if Imperative.MetaData.hasValidityCheck obligation.metadata then
@@ -485,7 +485,7 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
             CheckMode.satisfiability
           else
             options.checkMode
-        
+
         -- Determine which checks to perform based on check mode and property type
         let (satisfiabilityCheck, validityCheck) := match checkMode, obligation.property with
           | .full, _ => (true, true)
