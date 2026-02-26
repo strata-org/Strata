@@ -65,88 +65,6 @@ info: Entry: l_3
 #eval (Std.format (singleCFG gaussPgm))
 
 /--
-info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: entry_invariant_0_0
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-sum_requires_0: $__n0 >= 0
-Obligation:
-true
-
-Label: entry_invariant_0_1
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-sum_requires_0: $__n0 >= 0
-Obligation:
-0 <= $__n0
-
-Label: entry_invariant_0_2
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-sum_requires_0: $__n0 >= 0
-Obligation:
-true
-
-Label: arbitrary_iter_maintain_invariant_0_0
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard_0: $__i3 < $__n0
-assume_invariant_0_0: 0 <= $__i3
-assume_invariant_0_1: $__i3 <= $__n0
-assume_invariant_0_2: $__s4 == $__i3 * ($__i3 + 1) div 2
-sum_requires_0: $__n0 >= 0
-Obligation:
-0 <= $__i3 + 1
-
-Label: arbitrary_iter_maintain_invariant_0_1
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard_0: $__i3 < $__n0
-assume_invariant_0_0: 0 <= $__i3
-assume_invariant_0_1: $__i3 <= $__n0
-assume_invariant_0_2: $__s4 == $__i3 * ($__i3 + 1) div 2
-sum_requires_0: $__n0 >= 0
-Obligation:
-$__i3 + 1 <= $__n0
-
-Label: arbitrary_iter_maintain_invariant_0_2
-Property: assert
-Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard_0: $__i3 < $__n0
-assume_invariant_0_0: 0 <= $__i3
-assume_invariant_0_1: $__i3 <= $__n0
-assume_invariant_0_2: $__s4 == $__i3 * ($__i3 + 1) div 2
-sum_requires_0: $__n0 >= 0
-Obligation:
-$__s4 + ($__i3 + 1) == ($__i3 + 1) * ($__i3 + 1 + 1) div 2
-
-Label: sum_ensures_1
-Property: assert
-Assumptions:
-sum_requires_0: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
-assume_guard_0: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant_0_0: if 0 < $__n0 then (0 <= $__i3) else true
-assume_invariant_0_1: if 0 < $__n0 then ($__i3 <= $__n0) else true
-assume_invariant_0_2: if 0 < $__n0 then ($__s4 == $__i3 * ($__i3 + 1) div 2) else true
-not_guard_0: if 0 < $__n0 then !($__i5 < $__n0) else true
-invariant_0_0: if 0 < $__n0 then (0 <= $__i5) else true
-invariant_0_1: if 0 < $__n0 then ($__i5 <= $__n0) else true
-invariant_0_2: if 0 < $__n0 then ($__s6 == $__i5 * ($__i5 + 1) div 2) else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
-Obligation:
-if 0 < $__n0 then $__s6 else 0 == $__n0 * ($__n0 + 1) div 2
-
----
 info:
 Obligation: entry_invariant_0_0
 Property: assert
@@ -177,7 +95,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify gaussPgm
+#eval verify gaussPgm (options := Options.quiet)
 
 def nestedPgm :=
 #strata
