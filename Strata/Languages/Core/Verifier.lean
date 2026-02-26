@@ -156,101 +156,112 @@ instance : Inhabited VCOutcome where
 
 namespace VCOutcome
 
-def isPass (o : VCOutcome) : Bool :=
-  match o.validityProperty with
-  | .unsat => true
-  | _ => false
+-- Nine base outcome cases (one per combination)
 
-def isPassAndReachable (o : VCOutcome) : Bool :=
+def passAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .sat _, .unsat => true
   | _, _ => false
 
-def isPassReachabilityUnknown (o : VCOutcome) : Bool :=
-  match o.satisfiabilityProperty, o.validityProperty with
-  | .unknown, .unsat => true
-  | _, _ => false
-
-def isRefutedAndReachable (o : VCOutcome) : Bool :=
+def refutedAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unsat, .sat _ => true
   | _, _ => false
 
-def isIndecisiveAndReachable (o : VCOutcome) : Bool :=
+def indecisiveAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .sat _, .sat _ => true
   | _, _ => false
 
-def isUnreachable (o : VCOutcome) : Bool :=
+def unreachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unsat, .unsat => true
   | _, _ => false
+
+def satisfiableValidityUnknown (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .sat _, .unknown => true
+  | _, _ => false
+
+def alwaysFalseReachabilityUnknown (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .unsat, .unknown => true
+  | _, _ => false
+
+def canBeFalseAndReachable (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .unknown, .sat _ => true
+  | _, _ => false
+
+def passReachabilityUnknown (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .unknown, .unsat => true
+  | _, _ => false
+
+def unknown (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .unknown, .unknown => true
+  | _, _ => false
+
+-- Derived predicates (cross-cutting properties)
+
+def isPass (o : VCOutcome) : Bool :=
+  match o.validityProperty with
+  | .unsat => true
+  | _ => false
 
 def isSatisfiable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty with
   | .sat _ => true
   | _ => false
 
-def isSatisfiableValidityUnknown (o : VCOutcome) : Bool :=
-  match o.satisfiabilityProperty, o.validityProperty with
-  | .sat _, .unknown => true
-  | _, _ => false
-
-def isAlwaysFalseReachabilityUnknown (o : VCOutcome) : Bool :=
-  match o.satisfiabilityProperty, o.validityProperty with
-  | .unsat, .unknown => true
-  | _, _ => false
-
-def isCanBeFalseAndReachable (o : VCOutcome) : Bool :=
-  match o.satisfiabilityProperty, o.validityProperty with
-  | .unknown, .sat _ => true
-  | _, _ => false
-
-def isUnknown (o : VCOutcome) : Bool :=
-  match o.satisfiabilityProperty, o.validityProperty with
-  | .unknown, .unknown => true
-  | _, _ => false
-
--- Backward compatibility aliases
-def isRefuted := isRefutedAndReachable
-def isRefutedIfReachable := isAlwaysFalseReachabilityUnknown
-def isIndecisive := isIndecisiveAndReachable
-def isAlwaysTrueIfReachable := isPassReachabilityUnknown
-def isPassIfReachable := isPassReachabilityUnknown
-def isAlwaysFalseIfReachable := isAlwaysFalseReachabilityUnknown
-def isReachableAndCanBeFalse := isCanBeFalseAndReachable
-
--- Cross-cutting predicates for filtering by properties
-
 def isAlwaysFalse (o : VCOutcome) : Bool :=
-  o.isRefutedAndReachable || o.isAlwaysFalseReachabilityUnknown
+  o.refutedAndReachable || o.alwaysFalseReachabilityUnknown
 
 def isAlwaysTrue (o : VCOutcome) : Bool :=
   o.isPass
 
 def isReachable (o : VCOutcome) : Bool :=
-  o.isPassAndReachable || o.isRefutedAndReachable || o.isIndecisiveAndReachable
+  o.passAndReachable || o.refutedAndReachable || o.indecisiveAndReachable
+
+-- Backward compatibility aliases (old names with "is" prefix)
+def isPassAndReachable := passAndReachable
+def isRefutedAndReachable := refutedAndReachable
+def isIndecisiveAndReachable := indecisiveAndReachable
+def isUnreachable := unreachable
+def isSatisfiableValidityUnknown := satisfiableValidityUnknown
+def isAlwaysFalseReachabilityUnknown := alwaysFalseReachabilityUnknown
+def isCanBeFalseAndReachable := canBeFalseAndReachable
+def isPassReachabilityUnknown := passReachabilityUnknown
+def isUnknown := unknown
+def isRefuted := refutedAndReachable
+def isRefutedIfReachable := alwaysFalseReachabilityUnknown
+def isIndecisive := indecisiveAndReachable
+def isAlwaysTrueIfReachable := passReachabilityUnknown
+def isPassIfReachable := passReachabilityUnknown
+def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
+def isReachableAndCanBeFalse := canBeFalseAndReachable
 
 def label (o : VCOutcome) : String :=
-  if o.isPassAndReachable then "pass"
-  else if o.isRefuted then "refuted"
-  else if o.isIndecisive then "indecisive"
-  else if o.isUnreachable then "unreachable"
-  else if o.isSatisfiableValidityUnknown then "satisfiable"
-  else if o.isAlwaysFalseReachabilityUnknown then "refuted if reachable"
-  else if o.isCanBeFalseAndReachable then "reachable and can be false"
-  else if o.isPassReachabilityUnknown then "pass if reachable"
+  if o.passAndReachable then "pass"
+  else if o.refutedAndReachable then "refuted"
+  else if o.indecisiveAndReachable then "indecisive"
+  else if o.unreachable then "unreachable"
+  else if o.satisfiableValidityUnknown then "satisfiable"
+  else if o.alwaysFalseReachabilityUnknown then "refuted if reachable"
+  else if o.canBeFalseAndReachable then "reachable and can be false"
+  else if o.passReachabilityUnknown then "pass if reachable"
   else "unknown"
 
 def emoji (o : VCOutcome) : String :=
-  if o.isPassAndReachable then "✅"
-  else if o.isRefuted then "❌"
-  else if o.isIndecisive then "🔶"
-  else if o.isUnreachable then "⛔"
-  else if o.isSatisfiableValidityUnknown then "➕"
-  else if o.isAlwaysFalseReachabilityUnknown then "✖️"
-  else if o.isCanBeFalseAndReachable then "➖"
-  else if o.isPassReachabilityUnknown then "✔️"
+  if o.passAndReachable then "✅"
+  else if o.refutedAndReachable then "❌"
+  else if o.indecisiveAndReachable then "🔶"
+  else if o.unreachable then "⛔"
+  else if o.satisfiableValidityUnknown then "➕"
+  else if o.alwaysFalseReachabilityUnknown then "✖️"
+  else if o.canBeFalseAndReachable then "➖"
+  else if o.passReachabilityUnknown then "✔️"
   else "❓"
 
 end VCOutcome

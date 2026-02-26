@@ -21,20 +21,20 @@ open Strata.Sarif Strata.SMT
 
 /-- Convert VCOutcome to SARIF Level -/
 def outcomeToLevel (outcome : VCOutcome) : Level :=
-  if outcome.isPass then .none
-  else if outcome.isRefuted then .error
-  else if outcome.isIndecisive then .warning
-  else if outcome.isUnreachable then .note
-  else if outcome.isSatisfiable then .note
-  else if outcome.isRefutedIfReachable then .warning
-  else if outcome.isReachableAndCanBeFalse then .warning
-  else if outcome.isAlwaysTrueIfReachable then .note
+  if outcome.passAndReachable then .none
+  else if outcome.refutedAndReachable then .error
+  else if outcome.indecisiveAndReachable then .warning
+  else if outcome.unreachable then .note
+  else if outcome.satisfiableValidityUnknown then .note
+  else if outcome.alwaysFalseReachabilityUnknown then .warning
+  else if outcome.canBeFalseAndReachable then .warning
+  else if outcome.passReachabilityUnknown then .note
   else .warning
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=
-  if outcome.isPass then "Verification succeeded: always true and reachable"
-  else if outcome.isRefuted then
+  if outcome.passAndReachable then "Verification succeeded: always true and reachable"
+  else if outcome.refutedAndReachable then
     match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
@@ -42,7 +42,7 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
       else
         s!"Verification failed: always false and reachable with counterexample: {Std.format m}"
     | _ => "Verification failed: always false and reachable"
-  else if outcome.isIndecisive then
+  else if outcome.indecisiveAndReachable then
     let models := match outcome.satisfiabilityProperty, outcome.validityProperty with
       | .sat m1, .sat m2 =>
         if !m1.isEmpty && !m2.isEmpty then
@@ -54,9 +54,9 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
         else ""
       | _, _ => ""
     s!"Verification inconclusive: true or false depending on inputs{models}"
-  else if outcome.isUnreachable then "Path unreachable: path condition is contradictory"
-  else if outcome.isSatisfiable then "Reachable and can be true, unknown if always true"
-  else if outcome.isRefutedIfReachable then
+  else if outcome.unreachable then "Path unreachable: path condition is contradictory"
+  else if outcome.satisfiableValidityUnknown then "Reachable and can be true, unknown if always true"
+  else if outcome.alwaysFalseReachabilityUnknown then
     match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
@@ -64,7 +64,7 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
       else
         s!"Always false if reached, reachability unknown with counterexample: {Std.format m}"
     | _ => "Always false if reached, reachability unknown"
-  else if outcome.isReachableAndCanBeFalse then
+  else if outcome.canBeFalseAndReachable then
     match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
@@ -72,7 +72,7 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
       else
         s!"Reachable and can be false, unknown if always false with counterexample: {Std.format m}"
     | _ => "Reachable and can be false, unknown if always false"
-  else if outcome.isAlwaysTrueIfReachable then "Always true if reached, reachability unknown"
+  else if outcome.passReachabilityUnknown then "Always true if reached, reachability unknown"
   else "Verification result unknown (solver timeout or incomplete)"
 
 /-- Extract location information from metadata -/
