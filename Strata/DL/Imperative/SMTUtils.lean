@@ -161,12 +161,12 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     parseVerdict stdout
   else
     .ok (.unknown, stdout)
-  
+
   let (validityResult, _) ← if validityCheck then
     parseVerdict remaining
   else
     .ok (.unknown, remaining)
-  
+
   .ok (satResult, validityResult)
 
 def addLocationInfo {P : PureExpr} [BEq P.Ident]
