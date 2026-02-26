@@ -47,15 +47,15 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=
-  if outcome.passAndReachable then "Verification succeeded: always true and reachable"
+  if outcome.passAndReachable then "Always true and reachable"
   else if outcome.alwaysFalseAndReachable then
     match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
-        "Verification failed: always false and reachable"
+        "Always false and reachable"
       else
-        s!"Verification failed: always false and reachable with counterexample: {Std.format m}"
-    | _ => "Verification failed: always false and reachable"
+        s!"Always false and reachable with counterexample: {Std.format m}"
+    | _ => "Always false and reachable"
   else if outcome.indecisiveAndReachable then
     let models := match outcome.satisfiabilityProperty, outcome.validityProperty with
       | .sat m1, .sat m2 =>
@@ -67,27 +67,27 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
           s!" (false: {Std.format m2})"
         else ""
       | _, _ => ""
-    s!"Verification inconclusive: true or false depending on inputs{models}"
-  else if outcome.unreachable then "Path unreachable: path condition is contradictory"
-  else if outcome.satisfiableValidityUnknown then "Reachable and can be true, unknown if always true"
+    s!"True or false depending on inputs{models}"
+  else if outcome.unreachable then "Unreachable: path condition is contradictory"
+  else if outcome.satisfiableValidityUnknown then "Can be true, unknown if always true"
   else if outcome.alwaysFalseReachabilityUnknown then
     match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
-        "Always false if reached, reachability unknown"
+        "Always false if reachable, reachability unknown"
       else
-        s!"Always false if reached, reachability unknown with counterexample: {Std.format m}"
-    | _ => "Always false if reached, reachability unknown"
+        s!"Always false if reachable, reachability unknown with counterexample: {Std.format m}"
+    | _ => "Always false if reachable, reachability unknown"
   else if outcome.canBeFalseAndReachable then
     match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
-        "Reachable and can be false, unknown if always false"
+        "Can be false and reachable, unknown if always false"
       else
-        s!"Reachable and can be false, unknown if always false with counterexample: {Std.format m}"
-    | _ => "Reachable and can be false, unknown if always false"
-  else if outcome.passReachabilityUnknown then "Always true if reached, reachability unknown"
-  else "Verification result unknown (solver timeout or incomplete)"
+        s!"Can be false and reachable, unknown if always false with counterexample: {Std.format m}"
+    | _ => "Can be false and reachable, unknown if always false"
+  else if outcome.passReachabilityUnknown then "Always true if reachable, reachability unknown"
+  else "Unknown (solver timeout or incomplete)"
 
 /-- Extract location information from metadata -/
 def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
