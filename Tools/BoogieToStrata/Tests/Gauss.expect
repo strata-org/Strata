@@ -1,5 +1,7 @@
 Successfully parsed.
-Gauss.core.st(18, 4) [entry_invariant_0]: ✅ pass
-Gauss.core.st(18, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
+Gauss.core.st(18, 4) [entry_invariant_0_0]: ✅ pass
+Gauss.core.st(18, 4) [entry_invariant_0_1]: ✅ pass
+Gauss.core.st(18, 4) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
+Gauss.core.st(18, 4) [arbitrary_iter_maintain_invariant_0_1]: ✅ pass
 Gauss.core.st(11, 2) [sum_ensures_1]: ✅ pass
-All 3 goals passed.
+All 5 goals passed.

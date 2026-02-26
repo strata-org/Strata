@@ -78,8 +78,8 @@ Model:
 [DEBUG] Evaluated program:
 procedure Test (x : int) returns (r : int)
 spec {
-  ensures [good]: forall __q0 : int :: exists __q1 : int :: __q1 + (__q1 + __q0) == __q0 + (__q1 + __q1);
-  ensures [bad]: forall __q0 : int :: __q0 < r;
+  ensures [good]: forall __q0 : int :: exists __q1 : int :: r + (__q1 + __q0) == __q0 + (__q1 + r);
+  ensures [bad]: forall __q0 : int :: __q0 < x;
   } {
   assert [good_assert]: forall __q0 : ($__unknown_type) :: !(__q0 == __q0 + 1);
   r := $__x0 + 1;

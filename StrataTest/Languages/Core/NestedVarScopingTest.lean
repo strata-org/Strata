@@ -42,13 +42,14 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: procedure test (cond : bool, x : int, y : int) returns ()
 {
-  if(cond){
+  if (cond) {
     function f (a : int) : int { a + x }
     var r1 : int := f(10);
-    }else{
+    } else {
     function f (a : int) : int { a + y }
     var r2 : int := f(20);
-    }};
+    }
+  };
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck Options.default (translatePgm issue436Pgm).stripMetaData))

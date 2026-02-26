@@ -124,32 +124,26 @@ where
             let (ma, Env) ← LExpr.resolve C Env m |>.mapError DiagnosticModel.fromFormat
             .ok (some ma, Env)
           | _ => .ok (none, Env))
-          let (it, Env) ← (match invariant with
-          | .some i => do
-            let _ ← Env.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-            let (ia, Env) ← LExpr.resolve C Env i |>.mapError DiagnosticModel.fromFormat
-            .ok (some ia, Env)
-          | _ => .ok (none, Env))
+          let (it, Env) ← invariant.foldlM (fun (acc, E) i => do
+            let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
+            let (ia, E') ← LExpr.resolve C E i |>.mapError DiagnosticModel.fromFormat
+            if ia.toLMonoTy == .tcons "bool" [] then
+              .ok (acc ++ [ia], E')
+            else
+              .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
+          ) ([], Env)
           let mty := mt.map LExpr.toLMonoTy
-          let ity := it.map LExpr.toLMonoTy
-          match (condty, mty, ity) with
-          | (.tcons "bool" [], none, none)
-          | (.tcons "bool" [], some (.tcons "int" []), none)
-          | (.tcons "bool" [], none, some (.tcons "bool" []))
-          | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
+          match (condty, mty) with
+          | (.tcons "bool" [], none)
+          | (.tcons "bool" [], some (.tcons "int" [])) =>
             let (tb, Env, C) ← goBlock C Env bss []
             let s' := Stmt.loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
             .ok (s', Env, C)
           | _ =>
             match condty with
             | .tcons "bool" [] =>
-              match mty with
-              | none | .some (.tcons "int" []) =>
-                match ity with
-                | none | .some (.tcons "bool" []) => panic! "Internal error. condty, mty or ity must be unexpected."
-                | _ => .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {invariant} is not of type `bool`!"
-              | _ => .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
-            | _ =>  .error <| md.toDiagnosticF f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
+              .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
+            | _ => .error <| md.toDiagnosticF f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
@@ -224,7 +218,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .ite cond tss ess md =>
     .ite (cond.applySubst S) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) (go S bss []) md
+    .loop (guard.applySubst S) (substOptionExpr S m) (i.map (·.applySubst S)) (go S bss []) md
   | .goto _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with
