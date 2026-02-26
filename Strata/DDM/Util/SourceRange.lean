@@ -27,6 +27,8 @@ structure SourceRange where
   stop : String.Pos.Raw
 deriving DecidableEq, Inhabited
 
+/-- Compact repr: `SourceRange.none` (start=stop=0) displays as `()` to match the
+    previous `Unit` metadata repr in tests that print Core expressions. -/
 instance : Repr SourceRange where
   reprPrec sr _ :=
     if sr.start == 0 && sr.stop == 0 then "()"

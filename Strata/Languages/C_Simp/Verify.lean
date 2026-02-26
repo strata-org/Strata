@@ -85,6 +85,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, .unres⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
+      -- Synthesized Core expressions have no C_Simp source location; SourceRange.none is used.
       let measure_pos := (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Ge" none) (translate_expr measure)) (.intConst Strata.SourceRange.none 0))
 
       let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>

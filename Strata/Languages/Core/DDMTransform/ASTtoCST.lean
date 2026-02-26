@@ -790,6 +790,8 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
       let dl := DeclList.declAtom default bind
       pure (.varStatement default dl)
     | some (.fvar _ f _) =>
+      -- Handle free variable initializers (e.g., `var tmp := x` from CallElim).
+      -- Look up the variable in the bound context; if not found, format it as an expression.
       let ctx ← get
       match ctx.freeVarIndex? f.name with
       | some idx =>

@@ -260,7 +260,7 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) :
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
             | none => .fvar Strata.SourceRange.none xid none
-            | some xty => .fvar Strata.SourceRange.none xid xty
+            | some xty => .fvar Strata.SourceRange.none xid (some xty)
   (xe, E)
 
 /--
