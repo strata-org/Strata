@@ -475,24 +475,22 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx) =>
-        -- Determine which checks to perform based on metadata annotations or global check mode
-        let checkMode :=
+        -- Determine which checks to perform based on metadata annotations or error mode/diagnostic
+        let (satisfiabilityCheck, validityCheck) :=
           if Imperative.MetaData.hasFullCheck obligation.metadata then
-            CheckMode.full
+            (true, true)
           else if Imperative.MetaData.hasValidityCheck obligation.metadata then
-            CheckMode.validity
+            (false, true)
           else if Imperative.MetaData.hasSatisfiabilityCheck obligation.metadata then
-            CheckMode.satisfiability
+            (true, false)
           else
-            options.checkMode
-
-        -- Determine which checks to perform based on check mode and property type
-        let (satisfiabilityCheck, validityCheck) := match checkMode, obligation.property with
-          | .full, _ => (true, true)
-          | .validity, .assert => (false, true)
-          | .validity, .cover => (true, false)  -- Cover uses satisfiability semantics
-          | .satisfiability, .assert => (true, false)
-          | .satisfiability, .cover => (true, false)
+            -- Derive checks from error mode and diagnostic level
+            match options.errorMode, options.errorDiagnostic, obligation.property with
+            | _, .full, _ => (true, true)  -- Full diagnostic: both checks
+            | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
+            | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
+            | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
+            | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       counter tempDir satisfiabilityCheck validityCheck
         results := results.push result

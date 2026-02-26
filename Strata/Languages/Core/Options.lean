@@ -47,11 +47,10 @@ instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
 /-- Default SMT solver to use -/
 def defaultSolver : String := "cvc5"
 
-/-- Check mode for verification -/
-inductive CheckMode where
-  | full
-  | validity
-  | satisfiability
+/-- Error diagnostic level: how much information to gather -/
+inductive ErrorDiagnostic where
+  | minimal  -- Only checks needed for error mode
+  | full     -- Both checks for more informative messages
   deriving Inhabited, Repr, DecidableEq
 
 structure Options where
@@ -71,10 +70,10 @@ structure Options where
   solver : String
   /-- Directory to store VCs -/
   vcDirectory : Option System.FilePath
-  /-- Check mode: full (both checks), validity (only validity), satisfiability (only satisfiability) -/
-  checkMode : CheckMode
-  /-- Error level for SARIF output: deductive (prove correctness) or bugFinding (find bugs) -/
-  errorLevel : VerificationMode
+  /-- Error mode: deductive (prove correctness) or bugFinding (find bugs) -/
+  errorMode : VerificationMode
+  /-- Error diagnostic: minimal (only necessary checks) or full (both checks for better messages) -/
+  errorDiagnostic : ErrorDiagnostic
 
 def Options.default : Options := {
   verbose := .normal,
@@ -88,8 +87,8 @@ def Options.default : Options := {
   outputSarif := false,
   solver := defaultSolver
   vcDirectory := .none
-  checkMode := .validity
-  errorLevel := .deductive
+  errorMode := .deductive
+  errorDiagnostic := .minimal
 }
 
 instance : Inhabited Options where

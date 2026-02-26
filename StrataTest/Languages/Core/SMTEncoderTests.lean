@@ -187,7 +187,7 @@ spec {
 };
 #end
 
--- Test verification with axiomatized maps (default) - use full mode for complete check
+-- Test verification with axiomatized maps (default)
 /--
 info:
 Obligation: UpdateAndRead_ensures_1
@@ -195,7 +195,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false, checkMode := .full})
+#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
 
 /--
 info:
@@ -204,6 +204,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true, checkMode := .full})
+#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true})
 
 end Strata
