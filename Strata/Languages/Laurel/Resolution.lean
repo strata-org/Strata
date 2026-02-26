@@ -51,7 +51,30 @@ namespace Strata.Laurel
 inductive AstNode where
   /-- A local variable declaration. -/
   | var (name : Identifier) (type : HighTypeMd)
-  | alternative
+  /-- A procedure parameter. -/
+  | parameter (param : Parameter)
+  /-- A static procedure. -/
+  | staticProcedure (proc : Procedure)
+  /-- An instance procedure (method) on a composite type. -/
+  | instanceProcedure (typeName : Identifier) (proc : Procedure)
+  /-- A field on a composite type. -/
+  | field (typeName : Identifier) (fld : Field)
+  /-- A composite type definition. -/
+  | compositeType (ty : CompositeType)
+  /-- A constrained type definition. -/
+  | constrainedType (ty : ConstrainedType)
+  /-- A datatype definition. -/
+  | datatypeDefinition (ty : DatatypeDefinition)
+  /-- A datatype constructor. -/
+  | datatypeConstructor (typeName : Identifier) (ctor : DatatypeConstructor)
+  /-- A constant. -/
+  | constant (c : Constant)
+  /-- A quantifier-bound variable. -/
+  | quantifierVar (name : Identifier) (type : HighTypeMd)
+
+def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
+ | .var _ type => type
+ | _ => panic "oeps"
 
 /-! ## Resolution result -/
 

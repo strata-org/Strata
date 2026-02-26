@@ -34,18 +34,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralBool _ => ⟨ .TBool, md ⟩
   | .LiteralString _ => ⟨ .TString, md ⟩
   -- Variables
-  | .Identifier id =>
-      match model.get id with
-       | .var name type => type
-       | _ => panic "bla"
-      -- match env.find? (fun (n, _) => n == id.id.get!) with
-      -- | some (_, ty) => ty
-      -- | none => panic s!"Could not find variable {id.name} in environment '{Std.format env}'"
+  | .Identifier id => (model.get id).getType.get!
   -- Field access
-  | .FieldSelect target fieldName =>
-      match model.get fieldName with
-       | .var name type => type
-       | _ => panic "bla"
+  | .FieldSelect _ fieldName => (model.get fieldName).getType.get!
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — we don't track return types here, so fall back to TVoid
