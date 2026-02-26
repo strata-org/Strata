@@ -21,79 +21,115 @@ open Core.SMT (Result)
 def mkOutcome (satisfiabilityProperty : Result) (validityProperty : Result) : VCOutcome :=
   { satisfiabilityProperty, validityProperty }
 
-def testOutcome (o : VCOutcome) (predicate : VCOutcome → Bool) : IO Unit := do
-  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {predicate o}, Message: {outcomeToMessage o}, SARIF output: Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
+inductive OutcomePredicate where
+  | passAndReachable
+  | alwaysFalseAndReachable
+  | indecisiveAndReachable
+  | unreachable
+  | satisfiableValidityUnknown
+  | alwaysFalseReachabilityUnknown
+  | canBeFalseAndReachable
+  | passReachabilityUnknown
+  | unknown
+  deriving DecidableEq, Repr
+
+def OutcomePredicate.eval (p : OutcomePredicate) (o : VCOutcome) : Bool :=
+  match p with
+  | .passAndReachable => o.passAndReachable
+  | .alwaysFalseAndReachable => o.alwaysFalseAndReachable
+  | .indecisiveAndReachable => o.indecisiveAndReachable
+  | .unreachable => o.unreachable
+  | .satisfiableValidityUnknown => o.satisfiableValidityUnknown
+  | .alwaysFalseReachabilityUnknown => o.alwaysFalseReachabilityUnknown
+  | .canBeFalseAndReachable => o.canBeFalseAndReachable
+  | .passReachabilityUnknown => o.passReachabilityUnknown
+  | .unknown => o.unknown
+
+def allPredicates : List OutcomePredicate :=
+  [.passAndReachable, .alwaysFalseAndReachable, .indecisiveAndReachable, .unreachable,
+   .satisfiableValidityUnknown, .alwaysFalseReachabilityUnknown, .canBeFalseAndReachable,
+   .passReachabilityUnknown, .unknown]
+
+def testOutcome (o : VCOutcome) (expectedTrue : OutcomePredicate) : IO Unit := do
+  for p in allPredicates do
+    if p == expectedTrue then
+      if !p.eval o then IO.eprintln s!"ERROR: Expected {repr p} to be true but was false"
+    else
+      if p.eval o then IO.eprintln s!"ERROR: Expected {repr p} to be false but was true"
+  let satStr := if let .sat _ := o.satisfiabilityProperty then "sat" else if let .unsat := o.satisfiabilityProperty then "unsat" else "unknown"
+  let valStr := if let .sat _ := o.validityProperty then "sat" else if let .unsat := o.validityProperty then "unsat" else "unknown"
+  IO.println s!"Sat:{satStr}|Val:{valStr} {o.emoji} {o.label}, {outcomeToMessage o}, SARIF: Deductive level: {outcomeToLevel .deductive o}, BugFinding level: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (sat, unsat) - always true and reachable -/
 
 /--
-info: Emoji: ✅, Label: pass, Predicate: true, Message: Always true and reachable, SARIF output: Deductive: none, BugFinding: none
+info: Sat:sat|Val:unsat ✅ pass, Always true and reachable, SARIF: Deductive level: none, BugFinding level: none
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (.sat default) .unsat) (·.passAndReachable)
+#eval testOutcome (mkOutcome (.sat default) .unsat) .passAndReachable
 
 /-! ### Outcome: (unsat, sat) - always false and reachable -/
 
 /--
-info: Emoji: ❌, Label: refuted, Predicate: true, Message: Always false and reachable, SARIF output: Deductive: error, BugFinding: error
+info: Sat:unsat|Val:sat ❌ refuted, Always false and reachable, SARIF: Deductive level: error, BugFinding level: error
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome .unsat (.sat default)) (·.alwaysFalseAndReachable)
+#eval testOutcome (mkOutcome .unsat (.sat default)) .alwaysFalseAndReachable
 
 /-! ### Outcome: (sat, sat) - true or false depending on inputs -/
 
 /--
-info: Emoji: 🔶, Label: indecisive, Predicate: true, Message: True or false depending on inputs, SARIF output: Deductive: error, BugFinding: note
+info: Sat:sat|Val:sat 🔶 indecisive, True or false depending on inputs, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (.sat default) (.sat default)) (·.indecisiveAndReachable)
+#eval testOutcome (mkOutcome (.sat default) (.sat default)) .indecisiveAndReachable
 
 /-! ### Outcome: (unsat, unsat) - unreachable -/
 
 /--
-info: Emoji: ⛔, Label: unreachable, Predicate: true, Message: Unreachable: path condition is contradictory, SARIF output: Deductive: warning, BugFinding: warning
+info: Sat:unsat|Val:unsat ⛔ unreachable, Unreachable: path condition is contradictory, SARIF: Deductive level: warning, BugFinding level: warning
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome .unsat .unsat) (·.unreachable)
+#eval testOutcome (mkOutcome .unsat .unsat) .unreachable
 
 /-! ### Outcome: (sat, unknown) - can be true, unknown if always true -/
 
 /--
-info: Emoji: ➕, Label: satisfiable, Predicate: true, Message: Can be true, unknown if always true, SARIF output: Deductive: error, BugFinding: note
+info: Sat:sat|Val:unknown ➕ satisfiable, Can be true, unknown if always true, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) (·.satisfiableValidityUnknown)
+#eval testOutcome (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) .satisfiableValidityUnknown
 
 /-! ### Outcome: (unsat, unknown) - always false if reachable -/
 
 /--
-info: Emoji: ✖️, Label: refuted if reachable, Predicate: true, Message: Always false if reachable, reachability unknown, SARIF output: Deductive: error, BugFinding: error
+info: Sat:unsat|Val:unknown ✖️ refuted if reachable, Always false if reachable, reachability unknown, SARIF: Deductive level: error, BugFinding level: error
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) (·.alwaysFalseReachabilityUnknown)
+#eval testOutcome (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) .alwaysFalseReachabilityUnknown
 
 /-! ### Outcome: (unknown, sat) - can be false and reachable -/
 
 /--
-info: Emoji: ➖, Label: reachable and can be false, Predicate: true, Message: Can be false and reachable, unknown if always false, SARIF output: Deductive: error, BugFinding: note
+info: Sat:unknown|Val:sat ➖ reachable and can be false, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)) (·.canBeFalseAndReachable)
+#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)) .canBeFalseAndReachable
 
 /-! ### Outcome: (unknown, unsat) - always true if reachable -/
 
 /--
-info: Emoji: ✔️, Label: pass if reachable, Predicate: true, Message: Always true if reachable, reachability unknown, SARIF output: Deductive: none, BugFinding: none
+info: Sat:unknown|Val:unsat ✔️ pass if reachable, Always true if reachable, reachability unknown, SARIF: Deductive level: none, BugFinding level: none
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat) (·.passReachabilityUnknown)
+#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat) .passReachabilityUnknown
 
 /-! ### Outcome: (unknown, unknown) - solver timeout or incomplete -/
 
 /--
-info: Emoji: ❓, Label: unknown, Predicate: true, Message: Unknown (solver timeout or incomplete), SARIF output: Deductive: error, BugFinding: note
+info: Sat:unknown|Val:unknown ❓ unknown, Unknown (solver timeout or incomplete), SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) (·.unknown)
+#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) .unknown
 
 end Core
