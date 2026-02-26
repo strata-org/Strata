@@ -26,8 +26,8 @@ def lookupFieldInTypes (types : List TypeDefinition) (typeName : Identifier) (fi
   types.findSome? fun td =>
     match td with
     | .Composite ct =>
-        if ct.name.name == typeName then ct.fields.findSome? fun f =>
-          if f.name.name == fieldName then some f.type else none
+        if ct.name == typeName then ct.fields.findSome? fun f =>
+          if f.name == fieldName then some f.type else none
         else none
     | _ => none
 
@@ -46,14 +46,14 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .LiteralString _ => ⟨ .TString, md ⟩
   -- Variables
   | .Identifier name =>
-      match env.find? (fun (n, _) => n == name.name) with
+      match env.find? (fun (n, _) => n == name) with
       | some (_, ty) => ty
       | none => panic s!"Could not find variable {name.name} in environment '{Std.format env}'"
   -- Field access
   | .FieldSelect target fieldName =>
       match computeExprType env types target with
       | WithMetadata.mk (.UserDefined typeName) _ =>
-          match lookupFieldInTypes types typeName.name fieldName.name with
+          match lookupFieldInTypes types typeName fieldName with
           | some ty => ty
           | none => panic s!"Could not find field in type"
       | _ => panic s!"Selecting from a type that's not a composite"
@@ -90,8 +90,8 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .AsType _ ty => ty
   | .IsType _ _ => ⟨ .TBool, md ⟩
   -- Verification specific
-  | .Forall _ _ _ => ⟨ .TBool, md ⟩
-  | .Exists _ _ _ => ⟨ .TBool, md ⟩
+  | .Forall _ _ => ⟨ .TBool, md ⟩
+  | .Exists _ _ => ⟨ .TBool, md ⟩
   | .Assigned _ => ⟨ .TBool, md ⟩
   | .Old v => computeExprType env types v
   | .Fresh _ => ⟨ .TBool, md ⟩

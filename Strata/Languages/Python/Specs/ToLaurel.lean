@@ -81,16 +81,16 @@ def pushOverloadEntry (funcName : String) (literalValue : String)
     let updated := existing.insert literalValue returnType
     { s with overloads := s.overloads.insert funcName updated }
 
-/-- Allocate a fresh unique ID for Definition nodes. -/
+/-- Allocate a fresh unique ID for Identifier nodes. -/
 private def freshId : ToLaurelM Nat := do
   let s ← get
   modify fun st => { st with nextId := st.nextId + 1 }
   return s.nextId
 
-/-- Create a `Definition` with a fresh ID. -/
-private def mkDef (name : String) : ToLaurelM Definition := do
+/-- Create an `Identifier` with a fresh ID. -/
+private def mkDef (name : String) : ToLaurelM Identifier := do
   let id ← freshId
-  return ⟨name, id⟩
+  return { name := name, id := id }
 
 /-! ## Helper Functions -/
 
@@ -252,7 +252,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
       if args.size > 0 then
         reportError default
           s!"Generic class '{name}' with type args unsupported"
-      return mkTy (.UserDefined (Reference.mk' name))
+      return mkTy (.UserDefined { name := name })
     | .intLiteral _ => return mkTy .TInt
     | .stringLiteral _ => return mkTy .TString
     | .typedDict _ _ _ => return mkCore "DictStrAny"
