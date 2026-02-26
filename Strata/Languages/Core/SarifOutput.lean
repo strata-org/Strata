@@ -19,10 +19,6 @@ open Strata.Sarif Strata.SMT
 
 /-! ## Core-Specific Conversion Functions -/
 
-inductive VerificationMode where
-  | deductive  -- Prove correctness (unknown is error)
-  | bugFinding -- Find bugs (unknown is warning)
-
 /-- Convert VCOutcome to SARIF Level -/
 def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
   match mode with
@@ -88,7 +84,7 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
   | _ => none
 
 /-- Convert a VCResult to a SARIF Result -/
-def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
+def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
   match vcr.outcome with
   | .error msg =>
@@ -100,7 +96,7 @@ def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult)
       | none => #[]
     { ruleId, level, message, locations }
   | .ok outcome =>
-    let level := outcomeToLevel .deductive outcome
+    let level := outcomeToLevel mode outcome
     let messageText := outcomeToMessage outcome
     let message : Strata.Sarif.Message := { text := messageText }
     let locations := match extractLocation files vcr.obligation.metadata with
@@ -109,7 +105,7 @@ def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult)
     { ruleId, level, message, locations }
 
 /-- Convert VCResults to a SARIF document -/
-def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
+def vcResultsToSarif (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
   let tool : Strata.Sarif.Tool := {
     driver := {
       name := "Strata",
@@ -118,7 +114,7 @@ def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResult
     }
   }
 
-  let results := vcResults.map (vcResultToSarifResult files)
+  let results := vcResults.map (vcResultToSarifResult mode files)
 
   let run : Strata.Sarif.Run := { tool, results }
 
@@ -129,14 +125,16 @@ def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResult
 end Core.Sarif
 
 /-- Write SARIF output for verification results to a file.
+    `mode` is the verification mode (deductive or bugFinding) for error level mapping.
     `files` maps source URIs to their file maps for location resolution.
     `vcResults` are the verification results to encode.
     `outputPath` is the path to write the SARIF JSON to. -/
 def Core.Sarif.writeSarifOutput
+    (mode : VerificationMode)
     (files : Map Strata.Uri Lean.FileMap)
     (vcResults : Core.VCResults)
     (outputPath : String) : IO Unit := do
-  let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
+  let sarifDoc := Core.Sarif.vcResultsToSarif mode files vcResults
   let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
   try
     IO.FS.writeFile outputPath sarifJson

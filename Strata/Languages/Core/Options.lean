@@ -18,6 +18,12 @@ def VerboseMode.toNat (v : VerboseMode) : Nat :=
   | .normal => 2
   | .debug => 3
 
+/-- Verification mode for SARIF error level mapping -/
+inductive VerificationMode where
+  | deductive  -- Prove correctness (unknown is error)
+  | bugFinding -- Find bugs (unknown is warning)
+  deriving Inhabited, Repr, DecidableEq
+
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
   | false => .quiet
@@ -67,6 +73,8 @@ structure Options where
   vcDirectory : Option System.FilePath
   /-- Check mode: full (both checks), validity (only validity), satisfiability (only satisfiability) -/
   checkMode : CheckMode
+  /-- Error level for SARIF output: deductive (prove correctness) or bugFinding (find bugs) -/
+  errorLevel : VerificationMode
 
 def Options.default : Options := {
   verbose := .normal,
@@ -81,6 +89,7 @@ def Options.default : Options := {
   solver := defaultSolver
   vcDirectory := .none
   checkMode := .validity
+  errorLevel := .deductive
 }
 
 instance : Inhabited Options where

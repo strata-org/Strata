@@ -197,7 +197,6 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false, checkMode := .full})
 
--- Test verification with Array theory - use full mode for complete check
 /--
 info:
 Obligation: UpdateAndRead_ensures_1

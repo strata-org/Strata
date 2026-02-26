@@ -117,7 +117,7 @@ def dischargeObligation
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
-  let needsIncremental := (satisfiabilityCheck && validityCheck) || satisfiabilityCheck || validityCheck
+  let needsIncremental := satisfiabilityCheck && validityCheck
   let solverFlags :=
     if needsIncremental && options.solver == "cvc5" && !baseFlags.contains "--incremental" then
       baseFlags ++ #["--incremental"]

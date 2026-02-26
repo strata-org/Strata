@@ -43,6 +43,11 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
          | "validity" => go {opts with checkMode := .validity} rest procs
          | "satisfiability" => go {opts with checkMode := .satisfiability} rest procs
          | _ => .error f!"Invalid check mode: {modeStr}. Must be 'full', 'validity', or 'satisfiability'."
+      | opts, "--error-level" :: levelStr :: rest, procs =>
+         match levelStr with
+         | "deductive" => go {opts with errorLevel := .deductive} rest procs
+         | "bugFinding" => go {opts with errorLevel := .bugFinding} rest procs
+         | _ => .error f!"Invalid error level: {levelStr}. Must be 'deductive' or 'bugFinding'."
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -62,7 +67,8 @@ def usageMessage : Std.Format :=
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
-  --check-mode <mode>         Verification check mode: 'full' (both checks), 'validity' (default), or 'satisfiability'."
+  --check-mode <mode>         Verification check mode: 'full' (both checks), 'validity' (default), or 'satisfiability'.{Std.Format.line}  \
+  --error-level <level>       SARIF error level: 'deductive' (default, prove correctness) or 'bugFinding' (find bugs)."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -136,13 +142,13 @@ def main (args : List String) : IO UInt32 := do
             -- Create a files map with the single input file
             let uri := Strata.Uri.file file
             let files := Map.empty.insert uri inputCtx.fileMap
-            Core.Sarif.writeSarifOutput files vcResults (file ++ ".sarif")
+            Core.Sarif.writeSarifOutput opts.errorLevel files vcResults (file ++ ".sarif")
 
         -- Also output standard format
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
           match vcResult.outcome with
-          | .ok outcome => println! f!"{posStr} [{vcResult.obligation.label}]: {VCOutcome.emoji outcome} {VCOutcome.label outcome}"
+          | .ok outcome => println! f!"{posStr} [{vcResult.obligation.label}]: {Core.VCOutcome.emoji outcome} {Core.VCOutcome.label outcome}"
           | .error msg => println! f!"{posStr} [{vcResult.obligation.label}]: error: {msg}"
         let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
