@@ -19,17 +19,34 @@ open Strata.Sarif Strata.SMT
 
 /-! ## Core-Specific Conversion Functions -/
 
+inductive VerificationMode where
+  | deductive  -- Prove correctness (unknown is error)
+  | bugFinding -- Find bugs (unknown is warning)
+
 /-- Convert VCOutcome to SARIF Level -/
-def outcomeToLevel (outcome : VCOutcome) : Level :=
-  if outcome.passAndReachable then .none
-  else if outcome.refutedAndReachable then .error
-  else if outcome.indecisiveAndReachable then .warning
-  else if outcome.unreachable then .note
-  else if outcome.satisfiableValidityUnknown then .note
-  else if outcome.alwaysFalseReachabilityUnknown then .warning
-  else if outcome.canBeFalseAndReachable then .warning
-  else if outcome.passReachabilityUnknown then .note
-  else .warning
+def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
+  match mode with
+  | .deductive =>
+    -- Deductive verification: prove correctness
+    if outcome.passAndReachable || outcome.passReachabilityUnknown then 
+      .none
+    else if outcome.refutedAndReachable || outcome.alwaysFalseReachabilityUnknown || 
+            outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then 
+      .error
+    else if outcome.satisfiableValidityUnknown then 
+      .warning
+    else 
+      .note -- unreachable
+  | .bugFinding =>
+    -- Bug finding: find counterexamples
+    if outcome.passAndReachable || outcome.passReachabilityUnknown then 
+      .none
+    else if outcome.refutedAndReachable || outcome.alwaysFalseReachabilityUnknown then 
+      .error
+    else if outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then 
+      .warning
+    else 
+      .note -- unreachable, satisfiableValidityUnknown
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=
@@ -100,7 +117,7 @@ def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult)
       | none => #[]
     { ruleId, level, message, locations }
   | .ok outcome =>
-    let level := outcomeToLevel outcome
+    let level := outcomeToLevel .deductive outcome
     let messageText := outcomeToMessage outcome
     let message : Strata.Sarif.Message := { text := messageText }
     let locations := match extractLocation files vcr.obligation.metadata with
