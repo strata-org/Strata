@@ -206,7 +206,7 @@ end
 
 def listToExpr (l: ListMap CoreLabel Core.Procedure.Check) : Core.Expression.Expr :=
   match l with
-  | _ => .true ()
+  | _ => .true Strata.SourceRange.none
 
 def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
   let location : Location := {

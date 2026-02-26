@@ -67,7 +67,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
       | SMT.Decision.unsat => SMT.Result.unsat
       | SMT.Decision.sat => SMT.Result.unknown
       | SMT.Decision.unknown => SMT.Result.unknown
-    
+
     -- Add diagnosis for failures
     let diagnosis ← if outcome != .pass then
       let diagResult ← diagnoseFailure state E expr false smtCtx
@@ -80,7 +80,7 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
       pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := failures })
     else
       pure none
-    
+
     return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
 
 /-- Cover check: check-sat of expression using check-sat-assuming -/
@@ -108,7 +108,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
       | SMT.Decision.sat => SMT.Result.unknown
       | SMT.Decision.unsat => SMT.Result.unsat
       | SMT.Decision.unknown => SMT.Result.unknown
-    
+
     -- Add diagnosis for failures (reach checks)
     let diagnosis ← if outcome != .pass then
       let diagResult ← diagnoseFailure state E expr true smtCtx  -- true for reach check
@@ -120,7 +120,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
       pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := failures })
     else
       pure none
-    
+
     return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
 
 mutual
@@ -180,7 +180,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       -- Use a dummy expression for error reporting
       let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
       let obligation : Imperative.ProofObligation Core.Expression := {
-        label := s!"init {name.name}", property := .assert, assumptions := [], 
+        label := s!"init {name.name}", property := .assert, assumptions := [],
         obligation := dummyExpr, metadata := .empty
       }
       return (state, smtCtx, [{ obligation, result := .implementationError s!"Type translation error: {toString msg}" }])
@@ -214,12 +214,12 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         | .error msg => return .error msg
         | .ok (smtTy, _) => return .ok (types ++ [smtTy])
     ) (.ok [])
-    
+
     match result with
     | .error msg =>
       let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
       let obligation : Imperative.ProofObligation Core.Expression := {
-        label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
+        label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [],
         obligation := dummyExpr, metadata := .empty
       }
       return (state, smtCtx, [{ obligation, result := .implementationError s!"Type translation error: {toString msg}" }])
@@ -228,7 +228,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       | .error msg =>
         let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
         let obligation : Imperative.ProofObligation Core.Expression := {
-          label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
+          label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [],
           obligation := dummyExpr, metadata := .empty
         }
         return (state, smtCtx, [{ obligation, result := .implementationError s!"Output type translation error: {toString msg}" }])
@@ -248,7 +248,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         match translateExprSafe E body smtCtx with
         | .error msg =>
           let obligation : Imperative.ProofObligation Core.Expression := {
-            label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [], 
+            label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [],
             obligation := body, metadata := .empty
           }
           return (state, smtCtx, [{ obligation, result := .implementationError s!"Body translation error: {msg}" }])

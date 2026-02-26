@@ -8,7 +8,8 @@
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
-import Strata.Languages.B3.Verifier.Program
+import Strata.Languages.B3.Verifier
+import Strata.DL.SMT.Solver
 import Strata.Util.IO
 import Std.Internal.Parsec
 
@@ -94,23 +95,21 @@ def main (args : List String) : IO UInt32 := do
             C_Simp.verify pgm opts
           else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
             -- B3 verification (different model, handle inline)
-            let ast ← match B3.Verifier.programToB3AST pgm with
+            let ast ← match Strata.B3.Verifier.programToB3AST pgm with
               | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
               | Except.ok ast => pure ast
-            let solver ← B3.Verifier.createInteractiveSolver opts.solver
-            let reports ← B3.Verifier.programToSMT ast solver
+            let solver ← Strata.SMT.Solver.spawn opts.solver #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
+            let reports ← Strata.B3.Verifier.programToSMT ast solver
             -- B3 uses a different result format, print directly and return empty array
             for report in reports do
               IO.println s!"\nProcedure: {report.procedureName}"
               for (result, _) in report.results do
-                let marker := if result.result.isError then "✗" else "✓"
-                let desc := match result.result with
-                  | .error .counterexample => "counterexample found"
-                  | .error .unknown => "unknown"
-                  | .error .refuted => "refuted"
-                  | .success .verified => "verified"
-                  | .success .reachable => "reachable"
-                  | .success .reachabilityUnknown => "reachability unknown"
+                let marker := if result.outcome != .pass then "✗" else "✓"
+                let desc := match result.outcome with
+                  | .fail => "counterexample found"
+                  | .unknown => "unknown"
+                  | .pass => "verified"
+                  | .implementationError msg => s!"error: {msg}"
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
           else

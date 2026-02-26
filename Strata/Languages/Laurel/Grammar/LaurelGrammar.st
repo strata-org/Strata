@@ -1,4 +1,4 @@
-// Changes in this file are not automatically discovered by the build. 
+// Changes in this file are not automatically discovered by the build.
 // Touch LaurelGrammar.lean to trigger the build
 dialect Laurel;
 

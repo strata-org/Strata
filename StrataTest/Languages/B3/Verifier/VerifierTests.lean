@@ -139,7 +139,7 @@ def testVerification (prog : Program) : IO Unit := do
         | .fail => "✗"
         | .unknown => "✗"
         | .implementationError _ => "✗"
-      
+
       let description := match result.outcome with
         | .pass => "verified"
         | .fail => "counterexample found"

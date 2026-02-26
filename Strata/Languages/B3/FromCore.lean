@@ -44,7 +44,7 @@ instance : ToString ConversionError where
 def convertConst (sr : SourceRange) (c : Lambda.LConst) : Except ConversionError (B3AST.Expression SourceRange) :=
   match c with
   | Lambda.LConst.boolConst b => Except.ok (.literal sr (.boolLit sr b))
-  | Lambda.LConst.intConst i => 
+  | Lambda.LConst.intConst i =>
     if i >= 0 then
       Except.ok (.literal sr (.intLit sr i.natAbs))
     else

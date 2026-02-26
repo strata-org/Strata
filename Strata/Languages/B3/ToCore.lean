@@ -271,7 +271,7 @@ def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → ConvResult 
     let errors := if body.val.any (fun fb => match fb with | .functionBody _ whens _ => !whens.val.isEmpty) then
       errors ++ [.unsupportedFeature "'when' clauses" s!"function {name.val}"]
     else errors
-    
+
     let inputs : ListMap CoreIdent Lambda.LTy := params.val.toList.map fun p =>
       match p with
       | .fParameter _ _ pname pty => (CoreIdent.unres pname.val, b3TypeToCoreLTy pty.val)
