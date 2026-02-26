@@ -37,16 +37,16 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
-      | opts, "--error-mode" :: modeStr :: rest, procs =>
+      | opts, "--check-mode" :: modeStr :: rest, procs =>
          match modeStr with
-         | "deductive" => go {opts with errorMode := .deductive} rest procs
-         | "bugFinding" => go {opts with errorMode := .bugFinding} rest procs
-         | _ => .error f!"Invalid error mode: {modeStr}. Must be 'deductive' or 'bugFinding'."
-      | opts, "--error-diagnostic" :: diagStr :: rest, procs =>
-         match diagStr with
-         | "minimal" => go {opts with errorDiagnostic := .minimal} rest procs
-         | "full" => go {opts with errorDiagnostic := .full} rest procs
-         | _ => .error f!"Invalid error diagnostic: {diagStr}. Must be 'minimal' or 'full'."
+         | "deductive" => go {opts with checkMode := .deductive} rest procs
+         | "bugFinding" => go {opts with checkMode := .bugFinding} rest procs
+         | _ => .error f!"Invalid check mode: {modeStr}. Must be 'deductive' or 'bugFinding'."
+      | opts, "--check-amount" :: amountStr :: rest, procs =>
+         match amountStr with
+         | "minimal" => go {opts with checkAmount := .minimal} rest procs
+         | "full" => go {opts with checkAmount := .full} rest procs
+         | _ => .error f!"Invalid check amount: {amountStr}. Must be 'minimal' or 'full'."
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -66,8 +66,8 @@ def usageMessage : Std.Format :=
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
-  --error-mode <mode>         Error mode: 'deductive' (default, prove correctness) or 'bugFinding' (find bugs).{Std.Format.line}  \
-  --error-diagnostic <level>  Diagnostic level: 'minimal' (default, only necessary checks) or 'full' (both checks for better messages)."
+  --check-mode <mode>         Check mode: 'deductive' (default, prove correctness) or 'bugFinding' (find bugs).{Std.Format.line}  \
+  --check-amount <amount>     Check amount: 'minimal' (default, only necessary checks) or 'full' (both checks for better messages)."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -141,7 +141,7 @@ def main (args : List String) : IO UInt32 := do
             -- Create a files map with the single input file
             let uri := Strata.Uri.file file
             let files := Map.empty.insert uri inputCtx.fileMap
-            Core.Sarif.writeSarifOutput opts.errorMode files vcResults (file ++ ".sarif")
+            Core.Sarif.writeSarifOutput opts.checkMode files vcResults (file ++ ".sarif")
 
         -- Also output standard format
         for vcResult in vcResults do

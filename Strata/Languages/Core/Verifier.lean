@@ -475,18 +475,14 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx) =>
-        -- Determine which checks to perform based on metadata annotations or error mode/diagnostic
+        -- Determine which checks to perform based on metadata or check mode/amount
         let (satisfiabilityCheck, validityCheck) :=
           if Imperative.MetaData.hasFullCheck obligation.metadata then
-            (true, true)
-          else if Imperative.MetaData.hasValidityCheck obligation.metadata then
-            (false, true)
-          else if Imperative.MetaData.hasSatisfiabilityCheck obligation.metadata then
-            (true, false)
+            (true, true)  -- fullCheck annotation: always run both
           else
-            -- Derive checks from error mode and diagnostic level
-            match options.errorMode, options.errorDiagnostic, obligation.property with
-            | _, .full, _ => (true, true)  -- Full diagnostic: both checks
+            -- Derive checks from check mode and amount
+            match options.checkMode, options.checkAmount, obligation.property with
+            | _, .full, _ => (true, true)  -- Full: both checks
             | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
             | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
             | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
