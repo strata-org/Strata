@@ -350,31 +350,6 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
   let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
-/--
-Translate a forward type declaration. This creates a placeholder entry that will
-be replaced when the actual datatype definition is encountered in a mutual block.
--/
-def translateForwardTypeDecl (bindings : TransBindings) (op : Operation) :
-  TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_forward_typedecl 2
-  let name ← translateIdent TyIdentifier op.args[0]!
-  let numargs ←
-    translateOption
-      (fun maybearg =>
-            do match maybearg with
-            | none => pure 0
-            | some arg =>
-              let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let numargs ←
-                  match bargs[0]! with
-                  | .seq _ .comma args => pure args.size
-                  | _ => TransM.error
-                          s!"translateForwardTypeDecl expects a comma separated list: {repr bargs[0]!}")
-                    op.args[1]!
-  let md ← getOpMetaData op
-  let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
-  return (decl, { bindings with freeVars := bindings.freeVars.push decl })
-
 ---------------------------------------------------------------------
 
 def translateLhs (arg : Arg) : TransM Core.CoreIdent := do
@@ -1636,7 +1611,9 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
 /--
 Translate a mutual block containing mutually recursive datatype definitions.
 This collects all datatypes, creates a single TypeDecl.data with all of them,
-and updates the forward-declared entries in bindings.freeVars.
+and adds placeholder entries for type references during translation.
+The `@[preRegisterTypes]` metadata on the mutual block operation ensures that
+type names are pre-registered in the DDM GlobalContext before processing.
 -/
 def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Core.Decl × TransBindings) := do
@@ -1655,8 +1632,8 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
   if datatypeOps.size == 0 then
     TransM.error "Mutual block must contain at least one datatype"
   else
-    -- First pass: collect all datatype names, type args, and their indices in freeVars
-    -- Forward declarations MUST already be in bindings.freeVars
+    -- First pass: collect all datatype names and type args, and allocate placeholder
+    -- entries in freeVars for each one (replacing any pre-registered entries if present)
     let mut datatypeInfos : Array (String × List TyIdentifier × Nat) := #[]
     let mut bindingsWithPlaceholders := bindings
 
@@ -1664,20 +1641,25 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
       let datatypeName ← translateIdent String dtOp.args[0]!
       let (typeArgs, _) ← translateDatatypeTypeArgs bindings dtOp.args[1]! "translateMutualBlock"
 
-      -- Find the index of this datatype in freeVars (from forward declaration)
+      -- Check if this datatype was already pre-registered in freeVars
       let existingIdx := bindings.freeVars.findIdx? fun decl =>
         match decl with
         | .type t _ => t.names.contains datatypeName
         | _ => false
 
+      let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
       match existingIdx with
       | some i =>
-        let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
+        -- Replace existing pre-registered entry with placeholder
         datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, i)
         bindingsWithPlaceholders := { bindingsWithPlaceholders with
           freeVars := bindingsWithPlaceholders.freeVars.set! i placeholderDecl }
       | none =>
-        TransM.error s!"Mutual datatype {datatypeName} requires a forward declaration"
+        -- Allocate a new placeholder entry
+        let idx := bindingsWithPlaceholders.freeVars.size
+        datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, idx)
+        bindingsWithPlaceholders := { bindingsWithPlaceholders with
+          freeVars := bindingsWithPlaceholders.freeVars.push placeholderDecl }
 
     -- Second pass: translate all constructors with all placeholders in scope
     let ldatatypes ← (datatypeOps.zip datatypeInfos).toList.mapM fun (dtOp, (datatypeName, typeArgs, _idx)) => do
@@ -1698,8 +1680,7 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
     let md ← getOpMetaData op
     let mutualTypeDecl := Core.Decl.type (.data ldatatypes) md
 
-    -- Update bindings.freeVars: replace forward-declared entries with the mutual block
-    -- For each datatype, update its entry to point to the mutual TypeDecl
+    -- Update bindings.freeVars: replace placeholder entries with the mutual block
     let mut finalBindings := bindings
 
     for (_datatypeName, _typeArgs, idx) in datatypeInfos do
@@ -1741,13 +1722,7 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   | 0 => return ([], bindings)
   | _ + 1 =>
     let op := ops[count]!
-    let (newDecls, bindings) ←
-      match op.name with
-      | q`Core.command_forward_typedecl =>
-        -- Forward declarations do NOT produce AST nodes - they only update bindings
-        let (_, bindings) ← translateForwardTypeDecl bindings op
-        pure ([], bindings)
-      | _ =>
+    let (newDecls, bindings) ← do
         let (decl, bindings) ←
           match op.name with
           | q`Core.command_datatype =>

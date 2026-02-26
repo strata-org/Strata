@@ -173,8 +173,6 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(hd: a, tl: List a) };
 
-forward type MutNestA (a : Type);
-forward type MutNestB (a : Type);
 mutual
   datatype MutNestA (a : Type) { MkA(x: List (MutNestB a)) };
   datatype MutNestB (a : Type) { BBase(), MkB(x: MutNestA a) };
@@ -214,8 +212,6 @@ def mutualNonPositivePgm : Program :=
 #strata
 program Core;
 
-forward type BadA;
-forward type BadB;
 mutual
   datatype BadA () { MkA(f: BadB -> int) };
   datatype BadB () { BadBBase(), MkB(a: BadA) };
@@ -253,8 +249,6 @@ def mutualUninhabitedPgm : Program :=
 #strata
 program Core;
 
-forward type Bad1;
-forward type Bad2;
 mutual
   datatype Bad1 () { B1(x: Bad2) };
   datatype Bad2 () { B2(x: Bad1) };
@@ -275,9 +269,6 @@ def threeWayCyclePgm : Program :=
 #strata
 program Core;
 
-forward type Cycle1;
-forward type Cycle2;
-forward type Cycle3;
 mutual
   datatype Cycle1 () { C1(x: Cycle2) };
   datatype Cycle2 () { C2(x: Cycle3) };
