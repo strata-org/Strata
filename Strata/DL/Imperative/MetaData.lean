@@ -177,8 +177,38 @@ def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
 def MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 
+def MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
+
+def MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
+
+def MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
+
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+def MetaData.hasFullCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.fullCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+def MetaData.hasValidityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.validityCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+def MetaData.hasSatisfiabilityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.satisfiabilityCheck with
   | some elem =>
     match elem.value with
     | .switch true => true

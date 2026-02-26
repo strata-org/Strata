@@ -434,8 +434,19 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx) =>
+        -- Determine which checks to perform based on metadata annotations or global check mode
+        let checkMode := 
+          if Imperative.MetaData.hasFullCheck obligation.metadata then
+            CheckMode.full
+          else if Imperative.MetaData.hasValidityCheck obligation.metadata then
+            CheckMode.validity
+          else if Imperative.MetaData.hasSatisfiabilityCheck obligation.metadata then
+            CheckMode.satisfiability
+          else
+            options.checkMode
+        
         -- Determine which checks to perform based on check mode and property type
-        let (satisfiabilityCheck, validityCheck) := match options.checkMode, obligation.property with
+        let (satisfiabilityCheck, validityCheck) := match checkMode, obligation.property with
           | .full, _ => (true, true)
           | .validity, .assert => (false, true)
           | .validity, .cover => (true, false)  -- Cover uses satisfiability semantics
