@@ -282,15 +282,10 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
       let condExpr := translateExpr fieldNames env cond
-      -- Combine multiple invariants with && for Core (which expects single invariant)
-      let translatedInvariants := invariants.map (translateExpr fieldNames env)
-      let invExpr := match translatedInvariants with
-        | [] => none
-        | [single] => some single
-        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
+      let invExprs := invariants.map (translateExpr fieldNames env)
       let decreasingExprCore := decreasesExpr.map (translateExpr fieldNames env)
       let (_, bodyStmts) := translateStmt fieldNames funcNames env outputParams body
-      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
+      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md])
   | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by

@@ -25,28 +25,29 @@ def Stmt.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasPassiveCmds P C]
   (s : Stmt P C) : StateM Nat (Stmt P C) :=
   match s with
-  | .loop guard _ invariant? bss md => do
-    let invariant := invariant?.getD HasBool.tt
+  | .loop guard _ invariants bss md => do
     let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
     let neg_guard : P.Expr := HasNot.not guard
     let assigned_vars := Block.modifiedVars bss
     let havocd : Stmt P C :=
       .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n))) {}
-    let entry_invariant :=
-      Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}" invariant md)
+    let entry_invariants := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{i}" inv md)
     let first_iter_facts :=
-      .block s!"first_iter_asserts_{loop_num}" [entry_invariant] {}
-    let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}" [(Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" guard md)),
-             (Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}" invariant md))]
-    let maintain_invariant :=
-      Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}" invariant md)
+      .block s!"first_iter_asserts_{loop_num}" entry_invariants {}
+    let inv_assumes := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
+    let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
+      ([Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" guard md)] ++ inv_assumes)
+    let maintain_invariants := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)
     let body_statements ← Block.removeLoopsM bss
-    let arbitrary_iter_facts := .block s!"arbitrary_iter_facts_{loop_num}" ([havocd, arbitrary_iter_assumes] ++
-            body_statements ++
-            [maintain_invariant]) {}
+    let arbitrary_iter_facts := .block s!"arbitrary_iter_facts_{loop_num}"
+      ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
     let not_guard := Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" neg_guard md)
-    let invariant := Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}" invariant md)
-    pure (.ite guard [first_iter_facts, arbitrary_iter_facts, havocd, not_guard, invariant] [] {})
+    let invariant_assumes := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{i}" inv md)
+    pure (.ite guard ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {})
   | .ite c tss ess md => do
     let tss ← Block.removeLoopsM tss
     let ess ← Block.removeLoopsM ess

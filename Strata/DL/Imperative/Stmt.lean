@@ -34,8 +34,9 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   /-- A conditional execution statement. -/
   | ite      (cond : P.Expr)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P := .empty)
   /-- An iterated execution statement. Includes an optional measure (for
-  termination) and invariant. -/
-  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
+  termination) and invariants. -/
+  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariants : List P.Expr)
+             (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
   /-- An exit statement that transfers control out of the nearest enclosing
   block with the given label. If no label is provided, exits the nearest
   enclosing block. -/
@@ -67,7 +68,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       (∀ s, s ∈ thenb → motive s) →
       (∀ s, s ∈ elseb → motive s) →
       motive (Stmt.ite cond thenb elseb md))
-    (loop_case : ∀ (guard : P.Expr) (measure invariant : Option P.Expr)
+    (loop_case : ∀ (guard : P.Expr) (measure : Option P.Expr) (invariant : List P.Expr)
       (body : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ body → motive s) →
       motive (Stmt.loop guard measure invariant body md))
@@ -291,7 +292,7 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
 
   | .loop guard measure invariant body md =>
       let body := formatBlock P body
-      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}({invariant})"
+      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}{invariant}"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"
   | .exit label md => match label with

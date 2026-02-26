@@ -978,12 +978,13 @@ end
 
 ---------------------------------------------------------------------
 
-def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (Option Core.Expression.Expr) := do
+def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (List Core.Expression.Expr) := do
   match arg with
   | .option _ (.some m) => do
     let args ← checkOpArg m q`Core.invariant 1
-    translateExpr p bindings args[0]!
-  | _ => pure none
+    let e ← translateExpr p bindings args[0]!
+    pure [e]
+  | _ => pure []
 
 partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List Core.Expression.Expr) := do
@@ -999,14 +1000,6 @@ partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) 
     pure (i::is)
   | _ => TransM.error s!"translateInvariants unimplemented for {repr op}"
 
-private def invariantsToOption (invs : List Core.Expression.Expr) : Option Core.Expression.Expr :=
-  match invs with
-  | [] => none
-  | i :: is =>
-    -- ((i ∧ i2) ∧ i3) ∧ ...
-    some <| is.foldl
-      (fun acc j => .app () (.app () Core.boolAndOp acc) j)
-      i
 
 def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings) :
   TransM ((List Core.Statement) × TransBindings) := do
@@ -1124,10 +1117,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Core.while_statement, #[ca, ia, ba] =>
     let c ← translateExpr p bindings ca
     let invs ← translateInvariants p bindings ia
-    let inv? := invariantsToOption invs
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.loop c .none inv? bodyss md], bindings)
+    return ([.loop c .none invs bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent Core.CoreIdent) lsa
     let f   ← translateIdent String fa

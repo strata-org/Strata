@@ -250,14 +250,14 @@ def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LE
                       return some (← translateExpr bindings e[0]!))
                   arg
 
-def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
+def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (List (LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
-                    | none => return none
+                    | none => return []
                     | some a =>
                       let e ← checkOpArg a q`C_Simp.invariant 1
                       assert! e.size == 1
-                      return some (← translateExpr bindings e[0]!))
+                      return [← translateExpr bindings e[0]!])
                   arg
 
 ---------------------------------------------------------------------
