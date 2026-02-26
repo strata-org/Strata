@@ -121,23 +121,18 @@ def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange :=
   match t with
   | .qual_identifier _ qi =>
       match qi with
-      | .qi_ident _ iden =>
-          match iden with
-          | .iden_simple _ sym => .se_symbol srnone sym
-          | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
-      | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
+      | .qi_ident _ (.iden_simple _ sym) => .se_symbol srnone sym
+      | _ => panic! s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
   | .qual_identifier_args _ qi args =>
       -- Function application in pattern: convert to nested S-expr
       let qiSExpr := match qi with
-        | .qi_ident _ iden =>
-            match iden with
-            | .iden_simple _ sym => SMTDDM.SExpr.se_symbol srnone sym
-            | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "fn")))
-        | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "fn")))
+        | .qi_ident _ (.iden_simple _ sym) => SMTDDM.SExpr.se_symbol srnone sym
+        | _ => panic! s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
       -- Convert args array to SExpr list
       let argsSExpr := args.val.map termToSExpr
       .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
-  | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
+  | .spec_constant_term _ s => .se_spec_const srnone s
+  | _ => panic! s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
   decreasing_by cases args; term_by_mem
 
 partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
