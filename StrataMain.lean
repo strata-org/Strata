@@ -399,28 +399,29 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print pgm
     assert! cmds.size == 1
 
-    let prelude := Strata.Python.Laurel.prelude
-
-    -- Translate the Laurel prelude to Core so we can prepend its declarations
-    let preludeCoreDecls ← match Strata.Laurel.translate prelude with
-      | .error diagnostics =>
-        exitFailure s!"Laurel prelude translation failed: {diagnostics}"
-      | .ok (corePgm, _) => pure corePgm.decls
+    let laurelPrelude := Strata.Python.Laurel.prelude
 
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
+    let laurelPgm := Strata.Python.pythonToLaurel laurelPrelude cmds[0]! sourcePathForMetadata
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
       | .ok laurelProgram =>
+        -- Combine prelude top-level declarations with the user program at the Laurel level
+        let combinedLaurelProgram : Strata.Laurel.Program := {
+          staticProcedures := laurelPrelude.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := laurelPrelude.staticFields ++ laurelProgram.staticFields
+          types := laurelPrelude.types ++ laurelProgram.types
+          constants := laurelPrelude.constants ++ laurelProgram.constants
+        }
         if verbose then
           IO.println "\n==== Laurel Program ===="
-          IO.println f!"{laurelProgram}"
+          IO.println f!"{combinedLaurelProgram}"
 
-        -- Translate Laurel to Core
-        match Strata.Laurel.translate laurelProgram with
+        -- Translate combined Laurel program to Core
+        match Strata.Laurel.translate combinedLaurelProgram with
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok coreProgram =>
@@ -428,7 +429,7 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Core Program ===="
             IO.print coreProgram
 
-          let coreProgram := {decls := preludeCoreDecls ++ coreProgram.fst.decls }
+          let coreProgram := coreProgram.fst
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
