@@ -23,7 +23,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
 
@@ -122,6 +122,7 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
     | .Leq => binOp intLeOp
     | .Gt => binOp intGtOp
     | .Geq => binOp intGeOp
+    | .StrConcat => binOp strConcatOp
     | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
     panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
@@ -281,15 +282,10 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
       let condExpr := translateExpr fieldNames env cond
-      -- Combine multiple invariants with && for Core (which expects single invariant)
-      let translatedInvariants := invariants.map (translateExpr fieldNames env)
-      let invExpr := match translatedInvariants with
-        | [] => none
-        | [single] => some single
-        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
+      let invExprs := invariants.map (translateExpr fieldNames env)
       let decreasingExprCore := decreasesExpr.map (translateExpr fieldNames env)
       let (_, bodyStmts) := translateStmt fieldNames funcNames env outputParams body
-      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
+      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md])
   | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by
@@ -322,13 +318,13 @@ def translateProcedure (fieldNames : List Identifier) (funcNames : FunctionNames
   }
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type))
-  -- Translate precondition if it's not just LiteralBool true
+  -- Translate preconditions
   let preconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
-    match proc.precondition with
-    | ⟨ .LiteralBool true, _ ⟩ => []
-    | precond =>
+    let (_, result) := proc.preconditions.foldl (fun (i, acc) precond =>
+        let label := if proc.preconditions.length == 1 then "requires" else s!"requires_{i}"
         let check : Core.Procedure.Check := { expr := translateExpr fieldNames initEnv precond, md := precond.md }
-        [("requires", check)]
+        (i + 1, acc ++ [(label, check)])) (0, [])
+    result
   -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
@@ -437,7 +433,7 @@ def canBeBoogieFunction (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
-    (match proc.precondition.val with | .LiteralBool true => true | _ => false) &&
+    proc.preconditions.isEmpty &&
     proc.outputs.length == 1
   | _ => false
 

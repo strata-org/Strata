@@ -703,6 +703,9 @@ partial def genCatTypeTerm (annType : Ident) (c : SyntaxCat)
   | q`Init.SpacePrefixSepBy, 1 =>
     let inner := mkCApp ``Array #[args[0]]
     return if addAnn then mkCApp ``Ann #[inner, annType] else inner
+  | q`Init.NewlineSepBy, 1 =>
+    let inner := mkCApp ``Array #[args[0]]
+    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
   | q`Init.Option, 1 =>
     let inner := mkCApp ``Option #[args[0]]
     return if addAnn then mkCApp ``Ann #[inner, annType] else inner
@@ -910,6 +913,8 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat)
     toAstApplyArgSeq v cat ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
     toAstApplyArgSeq v cat ``SepFormat.spacePrefix
+  | q`Init.NewlineSepBy => do
+    toAstApplyArgSeq v cat ``SepFormat.newline
   | q`Init.Seq => do
     toAstApplyArgSeq v cat ``SepFormat.none
   | q`Init.Option => do
@@ -1170,6 +1175,8 @@ partial def genOfAstArgTerm (varName : String) (cat : SyntaxCat)
     genOfAstSeqArgTerm varName cat e ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
     genOfAstSeqArgTerm varName cat e ``SepFormat.spacePrefix
+  | q`Init.NewlineSepBy => do
+    genOfAstSeqArgTerm varName cat e ``SepFormat.newline
   | q`Init.Seq => do
     genOfAstSeqArgTerm varName cat e ``SepFormat.none
   | q`Init.Option => do
@@ -1485,6 +1492,7 @@ def tryMakeInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor)
         | q`Init.CommaSepBy => true
         | q`Init.SpaceSepBy => true
         | q`Init.SpacePrefixSepBy => true
+        | q`Init.NewlineSepBy => true
         | q`Init.Option => true
         | c => c ∈ inhabited
     if !argsInhabited then

@@ -67,6 +67,7 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
       match op with
       | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
       | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => ⟨ .TInt, md ⟩
+      | .StrConcat => ⟨ .TString, md ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
