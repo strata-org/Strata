@@ -41,9 +41,9 @@ def singleCFG (p : Program) : Imperative.CFG String (Imperative.DetBlock String 
   Imperative.stmtsToCFG proc.body
 
 /--
-info: Entry: l_6
+info: Entry: l_3
 
-[l_6:
+[l_3:
    [init (i : int), i := #0, s := #0]
    cgoto #true loop_entry_1 loop_entry_1,
  loop_entry_1:
@@ -54,8 +54,8 @@ info: Entry: l_6
   ((s : int) == ((~Int.Div : (arrow int (arrow int int)))
     ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
     #2)))]
-   cgoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l_3 end_0,
- l_3:
+   cgoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l_2 end_0,
+ l_2:
    [i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1),
  s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))]
    cgoto #true loop_entry_1 loop_entry_1,
@@ -149,9 +149,9 @@ spec {
 #end
 
 /--
-info: Entry: l_8
+info: Entry: l_6
 
-[l_8:
+[l_6:
    [init (x : int), init (y : int), x := #0]
    cgoto #true loop_entry_1 loop_entry_1,
  loop_entry_1:
