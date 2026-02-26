@@ -93,6 +93,7 @@ jobs:
         shell: bash
         run: |
           ./run_py_analyze.sh
+          ./run_py_analyze.sh laurel
           python run_py_analyze_sarif.py
           python run_py_analyze_sarif.py --laurel
 

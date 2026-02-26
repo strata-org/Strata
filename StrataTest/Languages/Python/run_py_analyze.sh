@@ -9,7 +9,7 @@ mode="${1:-core}"
 if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
-    skip_tests="test_datetime test_class_decl test_strings"
+    skip_tests="test_datetime test_class_decl"
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
