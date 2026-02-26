@@ -50,6 +50,58 @@
 ### 4. Check Mode Logic
 
 For `assert` statements:
+- `full`: Both satisfiability and validity checks enabled
+- `validity` (default): Only validity check enabled
+- `satisfiability`: Only satisfiability check enabled
+
+For `cover` statements:
+- `full`: Both checks enabled
+- `validity`: Only satisfiability check (cover uses existential semantics)
+- `satisfiability`: Only satisfiability check
+
+### 5. CLI Integration
+
+**File: `StrataVerify.lean`**
+- Added `--check-mode` flag parsing with three options: `full`, `validity`, `satisfiability`
+- Removed deprecated `--reach-check` flag
+- Updated help message with check mode documentation
+- Fixed to use `outcome` field instead of `result` (API change)
+
+### 6. Per-Statement Annotations
+
+**File: `Strata/DL/Imperative/MetaData.lean`**
+- Added metadata fields: `fullCheck`, `validityCheck`, `satisfiabilityCheck`
+- Added helper methods: `hasFullCheck`, `hasValidityCheck`, `hasSatisfiabilityCheck`
+
+**File: `Strata/Languages/Core/Verifier.lean`**
+- Updated `verifySingleEnv` to check obligation metadata for check mode annotations
+- Annotations override global `options.checkMode` for specific statements
+
+### 7. Emoji Updates
+
+Updated visual indicators for better distinction:
+- ✅ pass (valid and reachable)
+- ✔️ always true if reachable
+- ✖️ refuted if reachable
+- ❌ refuted (always false and reachable)
+- ⛔ unreachable
+- 🔶 indecisive
+- ➕ satisfiable
+- ➖ reachable and can be false
+- ❓ unknown
+
+### 8. Comprehensive Test Suite
+
+**File: `StrataTest/Languages/Core/VCOutcomeTests.lean`**
+- Tests all 9 outcome combinations
+- Uses `formatOutcome` helper for clean output
+- Shows emoji and label for each case with named arguments
+
+**File: `StrataTest/Languages/Core/SMTEncoderTests.lean`**
+- Updated to use `checkMode := .full` for backward compatibility
+- Tests expect "pass" outcome with both checks enabled
+
+For `assert` statements:
 - `full` mode: Both satisfiability and validity checks enabled
 - `validity` mode: Only validity check enabled (default, traditional behavior)
 - `satisfiability` mode: Only satisfiability check enabled
