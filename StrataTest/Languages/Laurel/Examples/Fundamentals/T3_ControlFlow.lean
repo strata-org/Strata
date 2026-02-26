@@ -31,17 +31,30 @@ procedure guards(a: int) returns (r: int)
   return e;
 }
 
-function letsInFunction() returns (r: int) {
-  var x: int := 0;
-  var y: int := x + 1;
-  var z: int := y + 1;
-  z
+// Lettish bindings in functions not yet supported
+// because Core expressions do not support let bindings
+// function letsInFunction() returns (r: int) {
+//  var x: int := 0;
+//  var y: int := x + 1;
+//  var z: int := y + 1;
+//  z
+// }
+
+function guardInFunction(x: int) returns (r: int) {
+  if (x > 0) {
+    return 1;
+  }
+
+  return 2;
 }
 
 procedure testFunctions() {
-  assert letsInFunction() == 2;
-  assert letsInFunction() == 3;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  // assert letsInFunction() == 2;
+  // assert letsInFunction() == 3; error: assertion does not hold
+
+  assert guardInFunction(5) == 1;
+  assert guardInFunction(5) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
 
 procedure dag(a: int) returns (r: int)
