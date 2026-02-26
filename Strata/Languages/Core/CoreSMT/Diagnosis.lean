@@ -43,13 +43,11 @@ structure DiagnosisReport where
 structure DiagnosedFailure where
   expression : Core.Expression.Expr
   isRefuted : Bool
-  label : String
   report : DiagnosisReport
   deriving Repr, Inhabited
 
 /-- Full diagnosis result -/
 structure DiagnosisResult where
-  originalLabel : String
   diagnosedFailures : List DiagnosedFailure
   deriving Repr, Inhabited
 
@@ -83,7 +81,7 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
     let refuted ← checkRefuted state E expr smtCtx
     let resultType := if refuted then DiagnosisResultType.refuted else DiagnosisResultType.unknown
     let report : DiagnosisReport := { result := .error resultType, context := { pathCondition := [] } }
-    return { originalLabel := "", diagnosedFailures := [{ expression := expr, isRefuted := refuted, label := "", report }] }
+    return { diagnosedFailures := [{ expression := expr, isRefuted := refuted, report }] }
   | some (lhs, rhs) =>
     -- Diagnose left conjunct
     let leftResult ← diagnoseFailure state E lhs isReachCheck smtCtx
@@ -91,17 +89,16 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
     if isReachCheck then
       let leftRefuted := leftResult.diagnosedFailures.any (·.isRefuted)
       if leftRefuted then
-        return { originalLabel := "", diagnosedFailures := leftResult.diagnosedFailures }
+        return { diagnosedFailures := leftResult.diagnosedFailures }
     -- Push, assert left as context, diagnose right conjunct, pop
     match translateExpr E lhs smtCtx with
     | Except.error _ =>
-      return { originalLabel := "", diagnosedFailures := leftResult.diagnosedFailures }
+      return { diagnosedFailures := leftResult.diagnosedFailures }
     | Except.ok (lhsTerm, _) =>
       state.solver.push
       state.solver.assert lhsTerm
       let rightResult ← diagnoseFailure state E rhs isReachCheck smtCtx
       state.solver.pop
-      return { originalLabel := ""
-               diagnosedFailures := leftResult.diagnosedFailures ++ rightResult.diagnosedFailures }
+      return { diagnosedFailures := leftResult.diagnosedFailures ++ rightResult.diagnosedFailures }
 
 end Strata.Core.CoreSMT
