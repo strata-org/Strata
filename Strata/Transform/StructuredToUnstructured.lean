@@ -21,8 +21,11 @@ def detCmdBlock [HasBool P] (c : CmdT) (k : Label) :
 
 open LabelGen
 
-/-- Helper to flush accumulated commands as a block if non-empty -/
-def flushAccum
+/-- Flush the list of accumulated commands.  If the list is empty, propagate the
+provideded continuation.  If the list is non-empty, create a block containing
+the command that jumps to the provided continuation and provide the new block's
+label as a new continuation.  -/
+def flushCmds
   [HasBool P]
   (accum : List CmdT) (k : String) :
   StringGenM (String × DetBlocks String CmdT P) := do
@@ -34,64 +37,74 @@ def flushAccum
     pure (l, [b])
 
 /-- Translate a list of statements to basic blocks, accumulating commands -/
-partial def stmtsToBlocks
+def stmtsToBlocks
   [HasBool P] [HasPassiveCmds P CmdT]
-  (k : String) (ss : List (Stmt P CmdT)) (accum : List CmdT) :
+  (k : String)
+  (ss : List (Stmt P CmdT))
+  (exitConts : List (String × String))
+  (accum : List CmdT) :
   StringGenM (String × DetBlocks String CmdT P) :=
 match ss with
 | [] =>
-  -- Flush any remaining accumulated commands
-  flushAccum accum k
-| .cmd c :: ss =>
-  -- Accumulate the command and continue
-  stmtsToBlocks k ss (c :: accum)
-| .funcDecl _ _ :: ss => do
-  -- Flush accumulator and continue
-  let (_, bs1) ← flushAccum accum k
-  let (l2, bs2) ← stmtsToBlocks k ss []
-  pure (l2, bs1 ++ bs2)
-| .block l bss _md :: ss => do
+  -- Flush accumulated commands
+  flushCmds accum k
+| .cmd c :: rest =>
+  -- Accumulate this command to be emitted at the next block end.
+  stmtsToBlocks k rest exitConts (c :: accum)
+| .funcDecl _ _ :: rest => do
+  -- Not yet supported, so just continue with `rest`.
+  stmtsToBlocks k rest exitConts accum
+| .block l bss _md :: rest => do
   -- Process rest first
-  let (kNext, bsNext) ← stmtsToBlocks k ss []
-  -- Process block body
-  let (bl, bbs) ← stmtsToBlocks kNext bss []
-  -- Flush accumulator
-  let (accumEntry, accumBlocks) ← flushAccum accum bl
+  let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
+  -- Process block body, extending the list of exit continuations.
+  let (bl, bbs) ← stmtsToBlocks kNext bss ((l, kNext) :: exitConts) []
+  -- Flush accumulated commands
+  let (accumEntry, accumBlocks) ← flushCmds accum bl
   -- Create labeled block if needed
   if l == bl then
+    -- TODO: can this ever happen?
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
     let b := (l, { cmds := [], transfer := .goto bl })
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
-| .ite c tss fss _md :: ss => do
+| .ite c tss fss _md :: rest => do
   -- Process rest first
-  let (kNext, bsNext) ← stmtsToBlocks k ss []
+  let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create ite block
   let l ← StringGenState.gen "ite"
-  let (tl, tbs) ← stmtsToBlocks kNext tss []
-  let (fl, fbs) ← stmtsToBlocks kNext fss []
+  let (tl, tbs) ← stmtsToBlocks kNext tss exitConts []
+  let (fl, fbs) ← stmtsToBlocks kNext fss exitConts []
   let b := (l, { cmds := [], transfer := .cgoto c tl fl })
-  -- Flush accumulator
-  let (accumEntry, accumBlocks) ← flushAccum accum l
+  -- Flush accumulated commands
+  let (accumEntry, accumBlocks) ← flushCmds accum l
   pure (accumEntry, accumBlocks ++ [b] ++ tbs ++ fbs ++ bsNext)
-| .loop c _m is bss _md :: ss => do
+| .loop c _m is bss _md :: rest => do
   -- Process rest first
-  let (kNext, bsNext) ← stmtsToBlocks k ss []
+  let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create loop entry block
   let lentry ← StringGenState.gen "loop_entry"
-  let (bl, bbs) ← stmtsToBlocks lentry bss []
+  let (bl, bbs) ← stmtsToBlocks lentry bss exitConts []
   let cmds : List CmdT :=
     is.map (fun i => HasPassiveCmds.assert "inv" i MetaData.empty)
   let b := (lentry, { cmds := cmds, transfer := .cgoto c bl kNext })
-  -- Flush accumulator
-  let (accumEntry, accumBlocks) ← flushAccum accum lentry
+  -- Flush accumulated commands
+  let (accumEntry, accumBlocks) ← flushCmds accum lentry
   pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
-| .exit l _md :: ss => do
-  -- Flush accumulator and continue
-  -- TODO: support this correctly
-  let (_, bs1) ← flushAccum accum k
-  let (l2, bs2) ← stmtsToBlocks k ss []
-  pure (l2, bs1 ++ bs2)
+| .exit l? _md :: _ => do
+  -- Find the continuation of the block labeled `l`, or the most recently-added
+  -- block if `l` is `.none`.
+  let bk :=
+    match (l?, exitConts) with
+    | (.none, []) => k -- Just keep going if this is an invalid exit
+    | (.none, (_, k) :: _) => k
+    | (.some l, _) =>
+      match exitConts.lookup l with
+      | .some k => k
+      | .none => k -- Just keep going if this is an invalid exit
+  -- Flush the accumulated commands, going to the continuation calculated above.
+  -- Any statements after the `.exit` are skipped.
+  flushCmds accum bk
 
 def stmtsToCFGM
   [HasBool P] [HasPassiveCmds P CmdT]
@@ -99,7 +112,7 @@ def stmtsToCFGM
   StringGenM (CFG String (DetBlock String CmdT P)) := do
   let lend ← StringGenState.gen "end"
   let bend := (lend, { cmds := [], transfer := .finish })
-  let (l, bs) ← stmtsToBlocks lend ss []
+  let (l, bs) ← stmtsToBlocks lend ss [] []
   pure { entry := l, blocks := bs ++ [bend] }
 
 def stmtsToCFG
