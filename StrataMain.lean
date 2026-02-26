@@ -720,6 +720,6 @@ def main (args : List String) : IO Unit := do
         else
           exitCmdFailure cmd.name s!"{cmd.name} expects {cmd.args.length} argument(s)."
     | [] => do
-    exitFailure "Expected subcommand."
+      exitFailure "Expected subcommand."
   catch e =>
     exitFailure e.toString
