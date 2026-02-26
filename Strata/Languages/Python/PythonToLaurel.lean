@@ -7,10 +7,12 @@
 import Strata.DDM.Elab
 import Strata.DDM.AST
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Core.Program
 
 /-!
@@ -65,6 +67,8 @@ structure TranslationContext where
   userFunctions : List String := []
   /-- Names of prelude types -/
   preludeTypes : List String := []
+  /-- Overload dispatch table from PySpec: function name → overloads -/
+  overloadTable : Specs.ToLaurel.OverloadTable := {}
   /-- Behavior for unmodeled functions -/
   unmodeledBehavior : UnmodeledFunctionBehavior := .havocOutputs
   /-- File path for source location metadata -/
@@ -169,6 +173,30 @@ def mkNoneForType (typeName : String) : StmtExprMd :=
   let noneVal := mkStmtExprMd (StmtExpr.StaticCall "None_none" [])
   mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
 
+/-- Look up a function call in the overload dispatch table.
+    Extracts the bare function name from the call target, then
+    returns the class name if the first arg is a string literal
+    matching an overload entry. -/
+def resolveDispatch (ctx : TranslationContext)
+    (f : Python.expr SourceRange)
+    (args : Array (Python.expr SourceRange))
+    : Except TranslationError (Option String) := do
+  let funcName := match f with
+    | .Attribute _ _ attr _ => attr.val
+    | .Name _ n _ => n.val
+    | _ => ""
+  match ctx.overloadTable.get? funcName with
+  | none => return none
+  | some fnOverloads =>
+    let .isTrue _ := decideProp (args.size > 0)
+      | throw (.typeError
+          s!"Dispatched function '{funcName}' called with no \
+            arguments (expected a string literal first argument)")
+    match args[0] with
+    | .Constant _ (.ConString _ s) _ =>
+      return (fnOverloads.get? s.val).map (·.name)
+    | _ => return none
+
 /-! ## Expression Translation -/
 
 /-- Check if a function has a model (is in prelude or user-defined) -/
@@ -209,7 +237,14 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let rightExpr ← translateExpr ctx right
     let laurelOp ← match op with
       -- Arithmetic
-      | .Add _ => .ok Operation.Add
+      | .Add _ =>
+        let typeEnv : Laurel.TypeEnv := ctx.variableTypes
+        let leftType := Laurel.computeExprType typeEnv [] leftExpr
+        -- Dispatch on left operand
+        if highEq leftType { val := .TString, md := leftExpr.md } then
+          .ok Operation.StrConcat
+        else
+          .ok Operation.Add
       | .Sub _ => .ok Operation.Sub
       | .Mult _ => .ok Operation.Mul
       | .FloorDiv _ => .ok Operation.Div  -- Python // maps to Laurel Div
@@ -271,18 +306,36 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       let first ← translateExpr ctx values.val[0]!
       return first
 
-  | .Call _ f args _kwargs => translateCall ctx (pyExprToString f) args.val.toList
+  | .Call _ f args _kwargs =>
+    translateCall ctx f args.val.toList
 
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
 
-/-- Translate function call, filling in optional arguments with None if needed -/
-partial def translateCall (ctx : TranslationContext) (funcName : String) (args : List (Python.expr SourceRange))
+/-- Translate a Python call expression to Laurel.
+    Tries factory dispatch, then method dispatch on typed variables,
+    then falls back to a static call by flattened name. -/
+partial def translateCall (ctx : TranslationContext) (f : Python.expr SourceRange) (args : List (Python.expr SourceRange))
     : Except TranslationError StmtExprMd := do
-  let mut translatedArgs ← args.mapM (translateExpr ctx)
+  -- Step 1: factory dispatch (e.g., boto3.client('iam'))
+  if let some className ← resolveDispatch ctx f args.toArray then
+    return mkStmtExprMd (.New className)
+  -- Step 2: method call on typed variable (e.g., iam.get_role())
+  --   Resolve to ClassName_method(obj, args)
+  let (funcName, finalArgs) := match f with
+    | .Attribute _ obj methodAttr _ =>
+      match obj with
+      | .Name _ objName _ =>
+        match ctx.variableTypes.lookup objName.val with
+        | some ⟨.UserDefined className, _⟩ =>
+          (s!"{className}_{methodAttr.val}", obj :: args)
+        | _ => (pyExprToString f, args)
+      | _ => (pyExprToString f, args)
+    | _ => (pyExprToString f, args)
+  -- Step 3: translate the resolved call
+  let mut translatedArgs ← finalArgs.mapM (translateExpr ctx)
 
   -- Check if function has a model
   if !hasModel ctx funcName then
-    -- Unmodeled function - use Hole
     return mkStmtExprMd .Hole
 
   -- Check if this is a prelude procedure and fill in optional args
@@ -291,7 +344,6 @@ partial def translateCall (ctx : TranslationContext) (funcName : String) (args :
     let numExpected := sig.inputs.length
 
     if numProvided < numExpected then
-      -- Fill remaining args with None of the appropriate type
       for i in [numProvided:numExpected] do
         let paramType := sig.inputs[i]!
         translatedArgs := translatedArgs ++ [mkNoneForType paramType]
@@ -340,7 +392,16 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .Name _ name _ => .ok name.val
       | _ => throw (.unsupportedConstruct "Only simple variable annotation supported" (toString (repr s)))
     let typeStr := pyExprToString annotation
-    let varType ← translateType ctx typeStr
+    -- Try the annotation first; if it resolves to PyAnyType and there's
+    -- an initializer call, fall back to the dispatch table.  This handles
+    -- the mismatch between Python type-stub names and PySpec service names.
+    let annotationType ← translateType ctx typeStr
+    let varType ← match annotationType.val, value.val with
+      | .TCore "PyAnyType", some (.Call _ f args _) =>
+        match ← resolveDispatch ctx f args.val with
+        | some name => .ok (mkHighTypeMd (.UserDefined name))
+        | none => .ok annotationType
+      | _, _ => .ok annotationType
     -- Add to context
     let newCtx := { ctx with variableTypes := ctx.variableTypes ++ [(varName, varType)] }
     -- If there's an initializer, create declaration with init
@@ -498,7 +559,7 @@ def translateFunction (ctx : TranslationContext) (f : Python.stmt SourceRange)
       name := funcName
       inputs := inputs
       outputs := outputs
-      precondition := mkStmtExprMd (StmtExpr.LiteralBool true)
+      preconditions := []
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Transparent bodyBlock
@@ -536,7 +597,11 @@ def extractPreludeProcedures (prelude : Core.Program) : List (String × CoreProc
     | none => none
 
 /-- Translate Python module to Laurel Program -/
-def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRange) (filePath : String := "") : Except TranslationError Laurel.Program := do
+def pythonToLaurel (prelude: Core.Program)
+    (pyModule : Python.Command SourceRange)
+    (filePath : String := "")
+    (overloadTable : Specs.ToLaurel.OverloadTable := {})
+    : Except TranslationError Laurel.Program := do
   match pyModule with
   | .Module _ body _ => do
     let preludeProcedures := extractPreludeProcedures prelude
@@ -552,6 +617,7 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       preludeProcedures := preludeProcedures,
       preludeTypes := preludeTypes,
       userFunctions := userFunctions,
+      overloadTable := overloadTable,
       filePath := filePath
     }
 
@@ -576,9 +642,9 @@ def pythonToLaurel (prelude: Core.Program) (pyModule : Python.Command SourceRang
       name := "__main__",
       inputs := [],
       outputs := [],
-      precondition := mkStmtExprMd (StmtExpr.LiteralBool true),
+      preconditions := [],
+      determinism := .deterministic none, --TODO: need to set reads
       decreases := none,
-      determinism := .deterministic none --TODO: need to set reads
       body := .Transparent bodyBlock
       md := default
       }

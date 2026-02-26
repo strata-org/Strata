@@ -178,7 +178,7 @@ def validateMutualBlock (block: MutualDatatype IDMeta) : Except DiagnosticModel 
     .error <| DiagnosticModel.fromFormat f!"Error: Empty mutual block is not allowed"
   match (block.foldl (fun (o, names) d =>
     if d.name ∈ names then (some d, names) else (o, Std.HashSet.insert names d.name)) (none, ∅)).1 with
-  | some dup => .error <| DiagnosticModel.fromFormat f!"Duplicate datataype name in mutual block: {dup}"
+  | some dup => .error <| DiagnosticModel.fromFormat f!"Duplicate datatype name in mutual block: {dup}"
   | none => .ok ()
 
 ---------------------------------------------------------------------
@@ -436,7 +436,7 @@ def elimFuncs [Inhabited T.IDMeta] [BEq T.Identifier] (block : MutualDatatype T.
       inputs := List.zip (genArgNames (allConstrs.length + 1)) (dataDefault d :: caseTypes)
       output := .ftvar outputTyVar
       concreteEval := elimConcreteEval block m
-      attr := #[eval_if_constr_attr] }
+      attr := #[.evalIfConstr 0] }
 
 ---------------------------------------------------------------------
 
@@ -465,7 +465,7 @@ def testerFunc {T} [Inhabited T.IDMeta] (block: MutualDatatype T.IDMeta)
    inputs := [(arg, dataDefault d)],
    output := .bool,
    body := testerFuncBody block d c (.fvar m arg .none) m,
-   attr := #[inline_if_constr_attr]
+   attr := #[.inlineIfConstr 0]
   }
 
 /--
@@ -501,7 +501,7 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Met
       inputs := [(arg, dataDefault d)],
       output := ty,
       concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[eval_if_constr_attr],
+      attr := #[.evalIfConstr 0],
       preconditions := [⟨testerExpr, default⟩]})
 
 /--
@@ -518,7 +518,7 @@ def unsafeDestructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] (d: LDatat
       inputs := [(arg, dataDefault d)],
       output := ty,
       concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[eval_if_constr_attr]})
+      attr := #[.evalIfConstr 0]})
 
 
 ---------------------------------------------------------------------
@@ -577,65 +577,6 @@ def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : Mutual
         for ref in getTypeRefs ty do
           if !validNames.contains ref then
             throw <| DiagnosticModel.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: Undefined type '{ref}'"
-
-/-- Add a mutual block to the TypeFactory, checking for duplicates,
-  inconsistent types, and positivity. -/
-def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String := []) : Except DiagnosticModel (@TypeFactory IDMeta) := do
-  -- Check for name clashes within block
-  validateMutualBlock block
-  -- Check for positivity, uniformity, nesting
-  checkConstructorArgsWF block
-  -- Check for duplicate names with existing types
-  for d in block do
-    match t.getType d.name with
-    | some d' => throw <| DiagnosticModel.fromFormat f!"A datatype of name {d.name} already exists! \
-                Redefinitions are not allowed.\n\
-                Existing Type: {d'}\n\
-                New Type:{d}"
-    | none => pure ()
-  -- Check for consistent type dependencies
-  t.validateTypeReferences block knownTypes
-  .ok (t.push block)
-
-/--
-Constructs maps of generated functions for datatype `d`: map of
-constructors, testers, destructors, and unsafe destructors in order.
-Each maps names to the datatype and constructor AST.
--/
-def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [Inhabited T.Metadata] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
-  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
-  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
-  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
-  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) :=
-  (Map.ofList (d.constrs.map (fun c => (c.name.name, (d, c)))),
-   Map.ofList (d.constrs.map (fun c => (c.testerName, (d, c)))),
-   Map.ofList (d.constrs.map (fun c =>
-      (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten,
-   Map.ofList (d.constrs.map (fun c =>
-      (unsafeDestructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
-
-/--
-Generates the Factory (containing eliminators, constructors, testers, and destructors)
-for a mutual block of datatypes.
--/
-def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
-    (block : MutualDatatype T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) := do
-  if block.isEmpty then return Factory.default
-  let elims := elimFuncs block inst.default
-  let constrs := block.flatMap (fun d => d.constrs.map (fun c => constrFunc c d))
-  let testers := block.flatMap (fun d => d.constrs.map (fun c => testerFunc block d c inst.default))
-  let destrs := block.flatMap (fun d => d.constrs.flatMap (fun c => destructorFuncs d c))
-  let unsafeDestrs := block.flatMap (fun d => d.constrs.flatMap (fun c => unsafeDestructorFuncs d c))
-  Factory.default.addFactory (elims ++ constrs ++ testers ++ destrs ++ unsafeDestrs).toArray
-
-/--
-Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`.
--/
-def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) :=
-  t.foldlM (fun f block => do
-    let f' ← genBlockFactory block
-    f.addFactory f'
-  ) Factory.default
 
 ---------------------------------------------------------------------
 
@@ -769,28 +710,82 @@ def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM inhabMap Bool
   := typesym_inhab adts [] (by grind) (by grind) a
 
 /--
-Check that all ADTs in TypeFactory `adts` are inhabited. This uses memoization
-to avoid computing the intermediate results more than once. Returns `none` if
-all datatypes are inhabited, `some a` for some uninhabited type `a`
+Check that all datatypes in a mutual block are inhabited, given the full
+TypeFactory (which must already contain the block).
 -/
-def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Option String :=
-  let x := (List.foldlM (fun (x: Option String) (l: LDatatype IDMeta) =>
-    do
-      match x with
-      | some a => pure (some a)
-      | none =>
-        let b ← adt_inhab adts l.name
-        pure (if b then none else some l.name)
-    ) none adts.allDatatypes)
-  (StateT.run x []).1
-
-/--
-Check that all ADTs in TypeFactory `adts` are inhabited.
--/
-def TypeFactory.checkInhab (adts: @TypeFactory IDMeta) : Except DiagnosticModel Unit :=
-  match adts.all_inhab with
+def TypeFactory.checkMutualBlockInhab (adts: @TypeFactory IDMeta) (block : MutualDatatype IDMeta) : Except DiagnosticModel Unit :=
+  let x := (block.foldlM (fun (x: Option String) (d: LDatatype IDMeta) => do
+    match x with
+    | some a => pure (some a)
+    | none =>
+      let b ← adt_inhab adts d.name
+      pure (if b then none else some d.name)
+  ) none)
+  match (StateT.run x []).1 with
   | none => .ok ()
   | some a => .error <| DiagnosticModel.fromFormat f!"Error: datatype {a} not inhabited"
+
+/-- Add a mutual block to the TypeFactory, checking for duplicates,
+  inconsistent types, and positivity. -/
+def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String := []) : Except DiagnosticModel (@TypeFactory IDMeta) := do
+  -- Check for name clashes within block
+  validateMutualBlock block
+  -- Check for positivity, uniformity, nesting
+  checkConstructorArgsWF block
+  -- Check for duplicate names with existing types
+  for d in block do
+    match t.getType d.name with
+    | some d' => throw <| DiagnosticModel.fromFormat f!"A datatype of name {d.name} already exists! \
+                Redefinitions are not allowed.\n\
+                Existing Type: {d'}\n\
+                New Type:{d}"
+    | none => pure ()
+  -- Check for consistent type dependencies
+  t.validateTypeReferences block knownTypes
+  let t' : TypeFactory := t.push block
+  -- Check that all types in the new block are inhabited
+  t'.checkMutualBlockInhab block
+  .ok t'
+
+/--
+Constructs maps of generated functions for datatype `d`: map of
+constructors, testers, destructors, and unsafe destructors in order.
+Each maps names to the datatype and constructor AST.
+-/
+def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [Inhabited T.Metadata] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) :=
+  (Map.ofList (d.constrs.map (fun c => (c.name.name, (d, c)))),
+   Map.ofList (d.constrs.map (fun c => (c.testerName, (d, c)))),
+   Map.ofList (d.constrs.map (fun c =>
+      (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten,
+   Map.ofList (d.constrs.map (fun c =>
+      (unsafeDestructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
+
+/--
+Generates the Factory (containing eliminators, constructors, testers, and destructors)
+for a mutual block of datatypes.
+-/
+def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
+    (block : MutualDatatype T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) := do
+  if block.isEmpty then return Factory.default
+  let elims := elimFuncs block inst.default
+  let constrs := block.flatMap (fun d => d.constrs.map (fun c => constrFunc c d))
+  let testers := block.flatMap (fun d => d.constrs.map (fun c => testerFunc block d c inst.default))
+  let destrs := block.flatMap (fun d => d.constrs.flatMap (fun c => destructorFuncs d c))
+  let unsafeDestrs := block.flatMap (fun d => d.constrs.flatMap (fun c => unsafeDestructorFuncs d c))
+  Factory.default.addFactory (elims ++ constrs ++ testers ++ destrs ++ unsafeDestrs).toArray
+
+/--
+Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`.
+-/
+def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) :=
+  t.foldlM (fun f block => do
+    let f' ← genBlockFactory block
+    f.addFactory f'
+  ) Factory.default
 
 ---------------------------------------------------------------------
 

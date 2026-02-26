@@ -34,6 +34,38 @@ requires true
 
   return message;
 }
+
+procedure testStringLiteralConcatOK()
+requires true
+{
+  var result: string := "a" ++ "b";
+  assert(result == "ab");
+}
+
+procedure testStringLiteralConcatKO()
+requires true
+{
+  var result: string := "a" ++ "b";
+  assert(result == "cd");
+//^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+}
+
+procedure testStringVarConcatOK()
+requires true
+{
+  var x: string := "Hello";
+  var result: string := x ++ " World";
+  assert(result == "Hello World");
+}
+
+procedure testStringVarConcatKO()
+requires true
+{
+  var x: string := "Hello";
+  var result: string := x ++ " World";
+  assert(result == "Goodbye");
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+}
 "#
 
 #guard_msgs(drop info, error) in

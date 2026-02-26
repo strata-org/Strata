@@ -28,8 +28,8 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
       (.seq ((.assume "false_cond" (Imperative.HasNot.not cond) md)) (BlockToNondetStmt ess))
   | .loop   guard _measure _inv bss md =>
     .loop (.seq (.assume "guard" guard md) (BlockToNondetStmt bss))
-  | .goto _ _ => (.assume "skip" Imperative.HasBool.tt)
-  | .funcDecl _ _ => (.assume "skip" Imperative.HasBool.tt)
+  | .goto _ md => (.assume "skip" Imperative.HasBool.tt md)
+  | .funcDecl _ md => (.assume "skip" Imperative.HasBool.tt md)
 
 /-- Deterministic-to-nondeterministic transformation for multiple
 (deterministic) statements -/
@@ -37,6 +37,6 @@ def BlockToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P
   (ss : Imperative.Block P (Cmd P)) :
   Imperative.NondetStmt P (Cmd P) :=
   match ss with
-  | [] => (.assume "skip" Imperative.HasBool.tt)
+  | [] => (.assume "skip" Imperative.HasBool.tt .empty)
   | s :: ss => .seq (StmtToNondetStmt s) (BlockToNondetStmt ss)
 end

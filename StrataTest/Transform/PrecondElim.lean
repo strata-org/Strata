@@ -219,7 +219,8 @@ info: procedure test () returns ()
     assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
     assume [precond_safeDiv_0]: y / x > 0;
     assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }function safeDiv (y : int) : int { y / x }
+    }
+  function safeDiv (y : int) : int { y / x }
   assert [init_calls_safeDiv_0]: 5 / x > 0;
   var z : int := safeDiv(5);
   };
@@ -250,30 +251,33 @@ procedure test(cond : bool, x : int, y : int) returns ()
 
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 ---
 info: procedure test (cond : bool, x : int, y : int) returns ()
 {
-  if(cond){
-    |$_then|: {
-      |f$$wf|: {
-        var a : int;
-        assume [precond_f_0]: !(x == 0);
-        assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-        }function f (a : int) : int { a / x }
-      assert [init_calls_f_0]: !(x == 0);
-      var r1 : int := f(10);
-      }}else{
-    |$_else|: {
-      |f$$wf|: {
-        var a : int;
-        assume [precond_f_0]: !(y == 0);
-        assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-        }function f (a : int) : int { a / y }
-      assert [init_calls_f_0]: !(y == 0);
-      var r2 : int := f(20);
-      }}};-/
+  if (cond) {
+    |f$$wf|: {
+      var a : int;
+      assume [precond_f_0]: !(x == 0);
+      assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
+      }
+    function f (a : int) : int { a / x }
+    assert [init_calls_f_0]: !(x == 0);
+    var r1 : int := f(10);
+    } else {
+    |f$$wf|: {
+      var a : int;
+      assume [precond_f_0]: !(y == 0);
+      assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
+      }
+    function f (a : int) : int { a / y }
+    assert [init_calls_f_0]: !(y == 0);
+    var r2 : int := f(20);
+    }
+  };
+-/
 #guard_msgs in
 #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
 
@@ -311,7 +315,8 @@ info: procedure proc1 (x : int) returns ()
     var a : int;
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }function f (a : int) : int { a / x }
+    }
+  function f (a : int) : int { a / x }
   assert [init_calls_f_0]: !(x == 0);
   var r : int := f(10);
   };
@@ -321,7 +326,8 @@ procedure proc2 (y : int) returns ()
     var a : int;
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-    }function f (a : int) : int { a / y }
+    }
+  function f (a : int) : int { a / y }
   assert [init_calls_f_0]: !(y == 0);
   var r : int := f(20);
   };

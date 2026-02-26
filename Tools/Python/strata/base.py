@@ -479,9 +479,11 @@ class MetadataCat:
     def to_ion(self):
         return ion_sexp(self.categorySym, self.index)
 
+MetadataArg = Union[None, bool, int, 'MetadataCat', 'MetadataSome']
+
 @dataclass
 class MetadataSome:
-    value: object
+    value: MetadataArg
 
     someSym = ion_symbol("some")
     def to_ion(self):
@@ -490,7 +492,7 @@ class MetadataSome:
 @dataclass
 class MetadataAttr:
     ident : QualifiedIdent
-    args : list[object]
+    args : list[MetadataArg]
 
     def to_ion(self):
         return ion_sexp(self.ident.to_ion(), *(metadata_arg_to_ion(a) for a in self.args))
@@ -848,6 +850,20 @@ def read_string(reader) -> str:
     assert isinstance(scalar, str)
     return scalar
 
+def read_int(reader) -> int:
+    event = read_scalar(reader, IonType.INT)
+    assert event.field_name is None, "Unexpected field name"
+    value = event.value
+    assert isinstance(value, int)
+    return value
+
+def read_bool(reader) -> bool:
+    event = read_scalar(reader, IonType.BOOL)
+    assert event.field_name is None, "Unexpected field name"
+    value = event.value
+    assert isinstance(value, bool)
+    return value
+
 X = TypeVar('X')
 
 def read_list(reader : object, f : Callable[[object, ion.IonEvent], X] ) -> tuple[X, ...]:
@@ -961,6 +977,63 @@ def read_arg_decl(reader, event) -> ArgDecl:
     type = read_argdecl_kind(reader)
     read_struct_end(reader)
     return ArgDecl(name, type)
+
+def read_syntaxdef_atom(reader, event) -> SyntaxDefAtom:
+    """Read a SyntaxDefAtom: either a string or a sexp (ident ...) / (indent ...)."""
+    if is_scalar(event, IonType.STRING):
+        scalar = ion.IonPyText.from_event(event)
+        assert isinstance(scalar, str)
+        return scalar
+    assert is_sexp_start(event), f"Expected string or sexp for SyntaxDefAtom, got {repr(event)}"
+    kind = read_symbol(reader)
+    match kind.text:
+        case "ident":
+            level = read_int(reader)
+            prec = read_int(reader)
+            read_sexp_end(reader)
+            return SyntaxDefIdent(level, prec)
+        case "indent":
+            indent_val = read_int(reader)
+            atoms = read_sexpr(reader, read_syntaxdef_atom)
+            return SyntaxDefIndent(indent_val, atoms)
+        case _:
+            raise Exception(f"Unknown SyntaxDefAtom kind {kind.text}")
+
+def read_metadata_arg(reader, event) -> MetadataArg:
+    """Read a MetadataArg value."""
+    if is_scalar(event, IonType.NULL):
+        return None
+    if is_scalar(event, IonType.BOOL):
+        return event.value
+    if is_scalar(event, IonType.INT):
+        return event.value
+    assert is_sexp_start(event), f"Expected sexp for MetadataArg, got {repr(event)}"
+    kind = read_symbol(reader)
+    match kind.text:
+        case "category":
+            val = MetadataCat(read_int(reader))
+            read_sexp_end(reader)
+            return val
+        case "some":
+            event = read_event(reader)
+            val = MetadataSome(read_metadata_arg(reader, event))
+            read_sexp_end(reader)
+            return val
+        case _:
+            raise Exception(f"Unknown MetadataArg kind {kind.text}")
+
+def read_metadata_attr(reader, event) -> MetadataAttr:
+    """Read a MetadataAttr sexp: (qualified.ident arg1 arg2 ...)."""
+    assert is_sexp_start(event), f"Expected sexp for MetadataAttr, got {repr(event)}"
+    event = read_event(reader)
+    ident = as_qualified_ident(event)
+    args = []
+    while True:
+        event = read_event(reader)
+        if is_sexp_end(event):
+            break
+        args.append(read_metadata_arg(reader, event))
+    return MetadataAttr(ident, args)
 
 class Dialect:
     """
@@ -1104,9 +1177,42 @@ class Dialect:
                     assert has_field_symbol(event, "result"), f"Expected result"
                     result_name = as_qualified_ident(event)
                     result = SyntaxCat(result_name)
-                    read_struct_end(reader)
 
-                    dialect.add_op(name, *args, result)
+                    event = read_event(reader)
+                    syntax : SyntaxDef|None = None
+                    if has_field_symbol(event, "syntax"):
+                        assert is_struct_start(event), (
+                            f"Expected struct for syntax, got {repr(event)}"
+                        )
+                        # Read the syntax struct inline (fields: atoms, prec)
+                        field = read_field_list_start(reader)
+                        assert field == "atoms", f"Expected 'atoms' field, got '{field}'"
+                        atoms = list(read_list(reader, read_syntaxdef_atom))
+                        event = read_event(reader)
+                        assert has_field_symbol(event, "prec"), f"Expected 'prec' field"
+                        assert is_scalar(event, IonType.INT), (
+                            f"Expected int for prec, got {repr(event)}"
+                        )
+                        prec = event.value
+                        assert isinstance(prec, int)
+                        read_struct_end(reader)
+                        syntax = SyntaxDef(atoms, prec)
+                        event = read_event(reader)
+
+                    metadata : Metadata = []
+                    if has_field_symbol(event, "metadata"):
+                        assert is_list_start(event), (
+                            f"Expected list for metadata, got {repr(event)}"
+                        )
+                        metadata = list(read_list(reader, read_metadata_attr))
+                        event = read_event(reader)
+
+                    assert is_struct_end(event), f"Expected struct end, got {repr(event)}"
+
+                    dialect.add_op(name, *args, result,
+                                   syntax=syntax.atoms if syntax is not None else None,
+                                   prec=syntax.prec if syntax is not None else None,
+                                   metadata=metadata if len(metadata) > 0 else None)
 
         event = read_event(reader)
         assert event.event_type == ion.IonEventType.STREAM_END, "Expected stream end"

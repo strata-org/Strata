@@ -188,6 +188,7 @@ inductive SepFormat where
 | comma          -- Comma separator (CommaSepBy)
 | space          -- Space separator (SpaceSepBy)
 | spacePrefix    -- Space before each element (SpacePrefixSepBy)
+| newline        -- Newline separator (NewlineSepBy)
 deriving Inhabited, Repr, BEq
 
 namespace SepFormat
@@ -197,23 +198,15 @@ def toString : SepFormat → String
   | .comma => "commaSepBy"
   | .space => "spaceSepBy"
   | .spacePrefix => "spacePrefixSepBy"
+  | .newline => "newlineSepBy"
 
-def toIonName : SepFormat → String
-  | .none => "seq"
-  | .comma => "commaSepList"
-  | .space => "spaceSepList"
-  | .spacePrefix => "spacePrefixedList"
-
-def fromIonName? : String → Option SepFormat
-  | "seq" => some .none
-  | "commaSepList" => some .comma
-  | "spaceSepList" => some .space
-  | "spacePrefixedList" => some .spacePrefix
+def fromCategoryName? : QualifiedIdent → Option SepFormat
+  | q`Init.Seq => some .none
+  | q`Init.CommaSepBy => some .comma
+  | q`Init.SpaceSepBy => some .space
+  | q`Init.SpacePrefixSepBy => some .spacePrefix
+  | q`Init.NewlineSepBy => some .newline
   | _ => none
-
-theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
-  fromIonName? (toIonName sep) = some sep := by
-  cases sep <;> rfl
 
 instance : ToString SepFormat where
   toString := SepFormat.toString

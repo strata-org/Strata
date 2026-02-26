@@ -29,7 +29,8 @@ op negSuccInt (x : Num) : Int => "-" x;
 category SpecType;
 category FieldDecl;
 
-op mkFieldDecl(name : Ident, fieldType : SpecType) : FieldDecl => name " : " fieldType;
+op mkFieldDecl(name : Ident, fieldType : SpecType, isRequired : Bool) : FieldDecl =>
+  name " : " fieldType " [required=" isRequired "]";
 
 op typeIdentNoArgs (x : Str) : SpecType => "ident" "(" x ")";
 op typeIdent (x : Str, y : CommaSepBy SpecType) : SpecType => "ident" "(" x ", " y ")";
@@ -38,8 +39,8 @@ op typeClass (x : Ident, y : CommaSepBy SpecType) : SpecType => "class" "(" x ",
 op typeIntLiteral (x : Int) : SpecType => x;
 op typeStringLiteral (x : Str) : SpecType => x;
 op typeUnion (args : CommaSepBy SpecType) : SpecType => "union" "(" args ")";
-op typeTypedDict (fields : CommaSepBy FieldDecl, isTotal : Bool): SpecType =>
-  "dict" "(" fields ")" "[" "isTotal" "=" isTotal "]";
+op typeTypedDict (fields : CommaSepBy FieldDecl): SpecType =>
+  "dict" "(" fields ")";
 
 category ArgDecl;
 op mkArgDecl (name : Ident, argType : SpecType, hasDefault : Bool) : ArgDecl =>
@@ -110,12 +111,12 @@ private def SpecAtomType.toDDM (d : SpecAtomType) (loc : SourceRange := .none) :
       .typeClass loc ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
   | .intLiteral i => .typeIntLiteral loc (toDDMInt .none i)
   | .stringLiteral v => .typeStringLiteral loc ⟨.none, v⟩
-  | .typedDict fields types isTotal =>
+  | .typedDict fields types fieldRequired =>
     assert! fields.size = types.size
     let argc := types.size
     let a := Array.ofFn fun (⟨i, ilt⟩ : Fin argc) =>
-      .mkFieldDecl .none ⟨.none, fields[i]!⟩ types[i].toDDM
-    .typeTypedDict loc ⟨.none, a⟩ ⟨.none, isTotal⟩
+      .mkFieldDecl .none ⟨.none, fields[i]!⟩ types[i].toDDM ⟨.none, fieldRequired[i]!⟩
+    .typeTypedDict loc ⟨.none, a⟩
 termination_by sizeOf d
 
 private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
@@ -176,10 +177,11 @@ private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType
       panic! "Bad identifier"
   | .typeIntLiteral loc i => .ofAtom loc <| .intLiteral i.ofDDM
   | .typeStringLiteral loc ⟨_, s⟩ => .ofAtom loc <| .stringLiteral s
-  | .typeTypedDict loc ⟨_, fields⟩ ⟨_, isTotal⟩ =>
-    let names := fields.map fun (.mkFieldDecl _ ⟨_, name⟩ _) => name
-    let types := fields.attach.map fun ⟨.mkFieldDecl _ _ tp, mem⟩ => tp.fromDDM
-    .ofAtom loc <| .typedDict names types isTotal
+  | .typeTypedDict loc ⟨_, fields⟩ =>
+    let names := fields.map fun (.mkFieldDecl _ ⟨_, name⟩ _ _) => name
+    let types := fields.attach.map fun ⟨.mkFieldDecl _ _ tp _, mem⟩ => tp.fromDDM
+    let required := fields.map fun (.mkFieldDecl _ _ _ ⟨_, r⟩) => r
+    .ofAtom loc <| .typedDict names types required
   | .typeUnion loc ⟨_, args⟩ =>
     if p : args.size > 0 then
       args.attach.foldl (init := args[0].fromDDM) (start := 1)
@@ -190,8 +192,8 @@ termination_by sizeOf d
 decreasing_by
   · decreasing_tactic
   · decreasing_tactic
-  · rename_i _ ann nm
-    have szp : 1 + sizeOf ann + sizeOf nm + sizeOf tp < sizeOf fields :=
+  · rename_i _ ann nm req
+    have szp : 1 + sizeOf ann + sizeOf nm + sizeOf tp + sizeOf req < sizeOf fields :=
        Array.sizeOf_lt_of_mem mem
     decreasing_tactic
   · decreasing_tactic
