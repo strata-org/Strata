@@ -205,7 +205,8 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Di
   let func ← match func.decreases with
     | some (.fvar _ name _) =>
       match func.inputs.keys.findIdx? (· == name) with
-      | some i => .ok { func with attr := #[.inlineIfConstr i] ++ func.attr }
+      | some i => 
+        .ok { func with attr := #[.inlineIfConstr i] ++ func.attr }
       | none => .error (.fromFormat f!"decreases '{name}' is not a parameter of '{func.name}'")
     | some _ => .error (.fromFormat
         f!"decreases must be a parameter name. General decreases expressions are not yet supported.")
