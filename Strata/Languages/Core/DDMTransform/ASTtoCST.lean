@@ -853,9 +853,13 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
     pure (.while_statement default guardCST invs bodyCST)
-  | .goto label _md => do
-    let labelAnn : Ann String M := ⟨default, label⟩
-    pure (.goto_statement default labelAnn)
+  | .exit label _md => do
+    match label with
+    | some l =>
+      let labelAnn : Ann String M := ⟨default, l⟩
+      pure (.exit_statement default labelAnn)
+    | none =>
+      pure (.exit_unlabeled_statement default)
   | .funcDecl decl _md => funcDeclToStatement decl
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
