@@ -23,23 +23,23 @@ argument is a constructor application) and reduces.
 
 namespace Lambda
 
-open Strata (DiagnosticModel)
+open Std (Format format)
 
 /-- Check well-formedness of a recursive function and extract the components
     needed for axiom generation: recParam index and datatype. -/
 def checkRecursiveFunc [DecidableEq T.IDMeta]
     (func : LFunc T) (tf : @TypeFactory T.IDMeta)
-    : Except DiagnosticModel (Nat × LDatatype T.IDMeta) := do
+    : Except Format (Nat × LDatatype T.IDMeta) := do
   let recIdx ← func.recParam |>.elim
-    (.error <| .fromFormat f!"Recursive function {func.name} has no recParam") .ok
+    (.error f!"Recursive function {func.name} has no recParam") .ok
   let inputTys := func.inputs.values
   let recTy ← inputTys[recIdx]? |>.elim
-    (.error <| .fromFormat f!"Recursive function {func.name}: recParam index {recIdx} out of bounds") .ok
+    (.error f!"Recursive function {func.name}: recParam index {recIdx} out of bounds") .ok
   let dtName ← match recTy with
     | .tcons n _ => .ok n
-    | _ => .error <| .fromFormat f!"Recursive function {func.name}: decreases parameter type is not a datatype"
+    | _ => .error f!"Recursive function {func.name}: decreases parameter type is not a datatype"
   let dt ← tf.getType dtName |>.elim
-    (.error <| .fromFormat f!"Recursive function {func.name}: datatype {dtName} not found") .ok
+    (.error f!"Recursive function {func.name}: datatype {dtName} not found") .ok
   return (recIdx, dt)
 
 /-- Generate per-constructor axiom LExprs for a recursive function.
@@ -48,7 +48,7 @@ def checkRecursiveFunc [DecidableEq T.IDMeta]
 def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [DecidableEq T.IDMeta]
     (func : LFunc T) (recIdx : Nat) (dt : LDatatype T.IDMeta)
     (pe : LExpr T.mono → LExpr T.mono) (m : T.Metadata)
-    : Except DiagnosticModel (List (LExpr T.mono)) :=
+    : Except Format (List (LExpr T.mono)) :=
   let formals := func.inputs.keys
   let inputTys := func.inputs.values
   dt.constrs.mapM fun c => do
@@ -71,7 +71,7 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
     -- RHS: PE inlines the function since the recursive arg is a constructor
     let rhs := pe lhs
     if lhs == rhs then
-      throw <| .fromFormat f!"Recursive function {func.name}: PE did not reduce axiom for \
+      .error f!"Recursive function {func.name}: PE did not reduce axiom for \
                constructor {c.name}. Ensure the function is in the factory with inlineIfConstr."
     let eq : LExpr T.mono := .eq m lhs rhs
     -- Wrap in quantifiers innermost-first: fields (with trigger on innermost),
@@ -90,7 +90,7 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
 def genRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [DecidableEq T.IDMeta]
     (func : LFunc T) (tf : @TypeFactory T.IDMeta)
     (pe : LExpr T.mono → LExpr T.mono) (m : T.Metadata)
-    : Except DiagnosticModel (List (LExpr T.mono)) := do
+    : Except Format (List (LExpr T.mono)) := do
   let (recIdx, dt) ← checkRecursiveFunc func tf
   mkRecursiveAxioms func recIdx dt pe m
 
