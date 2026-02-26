@@ -854,7 +854,7 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
       let labelAnn : Ann String M := ⟨default, l⟩
       pure (.exit_statement default labelAnn)
     | none =>
-      pure (.exit_statement default ⟨default, ""⟩)
+      pure (.exit_unlabeled_statement default)
   | .funcDecl decl _md => funcDeclToStatement decl
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)

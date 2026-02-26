@@ -228,6 +228,7 @@ op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
 op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b:0 "\n";
 op exit_statement (label : Ident) : Statement => "exit " label ";\n";
+op exit_unlabeled_statement : Statement => "exit;\n";
 
 category SpecElt;
 category Free;
