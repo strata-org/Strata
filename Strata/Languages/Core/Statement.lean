@@ -34,7 +34,7 @@ inductive CmdExt (P : PureExpr) where
   -- Maybe procedure names should just be plain strings since there is no
   -- "scoped procedures" or "generated procedures"
   | call (lhs : List P.Ident) (procName : String) (args : List P.Expr)
-         (md : MetaData P := .empty)
+         (md : MetaData P)
 
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.
@@ -46,7 +46,7 @@ instance : HasPassiveCmds Expression Command where
   assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
-  havoc x := .cmd (.havoc x)
+  havoc x md := .cmd (.havoc x md)
 
 instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
     [ToFormat (List P.Ident)] [ToFormat P.Expr] :
@@ -64,27 +64,27 @@ abbrev Statements := List Statement
 
 @[match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
 @[match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name expr md))
 @[match_pattern]
-abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression := .empty) :=
+abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.havoc name md))
 @[match_pattern]
-abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
 @[match_pattern]
-abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assume label b md))
 @[match_pattern]
 abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.call lhs pname args md)
 @[match_pattern]
-abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
 
 ---------------------------------------------------------------------

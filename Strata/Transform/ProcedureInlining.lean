@@ -53,8 +53,8 @@ def Statement.replaceLabels
   match s with
   | .block lbl b m => .block (app lbl) (Block.replaceLabels b map) m
   | .goto lbl m => .goto (app lbl) m
-  | .ite cond thenb elseb _ =>
-    .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map)
+  | .ite cond thenb elseb m =>
+    .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map) m
   | .loop g measure inv body m =>
     .loop g measure inv (Block.replaceLabels body map) m
   | .assume lbl e m => .assume (app lbl) e m
@@ -163,7 +163,7 @@ def inlineCallCmd
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
-      | .call lhs procName args _ =>
+      | .call lhs procName args md =>
 
         let st ← get
         if ¬ doInline procName st.cachedAnalyses then return .none else
@@ -200,12 +200,13 @@ def inlineCallCmd
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
         let outputInits := createInitVars
           (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
+          md
         let outputHavocs := outputTrips.map (fun
-          (_,orgvar) => Statement.havoc orgvar)
+          (_,orgvar) => Statement.havoc orgvar md)
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
         --let inputTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInits := createInits (sigInputs.zip args)
+        let inputInits := createInits (sigInputs.zip args) md
         -- Assign the output variables in the signature to the actual output
         -- variables used in the callee.
         let outputSetStmts :=
@@ -216,7 +217,7 @@ def inlineCallCmd
           let outs_lhs_and_sig := List.zip lhs out_vars
           List.map
             (fun (lhs_var,out_var) =>
-              Statement.set lhs_var (.fvar () out_var (.none)))
+              Statement.set lhs_var (.fvar () out_var (.none)) md)
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
@@ -235,7 +236,7 @@ def inlineCallCmd
             }
           }:CoreTransformState)
 
-        return .some [.block (procName ++ "$inlined") stmts]
+        return .some [.block (procName ++ "$inlined") stmts md]
 
       | _ => return .none
 
