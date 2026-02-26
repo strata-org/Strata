@@ -146,42 +146,32 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRan
   | .app op args retTy =>
     let args' <- args.mapM translateFromTerm
     let args_array := args'.toArray
+    let mk_qual_identifier (qi:QualIdentifier SourceRange) : SMTDDM.Term SourceRange :=
+      if args_array.isEmpty then
+        (.qual_identifier srnone qi)
+      else
+        (.qual_identifier_args srnone qi (Ann.mk srnone args_array))
+
     -- Datatype constructors need (as Name RetType) qualification for SMT-LIB
     match op with
     | .datatype_op .constructor name =>
       let retSort ← translateFromTermType retTy
       let qi := QualIdentifier.qi_isort srnone (mkIdentifier name) retSort
-      if args_array.isEmpty then
-        return (.qual_identifier srnone qi)
-      else
-        return (.qual_identifier_args srnone qi (Ann.mk srnone args_array))
+      return mk_qual_identifier qi
     | .bv (.zero_extend n) =>
       let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "zero_extend")
         (Ann.mk srnone #[.ind_numeral srnone n])
-      if args_array.isEmpty then
-        return (.qual_identifier srnone (.qi_ident srnone iden))
-      else
-        return (.qual_identifier_args srnone (.qi_ident srnone iden) (Ann.mk srnone args_array))
+      return mk_qual_identifier (.qi_ident srnone iden)
     | .str (.re_index n) =>
       let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "re.^")
         (Ann.mk srnone #[.ind_numeral srnone n])
-      if args_array.isEmpty then
-        return (.qual_identifier srnone (.qi_ident srnone iden))
-      else
-        return (.qual_identifier_args srnone (.qi_ident srnone iden) (Ann.mk srnone args_array))
+      return mk_qual_identifier (.qi_ident srnone iden)
     | .str (.re_loop n₁ n₂) =>
       let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "re.loop")
         (Ann.mk srnone #[.ind_numeral srnone n₁, .ind_numeral srnone n₂])
-      if args_array.isEmpty then
-        return (.qual_identifier srnone (.qi_ident srnone iden))
-      else
-        return (.qual_identifier_args srnone (.qi_ident srnone iden) (Ann.mk srnone args_array))
+      return mk_qual_identifier (.qi_ident srnone iden)
     | _ =>
-      if args_array.isEmpty then
-        return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier op.mkName)))
-      else
-        return (.qual_identifier_args srnone
-          (.qi_ident srnone (mkIdentifier op.mkName)) (Ann.mk srnone args_array))
+      return mk_qual_identifier (.qi_ident srnone (mkIdentifier op.mkName))
   | .quant qkind args tr body =>
     let args_sorted:List (SMTDDM.SortedVar SourceRange) <-
       args.mapM
