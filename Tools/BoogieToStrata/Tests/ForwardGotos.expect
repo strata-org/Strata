@@ -1,0 +1,6 @@
+Successfully parsed.
+ForwardGotos.core.st(26, 6) [assert_0]: ✅ pass
+ForwardGotos.core.st(57, 6) [assert_1]: ✅ pass
+ForwardGotos.core.st(90, 6) [assert_2]: ✅ pass
+ForwardGotos.core.st(114, 6) [assert_3]: ✅ pass
+All 4 goals passed.
