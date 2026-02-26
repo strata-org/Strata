@@ -317,7 +317,7 @@ op command_recfndef (name : Ident,
                      @[scope(typeArgs)] b : Bindings,
                      @[scope(typeArgs)] r : Type,
                      @[scope(b)] dec : Option DecreasesClause,
-                     @[scope(name, b)] c : r,
+                     @[scope(b), scopeSelf(name, b, r)] c : r,
                      inline? : Option Inline) : Command =>
   "recursive " inline? "function " name typeArgs b " : " r "\n  " dec "\n{\n  " indent(2, c) "\n}\n";
 

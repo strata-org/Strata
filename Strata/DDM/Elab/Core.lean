@@ -1063,12 +1063,46 @@ partial def runSyntaxElaborator
           pure tctx
         | _, _ => continue
       | none =>
-        match ae.contextLevel with
-        | some idx =>
-          match trees[idx] with
-          | some t => pure t.resultContext
-          | none => continue
+        -- Check for @[scopeSelf(name, args, type)] — adds function name as expression binding
+        -- Push function name BEFORE params so params keep their expected bvar indices
+        let tctx ← match ae.scopeSelf with
+        | some (nameLevel, _argsLevel, typeLevel) =>
+          let nameTree := trees[nameLevel]
+          let argsTree := trees[_argsLevel]
+          let typeTree := trees[typeLevel]
+          match nameTree, argsTree, typeTree with
+          | some nameT, some argsT, some typeT =>
+            let fnName :=
+              match nameT.info with
+              | .ofIdentInfo info => info.val
+              | _ => panic! "scopeSelf: expected identifier for function name"
+            let inheritedCount := tctx0.bindings.size
+            let paramBindings := argsT.resultContext.bindings.toArray.extract inheritedCount argsT.resultContext.bindings.size
+            let params := paramBindings.filterMap fun b =>
+              match b.kind with
+              | .expr tp => some (b.ident, tp)
+              | _ => none
+            let retType :=
+              match typeT.info with
+              | .ofTypeInfo info => info.typeExpr
+              | _ => panic! "scopeSelf: expected type for return type"
+            let fnType := TypeExprF.mkFunType typeT.info.loc params retType
+            pure (tctx0.push { ident := fnName, kind := .expr fnType })
+          | _, _, _ => pure tctx0
         | none => pure tctx0
+        -- Then apply @[scope] on top (params)
+        let tctx ←
+          match ae.contextLevel with
+          | some idx =>
+            match trees[idx] with
+            | some t =>
+              -- Re-push param bindings on top of the function name binding
+              let inheritedCount := tctx0.bindings.size
+              let rc := t.resultContext
+              let newBindings := rc.bindings.toArray.extract inheritedCount rc.bindings.size
+              pure (newBindings.foldl (init := tctx) fun ctx b => ctx.push b)
+            | none => continue
+          | none => pure tctx
     let astx := args[ae.syntaxLevel]
     let expectedKind := argDecls[argLevel].kind
     match expectedKind with

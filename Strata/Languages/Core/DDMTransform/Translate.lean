@@ -1470,7 +1470,11 @@ def translateRecFunction (p : Program) (bindings : TransBindings) (op : Operatio
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   let orig_bbindings := bindings.boundVars
-  let bbindings := bindings.boundVars ++ in_bindings
+  -- The DDM's @[scopeSelf] puts the function name before params in the typing context,
+  -- so we must mirror that order: push the function's op expr, then params.
+  let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
+  let selfBinding := LExpr.op () fname fnTy
+  let bbindings := bindings.boundVars ++ #[selfBinding] ++ in_bindings
   let bindings := { bindings with boundVars := bbindings }
   let dec ← translateDecreases p bindings op.args[4]!
   let body ← translateExpr p bindings op.args[5]!

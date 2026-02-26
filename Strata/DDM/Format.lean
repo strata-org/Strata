@@ -431,6 +431,21 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
                   a[alvl].snd
+          -- If @[scopeSelf] is present, insert the function name before the scope bindings
+          -- so that it gets a higher de Bruijn index (matching the elaborator order)
+          let s :=
+                match argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
+                | none => s
+                | some (⟨nameLvl, nameIsLt⟩, _, _) =>
+                  have _ : nameLvl < a.size := by simp at nameIsLt; omega
+                  match args[nameLvl] with
+                  | .ident _ name =>
+                    -- Insert function name at the position just before scope bindings
+                    let scopeStart := initState.bindings.size
+                    let before := s.bindings.extract 0 scopeStart
+                    let after := s.bindings.extract scopeStart s.bindings.size
+                    { s with bindings := before ++ #[name] ++ after }
+                  | _ => s
           aux (a.push (args[lvl].mformatM c s))
         else
           a
