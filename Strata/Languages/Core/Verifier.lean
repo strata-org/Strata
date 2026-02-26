@@ -47,19 +47,38 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Encode the obligation term (but don't assert it)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
-  -- Two-sided check: emit check-sat-assuming for both Q and ¬Q
-  if satisfiabilityCheck then
-    Solver.comment "Satisfiability check (can property be true?)"
-    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("sat-message", s!"\"Property can be satisfied\""))
-    let _ ← Solver.checkSatAssuming [obligationId] []
+  -- Choose encoding strategy: use check-sat-assuming only when doing both checks
+  let bothChecks := satisfiabilityCheck && validityCheck
+  
+  if bothChecks then
+    -- Two-sided check: use check-sat-assuming for both Q and ¬Q
+    if satisfiabilityCheck then
+      Solver.comment "Satisfiability check (can property be true?)"
+      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+        (message := ("sat-message", s!"\"Property can be satisfied\""))
+      let _ ← Solver.checkSatAssuming [obligationId] []
 
-  if validityCheck then
-    Solver.comment "Validity check (can property be false?)"
-    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("unsat-message", s!"\"Property is always true\""))
-    let negObligationId := s!"(not {obligationId})"
-    let _ ← Solver.checkSatAssuming [negObligationId] []
+    if validityCheck then
+      Solver.comment "Validity check (can property be false?)"
+      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+        (message := ("unsat-message", s!"\"Property is always true\""))
+      let negObligationId := s!"(not {obligationId})"
+      let _ ← Solver.checkSatAssuming [negObligationId] []
+  else
+    -- Single check: use assert + check-sat (matches pre-PR behavior)
+    if satisfiabilityCheck then
+      Solver.comment "Satisfiability check (can property be true?)"
+      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+        (message := ("sat-message", s!"\"Property can be satisfied\""))
+      Solver.assert obligationId
+      let _ ← Solver.checkSat []
+    else if validityCheck then
+      Solver.comment "Validity check (can property be false?)"
+      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+        (message := ("unsat-message", s!"\"Property is always true\""))
+      -- obligationId is already the negation of the property, so assert it directly
+      Solver.assert obligationId
+      let _ ← Solver.checkSat []
 
   let ids := estate.ufs.values
   return (ids, estate)
