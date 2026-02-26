@@ -163,7 +163,7 @@ def passAndReachable (o : VCOutcome) : Bool :=
   | .sat _, .unsat => true
   | _, _ => false
 
-def refutedAndReachable (o : VCOutcome) : Bool :=
+def alwaysFalseAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unsat, .sat _ => true
   | _, _ => false
@@ -216,17 +216,17 @@ def isSatisfiable (o : VCOutcome) : Bool :=
   | _ => false
 
 def isAlwaysFalse (o : VCOutcome) : Bool :=
-  o.refutedAndReachable || o.alwaysFalseReachabilityUnknown
+  o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown
 
 def isAlwaysTrue (o : VCOutcome) : Bool :=
   o.isPass
 
 def isReachable (o : VCOutcome) : Bool :=
-  o.passAndReachable || o.refutedAndReachable || o.indecisiveAndReachable
+  o.passAndReachable || o.alwaysFalseAndReachable || o.indecisiveAndReachable
 
 -- Backward compatibility aliases (old names with "is" prefix)
 def isPassAndReachable := passAndReachable
-def isRefutedAndReachable := refutedAndReachable
+def isRefutedAndReachable := alwaysFalseAndReachable
 def isIndecisiveAndReachable := indecisiveAndReachable
 def isUnreachable := unreachable
 def isSatisfiableValidityUnknown := satisfiableValidityUnknown
@@ -234,7 +234,7 @@ def isAlwaysFalseReachabilityUnknown := alwaysFalseReachabilityUnknown
 def isCanBeFalseAndReachable := canBeFalseAndReachable
 def isPassReachabilityUnknown := passReachabilityUnknown
 def isUnknown := unknown
-def isRefuted := refutedAndReachable
+def isRefuted := alwaysFalseAndReachable
 def isRefutedIfReachable := alwaysFalseReachabilityUnknown
 def isIndecisive := indecisiveAndReachable
 def isAlwaysTrueIfReachable := passReachabilityUnknown
@@ -244,7 +244,7 @@ def isReachableAndCanBeFalse := canBeFalseAndReachable
 
 def label (o : VCOutcome) : String :=
   if o.passAndReachable then "pass"
-  else if o.refutedAndReachable then "refuted"
+  else if o.alwaysFalseAndReachable then "refuted"
   else if o.indecisiveAndReachable then "indecisive"
   else if o.unreachable then "unreachable"
   else if o.satisfiableValidityUnknown then "satisfiable"
@@ -255,7 +255,7 @@ def label (o : VCOutcome) : String :=
 
 def emoji (o : VCOutcome) : String :=
   if o.passAndReachable then "✅"
-  else if o.refutedAndReachable then "❌"
+  else if o.alwaysFalseAndReachable then "❌"
   else if o.indecisiveAndReachable then "🔶"
   else if o.unreachable then "⛔"
   else if o.satisfiableValidityUnknown then "➕"

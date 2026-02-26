@@ -31,14 +31,14 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
     if outcome.passAndReachable || outcome.passReachabilityUnknown then 
       .none
     else if outcome.unreachable then 
-      .note
+      .warning -- Dead code
     else 
       .error -- Everything not proven is an error
   | .bugFinding =>
     -- Bug finding: find counterexamples
     if outcome.passAndReachable || outcome.passReachabilityUnknown then 
       .none
-    else if outcome.alwaysFalse then 
+    else if outcome.isAlwaysFalse then 
       .error
     else if outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then 
       .warning
@@ -48,7 +48,7 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=
   if outcome.passAndReachable then "Verification succeeded: always true and reachable"
-  else if outcome.refutedAndReachable then
+  else if outcome.alwaysFalseAndReachable then
     match outcome.validityProperty with
     | .sat m =>
       if m.isEmpty then
