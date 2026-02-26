@@ -53,6 +53,9 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
                   | .file path => (path.splitToList (· == '/')).getLast!
   match fileMap with
   | some fm =>
+    -- Lean's InputContext may have a fileMap which has an empty source and
+    -- position. This can happen when InputContext is assigned Inhabited.default.
+    if fm.source.isEmpty ∧ fm.positions.isEmpty then f!"" else
     let startPos := fm.toPosition fr.range.start
     let endPos := fm.toPosition fr.range.stop
     if includeEnd? then
