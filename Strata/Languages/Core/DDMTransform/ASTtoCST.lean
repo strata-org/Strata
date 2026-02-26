@@ -520,7 +520,9 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | "Int.Sub" | "Real.Sub" => pure (.sub_expr default ty arg1 arg2)
   | "Int.Mul" | "Real.Mul" => pure (.mul_expr default ty arg1 arg2)
   | "Int.Div" | "Real.Div" => pure (.div_expr default ty arg1 arg2)
+  | "Int.SafeDiv" => pure (.safediv_expr default ty arg1 arg2)
   | "Int.Mod" => pure (.mod_expr default ty arg1 arg2)
+  | "Int.SafeMod" => pure (.safemod_expr default ty arg1 arg2)
   | "Int.Le" | "Real.Le" => pure (.le default ty arg1 arg2)
   | "Int.Lt" | "Real.Lt" => pure (.lt default ty arg1 arg2)
   | "Int.Ge" | "Real.Ge" => pure (.ge default ty arg1 arg2)
@@ -659,6 +661,7 @@ partial def lquantToExpr {M} [Inhabited M]
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
   let name : Ann String M := ⟨default, mkQuantVarName (qLevel - 1)⟩
+  modify ToCSTContext.pushScope
   modify (·.addScopedBoundVars #[name.val])
   let tyExpr ← match ty with
     | some t => lmonoTyToCoreType t
@@ -666,20 +669,23 @@ partial def lquantToExpr {M} [Inhabited M]
   let bind := Bind.bind_mk default name ⟨default, none⟩ tyExpr
   let dl := DeclList.declAtom default bind
   let hasNoTrigger := trigger matches .bvar _ 0
-  if hasNoTrigger then
-    let bodyExpr ← lexprToExpr body qLevel
-    match qkind with
-    | .all => pure (.forall default dl bodyExpr)
-    | .exist => pure (.exists default dl bodyExpr)
-  else
-    let triggerExprs ← extractTriggerPatterns trigger qLevel
-    let bodyExpr ← lexprToExpr body qLevel
-    let trigAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, triggerExprs.reverse⟩
-    let tg := TriggerGroup.trigger default trigAnn
-    let tl := Triggers.triggersAtom default tg
-    match qkind with
-    | .all => pure (.forallT default dl tl bodyExpr)
-    | .exist => pure (.existsT default dl tl bodyExpr)
+  let result ←
+    if hasNoTrigger then
+      let bodyExpr ← lexprToExpr body qLevel
+      match qkind with
+      | .all => pure (.forall default dl bodyExpr)
+      | .exist => pure (.exists default dl bodyExpr)
+    else
+      let triggerExprs ← extractTriggerPatterns trigger qLevel
+      let bodyExpr ← lexprToExpr body qLevel
+      let trigAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, triggerExprs.reverse⟩
+      let tg := TriggerGroup.trigger default trigAnn
+      let tl := Triggers.triggersAtom default tg
+      match qkind with
+      | .all => pure (.forallT default dl tl bodyExpr)
+      | .exist => pure (.existsT default dl tl bodyExpr)
+  modify ToCSTContext.popScope
+  pure result
 
 partial def liteToExpr {M} [Inhabited M]
     (c t f : Lambda.LExpr CoreLParams.mono)
@@ -716,6 +722,18 @@ partial def lappToExpr {M} [Inhabited M]
     pure (.btrue default)  -- Default to true literal
 end
 
+/-- Convert preconditions to CST spec elements -/
+private def precondsToSpecElts {M} [Inhabited M]
+    (preconds : List (DL.Util.FuncPrecondition
+      (Lambda.LExpr CoreLParams.mono) CoreLParams.Metadata))
+    : ToCSTM M (Ann (Array (SpecElt M)) M) := do
+  let specElts ← preconds.toArray.mapM fun precond => do
+    let labelAnn : Ann (Option (Label M)) M := ⟨default, none⟩
+    let freeAnn : Ann (Option (Free M)) M := ⟨default, none⟩
+    let exprCST ← lexprToExpr precond.expr 0
+    pure (SpecElt.requires_spec default labelAnn freeAnn exprCST)
+  pure ⟨default, specElts⟩
+
 /-- Convert a function declaration to a statement -/
 def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression)
     : ToCSTM M (CoreDDM.Statement M) := do
@@ -742,6 +760,8 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
   -- Add formals to the context
   modify (·.addScopedBoundVars (reverse? := false) paramNames)
+  -- Convert preconditions
+  let preconds ← precondsToSpecElts decl.preconditions
   let bodyExpr ← match decl.body with
   | none =>
     -- Dummy expr for the body.
@@ -753,7 +773,7 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   -- Register function name as a scoped bound variable in the parent scope,
   -- matching DDM's @[declareFn] which makes the name a bvar.
   modify (·.pushBoundVar name.val)
-  pure (.funcDecl_statement default name typeArgs b r bodyExpr inline?)
+  pure (.funcDecl_statement default name typeArgs b r preconds bodyExpr inline?)
 
 mutual
 /-- Convert `Core.Statement` to `CoreDDM.Statement` -/
@@ -786,18 +806,28 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
   | .havoc name _md => do
     let nameAnn : Ann String M := ⟨default, name.name⟩
     pure (.havoc_statement default nameAnn)
-  | .assert label expr _md => do
+  | .assert label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.assert default labelAnn exprCST)
+    let rcAnn : Ann (Option (ReachCheck M)) M :=
+      if Imperative.MetaData.hasReachCheck md then
+        ⟨default, some (.reachCheck default)⟩
+      else
+        ⟨default, none⟩
+    pure (.assert default rcAnn labelAnn exprCST)
   | .assume label expr _md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
     pure (.assume default labelAnn exprCST)
-  | .cover label expr _md => do
+  | .cover label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.cover default labelAnn exprCST)
+    let rcAnn : Ann (Option (ReachCheck M)) M :=
+      if Imperative.MetaData.hasReachCheck md then
+        ⟨default, some (.reachCheck default)⟩
+      else
+        ⟨default, none⟩
+    pure (.cover default rcAnn labelAnn exprCST)
   | .call lhs pname args _md => do
     let lhsAnn := ⟨default, lhs.toArray.map fun id => ⟨default, id.name⟩⟩
     let pnameAnn : Ann String M := ⟨default, pname⟩
@@ -839,12 +869,13 @@ partial def elseToCST {M} [Inhabited M] (stmts : List Core.Statement)
     pure (.else1 default blockCST)
 
 partial def invariantsToCST {M} [Inhabited M]
-    (inv : Option (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
+    (inv : List (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
   match inv with
-  | none => pure (.nilInvariants default)
-  | some expr => do
+  | [] => pure (.nilInvariants default)
+  | expr :: rest => do
     let exprCST ← lexprToExpr expr 0
-    pure (.consInvariants default exprCST (.nilInvariants default))
+    let restCST ← invariantsToCST rest
+    pure (.consInvariants default exprCST restCST)
 end
 
 /-- Convert a procedure to CST
@@ -889,9 +920,10 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   -- Build spec elements
   let mut specElts : Array (SpecElt M) := #[]
   -- Add modifies
-  for id in proc.spec.modifies do
-    let modSpec := SpecElt.modifies_spec default ⟨default, id.name⟩
-    specElts := specElts.push modSpec
+  if !proc.spec.modifies.isEmpty then
+    let ids : Ann (Array (Ann String M)) M :=
+      ⟨default, proc.spec.modifies.toArray.map fun id => ⟨default, id.name⟩⟩
+    specElts := specElts.push (SpecElt.modifies_spec default ids)
   -- Add requires
   for (label, check) in proc.spec.preconditions.toList do
     let labelAnn : Ann (Option (Label M)) M :=
@@ -952,9 +984,11 @@ def funcToCST {M} [Inhabited M]
   | some body => do
     -- Add formals to the context.
     modify (·.addScopedBoundVars (reverse? := false) paramNames)
+    -- Convert preconditions
+    let preconds ← precondsToSpecElts func.preconditions
     let bodyExpr ← lexprToExpr body 0
     let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
-    pure (.command_fndef default name typeArgs b r bodyExpr inline?)
+    pure (.command_fndef default name typeArgs b r preconds bodyExpr inline?)
   modify ToCSTContext.popScope
   -- Register function name as free variable.
   modify (·.addGlobalFreeVars #[name.val])

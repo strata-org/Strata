@@ -34,8 +34,9 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   /-- A conditional execution statement. -/
   | ite      (cond : P.Expr)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P := .empty)
   /-- An iterated execution statement. Includes an optional measure (for
-  termination) and invariant. -/
-  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
+  termination) and invariants. -/
+  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariants : List P.Expr)
+             (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
   /-- A semi-structured control flow statement transferring control to the given
   label. The control flow induced by `goto` must not create cycles. **NOTE:**
   This will likely be removed, in favor of an alternative view of imperative
@@ -68,7 +69,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       (∀ s, s ∈ thenb → motive s) →
       (∀ s, s ∈ elseb → motive s) →
       motive (Stmt.ite cond thenb elseb md))
-    (loop_case : ∀ (guard : P.Expr) (measure invariant : Option P.Expr)
+    (loop_case : ∀ (guard : P.Expr) (measure : Option P.Expr) (invariant : List P.Expr)
       (body : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ body → motive s) →
       motive (Stmt.loop guard measure invariant body md))
@@ -94,7 +95,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
 
 ---------------------------------------------------------------------
 
-/-! ### SizeOf -/
+/-! ### sizeOf -/
 
 mutual
 @[simp]
@@ -115,18 +116,6 @@ def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
 
 end
 
-theorem sizeOf_stmt_in_block {s : Imperative.Stmt P C} {b: Imperative.Block P C} (s_in: s ∈ b) : s.sizeOf < b.sizeOf := by
-  induction b with
-  | nil => grind
-  | cons hd tl IH =>
-    rw[List.mem_cons] at s_in; simp only [Block.sizeOf]; grind
-
-instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
-  sizeOf := Stmt.sizeOf
-
-instance (P : PureExpr) : SizeOf (Imperative.Block P C) where
-  sizeOf := Block.sizeOf
-
 ---------------------------------------------------------------------
 
 /--
@@ -143,7 +132,6 @@ def Stmt.hasLabelInside (label : String) (s : Stmt P C) : Bool :=
   |  .block label' bss _ => label = label' || Block.hasLabelInside label bss
   |  .ite _ tss ess _ => Block.hasLabelInside label tss || Block.hasLabelInside label ess
   |  _ => false
-  termination_by (Stmt.sizeOf s)
 
 /--
 Do statements `ss` contain any block labeled `label`?
@@ -152,7 +140,6 @@ def Block.hasLabelInside (label : String) (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => false
   | s :: ss => Stmt.hasLabelInside label s || Block.hasLabelInside label ss
-  termination_by (Block.sizeOf ss)
 end
 
 ---------------------------------------------------------------------
@@ -232,13 +219,11 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
       let bodyVars := HasVarsPure.getVars body
       let formals := decl.inputs.map (·.1)
       bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
-  termination_by (Stmt.sizeOf s)
 
 def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.getVars s ++ Block.getVars srest
-  termination_by (Block.sizeOf ss)
 end
 
 instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
@@ -259,13 +244,11 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .loop _ _ _ body _ => Block.definedVars body
   | .funcDecl decl _ => [decl.name]  -- Function declaration defines the function name
   | _ => []
-  termination_by (Stmt.sizeOf s)
 
 def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.definedVars s ++ Block.definedVars srest
-  termination_by (Block.sizeOf ss)
 end
 
 mutual
@@ -278,13 +261,11 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .ite _ tbss ebss _ => Block.modifiedVars tbss ++ Block.modifiedVars ebss
   | .loop _ _ _ bss _ => Block.modifiedVars bss
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
-  termination_by (Stmt.sizeOf s)
 
 def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.modifiedVars s ++ Block.modifiedVars srest
-  termination_by (Block.sizeOf ss)
 end
 
 mutual
@@ -297,14 +278,12 @@ def Stmt.touchedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .block _ bss _ => Block.touchedVars bss
   | .ite _ tbss ebss _ => Block.touchedVars tbss ++ Block.touchedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
-  termination_by (Stmt.sizeOf s)
 
 @[simp]
 def Block.touchedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.touchedVars s ++ Block.touchedVars srest
-  termination_by (Block.sizeOf ss)
 end
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
@@ -338,12 +317,11 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
 
   | .loop guard measure invariant body md =>
       let body := formatBlock P body
-      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}({invariant})"
+      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}{invariant}"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"
   | .goto label md => f!"{md}goto {label}"
   | .funcDecl _ md => f!"{md}funcDecl <function>"
-  termination_by s.sizeOf
 
 def formatBlock (P : PureExpr) (ss : List (Stmt P C))
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
@@ -352,8 +330,6 @@ def formatBlock (P : PureExpr) (ss : List (Stmt P C))
     | parts =>
       let inner := line ++ (group $ joinSep (parts.map (fun s => formatStmt P s)) (format "\n"))
       f!"\{{nestD inner}\n}"
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals (simp_wf; apply sizeOf_stmt_in_block; simp_all)
 end
 
 

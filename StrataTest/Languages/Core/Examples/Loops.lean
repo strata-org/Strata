@@ -16,7 +16,7 @@ program Core;
 procedure sum(n : int) returns (s : int)
 spec {
   requires (n >= 0);
-  ensures (s == ((n * (n + 1)) div 2));
+  ensures (s == ((n * (n + 1)) / 2));
 }
 {
   var i : int;
@@ -25,7 +25,7 @@ spec {
   while (i < n)
     invariant 0 <= i
     invariant i <= n
-    invariant s == (i * (i + 1)) div 2
+    invariant s == (i * (i + 1)) / 2
   {
     i := (i + 1);
     s := (s + i);
@@ -38,44 +38,128 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: entry_invariant_0
+Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
 sum_requires_0: $__n0 >= 0
 Obligation:
-true && 0 <= $__n0 && true
+true
 
-Label: arbitrary_iter_maintain_invariant_0
+Label: loop_invariant_calls_Int.SafeDiv_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard_0: $__i3 < $__n0
-assume_invariant_0: 0 <= $__i3 && $__i3 <= $__n0 && $__s4 == $__i3 * ($__i3 + 1) div 2
-sum_requires_0: $__n0 >= 0
+sum_requires_0: $__n2 >= 0
 Obligation:
-0 <= $__i3 + 1 && $__i3 + 1 <= $__n0 && $__s4 + ($__i3 + 1) == ($__i3 + 1) * ($__i3 + 1 + 1) div 2
+true
+
+Label: entry_invariant_0_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+sum_requires_0: $__n2 >= 0
+Obligation:
+true
+
+Label: entry_invariant_0_1
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+sum_requires_0: $__n2 >= 0
+Obligation:
+0 <= $__n2
+
+Label: entry_invariant_0_2
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+sum_requires_0: $__n2 >= 0
+Obligation:
+true
+
+Label: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+sum_requires_0: $__n2 >= 0
+Obligation:
+0 <= $__i5 + 1
+
+Label: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+sum_requires_0: $__n2 >= 0
+Obligation:
+$__i5 + 1 <= $__n2
+
+Label: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+sum_requires_0: $__n2 >= 0
+Obligation:
+$__s6 + ($__i5 + 1) == ($__i5 + 1) * ($__i5 + 1 + 1) / 2
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
-sum_requires_0: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
-assume_guard_0: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant_0: if 0 < $__n0 then (0 <= $__i3 && $__i3 <= $__n0 && $__s4 == $__i3 * ($__i3 + 1) div 2) else true
-not_guard_0: if 0 < $__n0 then !($__i5 < $__n0) else true
-invariant_0: if 0 < $__n0 then (0 <= $__i5 && $__i5 <= $__n0 && $__s6 == $__i5 * ($__i5 + 1) div 2) else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+sum_requires_0: $__n2 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then (0 < $__n2) else true
+assume_guard_0: if 0 < $__n2 then ($__i5 < $__n2) else true
+assume_invariant_0_0: if 0 < $__n2 then (0 <= $__i5) else true
+assume_invariant_0_1: if 0 < $__n2 then ($__i5 <= $__n2) else true
+assume_invariant_0_2: if 0 < $__n2 then ($__s6 == $__i5 * ($__i5 + 1) / 2) else true
+not_guard_0: if 0 < $__n2 then !($__i7 < $__n2) else true
+invariant_0_0: if 0 < $__n2 then (0 <= $__i7) else true
+invariant_0_1: if 0 < $__n2 then ($__i7 <= $__n2) else true
+invariant_0_2: if 0 < $__n2 then ($__s8 == $__i7 * ($__i7 + 1) / 2) else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
 Obligation:
-if 0 < $__n0 then $__s6 else 0 == $__n0 * ($__n0 + 1) div 2
+if 0 < $__n2 then $__s8 else 0 == $__n2 * ($__n2 + 1) / 2
 
 ---
 info:
-Obligation: entry_invariant_0
+Obligation: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0
+Obligation: loop_invariant_calls_Int.SafeDiv_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
@@ -120,19 +204,43 @@ spec {
 
 /--
 info:
-Obligation: entry_invariant_0
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_1
+Obligation: entry_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_1
+Obligation: entry_invariant_0_2
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0
+Obligation: entry_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 -/

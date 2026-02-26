@@ -367,4 +367,49 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify eitherHavocPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 9: Polymorphic Precondition with Havoc
+---------------------------------------------------------------------
+
+def optionHavocPgm : Program :=
+#strata
+program Core;
+
+datatype Option (a : Type) { None(), Some(value: a) };
+
+function safeValue<a>(x : Option a) : a
+  requires Option..isSome(x);
+{ Option..value(x) }
+
+procedure TestOptionHavoc() returns ()
+spec {
+  ensures true;
+}
+{
+  var x : Option int;
+  x := Some(42);
+  havoc x;
+  assume Option..isSome(x);
+  var v : int;
+  v := safeValue(x);
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram optionHavocPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: set_v_calls_safeValue_0
+Property: assert
+Result: ✅ pass
+
+Obligation: TestOptionHavoc_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify optionHavocPgm (options := .quiet)
+
 end Strata.PolymorphicDatatypeTest

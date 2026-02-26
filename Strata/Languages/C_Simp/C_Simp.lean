@@ -36,9 +36,9 @@ abbrev Expression : Imperative.PureExpr := {
 }
 
 
-def Command := Imperative.Cmd Expression
+abbrev Command := Imperative.Cmd Expression
 
-def Statement := Imperative.Stmt Expression Command
+abbrev Statement := Imperative.Stmt Expression Command
 
 instance : Imperative.HasVarsImp Expression Command where
   definedVars := Imperative.Cmd.definedVars

@@ -1,5 +1,5 @@
-// Changes in this file are not automatically discovered by the build. 
-// Touch LaurelGrammar.lean to trigger the build
+// Changes in this file are not automatically tracked by the build system.
+// Modify LaurelGrammar.lean (e.g. update its comment) to trigger a rebuild after changing this file.
 dialect Laurel;
 
 // Types
@@ -56,6 +56,7 @@ op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " >= " rhs;
 op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
 op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " || " rhs;
 op implies (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(15), rightassoc] lhs " ==> " rhs;
+op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ++ " rhs;
 
 // Unary operators
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
@@ -94,8 +95,16 @@ category Field;
 op mutableField (name: Ident, fieldType: LaurelType): Field => "var " name ":" fieldType;
 op immutableField (name: Ident, fieldType: LaurelType): Field => name ":" fieldType;
 
+// Type checking and casting
+op isType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " is " typeName;
+op asType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " as " typeName;
+
+// Composite types with optional extends
+category OptionalExtends;
+op optionalExtends(parents: CommaSepBy Ident): OptionalExtends => "extends " parents;
+
 category Composite;
-op composite (name: Ident, fields: Seq Field): Composite => "composite " name "{" fields "}";
+op composite (name: Ident, extending: Option OptionalExtends, fields: Seq Field): Composite => "composite " name extending "{" fields "}";
 
 // Procedures
 category OptionalReturnType;

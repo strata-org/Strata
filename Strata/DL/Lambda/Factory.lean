@@ -56,12 +56,8 @@ abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
 abbrev LTySignature := Signature IDMeta LTy
 
-def inline_attr : String := "inline"
-def inline_if_constr_attr : String := "inline_if_constr"
-def eval_if_constr_attr : String := "eval_if_constr"
-
 -- Re-export Func from Util for backward compatibility
-open Strata.DL.Util (Func TyIdentifier)
+open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
 
 /--
 A Lambda factory function - instantiation of `Func` for Lambda expressions.
@@ -76,11 +72,11 @@ Helper constructor for LFunc to maintain backward compatibility.
 -/
 def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
     (isConstr : Bool := false) (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
-    (body : Option (LExpr T.mono) := .none) (attr : Array String := #[])
+    (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])
     (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
-    (axioms : List (LExpr T.mono) := []) : LFunc T :=
-  Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms
-
+    (axioms : List (LExpr T.mono) := [])
+    (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := []) : LFunc T :=
+  Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms preconditions
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -131,8 +127,9 @@ def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
 
 def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
   { f with
-    body := f.body.map LExpr.eraseTypes
-    axioms := f.axioms.map LExpr.eraseTypes
+    body := f.body.map LExpr.eraseTypes,
+    axioms := f.axioms.map LExpr.eraseTypes,
+    preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes }
   }
 
 /--

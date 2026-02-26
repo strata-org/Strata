@@ -32,7 +32,11 @@ func Int.Add :  ((x : int) (y : int)) → int;
 func Int.Sub :  ((x : int) (y : int)) → int;
 func Int.Mul :  ((x : int) (y : int)) → int;
 func Int.Div :  ((x : int) (y : int)) → int;
+func Int.SafeDiv :  ((x : int) (y : int)) → int
+  requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
 func Int.Mod :  ((x : int) (y : int)) → int;
+func Int.SafeMod :  ((x : int) (y : int)) → int
+  requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
 func Int.DivT :  ((x : int) (y : int)) → int;
 func Int.ModT :  ((x : int) (y : int)) → int;
 func Int.Neg :  ((x : int)) → int;
@@ -71,6 +75,7 @@ func Re.Inter :  ((x : regex) (y : regex)) → regex;
 func Re.Comp :  ((x : regex)) → regex;
 func Re.None :  () → regex;
 func old : ∀[a]. ((x : a)) → a;
+func Map.const : ∀[k, v]. ((d : v)) → (Map k v);
 func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
 func Triggers.empty :  () → Triggers;
