@@ -166,7 +166,7 @@ def isPassAndReachable (o : VCOutcome) : Bool :=
   | .sat _, .unsat => true
   | _, _ => false
 
-def isPassIfReachable (o : VCOutcome) : Bool :=
+def isPassReachabilityUnknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unknown, .unsat => true
   | _, _ => false
@@ -187,23 +187,23 @@ def isUnreachable (o : VCOutcome) : Bool :=
   | _, _ => false
 
 def isSatisfiable (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty with
+  | .sat _ => true
+  | _ => false
+
+def isSatisfiableValidityUnknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .sat _, .unknown => true
   | _, _ => false
 
-def isAlwaysFalseIfReachable (o : VCOutcome) : Bool :=
+def isAlwaysFalseReachabilityUnknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unsat, .unknown => true
   | _, _ => false
 
-def isReachableAndCanBeFalse (o : VCOutcome) : Bool :=
+def isCanBeFalseAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unknown, .sat _ => true
-  | _, _ => false
-
-def isAlwaysTrueIfReachable (o : VCOutcome) : Bool :=
-  match o.satisfiabilityProperty, o.validityProperty with
-  | .unknown, .unsat => true
   | _, _ => false
 
 def isUnknown (o : VCOutcome) : Bool :=
@@ -213,14 +213,17 @@ def isUnknown (o : VCOutcome) : Bool :=
 
 -- Backward compatibility aliases
 def isRefuted := isRefutedAndReachable
-def isRefutedIfReachable := isAlwaysFalseIfReachable
+def isRefutedIfReachable := isAlwaysFalseReachabilityUnknown
 def isIndecisive := isIndecisiveAndReachable
-def isAlwaysTrueIfReachable := isPassIfReachable
+def isAlwaysTrueIfReachable := isPassReachabilityUnknown
+def isPassIfReachable := isPassReachabilityUnknown
+def isAlwaysFalseIfReachable := isAlwaysFalseReachabilityUnknown
+def isReachableAndCanBeFalse := isCanBeFalseAndReachable
 
 -- Cross-cutting predicates for filtering by properties
 
 def isAlwaysFalse (o : VCOutcome) : Bool :=
-  o.isRefutedAndReachable || o.isAlwaysFalseIfReachable
+  o.isRefutedAndReachable || o.isAlwaysFalseReachabilityUnknown
 
 def isAlwaysTrue (o : VCOutcome) : Bool :=
   o.isPass
@@ -233,10 +236,10 @@ def label (o : VCOutcome) : String :=
   else if o.isRefuted then "refuted"
   else if o.isIndecisive then "indecisive"
   else if o.isUnreachable then "unreachable"
-  else if o.isSatisfiable then "satisfiable"
-  else if o.isRefutedIfReachable then "refuted if reachable"
-  else if o.isReachableAndCanBeFalse then "reachable and can be false"
-  else if o.isPassIfReachable then "pass if reachable"
+  else if o.isSatisfiableValidityUnknown then "satisfiable"
+  else if o.isAlwaysFalseReachabilityUnknown then "refuted if reachable"
+  else if o.isCanBeFalseAndReachable then "reachable and can be false"
+  else if o.isPassReachabilityUnknown then "pass if reachable"
   else "unknown"
 
 def emoji (o : VCOutcome) : String :=
@@ -244,10 +247,10 @@ def emoji (o : VCOutcome) : String :=
   else if o.isRefuted then "❌"
   else if o.isIndecisive then "🔶"
   else if o.isUnreachable then "⛔"
-  else if o.isSatisfiable then "➕"
-  else if o.isRefutedIfReachable then "✖️"
-  else if o.isReachableAndCanBeFalse then "➖"
-  else if o.isPassIfReachable then "✔️"
+  else if o.isSatisfiableValidityUnknown then "➕"
+  else if o.isAlwaysFalseReachabilityUnknown then "✖️"
+  else if o.isCanBeFalseAndReachable then "➖"
+  else if o.isPassReachabilityUnknown then "✔️"
   else "❓"
 
 end VCOutcome
