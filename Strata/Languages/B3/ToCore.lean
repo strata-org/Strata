@@ -313,10 +313,16 @@ def convertProgram : B3AST.Program SourceRange → ConvResult (List Core.Stateme
       | .axiom _ _vars expr =>
         let exprResult := convertExpr ctx expr
         { value := [Core.Statement.assume "axiom" exprResult.value .empty], errors := exprResult.errors }
-      | .procedure _ name _params _specs body =>
+      | .procedure _ name params specs body =>
+        let paramErrors := if params.val.isEmpty then []
+          else [ConversionError.unsupportedFeature "procedure parameters" s!"procedure {name.val}"]
+        let specErrors := if specs.val.isEmpty then []
+          else [ConversionError.unsupportedFeature "procedure specifications" s!"procedure {name.val}"]
         match body.val with
-        | some bodyStmt => convertStmt ctx bodyStmt name.val
-        | none => .ok []
+        | some bodyStmt =>
+          let result := convertStmt ctx bodyStmt name.val
+          { result with errors := paramErrors ++ specErrors ++ result.errors }
+        | none => { value := [], errors := paramErrors ++ specErrors }
       | _ => .withError [] (.unsupportedFeature "unknown declaration type" "program")
     { value := results.flatMap (·.value), errors := results.flatMap (·.errors) }
 
