@@ -257,7 +257,7 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) :
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
             | none => .fvar () xid none
-            | some xty => .fvar () xid xty
+            | some xty => .fvar () xid (some xty)
   (xe, E)
 
 /--
