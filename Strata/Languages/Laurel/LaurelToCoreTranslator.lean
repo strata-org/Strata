@@ -318,13 +318,13 @@ def translateProcedure (fieldNames : List Identifier) (funcNames : FunctionNames
   }
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type))
-  -- Translate precondition if it's not just LiteralBool true
+  -- Translate preconditions
   let preconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
-    match proc.precondition with
-    | ⟨ .LiteralBool true, _ ⟩ => []
-    | precond =>
+    let (_, result) := proc.preconditions.foldl (fun (i, acc) precond =>
+        let label := if proc.preconditions.length == 1 then "requires" else s!"requires_{i}"
         let check : Core.Procedure.Check := { expr := translateExpr fieldNames initEnv precond, md := precond.md }
-        [("requires", check)]
+        (i + 1, acc ++ [(label, check)])) (0, [])
+    result
   -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
@@ -433,7 +433,7 @@ def canBeBoogieFunction (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
-    (match proc.precondition.val with | .LiteralBool true => true | _ => false) &&
+    proc.preconditions.isEmpty &&
     proc.outputs.length == 1
   | _ => false
 

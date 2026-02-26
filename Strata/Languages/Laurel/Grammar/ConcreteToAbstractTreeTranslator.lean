@@ -126,7 +126,7 @@ instance : Inhabited Procedure where
     name := ""
     inputs := []
     outputs := []
-    precondition := mkStmtExprMdEmpty <| .LiteralBool true
+    preconditions := []
     determinism := .deterministic none
     decreases := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
@@ -353,12 +353,14 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | .option _ none => pure []
         | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
-    -- Parse precondition (requires clause)
-    let precondition ← match requiresArg with
+    -- Parse preconditions (requires clause)
+    let preconditions ← match requiresArg with
       | .option _ (some (.op requiresOp)) => match requiresOp.name, requiresOp.args with
-        | q`Laurel.optionalRequires, #[exprArg] => translateStmtExpr exprArg
+        | q`Laurel.optionalRequires, #[exprArg] => do
+          let precond ← translateStmtExpr exprArg
+          pure [precond]
         | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
-      | .option _ none => pure (mkStmtExprMdEmpty <| .LiteralBool true)
+      | .option _ none => pure []
       | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"
     -- Parse postconditions (ensures clauses - zero or more)
     let postconditions ← translateEnsuresClauses ensuresArg
@@ -380,7 +382,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       name := name
       inputs := parameters
       outputs := returnParameters
-      precondition := precondition
+      preconditions := preconditions
       determinism := .deterministic none
       decreases := none
       body := procBody
