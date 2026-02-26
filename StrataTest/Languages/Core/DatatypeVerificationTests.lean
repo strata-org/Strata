@@ -25,50 +25,50 @@ open Imperative
 /-- Simple Option datatype: Option a = None | Some(OptionVal: a)
     Testers: isNone, isSome
     Destructors: OptionVal -/
-def optionDatatype : LDatatype Visibility :=
+def optionDatatype : LDatatype Unit :=
   { name := "Option"
     typeArgs := ["a"]
     constrs := [
-      { name := ⟨"None", .unres⟩, args := [], testerName := "isNone" },
-      { name := ⟨"Some", .unres⟩, args := [(⟨"OptionVal", .unres⟩, .ftvar "a")], testerName := "isSome" }
+      { name := ⟨"None", ()⟩, args := [], testerName := "isNone" },
+      { name := ⟨"Some", ()⟩, args := [(⟨"OptionVal", ()⟩, .ftvar "a")], testerName := "isSome" }
     ]
     constrs_ne := by decide }
 
 /-- Recursive List datatype: List a = Nil | Cons(hd: a, tl: List a)
     Testers: isNil, isCons
     Destructors: hd, tl -/
-def listDatatype : LDatatype Visibility :=
+def listDatatype : LDatatype Unit :=
   { name := "List"
     typeArgs := ["a"]
     constrs := [
-      { name := ⟨"Nil", .unres⟩, args := [], testerName := "isNil" },
-      { name := ⟨"Cons", .unres⟩, args := [
-          (⟨"hd", .unres⟩, .ftvar "a"),
-          (⟨"tl", .unres⟩, .tcons "List" [.ftvar "a"])
+      { name := ⟨"Nil", ()⟩, args := [], testerName := "isNil" },
+      { name := ⟨"Cons", ()⟩, args := [
+          (⟨"hd", ()⟩, .ftvar "a"),
+          (⟨"tl", ()⟩, .tcons "List" [.ftvar "a"])
         ], testerName := "isCons" }
     ]
     constrs_ne := by decide }
 
 /-- Hidden datatype that is never directly used in the program -/
-def hiddenDatatype : LDatatype Visibility :=
+def hiddenDatatype : LDatatype Unit :=
   { name := "Hidden"
     typeArgs := ["a"]
     constrs := [
-      { name := ⟨"HiddenValue", .unres⟩, args := [
-          (⟨"hiddenField", .unres⟩, .ftvar "a")
+      { name := ⟨"HiddenValue", ()⟩, args := [
+          (⟨"hiddenField", ()⟩, .ftvar "a")
         ], testerName := "isHiddenValue" }
     ]
     constrs_ne := by decide }
 
 /-- Container datatype that references Hidden but we never use Hidden directly -/
-def containerDatatype : LDatatype Visibility :=
+def containerDatatype : LDatatype Unit :=
   { name := "Container"
     typeArgs := ["a"]
     constrs := [
-      { name := ⟨"Empty", .unres⟩, args := [], testerName := "isEmpty" },
-      { name := ⟨"WithHidden", .unres⟩, args := [
-          (⟨"hiddenPart", .unres⟩, .tcons "Hidden" [.ftvar "a"]),
-          (⟨"visiblePart", .unres⟩, .ftvar "a")
+      { name := ⟨"Empty", ()⟩, args := [], testerName := "isEmpty" },
+      { name := ⟨"WithHidden", ()⟩, args := [
+          (⟨"hiddenPart", ()⟩, .tcons "Hidden" [.ftvar "a"]),
+          (⟨"visiblePart", ()⟩, .ftvar "a")
         ], testerName := "isWithHidden" }
     ]
     constrs_ne := by decide }
@@ -79,13 +79,13 @@ def containerDatatype : LDatatype Visibility :=
 Create a STrata Core program with datatypes and a procedure.
 -/
 def mkProgramWithDatatypes
-  (datatypes : List (LDatatype Visibility))
+  (datatypes : List (LDatatype Unit))
   (procName : String)
   (body : List Statement)
   : Except Format Program := do
   let proc : Procedure := {
     header := {
-      name := CoreIdent.unres procName
+      name := ⟨procName, ()⟩
       typeArgs := []
       inputs := []
       outputs := []
@@ -138,13 +138,13 @@ procedure testConstructors () {
 def test1_constructorApplication : IO String := do
   let statements : List Statement := [
     -- Create None value
-    Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
+    Statement.init (⟨"x", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
+      (some (LExpr.op () (⟨"None", ()⟩) (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Create Some value
-    Statement.init (CoreIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (⟨"y", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+        (LExpr.op () (⟨"Some", ()⟩)
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 42))),
 
@@ -176,29 +176,29 @@ procedure testTesters () {
 def test2_testerFunctions : IO String := do
   let statements : List Statement := [
     -- Create None value
-    Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
+    Statement.init (⟨"x", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
+      (some (LExpr.op () (⟨"None", ()⟩) (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert that x is None
     Statement.assert "x_is_none"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isNone")
+        (LExpr.op () (⟨"isNone", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (⟨"x", ()⟩) (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Create Some value
-    Statement.init (CoreIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (⟨"y", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+        (LExpr.op () (⟨"Some", ()⟩)
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 42))),
 
     -- Assert that y is Some
     Statement.assert "y_is_some"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isSome")
+        (LExpr.op () (⟨"isSome", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "y") (.some (LMonoTy.tcons "Option" [.int]))))
+        (LExpr.fvar () (⟨"y", ()⟩) (.some (LMonoTy.tcons "Option" [.int]))))
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testTesters" statements with
@@ -229,45 +229,45 @@ procedure testDestructors () {
 def test3_destructorFunctions : IO String := do
   let statements : List Statement := [
     -- Create Some(42)
-    Statement.init (CoreIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (⟨"opt", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+        (LExpr.op () (⟨"Some", ()⟩)
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 42))),
 
     -- Extract value from Some
-    Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
+    Statement.init (⟨"value", ()⟩) (.forAll [] LMonoTy.int)
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
+        (LExpr.op () (⟨"Option..OptionVal", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
+        (LExpr.fvar () (⟨"opt", ()⟩) (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert that val == 42
     Statement.assert "val_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
+        (LExpr.fvar () (⟨"value", ()⟩) (.some .int))
         (LExpr.intConst () 42)),
 
     -- Create Cons(1, Nil)
-    Statement.init (CoreIdent.unres "list") (.forAll [] (LMonoTy.tcons "List" [.int]))
+    Statement.init (⟨"list", ()⟩) (.forAll [] (LMonoTy.tcons "List" [.int]))
       (some (LExpr.app ()
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Cons")
+          (LExpr.op () (⟨"Cons", ()⟩)
             (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) (LMonoTy.tcons "List" [.int])))))
           (LExpr.intConst () 1))
-        (LExpr.op () (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int]))))),
+        (LExpr.op () (⟨"Nil", ()⟩) (.some (LMonoTy.tcons "List" [.int]))))),
 
     -- Extract head
-    Statement.init (CoreIdent.unres "head") (.forAll [] LMonoTy.int)
+    Statement.init (⟨"head", ()⟩) (.forAll [] LMonoTy.int)
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "List..hd")
+        (LExpr.op () (⟨"List..hd", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int]))))),
+        (LExpr.fvar () (⟨"list", ()⟩) (.some (LMonoTy.tcons "List" [.int]))))),
 
     -- Assert head == 1
     Statement.assert "head_is_1"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "head") (.some .int))
+        (LExpr.fvar () (⟨"head", ()⟩) (.some .int))
         (LExpr.intConst () 1))
   ]
 
@@ -297,49 +297,49 @@ procedure testNested () {
 def test4_nestedDatatypes : IO String := do
   let statements : List Statement := [
     -- Create a List of Option: Cons(Some(42), Nil)
-    Statement.init (CoreIdent.unres "listOfOpt")
+    Statement.init (⟨"listOfOpt", ()⟩)
       (.forAll [] (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))
       (some (LExpr.app ()
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Cons")
+          (LExpr.op () (⟨"Cons", ()⟩)
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int])
               (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])
                 (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))))
           (LExpr.app ()
-            (LExpr.op () (CoreIdent.unres "Some")
+            (LExpr.op () (⟨"Some", ()⟩)
               (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
             (LExpr.intConst () 42)))
-        (LExpr.op () (CoreIdent.unres "Nil")
+        (LExpr.op () (⟨"Nil", ()⟩)
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))))),
 
     -- Assert that the list is Cons
     Statement.assert "list_is_cons"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isCons")
+        (LExpr.op () (⟨"isCons", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "listOfOpt")
+        (LExpr.fvar () (⟨"listOfOpt", ()⟩)
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
 
     -- Extract the head of the list (which is an Option)
-    Statement.init (CoreIdent.unres "headOpt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (⟨"headOpt", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "List..hd")
+        (LExpr.op () (⟨"List..hd", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.fvar () (CoreIdent.unres "listOfOpt")
+        (LExpr.fvar () (⟨"listOfOpt", ()⟩)
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))))),
 
     -- Extract the value from the Option
-    Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
+    Statement.init (⟨"value", ()⟩) (.forAll [] LMonoTy.int)
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
+        (LExpr.op () (⟨"Option..OptionVal", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "headOpt")
+        (LExpr.fvar () (⟨"headOpt", ()⟩)
           (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert that the extracted value is 42
     Statement.assert "value_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
+        (LExpr.fvar () (⟨"value", ()⟩) (.some .int))
         (LExpr.intConst () 42))
   ]
 
@@ -368,26 +368,26 @@ procedure testTesterHavoc () {
 def test5_testerWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value (non-deterministic)
-    Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int])))),
-    Statement.havoc (CoreIdent.unres "x"),
+    Statement.init (⟨"x", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
+      (some (LExpr.op () (⟨"None", ()⟩) (.some (LMonoTy.tcons "Option" [.int])))),
+    Statement.havoc (⟨"x", ()⟩),
 
     -- Assume x is Some
     Statement.assume "x_is_some"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isSome")
+        (LExpr.op () (⟨"isSome", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (⟨"x", ()⟩) (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert x is not None (should follow from assumption)
     Statement.assert "x_not_none"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+        (LExpr.op () (⟨"Bool.Not", ()⟩)
           (.some (LMonoTy.arrow .bool .bool)))
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isNone")
+          (LExpr.op () (⟨"isNone", ()⟩)
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))))
+          (LExpr.fvar () (⟨"x", ()⟩) (.some (LMonoTy.tcons "Option" [.int])))))
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testTesterHavoc" statements with
@@ -415,33 +415,33 @@ procedure testDestructorHavoc () {
 def test6_destructorWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value
-    Statement.init (CoreIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (⟨"opt", ()⟩) (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Some")
+        (LExpr.op () (⟨"Some", ()⟩)
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 0))),
-    Statement.havoc (CoreIdent.unres "opt"),
+    Statement.havoc (⟨"opt", ()⟩),
 
     -- Assume opt is Some(42)
     Statement.assume "opt_is_some_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))
+        (LExpr.fvar () (⟨"opt", ()⟩) (.some (LMonoTy.tcons "Option" [.int])))
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Some")
+          (LExpr.op () (⟨"Some", ()⟩)
             (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
           (LExpr.intConst () 42))),
 
     -- Extract value
-    Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
+    Statement.init (⟨"value", ()⟩) (.forAll [] LMonoTy.int)
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Option..OptionVal")
+        (LExpr.op () (⟨"Option..OptionVal", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int]))))),
+        (LExpr.fvar () (⟨"opt", ()⟩) (.some (LMonoTy.tcons "Option" [.int]))))),
 
     -- Assert val == 42
     Statement.assert "val_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
+        (LExpr.fvar () (⟨"value", ()⟩) (.some .int))
         (LExpr.intConst () 42))
   ]
 
@@ -469,26 +469,26 @@ procedure testListHavoc () {
 def test7_listWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc a list
-    Statement.init (CoreIdent.unres "xs") (.forAll [] (LMonoTy.tcons "List" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int])))),
-    Statement.havoc (CoreIdent.unres "xs"),
+    Statement.init (⟨"xs", ()⟩) (.forAll [] (LMonoTy.tcons "List" [.int]))
+      (some (LExpr.op () (⟨"Nil", ()⟩) (.some (LMonoTy.tcons "List" [.int])))),
+    Statement.havoc (⟨"xs", ()⟩),
 
     -- Assume xs is Cons
     Statement.assume "xs_is_cons"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isCons")
+        (LExpr.op () (⟨"isCons", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))),
+        (LExpr.fvar () (⟨"xs", ()⟩) (.some (LMonoTy.tcons "List" [.int])))),
 
     -- Assert xs is not Nil
     Statement.assert "xs_not_nil"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+        (LExpr.op () (⟨"Bool.Not", ()⟩)
           (.some (LMonoTy.arrow .bool .bool)))
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isNil")
+          (LExpr.op () (⟨"isNil", ()⟩)
             (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))))
+          (LExpr.fvar () (⟨"xs", ()⟩) (.some (LMonoTy.tcons "List" [.int])))))
   ]
 
   match mkProgramWithDatatypes [listDatatype] "testListHavoc" statements with
@@ -520,42 +520,42 @@ procedure testHiddenTypeRecursion () {
 def test8_hiddenTypeRecursion : IO String := do
   let statements : List Statement := [
     -- Initialize with Empty Container - note we NEVER use Hidden directly
-    Statement.init (CoreIdent.unres "container")
+    Statement.init (⟨"container", ()⟩)
       (.forAll [] (LMonoTy.tcons "Container" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int])))),
+      (some (LExpr.op () (⟨"Empty", ()⟩) (.some (LMonoTy.tcons "Container" [.int])))),
 
     -- Havoc the container to make it non-deterministic
-    Statement.havoc (CoreIdent.unres "container"),
+    Statement.havoc (⟨"container", ()⟩),
 
     -- Assume container is not Empty (so it must be WithHidden)
     Statement.assume "container_not_empty"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+        (LExpr.op () (⟨"Bool.Not", ()⟩)
           (.some (LMonoTy.arrow .bool .bool)))
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isEmpty")
+          (LExpr.op () (⟨"isEmpty", ()⟩)
             (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
+          (LExpr.fvar () (⟨"container", ()⟩) (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Extract the visible part
-    Statement.init (CoreIdent.unres "Container..visiblePart") (.forAll [] LMonoTy.int)
+    Statement.init (⟨"Container..visiblePart", ()⟩) (.forAll [] LMonoTy.int)
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Container..visiblePart")
+        (LExpr.op () (⟨"Container..visiblePart", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
+        (LExpr.fvar () (⟨"container", ()⟩) (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Assume the visible part has a specific value
     Statement.assume "visible_part_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "Container..visiblePart") (.some .int))
+        (LExpr.fvar () (⟨"Container..visiblePart", ()⟩) (.some .int))
         (LExpr.intConst () 42)),
 
     -- Assert that container is WithHidden
     Statement.assert "container_is_with_hidden"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isWithHidden")
+        (LExpr.op () (⟨"isWithHidden", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))
+        (LExpr.fvar () (⟨"container", ()⟩) (.some (LMonoTy.tcons "Container" [.int]))))
   ]
 
   match mkProgramWithDatatypes [hiddenDatatype, containerDatatype] "testHiddenTypeRecursion" statements with
@@ -617,26 +617,26 @@ info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
 /-! ## Test 9: Mutually Recursive Datatypes with Havoc -/
 
 /-- RoseTree a = Node a (Forest a) -/
-def roseTreeDatatype : LDatatype Visibility :=
+def roseTreeDatatype : LDatatype Unit :=
   { name := "RoseTree"
     typeArgs := ["a"]
     constrs := [
-      { name := ⟨"Node", .unres⟩, args := [
-          (⟨"nodeVal", .unres⟩, .ftvar "a"),
-          (⟨"children", .unres⟩, .tcons "Forest" [.ftvar "a"])
+      { name := ⟨"Node", ()⟩, args := [
+          (⟨"nodeVal", ()⟩, .ftvar "a"),
+          (⟨"children", ()⟩, .tcons "Forest" [.ftvar "a"])
         ], testerName := "isNode" }
     ]
     constrs_ne := by decide }
 
 /-- Forest a = FNil | FCons (RoseTree a) (Forest a) -/
-def forestDatatype : LDatatype Visibility :=
+def forestDatatype : LDatatype Unit :=
   { name := "Forest"
     typeArgs := ["a"]
     constrs := [
-      { name := ⟨"FNil", .unres⟩, args := [], testerName := "isFNil" },
-      { name := ⟨"FCons", .unres⟩, args := [
-          (⟨"head", .unres⟩, .tcons "RoseTree" [.ftvar "a"]),
-          (⟨"tail", .unres⟩, .tcons "Forest" [.ftvar "a"])
+      { name := ⟨"FNil", ()⟩, args := [], testerName := "isFNil" },
+      { name := ⟨"FCons", ()⟩, args := [
+          (⟨"head", ()⟩, .tcons "RoseTree" [.ftvar "a"]),
+          (⟨"tail", ()⟩, .tcons "Forest" [.ftvar "a"])
         ], testerName := "isFCons" }
     ]
     constrs_ne := by decide }
@@ -645,13 +645,13 @@ def forestDatatype : LDatatype Visibility :=
 Create a Core program with a mutual block of datatypes.
 -/
 def mkProgramWithMutualDatatypes
-  (mutualBlock : List (LDatatype Visibility))
+  (mutualBlock : List (LDatatype Unit))
   (procName : String)
   (body : List Statement)
   : Except Format Program := do
   let proc : Procedure := {
     header := {
-      name := CoreIdent.unres procName
+      name := ⟨procName, ()⟩
       typeArgs := []
       inputs := []
       outputs := []
@@ -690,60 +690,60 @@ procedure testMutualRecursive () {
 def test9_mutualRecursiveWithHavoc : IO String := do
   let statements : List Statement := [
     -- Create a tree: Node 1 FNil
-    Statement.init (CoreIdent.unres "tree") (.forAll [] (LMonoTy.tcons "RoseTree" [.int]))
+    Statement.init (⟨"tree", ()⟩) (.forAll [] (LMonoTy.tcons "RoseTree" [.int]))
       (some (LExpr.app ()
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "Node")
+          (LExpr.op () (⟨"Node", ()⟩)
             (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) (LMonoTy.tcons "RoseTree" [.int])))))
           (LExpr.intConst () 1))
-        (LExpr.op () (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int]))))),
+        (LExpr.op () (⟨"FNil", ()⟩) (.some (LMonoTy.tcons "Forest" [.int]))))),
 
     -- Havoc the tree
-    Statement.havoc (CoreIdent.unres "tree"),
+    Statement.havoc (⟨"tree", ()⟩),
 
     -- Extract nodeVal
-    Statement.init (CoreIdent.unres "val") (.forAll [] LMonoTy.int)
+    Statement.init (⟨"val", ()⟩) (.forAll [] LMonoTy.int)
       (some (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "RoseTree..nodeVal")
+        (LExpr.op () (⟨"RoseTree..nodeVal", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .int)))
-        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int]))))),
+        (LExpr.fvar () (⟨"tree", ()⟩) (.some (LMonoTy.tcons "RoseTree" [.int]))))),
 
     -- Assume val == 42
     Statement.assume "val_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (CoreIdent.unres "val") (.some .int))
+        (LExpr.fvar () (⟨"val", ()⟩) (.some .int))
         (LExpr.intConst () 42)),
 
     -- Assert tree is a Node (always true for RoseTree)
     Statement.assert "tree_is_node"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isNode")
+        (LExpr.op () (⟨"isNode", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
+        (LExpr.fvar () (⟨"tree", ()⟩) (.some (LMonoTy.tcons "RoseTree" [.int])))),
 
     -- Create a forest: FNil
-    Statement.init (CoreIdent.unres "forest") (.forAll [] (LMonoTy.tcons "Forest" [.int]))
-      (some (LExpr.op () (CoreIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int])))),
+    Statement.init (⟨"forest", ()⟩) (.forAll [] (LMonoTy.tcons "Forest" [.int]))
+      (some (LExpr.op () (⟨"FNil", ()⟩) (.some (LMonoTy.tcons "Forest" [.int])))),
 
     -- Havoc the forest
-    Statement.havoc (CoreIdent.unres "forest"),
+    Statement.havoc (⟨"forest", ()⟩),
 
     -- Assume forest is FCons
     Statement.assume "forest_is_fcons"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "isFCons")
+        (LExpr.op () (⟨"isFCons", ()⟩)
           (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
-        (LExpr.fvar () (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))),
+        (LExpr.fvar () (⟨"forest", ()⟩) (.some (LMonoTy.tcons "Forest" [.int])))),
 
     -- Assert forest is not FNil
     Statement.assert "forest_not_fnil"
       (LExpr.app ()
-        (LExpr.op () (CoreIdent.unres "Bool.Not")
+        (LExpr.op () (⟨"Bool.Not", ()⟩)
           (.some (LMonoTy.arrow .bool .bool)))
         (LExpr.app ()
-          (LExpr.op () (CoreIdent.unres "isFNil")
+          (LExpr.op () (⟨"isFNil", ()⟩)
             (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
-          (LExpr.fvar () (CoreIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))))
+          (LExpr.fvar () (⟨"forest", ()⟩) (.some (LMonoTy.tcons "Forest" [.int])))))
   ]
 
   match mkProgramWithMutualDatatypes [roseTreeDatatype, forestDatatype] "testMutualRecursive" statements with
@@ -761,11 +761,11 @@ info: "Test 9 - Mutual Recursive with Havoc: PASSED\n  Verified 2 obligation(s)\
 /-! ## Test 10: Duplicate Datatype Name in Mutual Block (Typecheck Failure) -/
 
 /-- Duplicate of optionDatatype to trigger validation error -/
-def optionDatatype2 : LDatatype Visibility :=
+def optionDatatype2 : LDatatype Unit :=
   { name := "Option"  -- Same name as optionDatatype!
     typeArgs := ["a"]
     constrs := [
-      { name := ⟨"Nothing", .unres⟩, args := [], testerName := "isNothing" }
+      { name := ⟨"Nothing", ()⟩, args := [], testerName := "isNothing" }
     ]
     constrs_ne := by decide }
 

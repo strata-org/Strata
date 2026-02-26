@@ -357,11 +357,11 @@ end
 
 mutual
 def Block.renameLhs (b : Block)
-    (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
+    (fr: CoreIdent) (to: CoreIdent) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
 
 def Statement.renameLhs (s : Core.Statement)
-    (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
+    (fr: CoreIdent) (to: CoreIdent)
     : Statement :=
   match s with
   | .init lhs ty rhs metadata =>

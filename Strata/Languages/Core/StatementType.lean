@@ -9,7 +9,6 @@
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.CmdType
 import Strata.Languages.Core.Program
-import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.FunctionType
 import Strata.DL.Imperative.CmdType
 import Strata.Util.Tactics
@@ -28,8 +27,8 @@ Type checker for Strata Core commands.
 Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.
 -/
-def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (c : Command) :
-  Except DiagnosticModel (Command × (TEnv Visibility)) := do
+def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : Command) :
+  Except DiagnosticModel (Command × (TEnv Unit)) := do
   match c with
   | .cmd c =>
     -- Any errors in `Imperative.Cmd.typeCheck` already include source
@@ -77,12 +76,12 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program)
         -- Add source location to error messages if not already present.
         .error <| e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
 
-def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
+def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (op : Option Procedure) (ss : List Statement) :
+  Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
   go C Env ss []
 where
-  go (C : LContext CoreLParams) (Env : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
-    Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
+  go (C : LContext CoreLParams) (Env : TEnv Unit) (ss : List Statement) (acc : List Statement) :
+    Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
     let errorWithSourceLoc := fun (e : DiagnosticModel) md =>
       e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
     match ss with
@@ -176,8 +175,8 @@ where
             .error (errorWithSourceLoc e md)
 
       go C Env srest (s' :: acc)
-  goBlock (C : LContext CoreLParams) (Env : TEnv Visibility) (bss : Imperative.Block Core.Expression Core.Command) (acc : List Statement) :
-    Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) := do
+  goBlock (C : LContext CoreLParams) (Env : TEnv Unit) (bss : Imperative.Block Core.Expression Core.Command) (acc : List Statement) :
+    Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) := do
     let Env := Env.pushEmptyContext
     let (ss', Env, C) ← go C Env bss acc
     .ok (ss', Env.popContext, C)

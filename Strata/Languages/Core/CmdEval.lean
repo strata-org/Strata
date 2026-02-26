@@ -6,7 +6,6 @@
 
 
 
-import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.Expressions
 import Strata.Languages.Core.Env
 import Strata.DL.Imperative.EvalContext
@@ -47,8 +46,9 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
   | none => none
 
 def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
-  let substMap := oldVarSubst E.substMap E
-  let e' := OldExpressions.substsOldExpr substMap e
+  -- Apply "old g" substitutions from substMap (only entries for "old ..." variables)
+  let oldSubst := E.substMap.filter (fun (id, _) => id.name.startsWith "old ")
+  let e := if oldSubst.isEmpty then e else Lambda.LExpr.substFvars e oldSubst
   match c with
   | .init _ _ eOpt _ =>
     -- The type checker only allows free variables to appear in `init`
@@ -59,9 +59,9 @@ def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression
     | some _ =>
       let freeVars := e.freeVars
       let E' := E.insertFreeVarsInOldestScope freeVars
-      (e', E')
-    | none => (e', E)
-  | _ => (e', E)
+      (e, E')
+    | none => (e, E)
+  | _ => (e, E)
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=
   if h : ty.isMonoType then

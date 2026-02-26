@@ -32,38 +32,38 @@ open Std
 /-! ## Test Datatypes -/
 
 /-- Option α = None | Some α -/
-def optionDatatype : LDatatype Visibility :=
+def optionDatatype : LDatatype Unit :=
   { name := "TestOption"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"None", .unres⟩, args := [], testerName := "TestOption..isNone" },
-      { name := ⟨"Some", .unres⟩, args := [(⟨"val", .unres⟩, .ftvar "α")], testerName := "TestOption..isSome"  }
+      { name := ⟨"None", ()⟩, args := [], testerName := "TestOption..isNone" },
+      { name := ⟨"Some", ()⟩, args := [(⟨"val", ()⟩, .ftvar "α")], testerName := "TestOption..isSome"  }
     ]
     constrs_ne := by decide }
 
 /-- List α = Nil | Cons α (List α) -/
-def listDatatype : LDatatype Visibility :=
+def listDatatype : LDatatype Unit :=
   { name := "TestList"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"Nil", .unres⟩, args := [], testerName := "TestList..isNil" },
-      { name := ⟨"Cons", .unres⟩, args := [
-          (⟨"head", .unres⟩, .ftvar "α"),
-          (⟨"tail", .unres⟩, .tcons "TestList" [.ftvar "α"])
+      { name := ⟨"Nil", ()⟩, args := [], testerName := "TestList..isNil" },
+      { name := ⟨"Cons", ()⟩, args := [
+          (⟨"head", ()⟩, .ftvar "α"),
+          (⟨"tail", ()⟩, .tcons "TestList" [.ftvar "α"])
         ], testerName := "TestList..isCons" }
     ]
     constrs_ne := by decide }
 
 /-- Tree α = Leaf | Node α (Tree α) (Tree α) -/
-def treeDatatype : LDatatype Visibility :=
+def treeDatatype : LDatatype Unit :=
   { name := "TestTree"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"Leaf", .unres⟩, args := [], testerName := "TestTree..isLeaf" },
-      { name := ⟨"Node", .unres⟩, args := [
-          (⟨"value", .unres⟩, .ftvar "α"),
-          (⟨"left", .unres⟩, .tcons "TestTree" [.ftvar "α"]),
-          (⟨"right", .unres⟩, .tcons "TestTree" [.ftvar "α"])
+      { name := ⟨"Leaf", ()⟩, args := [], testerName := "TestTree..isLeaf" },
+      { name := ⟨"Node", ()⟩, args := [
+          (⟨"value", ()⟩, .ftvar "α"),
+          (⟨"left", ()⟩, .tcons "TestTree" [.ftvar "α"]),
+          (⟨"right", ()⟩, .tcons "TestTree" [.ftvar "α"])
         ], testerName := "TestTree..isNode" }
     ]
     constrs_ne := by decide }
@@ -71,7 +71,7 @@ def treeDatatype : LDatatype Visibility :=
 Convert an expression to full SMT string including datatype declarations.
 `blocks` is a list of mutual blocks (each block is a list of mutually recursive datatypes).
 -/
-def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Visibility))) : IO String := do
+def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Unit))) : IO String := do
   match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
@@ -102,7 +102,7 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
 Convert an expression to full SMT string including datatype declarations.
 Each datatype is treated as its own (non-mutual) block.
 -/
-def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDatatype Visibility)) : IO String :=
+def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDatatype Unit)) : IO String :=
   toSMTStringWithDatatypeBlocks e (datatypes.map (fun d => [d]))
 
 /-! ## Test Cases with Guard Messages -/
@@ -118,7 +118,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int])))
+  (.fvar () (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 2: Recursive datatype (List) - using List type
@@ -132,7 +132,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int])))
+  (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 3: Multiple constructors - Tree with Leaf and Node
@@ -146,7 +146,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "tree") (.some (.tcons "TestTree" [.bool])))
+  (.fvar () (⟨"tree", ()⟩) (.some (.tcons "TestTree" [.bool])))
   [treeDatatype]
 
 -- Test 4: Parametric datatype instantiation - List Int
@@ -160,7 +160,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "intList") (.some (.tcons "TestList" [.int])))
+  (.fvar () (⟨"intList", ()⟩) (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 5: Parametric datatype instantiation - List Bool (should reuse same datatype)
@@ -174,7 +174,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "boolList") (.some (.tcons "TestList" [.bool])))
+  (.fvar () (⟨"boolList", ()⟩) (.some (.tcons "TestList" [.bool])))
   [listDatatype]
 
 -- Test 6: Multi-field constructor - Tree with 3 fields
@@ -188,7 +188,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "intTree") (.some (.tcons "TestTree" [.int])))
+  (.fvar () (⟨"intTree", ()⟩) (.some (.tcons "TestTree" [.int])))
   [treeDatatype]
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
@@ -205,7 +205,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
+  (.fvar () (⟨"listOfOption", ()⟩) (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
   [optionDatatype, listDatatype]
 
 /-! ## Constructor Application Tests -/
@@ -219,7 +219,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.op () (CoreIdent.unres "None") (.some (.tcons "TestOption" [.int])))
+  (.op () (⟨"None", ()⟩) (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 9: Some constructor (single-argument)
@@ -231,7 +231,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "Some") (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst () 42))
+  (.app () (.op () (⟨"Some", ()⟩) (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst () 42))
   [optionDatatype]
 
 -- Test 10: Cons constructor (multi-argument)
@@ -245,9 +245,9 @@ info: (declare-datatype TestList (par (α) (
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
   (.app ()
-    (.app () (.op () (CoreIdent.unres "Cons") (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
+    (.app () (.op () (⟨"Cons", ()⟩) (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
       (.intConst () 1))
-    (.op () (CoreIdent.unres "Nil") (.some (.tcons "TestList" [.int]))))
+    (.op () (⟨"Nil", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Tester Function Tests  -/
@@ -264,8 +264,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestOption..isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
-    (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
+  (.app () (.op () (⟨"TestOption..isNone", ()⟩) (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
+    (.fvar () (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 12: isCons tester
@@ -280,8 +280,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList..isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
-    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app () (.op () (⟨"TestList..isCons", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) .bool)))
+    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Destructor Function Tests -/
@@ -298,8 +298,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestOption..val") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
-    (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
+  (.app () (.op () (⟨"TestOption..val", ()⟩) (.some (.arrow (.tcons "TestOption" [.int]) .int)))
+    (.fvar () (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 14: Cons head destructor
@@ -314,8 +314,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList..head") (.some (.arrow (.tcons "TestList" [.int]) .int)))
-    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app () (.op () (⟨"TestList..head", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) .int)))
+    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 -- Test 15: Cons tail destructor
@@ -330,8 +330,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (CoreIdent.unres "TestList..tail") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
-    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app () (.op () (⟨"TestList..tail", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
+    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Dependency Order Tests -/
@@ -342,40 +342,40 @@ info: (declare-datatype TestList (par (α) (
 --              Right -> Root
 
 /-- Root = RootValue int -/
-def rootDatatype : LDatatype Visibility :=
+def rootDatatype : LDatatype Unit :=
   { name := "Root"
     typeArgs := []
     constrs := [
-      { name := ⟨"RootValue", .unres⟩, args := [(⟨"value", .unres⟩, .int)], testerName := "Root..isRootValue" }
+      { name := ⟨"RootValue", ()⟩, args := [(⟨"value", ()⟩, .int)], testerName := "Root..isRootValue" }
     ]
     constrs_ne := by decide }
 
 /-- Left = LeftValue Root -/
-def leftDatatype : LDatatype Visibility :=
+def leftDatatype : LDatatype Unit :=
   { name := "Left"
     typeArgs := []
     constrs := [
-      { name := ⟨"LeftValue", .unres⟩, args := [(⟨"root", .unres⟩, .tcons "Root" [])], testerName := "Left..isLeftValue" }
+      { name := ⟨"LeftValue", ()⟩, args := [(⟨"root", ()⟩, .tcons "Root" [])], testerName := "Left..isLeftValue" }
     ]
     constrs_ne := by decide }
 
 /-- Right = RightValue Root -/
-def rightDatatype : LDatatype Visibility :=
+def rightDatatype : LDatatype Unit :=
   { name := "Right"
     typeArgs := []
     constrs := [
-      { name := ⟨"RightValue", .unres⟩, args := [(⟨"root", .unres⟩, .tcons "Root" [])], testerName := "Right..isRightValue" }
+      { name := ⟨"RightValue", ()⟩, args := [(⟨"root", ()⟩, .tcons "Root" [])], testerName := "Right..isRightValue" }
     ]
     constrs_ne := by decide }
 
 /-- Diamond = DiamondValue Left Right -/
-def diamondDatatype : LDatatype Visibility :=
+def diamondDatatype : LDatatype Unit :=
   { name := "Diamond"
     typeArgs := []
     constrs := [
-      { name := ⟨"DiamondValue", .unres⟩, args := [
-          (⟨"left", .unres⟩, .tcons "Left" []),
-          (⟨"right", .unres⟩, .tcons "Right" [])
+      { name := ⟨"DiamondValue", ()⟩, args := [
+          (⟨"left", ()⟩, .tcons "Left" []),
+          (⟨"right", ()⟩, .tcons "Right" [])
         ], testerName := "Diamond..isDiamondValue" }
     ]
     constrs_ne := by decide }
@@ -395,33 +395,33 @@ info: (declare-datatype Root (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (CoreIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
+  (.fvar () (⟨"diamondVar", ()⟩) (.some (.tcons "Diamond" [])))
   [rootDatatype, rightDatatype, leftDatatype, diamondDatatype]
 
 -- Test 17: Mutually recursive datatypes (RoseTree/Forest)
 -- Should emit declare-datatypes with both types together
 
 /-- RoseTree α = Node α (Forest α) -/
-def roseTreeDatatype : LDatatype Visibility :=
+def roseTreeDatatype : LDatatype Unit :=
   { name := "RoseTree"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"Node", .unres⟩, args := [
-          (⟨"node", .unres⟩, .ftvar "α"),
-          (⟨"children", .unres⟩, .tcons "Forest" [.ftvar "α"])
+      { name := ⟨"Node", ()⟩, args := [
+          (⟨"node", ()⟩, .ftvar "α"),
+          (⟨"children", ()⟩, .tcons "Forest" [.ftvar "α"])
         ], testerName := "RoseTree$isNode" }
     ]
     constrs_ne := by decide }
 
 /-- Forest α = FNil | FCons (RoseTree α) (Forest α) -/
-def forestDatatype : LDatatype Visibility :=
+def forestDatatype : LDatatype Unit :=
   { name := "Forest"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"FNil", .unres⟩, args := [], testerName := "Forest$isFNil" },
-      { name := ⟨"FCons", .unres⟩, args := [
-          (⟨"hd", .unres⟩, .tcons "RoseTree" [.ftvar "α"]),
-          (⟨"tl", .unres⟩, .tcons "Forest" [.ftvar "α"])
+      { name := ⟨"FNil", ()⟩, args := [], testerName := "Forest$isFNil" },
+      { name := ⟨"FCons", ()⟩, args := [
+          (⟨"hd", ()⟩, .tcons "RoseTree" [.ftvar "α"]),
+          (⟨"tl", ()⟩, .tcons "Forest" [.ftvar "α"])
         ], testerName := "Forest$isFCons" }
     ]
     constrs_ne := by decide }
@@ -436,7 +436,7 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
-  (.fvar () (CoreIdent.unres "tree") (.some (.tcons "RoseTree" [.int])))
+  (.fvar () (⟨"tree", ()⟩) (.some (.tcons "RoseTree" [.int])))
   [[roseTreeDatatype, forestDatatype]]
 
 -- Test 19: Mix of mutual and non-mutual datatypes
@@ -454,7 +454,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
-  (.fvar () (CoreIdent.unres "optionTree") (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
+  (.fvar () (⟨"optionTree", ()⟩) (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
   [[optionDatatype], [roseTreeDatatype, forestDatatype]]
 
 end DatatypeTests

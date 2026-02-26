@@ -16,8 +16,8 @@ private abbrev Ss := List S
 private abbrev E := Expression.Expr
 
 private def intTy : Expression.Ty := .forAll [] .int
-private def x : E := .fvar () (CoreIdent.unres "x") (some .int)
-private def y : E := .fvar () (CoreIdent.unres "y") (some .int)
+private def x : E := .fvar () (⟨"x", ()⟩) (some .int)
+private def y : E := .fvar () (⟨"y", ()⟩) (some .int)
 private def tt : E := .boolConst () true
 private def int0 : E := .intConst () 0
 private def int1 : E := .intConst () 1
@@ -151,7 +151,7 @@ info: while
 /-- info: funcDecl <function> -/
 #guard_msgs in
 #eval! format (Stmt.funcDecl
-  ({ name := CoreIdent.unres "f",
+  ({ name := ⟨"f", ()⟩,
      inputs := [("a", LTy.forAll [] .int)],
      output := LTy.forAll [] .int,
      body := some x } : PureFunc Expression) : S)

@@ -92,10 +92,10 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
       | none =>
           -- Check if this is a field name (datatype constructor) or local variable
           if isFieldName fieldNames name then
-            let ident := Core.CoreIdent.unres name
+            let ident := ⟨name, ()⟩
             .op () ident none
           else
-            let ident := Core.CoreIdent.locl name
+            let ident := ⟨name, ()⟩
             .fvar () ident (some (lookupType env name))
   | .PrimitiveOp op [e] =>
     match op with
@@ -134,7 +134,7 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
       .ite () bcond bthen belse
   | .Assign _ value => translateExpr fieldNames env value boundVars
   | .StaticCall name args =>
-      let ident := Core.CoreIdent.unres name
+      let ident := ⟨name, ()⟩
       let fnOp := .op () ident none
       args.foldl (fun acc arg => .app () acc (translateExpr fieldNames env arg boundVars)) fnOp
   | .Block [single] _ => translateExpr fieldNames env single boundVars
@@ -154,7 +154,7 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
       panic! s!"IsType should have been eliminated by typeHierarchyTransform"
   | .New _ =>
       panic! s!"New should have been eliminated by typeHierarchyTransform"
-  | .Hole => .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
+  | .Hole => .fvar () (⟨s!"DUMMY_VAR_{env.length}", ()⟩) none
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   termination_by expr
   decreasing_by
@@ -174,7 +174,7 @@ def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
     let coreTy := translateType ty
-    .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
+    .fvar () (⟨"$default", ()⟩) (some coreTy)
 
 /--
 Translate Laurel StmtExpr to Core Statements
@@ -199,7 +199,7 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
       let env' := (name, ty) :: env
       let boogieMonoType := translateType ty
       let boogieType := LTy.forAll [] boogieMonoType
-      let ident := Core.CoreIdent.locl name
+      let ident := ⟨name, ()⟩
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
@@ -223,7 +223,7 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
-          let ident := Core.CoreIdent.locl name
+          let ident := ⟨name, ()⟩
           -- Check if RHS is a procedure call (not a function)
           match value.val with
           | .StaticCall callee args =>
@@ -246,7 +246,7 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
               let boogieArgs := args.map (translateExpr fieldNames env)
               let lhsIdents := targets.filterMap fun t =>
                 match t.val with
-                | .Identifier name => some (Core.CoreIdent.locl name)
+                | .Identifier name => some (⟨name, ()⟩)
                 | _ => none
               (env, [Core.Statement.call lhsIdents callee boogieArgs value.md])
           | _ =>
@@ -269,7 +269,7 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
-          let ident := Core.CoreIdent.locl outParam.name
+          let ident := ⟨outParam.name, ()⟩
           let boogieExpr := translateExpr fieldNames env value
           let assignStmt := Core.Statement.set ident boogieExpr
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
@@ -301,7 +301,7 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
 Translate Laurel Parameter to Core Signature entry
 -/
 def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
-  let ident := Core.CoreIdent.locl param.name
+  let ident := ⟨param.name, ()⟩
   let ty := translateType param.type
   (ident, ty)
 
@@ -370,7 +370,7 @@ def translateProcedureToFunction (fieldNames : List Identifier) (proc : Procedur
     | .Transparent bodyExpr => some (translateExpr fieldNames initEnv bodyExpr)
     | _ => none
   .func {
-    name := Core.CoreIdent.unres proc.name
+    name := ⟨proc.name, ()⟩
     typeArgs := []
     inputs := inputs
     output := outputTy
@@ -451,10 +451,10 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
     -- Zero constructors: opaque type
     Core.Decl.type (.con { name := dt.name, numargs := dt.typeArgs.length })
   | first :: rest =>
-    let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun c =>
-      { name := Core.CoreIdent.unres c.name
-        args := c.args.map fun (n, ty) => (Core.CoreIdent.unres n, translateType ty) }
-    let ldt : Lambda.LDatatype Core.Visibility := {
+    let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
+      { name := ⟨c.name, ()⟩
+        args := c.args.map fun (n, ty) => (⟨n, ()⟩, translateType ty) }
+    let ldt : Lambda.LDatatype Unit := {
       name := dt.name
       typeArgs := dt.typeArgs
       constrs := constrs
@@ -493,7 +493,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     let coreTy := translateType c.type
     let body := c.initializer.map (translateExpr fieldNames [] ·)
     Core.Decl.func {
-      name := Core.CoreIdent.unres c.name
+      name := ⟨c.name, ()⟩
       typeArgs := []
       inputs := []
       output := coreTy

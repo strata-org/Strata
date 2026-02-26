@@ -60,10 +60,10 @@ info: ok: procedure P :  ((a : int)) → ()
 -/
 #guard_msgs in
 #eval do
-  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let g : TGenEnv Unit := { @TGenEnv.default Unit with context := {types := [[("g", t[int])]] }};
   let ans ←
-              typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
-                              functions := Core.Factory} {@TEnv.default Visibility with genEnv := g}
+              typeCheck { @LContext.default ⟨Unit, Unit⟩ with
+                              functions := Core.Factory} {@TEnv.default Unit with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -84,8 +84,8 @@ info: ok: procedure P :  ((a : int)) → ()
   modifies: [g]
   preconditions: 
   postconditions: (P.g_eq_a, ((g : int) == ((~Int.Add : (arrow int (arrow int int)))
-    ((~old : (arrow int int)) (a : int))
-    ((~old : (arrow int int)) (g : int)))))
+    ((~old : (arrow int int)) (g : int))
+    (a : int))))
 {
   {
     g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
@@ -94,11 +94,11 @@ info: ok: procedure P :  ((a : int)) → ()
 -/
 #guard_msgs in
 #eval do
-  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let g : TGenEnv Unit := { @TGenEnv.default Unit with context := {types := [[("g", t[int])]] }};
   let ans ←
-              typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
+              typeCheck { @LContext.default ⟨Unit, Unit⟩ with
                               functions := Core.Factory}
-                        { @TEnv.default Visibility with genEnv := g}
+                        { @TEnv.default Unit with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -108,7 +108,7 @@ info: ok: procedure P :  ((a : int)) → ()
                           modifies := [("g")],
                           preconditions := [],
                           postconditions :=
-                            [("P.g_eq_a", ⟨eb[g == (~old ((~Int.Add a) g))], .Default, #[]⟩)] },
+                            [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default, #[]⟩)] },
                           body :=
                             [Statement.set "g" eb[((~Int.Add a) g)]]
                         } .empty

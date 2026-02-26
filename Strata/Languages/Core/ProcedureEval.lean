@@ -53,6 +53,12 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
   -- `Statement.eval` will substitute `old <var>` where `<var>` is a local
   -- variable with the value of `<var>` at each given statement.
   let old_var_subst := E.exprEnv.state.oldest.map (fun (i, _, e) => (i, e))
+  -- Add "old g" → pre-state value of g for all declared globals
+  let globalNames : List String := E.program.decls.filterMap fun d =>
+    match d with | .var name _ _ _ => some name.name | _ => none
+  let old_g_subst := old_var_subst.filterMap fun (id, e) =>
+    if globalNames.contains id.name then some (⟨"old " ++ id.name, ()⟩, e) else none
+  let old_var_subst := old_var_subst ++ old_g_subst
   let postcond_asserts :=
     List.map (fun (label, check) =>
                 match check.attr with

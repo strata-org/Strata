@@ -261,8 +261,7 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok (ds', T'
     any_goals simp [t_ih $ Program.typeCheckAux_elim_singleton tcok]
     have := Statement.typeCheckWF (by assumption)
     constructor
-    simp [WFCmdExtProp] at this
-    sorry
+    · sorry
     any_goals (apply Procedure.typeCheckWF (by assumption))
     any_goals constructor
 

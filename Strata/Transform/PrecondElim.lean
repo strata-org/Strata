@@ -116,7 +116,7 @@ def mkContractWFProc (F : @Lambda.Factory CoreLParams) (proc : Procedure)
   let body := precondStmts ++ postcondStmts
   if hasAssert body then
     some <| .proc {
-      header := { proc.header with name := CoreIdent.unres (wfProcName name), noFilter := true }
+      header := { proc.header with name := ⟨wfProcName name, ()⟩, noFilter := true }
       spec := { modifies := [], preconditions := [], postconditions := [] }
       body := body
     }
@@ -164,7 +164,7 @@ def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function) : Option De
   (fun wfStmts =>
     some <| .proc {
       header := {
-        name := CoreIdent.unres (wfProcName funcName)
+        name := ⟨wfProcName funcName, ()⟩
         typeArgs := func.typeArgs
         inputs := func.inputs
         outputs := []

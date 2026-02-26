@@ -8,7 +8,6 @@
 
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Program
-import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.CmdEval
 import Strata.DL.Lambda.LTyUnify
@@ -60,10 +59,10 @@ private def callConditions (proc : Procedure)
 Create substitution mapping from formal parameters to actual arguments.
 -/
 private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env)
-    (old_var_subst : SubstMap) : VarSubst :=
-  let args' := args.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a))
+    (_old_var_subst : SubstMap) : VarSubst :=
+  let args' := args.map (fun a => E.exprEval a)
   let formal_tys := proc.header.inputs.keys.map
-                      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
+                      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Unit)))
   List.zip formal_tys args'
 
 /--
@@ -85,7 +84,7 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
   let return_tys := proc.header.outputs.keys.map
-      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
+      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Unit)))
   let return_lhs_subst := List.zip return_tys lhs_fvars
   let lhs_post_subst := List.zip lhs_typed lhs_fvars
   (return_lhs_subst, lhs_post_subst, E')
@@ -196,10 +195,13 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
         (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create post-call substitution for postconditions.
     let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
-    let postcond_subst_map := postcond_subst_init ++ current_globals
-    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst_map postconditions_typed
-    let postcond_subst_full :=  postcond_subst_init ++ globals_post_subst
-    let postconditions := callConditions proc .Ensures postconditions postcond_subst_full
+    -- Build "old g" substitutions: map "old g" → pre-call value of g
+    let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
+      let oldId : CoreIdent := ⟨"old " ++ id.name, ()⟩
+      some ((oldId, ty), e)
+    -- Substitute: args/returns with fresh vars, globals with post-call fresh vars, "old g" with pre-call values
+    let postcond_subst_map := postcond_subst_init ++ globals_post_subst ++ old_g_subst
+    let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst_map
 
     -- Add postconditions to path conditions.
     let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)

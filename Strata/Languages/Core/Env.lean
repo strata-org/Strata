@@ -62,15 +62,15 @@ def PathConditions.format (ps : PathConditions Expression) : Format :=
     f!"{PathCondition.format p}{Format.line}" ++ PathConditions.format prest
 
 def PathCondition.getVars (p : PathCondition Expression)
-    : List (Lambda.IdentT Lambda.LMonoTy Visibility) :=
+    : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   p.map (fun (_, e) => Lambda.LExpr.freeVars e) |> .flatten |> .eraseDups
 
 def PathConditions.getVars (ps : PathConditions Expression)
-    : List (Lambda.IdentT Lambda.LMonoTy Visibility) :=
+    : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   ps.map (fun p => PathCondition.getVars p) |> .flatten |> .eraseDups
 
 def ProofObligation.getVars (d : ProofObligation Expression)
-    : List (Lambda.IdentT Lambda.LMonoTy Visibility) :=
+    : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   let o_vars := Lambda.LExpr.freeVars d.obligation
   let pc_vars := PathConditions.getVars d.assumptions
   (o_vars ++ pc_vars).eraseDups
@@ -133,7 +133,7 @@ structure Env where
   program : Program
   substMap : SubstMap
   exprEnv : Expression.EvalEnv
-  datatypes : @Lambda.TypeFactory Visibility
+  datatypes : @Lambda.TypeFactory Unit
   distinct : List (List Expression.Expr)
   pathConditions : Imperative.PathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
@@ -205,14 +205,14 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Di
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
-def Env.insertInContext (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) (e : Expression.Expr) (E : Env) : Env :=
+def Env.insertInContext (xt : (Lambda.IdentT Lambda.LMonoTy Unit)) (e : Expression.Expr) (E : Env) : Env :=
   { E with exprEnv.state := E.exprEnv.state.insert xt.ident (xt.ty?, e) }
 
 /--
 Insert each `(x, v)` in `xs` into the context.
 -/
 def Env.addToContext
-    (xs : Map (Lambda.IdentT Lambda.LMonoTy Visibility) Expression.Expr) (E : Env)
+    (xs : Map (Lambda.IdentT Lambda.LMonoTy Unit) Expression.Expr) (E : Env)
     : Env :=
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
@@ -221,7 +221,7 @@ def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × L
   let new_idx := c.gen
   let c := c.incGen
   let new_var := c.varPrefix ++ x ++ toString new_idx
-  (.temp new_var, c)
+  (⟨new_var, ()⟩, c)
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
     (CoreIdent × (Lambda.LState CoreLParams)) :=
@@ -252,7 +252,7 @@ def Env.genVars (xs : List String) (σ : Lambda.LState CoreLParams) : (List Core
 Generate a fresh variable using the base name and pre-existing type, if any,
 from `xt`.
 -/
-def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) :
+def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Unit)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
@@ -264,10 +264,10 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) :
 Generate fresh variables using the base names and any pre-existing types from
 `xs`.
 -/
-def Env.genFVars (E : Env) (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) :
+def Env.genFVars (E : Env) (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) :
   List Expression.Expr × Env :=
   let rec go (acc : List Expression.Expr) (E : Env)
-             (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) :
+             (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) :
     List Expression.Expr × Env :=
     match xs with
     | [] => (acc.reverse, E)
@@ -281,7 +281,7 @@ Insert `(xi, .fvar xi)`, for each `xi` in `xs`, in the _oldest_ scope in `ss`,
 only if `xi` is the identifier of a free variable, i.e., it is not in `ss`.
 -/
 def Env.insertFreeVarsInOldestScope
-  (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) (E : Env) : Env :=
+  (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
       (x.fst :: acc_ids, (x.snd, .fvar () x.fst x.snd) :: acc_pairs))
@@ -319,12 +319,12 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
-def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Visibility) : Except DiagnosticModel Env := do
+def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except DiagnosticModel Env := do
   let f ← Lambda.genBlockFactory (T:=CoreLParams) block
   let env ← E.addFactory f
   return { env with datatypes := E.datatypes.push block }
 
-def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Visibility)) : Except DiagnosticModel Env :=
+def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Except DiagnosticModel Env :=
   blocks.foldlM Env.addMutualDatatype E
 
 end Core

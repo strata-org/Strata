@@ -9,7 +9,6 @@
 import Strata.Languages.Core.Procedure
 import Strata.DL.Imperative.HasVars
 import Strata.Languages.Core.StatementType
-import Strata.Languages.Core.OldExpressions
 
 ---------------------------------------------------------------------
 
@@ -68,7 +67,7 @@ private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
 
 private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel (@Lambda.LMonoTySignature Visibility × Core.Expression.TyEnv) := do
+    Except DiagnosticModel (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv) := do
   let Env := Env.pushEmptyContext
   let (inp_mty_sig, Env) ← Lambda.LMonoTySignature.instantiate C Env proc.header.typeArgs
                             proc.header.inputs |>.mapError (fun e => DiagnosticModel.withRange sourceLoc e)
@@ -82,20 +81,16 @@ def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
   md.toDiagnosticF f!"[{procName}:{condName}]:"
 
 -- Type checking procedure pre/post conditions.
--- We flag occurrences of `old` expressions in the preconditions and normalize
--- them in the postconditions.
+-- Type checking procedure pre/post conditions.
 open Lambda.LTy.Syntax in
 private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (conditions : ListMap CoreLabel Check) (procName : CoreIdent) (checkOldExprs : Bool) :
+    (conditions : ListMap CoreLabel Check) (procName : CoreIdent) :
     Except DiagnosticModel (Array Expression.Expr × Core.Expression.TyEnv) := do
   let mut results := #[]
   let mut currentEnv := Env
   for (name, condition) in (conditions.keys, conditions.values) do
     let errorPrefix := conditionErrorMsgPrefix procName name condition.md
-    if checkOldExprs && OldExpressions.containsOldExpr condition.expr then
-      .error { errorPrefix with message := errorPrefix.message ++ " Preconditions cannot contain applications of the `old` function!" }
-    let expr := if checkOldExprs then condition.expr else OldExpressions.normalizeOldExpr condition.expr
-    let (annotatedExpr, newEnv) ← Lambda.LExpr.resolve C currentEnv expr
+    let (annotatedExpr, newEnv) ← Lambda.LExpr.resolve C currentEnv condition.expr
                                     |>.mapError (fun e => { errorPrefix with message := errorPrefix.message ++ " " ++ toString e })
     if annotatedExpr.toLMonoTy != mty[bool] then
       .error { errorPrefix with message := errorPrefix.message ++ s!": Expected condition to be of type Bool, but got {annotatedExpr.toLMonoTy}!" }
@@ -122,7 +117,6 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- will rightfully flag an error.
   let (preconditions, envAfterPreconds) ← typeCheckConditions C envWithInputs
                                             proc.spec.preconditions proc.header.name
-                                            (checkOldExprs := true)
 
   -- Temporarily add returns into the context.
   let (out_mty_sig, envWithOutputs) ← Lambda.LMonoTySignature.instantiate C
@@ -131,10 +125,18 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := envWithOutputs.addInNewestContext out_lty_sig
 
+  -- Add "old g" variables for all globals in the program so that
+  -- postconditions can reference them (old g is always well-defined).
+  let oldVarBindings : List (CoreIdent × Lambda.LTy) :=
+    p.decls.filterMap fun d =>
+      match d with
+      | .var name ty _ _ => some (⟨"old " ++ name.name, ()⟩, ty)
+      | _ => none
+  let envWithOldVars := envWithOutputs.addInNewestContext oldVarBindings
+
   -- Type check postconditions.
-  let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOutputs
+  let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOldVars
                                               proc.spec.postconditions proc.header.name
-                                              (checkOldExprs := false)
 
   -- Type check body.
   -- Note that `Statement.typeCheck` already reports source locations in
