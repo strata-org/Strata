@@ -68,6 +68,8 @@ inductive Operation : Type where
   | StrConcat
   deriving Repr
 
+abbrev MetaData := Imperative.MetaData Core.Expression
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -78,7 +80,7 @@ structure WithMetadata (t : Type) : Type where
   /-- The wrapped value. -/
   val : t
   /-- Source-level metadata (locations, annotations). -/
-  md : Imperative.MetaData Core.Expression
+  md : MetaData
 
 /--
 The type system for Laurel programs.
@@ -140,6 +142,8 @@ structure Procedure : Type where
   determinism : Determinism
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
+  /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
+  isFunctional : Bool := false
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
   /-- Source-level metadata. -/

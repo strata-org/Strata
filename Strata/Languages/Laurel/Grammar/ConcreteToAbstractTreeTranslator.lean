@@ -74,8 +74,8 @@ def translateBool (arg : Arg) : TransM Bool := do
 instance : Inhabited Parameter where
   default := { name := "", type := ⟨.TVoid, #[]⟩ }
 
-def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := ⟨t, md⟩
-def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
+def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
+def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
 def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
@@ -129,6 +129,7 @@ instance : Inhabited Procedure where
     precondition := mkStmtExprMdEmpty <| .LiteralBool true
     determinism := .deterministic none
     decreases := none
+    isFunctional := false
     body := .Transparent ⟨.LiteralBool true, #[]⟩
     md := .empty
   }
@@ -332,6 +333,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+      requiresArg, ensuresArg, modifiesArg, bodyArg]
+  | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
       requiresArg, ensuresArg, modifiesArg, bodyArg] =>
     let name ← translateIdent nameArg
     let nameMd ← getArgMetaData nameArg
@@ -383,13 +386,15 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       precondition := precondition
       determinism := .deterministic none
       decreases := none
+      isFunctional := op.name == q`Laurel.function
       body := procBody
       md := nameMd
     }
-  | q`Laurel.procedure, args =>
+  | q`Laurel.procedure, args
+  | q`Laurel.function, args =>
     TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
   | _, _ =>
-    TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
+    TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 
 def parseField (arg : Arg) : TransM Field := do
   let .op op := arg

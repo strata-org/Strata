@@ -10,8 +10,7 @@ import StrataTest.Languages.Laurel.TestExamples
 open StrataTest.Util
 open Strata
 
-namespace Strata
-namespace Laurel
+namespace Strata.Laurel
 
 def program := r"
 procedure guards(a: int) returns (r: int)
@@ -32,6 +31,52 @@ procedure guards(a: int) returns (r: int)
   return e;
 }
 
+// Lettish bindings in functions not yet supported
+// because Core expressions do not support let bindings
+// function letsInFunction() returns (r: int) {
+//  var x: int := 0;
+//  var y: int := x + 1;
+//  var z: int := y + 1;
+//  z
+// }
+
+function returnAtEnd(x: int) returns (r: int) {
+  if (x > 0) {
+    if (x == 1) {
+      return 1;
+    } else {
+      return 2;
+    }
+  } else {
+    return 3;
+  }
+}
+
+function guardInFunction(x: int) returns (r: int) {
+  if (x > 0) {
+    if (x == 1) {
+      return 1;
+    } else {
+      return 2;
+    }
+  }
+
+  return 3;
+}
+
+procedure testFunctions() {
+  // assert letsInFunction() == 2;
+  // assert letsInFunction() == 3; error: assertion does not hold
+
+  assert returnAtEnd(1) == 1;
+  assert returnAtEnd(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+
+  assert guardInFunction(1) == 1;
+  assert guardInFunction(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+}
+
 procedure dag(a: int) returns (r: int)
 {
   var b: int;
@@ -48,40 +93,3 @@ procedure dag(a: int) returns (r: int)
 
 #guard_msgs (error, drop all) in
 #eval! testInputWithOffset "ControlFlow" program 14 processLaurelFile
-
-/-
-Translation towards expression form:
-
-function guards(a: int): int {
-  var b = a + 2;
-  if (b > 2) {
-      var c = b + 3;
-      if (c > 3) {
-        c + 4;
-      } else {
-        var d = c + 5;
-        d + 6;
-      }
-  } else {
-    var e = b + 1;
-    e
-  }
-}
-
-To translate towards SMT we only need to apply something like WP calculus.
- Here's an example of what that looks like:
-
-function dag(a: int): int {
-  (
-    assume a > 0;
-    assume b == 1;
-    b;
-  )
-  OR
-  (
-    assume a <= 0;
-    assume b == 2;
-    b;
-  )
-}
--/
