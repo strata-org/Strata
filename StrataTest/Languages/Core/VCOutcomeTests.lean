@@ -21,205 +21,94 @@ open Core.SMT (Result)
 def mkOutcome (satisfiabilityProperty : Result) (validityProperty : Result) : VCOutcome :=
   { satisfiabilityProperty, validityProperty }
 
-def formatOutcome (o : VCOutcome) : String :=
-  s!"{VCOutcome.emoji o} {VCOutcome.label o}"
-
 /-! ### Outcome: (sat, unsat) - always true and reachable -/
 
-/-- info: "✅ pass" -/
+/--
+info: Emoji: ✅, Label: pass, Predicate: true, Message: Always true and reachable, Deductive: none, BugFinding: none
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome (.sat default) .unsat)
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (.sat default) .unsat).passAndReachable
-
-/-- info: "Always true and reachable" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome (.sat default) .unsat)
-
-/-- info: Strata.Sarif.Level.none -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome (.sat default) .unsat)
-
-/-- info: Strata.Sarif.Level.none -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome (.sat default) .unsat)
+#eval do
+  let o := mkOutcome (.sat default) .unsat
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.passAndReachable}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (unsat, sat) - always false and reachable -/
 
-/-- info: "❌ refuted" -/
+/--
+info: Emoji: ❌, Label: refuted, Predicate: true, Message: Always false and reachable, Deductive: error, BugFinding: error
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome .unsat (.sat default))
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome .unsat (.sat default)).alwaysFalseAndReachable
-
-/-- info: "Always false and reachable" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome .unsat (.sat default))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome .unsat (.sat default))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome .unsat (.sat default))
+#eval do
+  let o := mkOutcome .unsat (.sat default)
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.alwaysFalseAndReachable}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (sat, sat) - true or false depending on inputs -/
 
-/-- info: "🔶 indecisive" -/
+/--
+info: Emoji: 🔶, Label: indecisive, Predicate: true, Message: True or false depending on inputs, Deductive: error, BugFinding: warning
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome (.sat default) (.sat default))
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (.sat default) (.sat default)).indecisiveAndReachable
-
-/-- info: "True or false depending on inputs" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome (.sat default) (.sat default))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome (.sat default) (.sat default))
-
-/-- info: Strata.Sarif.Level.warning -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome (.sat default) (.sat default))
+#eval do
+  let o := mkOutcome (.sat default) (.sat default)
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.indecisiveAndReachable}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (unsat, unsat) - unreachable -/
 
-/-- info: "⛔ unreachable" -/
+/--
+info: Emoji: ⛔, Label: unreachable, Predicate: true, Message: Unreachable: path condition is contradictory, Deductive: warning, BugFinding: note
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome .unsat .unsat)
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome .unsat .unsat).unreachable
-
-/-- info: "Unreachable: path condition is contradictory" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome .unsat .unsat)
-
-/-- info: Strata.Sarif.Level.warning -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome .unsat .unsat)
-
-/-- info: Strata.Sarif.Level.note -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome .unsat .unsat)
+#eval do
+  let o := mkOutcome .unsat .unsat
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.unreachable}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (sat, unknown) - can be true, unknown if always true -/
 
-/-- info: "➕ satisfiable" -/
+/--
+info: Emoji: ➕, Label: satisfiable, Predicate: true, Message: Can be true, unknown if always true, Deductive: error, BugFinding: note
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))).satisfiableValidityUnknown
-
-/-- info: "Can be true, unknown if always true" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: Strata.Sarif.Level.note -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
+#eval do
+  let o := mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.satisfiableValidityUnknown}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (unsat, unknown) - always false if reachable -/
 
-/-- info: "✖️ refuted if reachable" -/
+/--
+info: Emoji: ✖️, Label: refuted if reachable, Predicate: true, Message: Always false if reachable, reachability unknown, Deductive: error, BugFinding: error
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))).alwaysFalseReachabilityUnknown
-
-/-- info: "Always false if reachable, reachability unknown" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
+#eval do
+  let o := mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.alwaysFalseReachabilityUnknown}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (unknown, sat) - can be false and reachable -/
 
-/-- info: "➖ reachable and can be false" -/
+/--
+info: Emoji: ➖, Label: reachable and can be false, Predicate: true, Message: Can be false and reachable, unknown if always false, Deductive: error, BugFinding: warning
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default))
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)).canBeFalseAndReachable
-
-/-- info: "Can be false and reachable, unknown if always false" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default))
-
-/-- info: Strata.Sarif.Level.warning -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default))
+#eval do
+  let o := mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.canBeFalseAndReachable}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (unknown, unsat) - always true if reachable -/
 
-/-- info: "✔️ pass if reachable" -/
+/--
+info: Emoji: ✔️, Label: pass if reachable, Predicate: true, Message: Always true if reachable, reachability unknown, Deductive: none, BugFinding: none
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat)
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat).passReachabilityUnknown
-
-/-- info: "Always true if reachable, reachability unknown" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat)
-
-/-- info: Strata.Sarif.Level.none -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat)
-
-/-- info: Strata.Sarif.Level.none -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat)
+#eval do
+  let o := mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.passReachabilityUnknown}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 /-! ### Outcome: (unknown, unknown) - solver timeout or incomplete -/
 
-/-- info: "❓ unknown" -/
+/--
+info: Emoji: ❓, Label: unknown, Predicate: true, Message: Unknown (solver timeout or incomplete), Deductive: error, BugFinding: warning
+-/
 #guard_msgs in
-#eval formatOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: true -/
-#guard_msgs in
-#eval (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))).unknown
-
-/-- info: "Unknown (solver timeout or incomplete)" -/
-#guard_msgs in
-#eval outcomeToMessage (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: Strata.Sarif.Level.error -/
-#guard_msgs in
-#eval outcomeToLevel .deductive (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
-
-/-- info: Strata.Sarif.Level.warning -/
-#guard_msgs in
-#eval outcomeToLevel .bugFinding (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)))
+#eval do
+  let o := mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
+  IO.println s!"Emoji: {o.emoji}, Label: {o.label}, Predicate: {o.unknown}, Message: {outcomeToMessage o}, Deductive: {outcomeToLevel .deductive o}, BugFinding: {outcomeToLevel .bugFinding o}"
 
 end Core
