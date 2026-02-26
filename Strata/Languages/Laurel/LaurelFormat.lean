@@ -31,6 +31,7 @@ def formatOperation : Operation → Format
   | .Leq => "<="
   | .Gt => ">"
   | .Geq => ">="
+  | .StrConcat => "++"
 
 
 mutual
