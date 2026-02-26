@@ -1,34 +1,39 @@
+⚠️ [addPathCondition] Label clash detected for assume_invariant_0_0, using unique label assume_invariant_0_0_1.
+⚠️ [addPathCondition] Label clash detected for assume_invariant_0_1, using unique label assume_invariant_0_1_1.
+⚠️ [addPathCondition] Label clash detected for not_guard_0, using unique label not_guard_0_1.
+⚠️ [addPathCondition] Label clash detected for invariant_0_0, using unique label invariant_0_0_1.
+⚠️ [addPathCondition] Label clash detected for invariant_0_1, using unique label invariant_0_1_1.
 Successfully parsed.
-Bubble.core.st(31, 4) [entry_invariant_0_0]: ✅ pass
-Bubble.core.st(31, 4) [entry_invariant_0_1]: ✅ pass
-Bubble.core.st(31, 4) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
-Bubble.core.st(31, 4) [arbitrary_iter_maintain_invariant_0_1]: ✅ pass
-Bubble.core.st(44, 4) [entry_invariant_0_0]: ✅ pass
-Bubble.core.st(44, 4) [entry_invariant_0_1]: ✅ pass
-Bubble.core.st(44, 4) [entry_invariant_0_2]: ✅ pass
-Bubble.core.st(44, 4) [entry_invariant_0_3]: ✅ pass
-Bubble.core.st(44, 4) [entry_invariant_0_4]: ✅ pass
+Bubble.core.st(32, 0) [entry_invariant_0_0]: ✅ pass
+Bubble.core.st(32, 0) [entry_invariant_0_1]: ✅ pass
+Bubble.core.st(32, 0) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
+Bubble.core.st(32, 0) [arbitrary_iter_maintain_invariant_0_1]: ✅ pass
+Bubble.core.st(46, 0) [entry_invariant_0_0]: ✅ pass
+Bubble.core.st(46, 0) [entry_invariant_0_1]: ✅ pass
+Bubble.core.st(46, 0) [entry_invariant_0_2]: ✅ pass
+Bubble.core.st(46, 0) [entry_invariant_0_3]: ✅ pass
+Bubble.core.st(46, 0) [entry_invariant_0_4]: ✅ pass
 Bubble.core.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
 Bubble.core.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
 Bubble.core.st(22, 2) [BubbleSort_ensures_3]: ✅ pass
 Bubble.core.st(23, 2) [BubbleSort_ensures_4]: ✅ pass
-Bubble.core.st(62, 8) [entry_invariant_1_0]: ✅ pass
-Bubble.core.st(62, 8) [entry_invariant_1_1]: ✅ pass
-Bubble.core.st(62, 8) [entry_invariant_1_2]: ✅ pass
-Bubble.core.st(62, 8) [entry_invariant_1_3]: ✅ pass
-Bubble.core.st(62, 8) [entry_invariant_1_4]: ✅ pass
-Bubble.core.st(62, 8) [entry_invariant_1_5]: ✅ pass
-Bubble.core.st(62, 8) [arbitrary_iter_maintain_invariant_1_0]: ✅ pass
-Bubble.core.st(62, 8) [arbitrary_iter_maintain_invariant_1_1]: ✅ pass
-Bubble.core.st(62, 8) [arbitrary_iter_maintain_invariant_1_2]: ✅ pass
-Bubble.core.st(62, 8) [arbitrary_iter_maintain_invariant_1_3]: ✅ pass
-Bubble.core.st(62, 8) [arbitrary_iter_maintain_invariant_1_4]: ✅ pass
-Bubble.core.st(62, 8) [arbitrary_iter_maintain_invariant_1_5]: ✅ pass
-Bubble.core.st(44, 4) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
-Bubble.core.st(44, 4) [arbitrary_iter_maintain_invariant_0_1]: ✅ pass
-Bubble.core.st(44, 4) [arbitrary_iter_maintain_invariant_0_2]: ✅ pass
-Bubble.core.st(44, 4) [arbitrary_iter_maintain_invariant_0_3]: ✅ pass
-Bubble.core.st(44, 4) [arbitrary_iter_maintain_invariant_0_4]: ✅ pass
+Bubble.core.st(65, 0) [entry_invariant_1_0]: ✅ pass
+Bubble.core.st(65, 0) [entry_invariant_1_1]: ✅ pass
+Bubble.core.st(65, 0) [entry_invariant_1_2]: ✅ pass
+Bubble.core.st(65, 0) [entry_invariant_1_3]: ✅ pass
+Bubble.core.st(65, 0) [entry_invariant_1_4]: ✅ pass
+Bubble.core.st(65, 0) [entry_invariant_1_5]: ✅ pass
+Bubble.core.st(65, 0) [arbitrary_iter_maintain_invariant_1_0]: ✅ pass
+Bubble.core.st(65, 0) [arbitrary_iter_maintain_invariant_1_1]: ✅ pass
+Bubble.core.st(65, 0) [arbitrary_iter_maintain_invariant_1_2]: ✅ pass
+Bubble.core.st(65, 0) [arbitrary_iter_maintain_invariant_1_3]: ✅ pass
+Bubble.core.st(65, 0) [arbitrary_iter_maintain_invariant_1_4]: ✅ pass
+Bubble.core.st(65, 0) [arbitrary_iter_maintain_invariant_1_5]: ✅ pass
+Bubble.core.st(46, 0) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
+Bubble.core.st(46, 0) [arbitrary_iter_maintain_invariant_0_1]: ✅ pass
+Bubble.core.st(46, 0) [arbitrary_iter_maintain_invariant_0_2]: ✅ pass
+Bubble.core.st(46, 0) [arbitrary_iter_maintain_invariant_0_3]: ✅ pass
+Bubble.core.st(46, 0) [arbitrary_iter_maintain_invariant_0_4]: ✅ pass
 Bubble.core.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
 Bubble.core.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
 Bubble.core.st(22, 2) [BubbleSort_ensures_3]: ✅ pass
