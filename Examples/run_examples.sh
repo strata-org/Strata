@@ -14,8 +14,8 @@ for test_file in *.st; do
                 echo "ERROR: Analysis output for $base_name does not match expected result"
                 echo "$output" | diff "$expected_file" -
                 failed=1
-	    else
-		echo "Test passed: $test_file"
+	        else
+		        echo "Test passed: $test_file"
             fi
             if ls ../vcs/*.smt2 2> /dev/null > /dev/null ; then
                 if ! grep -q "set-info" ../vcs/*.smt2 ; then
