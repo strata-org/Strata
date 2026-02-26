@@ -166,6 +166,9 @@ def isRefuted (o : VCOutcome) : Bool :=
   | .unsat, .sat _ => true
   | _, _ => false
 
+-- Alias for clarity: refuted means reachable and always false
+def isAlwaysFalseIfReachable (o : VCOutcome) : Bool := o.isRefuted
+
 def isIndecisive (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .sat _, .sat _ => true
