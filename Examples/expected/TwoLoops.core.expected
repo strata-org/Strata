@@ -1,0 +1,6 @@
+Successfully parsed.
+TwoLoops.core.st(22, 2) [entry_invariant_0]: ✅ pass
+TwoLoops.core.st(22, 2) [arbitrary_iter_maintain_invariant_0]: ✅ pass
+TwoLoops.core.st(29, 2) [entry_invariant_1]: ✅ pass
+TwoLoops.core.st(29, 2) [arbitrary_iter_maintain_invariant_1]: ✅ pass
+All 4 goals passed.
