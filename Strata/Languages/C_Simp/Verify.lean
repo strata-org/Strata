@@ -16,17 +16,22 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
+/-- Convert C_Simp expression metadata (Unit) to Core expression metadata (SourceRange).
+    C_Simp does not track source locations, so we use SourceRange.none. -/
+private def csimpMetaToCore (_ : C_Simp.CSimpLParams.mono.base.Metadata) : Core.CoreLParams.mono.base.Metadata :=
+  Strata.SourceRange.none
+
 def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
-  | .const _ c => .const Strata.SourceRange.none c
-  | .op _ o ty => .op Strata.SourceRange.none ⟨o.name, .unres⟩ ty
-  | .bvar _ n => .bvar Strata.SourceRange.none n
-  | .fvar _ n ty => .fvar Strata.SourceRange.none ⟨n.name, .unres⟩ ty
-  | .abs _ ty e => .abs Strata.SourceRange.none ty (translate_expr e)
-  | .quant _ k ty tr e => .quant Strata.SourceRange.none k ty (translate_expr tr) (translate_expr e)
-  | .app _ fn e => .app Strata.SourceRange.none (translate_expr fn) (translate_expr e)
-  | .ite _ c t e => .ite Strata.SourceRange.none (translate_expr c) (translate_expr t) (translate_expr e)
-  | .eq _ e1 e2 => .eq Strata.SourceRange.none (translate_expr e1) (translate_expr e2)
+  | .const m c => .const (csimpMetaToCore m) c
+  | .op m o ty => .op (csimpMetaToCore m) ⟨o.name, .unres⟩ ty
+  | .bvar m n => .bvar (csimpMetaToCore m) n
+  | .fvar m n ty => .fvar (csimpMetaToCore m) ⟨n.name, .unres⟩ ty
+  | .abs m ty e => .abs (csimpMetaToCore m) ty (translate_expr e)
+  | .quant m k ty tr e => .quant (csimpMetaToCore m) k ty (translate_expr tr) (translate_expr e)
+  | .app m fn e => .app (csimpMetaToCore m) (translate_expr fn) (translate_expr e)
+  | .ite m c t e => .ite (csimpMetaToCore m) (translate_expr c) (translate_expr t) (translate_expr e)
+  | .eq m e1 e2 => .eq (csimpMetaToCore m) (translate_expr e1) (translate_expr e2)
 
 def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match e with
