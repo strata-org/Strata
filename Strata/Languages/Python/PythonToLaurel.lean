@@ -546,7 +546,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         return (newCtx, blockStmt)
       else
         -- Regular call, not a constructor
-        let initVal ← translateCall ctx funcName args.val.toList
+        let initVal ← translateCall ctx f args.val.toList
         let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
         return (newCtx, declStmt)
     | some initExpr => do
