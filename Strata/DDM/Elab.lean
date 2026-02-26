@@ -71,6 +71,11 @@ private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Op
     return commands
   let (some tree, true) ← runChecked <| elabCommand leanEnv
     | return commands
+  -- Prevent infinite loop if parser makes no progress
+  let newPos := (←get).pos
+  if newPos <= iniPos then
+    logError { start := iniPos, stop := iniPos } "Syntax error: unrecognized syntax or unexpected token"
+    return commands
   let cmd := tree.info.asOp!.op
   let dialects := (← read).loader.dialects
   modify fun s => { s with

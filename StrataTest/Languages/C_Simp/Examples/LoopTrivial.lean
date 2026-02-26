@@ -62,7 +62,7 @@ info: function loopTrivial {
   while
     (~Int.Lt i n)
     (some (~Int.Sub n i))
-    (some (~Int.Le i n))
+    [(~Int.Le i n)]
   {
     i := (~Int.Add i #1)
   }
@@ -84,27 +84,33 @@ spec {
   } {
   var i : int;
   i := 0;
-  if(i < n){
+  if (i < n) {
     first_iter_asserts: {
-      assert [entry_invariant]: i <= n;
+      assert [entry_invariant_0]: i <= n;
       assert [assert_measure_pos]: n - i >= 0;
-      }|arbitrary iter facts|: {
+      }
+    |arbitrary iter facts|: {
       |loop havoc|: {
         havoc i;
-        }arbitrary_iter_assumes: {
+        }
+      arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
-        assume [assume_invariant]: i <= n;
+        assume [assume_invariant_0]: i <= n;
         assume [assume_measure_pos]: n - i >= 0;
-        }var |special-name-for-old-measure-value| : int := n - i;
+        }
+      var |special-name-for-old-measure-value| : int := n - i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
-      assert [arbitrary_iter_maintain_invariant]: i <= n;
-      }|loop havoc|: {
+      assert [arbitrary_iter_maintain_invariant_0]: i <= n;
+      }
+    |loop havoc|: {
       havoc i;
-      }assume [not_guard]: !(i < n);
-    assume [invariant]: i <= n;
-    }assert [i_eq_n]: i == n;
+      }
+    assume [not_guard]: !(i < n);
+    assume [invariant_0]: i <= n;
+    }
+  assert [i_eq_n]: i == n;
   return := i;
   };
 -/
@@ -116,7 +122,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: entry_invariant
+Label: entry_invariant_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
@@ -137,7 +143,7 @@ Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
 assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0
+assume_invariant_0: $__i3 <= $__n0
 assume_measure_pos: $__n0 - $__i3 >= 0
 pre: $__n0 >= 0
 Obligation:
@@ -148,18 +154,18 @@ Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
 assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0
+assume_invariant_0: $__i3 <= $__n0
 assume_measure_pos: $__n0 - $__i3 >= 0
 pre: $__n0 >= 0
 Obligation:
 if $__n0 - ($__i3 + 1) <= 0 then !($__i3 + 1 < $__n0) else true
 
-Label: arbitrary_iter_maintain_invariant
+Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
 assume_guard: $__i3 < $__n0
-assume_invariant: $__i3 <= $__n0
+assume_invariant_0: $__i3 <= $__n0
 assume_measure_pos: $__n0 - $__i3 >= 0
 pre: $__n0 >= 0
 Obligation:
@@ -171,10 +177,10 @@ Assumptions:
 pre: $__n0 >= 0
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
 assume_guard: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant: if 0 < $__n0 then ($__i3 <= $__n0) else true
+assume_invariant_0: if 0 < $__n0 then ($__i3 <= $__n0) else true
 assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i3 >= 0) else true
 not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
-invariant: if 0 < $__n0 then ($__i4 <= $__n0) else true
+invariant_0: if 0 < $__n0 then ($__i4 <= $__n0) else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
 if 0 < $__n0 then $__i4 else 0 == $__n0
@@ -185,17 +191,17 @@ Assumptions:
 pre: $__n0 >= 0
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
 assume_guard: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant: if 0 < $__n0 then ($__i3 <= $__n0) else true
+assume_invariant_0: if 0 < $__n0 then ($__i3 <= $__n0) else true
 assume_measure_pos: if 0 < $__n0 then ($__n0 - $__i3 >= 0) else true
 not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
-invariant: if 0 < $__n0 then ($__i4 <= $__n0) else true
+invariant_0: if 0 < $__n0 then ($__i4 <= $__n0) else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
 true
 
 ---
 info:
-Obligation: entry_invariant
+Obligation: entry_invariant_0
 Property: assert
 Result: ✅ pass
 
@@ -211,7 +217,7 @@ Obligation: measure_imp_not_guard
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant
+Obligation: arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
