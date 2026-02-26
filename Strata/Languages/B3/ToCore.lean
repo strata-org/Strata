@@ -197,10 +197,10 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     let md : Imperative.MetaData Core.Expression :=
       #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
     { value := [Core.Statement.assert procName exprResult.value md,
-                Core.Statement.assume "assert-assume" exprResult.value], errors := exprResult.errors }
+                Core.Statement.assume "assert-assume" exprResult.value .empty], errors := exprResult.errors }
   | .assume _ expr, _ =>
     let exprResult := convertExpr ctx expr
-    { value := [Core.Statement.assume "assume" exprResult.value], errors := exprResult.errors }
+    { value := [Core.Statement.assume "assume" exprResult.value .empty], errors := exprResult.errors }
   | .reach sr expr, procName =>
     let exprResult := convertExpr ctx expr
     let md : Imperative.MetaData Core.Expression :=
@@ -208,7 +208,7 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     { value := [Core.Statement.cover procName exprResult.value md], errors := exprResult.errors }
   | .blockStmt _ stmts, procName =>
     let results := stmts.val.toList.map (convertStmt ctx · procName)
-    { value := [Imperative.Stmt.block "block" (results.flatMap (·.value))],
+    { value := [Imperative.Stmt.block "block" (results.flatMap (·.value)) .empty],
       errors := results.flatMap (·.errors) }
   | .varDecl _ name ty _autoinv init, _ =>
     let coreTy := match ty.val with
@@ -217,15 +217,15 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     match init.val with
     | some initExpr =>
       let initResult := convertExpr ctx initExpr
-      { value := [Core.Statement.init (CoreIdent.unres name.val) coreTy (some initResult.value)],
+      { value := [Core.Statement.init (CoreIdent.unres name.val) coreTy (some initResult.value) .empty],
         errors := initResult.errors }
     | none =>
-      .ok [Core.Statement.init (CoreIdent.unres name.val) coreTy none]
+      .ok [Core.Statement.init (CoreIdent.unres name.val) coreTy none .empty]
   | .assign _ lhs rhs, _ =>
     let rhsResult := convertExpr ctx rhs
     match ctx.vars[lhs.val]? with
     | some (name, _) =>
-      { value := [Core.Statement.set (CoreIdent.unres name) rhsResult.value],
+      { value := [Core.Statement.set (CoreIdent.unres name) rhsResult.value .empty],
         errors := rhsResult.errors }
     | none =>
       .withError [] (.unsupportedFeature s!"unbound variable at index {lhs.val}" "assignment")
@@ -235,18 +235,18 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     let elseResult := match elseBranch.val with
       | some s => convertStmt ctx s procName
       | none => .ok []
-    { value := [Imperative.Stmt.ite condResult.value thenResult.value elseResult.value],
+    { value := [Imperative.Stmt.ite condResult.value thenResult.value elseResult.value .empty],
       errors := condResult.errors ++ thenResult.errors ++ elseResult.errors }
   | .loop sr invariants body, procName =>
     let guard : Core.Expression.Expr := .boolConst sr true
     let invResults := invariants.val.toList.map (convertExpr ctx)
     let invExprs := invResults.map (·.value)
     let bodyResult := convertStmt ctx body procName
-    { value := [Imperative.Stmt.loop guard none invExprs bodyResult.value],
+    { value := [Imperative.Stmt.loop guard none invExprs bodyResult.value .empty],
       errors := invResults.flatMap (·.errors) ++ bodyResult.errors }
   | .choose _ branches, procName =>
     let results := branches.val.toList.map (convertStmt ctx · procName)
-    { value := [Imperative.Stmt.block "choose" (results.flatMap (·.value))],
+    { value := [Imperative.Stmt.block "choose" (results.flatMap (·.value)) .empty],
       errors := results.flatMap (·.errors) }
   | .labeledStmt _ _label stmt, procName => convertStmt ctx stmt procName
   | _, _ => .withError [] (.unsupportedFeature "unknown statement type" "statement")
@@ -288,7 +288,7 @@ def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → ConvResult 
       output := outputTy
       body := coreBody
     }
-    { value := [Imperative.Stmt.funcDecl decl], errors := errors ++ bodyErrors }
+    { value := [Imperative.Stmt.funcDecl decl .empty], errors := errors ++ bodyErrors }
   | _ => .ok []
 
 /-- Build a ConvContext with all function declarations from a B3 program. -/
@@ -312,7 +312,7 @@ def convertProgram : B3AST.Program SourceRange → ConvResult (List Core.Stateme
       | .function _ _ _ _ _ _ => convertFuncDecl ctx decl
       | .axiom _ _vars expr =>
         let exprResult := convertExpr ctx expr
-        { value := [Core.Statement.assume "axiom" exprResult.value], errors := exprResult.errors }
+        { value := [Core.Statement.assume "axiom" exprResult.value .empty], errors := exprResult.errors }
       | .procedure _ name _params _specs body =>
         match body.val with
         | some bodyStmt => convertStmt ctx bodyStmt name.val

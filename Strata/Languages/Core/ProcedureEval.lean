@@ -74,7 +74,10 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
                 | _ => (.assert label check.expr check.md))
       p.spec.postconditions
   let precond_assumes :=
-    List.map (fun (label, check) => (.assume label check.expr)) p.spec.preconditions
+    List.map (fun (label, check) =>
+      /- the assumptions from preconditions are set to have empty metadata  -/
+      (.assume label check.expr check.md))
+      p.spec.preconditions
   let body' : List Statement := p.body.map Stmt.removeLoops
   let ssEs := Statement.eval E old_var_subst (precond_assumes ++ body' ++ postcond_asserts)
   ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))
