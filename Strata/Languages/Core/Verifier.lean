@@ -157,7 +157,6 @@ instance : ToFormat Outcome where
 /-- Diagnosis information for verification failures -/
 structure DiagnosisInfo where
   isRefuted : Bool := false
-  failedSubExpressions : List Expression.Expr := []
   diagnosedFailures : List Strata.Core.CoreSMT.DiagnosedFailure := []
   deriving Repr, Inhabited
 

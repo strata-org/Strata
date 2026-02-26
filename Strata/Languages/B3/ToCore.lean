@@ -240,14 +240,9 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
   | .loop sr invariants body, procName =>
     let guard : Core.Expression.Expr := .boolConst sr true
     let invResults := invariants.val.toList.map (convertExpr ctx)
-    let invariant := match invResults with
-      | [] => none
-      | [invRes] => some invRes.value
-      | invRes :: rest => some (rest.foldl (fun acc res =>
-          .app sr (.app sr (.op sr (CoreIdent.unres "Bool.And") none) acc) res.value
-        ) invRes.value)
+    let invExprs := invResults.map (·.value)
     let bodyResult := convertStmt ctx body procName
-    { value := [Imperative.Stmt.loop guard none invariant bodyResult.value],
+    { value := [Imperative.Stmt.loop guard none invExprs bodyResult.value],
       errors := invResults.flatMap (·.errors) ++ bodyResult.errors }
   | .choose _ branches, procName =>
     let results := branches.val.toList.map (convertStmt ctx · procName)

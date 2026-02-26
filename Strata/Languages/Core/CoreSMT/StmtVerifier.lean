@@ -32,22 +32,12 @@ open Strata.SMT
 open Lambda
 open Imperative
 
-/-- Helper: translate an expression to SMT term, returning error on failure -/
-private def translateExprSafe (E : Core.Env) (e : Core.Expression.Expr)
-    (ctx : Core.SMT.Context) : Except Std.Format (Term × Core.SMT.Context) :=
-  translateExpr E e ctx
-
-/-- Helper: translate a type to SMT TermType, returning error on failure -/
-private def translateTypeSafe (E : Core.Env) (ty : Core.Expression.Ty)
-    (ctx : Core.SMT.Context) : Except Std.Format (TermType × Core.SMT.Context) :=
-  translateType E ty ctx
-
 /-- Proof check: check-sat of negation using check-sat-assuming -/
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
     : IO (Core.VCResult × Core.SMT.Context) := do
-  match translateExprSafe E expr smtCtx with
+  match translateExpr E expr smtCtx with
   | .error msg =>
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property := .assert, assumptions := [], obligation := expr, metadata := md
@@ -75,9 +65,8 @@ private def proveCheck (state : CoreSMTState) (E : Core.Env)
       -- Add path condition to each failure's report context
       let failures := diagResult.diagnosedFailures.map fun f =>
         { f with report := { f.report with context := { pathCondition := pathCond } } }
-      let failedExprs := failures.map (·.expression)
       let isRefuted := failures.any (·.isRefuted)
-      pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := failures })
+      pure (some { isRefuted, diagnosedFailures := failures })
     else
       pure none
 
@@ -88,7 +77,7 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
     : IO (Core.VCResult × Core.SMT.Context) := do
-  match translateExprSafe E expr smtCtx with
+  match translateExpr E expr smtCtx with
   | .error msg =>
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property := .cover, assumptions := [], obligation := expr, metadata := md
@@ -115,9 +104,8 @@ private def coverCheck (state : CoreSMTState) (E : Core.Env)
       let pathCond := state.pathCondition
       let failures := diagResult.diagnosedFailures.map fun f =>
         { f with report := { f.report with context := { pathCondition := pathCond } } }
-      let failedExprs := failures.map (·.expression)
       let isRefuted := failures.any (·.isRefuted)
-      pure (some { isRefuted, failedSubExpressions := failedExprs, diagnosedFailures := failures })
+      pure (some { isRefuted, diagnosedFailures := failures })
     else
       pure none
 
@@ -141,7 +129,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     return (state, smtCtx, [result])
   match stmt with
   | Core.Statement.assume _label expr _ =>
-    match translateExprSafe E expr smtCtx with
+    match translateExpr E expr smtCtx with
     | .error msg =>
       let obligation : Imperative.ProofObligation Core.Expression := {
         label := "assume", property := .assert, assumptions := [], obligation := expr, metadata := .empty
@@ -155,14 +143,14 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       return (state, smtCtx, [])
 
   | Core.Statement.init name ty (some expr) _ =>
-    match translateExprSafe E expr smtCtx with
+    match translateExpr E expr smtCtx with
     | .error msg =>
       let obligation : Imperative.ProofObligation Core.Expression := {
         label := s!"init {name.name}", property := .assert, assumptions := [], obligation := expr, metadata := .empty
       }
       return (state, smtCtx, [{ obligation, result := .implementationError s!"Translation error: {msg}" }])
     | .ok (term, smtCtx) =>
-      match translateTypeSafe E ty smtCtx with
+      match translateType E ty smtCtx with
       | .error msg =>
         let obligation : Imperative.ProofObligation Core.Expression := {
           label := s!"init {name.name}", property := .assert, assumptions := [], obligation := expr, metadata := .empty
@@ -175,7 +163,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         return (state, smtCtx, [])
 
   | Core.Statement.init name ty none _ =>
-    match translateTypeSafe E ty smtCtx with
+    match translateType E ty smtCtx with
     | .error msg =>
       -- Use a dummy expression for error reporting
       let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
@@ -210,7 +198,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       match acc with
       | .error msg => return .error msg
       | .ok types =>
-        match translateTypeSafe E ty smtCtx with
+        match translateType E ty smtCtx with
         | .error msg => return .error msg
         | .ok (smtTy, _) => return .ok (types ++ [smtTy])
     ) (.ok [])
@@ -224,7 +212,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       }
       return (state, smtCtx, [{ obligation, result := .implementationError s!"Type translation error: {toString msg}" }])
     | .ok inputTypes =>
-      match translateTypeSafe E decl.output smtCtx with
+      match translateType E decl.output smtCtx with
       | .error msg =>
         let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
         let obligation : Imperative.ProofObligation Core.Expression := {
@@ -245,7 +233,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         let state := state.addItem (.funcDecl decl.name.name inputTypes outTy)
         return (state, smtCtx, [])
       | some body =>
-        match translateExprSafe E body smtCtx with
+        match translateExpr E body smtCtx with
         | .error msg =>
           let obligation : Imperative.ProofObligation Core.Expression := {
             label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [],
