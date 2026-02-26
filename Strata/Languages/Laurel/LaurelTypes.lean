@@ -6,6 +6,7 @@
 
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Resolution
 import Strata.Util.Tactics
 
 /-
@@ -17,26 +18,14 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-abbrev TypeEnv := List (Identifier × HighTypeMd)
-
-/--
-Look up a field's type in a composite type by name.
--/
-def lookupFieldInTypes (types : List TypeDefinition) (typeName : Identifier) (fieldName : Identifier) : Option HighTypeMd :=
-  types.findSome? fun td =>
-    match td with
-    | .Composite ct =>
-        if ct.name == typeName then ct.fields.findSome? fun f =>
-          if f.name == fieldName then some f.type else none
-        else none
-    | _ => none
+abbrev TypeEnv := List (Int × HighTypeMd)
 
 /--
 Compute the HighType of a StmtExpr given a type environment and type definitions.
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
 -/
-def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtExprMd) : HighTypeMd :=
+def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   match expr with
   | WithMetadata.mk val md =>
   match val with
@@ -45,20 +34,20 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .LiteralBool _ => ⟨ .TBool, md ⟩
   | .LiteralString _ => ⟨ .TString, md ⟩
   -- Variables
-  | .Identifier name =>
-      match env.find? (fun (n, _) => n == name) with
-      | some (_, ty) => ty
-      | none => panic s!"Could not find variable {name.name} in environment '{Std.format env}'"
+  | .Identifier id =>
+      match model.get id with
+       | .var name type => type
+       | _ => panic "bla"
+      -- match env.find? (fun (n, _) => n == id.id.get!) with
+      -- | some (_, ty) => ty
+      -- | none => panic s!"Could not find variable {id.name} in environment '{Std.format env}'"
   -- Field access
   | .FieldSelect target fieldName =>
-      match computeExprType env types target with
-      | WithMetadata.mk (.UserDefined typeName) _ =>
-          match lookupFieldInTypes types typeName fieldName with
-          | some ty => ty
-          | none => panic s!"Could not find field in type"
-      | _ => panic s!"Selecting from a type that's not a composite"
+      match model.get fieldName with
+       | .var name type => type
+       | _ => panic "bla"
   -- Pure field update returns the same type as the target
-  | .PureFieldUpdate target _ _ => computeExprType env types target
+  | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — we don't track return types here, so fall back to TVoid
   | .StaticCall _ _ => panic "Not supported StaticCall"
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
@@ -69,11 +58,11 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
       | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => ⟨ .TInt, md ⟩
       | .StrConcat => ⟨ .TString, md ⟩
   -- Control flow
-  | .IfThenElse _ thenBranch _ => computeExprType env types thenBranch
+  | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
-        computeExprType env types last
+        computeExprType model last
     | none => ⟨ .TVoid, md ⟩
   -- Statements (void-typed)
   | .LocalVariable _ _ _ => ⟨ .TVoid, md ⟩
@@ -93,10 +82,10 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .Forall _ _ => ⟨ .TBool, md ⟩
   | .Exists _ _ => ⟨ .TBool, md ⟩
   | .Assigned _ => ⟨ .TBool, md ⟩
-  | .Old v => computeExprType env types v
+  | .Old v => computeExprType model v
   | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
-  | .ProveBy v _ => computeExprType env types v
+  | .ProveBy v _ => computeExprType model v
   | .ContractOf _ _ => panic "Not supported"
   -- Special
   | .Abstract => panic "Not supported"

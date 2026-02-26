@@ -50,29 +50,17 @@ namespace Strata.Laurel
 /-- A definition-site AST node that a reference can resolve to. -/
 inductive AstNode where
   /-- A local variable declaration. -/
-  | localVariable (name : Identifier) (type : HighTypeMd)
-  /-- A procedure parameter. -/
-  | parameter (param : Parameter)
-  /-- A static procedure. -/
-  | staticProcedure (proc : Procedure)
-  /-- An instance procedure (method) on a composite type. -/
-  | instanceProcedure (typeName : Identifier) (proc : Procedure)
-  /-- A field on a composite type. -/
-  | field (typeName : Identifier) (fld : Field)
-  /-- A composite type definition. -/
-  | compositeType (ty : CompositeType)
-  /-- A constrained type definition. -/
-  | constrainedType (ty : ConstrainedType)
-  /-- A datatype definition. -/
-  | datatypeDefinition (ty : DatatypeDefinition)
-  /-- A datatype constructor. -/
-  | datatypeConstructor (typeName : Identifier) (ctor : DatatypeConstructor)
-  /-- A constant. -/
-  | constant (c : Constant)
-  /-- A quantifier-bound variable. -/
-  | quantifierVar (name : Identifier) (type : HighTypeMd)
+  | var (name : Identifier) (type : HighTypeMd)
+  | alternative
 
 /-! ## Resolution result -/
+
+structure SemanticModel where
+  refToDef: Std.HashMap Nat AstNode
+
+deriving instance Inhabited for Strata.Laurel.AstNode
+def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode := model.refToDef.get! id.id.get!
+
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where

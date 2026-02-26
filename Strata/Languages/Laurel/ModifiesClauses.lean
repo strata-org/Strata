@@ -7,6 +7,7 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Core.Verifier
+import Strata.Languages.Laurel.Resolution
 
 /-
 Modifies clause transformation (Laurel → Laurel).
@@ -47,10 +48,10 @@ inductive ModifiesEntry where
 Extract modifies entries from the list of modifies StmtExprs, using the type
 environment and type definitions to distinguish Composite from Set Composite.
 -/
-def extractModifiesEntries (env : TypeEnv) (types : List TypeDefinition)
+def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
   modifiesExprs.map fun expr =>
-    match (computeExprType env types expr).val with
+    match (computeExprType model expr).val with
     | .TSet _ => .set expr
     | _ => .single expr
 /--
@@ -63,7 +64,7 @@ def buildNotModifiedForEntry (obj : StmtExprMd) (entry : ModifiesEntry) : StmtEx
   | .single expr =>
     mkMd <| .PrimitiveOp .Neq [obj, expr]
   | .set expr =>
-    let membership := mkMd <| .StaticCall "select" [expr, obj]
+    let membership := mkMd <| .StaticCall (mkId "select") [expr, obj]
     mkMd <| .PrimitiveOp .Not [membership]
 
 /-- Conjoin a list of StmtExprs with `&&`. -/
@@ -83,19 +84,18 @@ Generates a single quantified formula:
 
 Returns `none` if there are no entries.
 -/
-def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
-    (types : List TypeDefinition) (modifiesExprs : List StmtExprMd)
+def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs : List StmtExprMd)
     (heapInName heapOutName : Identifier) : Option StmtExprMd :=
-  let entries := extractModifiesEntries env types modifiesExprs
-  let objName := "$modifies_obj"
-  let fldName := "$modifies_fld"
+  let entries := extractModifiesEntries model modifiesExprs
+  let objName := mkId "$modifies_obj"
+  let fldName := mkId "$modifies_fld"
   let obj := mkMd <| .Identifier objName
   let fld := mkMd <| .Identifier fldName
   let heapIn := mkMd <| .Identifier heapInName
   let heapOut := mkMd <| .Identifier heapOutName
       -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.nextReference
-  let heapCounter := mkMd <| .StaticCall "Heap..nextReference" [heapIn]
-  let objRef := mkMd <| .StaticCall "Composite..ref" [obj]
+  let heapCounter := mkMd <| .StaticCall (mkId "Heap..nextReference") [heapIn]
+  let objRef := mkMd <| .StaticCall (mkId "Composite..ref") [obj]
   let objAllocated := mkMd <| .PrimitiveOp .Lt [objRef, heapCounter]
   let antecedent := if entries.isEmpty
     then objAllocated
@@ -105,14 +105,14 @@ def buildModifiesEnsures (proc: Procedure) (env : TypeEnv)
       let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
       mkMd <| .PrimitiveOp .And [objAllocated, notModified]
   -- Build: readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
-  let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
-  let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
+  let readIn := mkMd <| .StaticCall (mkId "readField") [heapIn, obj, fld]
+  let readOut := mkMd <| .StaticCall (mkId "readField") [heapOut, obj, fld]
   let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
-  let innerForall := mkMd <| .Forall fldName (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) implBody
-  let outerForall := ⟨ .Forall objName (⟨ .UserDefined "Composite", .empty ⟩) innerForall, proc.md ⟩
+  let innerForall := mkMd <| .Forall ⟨ fldName, (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) ⟩ implBody
+  let outerForall := ⟨ .Forall ⟨ objName, (⟨ .UserDefined (mkId "Composite"), .empty ⟩) ⟩   innerForall, proc.md ⟩
   some outerForall
 
 /--
@@ -120,7 +120,7 @@ Check whether a procedure has a `$heap` output parameter,
 indicating it mutates the heap.
 -/
 def hasHeapOut (proc : Procedure) : Bool :=
-  proc.outputs.any (fun p => p.name == "$heap")
+  proc.outputs.any (fun p => p.name.name == "$heap")
 
 /--
 Transform a single procedure: if it has modifies clauses, generate the frame
@@ -130,17 +130,14 @@ If the procedure has a `$heap` but no modifies clause, adds a postcondition
 that all allocated objects are preserved between heaps:
   `forall $obj: Composite, $fld: Field => $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)`
 -/
-def transformModifiesClauses (constants : List Constant) (types : List TypeDefinition)
+def transformModifiesClauses (model: SemanticModel)
     (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
   match proc.body with
   | .Opaque postconds impl modifiesExprs =>
       if hasHeapOut proc then
-        let env : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
-                              proc.outputs.map (fun p => (p.name, p.type)) ++
-                              constants.map (fun c => (c.name, c.type))
-        let heapInName := "$heap_in"
-        let heapName := "$heap"
-        let frameCondition := buildModifiesEnsures proc env types modifiesExprs heapInName heapName
+        let heapInName := mkId "$heap_in"
+        let heapName := mkId "$heap"
+        let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
           | some frame => postconds ++ [frame]
           | none => postconds
@@ -156,9 +153,9 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (program : Program) : Program × Array DiagnosticModel :=
+def modifiesClausesTransform (model: SemanticModel) (program : Program) : Program × Array DiagnosticModel :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
-    match transformModifiesClauses program.constants program.types proc with
+    match transformModifiesClauses model proc with
     | .ok proc' => (acc ++ [proc'], errs)
     | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
   ) ([], [])

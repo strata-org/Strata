@@ -25,6 +25,8 @@ structure Identifier where
   id : Option Nat := none
   deriving Repr, BEq, Inhabited
 
+def mkId (name: String): Identifier := Identifier.mk name none
+
 /--
 Primitive operations available in Laurel expressions.
 
