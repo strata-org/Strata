@@ -68,7 +68,7 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalStmt P Cmd EvalCmd extendEval δ σ (.funcDecl decl md) σ
       (extendEval δ σ decl)
 
-  -- (TODO): Define semantics of `goto`.
+  -- (TODO): Define semantics of `exit`.
 
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   (extendEval : ExtendEval P)
@@ -149,7 +149,7 @@ theorem EvalStmtDefMonotone
       apply EvalBlockDefMonotone <;> assumption
     | ite_false_sem Hsome Hwf Heval =>
       apply EvalBlockDefMonotone <;> assumption
-  | .goto _ _ => cases Heval
+  | .exit _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
 
