@@ -28,21 +28,21 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
   match mode with
   | .deductive =>
     -- Deductive verification: prove correctness
-    if outcome.passAndReachable || outcome.passReachabilityUnknown then 
+    if outcome.passAndReachable || outcome.passReachabilityUnknown then
       .none
-    else if outcome.unreachable then 
+    else if outcome.unreachable then
       .warning -- Dead code
-    else 
+    else
       .error -- alwaysFalseAndReachable, alwaysFalseReachabilityUnknown, indecisiveAndReachable, canBeFalseAndReachable, satisfiableValidityUnknown, unknown
   | .bugFinding =>
     -- Bug finding: find counterexamples
-    if outcome.passAndReachable || outcome.passReachabilityUnknown then 
+    if outcome.passAndReachable || outcome.passReachabilityUnknown then
       .none
-    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then 
+    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then
       .error
-    else if outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then 
+    else if outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then
       .warning
-    else 
+    else
       .note -- unreachable, satisfiableValidityUnknown
 
 /-- Convert VCOutcome to a descriptive message -/
