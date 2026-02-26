@@ -74,8 +74,8 @@ def translateBool (arg : Arg) : TransM Bool := do
 instance : Inhabited Parameter where
   default := { name := "", type := ⟨.TVoid, #[]⟩ }
 
-def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := ⟨t, md⟩
-def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
+def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
+def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
 def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do

@@ -116,12 +116,12 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   -- Dummy expression used as placeholder when an error is emitted in pure context
   let dummy := .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
-  let disallowed (e : StmtExprMd) (msg : String) : TranslateM Core.Expression.Expr := do
+  let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
-      emitDiagnostic (e.md.toDiagnostic msg)
+      emitDiagnostic (md.toDiagnostic msg)
       return dummy
     else
-      panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format e)}"
+      panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format md)}"
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
@@ -188,7 +188,7 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   | .StaticCall name args =>
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && !isCoreFunction funcNames name then
-        disallowed expr "calls to procedures are not supported in functions or contracts"
+        disallowed expr.md "calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () (Core.CoreIdent.unres name) none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
@@ -210,10 +210,17 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       let re2 ← translateExpr env e2 boundVars isPureContext
       return .eq () re1 re2
   | .Assign _ _ =>
-      disallowed expr "destructive assignments are not supported in functions or contracts"
+      disallowed expr.md "destructive assignments are not supported in functions or contracts"
   | .While _ _ _ _ =>
-      disallowed expr "loops are not supported in functions or contracts"
-  | .Exit _ => disallowed expr "exit is not supported in expression position"
+      disallowed expr.md "loops are not supported in functions or contracts"
+  | .Exit _ => disallowed expr.md "exit is not supported in expression position"
+
+  | .Block (⟨ .Assert _, md⟩ :: rest) label => do
+    _ ← disallowed md "asserts are not YET supported in functions or contracts"
+    translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
+  | .Block (⟨ .Assume _, md⟩ :: rest) label =>
+    _ ← disallowed md "assumes are not YET supported in functions or contracts"
+    translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
 
   | .IsType _ _ => panic "IsType should have been lowered"
   | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
@@ -222,9 +229,10 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
 
+
   | .Block _ _ => panic "block expression not yet implemented (should be lowered in a separate pass)"
   | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
-  | .Return _ => disallowed expr "return expression not yet implemented (should be lowered in a separate pass)"
+  | .Return _ => disallowed expr.md "return expression not yet implemented (should be lowered in a separate pass)"
 
   | .AsType target _ => panic "AsType expression not implemented"
   | .Assigned _ => panic "assigned expression not implemented"
