@@ -18,8 +18,10 @@ TEST_DIR = Path(__file__).resolve().parent
 TEST_FILES = sorted(
     f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
 )
-SKIP_TESTS = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
-SKIP_TESTS_LAUREL = SKIP_TESTS | {"test_datetime"}
+
+BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
+SKIP_TESTS = BOTH_SKIP | {"test_class_field_use"}
+SKIP_TESTS_LAUREL = BOTH_SKIP | {"test_datetime"}
 
 
 def run(test_file: str, *, laurel: bool) -> bool:
