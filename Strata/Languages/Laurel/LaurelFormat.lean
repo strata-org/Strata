@@ -146,11 +146,6 @@ end
 def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
 
-def formatDeterminism : Determinism → Format
-  | .deterministic none => "deterministic"
-  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
-  | .nondeterministic => "nondeterministic"
-
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque postconds impl modif =>
@@ -160,13 +155,21 @@ def formatBody : Body → Format
       match impl with
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
-  | .Abstract post => "abstract ensures " ++ formatStmtExpr post
+  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
+
+def formatDeterminism : Determinism → Format
+  | .deterministic none => "deterministic"
+  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
+  | .nondeterministic => "nondeterministic"
+
+instance : Std.ToFormat Determinism where
+  format := formatDeterminism
 
 def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
-  "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++
+  Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
   formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 
@@ -221,9 +224,6 @@ instance : Std.ToFormat StmtExpr where
 
 instance : Std.ToFormat Parameter where
   format := formatParameter
-
-instance : Std.ToFormat Determinism where
-  format := formatDeterminism
 
 instance : Std.ToFormat Body where
   format := formatBody
