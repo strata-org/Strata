@@ -74,7 +74,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (LoopTrivialPgm.commands))
+#eval TransM.run Inhabited.default ((translateProgram (LoopTrivialPgm.commands)).map (·.stripMetaData))
 
 /--
 info: procedure loopTrivial (n : int) returns (return : int)

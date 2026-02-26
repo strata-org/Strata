@@ -1001,22 +1001,24 @@ partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) 
   | _ => TransM.error s!"translateInvariants unimplemented for {repr op}"
 
 
-def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings) :
+def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings)
+    (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Core.Statement.init id tp none
-    let (stmts, bindings) ← initVarStmts rest bindings
+    let s := Core.Statement.init id tp none md
+    let (stmts, bindings) ← initVarStmts rest bindings md
     return ((s :: stmts), bindings)
 
-def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
+def translateVarStatement (bindings : TransBindings) (decls : Array Arg)
+    (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
   if decls.size != 1 then
     TransM.error s!"translateVarStatement unexpected decls length {repr decls}"
   else
     let tpids ← translateDeclList bindings decls[0]!
-    let (stmts, bindings) ← initVarStmts tpids bindings
+    let (stmts, bindings) ← initVarStmts tpids bindings md
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
                       return ((LExpr.fvar () id (ty.toMonoType h)): LExpr Core.CoreLParams.mono)
@@ -1025,7 +1027,8 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let bbindings := bindings.boundVars ++ newVars
     return (stmts, { bindings with boundVars := bbindings })
 
-def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg) :
+def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg)
+    (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
   if args.size != 3 then
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
@@ -1036,7 +1039,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let ty := (.forAll [] mty)
     let newBinding: LExpr Core.CoreLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
-    return ([.init lhs ty val], { bindings with boundVars := bbindings })
+    return ([.init lhs ty val md], { bindings with boundVars := bbindings })
 
 def translateOptionReachCheck (arg : Arg) : TransM Bool := do
   let .option _ rc := arg
@@ -1071,9 +1074,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
 
   match op.name, op.args with
   | q`Core.varStatement, declsa =>
-    translateVarStatement bindings declsa
+    translateVarStatement bindings declsa (← getOpMetaData op)
   | q`Core.initStatement, args =>
-    translateInitStatement p bindings args
+    translateInitStatement p bindings args (← getOpMetaData op)
   | q`Core.assign, #[_tpa, lhsa, ea] =>
     let lhs ← translateLhs lhsa
     let val ← translateExpr p bindings ea

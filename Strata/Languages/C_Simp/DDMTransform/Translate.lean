@@ -6,6 +6,7 @@
 
 import Strata.Languages.C_Simp.DDMTransform.Parse
 import Strata.Languages.C_Simp.C_Simp
+import Strata.DDM.AST
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -19,19 +20,21 @@ namespace C_Simp
 
 open C_Simp Lambda Imperative
 open Std (ToFormat Format format)
+open Lean.Parser
 
 ---------------------------------------------------------------------
 
 /- Translation Monad -/
 
 structure TransState where
+  inputCtx : InputContext
   errors : Array String
 
 def TransM := StateM TransState
   deriving Monad
 
-def TransM.run (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { errors := #[] }
+def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
+  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
   (v, s.errors)
 
 instance : ToString (C_Simp.Program × Array String) where
@@ -39,8 +42,24 @@ instance : ToString (C_Simp.Program × Array String) where
                 "Errors: " ++ (toString p.snd)
 
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
-  fun s => ((), { errors := s.errors.push msg })
+  fun s => ((), { s with errors := s.errors.push msg })
   return panic msg
+
+---------------------------------------------------------------------
+
+/- Metadata -/
+
+def sourceRangeToMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData C_Simp.Expression :=
+  let file := ictx.fileName
+  let uri : Uri := .file file
+  let fileRangeElt := ⟨ MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
+  #[fileRangeElt]
+
+def getOpMetaData (op : Operation) : TransM (Imperative.MetaData C_Simp.Expression) :=
+  return sourceRangeToMetaData (← StateT.get).inputCtx op.ann
+
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData C_Simp.Expression) :=
+  return sourceRangeToMetaData (← StateT.get).inputCtx arg.ann
 
 ---------------------------------------------------------------------
 
@@ -352,6 +371,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
   TransM (List Statement × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateStmt expected op {repr arg}"
+  let md ← getOpMetaData op
 
   match op.name, op.args with
   | q`C_Simp.init_decl, #[ida, tpa] =>
@@ -363,7 +383,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty none))], newBindings)
+    return ([(.cmd (.init id ty none md))], newBindings)
   | q`C_Simp.init_def, #[ida, tpa, ea] =>
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
@@ -374,34 +394,34 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty val))], newBindings)
+    return ([(.cmd (.init id ty val md))], newBindings)
   | q`C_Simp.assign, #[_tpa, ida, ea] =>
     let id ← translateIdent ida
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set id val))], bindings)
+    return ([(.cmd (.set id val md))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa))], bindings)
+    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa) md)], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
-    -- TODO: Handle measure and invariant
-    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba)], bindings)
+    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) md], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set "return" val))], bindings)
+    return ([(.cmd (.set "return" val md))], bindings)
   | q`C_Simp.annotation, #[a] =>
     let .op a_op := a
       | TransM.error s!"Annotation expected op {repr a}"
+    let a_md ← getOpMetaData a_op
     match a_op.name, a_op.args with
     | q`C_Simp.assert, #[la, ca] =>
       let l ← translateIdent la
       let c ← translateExpr bindings ca
-      return ([(.cmd (.assert l c))], bindings)
+      return ([(.cmd (.assert l c a_md))], bindings)
     | q`C_Simp.assume, #[la, ca] =>
       let l ← translateIdent la
       let c ← translateExpr bindings ca
-      return ([(.cmd (.assume l c))], bindings)
+      return ([(.cmd (.assume l c a_md))], bindings)
     | _,_ => TransM.error s!"Unexpected annotation."
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 

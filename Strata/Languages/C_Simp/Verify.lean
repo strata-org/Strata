@@ -131,7 +131,7 @@ def to_core(program : C_Simp.Program) : Core.Program :=
   loop_elimination program
 
 def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
-  (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
+  (Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (p.commands))).fst
 
 def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
   Except DiagnosticModel Core.Program := do

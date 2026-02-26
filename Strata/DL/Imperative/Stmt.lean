@@ -30,19 +30,19 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   /-- An atomic command. -/
   | cmd      (cmd : Cmd)
   /-- An block containing a `List` of `Stmt`. -/
-  | block    (label : String) (b : List (Stmt P Cmd)) (md : MetaData P := .empty)
+  | block    (label : String) (b : List (Stmt P Cmd)) (md : MetaData P)
   /-- A conditional execution statement. -/
-  | ite      (cond : P.Expr)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P := .empty)
+  | ite      (cond : P.Expr)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P)
   /-- An iterated execution statement. Includes an optional measure (for
   termination) and invariants. -/
   | loop     (guard : P.Expr) (measure : Option P.Expr) (invariants : List P.Expr)
-             (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
+             (body : List (Stmt P Cmd)) (md : MetaData P)
   /-- An exit statement that transfers control out of the nearest enclosing
   block with the given label. If no label is provided, exits the nearest
   enclosing block. -/
-  | exit     (label : Option String) (md : MetaData P := .empty)
+  | exit     (label : Option String) (md : MetaData P)
   /-- A function declaration within a statement block. -/
-  | funcDecl (decl : PureFunc P) (md : MetaData P := .empty)
+  | funcDecl (decl : PureFunc P) (md : MetaData P)
   deriving Inhabited
 
 /-- A block is simply an abbreviation for a list of commands. -/
@@ -158,11 +158,11 @@ mutual
 def Stmt.stripMetaData (s : Stmt P C) : Stmt P C :=
   match s with
   | .cmd c => .cmd c
-  | .block label bss _ => .block label (Block.stripMetaData bss)
-  | .ite cond tss ess _ => .ite cond (Block.stripMetaData tss) (Block.stripMetaData ess)
-  | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss)
-  | .exit label _ => .exit label
-  | .funcDecl decl _ => .funcDecl decl
+  | .block label bss _ => .block label (Block.stripMetaData bss) .empty
+  | .ite cond tss ess _ => .ite cond (Block.stripMetaData tss) (Block.stripMetaData ess) .empty
+  | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss) .empty
+  | .exit label _ => .exit label .empty
+  | .funcDecl decl _ => .funcDecl decl .empty
   termination_by (Stmt.sizeOf s)
 
 /-- Remove all metadata from a block. -/

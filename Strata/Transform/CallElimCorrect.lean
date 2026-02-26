@@ -64,7 +64,7 @@ theorem CoreIdent.Disjoint_isLocl_isGlob :
 -- inidividual lemmas
 
 theorem createHavocsApp :
-createHavocs (a ++ b) = createHavocs a ++ createHavocs b := by
+createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
 simp [createHavocs]
 
 theorem createFvarsApp :
