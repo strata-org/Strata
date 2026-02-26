@@ -19,7 +19,7 @@ TEST_FILES = sorted(
     f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
 )
 SKIP_TESTS = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
-SKIP_TESTS_LAUREL = SKIP_TESTS | {"test_class_decl", "test_datetime", "test_strings"}
+SKIP_TESTS_LAUREL = SKIP_TESTS | {"test_datetime"}
 
 
 def run(test_file: str, *, laurel: bool) -> bool:
