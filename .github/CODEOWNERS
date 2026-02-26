@@ -1,3 +1,9 @@
 # Defaults owners for everything in the repo. unless a later match
 # takes precedence
 *       @strata-org/reviewers
+
+# Laurel language
+Strata/Languages/Laurel/     @strata-org/reviewers @keyboardDrummer @fabiomadge
+StrataTest/Languages/Laurel/ @strata-org/reviewers @keyboardDrummer @fabiomadge
+Strata/Languages/Python/     @strata-org/reviewers @keyboardDrummer @fabiomadge
+StrataTest/Languages/Python/ @strata-org/reviewers @keyboardDrummer @fabiomadge

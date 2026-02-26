@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(lake:*)",
+      "Bash(git:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(pwd)",
+      "Bash(grep:*)"
+    ]
+  },
+  "permissionMode": "dontAsk"
+}

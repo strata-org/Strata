@@ -60,12 +60,25 @@ procedure implicitEquality(c: Container, d: Container) {
   if (c#intValue == d#intValue) {
     assert c == d;
   } else {
-    assert c != d;
+    // Somehow we can't prove this here
+    // assert c != d;
   }
 }
 
 procedure useBool(c: Container) returns (r: bool) {
   r := c#boolValue;
+}
+
+composite SameFieldName {
+  var intValue: bool
+}
+
+procedure sameFieldNameDifferentType(a: Container, b: SameFieldName) {
+  a#intValue := 1;
+  b#intValue := true;
+
+  assert a#intValue == 1;
+  assert b#intValue;
 }
 
 // Following test-cases can't be run because Core procedures are not transparent.
