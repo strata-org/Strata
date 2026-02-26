@@ -49,7 +49,7 @@ def formatHighTypeVal : HighType → Format
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
   | .TMap keyType valueType => "Map[" ++ formatHighType keyType ++ ", " ++ formatHighType valueType ++ "]"
-  | .UserDefined name => Format.text name
+  | .UserDefined ref => Format.text ref.name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
       Format.joinSep (args.map formatHighType) " " ++ ")"
@@ -78,8 +78,8 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       | some e => " else " ++ formatStmtExpr e
   | .Block stmts _ =>
       group $ "{" ++ nestD (line ++ joinSep (stmts.map formatStmtExpr) (";" ++ line)) ++ line ++ "}"
-  | .LocalVariable name ty init =>
-      "var " ++ Format.text name ++ ": " ++ formatHighType ty ++
+  | .LocalVariable defn ty init =>
+      "var " ++ Format.text defn.name ++ ": " ++ formatHighType ty ++
       match init with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
@@ -96,7 +96,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .LiteralString s => "\"" ++ Format.text s ++ "\""
-  | .Identifier name => Format.text name
+  | .Identifier ref => Format.text ref.name
   | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value
   | .Assign targets value =>
