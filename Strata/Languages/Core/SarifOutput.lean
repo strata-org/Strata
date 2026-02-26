@@ -33,12 +33,12 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
     else if outcome.unreachable then 
       .warning -- Dead code
     else 
-      .error -- Everything not proven is an error
+      .error -- alwaysFalseAndReachable, alwaysFalseReachabilityUnknown, indecisiveAndReachable, canBeFalseAndReachable, satisfiableValidityUnknown, unknown
   | .bugFinding =>
     -- Bug finding: find counterexamples
     if outcome.passAndReachable || outcome.passReachabilityUnknown then 
       .none
-    else if outcome.isAlwaysFalse then 
+    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then 
       .error
     else if outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then 
       .warning
