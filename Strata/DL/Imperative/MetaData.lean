@@ -197,7 +197,9 @@ def MetaData.hasFullCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool 
     match elem.value with
     | .switch true => true
     | _ => false
-  | none => false
+  | none =>
+    -- Backward compatibility: reachCheck maps to fullCheck
+    md.hasReachCheck
 
 def MetaData.hasValidityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.validityCheck with
