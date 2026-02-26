@@ -132,7 +132,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     (satisfiabilityCheck validityCheck : Bool)
     : Except Format (Result P.Ident × Result P.Ident) := do
   let stdout := output.stdout
-  
+
   -- Helper to parse a single verdict and model
   let parseVerdict (input : String) : Except Format (Result P.Ident × String) := do
     let pos := input.find (· == '\n')
@@ -155,7 +155,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
           s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver."
         else ""
       .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
-  
+
   -- Parse results based on which checks are enabled
   let (satResult, remaining) ← if satisfiabilityCheck then
     parseVerdict stdout
