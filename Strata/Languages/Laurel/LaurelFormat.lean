@@ -102,18 +102,18 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .Assign targets value =>
       "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
-      formatStmtExpr target ++ "#" ++ Format.text field
+      formatStmtExpr target ++ "#" ++ Format.text field.name
   | .PureFieldUpdate target field value =>
-      formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
+      formatStmtExpr target ++ " with { " ++ Format.text field.name ++ " := " ++ formatStmtExpr value ++ " }"
   | .StaticCall name args =>
-      Format.text name ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+      Format.text name.name ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
   | .PrimitiveOp op [a] =>
       formatOperation op ++ formatStmtExpr a
   | .PrimitiveOp op [a, b] =>
       formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
   | .PrimitiveOp op args =>
       formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
-  | .New name => "new " ++ Format.text name
+  | .New name => "new " ++ Format.text name.name
   | .This => "this"
   | .ReferenceEquals lhs rhs =>
       formatStmtExpr lhs ++ " === " ++ formatStmtExpr rhs
@@ -122,12 +122,12 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .IsType target ty =>
       formatStmtExpr target ++ " is " ++ formatHighType ty
   | .InstanceCall target name args =>
-      formatStmtExpr target ++ "." ++ Format.text name ++ "(" ++
+      formatStmtExpr target ++ "." ++ Format.text name.name ++ "(" ++
       Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
-  | .Forall name ty body =>
-      "forall " ++ Format.text name ++ ": " ++ formatHighType ty ++ " => " ++ formatStmtExpr body
-  | .Exists name ty body =>
-      "exists " ++ Format.text name ++ ": " ++ formatHighType ty ++ " => " ++ formatStmtExpr body
+  | .Forall param body =>
+      "forall " ++ Format.text param.name.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
+  | .Exists param body =>
+      "exists " ++ Format.text param.name.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
@@ -144,7 +144,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
 end
 
 def formatParameter (p : Parameter) : Format :=
-  Format.text p.name ++ ": " ++ formatHighType p.type
+  Format.text p.name.name ++ ": " ++ formatHighType p.type
 
 def formatDeterminism : Determinism → Format
   | .deterministic none => "deterministic"
@@ -163,7 +163,7 @@ def formatBody : Body → Format
   | .Abstract post => "abstract ensures " ++ formatStmtExpr post
 
 def formatProcedure (proc : Procedure) : Format :=
-  "procedure " ++ Format.text proc.name ++
+  "procedure " ++ Format.text proc.name.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
   "requires " ++ formatStmtExpr proc.precondition ++ Format.line ++
@@ -172,26 +172,26 @@ def formatProcedure (proc : Procedure) : Format :=
 
 def formatField (f : Field) : Format :=
   (if f.isMutable then "var " else "val ") ++
-  Format.text f.name ++ ": " ++ formatHighType f.type
+  Format.text f.name.name ++ ": " ++ formatHighType f.type
 
 def formatCompositeType (ct : CompositeType) : Format :=
-  "composite " ++ Format.text ct.name ++
+  "composite " ++ Format.text ct.name.name ++
   (if ct.extending.isEmpty then Format.nil else " extends " ++
-   Format.joinSep (ct.extending.map Format.text) ", ") ++
+   Format.joinSep (ct.extending.map (Format.text ·.name)) ", ") ++
   " { " ++ Format.joinSep (ct.fields.map formatField) "; " ++ " }"
 
 def formatConstrainedType (ct : ConstrainedType) : Format :=
-  "constrained " ++ Format.text ct.name ++
+  "constrained " ++ Format.text ct.name.name ++
   " = " ++ Format.text ct.valueName ++ ": " ++ formatHighType ct.base ++
   " | " ++ formatStmtExpr ct.constraint
 
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format :=
-  Format.text c.name ++
+  Format.text c.name.name ++
   if c.args.isEmpty then Format.nil
   else "(" ++ Format.joinSep (c.args.map fun (n, ty) => Format.text n ++ ": " ++ formatHighType ty) ", " ++ ")"
 
 def formatDatatypeDefinition (dt : DatatypeDefinition) : Format :=
-  "datatype " ++ Format.text dt.name ++
+  "datatype " ++ Format.text dt.name.name ++
   (if dt.typeArgs.isEmpty then Format.nil
    else "(" ++ Format.joinSep (dt.typeArgs.map Format.text) ", " ++ ")") ++
   " { " ++ Format.joinSep (dt.constructors.map formatDatatypeConstructor) ", " ++ " }"

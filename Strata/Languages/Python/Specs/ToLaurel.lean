@@ -55,6 +55,7 @@ structure ToLaurelState where
   procedures : Array Procedure := #[]
   types : Array TypeDefinition := #[]
   overloads : OverloadTable := {}
+  nextId : Nat := 0
 
 /-- Monad for PySpec to Laurel translation. -/
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
@@ -79,6 +80,17 @@ def pushOverloadEntry (funcName : String) (literalValue : String)
     let existing := s.overloads.getD funcName {}
     let updated := existing.insert literalValue returnType
     { s with overloads := s.overloads.insert funcName updated }
+
+/-- Allocate a fresh unique ID for Definition nodes. -/
+private def freshId : ToLaurelM Nat := do
+  let s ← get
+  modify fun st => { st with nextId := st.nextId + 1 }
+  return s.nextId
+
+/-- Create a `Definition` with a fresh ID. -/
+private def mkDef (name : String) : ToLaurelM Definition := do
+  let id ← freshId
+  return ⟨name, id⟩
 
 /-! ## Helper Functions -/
 
@@ -240,7 +252,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
       if args.size > 0 then
         reportError default
           s!"Generic class '{name}' with type args unsupported"
-      return mkTy (.UserDefined name)
+      return mkTy (.UserDefined (Reference.mk' name))
     | .intLiteral _ => return mkTy .TInt
     | .stringLiteral _ => return mkTy .TString
     | .typedDict _ _ _ => return mkCore "DictStrAny"
@@ -250,7 +262,8 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
 /-- Convert an Arg to a Laurel Parameter. -/
 def argToParameter (arg : Arg) : ToLaurelM Parameter := do
   let ty ← specTypeToLaurelType arg.type
-  return { name := arg.name, type := ty }
+  let defn ← mkDef arg.name
+  return { name := defn, type := ty }
 
 /-- Convert a function declaration to a Laurel Procedure. -/
 def funcDeclToLaurel (procName : String) (func : FunctionDecl)
@@ -258,14 +271,17 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
   let allArgs := func.args.args ++ func.args.kwonly
   let inputs ← allArgs.mapM argToParameter
   let retType ← specTypeToLaurelType func.returnType
-  let outputs : List Parameter :=
+  let outputs : List Parameter ← do
     match retType.val with
-    | .TVoid => []
-    | _ => [{ name := "result", type := retType }]
+    | .TVoid => pure []
+    | _ => do
+      let resultDefn ← mkDef "result"
+      pure [{ name := resultDefn, type := retType }]
   if func.preconditions.size > 0 || func.postconditions.size > 0 then
     reportError func.loc "Preconditions/postconditions not yet supported"
+  let nameDefn ← mkDef procName
   return {
-    name := procName
+    name := nameDefn
     inputs := inputs.toList
     outputs := outputs
     precondition := ⟨.LiteralBool true, .empty⟩
@@ -277,8 +293,9 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
 
 /-- Convert a class definition to Laurel types and procedures. -/
 def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
+  let nameDefn ← mkDef cls.name
   pushType (.Composite {
-    name := cls.name
+    name := nameDefn
     extending := []
     fields := []
     instanceProcedures := []
@@ -288,9 +305,10 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
     pushProcedure proc
 
 /-- Convert a type definition to a Laurel composite type placeholder. -/
-def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit :=
+def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
+  let nameDefn ← mkDef td.name
   pushType (.Composite {
-    name := td.name
+    name := nameDefn
     extending := []
     fields := []
     instanceProcedures := []

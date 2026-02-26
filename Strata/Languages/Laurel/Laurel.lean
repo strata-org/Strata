@@ -15,28 +15,15 @@ Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
 namespace Strata
 namespace Laurel
 
-abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
 /-- A name-introduction site (variable declaration, procedure, field, type, etc.).
     Carries a mandatory unique ID assigned by the resolution pass. -/
-structure Definition where
+structure Identifier where
   /-- The declared name. -/
   name : String
   /-- Unique ID assigned by the resolution pass. -/
-  id : Nat
-  deriving Repr, BEq, Inhabited
-
-/-- A name-use site (variable reference, call target, field access, etc.).
-    Carries an optional ID that is `none` before resolution and `some id` after. -/
-structure Reference where
-  /-- The referenced name. -/
-  name : String
-  /-- Resolved ID, `none` before resolution. -/
   id : Option Nat := none
   deriving Repr, BEq, Inhabited
-
-/-- Create an unresolved `Reference` from a plain name. -/
-def Reference.mk' (name : String) : Reference := { name, id := none }
 
 /--
 Primitive operations available in Laurel expressions.
@@ -45,11 +32,11 @@ Operations are grouped into boolean operations (`Eq`, `Neq`, `And`, `Or`,
 `Not`, `Implies`), arithmetic operations (`Neg`, `Add`, `Sub`, `Mul`, `Div`,
 `Mod`, `DivT`, `ModT`), and comparison operations (`Lt`, `Leq`, `Gt`, `Geq`).
 
-Equality on composite types uses reference equality for impure types and
+Equality on composite types uses Identifier equality for impure types and
 structural equality for pure ones.
 -/
 inductive Operation : Type where
-  /-- Equality test. Uses reference equality for impure composite types, structural equality for pure ones. -/
+  /-- Equality test. Uses Identifier equality for impure composite types, structural equality for pure ones. -/
   | Eq
   /-- Inequality test. -/
   | Neq
@@ -129,11 +116,11 @@ inductive HighType : Type where
   | TSet (elementType : WithMetadata HighType)
   /-- Map type. -/
   | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType)
-  /-- A reference to a user-defined composite or constrained type by name. -/
-  | UserDefined (ref : Reference)
+  /-- A Identifier to a user-defined composite or constrained type by name. -/
+  | UserDefined (ref : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
   | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
-  /-- A pure (value) variant of a composite type that uses structural equality instead of reference equality. -/
+  /-- A pure (value) variant of a composite type that uses structural equality instead of Identifier equality. -/
   | Pure (base : WithMetadata HighType)
   /-- An intersection of types. Used for implicit intersection types, e.g. `Scientist & Scandinavian`. -/
   | Intersection (types : List (WithMetadata HighType))
@@ -149,8 +136,8 @@ verification. Unlike separate functions and methods, Laurel uses a single
 general concept that covers both.
 -/
 structure Procedure : Type where
-  /-- The procedure's definition (name + ID). -/
-  name : Definition
+  /-- The procedure's Identifier (name + ID). -/
+  name : Identifier
   /-- Input parameters with their types. -/
   inputs : List Parameter
   /-- Output parameters with their types. Multiple outputs are supported. -/
@@ -182,8 +169,8 @@ inductive Determinism where
 A typed parameter for a procedure.
 -/
 structure Parameter where
-  /-- The parameter's definition (name + ID). -/
-  name : Definition
+  /-- The parameter's Identifier (name + ID). -/
+  name : Identifier
   /-- The parameter type. -/
   type : WithMetadata HighType
 
@@ -217,7 +204,7 @@ inductive StmtExpr : Type where
   /-- A sequence of statements with an optional label for `Exit`. -/
   | Block (statements : List (WithMetadata StmtExpr)) (label : Option String)
   /-- A local variable declaration with a type and optional initializer. The initializer must be set if this `StmtExpr` is pure. -/
-  | LocalVariable (name : Definition) (type : WithMetadata HighType) (initializer : Option (WithMetadata StmtExpr))
+  | LocalVariable (name : Identifier) (type : WithMetadata HighType) (initializer : Option (WithMetadata StmtExpr))
   /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
   | While (cond : WithMetadata StmtExpr) (invariants : List (WithMetadata StmtExpr))
     (decreases : Option (WithMetadata StmtExpr))
@@ -232,30 +219,30 @@ inductive StmtExpr : Type where
   | LiteralBool (value : Bool)
   /-- A string literal. -/
   | LiteralString (value : String)
-  /-- A variable reference by name. -/
-  | Identifier (ref : Reference)
+  /-- A variable Identifier by name. -/
+  | Identifier (ref : Identifier)
   /-- Assignment to one or more targets. Multiple targets are only allowed when the value is a `StaticCall` to a procedure with multiple outputs. -/
   | Assign (targets : List (WithMetadata StmtExpr)) (value : WithMetadata StmtExpr)
   /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
-  | FieldSelect (target : WithMetadata StmtExpr) (fieldName : Reference)
+  | FieldSelect (target : WithMetadata StmtExpr) (fieldName : Identifier)
   /-- Update a field on a pure (value) type, producing a new value. -/
-  | PureFieldUpdate (target : WithMetadata StmtExpr) (fieldName : Reference) (newValue : WithMetadata StmtExpr)
+  | PureFieldUpdate (target : WithMetadata StmtExpr) (fieldName : Identifier) (newValue : WithMetadata StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
-  | StaticCall (callee : Reference) (arguments : List (WithMetadata StmtExpr))
+  | StaticCall (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
   /-- Apply a primitive operation to the given arguments. -/
   | PrimitiveOp (operator : Operation) (arguments : List (WithMetadata StmtExpr))
   /-- Create new object (`new`). -/
-  | New (ref : Reference)
-  /-- Reference to the current object (`this`/`self`). -/
+  | New (ref : Identifier)
+  /-- Identifier to the current object (`this`/`self`). -/
   | This
-  /-- Reference equality test between two expressions. -/
+  /-- Identifier equality test between two expressions. -/
   | ReferenceEquals (lhs : WithMetadata StmtExpr) (rhs : WithMetadata StmtExpr)
   /-- Type cast: treat the target as the given type. -/
   | AsType (target : WithMetadata StmtExpr) (targetType : WithMetadata HighType)
   /-- Type test: check whether the target is an instance of the given type. -/
   | IsType (target : WithMetadata StmtExpr) (type : WithMetadata HighType)
   /-- Call an instance method on a target object. -/
-  | InstanceCall (target : WithMetadata StmtExpr) (callee : Reference) (arguments : List (WithMetadata StmtExpr))
+  | InstanceCall (target : WithMetadata StmtExpr) (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
   /-- Universal quantification over a typed parameter. -/
   | Forall (param : Parameter) (body : WithMetadata StmtExpr)
   /-- Existential quantification over a typed parameter. -/
@@ -264,7 +251,7 @@ inductive StmtExpr : Type where
   | Assigned (name : WithMetadata StmtExpr)
   /-- Refer to the pre-state value of an expression in a postcondition. -/
   | Old (value : WithMetadata StmtExpr)
-  /-- Check whether a reference is freshly allocated. May only target impure composite types. -/
+  /-- Check whether a Identifier is freshly allocated. May only target impure composite types. -/
   | Fresh (value : WithMetadata StmtExpr)
   /-- Assert a condition, generating a proof obligation. -/
   | Assert (condition : WithMetadata StmtExpr)
@@ -341,8 +328,8 @@ A field in a composite type. Fields declare their name, mutability, and type.
 Mutability affects what permissions are needed to access the field.
 -/
 structure Field where
-  /-- The field definition (name + ID). -/
-  name : Definition
+  /-- The field Identifier (name + ID). -/
+  name : Identifier
   /-- Whether the field is mutable. Mutable fields require write permission. -/
   isMutable : Bool
   /-- The field's type. -/
@@ -355,10 +342,10 @@ Composite types may extend other composite types, forming a type hierarchy
 that affects the results of `IsType` and `AsType` operations.
 -/
 structure CompositeType where
-  /-- The type definition (name + ID). -/
-  name : Definition
+  /-- The type Identifier (name + ID). -/
+  name : Identifier
   /-- Names of composite types this type extends. The type hierarchy affects `IsType` and `AsType` results. -/
-  extending : List Reference
+  extending : List Identifier
   /-- The fields of this type. -/
   fields : List Field
   /-- Instance procedures (methods) defined on this type. -/
@@ -372,8 +359,8 @@ For example, `Option<T>` can be defined as a constrained type over `Dynamic`
 with the constraint `value is Some<T> || value is Unit`.
 -/
 structure ConstrainedType where
-  /-- The constrained type's definition (name + ID). -/
-  name : Definition
+  /-- The constrained type's Identifier (name + ID). -/
+  name : Identifier
   /-- The base type being refined. -/
   base : HighTypeMd
   /-- The name bound to the value in the constraint expression. -/
@@ -385,10 +372,10 @@ structure ConstrainedType where
 
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/
 structure DatatypeConstructor where
-  name : Definition
+  name : Identifier
   args : List (String × HighTypeMd)
 
-/-- A Laurel datatype definition with optional type parameters.
+/-- A Laurel datatype Identifier with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.
 
     The use-case of this type is to enable incremental translation to Core.
@@ -396,7 +383,7 @@ structure DatatypeConstructor where
     to already translate to datatypes.
      -/
 structure DatatypeDefinition where
-  name : Definition
+  name : Identifier
   typeArgs : List String
   constructors : List DatatypeConstructor
 
@@ -422,7 +409,7 @@ inductive TypeDefinition where
   | Datatype (ty : DatatypeDefinition)
 
 structure Constant where
-  name : Definition
+  name : Identifier
   type : HighTypeMd
   initializer : Option StmtExprMd := none
 

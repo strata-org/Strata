@@ -26,8 +26,8 @@ def lookupFieldInTypes (types : List TypeDefinition) (typeName : Identifier) (fi
   types.findSome? fun td =>
     match td with
     | .Composite ct =>
-        if ct.name == typeName then ct.fields.findSome? fun f =>
-          if f.name == fieldName then some f.type else none
+        if ct.name.name == typeName then ct.fields.findSome? fun f =>
+          if f.name.name == fieldName then some f.type else none
         else none
     | _ => none
 
@@ -46,14 +46,14 @@ def computeExprType (env : TypeEnv) (types : List TypeDefinition) (expr : StmtEx
   | .LiteralString _ => ⟨ .TString, md ⟩
   -- Variables
   | .Identifier name =>
-      match env.find? (fun (n, _) => n == name) with
+      match env.find? (fun (n, _) => n == name.name) with
       | some (_, ty) => ty
-      | none => panic s!"Could not find variable {name} in environment '{Std.format env}'"
+      | none => panic s!"Could not find variable {name.name} in environment '{Std.format env}'"
   -- Field access
   | .FieldSelect target fieldName =>
       match computeExprType env types target with
       | WithMetadata.mk (.UserDefined typeName) _ =>
-          match lookupFieldInTypes types typeName fieldName with
+          match lookupFieldInTypes types typeName.name fieldName.name with
           | some ty => ty
           | none => panic s!"Could not find field in type"
       | _ => panic s!"Selecting from a type that's not a composite"
