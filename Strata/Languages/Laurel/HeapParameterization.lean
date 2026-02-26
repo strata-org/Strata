@@ -111,9 +111,9 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
           { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
             writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
             callees := r1.callees ++ r2.callees }
-    | .Abstract postconds => postconds.foldl (fun (acc : AnalysisResult) p => let r := (collectExprMd p).run {} |>.2; { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly, writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly, callees := acc.callees ++ r.callees }) {}
+    | .Abstract postconds => (postconds.forM collectExprMd).run {} |>.2
   -- Also analyze preconditions
-  let precondResult := proc.preconditions.foldl (fun (acc : AnalysisResult) p => let r := (collectExprMd p).run {} |>.2; { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly, writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly, callees := acc.callees ++ r.callees }) {}
+  let precondResult := (proc.preconditions.forM collectExprMd).run {} |>.2
   { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
     writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
     callees := bodyResult.callees ++ precondResult.callees }
