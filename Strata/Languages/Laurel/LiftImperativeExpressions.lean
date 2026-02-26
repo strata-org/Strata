@@ -369,7 +369,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- If the RHS is a direct imperative StaticCall, don't lift it —
       -- translateStmt handles Assign + StaticCall directly as a call statement.
       match _:value with
-      | WithMetadata.mk val md =>
+      | WithMetadata.mk val valueMd =>
       match _:val with
       | .StaticCall callee args =>
           let imperative := (← get).imperativeNames
@@ -377,7 +377,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
             let seqArgs ← args.mapM transformExpr
             let argPrepends ← takePrepends
             modify fun s => { s with subst := [] }
-            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, value.md⟩, md⟩]
+            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, valueMd⟩, md⟩]
           else
             let seqValue ← transformExpr value
             let prepends ← takePrepends
