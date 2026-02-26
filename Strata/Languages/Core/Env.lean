@@ -202,6 +202,14 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
   .ok { E with exprEnv := exprEnv }
 
 def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
+  let func ← match func.decreases with
+    | some (.fvar _ name _) =>
+      match func.inputs.keys.findIdx? (· == name) with
+      | some i => .ok { func with attr := #[.inlineIfConstr i] ++ func.attr }
+      | none => .error (.fromFormat f!"decreases '{name}' is not a parameter of '{func.name}'")
+    | some _ => .error (.fromFormat
+        f!"decreases must be a parameter name. General decreases expressions are not yet supported.")
+    | none => .ok func
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 

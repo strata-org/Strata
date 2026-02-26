@@ -24,19 +24,22 @@ argument is a constructor application) and reduces.
 namespace Lambda
 
 open Std (Format format)
+open Strata.DL.Util (FuncAttr)
 
 /-- Check well-formedness of a recursive function and extract the components
-    needed for axiom generation: recParam index and datatype. -/
+    needed for axiom generation: recParam index and datatype.
+    The `inlineIfConstr` attribute must have been previously set by `addFactoryFunc`
+    (which resolves the `decreases` expression to a parameter index). -/
 def checkRecursiveFunc [DecidableEq T.IDMeta]
     (func : LFunc T) (tf : @TypeFactory T.IDMeta)
     : Except Format (Nat × LDatatype T.IDMeta) := do
-  let recIdx ← func.recParam |>.elim
-    (.error f!"Recursive function {func.name} has no recParam") .ok
+  let recIdx ← FuncAttr.findInlineIfConstr func.attr |>.elim
+    (.error f!"Recursive function {func.name} has no inlineIfConstr attribute") .ok
   let inputTys := func.inputs.values
   let recTy ← inputTys[recIdx]? |>.elim
     (.error f!"Recursive function {func.name}: recParam index {recIdx} out of bounds") .ok
   let dtName ← match recTy with
-    | .tcons n _ => .ok n
+    | LMonoTy.tcons n _ => .ok n
     | _ => .error f!"Recursive function {func.name}: decreases parameter type is not a datatype"
   let dt ← tf.getType dtName |>.elim
     (.error f!"Recursive function {func.name}: datatype {dtName} not found") .ok

@@ -71,13 +71,13 @@ abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.M
 Helper constructor for LFunc to maintain backward compatibility.
 -/
 def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
-    (isConstr : Bool := false) (isRecursive : Bool := false) (recParam : Option Nat := none)
+    (isConstr : Bool := false) (isRecursive : Bool := false) (decreases : Option (LExpr T.mono) := none)
     (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
     (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])
     (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
     (axioms : List (LExpr T.mono) := [])
     (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := []) : LFunc T :=
-  Func.mk name typeArgs isConstr isRecursive recParam inputs output body attr concreteEval axioms preconditions
+  Func.mk name typeArgs isConstr isRecursive decreases inputs output body attr concreteEval axioms preconditions
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }

@@ -66,8 +66,8 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   name     : IdentT
   typeArgs : List TyIdentifier := []
   isConstr : Bool := false --whether function is datatype constructor
-  isRecursive : Bool := false -- whether function is recursive
-  recParam : Option Nat := none -- index of the structural recursion parameter (from `decreases`)
+  isRecursive : Bool := false
+  decreases : Option ExprT := none
   inputs   : ListMap IdentT TyT
   output   : TyT
   body     : Option ExprT := .none

@@ -1450,6 +1450,45 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
             boundVars := orig_bbindings,
             freeVars := bindings.freeVars.push decl })
 
+def translateDecreases (p : Program) (bindings : TransBindings) (arg : Arg)
+    : TransM (Option (LExpr Core.CoreLParams.mono)) := do
+  let .option _ dec := arg
+    | TransM.error s!"translateDecreases unexpected {repr arg}"
+  match dec with
+  | none => return none
+  | some d =>
+    let args ← checkOpArg d q`Core.decreases_clause 1
+    let e ← translateExpr p bindings args[0]!
+    return some e
+
+def translateRecFunction (p : Program) (bindings : TransBindings) (op : Operation)
+    : TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef 7
+  let fname ← translateIdent Core.CoreIdent op.args[0]!
+  let typeArgs ← translateTypeArgs op.args[1]!
+  let sig ← translateBindings bindings op.args[2]!
+  let ret ← translateLMonoTy bindings op.args[3]!
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  let orig_bbindings := bindings.boundVars
+  let bbindings := bindings.boundVars ++ in_bindings
+  let bindings := { bindings with boundVars := bbindings }
+  let dec ← translateDecreases p bindings op.args[4]!
+  let body ← translateExpr p bindings op.args[5]!
+  let inline? ← translateOptionInline op.args[6]!
+  let md ← getOpMetaData op
+  let decl := .func { name := fname,
+                      typeArgs := typeArgs.toList,
+                      isRecursive := true,
+                      decreases := dec,
+                      inputs := sig,
+                      output := ret,
+                      body := some body,
+                      attr := inline? } md
+  return (decl,
+          { bindings with
+            boundVars := orig_bbindings,
+            freeVars := bindings.freeVars.push decl })
+
 ---------------------------------------------------------------------
 
 /--
@@ -1772,6 +1811,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
+          | q`Core.command_recfndef =>
+            translateRecFunction p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"

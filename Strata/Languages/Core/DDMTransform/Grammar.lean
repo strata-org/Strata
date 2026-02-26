@@ -308,6 +308,19 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
+category DecreasesClause;
+op decreases_clause (v : Expr) : DecreasesClause => "decreases " v;
+
+@[declareFn(name, b, r)]
+op command_recfndef (name : Ident,
+                     typeArgs : Option TypeArgs,
+                     @[scope(typeArgs)] b : Bindings,
+                     @[scope(typeArgs)] r : Type,
+                     @[scope(b)] dec : Option DecreasesClause,
+                     @[scope(name, b)] c : r,
+                     inline? : Option Inline) : Command =>
+  "recursive " inline? "function " name typeArgs b " : " r "\n  " dec "\n{\n  " indent(2, c) "\n}\n";
+
 // Function declaration statement
 @[declareFn(name, b, r)]
 op funcDecl_statement (name : Ident,

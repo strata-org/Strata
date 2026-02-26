@@ -481,7 +481,7 @@ private def listLenBody : LExpr CoreLParams.mono :=
 
 private def listLenFunc : Lambda.LFunc CoreLParams :=
   { name := CoreIdent.unres "listLen",
-    isRecursive := true, recParam := some 0,
+    isRecursive := true,
     inputs := [(CoreIdent.unres "xs", intListTy)],
     output := .int,
     body := some listLenBody,
