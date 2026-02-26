@@ -278,7 +278,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Mult _ => .ok Operation.Mul
       | .FloorDiv _ => .ok Operation.Div  -- Python // maps to Laurel Div
       | .Mod _ => .ok Operation.Mod
-      | .Pow _ => .ok Operation.Mul  -- Abstract: x**y as x*y (sound over-approximation)
       | .Div _ => .ok Operation.Div  -- Python / (true division)
       | .BitAnd _ => .ok Operation.And  -- Bitwise & - abstract as logical And
       | .BitOr _ => .ok Operation.Or    -- Bitwise | - abstract as logical Or
@@ -302,8 +301,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .LtE _ => .ok Operation.Leq
       | .Gt _ => .ok Operation.Gt
       | .GtE _ => .ok Operation.Geq
-      | .In _ => .ok Operation.Eq  -- Abstract: 'x in y' as x == y (sound over-approximation)
-      | .NotIn _ => .ok Operation.Neq  -- Abstract: 'x not in y' as x != y
+      | .In _ => return mkStmtExprMd .Hole  -- Abstract: arbitrary bool (sound)
+      | .NotIn _ => return mkStmtExprMd .Hole  -- Abstract: arbitrary bool (sound)
       | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.PrimitiveOp laurelOp [leftExpr, rightExpr])
 
