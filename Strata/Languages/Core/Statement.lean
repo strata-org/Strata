@@ -120,7 +120,7 @@ def Statement.eraseTypes (s : Statement) : Statement :=
   | .loop guard measure invariant bss md =>
     let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
-  | .goto l md => .goto l md
+  | .exit l md => .exit l md
   | .funcDecl decl md =>
     let decl' := { decl with
       body := decl.body.map Lambda.LExpr.eraseTypes,
@@ -193,7 +193,7 @@ def Statement.modifiedVarsTrans
   (π : String → Option ProcType) (s : Statement)
   : List Expression.Ident := match s with
   | .cmd cmd => Command.modifiedVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.modifiedVarsTrans π bss
   | .ite _ tbss ebss _ =>
     Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
@@ -230,7 +230,7 @@ def Statement.getVarsTrans
   (π : String → Option ProcType) (s : Statement)
   : List Expression.Ident := match s with
   | .cmd cmd => Command.getVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.getVarsTrans π bss
   | .ite _ tbss ebss _ =>
     Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
@@ -281,7 +281,7 @@ def Statement.touchedVarsTrans
   : List Expression.Ident :=
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.touchedVarsTrans π bss
   | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
   | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
@@ -344,7 +344,7 @@ def Statement.substFvar (s : Core.Statement)
           (invariant.map (Lambda.LExpr.substFvar · fr to))
           (Block.substFvar body fr to)
           metadata
-  | .goto _ _ => s
+  | .exit _ _ => s
   | .funcDecl decl md =>
     -- Substitute in function body and axioms
     let decl' := { decl with
@@ -382,7 +382,7 @@ def Statement.renameLhs (s : Core.Statement)
     -- Rename function name if it matches
     let decl' := if decl.name == fr then { decl with name := to } else decl
     .funcDecl decl' md
-  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
+  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .exit _ _ => s
 end
 
 ---------------------------------------------------------------------

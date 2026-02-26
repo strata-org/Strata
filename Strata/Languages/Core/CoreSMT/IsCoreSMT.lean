@@ -54,7 +54,7 @@ def isCoreSMTStmt : Core.Statement → Bool
   | .funcDecl _ _       => true
   | .ite _ _ _ _        => false
   | .loop _ _ _ _ _     => false
-  | .goto _ _           => false
+  | .exit _ _           => false
 
 /-- Check all statements in a list are CoreSMT -/
 def isCoreSMTStmts : Core.Statements → Bool

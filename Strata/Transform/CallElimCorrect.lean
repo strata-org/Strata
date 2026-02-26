@@ -182,7 +182,7 @@ theorem callElimBlockNoExcept :
   cases st with
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
-  | goto l b => exists [.goto l b]
+  | exit l b => exists [.exit l b]
   | loop g m i b md => exists [.loop g m i b md]
   | funcDecl f md => exists [.funcDecl f md]
   | cmd c =>
@@ -3311,7 +3311,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
         <;> try simp [Helim]
   case block => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case ite => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case goto => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
+  case exit => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case loop => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case funcDecl => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case cmd c =>

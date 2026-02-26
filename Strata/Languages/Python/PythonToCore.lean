@@ -324,7 +324,7 @@ def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Cor
 
 def handleCallThrow (jmp_target : String) : Core.Statement :=
   let cond := .app Strata.SourceRange.none (.op Strata.SourceRange.none "ExceptOrNone..isExceptOrNone_mk_code" none) (.fvar Strata.SourceRange.none "maybe_except" none)
-  .ite cond [.goto jmp_target .empty] [] .empty
+  .ite cond [.exit (some jmp_target) .empty] [] .empty
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
   let mut m : Map String String := []
@@ -629,7 +629,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
     | .none =>
       [.set "exception_ty_matches" (.boolConst Strata.SourceRange.none false) md]
     let cond := .fvar Strata.SourceRange.none "exception_ty_matches" none
-    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.goto jmp_targets[1]! md]
+    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.exit (some jmp_targets[1]!) md]
     set_ex_ty_matches ++ [.ite cond body_if_matches [] md]
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)
@@ -718,19 +718,19 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       (res.stmts ++ [.set (PyExprToString lhs) res.expr md], some (PyExprToString lhs, PyExprToMonoTy ty))
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
-        let entry_except_handlers := [.block new_target [] md]
         let new_jmp_stack := new_target :: jmp_targets
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToCore new_jmp_stack translation_ctx)
         let var_decls := collectVarDecls translation_ctx body.val
-        ([.block "try_block" (var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst) ++ entry_except_handlers ++ except_handlers) md], none)
+        let try_body := var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst)
+        ([.block "try_block" ([.block new_target try_body .empty] ++ except_handlers) .empty], none)
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Strata Core statement"
     | .If _ test then_b else_b =>
       let guard_ctx := {translation_ctx with expectedType := some (.tcons "bool" [])}
       ([.ite (PyExprToCore guard_ctx test).expr (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst md], none)
     | .Return _ v =>
       match v.val with
-      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr md, .goto jmp_targets[0]! md], none) -- TODO: need to thread return value name here. For now, assume "ret"
-      | .none => ([.goto jmp_targets[0]! md], none)
+      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr md, .exit (some jmp_targets[0]!) md], none) -- TODO: need to thread return value name here. For now, assume "ret"
+      | .none => ([.exit (some jmp_targets[0]!) md], none)
     | .For _ tgt itr body _ _ =>
       -- Do one unrolling:
       let guard := .app Strata.SourceRange.none (.op Strata.SourceRange.none "Bool.Not" none) (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst Strata.SourceRange.none 0))
@@ -798,7 +798,7 @@ def translateFunctions (a : Array (Python.stmt SourceRange)) (translation_ctx: T
                inputs := [],
                outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
         spec := default,
-        body := varDecls ++ (ArrPyStmtToCore translation_ctx body.val).fst ++ [.block "end" [] .empty]
+        body := varDecls ++ [.block "end" ((ArrPyStmtToCore translation_ctx body.val).fst) .empty]
       }
       some (.proc proc)
     | _ => none)
@@ -814,7 +814,7 @@ def pythonFuncToCore (name : String) (args: List (String × String)) (body: Arra
   let inputs : List (Lambda.Identifier Core.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
   let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (some (.boolConst Strata.SourceRange.none false)) .empty), (.havoc "exception_ty_matches" .empty)]
   let stmts := (ArrPyStmtToCore translation_ctx body).fst
-  let body := varDecls ++ stmts ++ [.block "end" [] .empty]
+  let body := varDecls ++ [.block "end" stmts .empty]
   let constructor := name.endsWith "___init__"
   let outputs : Lambda.LMonoTySignature := if not constructor then
     match ret with

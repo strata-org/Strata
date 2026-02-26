@@ -1139,10 +1139,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let (ss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
     return ([.block l ss md], bindings)
-  | q`Core.goto_statement, #[la] =>
+  | q`Core.exit_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op
-    return ([.goto l md], bindings)
+    return ([.exit (some l) md], bindings)
+  | q`Core.exit_unlabeled_statement, #[] =>
+    let md ← getOpMetaData op
+    return ([.exit none md], bindings)
   | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, precondsa, bodya, _inlinea] =>
     let name ← translateIdent Core.CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa
