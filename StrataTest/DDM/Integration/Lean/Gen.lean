@@ -47,17 +47,17 @@ op cmd (tp : Type, a : tp) : Command => "cmd " a;
 
 
 /--
-trace: [Strata.generator] Generating EmptyExprDialectType
----
-trace: [Strata.generator] Generating EmptyExprDialectType.toAst
----
-trace: [Strata.generator] Generating EmptyExprDialectType.ofAst
----
 trace: [Strata.generator] Generating Expr
 ---
 trace: [Strata.generator] Generating Expr.toAst
 ---
 trace: [Strata.generator] Generating Expr.ofAst
+---
+trace: [Strata.generator] Generating EmptyExprDialectType
+---
+trace: [Strata.generator] Generating EmptyExprDialectType.toAst
+---
+trace: [Strata.generator] Generating EmptyExprDialectType.ofAst
 ---
 trace: [Strata.generator] Generating Command
 ---
@@ -65,8 +65,8 @@ trace: [Strata.generator] Generating Command.toAst
 ---
 trace: [Strata.generator] Generating Command.ofAst
 ---
-trace: [Strata.generator] Declarations group: [Init.Type]
-[Strata.generator] Declarations group: [Init.Expr]
+trace: [Strata.generator] Declarations group: [Init.Expr]
+[Strata.generator] Declarations group: [Init.Type]
 [Strata.generator] Declarations group: [Init.Command]
 -/
 #guard_msgs in

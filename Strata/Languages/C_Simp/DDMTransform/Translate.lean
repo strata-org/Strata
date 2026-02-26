@@ -250,14 +250,14 @@ def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LE
                       return some (← translateExpr bindings e[0]!))
                   arg
 
-def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
+def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (List (LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
-                    | none => return none
+                    | none => return []
                     | some a =>
                       let e ← checkOpArg a q`C_Simp.invariant 1
                       assert! e.size == 1
-                      return some (← translateExpr bindings e[0]!))
+                      return [← translateExpr bindings e[0]!])
                   arg
 
 ---------------------------------------------------------------------
@@ -408,7 +408,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
 partial def translateBlock (bindings : TransBindings) (arg : Arg) :
   TransM (List Statement) := do
   let args ← checkOpArg arg q`C_Simp.block 1
-  let .seq _ .none stmts := args[0]!
+  let .seq _ _ stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
   let (a, _) ← stmts.foldlM (init := (#[], bindings)) fun (a, b) s => do
       let (s, b) ← translateStmt b s

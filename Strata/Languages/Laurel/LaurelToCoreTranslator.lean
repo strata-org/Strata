@@ -367,16 +367,11 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr env cond
-      -- Combine multiple invariants with && for Core (which expects single invariant)
-      let translatedInvariants ← invariants.mapM (fun inv => translateExpr env inv)
-      let invExpr := match translatedInvariants with
-        | [] => none
-        | [single] => some single
-        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
-      let decreasingExprCore ← decreasesExpr.mapM (fun d => translateExpr env d)
+      let invExprs ← invariants.mapM (translateExpr env)
+      let decreasingExprCore ← decreasesExpr.map (translateExpr env)
       let (_, bodyStmts) ← translateStmt env outputParams body
-      return (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
-  | _ => return (env, [])
+      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md])
+  | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by
     all_goals
@@ -408,14 +403,13 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   }
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type))
-  -- Translate precondition if it's not just LiteralBool true
-  let preconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
-    match proc.precondition with
-    | ⟨ .LiteralBool true, _ ⟩ => pure []
-    | precond =>
-        let e ← translateExpr initEnv precond [] (isPureContext := true)
-        let check : Core.Procedure.Check := { expr := e, md := precond.md }
-        pure [("requires", check)]
+  -- Translate preconditions
+  let preconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
+    let (_, result) := proc.preconditions.foldl (fun (i, acc) precond =>
+        let label := if proc.preconditions.length == 1 then "requires" else s!"requires_{i}"
+        let check : Core.Procedure.Check := { expr ← translateExpr initEnv precond, md := precond.md }
+        (i + 1, acc ++ [(label, check)])) (0, [])
+    result
   -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
