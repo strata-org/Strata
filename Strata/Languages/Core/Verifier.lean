@@ -157,8 +157,18 @@ instance : Inhabited VCOutcome where
 namespace VCOutcome
 
 def isPass (o : VCOutcome) : Bool :=
+  match o.validityProperty with
+  | .unsat => true
+  | _ => false
+
+def isPassAndReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .sat _, .unsat => true
+  | _, _ => false
+
+def isPassIfReachable (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .unknown, .unsat => true
   | _, _ => false
 
 def isRefutedAndReachable (o : VCOutcome) : Bool :=
@@ -205,6 +215,7 @@ def isUnknown (o : VCOutcome) : Bool :=
 def isRefuted := isRefutedAndReachable
 def isRefutedIfReachable := isAlwaysFalseIfReachable
 def isIndecisive := isIndecisiveAndReachable
+def isAlwaysTrueIfReachable := isPassIfReachable
 
 -- Cross-cutting predicates for filtering by properties
 
@@ -212,31 +223,31 @@ def isAlwaysFalse (o : VCOutcome) : Bool :=
   o.isRefutedAndReachable || o.isAlwaysFalseIfReachable
 
 def isAlwaysTrue (o : VCOutcome) : Bool :=
-  o.isPass || o.isAlwaysTrueIfReachable
+  o.isPass
 
 def isReachable (o : VCOutcome) : Bool :=
-  o.isPass || o.isRefutedAndReachable || o.isIndecisiveAndReachable
+  o.isPassAndReachable || o.isRefutedAndReachable || o.isIndecisiveAndReachable
 
 def label (o : VCOutcome) : String :=
-  if o.isPass then "pass"
+  if o.isPassAndReachable then "pass"
   else if o.isRefuted then "refuted"
   else if o.isIndecisive then "indecisive"
   else if o.isUnreachable then "unreachable"
   else if o.isSatisfiable then "satisfiable"
   else if o.isRefutedIfReachable then "refuted if reachable"
   else if o.isReachableAndCanBeFalse then "reachable and can be false"
-  else if o.isAlwaysTrueIfReachable then "always true if reachable"
+  else if o.isPassIfReachable then "pass if reachable"
   else "unknown"
 
 def emoji (o : VCOutcome) : String :=
-  if o.isPass then "✅"
+  if o.isPassAndReachable then "✅"
   else if o.isRefuted then "❌"
   else if o.isIndecisive then "🔶"
   else if o.isUnreachable then "⛔"
   else if o.isSatisfiable then "➕"
   else if o.isRefutedIfReachable then "✖️"
   else if o.isReachableAndCanBeFalse then "➖"
-  else if o.isAlwaysTrueIfReachable then "✔️"
+  else if o.isPassIfReachable then "✔️"
   else "❓"
 
 end VCOutcome

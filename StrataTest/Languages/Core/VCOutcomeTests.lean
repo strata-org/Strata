@@ -57,8 +57,8 @@ def formatOutcome (o : VCOutcome) : String :=
 #guard_msgs in
 #eval formatOutcome (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .sat))
 
--- Test 8: (unknown, unsat) → always true if reachable
-/-- info: "✔️ always true if reachable" -/
+-- Test 8: (unknown, unsat) → pass if reachable
+/-- info: "✔️ pass if reachable" -/
 #guard_msgs in
 #eval formatOutcome (mkOutcome (satisfiabilityProperty := .unknown) (validityProperty := .unsat))
 
