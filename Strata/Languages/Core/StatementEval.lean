@@ -316,19 +316,31 @@ def Statements.collectAsserts (ss : Statements) : List (String × Imperative.Met
   termination_by Imperative.Block.sizeOf ss
 end
 
-def createFailingCoverObligations
+/--
+Create cover obligations for covers in an unreachable (dead) branch, including
+the current path conditions so that a reachability check can detect unreachability.
+The obligation expression is `false` (a cover that trivially fails).
+-/
+private def createUnreachableCoverObligations
+    (pathConditions : Imperative.PathConditions Expression)
     (covers : List (String × Imperative.MetaData Expression)) :
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover [] (LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false ()) md))
 
-def createPassingAssertObligations
+/--
+Create assert obligations for asserts in an unreachable (dead) branch, including
+the current path conditions so that a reachability check can detect unreachability.
+The obligation expression is `true` (an assert that trivially passes).
+-/
+private def createUnreachableAssertObligations
+    (pathConditions : Imperative.PathConditions Expression)
     (asserts : List (String × Imperative.MetaData Expression)) :
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .assert [] (LExpr.true ()) md))
+      (Imperative.ProofObligation.mk label .assert pathConditions (LExpr.true ()) md))
 
 /--
 Substitute free variables in an expression with their current values from the environment,
@@ -444,8 +456,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                 if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
                   let ss_f_covers := Statements.collectCovers ss_f
                   let ss_f_asserts := Statements.collectAsserts ss_f
-                  let deferred := createFailingCoverObligations ss_f_covers
-                  let deferred := deferred ++ createPassingAssertObligations ss_f_asserts
+                  let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
+                  let deadPathConds := Ewn.env.pathConditions.push [(deadLabel, LExpr.false ())]
+                  let deferred := createUnreachableCoverObligations deadPathConds ss_f_covers
+                  let deferred := deferred ++ createUnreachableAssertObligations deadPathConds ss_f_asserts
                   [{ Ewn with env.deferred := Ewn.env.deferred ++ deferred }]
                 else
                   []

@@ -75,6 +75,7 @@ func Re.Inter :  ((x : regex) (y : regex)) → regex;
 func Re.Comp :  ((x : regex)) → regex;
 func Re.None :  () → regex;
 func old : ∀[a]. ((x : a)) → a;
+func Map.const : ∀[k, v]. ((d : v)) → (Map k v);
 func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
 func Triggers.empty :  () → Triggers;
