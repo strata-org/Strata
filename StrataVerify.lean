@@ -37,7 +37,12 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
-      | opts, "--reach-check" :: rest, procs => go {opts with reachCheck := true} rest procs
+      | opts, "--check-mode" :: modeStr :: rest, procs =>
+         match modeStr with
+         | "full" => go {opts with checkMode := .full} rest procs
+         | "validity" => go {opts with checkMode := .validity} rest procs
+         | "satisfiability" => go {opts with checkMode := .satisfiability} rest procs
+         | _ => .error f!"Invalid check mode: {modeStr}. Must be 'full', 'validity', or 'satisfiability'."
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -57,7 +62,7 @@ def usageMessage : Std.Format :=
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
-  --reach-check               Enable reachability checks for all asserts and covers."
+  --check-mode <mode>         Verification check mode: 'full' (both checks), 'validity' (default), or 'satisfiability'."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -136,7 +141,7 @@ def main (args : List String) : IO UInt32 := do
         -- Also output standard format
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
-          println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
+          println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.outcome}"
         let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
           println! f!"All {vcResults.size} goals passed."

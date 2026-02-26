@@ -215,12 +215,12 @@ def label (o : VCOutcome) : String :=
 def emoji (o : VCOutcome) : String :=
   if o.isPass then "✅"
   else if o.isRefuted then "❌"
-  else if o.isIndecisive then "⚠️"
-  else if o.isUnreachable then "🚫"
-  else if o.isSatisfiable then "🟢"
-  else if o.isRefutedIfReachable then "🔴"
-  else if o.isReachableAndCanBeFalse then "🟠"
-  else if o.isAlwaysTrueIfReachable then "🟡"
+  else if o.isIndecisive then "🔶"
+  else if o.isUnreachable then "⛔"
+  else if o.isSatisfiable then "➕"
+  else if o.isRefutedIfReachable then "✖️"
+  else if o.isReachableAndCanBeFalse then "➖"
+  else if o.isAlwaysTrueIfReachable then "✔️"
   else "❓"
 
 end VCOutcome
