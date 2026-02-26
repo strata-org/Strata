@@ -30,18 +30,15 @@ def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
     -- Deductive verification: prove correctness
     if outcome.passAndReachable || outcome.passReachabilityUnknown then 
       .none
-    else if outcome.refutedAndReachable || outcome.alwaysFalseReachabilityUnknown || 
-            outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then 
-      .error
-    else if outcome.satisfiableValidityUnknown then 
-      .warning
+    else if outcome.unreachable then 
+      .note
     else 
-      .note -- unreachable
+      .error -- Everything not proven is an error
   | .bugFinding =>
     -- Bug finding: find counterexamples
     if outcome.passAndReachable || outcome.passReachabilityUnknown then 
       .none
-    else if outcome.refutedAndReachable || outcome.alwaysFalseReachabilityUnknown then 
+    else if outcome.alwaysFalse then 
       .error
     else if outcome.indecisiveAndReachable || outcome.canBeFalseAndReachable || outcome.unknown then 
       .warning
