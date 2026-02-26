@@ -6,7 +6,7 @@ for test_file in *.st; do
     if [ -f "$test_file" ]; then
         base_name=$(basename "$test_file" ".st")
         expected_file="expected/${base_name}.expected"
-        if [ -f "$expected_file" ]; then	    
+        if [ -f "$expected_file" ]; then
 
             output=$(cd .. && lake exe StrataVerify --vc-directory vcs "Examples/${test_file}")
 
@@ -23,7 +23,7 @@ for test_file in *.st; do
                   failed=1
                 fi
             fi
-            rm -rf ../vcs	    
+            rm -rf ../vcs
         fi
     fi
 done
