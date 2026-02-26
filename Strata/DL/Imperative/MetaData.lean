@@ -74,12 +74,15 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
+  /-- Metadata value in the form of a boolean switch. -/
+  | switch (b : Bool)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with
               | .expr e => f!"{e}"
               | .msg s => f!"{s}"
               | .fileRange r => f!"{r}"
+              | .switch b => f!"{b}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -88,6 +91,7 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       | .expr e => f!".expr {reprPrec e prec}"
       | .msg s => f!".msg {s}"
       | .fileRange fr => f!".fileRange {fr}"
+      | .switch b => f!".switch {repr b}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -95,6 +99,7 @@ def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
   | .fileRange r1, .fileRange r2 => r1 == r2
+  | .switch b1, .switch b2 => b1 == b2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -169,6 +174,16 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+
+def MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
+
+def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.reachCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
 
 def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
   let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
