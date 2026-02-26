@@ -50,6 +50,20 @@ inductive TermType where
   | constr (id : String) (args : List TermType)
 deriving instance Repr, Inhabited for TermType
 
+/-- Convert a TermType to its SMT-LIB string representation. -/
+def TermType.toSMTString : TermType → String
+  | .prim .bool => "Bool"
+  | .prim .int => "Int"
+  | .prim .real => "Real"
+  | .prim .string => "String"
+  | .prim .regex => "RegLan"
+  | .prim .trigger => "Trigger"
+  | .prim (.bitvec n) => s!"(_ BitVec {n})"
+  | .option ty => s!"(Option {TermType.toSMTString ty})"
+  | .constr id args =>
+    if args.isEmpty then id
+    else s!"({id} {String.intercalate " " (args.map TermType.toSMTString)})"
+
 /--
 Induction rule for `TermType`: the default induction tactic doesn't yet support
 nested or mutual induction types.

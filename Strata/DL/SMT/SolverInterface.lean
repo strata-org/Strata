@@ -47,20 +47,6 @@ structure SolverInterface where
   /-- Reset the solver state -/
   reset : IO Unit
 
-/-- Helper to convert TermType to SMT-LIB string -/
-private def termTypeToString : TermType → String
-  | .prim .bool => "Bool"
-  | .prim .int => "Int"
-  | .prim .real => "Real"
-  | .prim .string => "String"
-  | .prim .regex => "RegLan"
-  | .prim .trigger => "Trigger"
-  | .prim (.bitvec n) => s!"(_ BitVec {n})"
-  | .option ty => s!"(Option {termTypeToString ty})"
-  | .constr id args =>
-    if args.isEmpty then id
-    else s!"({id} {String.intercalate " " (args.map termTypeToString)})"
-
 /-- Helper to convert Term to SMT-LIB string using SMTDDM.toString -/
 private def termToString (t : Term) : Except String String :=
   SMTDDM.toString t
@@ -80,12 +66,12 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
     declareSort := fun name arity => do
       (Solver.declareSort name arity).run (← solverRef.get)
     declareFun := fun name argTypes retType => do
-      let argStrs := argTypes.map termTypeToString
-      let retStr := termTypeToString retType
+      let argStrs := argTypes.map TermType.toSMTString
+      let retStr := TermType.toSMTString retType
       (Solver.declareFun name argStrs retStr).run (← solverRef.get)
     defineFun := fun name args retType body => do
-      let argStrs := args.map fun (n, ty) => (n, termTypeToString ty)
-      let retStr := termTypeToString retType
+      let argStrs := args.map fun (n, ty) => (n, TermType.toSMTString ty)
+      let retStr := TermType.toSMTString retType
       match termToString body with
       | .ok bodyStr => (Solver.defineFun name argStrs retStr bodyStr).run (← solverRef.get)
       | .error e => throw (IO.userError s!"Failed to convert term to string: {e}")
