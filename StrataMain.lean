@@ -399,7 +399,7 @@ def pyAnalyzeCommand : Command where
                   ("", s!" (at byte {fr.range.start})")
           | none => ("", "")
         let outcomeStr := match vcResult.outcome with
-          | .ok outcome => s!"{VCOutcome.emoji outcome} {VCOutcome.label outcome}"
+          | .ok outcome => s!"{Core.VCOutcome.emoji outcome} {Core.VCOutcome.label outcome}"
           | .error msg => s!"error: {msg}"
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {outcomeStr}{locationSuffix}\n"
       IO.println s
@@ -408,7 +408,7 @@ def pyAnalyzeCommand : Command where
         let files := match pySourceOpt with
           | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
           | none => Map.empty
-        Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
+        Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 /-- Result of building the PySpec-augmented prelude. -/
 structure PySpecPrelude where
@@ -572,26 +572,29 @@ def pyAnalyzeLaurelCommand : Command where
                     | .file path =>
                       if path == pyPath then
                         let pos := fileMap.toPosition fr.range.start
-                        match vcResult.result with
-                        | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                        | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                        match vcResult.outcome with
+                        | .ok outcome => if outcome.alwaysFalseAndReachable then (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "") else ("", s!" (at line {pos.line}, col {pos.column})")
+                        | .error _ => ("", s!" (at line {pos.line}, col {pos.column})")
                       else
-                        match vcResult.result with
-                        | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                        | _ => ("", s!" (at byte {fr.range.start})")
+                        match vcResult.outcome with
+                        | .ok outcome => if outcome.alwaysFalseAndReachable then (s!"Assertion failed at byte {fr.range.start}: ", "") else ("", s!" (at byte {fr.range.start})")
+                        | .error _ => ("", s!" (at byte {fr.range.start})")
                   | none =>
-                    match vcResult.result with
-                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                    | _ => ("", s!" (at byte {fr.range.start})")
+                    match vcResult.outcome with
+                    | .ok outcome => if outcome.alwaysFalseAndReachable then (s!"Assertion failed at byte {fr.range.start}: ", "") else ("", s!" (at byte {fr.range.start})")
+                    | .error _ => ("", s!" (at byte {fr.range.start})")
               | none => ("", "")
-            s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
+            let outcomeStr := match vcResult.outcome with
+              | .ok outcome => s!"{Core.VCOutcome.emoji outcome} {Core.VCOutcome.label outcome}"
+              | .error msg => s!"error: {msg}"
+            s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {outcomeStr}{locationSuffix}\n"
           IO.println s
           -- Output in SARIF format if requested
           if outputSarif then
             let files := match pySourceOpt with
               | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
               | none => Map.empty
-            Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
+            Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 def javaGenCommand : Command where
   name := "javaGen"
