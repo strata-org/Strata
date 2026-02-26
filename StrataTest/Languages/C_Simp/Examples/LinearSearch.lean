@@ -81,7 +81,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (LinearSearchEnv.commands))
+#eval TransM.run Inhabited.default ((translateProgram (LinearSearchEnv.commands)).map (·.stripMetaData))
 
 /--
 info: procedure linearSearch (arr : intArr, e : int) returns (return : bool)

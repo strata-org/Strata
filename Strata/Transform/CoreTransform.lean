@@ -20,10 +20,11 @@ def oldVarPrefix (id : String) : String := s!"old_{id}"
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
 
 def createHavoc (ident : Expression.Ident)
-  : Statement := Statement.havoc ident
+    (md : Imperative.MetaData Expression)
+  : Statement := Statement.havoc ident md
 
-def createHavocs (ident : List Expression.Ident)
-  : List Statement := ident.map createHavoc
+def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
+  : List Statement := ident.map (createHavoc · md)
 
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
@@ -208,44 +209,50 @@ def genOldExprIdentsTrip
 Generate an init statement with rhs as expression
 -/
 def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
+    (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), e) => Statement.init v' ty (some e)
+  | ((v', ty), e) => Statement.init v' ty (some e) md
 
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
+    (md: (Imperative.MetaData Expression))
   : List Statement :=
-  trips.map createInit
+  trips.map (createInit · md)
 
 /--
 Generate an init statement with rhs as a free variable reference
 -/
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
+    (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none))
+  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
+    (md : (Imperative.MetaData Expression))
   : List Statement :=
-  trips.map createInitVar
+  trips.map (createInitVar · md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst))
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
     : CoreTransformM (List Statement)
     :=
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst))
+      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /--
 Generate the substitution pairs needed for the body of the procedure

@@ -29,36 +29,36 @@ private def xEq1 : E := .eq () x int1
 
 -- 1. cmd: init
 /-- info: init (x : int) := #0 -/
-#guard_msgs in #eval! format (Statement.init "x" intTy int0 : S)
+#guard_msgs in #eval! format (Statement.init "x" intTy int0 .empty : S)
 
 -- 2. cmd: set
 /-- info: x := #42 -/
-#guard_msgs in #eval! format (Statement.set "x" int42 : S)
+#guard_msgs in #eval! format (Statement.set "x" int42 .empty : S)
 
 -- 3. cmd: havoc
 /-- info: havoc x -/
-#guard_msgs in #eval! format (Statement.havoc "x" : S)
+#guard_msgs in #eval! format (Statement.havoc "x" .empty : S)
 
 -- 4. cmd: assert
 /-- info: assert [lbl] #true -/
-#guard_msgs in #eval! format (Statement.assert "lbl" tt : S)
+#guard_msgs in #eval! format (Statement.assert "lbl" tt .empty : S)
 
 -- 5. cmd: assume
 /-- info: assume [lbl] ((x : int) == #5) -/
-#guard_msgs in #eval! format (Statement.assume "lbl" xEq5 : S)
+#guard_msgs in #eval! format (Statement.assume "lbl" xEq5 .empty : S)
 
 -- 6. cmd: call (no lhs)
 /-- info: call foo(#1, #2) -/
-#guard_msgs in #eval! format (Statement.call [] "foo" [int1, int2] : S)
+#guard_msgs in #eval! format (Statement.call [] "foo" [int1, int2] .empty : S)
 
 -- 7. cmd: call (with lhs)
 /-- info: call [y] := bar(#1) -/
-#guard_msgs in #eval! format (Statement.call ["y"] "bar" [int1] : S)
+#guard_msgs in #eval! format (Statement.call ["y"] "bar" [int1] .empty : S)
 
 -- 8. block: empty
 /-- info: myBlock :
 {} -/
-#guard_msgs in #eval! format (Stmt.block "myBlock" ([] : Ss) : S)
+#guard_msgs in #eval! format (Stmt.block "myBlock" ([] : Ss) .empty : S)
 
 -- 9. block: with statements
 /--
@@ -69,12 +69,13 @@ info: myBlock :
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.block "myBlock" ([Statement.set "x" int1,
-                                      Statement.assert "check" xEq1] : Ss) : S)
+#eval! format (Stmt.block "myBlock" ([Statement.set "x" int1 .empty,
+                                      Statement.assert "check" xEq1 .empty] : Ss) .empty : S)
 
 def p := (Stmt.ite xEq0
-                ([Statement.set "y" int1] : Ss)
-                ([Statement.set "y" int2] : Ss) : S)
+                ([Statement.set "y" int1 .empty] : Ss)
+                ([Statement.set "y" int2 .empty] : Ss)
+                .empty : S)
 -- 10. ite: with body
 /--
 info: {
@@ -113,7 +114,7 @@ else {
 info: if #true {}
 else {}
 -/
-#guard_msgs in #eval! format (Stmt.ite tt ([] : Ss) ([] : Ss) : S)
+#guard_msgs in #eval! format (Stmt.ite tt ([] : Ss) ([] : Ss) .empty : S)
 
 -- 12. loop: no measure, no invariant
 /--
@@ -127,7 +128,7 @@ info: while
 -/
 #guard_msgs in
 #eval! format (Stmt.loop xEq0 none []
-                ([Statement.set "x" int1] : Ss) : S)
+                ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 13. loop: with measure and invariant
 /--
@@ -141,11 +142,11 @@ info: while
 -/
 #guard_msgs in
 #eval! format (Stmt.loop xEq0 (some x) [tt]
-                ([Statement.set "x" int1] : Ss) : S)
+                ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 14. goto
 /-- info: goto target -/
-#guard_msgs in #eval! format (Stmt.goto "target" : S)
+#guard_msgs in #eval! format (Stmt.goto "target" .empty : S)
 
 -- 15. funcDecl
 /-- info: funcDecl <function> -/
@@ -154,7 +155,7 @@ info: while
   ({ name := CoreIdent.unres "f",
      inputs := [("a", LTy.forAll [] .int)],
      output := LTy.forAll [] .int,
-     body := some x } : PureFunc Expression) : S)
+     body := some x } : PureFunc Expression) .empty : S)
 
 -- 16. formatBlock: empty
 /-- info: {} -/
@@ -168,7 +169,7 @@ info: {
 }
 -/
 #guard_msgs in
-#eval! format ([Statement.set "x" int1,
-                Statement.assert "check" xEq1] : Ss)
+#eval! format ([Statement.set "x" int1 .empty,
+                Statement.assert "check" xEq1 .empty] : Ss)
 
 end FormatStmtTest
