@@ -14,9 +14,9 @@ open Std (ToFormat Format format)
 open LExpr.SyntaxMono LTy.Syntax Core.Syntax
 
 private def testProgram1 : Cmds Expression :=
-  [.init "x" t[int] (some eb[#0]),
-   .set "x" eb[#10],
-   .assert "x_value_eq" eb[x == #10]]
+  [.init "x" t[int] (some eb[#0]) .empty,
+   .set "x" eb[#10] .empty,
+   .assert "x_value_eq" eb[x == #10] .empty]
 
 /--
 info: Commands:
@@ -59,8 +59,8 @@ Proof Obligation:
 #eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram1
 
 private def testProgram2 : Cmds Expression :=
-  [.init "x" t[int] (some eb[(y : int)]),
-   .assert "x_eq_12" eb[x == #12]]
+  [.init "x" t[int] (some eb[(y : int)]) .empty,
+   .assert "x_eq_12" eb[x == #12] .empty]
 
 /--
 info: Commands:

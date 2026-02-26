@@ -23,7 +23,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
 
@@ -122,6 +122,7 @@ def translateExpr (fieldNames : List Identifier) (env : TypeEnv) (expr : StmtExp
     | .Leq => binOp intLeOp
     | .Gt => binOp intGtOp
     | .Geq => binOp intGeOp
+    | .StrConcat => binOp strConcatOp
     | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
     panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
@@ -211,15 +212,15 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
             -- Translate as: var name; call name := callee(args)
             let boogieArgs := args.map (translateExpr fieldNames env)
             let defaultExpr := defaultExprForType ty
-            let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
-            let callStmt := Core.Statement.call [ident] callee boogieArgs
+            let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
+            let callStmt := Core.Statement.call [ident] callee boogieArgs md
             (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr fieldNames env initExpr
-          (env', [Core.Statement.init ident boogieType (some boogieExpr)])
+          (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
       | none =>
           let defaultExpr := defaultExprForType ty
-          (env', [Core.Statement.init ident boogieType (some defaultExpr)])
+          (env', [Core.Statement.init ident boogieType (some defaultExpr) md])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -230,14 +231,14 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
               if isCoreFunction funcNames callee then
                 -- Functions are translated as expressions
                 let boogieExpr := translateExpr fieldNames env value
-                (env, [Core.Statement.set ident boogieExpr])
+                (env, [Core.Statement.set ident boogieExpr md])
               else
                 -- Procedure calls need to be translated as call statements
                 let boogieArgs := args.map (translateExpr fieldNames env)
-                (env, [Core.Statement.call [ident] callee boogieArgs])
+                (env, [Core.Statement.call [ident] callee boogieArgs md])
           | _ =>
               let boogieExpr := translateExpr fieldNames env value
-              (env, [Core.Statement.set ident boogieExpr])
+              (env, [Core.Statement.set ident boogieExpr md])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
@@ -265,13 +266,13 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
         (env, [])
       else
         let boogieArgs := args.map (translateExpr fieldNames env)
-        (env, [Core.Statement.call [] name boogieArgs])
+        (env, [Core.Statement.call [] name boogieArgs md])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           let ident := Core.CoreIdent.locl outParam.name
           let boogieExpr := translateExpr fieldNames env value
-          let assignStmt := Core.Statement.set ident boogieExpr
+          let assignStmt := Core.Statement.set ident boogieExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           (env, [assignStmt, noFallThrough])
       | none, _ =>
@@ -281,15 +282,10 @@ def translateStmt (fieldNames : List Identifier) (funcNames : FunctionNames) (en
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
       let condExpr := translateExpr fieldNames env cond
-      -- Combine multiple invariants with && for Core (which expects single invariant)
-      let translatedInvariants := invariants.map (translateExpr fieldNames env)
-      let invExpr := match translatedInvariants with
-        | [] => none
-        | [single] => some single
-        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
+      let invExprs := invariants.map (translateExpr fieldNames env)
       let decreasingExprCore := decreasesExpr.map (translateExpr fieldNames env)
       let (_, bodyStmts) := translateStmt fieldNames funcNames env outputParams body
-      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
+      (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md])
   | _ => (env, [])
   termination_by sizeOf stmt
   decreasing_by
@@ -322,13 +318,13 @@ def translateProcedure (fieldNames : List Identifier) (funcNames : FunctionNames
   }
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type))
-  -- Translate precondition if it's not just LiteralBool true
+  -- Translate preconditions
   let preconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
-    match proc.precondition with
-    | ⟨ .LiteralBool true, _ ⟩ => []
-    | precond =>
+    let (_, result) := proc.preconditions.foldl (fun (i, acc) precond =>
+        let label := if proc.preconditions.length == 1 then "requires" else s!"requires_{i}"
         let check : Core.Procedure.Check := { expr := translateExpr fieldNames initEnv precond, md := precond.md }
-        [("requires", check)]
+        (i + 1, acc ++ [(label, check)])) (0, [])
+    result
   -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check :=
     match proc.body with
@@ -437,7 +433,7 @@ def canBeBoogieFunction (proc : Procedure) : Bool :=
   match proc.body with
   | .Transparent bodyExpr =>
     isPureExpr bodyExpr &&
-    (match proc.precondition.val with | .LiteralBool true => true | _ => false) &&
+    proc.preconditions.isEmpty &&
     proc.outputs.length == 1
   | _ => false
 

@@ -268,7 +268,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     name := procName
     inputs := inputs.toList
     outputs := outputs
-    precondition := ⟨.LiteralBool true, .empty⟩
+    preconditions := []
     determinism := .nondeterministic
     decreases := none
     body := .Opaque [] none []

@@ -247,33 +247,34 @@ def pySpecsCommand : Command where
   args := [ "python_path", "strata_path" ]
   help := "Translate a Python specification (.py) file into Strata DDM Ion format. Creates the output directory if needed. (Experimental)"
   callback := fun v _ => do
-    let dialectFile := "Tools/Python/dialects/Python.dialect.st.ion"
-    let pythonFile : System.FilePath := v[0]
-    let strataDir : System.FilePath := v[1]
-    if (←pythonFile.metadata).type != .file then
-      exitFailure s!"Expected Python to be a regular file."
-    match ←strataDir.metadata |>.toBaseIO with
-    | .ok md =>
-      if md.type != .dir then
-        exitFailure s!"Expected Strata to be a directory."
-    | .error _ =>
-      IO.FS.createDir strataDir
-    let r ← Strata.Python.Specs.translateFile
-        (dialectFile := dialectFile)
-        (strataDir := strataDir)
-        (pythonFile := pythonFile) |>.toBaseIO
+    -- Serialize embedded dialect for Python subprocess
+    IO.FS.withTempFile fun _handle dialectFile => do
+      IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
+      let pythonFile : System.FilePath := v[0]
+      let strataDir : System.FilePath := v[1]
+      if (←pythonFile.metadata).type != .file then
+        exitFailure s!"Expected Python to be a regular file."
+      match ←strataDir.metadata |>.toBaseIO with
+      | .ok md =>
+        if md.type != .dir then
+          exitFailure s!"Expected Strata to be a directory."
+      | .error _ =>
+        IO.FS.createDir strataDir
+      let r ← Strata.Python.Specs.translateFile
+          (dialectFile := dialectFile)
+          (strataDir := strataDir)
+          (pythonFile := pythonFile) |>.toBaseIO
 
-    let sigs ←
-      match r with
-      | .ok t => pure t
-      | .error msg => exitFailure msg
-
-    let some mod := pythonFile.fileStem
-      | exitFailure s!"No stem {pythonFile}"
-    let .ok mod := Strata.Python.Specs.ModuleName.ofString mod
-      | exitFailure s!"Invalid module {mod}"
-    let strataFile := strataDir / mod.strataFileName
-    Strata.Python.Specs.writeDDM strataFile sigs
+      let sigs ←
+        match r with
+        | .ok t => pure t
+        | .error msg => exitFailure msg
+      let some mod := pythonFile.fileStem
+        | exitFailure s!"No stem {pythonFile}"
+      let .ok mod := Strata.Python.Specs.ModuleName.ofString mod
+        | exitFailure s!"Invalid module {mod}"
+      let strataFile := strataDir / mod.strataFileName
+      Strata.Python.Specs.writeDDM strataFile sigs
 
 def pyTranslateCommand : Command where
   name := "pyTranslate"

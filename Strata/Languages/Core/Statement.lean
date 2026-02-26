@@ -34,7 +34,7 @@ inductive CmdExt (P : PureExpr) where
   -- Maybe procedure names should just be plain strings since there is no
   -- "scoped procedures" or "generated procedures"
   | call (lhs : List P.Ident) (procName : String) (args : List P.Expr)
-         (md : MetaData P := .empty)
+         (md : MetaData P)
 
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.
@@ -46,7 +46,7 @@ instance : HasPassiveCmds Expression Command where
   assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
-  havoc x := .cmd (.havoc x)
+  havoc x md := .cmd (.havoc x md)
 
 instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
     [ToFormat (List P.Ident)] [ToFormat P.Expr] :
@@ -64,27 +64,27 @@ abbrev Statements := List Statement
 
 @[match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
 @[match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name expr md))
 @[match_pattern]
-abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression := .empty) :=
+abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.havoc name md))
 @[match_pattern]
-abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
 @[match_pattern]
-abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assume label b md))
 @[match_pattern]
 abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.call lhs pname args md)
 @[match_pattern]
-abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
 
 ---------------------------------------------------------------------
@@ -120,7 +120,7 @@ def Statement.eraseTypes (s : Statement) : Statement :=
   | .loop guard measure invariant bss md =>
     let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
-  | .goto l md => .goto l md
+  | .exit l md => .exit l md
   | .funcDecl decl md =>
     let decl' := { decl with
       body := decl.body.map Lambda.LExpr.eraseTypes,
@@ -193,7 +193,7 @@ def Statement.modifiedVarsTrans
   (π : String → Option ProcType) (s : Statement)
   : List Expression.Ident := match s with
   | .cmd cmd => Command.modifiedVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.modifiedVarsTrans π bss
   | .ite _ tbss ebss _ =>
     Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
@@ -230,7 +230,7 @@ def Statement.getVarsTrans
   (π : String → Option ProcType) (s : Statement)
   : List Expression.Ident := match s with
   | .cmd cmd => Command.getVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.getVarsTrans π bss
   | .ite _ tbss ebss _ =>
     Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
@@ -281,7 +281,7 @@ def Statement.touchedVarsTrans
   : List Expression.Ident :=
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.touchedVarsTrans π bss
   | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
   | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
@@ -341,10 +341,10 @@ def Statement.substFvar (s : Core.Statement)
   | .loop guard measure invariant body metadata =>
     .loop (Lambda.LExpr.substFvar guard fr to)
           (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
+          (invariant.map (Lambda.LExpr.substFvar · fr to))
           (Block.substFvar body fr to)
           metadata
-  | .goto _ _ => s
+  | .exit _ _ => s
   | .funcDecl decl md =>
     -- Substitute in function body and axioms
     let decl' := { decl with
@@ -382,7 +382,7 @@ def Statement.renameLhs (s : Core.Statement)
     -- Rename function name if it matches
     let decl' := if decl.name == fr then { decl with name := to } else decl
     .funcDecl decl' md
-  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
+  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .exit _ _ => s
 end
 
 ---------------------------------------------------------------------
