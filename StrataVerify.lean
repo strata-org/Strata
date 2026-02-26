@@ -141,7 +141,9 @@ def main (args : List String) : IO UInt32 := do
         -- Also output standard format
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
-          println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.outcome}"
+          match vcResult.outcome with
+          | .ok outcome => println! f!"{posStr} [{vcResult.obligation.label}]: {VCOutcome.emoji outcome} {VCOutcome.label outcome}"
+          | .error msg => println! f!"{posStr} [{vcResult.obligation.label}]: error: {msg}"
         let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
           println! f!"All {vcResults.size} goals passed."

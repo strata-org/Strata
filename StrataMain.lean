@@ -373,20 +373,35 @@ def pyAnalyzeCommand : Command where
                   if path == pyPath then
                     let pos := fileMap.toPosition fr.range.start
                     -- For failures, show at beginning; for passes, show at end
-                    match vcResult.result with
-                    | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                    | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                    let isFail := match vcResult.outcome with
+                      | .error _ => true
+                      | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable
+                    if isFail then
+                      (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                    else
+                      ("", s!" (at line {pos.line}, col {pos.column})")
                   else
                     -- From CorePrelude or other source, show byte offsets
-                    match vcResult.result with
-                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                    | _ => ("", s!" (at byte {fr.range.start})")
+                    let isFail := match vcResult.outcome with
+                      | .error _ => true
+                      | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable
+                    if isFail then
+                      (s!"Assertion failed at byte {fr.range.start}: ", "")
+                    else
+                      ("", s!" (at byte {fr.range.start})")
               | none =>
-                match vcResult.result with
-                | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                | _ => ("", s!" (at byte {fr.range.start})")
+                let isFail := match vcResult.outcome with
+                  | .error _ => true
+                  | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable
+                if isFail then
+                  (s!"Assertion failed at byte {fr.range.start}: ", "")
+                else
+                  ("", s!" (at byte {fr.range.start})")
           | none => ("", "")
-        s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
+        let outcomeStr := match vcResult.outcome with
+          | .ok outcome => s!"{VCOutcome.emoji outcome} {VCOutcome.label outcome}"
+          | .error msg => s!"error: {msg}"
+        s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {outcomeStr}{locationSuffix}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
