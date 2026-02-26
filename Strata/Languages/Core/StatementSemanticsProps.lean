@@ -2021,12 +2021,12 @@ NOTE:
   variables (that is, lhs ++ modifies)
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ lhs n args σ' p},
+  ∀ {π φ δ σ lhs n args σ' p md md'},
   π n = .some p →
   p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
-  EvalCommand π φ δ σ (CmdExt.call lhs n args) σ' →
-  EvalCommandContract π δ σ (CmdExt.call lhs n args) σ' := by
-  intros π φ δ σ lhs n args σ' p pFound modValid H
+  EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' →
+  EvalCommandContract π δ σ (CmdExt.call lhs n args md') σ' := by
+  intros π φ δ σ lhs n args σ' p md md' pFound modValid H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
@@ -2067,12 +2067,9 @@ theorem EvalBlockRefinesContract
     .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
 end
 
-/-- Currently we cannot prove this theorem,
-    since the WellFormedSemanticEval definition does not assert
-    a congruence relation for definedness on store
-    that is, if f(a) is defined, then a must be defined.
-    We work around this by requiring this condition at `EvalExpressions`.
-  -/
+/-- If an expression is defined, all its free variables are defined in the store.
+    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
+    together with the variable-evaluation condition in `WellFormedSemanticEvalVar`. -/
 theorem EvalExpressionIsDefined :
   WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
@@ -2087,8 +2084,17 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case abs => sorry
-  case quant => sorry
-  case app => sorry
-  case ite => sorry
-  case eq => sorry
+  case abs m ty e ih =>
+    exact ih (Hwfc.definedness.absdef σ m ty e Hsome) v Hin
+  case quant m k ty tr e trih eih =>
+    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k ty tr e Hsome
+    grind
+  case app m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.appdef σ m e₁ e₂ Hsome
+    grind
+  case ite m c t e cih tih eih =>
+    have ⟨hc, ht, he⟩ := Hwfc.definedness.itedef σ m c t e Hsome
+    grind
+  case eq m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
+    grind

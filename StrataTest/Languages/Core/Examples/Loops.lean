@@ -47,13 +47,11 @@ info: Entry: l_3
    [init (i : int), i := #0, s := #0]
    cgoto #true loop_entry_1 loop_entry_1,
  loop_entry_1:
-   [assert [inv] ((~Bool.And : (arrow bool (arrow bool bool)))
-  ((~Bool.And : (arrow bool (arrow bool bool)))
-   ((~Int.Le : (arrow int (arrow int bool))) #0 (i : int))
-   ((~Int.Le : (arrow int (arrow int bool))) (i : int) (n : int)))
-  ((s : int) == ((~Int.Div : (arrow int (arrow int int)))
-    ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
-    #2)))]
+   [assert [inv] ((~Int.Le : (arrow int (arrow int bool))) #0 (i : int)),
+ assert [inv] ((~Int.Le : (arrow int (arrow int bool))) (i : int) (n : int)),
+ assert [inv] ((s : int) == ((~Int.Div : (arrow int (arrow int int)))
+   ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
+   #2))]
    cgoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l_2 end_0,
  l_2:
    [i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1),
@@ -71,23 +69,65 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: entry_invariant_0
+Label: entry_invariant_0_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
 sum_requires_0: $__n0 >= 0
 Obligation:
-true && 0 <= $__n0 && true
+true
 
-Label: arbitrary_iter_maintain_invariant_0
+Label: entry_invariant_0_1
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+sum_requires_0: $__n0 >= 0
+Obligation:
+0 <= $__n0
+
+Label: entry_invariant_0_2
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+sum_requires_0: $__n0 >= 0
+Obligation:
+true
+
+Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
 assume_guard_0: $__i3 < $__n0
-assume_invariant_0: 0 <= $__i3 && $__i3 <= $__n0 && $__s4 == $__i3 * ($__i3 + 1) div 2
+assume_invariant_0_0: 0 <= $__i3
+assume_invariant_0_1: $__i3 <= $__n0
+assume_invariant_0_2: $__s4 == $__i3 * ($__i3 + 1) div 2
 sum_requires_0: $__n0 >= 0
 Obligation:
-0 <= $__i3 + 1 && $__i3 + 1 <= $__n0 && $__s4 + ($__i3 + 1) == ($__i3 + 1) * ($__i3 + 1 + 1) div 2
+0 <= $__i3 + 1
+
+Label: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard_0: $__i3 < $__n0
+assume_invariant_0_0: 0 <= $__i3
+assume_invariant_0_1: $__i3 <= $__n0
+assume_invariant_0_2: $__s4 == $__i3 * ($__i3 + 1) div 2
+sum_requires_0: $__n0 >= 0
+Obligation:
+$__i3 + 1 <= $__n0
+
+Label: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard_0: $__i3 < $__n0
+assume_invariant_0_0: 0 <= $__i3
+assume_invariant_0_1: $__i3 <= $__n0
+assume_invariant_0_2: $__s4 == $__i3 * ($__i3 + 1) div 2
+sum_requires_0: $__n0 >= 0
+Obligation:
+$__s4 + ($__i3 + 1) == ($__i3 + 1) * ($__i3 + 1 + 1) div 2
 
 Label: sum_ensures_1
 Property: assert
@@ -95,20 +135,40 @@ Assumptions:
 sum_requires_0: $__n0 >= 0
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then (0 < $__n0) else true
 assume_guard_0: if 0 < $__n0 then ($__i3 < $__n0) else true
-assume_invariant_0: if 0 < $__n0 then (0 <= $__i3 && $__i3 <= $__n0 && $__s4 == $__i3 * ($__i3 + 1) div 2) else true
+assume_invariant_0_0: if 0 < $__n0 then (0 <= $__i3) else true
+assume_invariant_0_1: if 0 < $__n0 then ($__i3 <= $__n0) else true
+assume_invariant_0_2: if 0 < $__n0 then ($__s4 == $__i3 * ($__i3 + 1) div 2) else true
 not_guard_0: if 0 < $__n0 then !($__i5 < $__n0) else true
-invariant_0: if 0 < $__n0 then (0 <= $__i5 && $__i5 <= $__n0 && $__s6 == $__i5 * ($__i5 + 1) div 2) else true
+invariant_0_0: if 0 < $__n0 then (0 <= $__i5) else true
+invariant_0_1: if 0 < $__n0 then ($__i5 <= $__n0) else true
+invariant_0_2: if 0 < $__n0 then ($__s6 == $__i5 * ($__i5 + 1) div 2) else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
 if 0 < $__n0 then $__s6 else 0 == $__n0 * ($__n0 + 1) div 2
 
 ---
 info:
-Obligation: entry_invariant_0
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
@@ -184,19 +244,19 @@ info: Entry: l_6
 
 /--
 info:
-Obligation: entry_invariant_0
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_1
+Obligation: entry_invariant_1_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_1
+Obligation: arbitrary_iter_maintain_invariant_1_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0
+Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
 -/

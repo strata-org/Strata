@@ -34,7 +34,7 @@ inductive CmdExt (P : PureExpr) where
   -- Maybe procedure names should just be plain strings since there is no
   -- "scoped procedures" or "generated procedures"
   | call (lhs : List P.Ident) (procName : String) (args : List P.Expr)
-         (md : MetaData P := .empty)
+         (md : MetaData P)
 
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.
@@ -46,15 +46,7 @@ instance : HasPassiveCmds Expression Command where
   assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
-  havoc x := .cmd (.havoc x)
-
-def CmdExt.sizeOf (c : CmdExt P) : Nat :=
-  match c with
-  | .cmd c => SizeOf.sizeOf c
-  | .call l p a _ => 3 + l.length + SizeOf.sizeOf p + a.length
-
-instance : SizeOf (CmdExt P) where
-  sizeOf := CmdExt.sizeOf
+  havoc x md := .cmd (.havoc x md)
 
 instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
     [ToFormat (List P.Ident)] [ToFormat P.Expr] :
@@ -72,27 +64,27 @@ abbrev Statements := List Statement
 
 @[match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
 @[match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name expr md))
 @[match_pattern]
-abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression := .empty) :=
+abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.havoc name md))
 @[match_pattern]
-abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
 @[match_pattern]
-abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assume label b md))
 @[match_pattern]
 abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
-    (md : MetaData Expression := .empty) :=
+    (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.call lhs pname args md)
 @[match_pattern]
-abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
 
 ---------------------------------------------------------------------
@@ -128,22 +120,18 @@ def Statement.eraseTypes (s : Statement) : Statement :=
   | .loop guard measure invariant bss md =>
     let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
-  | .goto l md => .goto l md
+  | .exit l md => .exit l md
   | .funcDecl decl md =>
     let decl' := { decl with
       body := decl.body.map Lambda.LExpr.eraseTypes,
       axioms := decl.axioms.map Lambda.LExpr.eraseTypes,
       preconditions := decl.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
     .funcDecl decl' md
-  termination_by (Stmt.sizeOf s)
-  decreasing_by all_goals simp[sizeOf] <;> term_by_mem
 
 def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
   | [] => []
   | s :: srest => Statement.eraseTypes s :: Statements.eraseTypes srest
-  termination_by (sizeOf ss)
-  decreasing_by all_goals simp [sizeOf] <;> term_by_mem
 end
 
 ---------------------------------------------------------------------
@@ -205,14 +193,13 @@ def Statement.modifiedVarsTrans
   (π : String → Option ProcType) (s : Statement)
   : List Expression.Ident := match s with
   | .cmd cmd => Command.modifiedVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.modifiedVarsTrans π bss
   | .ite _ tbss ebss _ =>
     Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
   | .loop _ _ _ bss _ =>
     Statements.modifiedVarsTrans π bss
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
-  termination_by (Stmt.sizeOf s)
 
 def Statements.modifiedVarsTrans
   {ProcType : Type}
@@ -221,7 +208,6 @@ def Statements.modifiedVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.modifiedVarsTrans π s ++ Statements.modifiedVarsTrans π ss
-  termination_by (Block.sizeOf ss)
 end
 
 def Command.getVarsTrans
@@ -244,7 +230,7 @@ def Statement.getVarsTrans
   (π : String → Option ProcType) (s : Statement)
   : List Expression.Ident := match s with
   | .cmd cmd => Command.getVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.getVarsTrans π bss
   | .ite _ tbss ebss _ =>
     Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
@@ -258,7 +244,6 @@ def Statement.getVarsTrans
       let bodyVars := HasVarsPure.getVars body
       let formals := decl.inputs.map (·.1)
       bodyVars.filter (fun v => formals.all (fun f => v.name != f.name))
-  termination_by (Stmt.sizeOf s)
 
 def Statements.getVarsTrans
   {ProcType : Type}
@@ -267,7 +252,6 @@ def Statements.getVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.getVarsTrans π s ++ Statements.getVarsTrans π ss
-  termination_by (Block.sizeOf ss)
 end
 
 -- don't need to transitively lookup for procedures
@@ -297,12 +281,11 @@ def Statement.touchedVarsTrans
   : List Expression.Ident :=
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .block _ bss _ => Statements.touchedVarsTrans π bss
   | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
   | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
   | .funcDecl decl _ => [decl.name]  -- Function declaration touches (defines) the function name
-  termination_by (Stmt.sizeOf s)
 
 def Statements.touchedVarsTrans
   {ProcType : Type}
@@ -312,7 +295,6 @@ def Statements.touchedVarsTrans
   match ss with
   | [] => []
   | s :: srest => Statement.touchedVarsTrans π s ++ Statements.touchedVarsTrans π srest
-  termination_by (Block.sizeOf ss)
 end
 
 def Statement.allVarsTrans
@@ -332,8 +314,6 @@ mutual
 def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
-  termination_by b.sizeOf
-  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
@@ -361,17 +341,16 @@ def Statement.substFvar (s : Core.Statement)
   | .loop guard measure invariant body metadata =>
     .loop (Lambda.LExpr.substFvar guard fr to)
           (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
+          (invariant.map (Lambda.LExpr.substFvar · fr to))
           (Block.substFvar body fr to)
           metadata
-  | .goto _ _ => s
+  | .exit _ _ => s
   | .funcDecl decl md =>
     -- Substitute in function body and axioms
     let decl' := { decl with
       body := decl.body.map (Lambda.LExpr.substFvar · fr to),
       axioms := decl.axioms.map (Lambda.LExpr.substFvar · fr to) }
     .funcDecl decl' md
-  termination_by s.sizeOf
 end
 
 ---------------------------------------------------------------------
@@ -380,8 +359,6 @@ mutual
 def Block.renameLhs (b : Block)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
-  termination_by b.sizeOf
-  decreasing_by term_by_mem [Stmt, sizeOf_stmt_in_block]
 
 def Statement.renameLhs (s : Core.Statement)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
@@ -405,9 +382,7 @@ def Statement.renameLhs (s : Core.Statement)
     -- Rename function name if it matches
     let decl' := if decl.name == fr then { decl with name := to } else decl
     .funcDecl decl' md
-  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
-  termination_by s.sizeOf
-  decreasing_by all_goals term_by_mem
+  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .exit _ _ => s
 end
 
 ---------------------------------------------------------------------

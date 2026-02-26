@@ -74,26 +74,24 @@ match ss with
   -- Flush accumulator
   let (accumEntry, accumBlocks) ← flushAccum accum l
   pure (accumEntry, accumBlocks ++ [b] ++ tbs ++ fbs ++ bsNext)
-| .loop c _m i? bss _md :: ss => do
+| .loop c _m is bss _md :: ss => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k ss []
   -- Create loop entry block
   let lentry ← StringGenState.gen "loop_entry"
   let (bl, bbs) ← stmtsToBlocks lentry bss []
   let cmds : List CmdT :=
-    match i? with
-    | .some i => [HasPassiveCmds.assert "inv" i MetaData.empty]
-    | .none => []
+    is.map (fun i => HasPassiveCmds.assert "inv" i MetaData.empty)
   let b := (lentry, { cmds := cmds, transfer := .cgoto c bl kNext })
   -- Flush accumulator
   let (accumEntry, accumBlocks) ← flushAccum accum lentry
   pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
-| .goto l _md :: ss => do
-  -- Flush accumulator to goto target
-  let (accumEntry, accumBlocks) ← flushAccum accum l
-  -- Process rest (though this is likely unreachable code)
-  let (_, bsRest) ← stmtsToBlocks k ss []
-  pure (accumEntry, accumBlocks ++ bsRest)
+| .exit l _md :: ss => do
+  -- Flush accumulator and continue
+  -- TODO: support this correctly
+  let (_, bs1) ← flushAccum accum k
+  let (l2, bs2) ← stmtsToBlocks k ss []
+  pure (l2, bs1 ++ bs2)
 
 def stmtsToCFGM
   [HasBool P] [HasPassiveCmds P CmdT]

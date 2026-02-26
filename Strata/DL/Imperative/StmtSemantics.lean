@@ -48,27 +48,27 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   | block_sem :
     EvalBlock P Cmd EvalCmd extendEval δ σ b σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.block _ b) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.block _ b md) σ' δ'
 
   | ite_true_sem :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     EvalBlock P Cmd EvalCmd extendEval δ σ t σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e md) σ' δ'
 
   | ite_false_sem :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     EvalBlock P Cmd EvalCmd extendEval δ σ e σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e md) σ' δ'
 
   | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
     EvalStmt P Cmd EvalCmd extendEval δ σ (.funcDecl decl md) σ
       (extendEval δ σ decl)
 
-  -- (TODO): Define semantics of `goto`.
+  -- (TODO): Define semantics of `exit`.
 
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   (extendEval : ExtendEval P)
@@ -149,11 +149,9 @@ theorem EvalStmtDefMonotone
       apply EvalBlockDefMonotone <;> assumption
     | ite_false_sem Hsome Hwf Heval =>
       apply EvalBlockDefMonotone <;> assumption
-  | .goto _ _ => cases Heval
+  | .exit _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
-  termination_by (Stmt.sizeOf s)
-  decreasing_by all_goals term_by_mem
 
 theorem EvalBlockDefMonotone
   [DecidableEq P.Ident]
@@ -174,6 +172,4 @@ theorem EvalBlockDefMonotone
     apply EvalBlockDefMonotone (σ:=σ1) (δ:=δ1)
     apply EvalStmtDefMonotone <;> assumption
     assumption
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals term_by_mem
 end

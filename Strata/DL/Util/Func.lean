@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Util.ListMap
+import Strata.DL.Util.FuncAttr
 
 /-!
 ## Generic Function Structure
@@ -68,9 +69,8 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   inputs   : ListMap IdentT TyT
   output   : TyT
   body     : Option ExprT := .none
-  -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
-  -- a function, etc.).
-  attr     : Array String := #[]
+  -- Structured attributes controlling partial evaluator behavior (inlining, etc.)
+  attr     : Array FuncAttr := #[]
   -- The MetadataT argument is the metadata that will be attached to the
   -- resulting expression of concreteEval if evaluation was successful.
   concreteEval : Option (MetadataT → List ExprT → Option ExprT) := .none

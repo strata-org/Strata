@@ -64,7 +64,12 @@ inductive Operation : Type where
   | Gt
   /-- Greater than or equal. Works on `Int` and `Float64`. -/
   | Geq
+  /-- String concatenation. -/
+  | StrConcat
   deriving Repr
+
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
 
 /--
 A wrapper that pairs a value with source-level metadata such as source
@@ -77,6 +82,7 @@ structure WithMetadata (t : Type) : Type where
   val : t
   /-- Source-level metadata (locations, annotations). -/
   md : Imperative.MetaData Core.Expression
+  deriving Repr
 
 /--
 The type system for Laurel programs.
@@ -104,6 +110,8 @@ inductive HighType : Type where
   | TTypedField (valueType : WithMetadata HighType)
   /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : WithMetadata HighType)
+  /-- Map type. -/
+  | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType)
   /-- A reference to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
@@ -115,6 +123,7 @@ inductive HighType : Type where
   /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
   Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
   | TCore (s: String)
+  deriving Repr
 
 mutual
 
@@ -130,8 +139,8 @@ structure Procedure : Type where
   inputs : List Parameter
   /-- Output parameters with their types. Multiple outputs are supported. -/
   outputs : List Parameter
-  /-- The precondition that callers must satisfy. -/
-  precondition : WithMetadata StmtExpr
+  /-- The preconditions that callers must satisfy. -/
+  preconditions : List (WithMetadata StmtExpr)
   /-- Whether the procedure is deterministic or nondeterministic. -/
   determinism : Determinism
   /-- Optional termination measure for recursive procedures. -/
@@ -140,6 +149,15 @@ structure Procedure : Type where
   body : Body
   /-- Source-level metadata. -/
   md : Imperative.MetaData Core.Expression
+
+/--
+A typed parameter for a procedure.
+-/
+structure Parameter where
+  /-- The parameter name. -/
+  name : Identifier
+  /-- The parameter type. -/
+  type : WithMetadata HighType
 
 /--
 Specifies whether a procedure is deterministic or nondeterministic.
@@ -154,15 +172,6 @@ inductive Determinism where
   | nondeterministic
 
 /--
-A typed parameter for a procedure.
--/
-structure Parameter where
-  /-- The parameter name. -/
-  name : Identifier
-  /-- The parameter type. -/
-  type : WithMetadata HighType
-
-/--
 The body of a procedure. A body can be transparent (with a visible
 implementation), opaque (with a postcondition and optional implementation),
 or abstract (requiring overriding in extending types).
@@ -172,11 +181,11 @@ inductive Body where
   | Transparent (body : WithMetadata StmtExpr)
   /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
   | Opaque
-      (postcondition : List (WithMetadata StmtExpr))
+      (postconditions : List (WithMetadata StmtExpr))
       (implementation : Option (WithMetadata StmtExpr))
       (modifies : List (WithMetadata StmtExpr))
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
-  | Abstract (postcondition : WithMetadata StmtExpr)
+  | Abstract (postconditions : List (WithMetadata StmtExpr))
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -287,6 +296,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.THeap, HighType.THeap => true
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
+  | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -357,21 +367,48 @@ structure ConstrainedType where
   /-- A witness value proving the type is inhabited. -/
   witness : StmtExprMd
 
-/--
-A user-defined type, either a composite type or a constrained type.
+/-- A constructor of a Laurel datatype, with a name and typed arguments. -/
+structure DatatypeConstructor where
+  name : Identifier
+  args : List (Identifier × HighTypeMd)
 
-Typed unions (algebraic datatypes) are encoded by creating a `Composite` for
-each constructor and a `Constrained` for their union.
+/-- A Laurel datatype definition with optional type parameters.
+    Zero constructors produces an opaque (abstract) type in Core.
+
+    The use-case of this type is to enable incremental translation to Core.
+    Core features datatypes and having these in Laurel allows Laurel->Laurel passes
+    to already translate to datatypes.
+     -/
+structure DatatypeDefinition where
+  name : Identifier
+  typeArgs : List Identifier
+  constructors : List DatatypeConstructor
+
+/--
+A user-defined type, either a composite type, a constrained type, or an algebraic datatype.
+
+Algebriac datatypes can also be encoded uses composite and constrained types. Here are two examples:
+
+Example 1:
+`composite Some<T> { value: T }`
+`constrained Option<T> = value: Dynamic | value is Some<T> || value is Unit`
+
+Example 2:
+`composite Cons<T> { head: T, tail: List<T> }`
+`constrained List<T> = value: Dynamic | value is Cons<T> || value is Unit`
 -/
 inductive TypeDefinition where
   /-- A composite (class-like) type with fields and methods. -/
   | Composite (ty : CompositeType)
   /-- A constrained (refinement) type with a base type and predicate. -/
   | Constrained (ty : ConstrainedType)
+  /-- An algebriac datatype. -/
+  | Datatype (ty : DatatypeDefinition)
 
 structure Constant where
   name : Identifier
   type : HighTypeMd
+  initializer : Option StmtExprMd := none
 
 /--
 A Laurel program consisting of static procedures, static fields, type

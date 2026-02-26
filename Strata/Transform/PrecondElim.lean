@@ -216,17 +216,15 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed || changed', [.ite c thenb' elseb' md])
   | .loop guard measure invariant body md => do
-    let invAsserts := match invariant with
-      | some inv => collectPrecondAsserts F inv "loop_invariant" md
-      | none => []
+    let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
     let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
     return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty,
       guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md])
-  | .goto lbl md =>
-    return (false, [.goto lbl md])
+  | .exit lbl md =>
+    return (false, [.exit lbl md])
   | .funcDecl decl md => do
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
@@ -240,8 +238,8 @@ def transformStmt (s : Statement)
     | some wfStmts =>
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
-        Statement.init name ty none
-      return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts), .funcDecl decl' md])
+        Statement.init name ty none md
+      return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   termination_by s.sizeOf
   decreasing_by all_goals term_by_mem
 end
