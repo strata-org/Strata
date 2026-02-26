@@ -467,7 +467,8 @@ Transform a program to lift all assignments that occur in an expression context.
 def liftImperativeExpressions (program : Program) : Program :=
   let imperativeNames := program.staticProcedures.filter (fun p => !p.isFunctional) |>.map (·.name)
   let initState : LiftState := { types := program.types, imperativeNames := imperativeNames, procedures := program.staticProcedures }
-  let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
-  { program with staticProcedures := seqProcedures }
+  let (imperativeProcs, functionalProcs) := program.staticProcedures.partition (fun p => !p.isFunctional)
+  let (seqProcedures, _) := (imperativeProcs.mapM transformProcedure).run initState
+  { program with staticProcedures := seqProcedures ++ functionalProcs }
 
 end Laurel

@@ -221,6 +221,12 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   | .Block (⟨ .Assume _, md⟩ :: rest) label =>
     _ ← disallowed md "assumes are not YET supported in functions or contracts"
     translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
+  | .Block (⟨ .LocalVariable name ty (some initializer), md⟩ :: rest) label => do
+    let env' := (name, ty) :: env
+    let coreMonoType := translateType ty
+    let valueExpr ← translateExpr env initializer boundVars isPureContext
+    let bodyExpr ← translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
+    return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
 
   | .IsType _ _ => panic "IsType should have been lowered"
   | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
@@ -291,29 +297,29 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       return (env', stmtsList)
   | .LocalVariable name ty initializer =>
       let env' := (name, ty) :: env
-      let boogieMonoType := translateType ty
-      let boogieType := LTy.forAll [] boogieMonoType
+      let coreMonoType := translateType ty
+      let coreType := LTy.forAll [] coreMonoType
       let ident := Core.CoreIdent.locl name
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
           if isCoreFunction functionNames callee then
             -- Translate as expression (function application)
-            let boogieExpr ← translateExpr env (⟨ .StaticCall callee args, callMd ⟩)
-            return (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
+            let coreExpr ← translateExpr env (⟨ .StaticCall callee args, callMd ⟩)
+            return (env', [Core.Statement.init ident coreType (some coreExpr) md])
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr env a)
             let defaultExpr := defaultExprForType ty
-            let initStmt := Core.Statement.init ident boogieType (some defaultExpr)
+            let initStmt := Core.Statement.init ident coreType (some defaultExpr)
             let callStmt := Core.Statement.call [ident] callee coreArgs
             return (env', [initStmt, callStmt])
       | some initExpr =>
           let coreExpr ← translateExpr env initExpr
-          return (env', [Core.Statement.init ident boogieType (some coreExpr)])
+          return (env', [Core.Statement.init ident coreType (some coreExpr)])
       | none =>
           let defaultExpr := defaultExprForType ty
-          return (env', [Core.Statement.init ident boogieType (some defaultExpr)])
+          return (env', [Core.Statement.init ident coreType (some defaultExpr)])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
