@@ -800,14 +800,14 @@ public class StrataGenerator : ReadOnlyVisitor {
     /// Collect all forward goto target labels from a list of blocks.
     /// Returns a set of label names that are targets of goto commands.
     /// </summary>
-    private static HashSet<string> CollectGotoTargets(IEnumerable<Block> blocks) {
+    private static HashSet<string> CollectGotoTargets<T>(IEnumerable<T> items, Func<T, TransferCmd> getTransferCmd) {
         var targets = new HashSet<string>();
-        foreach (var blk in blocks) {
-            if (blk.TransferCmd is GotoCmd gotoCmd) {
+        foreach (var item in items) {
+            if (getTransferCmd(item) is GotoCmd gotoCmd) {
                 foreach (var target in gotoCmd.LabelTargets) {
                     targets.Add(target.Label);
                 }
-            } else if (blk.TransferCmd is ReturnCmd) {
+            } else if (getTransferCmd(item) is ReturnCmd) {
                 targets.Add("_exit");
             }
         }
@@ -1008,20 +1008,6 @@ public class StrataGenerator : ReadOnlyVisitor {
     /// <summary>
     /// Collect all forward goto target labels from a list of big blocks.
     /// </summary>
-    private static HashSet<string> CollectGotoTargetsFromBigBlocks(IList<BigBlock> bigBlocks) {
-        var targets = new HashSet<string>();
-        foreach (var bb in bigBlocks) {
-            if (bb.tc is GotoCmd gotoCmd) {
-                foreach (var target in gotoCmd.LabelTargets) {
-                    targets.Add(target.Label);
-                }
-            } else if (bb.tc is ReturnCmd) {
-                targets.Add("_exit");
-            }
-        }
-        return targets;
-    }
-
     /// <summary>
     /// Emit a sequence of items wrapped in labeled blocks for exit targets.
     /// For each target label, a wrapper block opens before the first item
@@ -1063,7 +1049,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     private void EmitStmtList(StmtList stmtList) {
         var bigBlocks = stmtList.BigBlocks;
-        var gotoTargets = CollectGotoTargetsFromBigBlocks(bigBlocks);
+        var gotoTargets = CollectGotoTargets(bigBlocks, bb => bb.tc);
 
         if (gotoTargets.Count == 0) {
             EmitSeparated(bigBlocks, EmitBigBlock, "\n");
@@ -1426,7 +1412,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             // For unstructured blocks, we wrap groups of blocks so that
             // forward gotos (now `exit label`) can exit to the right place.
             var blocks = node.Blocks;
-            var gotoTargets = CollectGotoTargets(blocks);
+            var gotoTargets = CollectGotoTargets(blocks, b => b.TransferCmd);
 
             var labelToIndex = new Dictionary<string, int>();
             for (var i = 0; i < blocks.Count; i++) {
