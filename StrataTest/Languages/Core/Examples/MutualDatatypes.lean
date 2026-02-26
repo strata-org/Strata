@@ -22,8 +22,6 @@ def roseTreeTesterPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree;
-forward type Forest;
 mutual
   datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
   datatype RoseTree { Node(val: int, children: Forest) };
@@ -92,8 +90,6 @@ def roseTreeDestructorPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree;
-forward type Forest;
 mutual
   datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
   datatype RoseTree { Node(val: int, children: Forest) };
@@ -170,8 +166,6 @@ def roseTreeEqualityPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree;
-forward type Forest;
 mutual
   datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
   datatype RoseTree { Node(val: int, children: Forest) };
@@ -235,8 +229,6 @@ def polyRoseTreeHavocPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree (a : Type);
-forward type Forest (a : Type);
 mutual
   datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
@@ -297,8 +289,6 @@ def stmtListHavocPgm : Program :=
 #strata
 program Core;
 
-forward type Stmt (e : Type, c : Type);
-forward type StmtList (e : Type, c : Type);
 mutual
   datatype StmtList (e : Type, c : Type) { SNil(), SCons(hd: Stmt e c, tl: StmtList e c) };
   datatype Stmt (e : Type, c : Type) {

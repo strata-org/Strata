@@ -309,23 +309,10 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
     let cmd ← processDatatype dt
     pure [cmd]
   | _ => do
-    -- Multiple datatypes - generate forward declarations and mutual block.
-    let mut forwardDecls : List (Command M) := []
-    for dt in datatypes.reverse do
-      let name : Ann String M := ⟨default, dt.name⟩
-      let args : Ann (Option (Bindings M)) M :=
-        if dt.typeArgs.isEmpty then
-          ⟨default, none⟩
-        else
-          let bindings := dt.typeArgs.map fun param =>
-            let paramName : Ann String M := ⟨default, param⟩
-            let paramType := TypeP.type default
-            Binding.mkBinding default paramName paramType
-          ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
-      forwardDecls := forwardDecls ++ [.command_forward_typedecl default name args]
+    -- Multiple datatypes - mutual block with pre-registration handles forward references.
     let cmds ← datatypes.mapM processDatatype
     let mutualCmd := Command.command_mutual default ⟨default, cmds.toArray⟩
-    pure (forwardDecls ++ [mutualCmd])
+    pure [mutualCmd]
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)
@@ -1068,7 +1055,7 @@ private def recreateGlobalContext (ctx : ToCSTContext M)
     (map.insert name i, i + 1)
   let vars := allFreeVars.map fun name =>
     -- .fvar below is really a dummy value.
-    (name, GlobalKind.expr (.fvar default 0 #[]), DeclState.defined)
+    (name, GlobalKind.expr (.fvar default 0 #[]))
   { nameMap, vars }
 
 -- Extract types not in `Core.KnownTypes`.
