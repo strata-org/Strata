@@ -4,11 +4,19 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Lambda.TypeFactory
+
+/-!
+# TypeFactory Tests
+
+Unit tests for datatype-generated functions (constructors, eliminators,
+testers, destructors) via Lambda's `typeCheckAndPartialEval`. Also
+includes typing tests not expressible in concrete syntax (e.g. duplicate
+constructor names, empty mutual blocks, constructor clashes with built-in
+functions).
+-/
 
 ---------------------------------------------------------------------
 
@@ -809,7 +817,7 @@ New Function:func Int.Add :  ((x : int)) → Bad;-/
 #eval format $ typeCheckAndPartialEval #[[badTy5]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 ---------------------------------------------------------------------
--- Test 9: Mutually recursive datatypes (RoseTree and Forest)
+-- Mutually recursive datatypes (RoseTree and Forest)
 ---------------------------------------------------------------------
 
 section MutualRecursion
@@ -906,7 +914,7 @@ info: ((~Node : (arrow int (arrow (Forest int) (RoseTree int)))) #7 (~FNil : (Fo
     ((LExpr.op () ("Forest..head" : TestParams.Identifier) .none).mkApp () [fcons' (node' (intConst () 7) fnil') fnil'])
 
 ---------------------------------------------------------------------
--- Test 10: Eliminator on mutually recursive types - computing tree size
+-- Eliminator on mutually recursive types - computing tree size
 ---------------------------------------------------------------------
 
 /-
@@ -983,35 +991,7 @@ info: #5
     (treeSize' roseTree5)
 
 ---------------------------------------------------------------------
--- Test 11: Non-strictly positive mutual types should be rejected
----------------------------------------------------------------------
-
-/-
-type BadA = MkA (BadB -> int)
-type BadB = MkB BadA | BadBBase
-
-BadA has BadB in negative position (left of arrow), which is non-strictly positive
-since BadB is in the same mutual block.
-BadB has a base case (BadBBase) to make it inhabited, so we hit the strict positivity
-error rather than the inhabited error.
--/
-
-def mkAConstr : LConstr Unit := {name := "MkA", args := [("f", .arrow (.tcons "BadB" []) .int)], testerName := "isMkA"}
-def badATy : LDatatype Unit := {name := "BadA", typeArgs := [], constrs := [mkAConstr], constrs_ne := rfl}
-
-def mkBConstr : LConstr Unit := {name := "MkB", args := [("a", .tcons "BadA" [])], testerName := "isMkB"}
-def badBBaseConstr : LConstr Unit := {name := "BadBBase", args := [], testerName := "isBadBBase"}
-def badBTy : LDatatype Unit := {name := "BadB", typeArgs := [], constrs := [badBBaseConstr, mkBConstr], constrs_ne := rfl}
-
-def badMutualBlock : MutualDatatype Unit := [badATy, badBTy]
-
-/-- info: Error in constructor MkA: Non-strictly positive occurrence of BadB in type (arrow BadB int)-/
-#guard_msgs in
-#eval format $
-  typeCheckAndPartialEval #[badMutualBlock] (Factory.default : @Factory TestParams) (intConst () 0)
-
----------------------------------------------------------------------
--- Test 12: Empty mutual block should be rejected
+-- Test 11: Empty mutual block should be rejected
 ---------------------------------------------------------------------
 
 def emptyBlock : MutualDatatype Unit := []
@@ -1022,7 +1002,7 @@ def emptyBlock : MutualDatatype Unit := []
   typeCheckAndPartialEval #[emptyBlock] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 ---------------------------------------------------------------------
--- Test 13: Type reference in wrong order should be rejected
+-- Type reference in wrong order should be rejected
 ---------------------------------------------------------------------
 
 -- Wrapper references List, but List is defined after Wrapper
@@ -1035,22 +1015,8 @@ def wrapperTy' : LDatatype Unit := {name := "Wrapper", typeArgs := [], constrs :
   typeCheckAndPartialEval #[[wrapperTy'], [listTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 ---------------------------------------------------------------------
--- Test 14: Type depending on previously defined type should work
 ---------------------------------------------------------------------
-
--- List is defined before Wrapper - correct order
-/-- info: Annotated expression:
-#0
-
----
-info: #0
--/
-#guard_msgs in
-#eval format $
-  typeCheckAndPartialEval #[[listTy], [wrapperTy']] (IntBoolFactory : @Factory TestParams) (intConst () 0)
-
----------------------------------------------------------------------
--- Test 15: 3-way mutually recursive datatypes (A -> B -> C -> A)
+-- 3-way mutually recursive datatypes (A -> B -> C -> A)
 ---------------------------------------------------------------------
 
 section ThreeWayMutualRecursion
@@ -1155,163 +1121,23 @@ info: #15
 
 end ThreeWayMutualRecursion
 
-end MutualRecursion
-
+---------------------------------------------------------------------
+-- Duplicate datatype name in mutual block should be rejected
 ---------------------------------------------------------------------
 
--- Inhabited type tests
+def dupTy1 : LDatatype Unit := {name := "Dup", typeArgs := ["a"], constrs := [{name := "A", args := [], testerName := "isA"}], constrs_ne := rfl}
+def dupTy2 : LDatatype Unit := {name := "Dup", typeArgs := ["a"], constrs := [{name := "B", args := [], testerName := "isB"}], constrs_ne := rfl}
 
-section InhabitedTests
-
--- Test 1: Standard inhabited types
-
--- Option type: Some | None
-def optionTy : LDatatype Unit := {
-  name := "Option", typeArgs := ["a"],
-  constrs := [
-    {name := "None", args := []},
-    {name := "Some", args := [("x", .ftvar "a")]}
-  ], constrs_ne := rfl
-}
-
-/-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[[optionTy]]
-
-/-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[[listTy]]
-
--- Either type: Left a | Right b
-def eitherTy : LDatatype Unit := {
-  name := "Either", typeArgs := ["a", "b"],
-  constrs := [
-    {name := "Left", args := [("l", .ftvar "a")]},
-    {name := "Right", args := [("r", .ftvar "b")]}
-  ], constrs_ne := rfl
-}
-
-/-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[[eitherTy]]
-
--- Nat type: Zero | Succ Nat
-def natTy : LDatatype Unit := {
-  name := "Nat", typeArgs := [],
-  constrs := [
-    {name := "Zero", args := []},
-    {name := "Succ", args := [("n", .tcons "Nat" [])]}
-  ], constrs_ne := rfl
-}
-
-/-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[[natTy]]
-
--- Test 2: Mutually recursive inhabited types
-
--- Even/Odd mutual recursion (note Odd does not have an explicit base case)
-def evenTy : LDatatype Unit := {
-  name := "Even", typeArgs := [],
-  constrs := [
-    {name := "EvenZ", args := []},
-    {name := "EvenS", args := [("o", .tcons "Odd" [])]}
-  ], constrs_ne := rfl
-}
-
-def oddTy : LDatatype Unit := {
-  name := "Odd", typeArgs := [],
-  constrs := [
-    {name := "OddS", args := [("e", .tcons "Even" [])]}
-  ], constrs_ne := rfl
-}
-
-/-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[[evenTy, oddTy]]
-
--- Forest/Tree mutual recursion
-def forestTy : LDatatype Unit := {
-  name := "Forest", typeArgs := ["a"],
-  constrs := [
-    {name := "FNil", args := []},
-    {name := "FCons", args := [("t", .tcons "Tree" [.ftvar "a"]), ("f", .tcons "Forest" [.ftvar "a"])]}
-  ], constrs_ne := rfl
-}
-
-def treeTy2 : LDatatype Unit := {
-  name := "Tree", typeArgs := ["a"],
-  constrs := [
-    {name := "TNode", args := [("x", .ftvar "a"), ("children", .tcons "Forest" [.ftvar "a"])]}
-  ], constrs_ne := rfl
-}
-
-/-- info: none -/
-#guard_msgs in #eval TypeFactory.all_inhab #[[forestTy, treeTy2]]
-
--- Test 3: Uninhabited types
-
--- Empty type
-def emptyTy : LDatatype Unit := {
-  name := "Empty", typeArgs := [],
-  constrs := [
-    {name := "MkEmpty", args := [("x", .tcons "Empty" [])]}
-  ], constrs_ne := rfl
-}
-
-/-- info: Error: datatype Empty not inhabited -/
+/-- info: Duplicate datatype name in mutual block: type:
+Dup
+Type Arguments:
+[a]
+Constructors:
+[Name: B Args: [] Tester: isB ] -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval #[[emptyTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+#eval format $
+  typeCheckAndPartialEval #[[dupTy1, dupTy2]] (Factory.default : @Factory TestParams) (intConst () 0)
 
--- Type requiring uninhabited type
-def needsEmptyTy : LDatatype Unit := {
-  name := "NeedsEmpty", typeArgs := [],
-  constrs := [
-    {name := "MkNeedsEmpty", args := [("x", .tcons "Empty" [])]}
-  ], constrs_ne := rfl
-}
-
-/-- info: Error: datatype NeedsEmpty not inhabited -/
-#guard_msgs in
-#eval format $ typeCheckAndPartialEval #[[needsEmptyTy], [emptyTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
-
--- Mutually uninhabited types
-def bad1Ty : LDatatype Unit := {
-  name := "Bad1", typeArgs := [],
-  constrs := [
-    {name := "B1", args := [("x", .tcons "Bad2" [])]}
-  ], constrs_ne := rfl
-}
-
-def bad2Ty : LDatatype Unit := {
-  name := "Bad2", typeArgs := [],
-  constrs := [
-    {name := "B2", args := [("x", .tcons "Bad1" [])]}
-  ], constrs_ne := rfl
-}
-
-/-- info: Error: datatype Bad1 not inhabited -/
-#guard_msgs in
-#eval format $ typeCheckAndPartialEval #[[bad1Ty, bad2Ty]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
-
--- Three-way mutual uninhabited cycle
-def cycle1Ty : LDatatype Unit := {
-  name := "Cycle1", typeArgs := [],
-  constrs := [{name := "C1", args := [("x", .tcons "Cycle2" [])]}],
-  constrs_ne := rfl
-}
-
-def cycle2Ty : LDatatype Unit := {
-  name := "Cycle2", typeArgs := [],
-  constrs := [{name := "C2", args := [("x", .tcons "Cycle3" [])]}],
-  constrs_ne := rfl
-}
-
-def cycle3Ty : LDatatype Unit := {
-  name := "Cycle3", typeArgs := [],
-  constrs := [{name := "C3", args := [("x", .tcons "Cycle1" [])]}],
-  constrs_ne := rfl
-}
-
-/-- info: Error: datatype Cycle1 not inhabited -/
-#guard_msgs in
-#eval format $ typeCheckAndPartialEval #[[cycle1Ty, cycle2Ty, cycle3Ty]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
-
-end InhabitedTests
+end MutualRecursion
 
 end Lambda
