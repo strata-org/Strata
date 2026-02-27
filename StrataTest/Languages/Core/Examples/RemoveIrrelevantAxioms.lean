@@ -146,6 +146,11 @@ Result: ➖ can be false if reachable
 Obligation: assert_11
 Property: assert
 Result: ➖ can be false if reachable
+-/
+#guard_msgs in
+#eval verify irrelevantAxiomsTestPgm
+        (options := {Options.models with removeIrrelevantAxioms := false})
+
 ---------------------------------------------------------------------
 
 /--
@@ -254,3 +259,4 @@ Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
+
