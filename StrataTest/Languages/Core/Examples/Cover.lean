@@ -129,7 +129,7 @@ Property: cover
 Result: ⛔ unreachable
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckGlobalPgm (options := {Options.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------
 
@@ -182,7 +182,7 @@ Property: cover
 Result: ➖ can be false if reachable
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckMixedPgm (options := {Options.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------
 
@@ -255,7 +255,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {Options.quiet with reachCheck := true})
+  let results ← verify reachCheckDiagnosticsPgm (options := {Options.quiet with checkAmount := .full})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -304,6 +304,6 @@ Property: cover
 Result: ⛔ unreachable
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckPEPgm (options := {Options.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------
