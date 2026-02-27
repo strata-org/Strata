@@ -10,7 +10,7 @@ import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Options
 import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LiftExpressionAssignments
+import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
