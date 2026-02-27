@@ -282,5 +282,3 @@ Obligation: assert_11
 Property: assert
 Result: ❓ unknown
 -/
-
----------------------------------------------------------------------
