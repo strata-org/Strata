@@ -59,8 +59,6 @@ def testSMTGeneration (prog : Program) : IO Unit := do
   let filtered := lines.filter (fun line =>
     !line.startsWith "(set-logic" &&
     !line.startsWith "(set-option" &&
-    !line.startsWith "(declare-datatype" &&
-    !line.startsWith "  (" &&  -- datatype constructor lines
     !line.startsWith "(exit"
   )
   IO.println (String.intercalate "\n" filtered)

@@ -112,13 +112,11 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
     reset := do
       (Solver.reset).run (← solverRef.get)
       (Solver.setLogic "ALL").run (← solverRef.get)
-      (Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]).run (← solverRef.get)
   : SolverInterface }
 
 /-- Initialize a solver with standard settings -/
 private def initializeSolver (solver : Solver) : IO Unit := do
   (Solver.setLogic "ALL").run solver
-  (Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]).run solver
 
 /-- Create an SMTSolverInterface backed by cvc5 (default solver). -/
 def mkCvc5Solver : IO SolverInterface := do
