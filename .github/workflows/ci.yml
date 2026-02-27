@@ -68,6 +68,14 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Invalidate cached .olean files for DDM grammar files
+        shell: bash
+        run: |
+          # .st grammar files are not included in the lean-action cache key.
+          # Remove .olean files for grammar-dependent modules to force rebuild
+          # when .st files change.
+          find .lake/build -name "*.olean" -path "*/Laurel/*" -delete 2>/dev/null || true
+          find .lake/build -name "*.olean" -path "*/DDM/*" -delete 2>/dev/null || true
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
       - name: Build and run StrataVerify
