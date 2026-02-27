@@ -23,7 +23,7 @@ structure Identifier where
   name : String
   /-- Unique ID assigned by the resolution pass. -/
   id : Option Nat := none
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, DecidableEq
 
 def mkId (name: String): Identifier := Identifier.mk name none
 

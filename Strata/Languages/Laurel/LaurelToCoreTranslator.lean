@@ -50,10 +50,10 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
-def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
-  match env.find? (fun (n, _) => n == name) with
-  | some (_, ty) => translateType ty
-  | none => panic s!"could not find variable {name} in environment '{Std.format env}'"
+def lookupType (model : SemanticModel) (name : Identifier) : LMonoTy :=
+  match (model.get name).getType with
+  | .some ty => translateType ty
+  | none => panic s!"no type for {name.name}"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -61,7 +61,8 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
 /-- Set of names that are translated to Core functions (not procedures) -/
 abbrev FunctionNames := List Identifier
 
-def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
+def isCoreFunction (funcNames : FunctionNames) (id : Identifier) : Bool :=
+  let name := id.name
   -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" || name == "increment" ||
   name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||

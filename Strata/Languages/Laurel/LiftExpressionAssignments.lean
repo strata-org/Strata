@@ -73,9 +73,7 @@ structure LiftState where
   /-- Substitution map: variable name → name to use -/
   subst : SubstMap := []
   /-- Type environment -/
-  env : TypeEnv := []
-  /-- Type definitions from the program -/
-  types : List TypeDefinition := []
+  model : SemanticModel
   /-- Global counter for fresh conditional variables -/
   condCounter : Nat := 0
 
@@ -93,12 +91,12 @@ private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters
   let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
   modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
-  return s!"${varName}_{counter}"
+  return mkId $ s!"${varName.name}_{counter}"
 
 private def freshCondVar : LiftM Identifier := do
   let n := (← get).condCounter
   modify fun s => { s with condCounter := n + 1 }
-  return s!"$c_{n}"
+  return mkId $ s!"$c_{n}"
 
 private def addPrepend (stmt : StmtExprMd) : LiftM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
@@ -107,15 +105,6 @@ private def takePrepends : LiftM (List StmtExprMd) := do
   let stmts := (← get).prependedStmts
   modify fun s => { s with prependedStmts := [] }
   return stmts
-
-private def getVarType (varName : Identifier) : LiftM HighTypeMd := do
-  let env := (← get).env
-  match env.find? (fun (n, _) => n == varName) with
-  | some (_, ty) => return ty
-  | none => panic s!"Could not find {varName} in environment."
-
-private def addToEnv (varName : Identifier) (ty : HighTypeMd) : LiftM Unit :=
-  modify fun s => { s with env := (varName, ty) :: s.env }
 
 private def getSubst (varName : Identifier) : LiftM Identifier := do
   match (← get).subst.find? varName with
@@ -127,7 +116,7 @@ private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit :=
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
-  return computeExprType s.env s.types expr
+  return computeExprType s.model expr
 
 /-- Check if an expression contains any assignments (recursively). -/
 private def containsAssignment (expr : StmtExprMd) : Bool :=
@@ -160,7 +149,7 @@ private def liftAssignExpr (targets : List StmtExprMd) (seqValue : StmtExprMd)
     match target.val with
     | .Identifier varName =>
         let snapshotName ← freshTempFor varName
-        let varType ← getVarType varName
+        let varType ← computeType target
         -- Snapshot goes before the assignment (cons pushes to front)
         addPrepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, md⟩)), md⟩)
         setSubst varName snapshotName
@@ -253,14 +242,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       | some last => do
           have := List.mem_of_getLast? h_last
 
-          -- Pre-populate the environment with all LocalVariable declarations
-          -- so that getVarType works when creating snapshots
-          for s in stmts do
-            match s with
-            | WithMetadata.mk val _ =>
-            match val with
-            | .LocalVariable name ty _ => addToEnv name ty
-            | _ => pure ()
           -- Process all-but-last right to left using transformExprDiscarded
           for nonLastStatement in stmts.dropLast.reverse.attach do
             transformExprDiscarded nonLastStatement
@@ -268,8 +249,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           transformExpr last
 
   | .LocalVariable name ty initializer =>
-      -- Add the variable to the environment
-      addToEnv name ty
       -- If the substitution map has an entry for this variable, it was
       -- assigned to the right and we need to lift this declaration so it
       -- appears before the snapshot that references it.
@@ -338,7 +317,6 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       return [bare (.Block seqStmts.flatten metadata)]
 
   | .LocalVariable name ty initializer =>
-      addToEnv name ty
       match initializer with
       | some initExpr =>
           let seqInit ← transformExpr initExpr
@@ -394,10 +372,7 @@ def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
   | multiple => pure (bare (.Block multiple none))
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
-  let initEnv : TypeEnv :=
-    proc.inputs.map (fun p => (p.name, p.type)) ++
-    proc.outputs.map (fun p => (p.name, p.type))
-  modify fun s => { s with subst := [], prependedStmts := [], varCounters := [], env := initEnv }
+  modify fun s => { s with subst := [], prependedStmts := [], varCounters := [] }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody bodyExpr
@@ -411,8 +386,8 @@ def transformProcedure (proc : Procedure) : LiftM Procedure := do
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftExpressionAssignments (program : Program) : Program :=
-  let initState : LiftState := { types := program.types }
+def liftExpressionAssignments (model: SemanticModel) (program : Program) : Program :=
+  let initState : LiftState := { model := model }
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
   { program with staticProcedures := seqProcedures }
 
