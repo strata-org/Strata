@@ -88,7 +88,7 @@ structure SemanticModel where
 
 deriving instance Inhabited for Strata.Laurel.AstNode
 def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
-  let uuid := id.id.getD (panic "identifier without number")
+  let uuid := id.id.getD (panic s!"identifier {id.name} without number")
   model.refToDef.get! uuid
   -- (panic s!"refToDef key '{id.name}', uuid {id.id} not found in model {repr model}")
 
