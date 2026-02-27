@@ -109,7 +109,7 @@ info:
 Obligation: assert_0
 Property: assert
 Result: ✔️ pass if reachable
- 
+
 Obligation: assert_1
 Property: assert
 Result: ❓ unknown
@@ -183,7 +183,7 @@ info:
 Obligation: assert_0
 Property: assert
 Result: ✔️ pass if reachable
- 
+
 Obligation: assert_1
 Property: assert
 Result: ❓ unknown
@@ -237,7 +237,7 @@ info:
 Obligation: assert_0
 Property: assert
 Result: ✔️ pass if reachable
- 
+
 Obligation: assert_1
 Property: assert
 Result: ❓ unknown
