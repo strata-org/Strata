@@ -96,14 +96,14 @@ private def translateFromTermType (t:SMT.TermType):
     | .trigger =>
       throw "don't know how to translate a trigger type"
     | _ =>
-      return .smtsort_ident srnone (mkIdentifier
-         (match tp with
-          | .bool => "Bool"
-          | .int => "Int"
-          | .real => "Real"
-          | .string => "String"
-          | .regex => "RegLan"
-          | _ => panic! "unreachable"))
+      let res:String ← match tp with
+          | .bool => .ok "Bool"
+          | .int => .ok "Int"
+          | .real => .ok "Real"
+          | .string => .ok "String"
+          | .regex => .ok "RegLan"
+          | _ => throw "unreachable"
+      return .smtsort_ident srnone (mkIdentifier res)
   | .option ty =>
     let argty ← translateFromTermType ty
     return .smtsort_param srnone (mkIdentifier "Option") (Ann.mk srnone #[argty])
@@ -116,23 +116,24 @@ private def translateFromTermType (t:SMT.TermType):
       return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 
 -- Helper function to convert a SMTDDM.Term to SExpr for use in pattern attributes
-def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange :=
+def termToSExpr (t : SMTDDM.Term SourceRange)
+    : Except String (SMTDDM.SExpr SourceRange) := do
   let srnone := SourceRange.none
   match t with
   | .qual_identifier _ qi =>
       match qi with
-      | .qi_ident _ (.iden_simple _ sym) => .se_symbol srnone sym
-      | _ => panic! s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
+      | .qi_ident _ (.iden_simple _ sym) => return .se_symbol srnone sym
+      | _ => throw s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
   | .qual_identifier_args _ qi args =>
       -- Function application in pattern: convert to nested S-expr
-      let qiSExpr := match qi with
-        | .qi_ident _ (.iden_simple _ sym) => SMTDDM.SExpr.se_symbol srnone sym
-        | _ => panic! s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
+      let qiSExpr ← match qi with
+        | .qi_ident _ (.iden_simple _ sym) => pure (SMTDDM.SExpr.se_symbol srnone sym)
+        | _ => throw s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
       -- Convert args array to SExpr list
-      let argsSExpr := args.val.map termToSExpr
-      .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
-  | .spec_constant_term _ s => .se_spec_const srnone s
-  | _ => panic! s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
+      let argsSExpr ← args.val.mapM termToSExpr
+      return .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
+  | .spec_constant_term _ s => return .se_spec_const srnone s
+  | _ => throw s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
   decreasing_by cases args; term_by_mem
 
 partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
@@ -201,10 +202,10 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRan
               let sexprs ← match trigTerm with
                 | .app .triggers its _ => do
                   let ddmTerms ← its.mapM translateFromTerm
-                  pure (ddmTerms.map termToSExpr)
+                  ddmTerms.mapM termToSExpr
                 | other => do
                   let ddmTerm ← translateFromTerm other
-                  pure [termToSExpr ddmTerm]
+                  pure [← termToSExpr ddmTerm]
               let attr : SMTDDM.Attribute SourceRange :=
                 .att_kw srnone
                   (.kw_symbol srnone (mkSimpleSymbol "pattern"))

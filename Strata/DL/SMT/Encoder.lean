@@ -70,7 +70,7 @@ open Solver
 
 structure EncoderState where
   /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `t0`).
-      This is a cache after converting terms to A-Normal From. -/
+      This is a cache after converting terms to A-Normal Form. -/
   terms : Std.HashMap Term Term
   /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f0`, `f1`). -/
   ufs   : Std.HashMap UF String
@@ -110,7 +110,7 @@ def defineTermBound := defineTerm True
 def defineTermUnbound := defineTerm False
 
 def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
-  -- Build: (set.insert t1 (set.insert t2 ... (as set.empty ty)))
+  -- Build: (set.insert tN ... (set.insert t2 (set.insert t1 (as set.empty ty))))
   let empty : Term := .app (.datatype_op .constructor "set.empty") [] ty
   let result := tEncs.foldl (fun acc t => Term.app (.uf ⟨"set.insert", [⟨"x", t.typeOf⟩, ⟨"s", ty⟩], ty⟩) [t, acc] ty) empty
   defineTermUnbound ty result
