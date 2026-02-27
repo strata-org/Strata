@@ -174,10 +174,10 @@ The function should be added to the type context so the call can be type-checked
 -/
 def testFuncDeclTypeCheck : List Statement :=
   let identityFunc : PureFunc Expression := {
-    name := CoreIdent.unres "identity",
+    name := ⟨"identity", ()⟩,
     typeArgs := [],
     isConstr := false,
-    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    inputs := [(⟨"x", ()⟩, .forAll [] .int)],
     output := .forAll [] .int,
     body := some eb[x],  -- Simple identity function
     attr := #[],

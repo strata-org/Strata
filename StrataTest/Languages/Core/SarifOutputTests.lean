@@ -242,7 +242,7 @@ def makeVCResult (label : String) (outcome : Outcome)
 -- Test SARIF output with counter-example
 #guard
   let cex : List (Core.Expression.Ident × String) :=
-    [({ name := "x", metadata := Visibility.unres }, "42")]
+    [({ name := "x", metadata := () }, "42")]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
   let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md
