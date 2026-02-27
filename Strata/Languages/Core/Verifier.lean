@@ -11,7 +11,6 @@ import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
-import Strata.DL.SMT.CexParser
 import Strata.DDM.AST
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures

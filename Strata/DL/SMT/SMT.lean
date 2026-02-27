@@ -5,7 +5,6 @@
 -/
 
 import Strata.DL.SMT.Basic
-import Strata.DL.SMT.CexParser
 import Strata.DL.SMT.Encoder
 import Strata.DL.SMT.Factory
 import Strata.DL.SMT.Function
