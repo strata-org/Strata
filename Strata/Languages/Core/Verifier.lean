@@ -152,6 +152,12 @@ instance : ToFormat Outcome where
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
 /--
+A counterexample expressed as Core `LExpr` values, suitable for display
+using Core's expression formatter and for future use as program metadata.
+-/
+abbrev LExprCounterEx := List (Expression.Ident × LExpr CoreLParams.mono)
+
+/--
 A collection of all information relevant to a verification condition's
 analysis.
 -/
@@ -162,6 +168,10 @@ structure VCResult where
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
+  /-- Counterexample with values converted from `SMT.Term` to Core `LExpr`.
+      The contents must be consistent with smtObligationResult, if
+      smtObligationResult was .sat. -/
+  counterExample : LExprCounterEx := []
 
 /--
 Map the result from an SMT backend engine to an `Outcome`.
@@ -175,11 +185,30 @@ def smtResultToOutcome (r : SMT.Result) (isCover : Bool) : Outcome :=
     if isCover then .pass else .fail
   | .err e => .implementationError e
 
+/--
+Format a counterexample whose values are Core `LExpr`s.
+-/
+def LExprCounterEx.format (cex : LExprCounterEx) : Format :=
+  match cex with
+  | [] => ""
+  | [(id, e)] => f!"({id}, {e})"
+  | (id, e) :: rest =>
+    let first := f!"({id}, {e}) "
+    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {e'}) ") first
+
+instance : ToFormat LExprCounterEx where
+  format := LExprCounterEx.format
+
 instance : ToFormat VCResult where
-  format r := f!"Obligation: {r.obligation.label}\n\
-                 Property: {r.obligation.property}\n\
-                 Result: {r.result}{if r.smtReachResult == some .unsat then " (❗path unreachable)" else ""}\
-                 {r.smtObligationResult.formatModelIfSat (r.verbose >= .models)}"
+  format r :=
+    let modelFmt :=
+      if r.verbose >= .models && !r.counterExample.isEmpty then
+        f!"\nModel:\n{r.counterExample}"
+      else f!""
+    f!"Obligation: {r.obligation.label}\n\
+       Property: {r.obligation.property}\n\
+       Result: {r.result}{if r.smtReachResult == some .unsat then " (❗path unreachable)" else ""}\
+       {modelFmt}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.result with | .pass => true | _ => false
@@ -302,12 +331,16 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     .error <| DiagnosticModel.fromFormat e
   | .ok (reachResult?, smt_result, estate) =>
     let outcome := smtResultToOutcome smt_result (obligation.property == .cover)
+    let cex := match smt_result with
+      | .sat m => convertCounterEx m
+      | _ => []
     let result :=  { obligation,
                      result := outcome,
                      smtReachResult := reachResult?
                      smtObligationResult := smt_result,
                      estate,
-                     verbose := options.verbose }
+                     verbose := options.verbose,
+                     counterExample := cex }
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : Options)

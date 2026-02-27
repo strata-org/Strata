@@ -22,6 +22,7 @@ namespace Core.Sarif.Tests
 
 open Lean (Json)
 open Imperative
+open Lambda
 open Strata.Sarif (Level Message)
 open Core.SMT (Result)
 
@@ -55,11 +56,13 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
 
 /-- Create a VCResult for testing -/
 def makeVCResult (label : String) (outcome : Outcome)
-  (smtResult : Result := .unknown) (md : MetaData Expression := #[]) : VCResult :=
+  (smtResult : Result := .unknown) (md : MetaData Expression := #[])
+  (counterExample : LExprCounterEx := []) : VCResult :=
   { obligation := makeObligation label md
     smtObligationResult := smtResult
     result := outcome
-    verbose := .normal }
+    verbose := .normal
+    counterExample := counterExample }
 
 /-! ## Level Conversion Tests -/
 
@@ -78,16 +81,16 @@ def makeVCResult (label : String) (outcome : Outcome)
 /-! ## Message Generation Tests -/
 
 -- Test pass message
-#guard outcomeToMessage .pass .unknown = "Verification succeeded"
+#guard outcomeToMessage .pass [] = "Verification succeeded"
 
 -- Test fail message without counterexample
-#guard outcomeToMessage .fail .unknown = "Verification failed"
+#guard outcomeToMessage .fail [] = "Verification failed"
 
 -- Test unknown message
-#guard (outcomeToMessage .unknown .unknown).startsWith "Verification result unknown"
+#guard (outcomeToMessage .unknown []).startsWith "Verification result unknown"
 
 -- Test error message
-#guard (outcomeToMessage (.implementationError "test error") .unknown).startsWith "Verification error:"
+#guard (outcomeToMessage (.implementationError "test error") []).startsWith "Verification error:"
 
 /-! ## Location Extraction Tests -/
 
@@ -243,9 +246,11 @@ def makeVCResult (label : String) (outcome : Outcome)
 #guard
   let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
     [({ name := "x", metadata := Visibility.unres }, .prim (.int 42))]
+  let lexprCex : LExprCounterEx :=
+    [({ name := "x", metadata := Visibility.unres }, .intConst () 42)]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
-  let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md
+  let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md lexprCex
   let sarifResult := vcResultToSarifResult files vcr
   sarifResult.level = Level.error &&
   (sarifResult.message.text.splitOn "counterexample").length > 1 &&

@@ -67,7 +67,7 @@ Result: Obligation: g_eq_15_internal
 Property: assert
 Result: ❌ fail
 Model:
-($__g3, 0)
+($__g3, #0)
 
 
 [DEBUG] Evaluated program:
@@ -103,7 +103,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❌ fail
 Model:
-($__g3, 0)
+($__g3, #0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

@@ -10,6 +10,7 @@ import Strata.Languages.Core.Core
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
+import Strata.DL.Imperative.SMTUtils
 
 ---------------------------------------------------------------------
 
@@ -675,5 +676,51 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   match smtctx with
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt
+
+/--
+Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
+
+Handles:
+- Primitives: bool, int, real, bitvec, string
+- UF applications (free variables, constructors, uninterpreted functions)
+- Datatype constructors/selectors/testers
+
+Falls back to rendering the term as a free variable with its string representation
+for any unsupported term shape.
+-/
+def smtTermToLExpr (t : Strata.SMT.Term) : LExpr CoreLParams.mono :=
+  match t with
+  | .prim (.bool b)       => .boolConst () b
+  | .prim (.int i)        => .intConst () i
+  | .prim (.real d)       => .realConst () d.toRat
+  | .prim (.bitvec b)     => .bitvecConst () _ b
+  | .prim (.string s)     => .strConst () s
+  | .var v                => .fvar () (CoreIdent.unres v.id) none
+  | .app (.core (.uf uf)) args _retTy =>
+    let fnExpr : LExpr CoreLParams.mono := .fvar () (CoreIdent.unres uf.id) none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg)) fnExpr
+  | .app (.datatype_op _kind name) args _retTy =>
+    let fnExpr : LExpr CoreLParams.mono := .op () (CoreIdent.unres name) none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg)) fnExpr
+  | .app op args _ =>
+    -- Generic fallback for other ops: render as op name applied to args
+    let opName := op.mkName
+    let fnExpr : LExpr CoreLParams.mono := .op () (CoreIdent.unres opName) none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg)) fnExpr
+  | .none _ty             => .op () (CoreIdent.unres "none") none
+  | .some inner           => .app () (.op () (CoreIdent.unres "some") none) (smtTermToLExpr inner)
+  | .quant _ _ _ _        =>
+    -- Quantifiers in model values are unusual; fall back to string repr
+    let s := match Strata.SMTDDM.toString t with
+             | .ok s => s | .error _ => repr t |>.pretty
+    .fvar () (CoreIdent.unres s) none
+
+/--
+Convert a counterexample map from `SMT.Term` values to `LExpr` values,
+so that model values can be displayed using Core's expression formatter.
+-/
+def convertCounterEx (cex : Imperative.SMT.CounterEx Expression.Ident)
+    : List (Expression.Ident × LExpr CoreLParams.mono) :=
+  cex.map fun (id, t) => (id, smtTermToLExpr t)
 
 end Core
