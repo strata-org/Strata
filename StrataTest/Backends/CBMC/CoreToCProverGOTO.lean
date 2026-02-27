@@ -21,7 +21,7 @@ model-check a Strata-generated GOTO binary.
 
 -------------------------------------------------------------------------------
 
-abbrev CoreParams : Lambda.LExprParams := ⟨Unit, Core.Visibility⟩
+abbrev CoreParams : Lambda.LExprParams := ⟨Unit, Unit⟩
 
 abbrev Core.ExprStr : Imperative.PureExpr :=
    { Ident := CoreParams.Identifier,
@@ -47,7 +47,7 @@ private def lookupType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident) :
 
 private def updateType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident)
     (ty : Core.Expression.Ty) : Core.Expression.TyEnv :=
-  @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Core.Visibility⟩ T [(i, ty)]
+  @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Unit⟩ T [(i, ty)]
 
 instance : Imperative.ToGoto Core.Expression where
   lookupType := lookupType
@@ -79,14 +79,14 @@ instance : Imperative.ToGoto Core.ExprStr where
 
 open Lambda in
 def substVarNames {Metadata IDMeta: Type} [DecidableEq IDMeta]
-    (e : LExpr ⟨⟨Metadata, IDMeta⟩, LMonoTy⟩) (frto : Map String String) : (LExpr ⟨⟨Unit, Core.Visibility⟩, LMonoTy⟩) :=
+    (e : LExpr ⟨⟨Metadata, IDMeta⟩, LMonoTy⟩) (frto : Map String String) : (LExpr ⟨⟨Unit, Unit⟩, LMonoTy⟩) :=
   match e with
   | .const _ c => .const () c
   | .bvar _ b => .bvar () b
-  | .op _ o ty => .op () (Lambda.Identifier.mk o.name Core.Visibility.unres) ty
+  | .op _ o ty => .op () (Lambda.Identifier.mk o.name ()) ty
   | .fvar _ name ty =>
     let name_alt := frto.find? name.name
-    .fvar () (Lambda.Identifier.mk (name_alt.getD name.name) Core.Visibility.unres) ty
+    .fvar () (Lambda.Identifier.mk (name_alt.getD name.name) ()) ty
   | .abs _ ty e' => .abs () ty (substVarNames e' frto)
   | .quant _ qk ty tr' e' => .quant () qk ty (substVarNames tr' frto) (substVarNames e' frto)
   | .app _ f e' => .app () (substVarNames f frto) (substVarNames e' frto)

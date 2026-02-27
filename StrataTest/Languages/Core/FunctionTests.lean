@@ -16,11 +16,11 @@ open LTy.Syntax LExpr.SyntaxMono
 /-- info: ok: ∀[a, b]. (arrow int (arrow a (arrow b (arrow a a)))) -/
 #guard_msgs in
 #eval do let type ← LFunc.type (T:=CoreLParams)
-                     ({ name := CoreIdent.unres "Foo",
+                     ({ name := ⟨"Foo", ()⟩,
                         typeArgs := ["a", "b"],
-                        inputs := [(CoreIdent.locl "w", mty[int]), (CoreIdent.locl "x", mty[%a]), (CoreIdent.locl "y", mty[%b]), (CoreIdent.locl "z", mty[%a])],
+                        inputs := [(⟨"w", ()⟩, mty[int]), (⟨"x", ()⟩, mty[%a]), (⟨"y", ()⟩, mty[%b]), (⟨"z", ()⟩, mty[%a])],
                         output := mty[%a],
-                        body := some (LExpr.fvar () (CoreIdent.locl "x") none) } : Function)
+                        body := some (LExpr.fvar () (⟨"x", ()⟩) none) } : Function)
          return format type
 
 end Core
