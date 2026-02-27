@@ -321,9 +321,9 @@ def resolveBody (body : Body) : ResolveM Body := do
     let impl' ← impl.mapM resolveStmtExpr
     let mods' ← mods.mapM resolveStmtExpr
     return .Opaque posts' impl' mods'
-  | .Abstract post =>
-    let post' ← resolveStmtExpr post
-    return .Abstract post'
+  | .Abstract posts =>
+    let posts' ← posts.mapM resolveStmtExpr
+    return .Abstract posts'
 
 /-- Resolve a determinism clause. -/
 def resolveDeterminism (d : Determinism) : ResolveM Determinism := do
@@ -339,12 +339,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pre' ← resolveStmtExpr proc.precondition
+    let pres' ← proc.preconditions.mapM resolveStmtExpr
     let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     return { name := procName', inputs := inputs', outputs := outputs',
-             precondition := pre', determinism := det', decreases := dec',
+             preconditions := pres', determinism := det', decreases := dec',
              body := body', md := proc.md }
 
 /-- Resolve a field: define its name and resolve its type. -/
@@ -359,12 +359,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pre' ← resolveStmtExpr proc.precondition
+    let pres' ← proc.preconditions.mapM resolveStmtExpr
     let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     return { name := procName', inputs := inputs', outputs := outputs',
-             precondition := pre', determinism := det', decreases := dec',
+             preconditions := pres', determinism := det', decreases := dec',
              body := body', md := proc.md }
 
 /-- Resolve a type definition. -/

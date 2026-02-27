@@ -1,14 +1,14 @@
 Successfully parsed.
 Lambda.core.st(39, 2) [P_ensures_0]: ✅ pass
 Lambda.core.st(52, 4) [assert_0]: ✅ pass
-Lambda.core.st(61, 4) [assert_1]: ✅ pass
-Lambda.core.st(74, 4) [assert_2]: ✅ pass
-Lambda.core.st(75, 4) [assert_3]: ✅ pass
-Lambda.core.st(76, 4) [assert_4]: ✅ pass
-Lambda.core.st(89, 4) [assert_5]: 🟡 unknown
-Lambda.core.st(90, 4) [assert_6]: 🟡 unknown
-Lambda.core.st(103, 4) [assert_7]: ✅ pass
-Lambda.core.st(104, 4) [assert_8]: ✅ pass
-Lambda.core.st(106, 4) [assert_9]: ✅ pass
-Lambda.core.st(107, 4) [assert_10]: ✅ pass
+Lambda.core.st(60, 4) [assert_1]: ✅ pass
+Lambda.core.st(72, 4) [assert_2]: ✅ pass
+Lambda.core.st(73, 4) [assert_3]: ✅ pass
+Lambda.core.st(74, 4) [assert_4]: ✅ pass
+Lambda.core.st(86, 4) [assert_5]: 🟡 unknown
+Lambda.core.st(87, 4) [assert_6]: 🟡 unknown
+Lambda.core.st(99, 4) [assert_7]: ✅ pass
+Lambda.core.st(100, 4) [assert_8]: ✅ pass
+Lambda.core.st(102, 4) [assert_9]: ✅ pass
+Lambda.core.st(103, 4) [assert_10]: ✅ pass
 Finished with 10 goals passed, 2 failed.

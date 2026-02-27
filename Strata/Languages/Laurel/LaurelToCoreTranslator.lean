@@ -507,7 +507,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     | none => LMonoTy.int
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
-    let checkExpr ← translateExpr initEnv precondition [] true
+    let checkExpr ← translateExpr precondition [] true
     return { expr := checkExpr, md := () })
 
   let body ← match proc.body with

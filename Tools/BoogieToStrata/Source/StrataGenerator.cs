@@ -796,9 +796,27 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
     }
 
+    /// <summary>
+    /// Collect all forward goto target labels from a list of blocks.
+    /// Returns a set of label names that are targets of goto commands.
+    /// </summary>
+    private static HashSet<string> CollectGotoTargets<T>(IEnumerable<T> items, Func<T, TransferCmd> getTransferCmd) {
+        var targets = new HashSet<string>();
+        foreach (var item in items) {
+            if (getTransferCmd(item) is GotoCmd gotoCmd) {
+                foreach (var target in gotoCmd.LabelTargets) {
+                    targets.Add(target.Label);
+                }
+            } else if (getTransferCmd(item) is ReturnCmd) {
+                targets.Add("_exit");
+            }
+        }
+        return targets;
+    }
+
     public override GotoCmd VisitGotoCmd(GotoCmd node) {
         if (node.LabelTargets.Count == 1) {
-            IndentLine($"goto {Name(node.LabelTargets[0].Label)};");
+            IndentLine($"exit {Name(node.LabelTargets[0].Label)};");
         } else if (node.LabelTargets.Count == 2) {
             var thenBlock = node.LabelTargets[0];
             var elseBlock = node.LabelTargets[1];
@@ -806,7 +824,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             if (cond != null) {
                 Indent("if (");
                 VisitExpr(cond);
-                WriteLine($") {{ goto {Name(thenBlock.Label)}; }} else {{ goto {Name(elseBlock.Label)}; }}");
+                WriteLine($") {{ exit {Name(thenBlock.Label)}; }} else {{ exit {Name(elseBlock.Label)}; }}");
             } else {
                 throw new StrataConversionException(node.tok, "Unsupported: goto with two targets that aren't obvious inverses");
             }
@@ -846,7 +864,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override ReturnCmd VisitReturnCmd(ReturnCmd node) {
-        IndentLine("goto _exit;");
+        IndentLine("exit _exit;");
         return node;
     }
 
@@ -919,6 +937,8 @@ public class StrataGenerator : ReadOnlyVisitor {
     private void EmitWhileCmd(WhileCmd whileCmd) {
         var label = $"break_{_breakLabelCount++}";
         _breakLabels.Push(label);
+        IndentLine($"{label}: {{");
+        IncIndent();
         WriteText("while (");
         if (whileCmd.Guard != null) {
             VisitExpr(whileCmd.Guard);
@@ -937,7 +957,8 @@ public class StrataGenerator : ReadOnlyVisitor {
         EmitStmtList(whileCmd.Body);
         DecIndent();
         IndentLine("}");
-        IndentLine($"{label}: {{}}");
+        DecIndent();
+        IndentLine("}");
         _breakLabels.Pop();
     }
 
@@ -951,9 +972,9 @@ public class StrataGenerator : ReadOnlyVisitor {
         } else if (cmd is BreakCmd breakCmd) {
             Indent();
             if (breakCmd.Label != null) {
-                IndentLine($"goto {Name(breakCmd.Label)};");
+                IndentLine($"exit {Name(breakCmd.Label)};");
             } else if (_breakLabels.TryPeek(out var label)) {
-                IndentLine($"goto {label};");
+                IndentLine($"exit {label};");
             } else {
                 throw new StrataConversionException(cmd.tok, "Internal: break statement outside loop");
             }
@@ -984,9 +1005,71 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
     }
 
+    /// <summary>
+    /// Collect all forward goto target labels from a list of big blocks.
+    /// </summary>
+    /// <summary>
+    /// Emit a sequence of items wrapped in labeled blocks for exit targets.
+    /// For each target label, a wrapper block opens before the first item
+    /// and closes just before the item at the target's index.
+    /// </summary>
+    private void EmitWithExitWrappers(
+        HashSet<string> gotoTargets,
+        Dictionary<string, int> labelToIndex,
+        int count,
+        Action<int> emitItem) {
+        var wrappers = gotoTargets
+            .Where(t => labelToIndex.ContainsKey(t))
+            .Select(t => (label: t, closeAt: labelToIndex[t]))
+            .OrderByDescending(w => w.closeAt)
+            .ToList();
+
+        foreach (var (label, _) in wrappers) {
+            IndentLine($"{Name(label)}: {{");
+            IncIndent();
+        }
+
+        for (var i = 0; i < count; i++) {
+            foreach (var (label, closeAt) in wrappers) {
+                if (closeAt == i) {
+                    DecIndent();
+                    IndentLine("}");
+                }
+            }
+            emitItem(i);
+        }
+
+        foreach (var (label, closeAt) in wrappers) {
+            if (closeAt == count) {
+                DecIndent();
+                IndentLine("}");
+            }
+        }
+    }
+
     private void EmitStmtList(StmtList stmtList) {
-        // TODO: cross-platform newline?
-        EmitSeparated(stmtList.BigBlocks, EmitBigBlock, "\n");
+        var bigBlocks = stmtList.BigBlocks;
+        var gotoTargets = CollectGotoTargets(bigBlocks, bb => bb.tc);
+
+        if (gotoTargets.Count == 0) {
+            EmitSeparated(bigBlocks, EmitBigBlock, "\n");
+            return;
+        }
+
+        var labelToIndex = new Dictionary<string, int>();
+        for (var i = 0; i < bigBlocks.Count; i++) {
+            if (bigBlocks[i].LabelName != null) {
+                labelToIndex[bigBlocks[i].LabelName] = i;
+            }
+        }
+        if (!labelToIndex.ContainsKey("_exit")) {
+            labelToIndex["_exit"] = bigBlocks.Count;
+        }
+
+        EmitWithExitWrappers(gotoTargets, labelToIndex, bigBlocks.Count, i => {
+            if (i > 0) { WriteLine(); }
+            EmitBigBlock(bigBlocks[i]);
+        });
     }
 
     public override Block VisitBlock(Block node) {
@@ -1326,12 +1409,21 @@ public class StrataGenerator : ReadOnlyVisitor {
         if (node.StructuredStmts != null) {
             EmitStmtList(node.StructuredStmts);
         } else {
-            foreach (var blk in node.Blocks) {
-                VisitBlock(blk);
-            }
-        }
+            // For unstructured blocks, we wrap groups of blocks so that
+            // forward gotos (now `exit label`) can exit to the right place.
+            var blocks = node.Blocks;
+            var gotoTargets = CollectGotoTargets(blocks, b => b.TransferCmd);
 
-        IndentLine("_exit : {}");
+            var labelToIndex = new Dictionary<string, int>();
+            for (var i = 0; i < blocks.Count; i++) {
+                labelToIndex[blocks[i].Label] = i;
+            }
+            labelToIndex["_exit"] = blocks.Count;
+
+            EmitWithExitWrappers(gotoTargets, labelToIndex, blocks.Count, i => {
+                VisitBlock(blocks[i]);
+            });
+        }
 
         DecIndent();
         WriteLine("};");

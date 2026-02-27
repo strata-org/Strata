@@ -94,6 +94,13 @@ private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
   | _, _ =>
     .error ".some and .none mismatch"
 
+private def alphaEquivExprsList (l1 l2 : List Expression.Expr) (map : IdMap)
+    : Except Format Bool :=
+  if l1.length != l2.length then
+    .error "invariant lists have different lengths"
+  else
+    return (l1.zip l2).all (fun (a, b) => alphaEquivExprs a b map)
+
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
   (-- Case 1: e1 is created from inliner, e2 was from DDM
@@ -124,7 +131,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   match s1, s2 with
   | .block lbl1 b1 _, .block lbl2 b2 _ =>
-    -- Since 'goto lbl' can appear before 'lbl' is defined, update the label
+    -- Since 'exit lbl' can reference an enclosing block, update the label
     -- map here
     let map ← IdMap.updateLabel map lbl1 lbl2
     alphaEquivBlock b1 b2 map
@@ -142,12 +149,15 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
-    else if ¬ (← alphaEquivExprsOpt i1 i2 map) then
+    else if ¬ (← alphaEquivExprsList i1 i2 map) then
       .error "invariant does not match"
     else alphaEquivBlock b1 b2 map
 
-  | .goto lbl1 _, .goto lbl2 _ =>
-    IdMap.updateLabel map lbl1 lbl2
+  | .exit lbl1 _, .exit lbl2 _ =>
+    match lbl1, lbl2 with
+    | some l1, some l2 => IdMap.updateLabel map l1 l2
+    | none, none => .ok map
+    | _, _ => mk_err "exit label mismatch"
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
@@ -288,11 +298,12 @@ def Test2 :=
 #strata
 program Core;
 procedure f(x : bool) returns (y : bool) {
-  if (x) {
-    goto _exit;
-  } else { y := false;
+  body: {
+    if (x) {
+      exit body;
+    } else { y := false;
+    }
   }
-  _exit: {}
 };
 
 procedure h() returns () {
@@ -307,11 +318,12 @@ def Test2Ans :=
 #strata
 program Core;
 procedure f(x : bool) returns (y : bool) {
-  if (x) {
-    goto _exit;
-  } else { y := false;
+  body: {
+    if (x) {
+      exit body;
+    } else { y := false;
+    }
   }
-  _exit: {}
 };
 
 procedure h() returns () {
@@ -321,12 +333,13 @@ procedure h() returns () {
     var f_x : bool := b_in;
     var f_y : bool;
     havoc f_y;
-    if (f_x) {
-      goto f_end;
-    } else {
-      f_y := false;
+    f_body: {
+      if (f_x) {
+        exit f_body;
+      } else {
+        f_y := false;
+      }
     }
-    f_end: {}
     b_out := f_y;
   }
   _exit: {}

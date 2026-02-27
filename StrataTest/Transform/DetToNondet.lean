@@ -18,12 +18,12 @@ section NondetExamples
 open Imperative
 
 def NondetTest1 : Stmt Expression (Cmd Expression) :=
-  .ite (Core.true) [.cmd $ .havoc "x" ] [.cmd $ .havoc "y" ]
+  .ite (Core.true) [.cmd $ .havoc "x" .empty ] [.cmd $ .havoc "y" .empty ] .empty
 
 def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
   .choice
-    (.seq (.cmd (.assume "true_cond" Core.true)) (.seq (.cmd $ .havoc "x") (.assume "skip" Imperative.HasBool.tt)))
-    (.seq (.cmd (.assume "false_cond" Core.false)) (.seq (.cmd $ .havoc "y") (.assume "skip" Imperative.HasBool.tt)))
+    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .havoc "x" .empty) (.assume "skip" Imperative.HasBool.tt .empty)))
+    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .havoc "y" .empty) (.assume "skip" Imperative.HasBool.tt .empty)))
 
 
 -- #eval toString $ Std.format (StmtToNondetStmt NondetTest1)

@@ -185,7 +185,7 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
             -- At least one argument in the function call is symbolic.
             new_e
       | none =>
-        -- Not a call of a factory function.
+        -- Not a call of a factory function - go through evalCore
         evalCore n' σ e
 
 def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBase.mono :=

@@ -177,7 +177,7 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Ar
           | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
           | none => []
         postErrors ++ implErrors
-      | .Abstract postcond => validateDiamondFieldAccessesForStmtExpr model postcond
+      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p) []
     acc ++ bodyErrors) []
   errors.toArray
 
@@ -279,7 +279,7 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   decreasing_by all_goals (simp_all; try term_by_mem)
 
 def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
-  let precondition' ← rewriteTypeHierarchyExpr proc.precondition
+  let preconditions' ← proc.preconditions.mapM rewriteTypeHierarchyExpr
   let body' ← match proc.body with
     | .Transparent b => pure (.Transparent (← rewriteTypeHierarchyExpr b))
     | .Opaque postconds impl modif =>
@@ -289,8 +289,8 @@ def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
           | none => pure none
         let modif' ← modif.mapM rewriteTypeHierarchyExpr
         pure (.Opaque postconds' impl' modif')
-    | .Abstract postcond => pure (.Abstract (← rewriteTypeHierarchyExpr postcond))
-  return { proc with precondition := precondition', body := body' }
+    | .Abstract postconds => pure (.Abstract (← postconds.mapM rewriteTypeHierarchyExpr))
+  return { proc with preconditions := preconditions', body := body' }
 
 /--
 Type hierarchy transformation pass (Laurel → Laurel).

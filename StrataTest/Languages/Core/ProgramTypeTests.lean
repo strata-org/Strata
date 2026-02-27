@@ -32,7 +32,7 @@ def bad_prog : Program := { decls := [
                   preconditions := [],
                   postconditions := [] },
               body := [
-                Statement.assert "test" eb[(~fooAliasVal == ~fooVal)]
+                Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
       }
 ]}
@@ -63,7 +63,7 @@ def good_prog : Program := { decls := [
                   preconditions := [],
                   postconditions := [] },
               body := [
-                Statement.assert "test" eb[(~fooAliasVal == ~fooVal)]
+                Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
       }
 ]}
@@ -321,16 +321,17 @@ def outOfScopeVarProg : Program := { decls := [
                   preconditions := [],
                   postconditions := [] },
               body := [
-                Statement.set "y" eb[((~Bool.Or x) x)],
+                Statement.set "y" eb[((~Bool.Or x) x)] .empty,
                 .ite eb[(x == #true)]
-                  [Statement.init "q" t[int] (some eb[#0]),
-                           Statement.set "q" eb[#1],
-                           Statement.set "y" eb[#true]]
-                  [Statement.init "q" t[int] (some eb[#0]),
-                           Statement.set "q" eb[#2],
-                           Statement.set "y" eb[#true]],
-                Statement.assert "y_check" eb[y == #true],
-                Statement.assert "q_check" eb[q == #1]
+                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                           Statement.set "q" eb[#1] .empty,
+                           Statement.set "y" eb[#true] .empty]
+                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                           Statement.set "q" eb[#2] .empty,
+                           Statement.set "y" eb[#true] .empty]
+                  .empty,
+                Statement.assert "y_check" eb[y == #true] .empty,
+                Statement.assert "q_check" eb[q == #1] .empty
               ]
       }
 ]}
@@ -366,9 +367,9 @@ def polyFuncProg : Program := { decls := [
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
-            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) none,
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) none .empty,
             -- m := makePair(identity(42), identity(true));
-            Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))]
+            Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))] .empty
           ]
   }
 ]}

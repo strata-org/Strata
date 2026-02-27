@@ -132,7 +132,5 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
     go C Env drest (decl' :: acc)
 
----------------------------------------------------------------------
-
 end Program
 end Core
