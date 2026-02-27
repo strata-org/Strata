@@ -68,8 +68,10 @@ def metadataToSourceLoc {P : PureExpr} [BEq P.Ident]
         let pos := fm.toPosition fr.range.start
         (pos.line, pos.column)
       | none =>
-        -- Without a FileMap we cannot map byte offsets to lines.
-        -- Use byte offset as a rough indicator (better than 0).
+        -- Without a FileMap we cannot map byte offsets to line/column.
+        -- Fall back to the 1D byte offset as the line number.
+        -- All current callers (coreAnalyzeToGoto, laurelAnalyzeToGoto,
+        -- pyAnalyzeToGoto) provide a FileMap built from the source file.
         (fr.range.start.byteIdx, 0)
     { file, line, column, function := functionName, workingDir := "", comment }
   | none =>

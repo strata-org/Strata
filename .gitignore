@@ -9,5 +9,7 @@ vcs/*.smt2
 *.symtab.json
 *.goto.json
 *.gb
+*.py.ion
+*.py.ion.core.st
 
 Strata.code-workspace
