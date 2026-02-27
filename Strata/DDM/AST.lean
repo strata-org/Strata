@@ -1004,12 +1004,18 @@ private def mkValueBindingSpec
     newBindingErr "Arguments only allowed when result is a type."
   return { nameIndex, argsIndex, typeIndex, allowCat }
 
-/-- Parse function templates from metadata arguments. -/
-private def parseFunctionTemplates (args : Array MetadataArg) : Array FunctionTemplate :=
-  args.filterMap fun arg =>
+/-- Parse and validate function templates from metadata arguments. -/
+private def parseFunctionTemplates (args : Array MetadataArg) : NewBindingM (Array FunctionTemplate) := do
+  let mut result := #[]
+  for arg in args do
     match arg with
-    | .functionTemplate t => some t
-    | _ => none
+    | .functionTemplate t =>
+      if let some err := validateNamePattern t.namePattern t.scope then
+        newBindingErr s!"Function template error: {err}"
+      else
+        result := result.push t
+    | _ => pure ()
+  return result
 
 def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec argDecls) × Array String :=
   let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec argDecls)) := do
@@ -1096,8 +1102,8 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             | return panic! "Invalid typeParams index"
           let .isTrue constructorsP := inferInstanceAs (Decidable (constructorsIndex < argDecls.size))
             | return panic! "Invalid constructors index"
-          -- Parse function templates from remaining arguments (args[3..])
-          let functionTemplates := parseFunctionTemplates (args.extract 3 args.size)
+          -- Parse and validate function templates from remaining arguments (args[3..])
+          let functionTemplates ← parseFunctionTemplates (args.extract 3 args.size)
           some <$> .datatype <$> pure {
             nameIndex := ⟨nameIndex, nameP⟩,
             typeParamsIndex := ⟨typeParamsIndex, typeParamsP⟩,
@@ -1738,7 +1744,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
   | .datatype b =>
     /- For datatypes, resolveBindingIndices only returns the datatype type
     itself; the constructors and template-generated functions are handled
-    separately in addDatatypeBindings. -/
+    separately in addDatatypeBindings!. -/
     let params : Array String :=
         let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
             match args[b.nameIndex.toLevel] with
@@ -1836,52 +1842,54 @@ private def getConstructorListPushAnnotation (opDecl : OpDecl) : Option (Nat × 
   | some #[.catbvar listIdx, .catbvar constrIdx] => some (listIdx, constrIdx)
   | _ => none
 
-/--
-Extract fields from a Bindings argument using the existing @[declare] annotations.
--/
-private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg) : Array (String × TypeExpr) :=
-  let addField (acc : Array (String × TypeExpr)) (_ : SourceRange)
-      {argDecls : ArgDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Array (String × TypeExpr) :=
+/-- Extract fields from a Bindings argument using the existing @[declare] annotations.
+The accumulator is `Except String ...` because `foldOverArgBindingSpecs` fixes the
+fold's accumulator type; wrapping in `Except` lets us propagate errors through
+the fold without changing its generic signature. -/
+private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg)
+    : Except String (Array (String × TypeExpr)) :=
+  -- We thread `Except` through the accumulator rather than changing
+  -- `foldOverArgBindingSpecs`, which is used broadly with plain accumulators.
+  let addField (acc : Except String (Array (String × TypeExpr))) (_ : SourceRange)
+      {argDecls : ArgDecls} (b : BindingSpec argDecls)
+      (args : Vector Arg argDecls.size)
+      : Except String (Array (String × TypeExpr)) := do
+    let acc ← acc
     match b with
     | .value vb =>
       match args[vb.nameIndex.toLevel], args[vb.typeIndex.toLevel] with
-      | .ident _ name, .type tp => acc.push (name, tp)
-      | _, _ => acc
-    | _ => acc
-  foldOverArgBindingSpecs dialects addField #[] arg
+      | .ident _ name, .type tp => return acc.push (name, tp)
+      | _, _ => throw s!"Expected (ident, type) for field binding, got ({repr args[vb.nameIndex.toLevel]}, {repr args[vb.typeIndex.toLevel]})"
+    | _ => return acc
+  foldOverArgBindingSpecs dialects addField (.ok #[]) arg
 
 /--
 Extract constructor information using the @[constructor] annotation.
 -/
-private def extractSingleConstructor (dialects : DialectMap) (arg : Arg) : Option ConstructorInfo :=
-  match arg with
-  | .op op =>
-    match dialects.lookupOpDecl op.name with
-    | none => none
-    | some opDecl =>
-      match getConstructorAnnotation opDecl with
-      | none => none
-      | some (nameIdx, fieldsIdx) =>
-        -- Convert deBruijn indices to levels
-        let argCount := opDecl.argDecls.size
-        if nameIdx < argCount && fieldsIdx < argCount then
-          let nameLevel := argCount - nameIdx - 1
-          let fieldsLevel := argCount - fieldsIdx - 1
-          if h1 : nameLevel < op.args.size then
-            if h2 : fieldsLevel < op.args.size then
-              match op.args[nameLevel] with
-              | .ident _ constrName =>
-                -- Extract fields from the Bindings argument using @[declare] annotations
-                let fields := match op.args[fieldsLevel] with
-                  | .option _ (some bindingsArg) => extractFieldsFromBindings dialects bindingsArg
-                  | .option _ none => #[]
-                  | other => extractFieldsFromBindings dialects other
-                some { name := constrName, fields := fields }
-              | _ => none
-            else none
-          else none
-        else none
-  | _ => none
+private def extractSingleConstructor (dialects : DialectMap) (arg : Arg)
+    : Except String ConstructorInfo := do
+  let .op op := arg
+    | throw s!"Expected op for constructor, got {repr arg}"
+  let some opDecl := dialects.lookupOpDecl op.name
+    | throw s!"Unknown operation '{op.name}'"
+  let some (nameIdx, fieldsIdx) := getConstructorAnnotation opDecl
+    | throw s!"Operation '{op.name}' missing @[constructor] annotation"
+  let argCount := opDecl.argDecls.size
+  unless nameIdx < argCount && fieldsIdx < argCount do
+    throw s!"Annotation indices out of bounds: nameIdx={nameIdx}, fieldsIdx={fieldsIdx}, argCount={argCount}"
+  let nameLevel := argCount - nameIdx - 1
+  let fieldsLevel := argCount - fieldsIdx - 1
+  let .isTrue h1 := decideProp (nameLevel < op.args.size)
+    | throw s!"Name index {nameLevel} out of bounds (size {op.args.size})"
+  let .isTrue h2 := decideProp (fieldsLevel < op.args.size)
+    | throw s!"Fields index {fieldsLevel} out of bounds (size {op.args.size})"
+  let .ident _ constrName := op.args[nameLevel]
+    | throw s!"Expected ident for constructor name, got {repr op.args[nameLevel]}"
+  let fields ← match op.args[fieldsLevel] with
+    | .option _ (some bindingsArg) => extractFieldsFromBindings dialects bindingsArg
+    | .option _ none => pure #[]
+    | other => extractFieldsFromBindings dialects other
+  return { name := constrName, fields }
 
 /--
 This function traverses a constructor list AST node and extracts structured
@@ -1897,45 +1905,39 @@ dialect annotations `@[constructor]`, `@[constructorListAtom]`,
 ]
 ```
 -/
-def extractConstructorInfo (dialects : DialectMap) (arg : Arg) : Array ConstructorInfo :=
-  match arg with
-  | .op op =>
-    match dialects.lookupOpDecl op.name with
-    | none => #[]
-    | some opDecl =>
-      match getConstructorListAtomAnnotation opDecl with
-      | some constrIdx =>
-        let argCount := opDecl.argDecls.size
-        if constrIdx < argCount then
-          let constrLevel := argCount - constrIdx - 1
-          if h : constrLevel < op.args.size then
-            match extractSingleConstructor dialects op.args[constrLevel] with
-            | some constr => #[constr]
-            | none => #[]
-          else #[]
-        else #[]
-      | none =>
-        match getConstructorListPushAnnotation opDecl with
-        | some (listIdx, constrIdx) =>
-          let argCount := opDecl.argDecls.size
-          if listIdx < argCount && constrIdx < argCount then
-            let listLevel := argCount - listIdx - 1
-            let constrLevel := argCount - constrIdx - 1
-            if h1 : listLevel < op.args.size then
-              if h2 : constrLevel < op.args.size then
-                let prevConstrs := extractConstructorInfo dialects op.args[listLevel]
-                match extractSingleConstructor dialects op.args[constrLevel] with
-                | some constr => prevConstrs.push constr
-                | none => prevConstrs
-              else #[]
-            else #[]
-          else #[]
-        | none =>
-          -- Could be a direct constructor operation
-          match extractSingleConstructor dialects arg with
-          | some constr => #[constr]
-          | none => #[]
-  | _ => #[]
+def extractConstructorInfo (dialects : DialectMap) (arg : Arg)
+    : Except String (Array ConstructorInfo) := do
+  let .op op := arg
+    | throw s!"Expected op for constructor list, got {repr arg}"
+  let some opDecl := dialects.lookupOpDecl op.name
+    | throw s!"Unknown operation '{op.name}'"
+  -- Try constructorListAtom annotation
+  if let some constrIdx := getConstructorListAtomAnnotation opDecl then
+    let argCount := opDecl.argDecls.size
+    unless constrIdx < argCount do
+      throw s!"constructorListAtom index {constrIdx} out of bounds (argCount={argCount})"
+    let constrLevel := argCount - constrIdx - 1
+    let .isTrue h := decideProp (constrLevel < op.args.size)
+      | throw s!"Constructor level {constrLevel} out of bounds (size {op.args.size})"
+    let constr ← extractSingleConstructor dialects op.args[constrLevel]
+    return #[constr]
+  -- Try constructorListPush annotation
+  if let some (listIdx, constrIdx) := getConstructorListPushAnnotation opDecl then
+    let argCount := opDecl.argDecls.size
+    unless listIdx < argCount && constrIdx < argCount do
+      throw s!"constructorListPush indices out of bounds: listIdx={listIdx}, constrIdx={constrIdx}, argCount={argCount}"
+    let listLevel := argCount - listIdx - 1
+    let constrLevel := argCount - constrIdx - 1
+    let .isTrue h1 := decideProp (listLevel < op.args.size)
+      | throw s!"List level {listLevel} out of bounds (size {op.args.size})"
+    let .isTrue h2 := decideProp (constrLevel < op.args.size)
+      | throw s!"Constructor level {constrLevel} out of bounds (size {op.args.size})"
+    let prevConstrs ← extractConstructorInfo dialects op.args[listLevel]
+    let constr ← extractSingleConstructor dialects op.args[constrLevel]
+    return prevConstrs.push constr
+  -- Fallback: try as a direct constructor
+  let constr ← extractSingleConstructor dialects arg
+  return #[constr]
   decreasing_by
     simp_wf; rw[OperationF.sizeOf_spec]
     have := Array.sizeOf_get op.args (opDecl.argDecls.size - listIdx - 1) (by omega); omega
@@ -1994,34 +1996,27 @@ Applied to `Option<T>` with constructors `None` and `Some`, this generates:
 - `Option..isNone : Option<T> -> bool`
 - `Option..isSome : Option<T> -> bool`
 -/
-private def expandSingleTemplate
+private def expandSingleTemplate1
     (datatypeName : String)
     (datatypeType : TypeExpr)
-    (constructorInfo : Array ConstructorInfo)
+    (constr : ConstructorInfo)
     (template : FunctionTemplate)
     (dialectName : String) : TemplateExpandM Unit := do
-  if let some err :=
-      validateNamePattern template.namePattern template.scope then
-    TemplateExpandM.addError err
-    return
   match template.scope with
   | .perConstructor =>
-    for constr in constructorInfo do
-      let funcName := expandNamePattern
-        template.namePattern datatypeName (some constr.name)
-      if ← TemplateExpandM.nameUsed funcName then
-        TemplateExpandM.addError
-          s!"Duplicate function name: {funcName}"
-      else
-        match buildFunctionType
-            template datatypeType none dialectName with
-        | .ok funcType =>
-          TemplateExpandM.addFunction funcName funcType
-        | .error e => TemplateExpandM.addError e
+    let funcName := expandNamePattern
+      template.namePattern datatypeName (some constr.name)
+    if ← TemplateExpandM.nameUsed funcName then
+      TemplateExpandM.addError
+        s!"Duplicate function name: {funcName}"
+    else
+      match buildFunctionType
+          template datatypeType none dialectName with
+      | .ok funcType =>
+        TemplateExpandM.addFunction funcName funcType
+      | .error e => TemplateExpandM.addError e
   | .perField =>
-    let allFields := constructorInfo.foldl
-      (init := #[]) fun acc c => acc ++ c.fields
-    for (fieldName, fieldTp) in allFields do
+    for (fieldName, fieldTp) in constr.fields do
       let funcName := expandNamePattern
         template.namePattern datatypeName none (some fieldName)
       if ← TemplateExpandM.nameUsed funcName then
@@ -2037,6 +2032,7 @@ private def expandSingleTemplate
         | .error e => TemplateExpandM.addError e
 
 private def expandFunctionTemplates
+    (src : SourceRange)
     (datatypeName : String)
     (datatypeType : TypeExpr)
     (constructorInfo : Array ConstructorInfo)
@@ -2046,9 +2042,16 @@ private def expandFunctionTemplates
     : GlobalContext × Array String :=
   let initState : TemplateExpandState := { gctx }
   let ((), finalState) := StateT.run (m := Id) (do
+    -- Pass 1: Register all constructor signatures first to maintain
+    -- FreeVarIndex ordering (constructors before template functions).
+    for constr in constructorInfo do
+      let constrType := mkConstructorType src datatypeType constr.fields
+      TemplateExpandM.addFunction constr.name constrType
+    -- Pass 2: Expand all templates for all constructors.
     for template in templates do
-      expandSingleTemplate datatypeName datatypeType
-        constructorInfo template dialectName
+      for constr in constructorInfo do
+        expandSingleTemplate1 datatypeName datatypeType
+          constr template dialectName
   ) initState
   (finalState.gctx, finalState.errors)
 
@@ -2075,7 +2078,7 @@ FreeVarIndex values are consistent with this order.
 this adds entries for: `Option` (type), `None` (constructor), `Some` (constructor),
 `Option..isNone` (tester), `Option..isSome` (tester).
 -/
-private def addDatatypeBindings
+private def addDatatypeBindings!
     (dialects : DialectMap)
     (gctx : GlobalContext)
     (src : SourceRange)
@@ -2104,15 +2107,11 @@ private def addDatatypeBindings
   let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
-  -- Step 2: Add constructor signatures
-  -- Duplicates are caught during elaboration; skip here.
-  let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
-  let gctx := constructorInfo.foldl (init := gctx) fun gctx constr =>
-    let constrType := mkConstructorType src datatypeType constr.fields
-    gctx.ensureDefined constr.name (.expr constrType)
-
-  -- Step 3: Expand and add function templates
-  let (gctx, errors) := expandFunctionTemplates datatypeName datatypeType
+  -- Step 2: Add constructor signatures and expand function templates
+  let constructorInfo := match extractConstructorInfo dialects args[b.constructorsIndex.toLevel] with
+    | .ok info => info
+    | .error e => panic! s!"Constructor extraction error: {e}"
+  let (gctx, errors) := expandFunctionTemplates src datatypeName datatypeType
     constructorInfo b.functionTemplates dialectName gctx
   if !errors.isEmpty then
     panic! s!"Datatype template expansion errors: {errors}"
@@ -2151,7 +2150,7 @@ def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) :
   where addBinding (dialectName : DialectName) (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
           match b with
           | .datatype datatypeSpec =>
-            addDatatypeBindings dialects gctx l dialectName datatypeSpec args
+            addDatatypeBindings! dialects gctx l dialectName datatypeSpec args
           | _ =>
             let name : Var :=
                   match args[b.nameIndex.toLevel] with
@@ -2179,9 +2178,10 @@ where
       : Array (String × SourceRange) :=
     match b with
     | .datatype ds =>
-      let constrs :=
-        extractConstructorInfo dialects
-          args[ds.constructorsIndex.toLevel]
+      let constrs := match extractConstructorInfo dialects
+          args[ds.constructorsIndex.toLevel] with
+        | .ok info => info
+        | .error _ => #[]  -- errors caught during elaboration
       constrs.foldl (init := acc) fun acc c =>
         acc.push (c.name, loc)
     | _ => acc

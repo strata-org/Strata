@@ -1466,7 +1466,9 @@ Extract and translate constructor information from a constructor list argument.
 -/
 def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg) :
     TransM (Array TransConstructorInfo) := do
-  let constructorInfos := GlobalContext.extractConstructorInfo p.dialects arg
+  let constructorInfos ← match GlobalContext.extractConstructorInfo p.dialects arg with
+    | .ok info => pure info
+    | .error e => TransM.error s!"Constructor extraction error: {e}"
   constructorInfos.mapM (translateConstructorInfo bindings)
 
 ---------------------------------------------------------------------
