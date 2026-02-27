@@ -68,16 +68,22 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Invalidate cached .olean files for DDM grammar files
-        shell: bash
-        run: |
-          # .st grammar files are not included in the lean-action cache key.
-          # Remove .olean files for grammar-dependent modules to force rebuild
-          # when .st files change.
-          find .lake/build -name "*.olean" -path "*/Laurel/*" -delete 2>/dev/null || true
-          find .lake/build -name "*.olean" -path "*/DDM/*" -delete 2>/dev/null || true
+      - name: Restore lake cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
+        with:
+          use-github-cache: false
+      - name: Save lake cache
+        uses: actions/cache/save@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - name: Build and run StrataVerify
         run: lake exe StrataVerify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
