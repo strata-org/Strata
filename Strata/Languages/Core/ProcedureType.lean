@@ -81,7 +81,6 @@ def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
   md.toDiagnosticF f!"[{procName}:{condName}]:"
 
 -- Type checking procedure pre/post conditions.
--- Type checking procedure pre/post conditions.
 open Lambda.LTy.Syntax in
 private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Check) (procName : CoreIdent) :

@@ -131,7 +131,6 @@ theorem Program.typeCheck.goWF' :
               | intro l r =>
                 apply And.intro
                 . constructor
-                  -- 2. All declared global variables are `CoreIdent.glob`.
                   sorry
                 . exists v.1, {
                   context := res.snd.context.subst res.snd.state.substInfo.subst,

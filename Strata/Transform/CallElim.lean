@@ -58,9 +58,7 @@ def callElimCmd (cmd: Command)
         let argInit := createInits argTrips md
         let outInit := createInitVars outTrips md
         -- Initialize fresh vars from the current (pre-call) values of the original globals
-        let oldInitRaw := oldTripsRaw.map fun ((fresh, ty), orig) =>
-          ((fresh, ty), orig)
-        let oldInit := createInitVars oldInitRaw md
+        let oldInit := createInitVars oldTripsRaw md
 
         -- Substitute "old g" with the fresh pre-call variable in postconditions
         let oldSubst := createOldVarsSubst oldTrips
