@@ -186,15 +186,23 @@ def smtResultToOutcome (r : SMT.Result) (isCover : Bool) : Outcome :=
   | .err e => .implementationError e
 
 /--
+Format a single counterexample value using the Core DDM formatter
+(`Core.formatExprs`).  This renders constructors, applications, and
+primitives with proper Core syntax (e.g. `Cons(0, Nil)`, `Right(true)`).
+-/
+private def formatCexValue (e : LExpr CoreLParams.mono) : Format :=
+  Core.formatExprs [e]
+
+/--
 Format a counterexample whose values are Core `LExpr`s.
 -/
 def LExprCounterEx.format (cex : LExprCounterEx) : Format :=
   match cex with
   | [] => ""
-  | [(id, e)] => f!"({id}, {e})"
+  | [(id, e)] => f!"({id}, {formatCexValue e})"
   | (id, e) :: rest =>
-    let first := f!"({id}, {e}) "
-    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {e'}) ") first
+    let first := f!"({id}, {formatCexValue e}) "
+    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatCexValue e'}) ") first
 
 instance : ToFormat LExprCounterEx where
   format := LExprCounterEx.format
@@ -332,7 +340,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   | .ok (reachResult?, smt_result, estate) =>
     let outcome := smtResultToOutcome smt_result (obligation.property == .cover)
     let cex := match smt_result with
-      | .sat m => convertCounterEx m
+      | .sat m => convertCounterEx m (SMT.Context.getConstructorNames ctx)
       | _ => []
     let result :=  { obligation,
                      result := outcome,

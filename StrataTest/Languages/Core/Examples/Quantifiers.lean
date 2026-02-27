@@ -72,7 +72,7 @@ Result: Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, #0)
+($__x0, 0)
 
 
 [DEBUG] Evaluated program:
@@ -101,7 +101,7 @@ Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, #0)
+($__x0, 0)
 -/
 #guard_msgs in
 #eval verify quantPgm (options := .default)
