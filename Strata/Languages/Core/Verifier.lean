@@ -268,7 +268,7 @@ def label (o : VCOutcome) : String :=
   else if o.unreachable then "unreachable"
   else if o.satisfiableValidityUnknown then "satisfiable"
   else if o.alwaysFalseReachabilityUnknown then "refuted if reachable"
-  else if o.canBeFalseAndReachable then "reachable from declaration entry and can be false"
+  else if o.canBeFalseAndReachable then "can be false if reachable"
   else if o.passReachabilityUnknown then "pass if reachable"
   else "unknown"
 
