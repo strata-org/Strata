@@ -73,7 +73,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
     IO.FS.withTempDir (fun tempDir => do
       let filename := tempDir / s!"exprEvalTest.smt2"
       let ans ← Core.SMT.dischargeObligation
-        { Options.default with verbose := .quiet }
+        { Core.VerifyOptions.default with verbose := .quiet }
         e_fvs_typed Imperative.MetaData.empty filename.toString
         [] smt_term ctx
       match ans with

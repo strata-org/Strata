@@ -83,7 +83,7 @@ def getSolverPrelude : String → SolverM Unit
 | "cvc5" => return ()
 | _ => return ()
 
-def getSolverFlags (options : Options) : Array String :=
+def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
     match options.solver with
     | "cvc5" => #["--produce-models"]
@@ -98,7 +98,7 @@ def getSolverFlags (options : Options) : Array String :=
   produceModels ++ setTimeout
 
 def dischargeObligation
-  (options : Options)
+  (options : VerifyOptions)
   (vars : List Expression.TypedIdent)
   (md : Imperative.MetaData Expression)
   (filename : String)
@@ -258,7 +258,7 @@ instance : ToString VCResults where
 Preprocess a proof obligation before handing it off to a backend engine.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
+    (options : VerifyOptions) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
   let needsReachCheck := options.reachCheck || Imperative.MetaData.hasReachCheck obligation.metadata
   match obligation.property with
   | .cover =>
@@ -309,7 +309,7 @@ given proof obligation.
 def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) (counter : IO.Ref Nat)
+    (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (reachCheck : Bool := false)
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
@@ -351,7 +351,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                      counterExample := cex }
     return result
 
-def verifySingleEnv (pE : Program × Env) (options : Options)
+def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath) :
     EIO DiagnosticModel VCResults := do
   let (p, E) := pE
@@ -407,7 +407,7 @@ All program-wide transformations that occur before any analyses
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO DiagnosticModel VCResults := do
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
@@ -448,12 +448,14 @@ def verify (program : Program)
 end Core
 ---------------------------------------------------------------------
 
+open Core (VerifyOptions)
+
 namespace Strata
 
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
 
-def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
+def typeCheck (ictx : InputContext) (env : Program) (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
   Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
@@ -472,7 +474,7 @@ def verify
     (env : Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx

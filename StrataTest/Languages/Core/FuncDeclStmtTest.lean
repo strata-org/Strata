@@ -40,4 +40,4 @@ info: ok: procedure test () returns ()
 
 -/
 #guard_msgs in
-#eval (Std.format ((Core.typeCheck Options.default (translate simpleFuncDeclPgm).stripMetaData)))
+#eval (Std.format ((Core.typeCheck .default (translate simpleFuncDeclPgm).stripMetaData)))
