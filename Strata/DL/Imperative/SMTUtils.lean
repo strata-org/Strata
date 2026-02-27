@@ -5,6 +5,9 @@
 -/
 
 import Strata.DL.SMT.SMT
+import Strata.DL.SMT.DDMTransform.Parse
+import Strata.DDM.Elab
+import Strata.DDM.Format
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Imperative.EvalContext
 
@@ -83,27 +86,6 @@ def getSMTId {Ident Ty} [ToFormat Ident]
     let key : Strata.SMT.UF := { id := var', args := [], out := ty' }
     .ok (E.ufs[key]!)
 
-def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
-  let cex ← Strata.SMT.CExParser.parseCEx m
-  return cex.pairs
-
-def processModel {P : PureExpr} [ToFormat P.Ident]
-    (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
-    (vars : List P.TypedIdent) (cexs : List Strata.SMT.CExParser.KeyValue)
-    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
-  match vars with
-  | [] => return []
-  | (var, ty) :: vrest =>
-    let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
-    let value ← findCExValue id cexs
-    let pair := (var, value)
-    let rest ← processModel typedVarToSMTFn vrest cexs E
-    .ok (pair :: rest)
-  where findCExValue id cexs : Except Format String :=
-    match cexs.find? (fun p => p.key == id) with
-    | none => .error f!"Cannot find model for id: {id}"
-    | some p => .ok p.value
-
 def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
     cmd := solver
@@ -114,8 +96,99 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
+---------------------------------------------------------------------
+-- SMTDDM-based parsing
+---------------------------------------------------------------------
+
+/-- The loaded dialects needed to parse SMTResponse commands. -/
+private def smtResponseDialects : Strata.Elab.LoadedDialects :=
+  .ofDialects! #[Strata.initDialect, Strata.smtReservedKeywordsDialect,
+                 Strata.SMTCore, Strata.SMTResponse]
+
+/-- Format context for rendering SMTResponse `Arg` values back to strings. -/
+private def smtFormatContext : Strata.FormatContext :=
+  .ofDialects smtResponseDialects.dialects
+
+/-- Format state for rendering SMTResponse `Arg` values back to strings. -/
+private def smtFormatState : Strata.FormatState where
+  openDialects := smtResponseDialects.dialects.toList.foldl (init := {}) fun s d => s.insert d.name
+
+/-- Render a DDM `Arg` to a string using the SMTResponse dialect formatting. -/
+private def formatArg (arg : Strata.Arg) : String :=
+  (Strata.mformat arg smtFormatContext smtFormatState).format.pretty
+
+/--
+Parse a verdict line ("sat", "unsat", "unknown") via the SMTResponse DDM
+dialect. Returns `some .sat`, `some .unsat`, `some .unknown`, or `none`
+on parse/conversion failure.
+-/
+private def parseVerdict (line : String) : IO (Option (Result PUnit)) := do
+  let inputCtx := Strata.Parser.stringInputContext "solver" (line ++ "\n")
+  let prg ←
+    try Strata.Elab.parseStrataProgramFromDialect
+          smtResponseDialects "SMTResponse" inputCtx
+    catch _ => return none
+  if prg.commands.isEmpty then return none
+  let op := prg.commands[0]!
+  match Strata.SMTResponseDDM.Command.ofAst op with
+  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_sat _)))     => return some (.sat [])
+  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_unsat _)))   => return some .unsat
+  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_unknown _))) => return some .unknown
+  | _ => return none
+
+/--
+Parse a `(get-value ...)` model response using the SMTResponse DDM dialect.
+Uses `parseCategoryFromDialect` targeting `SMTResponse.GetValueResponse`
+directly, which avoids the ambiguity that arises when parsing at the
+`Command` level.
+
+Returns a list of (key, value) string pairs on success.
+-/
+private def parseModelDDM (modelStr : String) : IO (List (String × String)) := do
+  let inputCtx := Strata.Parser.stringInputContext "solver-model" modelStr
+  let op ←
+    try Strata.Elab.parseCategoryFromDialect
+          smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
+    catch _ => return []
+  match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
+  | .ok (.get_value_response _ vps) =>
+    let pairs := vps.val.toList.filterMap fun vp =>
+      match vp with
+      | .valuation_pair _ t1 t2 =>
+        some (formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
+              formatArg (.op (Strata.SMTResponseDDM.Term.toAst t2)))
+    return pairs
+  | .error _ => return []
+
+/--
+Process a parsed model (list of key-value string pairs) against the
+expected variables, matching each variable's SMT-encoded name to its
+value in the model.
+-/
+private def processModel {P : PureExpr} [ToFormat P.Ident]
+    (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
+    (vars : List P.TypedIdent) (pairs : List (String × String))
+    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
+  match vars with
+  | [] => return []
+  | (var, ty) :: vrest =>
+    let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
+    let value ← findValue id pairs
+    let rest ← processModel typedVarToSMTFn vrest pairs E
+    .ok ((var, value) :: rest)
+  where findValue id pairs : Except Format String :=
+    match pairs.find? (fun p => p.fst == id) with
+    | none => .error f!"Cannot find model for id: {id}"
+    | some p => .ok p.snd
+
 /--
 Interprets the output of SMT solver.
+
+Both the verdict line (sat/unsat/unknown) and the model (when sat) are
+parsed using the SMTResponse DDM dialect. The verdict is parsed as a full
+`Command`, while the model is parsed by targeting the
+`SMTResponse.GetValueResponse` category directly via
+`parseCategoryFromDialect`.
 
 When `reachCheck` is `true`, the solver output contains two verdict lines:
 the first is the reachability check result (are the path-condition assumptions
@@ -128,38 +201,36 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     (vars : List P.TypedIdent) (output : IO.Process.Output)
     (E : Strata.SMT.EncoderState) (smtsolver : String)
     (reachCheck : Bool := false)
-    : Except Format (Option (Result P.Ident) × Result P.Ident) := do
+    : IO (Except Format (Option (Result P.Ident) × Result P.Ident)) := do
   let stdout := output.stdout
   -- When reachCheck is true, the first line of stdout is the reachability
   -- verdict; strip it and parse it separately.
-  let (reachResult, proofStdout) := if reachCheck then
+  let (reachResult, proofStdout) ← if reachCheck then do
     let pos := stdout.find (· == '\n')
-    let reachVerdictStr := (stdout.extract stdout.startPos pos).trimAscii
-    let reachResult : Result P.Ident := match reachVerdictStr with
-      | "sat" => .sat []
-      | "unsat" => .unsat
-      | _ => .unknown
-    let remaining := (stdout.extract pos stdout.endPos).drop 1
-    (some reachResult, remaining)
+    let reachVerdictStr := (stdout.extract stdout.startPos pos).trimAscii.toString
+    let reachResult : Result P.Ident ← do
+      match ← parseVerdict reachVerdictStr with
+      | some (.sat _) => pure (.sat [])
+      | some .unsat   => pure .unsat
+      | _             => pure .unknown
+    let remaining := (stdout.extract pos stdout.endPos).drop 1 |>.toString
+    pure (some reachResult, remaining)
   else
-    (none, stdout)
+    pure (none, stdout)
   -- Parse the proof verdict from the (possibly trimmed) stdout
   let pos := proofStdout.find (· == '\n')
-  let verdict := proofStdout.extract proofStdout.startPos pos |>.trimAscii
+  let verdictStr := (proofStdout.extract proofStdout.startPos pos).trimAscii.toString
   let rest := proofStdout.extract pos proofStdout.endPos
-  match verdict with
-  | "sat"     =>
-    let rawModel ← getModel rest
-    -- We suppress any model processing errors.
-    -- Likely, these would be because of the suboptimal implementation
-    -- of the model parser, which shouldn't hold back useful
-    -- feedback (i.e., problem was `sat`) from the user.
-    match (processModel typedVarToSMTFn vars rawModel E) with
-    | .ok model => .ok (reachResult, .sat model)
-    | .error _model_err => .ok (reachResult, .sat [])
-  | "unsat"   => .ok (reachResult, .unsat)
-  | "unknown" => .ok (reachResult, .unknown)
-  | _     =>
+  match ← parseVerdict verdictStr with
+  | some (.sat _) =>
+    -- Parse model via SMTDDM targeting GetValueResponse category directly.
+    let pairs ← parseModelDDM rest
+    match processModel typedVarToSMTFn vars pairs E with
+    | .ok model => return .ok (reachResult, .sat model)
+    | .error _  => return .ok (reachResult, .sat [])
+  | some .unsat   => return .ok (reachResult, .unsat)
+  | some .unknown => return .ok (reachResult, .unknown)
+  | _ =>
     let stderr := output.stderr
     let hasExecError := stderr.contains "could not execute external process"
     let hasFileError := stderr.contains "No such file or directory"
@@ -167,7 +238,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
       if (hasExecError || hasFileError) && smtsolver == defaultSolver then
         s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver."
       else ""
-    .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
+    return .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 
 def addLocationInfo {P : PureExpr} [BEq P.Ident]
   (md : Imperative.MetaData P) (message : String × String)
@@ -209,7 +280,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   if printFilename then IO.println s!"Wrote problem to {filename}."
 
   let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)
-  match solverResult typedVarToSMTFn vars solver_output estate smtsolver (reachCheck := reachCheck) with
+  match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver (reachCheck := reachCheck) with
   | .error e => return .error e
   | .ok (reachDecision, result) => return .ok (reachDecision, result, estate)
 

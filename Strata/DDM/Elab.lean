@@ -413,5 +413,57 @@ def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : Dialect
         return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
       throw (IO.userError errMsg)
 
+/--
+Parse a single syntax category from a loaded dialect set.
+
+Unlike `parseStrataProgramFromDialect`, this targets a specific syntax
+category (e.g. `q\`SMTResponse.GetValueResponse`) rather than parsing a
+full program of `Command`s. This avoids ambiguity issues that arise when
+multiple categories share the same surface syntax.
+
+Returns the elaborated `Operation` on success.
+-/
+def parseCategoryFromDialect
+    (dialects : LoadedDialects) (cat : QualifiedIdent) (input : InputContext)
+    (startPos : String.Pos.Raw := 0)
+    (stopPos : String.Pos.Raw := input.endPos)
+    : IO Strata.Operation := do
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+  -- Open dialects using the same pattern as elabProgramRest: start from
+  -- initDeclState (which has Init open) and open each dialect via
+  -- ensureLoaded! to avoid panics from HashMap iteration order.
+  let s := DeclState.initDeclState
+  let s := dialects.dialects.toList.foldl (init := s) fun s d =>
+    DeclState.ensureLoaded! s dialects d.name
+  -- Run the category-level parser
+  let ps := Parser.runCatParser s.tokenTable s.parserMap leanEnv input startPos stopPos cat
+  if ps.hasError then
+    let errMsg ← ps.allErrors.foldlM (init := "Parse errors:\n") fun msg (pos, stk, err) =>
+      let m := Lean.mkErrorMessage input pos stk err
+      return s!"{msg}  {m.pos.line}:{m.pos.column}: {← m.data.toString}\n"
+    throw (IO.userError errMsg)
+  if ps.stxStack.size == 0 then
+    throw (IO.userError "Parser returned no syntax")
+  let stx := ps.stxStack.back
+  -- Elaborate the parsed syntax into an Operation
+  let ctx : ElabContext := {
+    dialects := dialects.dialects
+    syntaxElabs := dialects.syntaxElabMap
+    openDialectSet := s.openDialectSet
+    typeOrCatDeclMap := s.typeOrCatDeclMap
+    metadataDeclMap := s.metadataDeclMap
+    globalContext := s.globalContext
+    inputContext := input
+    missingImport := false
+  }
+  let es : ElabState := {}
+  let (tree, es) := elabOperation (.empty s.globalContext) stx ctx es
+  if es.errors.size > 0 then
+    let errMsg ← es.errors.foldlM (init := "Elaboration errors:\n") fun msg e =>
+      return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
+    throw (IO.userError errMsg)
+  let op := tree.info.asOp!.op
+  return op
+
 end Strata.Elab
 end
