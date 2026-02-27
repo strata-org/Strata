@@ -80,7 +80,7 @@ info:
 Obligation: registry_id_eq_val
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: count_incremented
 Property: assert
 Result: ✔️ pass if reachable

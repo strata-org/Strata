@@ -41,7 +41,7 @@ info:
 Obligation: trueCase
 Property: assert
 Result: ✅ pass
-
+ 
 Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass
