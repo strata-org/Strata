@@ -54,15 +54,15 @@ spec {
 info:
 Obligation: isCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: valueIs42
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestNestedPolyDestructor_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify nestedPolyDestructorPgm (options := .quiet)
@@ -110,11 +110,11 @@ spec {
 info:
 Obligation: isWithHidden
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestHiddenTypeRecursion_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify hiddenTypeRecursionPgm (options := .quiet)

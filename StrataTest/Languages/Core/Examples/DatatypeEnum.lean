@@ -56,19 +56,19 @@ spec {
 info:
 Obligation: isRed
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notGreen
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notBlue
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestEnumTesters_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify enumPgm (options := .quiet)
@@ -113,15 +113,15 @@ spec {
 info:
 Obligation: notRed
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notBlue
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestEnumHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify enumHavocPgm (options := .quiet)
@@ -160,11 +160,11 @@ spec {
 info:
 Obligation: exhaustive
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestEnumExhaustive_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify enumExhaustivePgm (options := .quiet)

@@ -108,7 +108,7 @@ def normalizeModelValues (s : String) : String :=
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_1
 Property: assert
@@ -116,7 +116,7 @@ Result: 🟡 unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_3
 Property: assert
@@ -182,7 +182,7 @@ Model:
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_1
 Property: assert
@@ -190,7 +190,7 @@ Result: 🟡 unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_3
 Property: assert

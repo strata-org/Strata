@@ -34,15 +34,15 @@ spec {
 info:
 Obligation: P_post_result_ok_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: set_r_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: result_ok
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify noFilterWFPgm

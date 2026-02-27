@@ -68,23 +68,23 @@ spec {
 info:
 Obligation: isNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: isCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListTesters_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listTesterPgm (options := .quiet)
@@ -126,11 +126,11 @@ spec {
 info:
 Obligation: notNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listHavocPgm (options := .quiet)
@@ -169,11 +169,11 @@ spec {
 info:
 Obligation: exhaustive
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListExhaustive_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listExhaustivePgm (options := .quiet)
@@ -215,11 +215,11 @@ spec {
 info:
 Obligation: mutualExclusion
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListMutualExclusion_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listMutualExclusionPgm (options := .quiet)
@@ -266,15 +266,15 @@ spec {
 info:
 Obligation: nilEquality
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: consEquality
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListEquality_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listEqualityPgm (options := .quiet)
@@ -314,11 +314,11 @@ spec {
 info:
 Obligation: nilVsCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListInequality_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listInequalityPgm (options := .quiet)
@@ -375,23 +375,23 @@ spec {
 info:
 Obligation: headIs42
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: tailIsNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: headIs10
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: tailIsCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListDestructor_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listDestructorPgm (options := .quiet)
@@ -433,11 +433,11 @@ spec {
 info:
 Obligation: secondIs2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListNested_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listNestedPgm (options := .quiet)
@@ -483,11 +483,11 @@ spec {
 info:
 Obligation: headIs100
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListDestructorHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listDestructorHavocPgm (options := .quiet)
@@ -527,11 +527,11 @@ spec {
 info:
 Obligation: different_values
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestListDifferentValues_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listDifferentValuesPgm (options := .quiet)

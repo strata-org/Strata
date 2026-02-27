@@ -79,7 +79,7 @@ procedure P () returns ()
 info:
 Obligation: a_zero_true
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a_one_true
 Property: assert

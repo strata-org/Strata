@@ -42,11 +42,11 @@ Result: ❌ fail
 
 Obligation: unreachable_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: reachable_cover
 Property: cover
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: unsatisfiable_cover
 Property: cover
@@ -54,7 +54,7 @@ Result: ❌ fail
 
 Obligation: reachable_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify coverPgm1 (options := Options.quiet)
@@ -86,11 +86,11 @@ Result: ❌ fail
 
 Obligation: ctest2
 Property: cover
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: atest2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify coverPgm2 (options := Options.quiet)
@@ -171,11 +171,11 @@ Result: ❌ fail (❗path unreachable)
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: reach_cover_fail
 Property: cover
@@ -217,7 +217,7 @@ Result: ✅ pass (❗path unreachable)
 
 Obligation: no_rc_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: rc_cover
 Property: cover

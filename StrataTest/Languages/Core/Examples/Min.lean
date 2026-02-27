@@ -38,7 +38,7 @@ if $__n0 < $__m1 then $__n0 else $__m1 <= $__n0 && if $__n0 < $__m1 then $__n0 e
 info:
 Obligation: min_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify testPgm

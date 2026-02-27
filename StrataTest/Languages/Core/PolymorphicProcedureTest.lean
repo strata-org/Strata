@@ -92,7 +92,7 @@ Model:
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify polyProcPgm
@@ -147,15 +147,15 @@ true
 info:
 Obligation: MkCons_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify polyPostPgm

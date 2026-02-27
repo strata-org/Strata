@@ -67,23 +67,23 @@ $__a0 ==> $__b1 <==> !$__a0 || $__b1
 info:
 Obligation: implies_and_eq_not_or_1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: implies_and_eq_not_or_2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: implies_and_eq_not_or_3
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: implies_and_eq_not_or_4
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: implies_equiv
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify precPgm

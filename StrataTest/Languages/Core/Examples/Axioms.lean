@@ -86,19 +86,19 @@ f(y) > y
 info:
 Obligation: use_a1_a2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: use_f1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: use_a1_again
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: use_a2_again
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify axiomPgm1
@@ -147,7 +147,7 @@ $__x0 >= 0 ==> f($__x0) > $__x0
 info:
 Obligation: axiomPgm2_main_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify axiomPgm2

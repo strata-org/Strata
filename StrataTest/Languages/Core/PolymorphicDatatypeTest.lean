@@ -256,11 +256,11 @@ spec {
 info:
 Obligation: headIs100
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestPolyListHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify polyListHavocPgm (options := .quiet)
@@ -304,11 +304,11 @@ spec {
 info:
 Obligation: bothCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestMultiInstSMT_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify multiInstSMTPgm (options := .quiet)
@@ -350,19 +350,19 @@ spec {
 info:
 Obligation: isLeft
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notRight
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftVal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestEitherHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify eitherHavocPgm (options := .quiet)
@@ -403,11 +403,11 @@ spec {
 info:
 Obligation: set_v_calls_safeValue_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestOptionHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify optionHavocPgm (options := .quiet)

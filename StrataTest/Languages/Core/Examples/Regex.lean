@@ -101,39 +101,39 @@ Obligation:
 info:
 Obligation: hello_dot_ends_with_period
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: dot_ends_with_period
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: bye_exclaim_no_end_with_period
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: ok_chars_str
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: cannot_contain_exclaim
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: has_to_be_at_least_1_char
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: cannot_exceed_10_chars
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: optionally_a_check1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: optionally_a_check2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify regexPgm1
@@ -261,7 +261,7 @@ Obligation:
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify regexPgm3

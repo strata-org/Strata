@@ -91,11 +91,11 @@ spec {
 info:
 Obligation: good_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: good
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: bad
 Property: assert
@@ -157,15 +157,15 @@ g(f($__x0), $__x0) < 0
 info:
 Obligation: trigger_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: multi_trigger_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: f_and_g
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify triggerPgm

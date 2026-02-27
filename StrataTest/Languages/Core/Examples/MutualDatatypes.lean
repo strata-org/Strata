@@ -58,27 +58,27 @@ spec {
 info:
 Obligation: isFNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notFCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: isNode
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: isFCons
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notFNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestRoseTreeTesters_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify roseTreeTesterPgm Inhabited.default
@@ -136,27 +136,27 @@ spec {
 info:
 Obligation: valIs42
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: childrenIsNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: headIsNode
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: headVal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: tailIsNil
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestRoseTreeDestructor_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify roseTreeDestructorPgm Inhabited.default
@@ -209,19 +209,19 @@ spec {
 info:
 Obligation: leafEquality
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: emptyForestEquality
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: forestEquality
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestRoseTreeEquality_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify roseTreeEqualityPgm Inhabited.default
@@ -270,19 +270,19 @@ spec {
 info:
 Obligation: valIs42
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: headIsT
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: headVal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestPolyRoseTreeHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify polyRoseTreeHavocPgm Inhabited.default
@@ -340,23 +340,23 @@ spec {
 info:
 Obligation: isBlock
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: bodyHd
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: cmdVal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: secondIsGoto
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestStmtListHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify stmtListHavocPgm Inhabited.default

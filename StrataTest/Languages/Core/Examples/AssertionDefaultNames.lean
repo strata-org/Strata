@@ -55,7 +55,7 @@ $__x0 == 1
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify assertionNames
