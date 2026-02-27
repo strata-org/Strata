@@ -262,13 +262,13 @@ def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndReachable
 
 def label (o : VCOutcome) : String :=
-  if o.passAndReachable then "pass"
-  else if o.alwaysFalseAndReachable then "refuted"
-  else if o.indecisiveAndReachable then "indecisive"
+  if o.passAndReachable then "pass and reachable from declaration entry"
+  else if o.alwaysFalseAndReachable then "refuted and reachable from declaration entry"
+  else if o.indecisiveAndReachable then "indecisive and reachable from declaration entry"
   else if o.unreachable then "unreachable"
   else if o.satisfiableValidityUnknown then "satisfiable"
   else if o.alwaysFalseReachabilityUnknown then "refuted if reachable"
-  else if o.canBeFalseAndReachable then "reachable and can be false"
+  else if o.canBeFalseAndReachable then "reachable from declaration entry and can be false"
   else if o.passReachabilityUnknown then "pass if reachable"
   else "unknown"
 

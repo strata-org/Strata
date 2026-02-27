@@ -122,11 +122,11 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 -/
 #guard_msgs in
 #eval verify reachCheckGlobalPgm (options := {Options.quiet with reachCheck := true})
@@ -163,11 +163,11 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: reach_assert_pass
 Property: assert
@@ -213,7 +213,7 @@ procedure Test() returns ()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: no_rc_assert
 Property: assert
@@ -221,7 +221,7 @@ Result: ✔️ pass if reachable
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: no_rc_cover
 Property: cover
@@ -289,19 +289,19 @@ procedure Test() returns ()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: pe_cover_fail
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 -/
 #guard_msgs in
 #eval verify reachCheckPEPgm (options := {Options.quiet with reachCheck := true})

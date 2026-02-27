@@ -75,21 +75,21 @@ def testOutcome (o : VCOutcome) (expectedTrue : OutcomePredicate) : IO Unit := d
 
 /--
 info:  isPass isSatisfiable isAlwaysTrue isReachable
-Sat:sat|Val:unsat ✅ pass, Always true and reachable, SARIF: Deductive level: none, BugFinding level: none
+Sat:sat|Val:unsat ✅ pass and reachable from declaration entry, Always true and reachable, SARIF: Deductive level: none, BugFinding level: none
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (.sat default) .unsat) .passAndReachable
 
 /--
 info:  isAlwaysFalse isReachable
-Sat:unsat|Val:sat ❌ refuted, Always false and reachable, SARIF: Deductive level: error, BugFinding level: error
+Sat:unsat|Val:sat ❌ refuted and reachable from declaration entry, Always false and reachable, SARIF: Deductive level: error, BugFinding level: error
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome .unsat (.sat default)) .alwaysFalseAndReachable
 
 /--
 info:  isSatisfiable isReachable
-Sat:sat|Val:sat 🔶 indecisive, True or false depending on inputs, SARIF: Deductive level: error, BugFinding level: note
+Sat:sat|Val:sat 🔶 indecisive and reachable from declaration entry, True or false depending on inputs, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (.sat default) (.sat default)) .indecisiveAndReachable
@@ -117,7 +117,7 @@ Sat:unsat|Val:unknown ✖️ refuted if reachable, Always false if reachable, re
 
 /--
 info:
-Sat:unknown|Val:sat ➖ reachable and can be false, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
+Sat:unknown|Val:sat ➖ reachable from declaration entry and can be false, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)) .canBeFalseAndReachable
