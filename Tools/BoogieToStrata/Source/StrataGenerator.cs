@@ -286,8 +286,9 @@ public class StrataGenerator : ReadOnlyVisitor {
         _writer.WriteLine(text);
     }
 
-    // Emit `old expr` by distributing `old` inward through map accesses.
+    // Emit `old expr` by distributing `old` inward through map accesses and bitvector ops.
     // old(A[i]) -> (old A)[i], old(v) -> old v
+    // old(bv[end:start]) -> (old bv)[end:start], old(a ++ b) -> (old a) ++ (old b)
     private void EmitOldExpr(Expr expr) {
         switch (expr) {
             case IdentifierExpr identExpr:
@@ -300,6 +301,18 @@ public class StrataGenerator : ReadOnlyVisitor {
                 WriteText(")[");
                 EmitSeparated(mapSelect.Args.Skip(1), (Expr e) => VisitExpr(e), "][");
                 WriteText("]");
+                break;
+            case BvExtractExpr bvExtract:
+                WriteText("(");
+                EmitOldExpr(bvExtract.Bitvector);
+                WriteText($")[{bvExtract.End}:{bvExtract.Start}]");
+                break;
+            case BvConcatExpr bvConcat:
+                WriteText("(");
+                EmitOldExpr(bvConcat.E0);
+                WriteText(") ++ (");
+                EmitOldExpr(bvConcat.E1);
+                WriteText(")");
                 break;
             default:
                 // Fallback: wrap in old() — may not parse but better than silently wrong
