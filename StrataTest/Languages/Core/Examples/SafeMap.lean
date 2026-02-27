@@ -1,33 +1,33 @@
 /-
   Copyright Strata Contributors
-
+ 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-
+ 
+ 
 import Strata.Languages.Core.Verifier
-
-
+ 
+ 
 ---------------------------------------------------------------------
 namespace Strata
-
-
+ 
+ 
 def safeMapPgm :=
 #strata
 program Core;
-
+ 
 // --- Type Declarations ---
 datatype OptionInt () { None(), Some(val: int) };
-
+ 
 // --- Pure Functions ---
 function is_present(opt : OptionInt) : bool {
     OptionInt..isSome(opt)
 }
-
+ 
 // --- Global State ---
 var registry : Map int OptionInt;
 var count : int;
-
+ 
 // --- Procedures ---
 procedure Register(id : int, value : int) returns ()
 spec {
@@ -41,7 +41,7 @@ spec {
     registry := registry[id := Some(value)];
     count := count + 1;
 };
-
+ 
 procedure GetValue(id : int) returns (res : OptionInt)
 spec {
     requires [id_ge_zero]:  id >= 0;
@@ -50,7 +50,7 @@ spec {
 {
     res := registry[id];
 };
-
+ 
 procedure Main() returns ()
 spec {
     modifies registry;
@@ -59,12 +59,12 @@ spec {
 {
     assume [count_eq_zero]: count == 0;
     assume [registry_empty]: (forall i : int :: {registry[i]} registry[i] == None());
-
+ 
     call Register(101, 500);
-
+ 
     var result : OptionInt;
     call result := GetValue(101);
-
+ 
     if (OptionInt..isSome(result)) {
         assert [value_of_101]: OptionInt..val(result) == 500;
     } else {
@@ -74,37 +74,37 @@ spec {
     }
 };
 #end
-
+ 
 /--
 info:
 Obligation: registry_id_eq_val
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: count_incremented
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: value_for_id
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: (Origin_Register_Requires)id_not_in_registry
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: (Origin_GetValue_Requires)id_ge_zero
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: value_of_101
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: unreachable_cover
 Property: cover
 Result: ➖ can be false if reachable
-
+ 
 Obligation: unreachable_assert
 Property: assert
 Result: ✔️ pass if reachable
