@@ -76,6 +76,7 @@ inductive AstNode where
 
 def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .var _ type => type
+ | .parameter p => p.type
  | _ => panic s!"getType called on {repr node}"
 
 /-! ## Resolution result -/
