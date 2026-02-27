@@ -1,0 +1,19 @@
+# Expected outcomes for Python CBMC pipeline tests.
+# Format: <basename>.py.ion <PASS|FAIL|SKIP>
+# PASS = VERIFICATION SUCCESSFUL expected
+# FAIL = VERIFICATION FAILED expected (known limitations)
+# SKIP = pipeline error expected (test not yet supported)
+
+test_arithmetic.py.ion          PASS
+test_comparisons.py.ion         PASS
+test_control_flow.py.ion        PASS
+test_missing_models.py.ion      PASS
+test_strings.py.ion             PASS
+test_function_def_calls.py.ion  SKIP
+test_precondition_verification.py.ion FAIL
+missing_required_param.py.ion   SKIP
+test_class_decl.py.ion          SKIP
+test_datetime.py.ion            SKIP
+test_foo_client_folder.py.ion   SKIP
+test_invalid_client_type.py.ion SKIP
+test_unsupported_config.py.ion  SKIP
