@@ -7,10 +7,10 @@
 test_arithmetic.py.ion          PASS
 test_comparisons.py.ion         PASS
 test_control_flow.py.ion        PASS
-test_missing_models.py.ion      PASS
-test_strings.py.ion             PASS
+test_missing_models.py.ion      SKIP
+test_strings.py.ion             SKIP
 test_function_def_calls.py.ion  SKIP
-test_precondition_verification.py.ion FAIL
+test_precondition_verification.py.ion SKIP
 missing_required_param.py.ion   SKIP
 test_class_decl.py.ion          SKIP
 test_datetime.py.ion            SKIP

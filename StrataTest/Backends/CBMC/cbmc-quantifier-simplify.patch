@@ -1,0 +1,48 @@
+diff --git a/src/goto-symex/goto_symex_state.cpp b/src/goto-symex/goto_symex_state.cpp
+index 0608aa29b4..3e5f2a3a49 100644
+--- a/src/goto-symex/goto_symex_state.cpp
++++ b/src/goto-symex/goto_symex_state.cpp
+@@ -250,8 +250,17 @@ goto_symex_statet::rename(exprt expr, const namespacet &ns)
+     rename<level>(expr.type(), irep_idt(), ns);
+ 
+     // do this recursively
++    // For quantifiers (forall/exists), skip the bound variables (operand 0)
++    // to preserve the symbol invariant required by quantifier_exprt.
++    const bool is_quantifier =
++      expr.id() == ID_forall || expr.id() == ID_exists;
++    std::size_t i = 0;
+     Forall_operands(it, expr)
+-      *it = rename<level>(std::move(*it), ns).get();
++    {
++      if(!(is_quantifier && i == 0))
++        *it = rename<level>(std::move(*it), ns).get();
++      ++i;
++    }
+ 
+     const exprt &c_expr = as_const(expr);
+ 
+diff --git a/src/util/simplify_expr.cpp b/src/util/simplify_expr.cpp
+index 8670a17b97..e866fc9934 100644
+--- a/src/util/simplify_expr.cpp
++++ b/src/util/simplify_expr.cpp
+@@ -2947,6 +2947,20 @@ simplify_exprt::simplify_node_preorder(const exprt &expr)
+   {
+     result = simplify_unary_pointer_predicate_preorder(to_unary_expr(expr));
+   }
++  else if(expr.id() == ID_forall || expr.id() == ID_exists)
++  {
++    // Only simplify the body (operand 1), not the bound variables (operand 0).
++    // Simplifying bound variable symbols would break the quantifier invariant
++    // that requires them to remain symbols.
++    PRECONDITION(expr.operands().size() == 2);
++    auto r_body = simplify_rec(expr.operands()[1]);
++    if(r_body.has_changed())
++    {
++      result.expr = expr;
++      result.expr.operands()[1] = std::move(r_body.expr);
++      result.expr_changed = resultt<>::CHANGED;
++    }
++  }
+   else if(expr.has_operands())
+   {
+     std::optional<exprt::operandst> new_operands;

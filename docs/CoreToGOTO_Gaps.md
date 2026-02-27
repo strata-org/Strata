@@ -150,6 +150,17 @@ still fail, as `integer` has no fixed bit width.
 
 ## Known Issues
 
+### CBMC crashes on quantifiers over non-integer types (patched)
+
+**Root cause:** CBMC's SSA renaming (`goto_symex_state.cpp`) and simplifier
+(`simplify_expr.cpp`) process all operands of quantifier expressions, including
+bound variables. This converts bound variable symbols into SSA expressions,
+violating the `quantifier_exprt` invariant that bound variables must be symbols.
+
+**Fix:** The patch `cbmc-quantifier-simplify.patch` skips bound variables
+(operand 0) during SSA renaming and expression simplification. Applied
+automatically in CI.
+
 ### #490: DDM parser infinite loop with `modifies` before `ensures`
 
 **Root cause:** The Laurel DDM grammar defines the procedure syntax as:
