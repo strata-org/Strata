@@ -561,7 +561,7 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
 /--
 Translate Laurel Program to Core Program
 -/
-def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+def translate (program : Program) (preludeFunctionNames: List Identifier) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := heapParameterization program
   let program := typeHierarchyTransform program
   let (program, modifiesDiags) := modifiesClausesTransform program
@@ -621,10 +621,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 /--
 Verify a Laurel program using an SMT solver
 -/
-def verifyToVcResults (program : Program)
+def verifyToVcResults (program : Program) (preludeFunctionNames: List Identifier)
     (options : Options := Options.default)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let (strataCoreProgram, translateDiags) ← match translate program with
+  let (strataCoreProgram, translateDiags) ← match translate program preludeFunctionNames with
     | .error translateErrorDiags => return .error translateErrorDiags
     | .ok result => pure result
 
@@ -646,21 +646,21 @@ def verifyToVcResults (program : Program)
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program) (preludeFunctionNames: List Identifier)
     (options : Options := Options.default): IO (Array Diagnostic) := do
   -- Validate for diamond-inherited field accesses before translation
   let uri := files.keys.head!
   let diamondErrors := validateDiamondFieldAccesses uri program
   if !diamondErrors.isEmpty then
     return diamondErrors.map (fun dm => dm.toDiagnostic files)
-  let results <- verifyToVcResults program options
+  let results <- verifyToVcResults program preludeFunctionNames options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (program : Program) (options : Options := Options.default) : IO (Array DiagnosticModel) := do
-  let results <- verifyToVcResults program options
+def verifyToDiagnosticModels (program : Program) (preludeFunctionNames: List Identifier) (options : Options := Options.default) : IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults program preludeFunctionNames options
   match results with
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel
