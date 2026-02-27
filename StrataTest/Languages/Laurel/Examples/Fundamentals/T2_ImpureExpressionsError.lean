@@ -53,10 +53,6 @@ procedure impureContractIsNotLegal2(x: int)
 }
 "
 
-/--
-error: Parse errors:
-  22:0: Syntax error: unrecognized syntax or unexpected token
--/
 #guard_msgs (error, drop all) in
 #eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
 

@@ -47,9 +47,5 @@ procedure aFunctionCaller() {
 }
 "
 
-/--
-error: Parse errors:
-  39:0: Syntax error: unrecognized syntax or unexpected token
--/
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "ProcedureCalls" program 14 processLaurelFile

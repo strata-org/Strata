@@ -33,9 +33,5 @@ procedure callerOfOpaqueFunction() {
 }
 "
 
-/--
-error: Parse errors:
-  17:0: Syntax error: unrecognized syntax or unexpected token
--/
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "Postconditions" program 14 processLaurelFile
