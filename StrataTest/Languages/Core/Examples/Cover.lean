@@ -34,11 +34,11 @@ procedure Test() returns ()
 info:
 Obligation: unreachable_cover1
 Property: cover
-Result: ➖ can be false if reachable
+Result: ✖️ refuted if reachable
 
 Obligation: unreachable_cover2
 Property: cover
-Result: ➖ can be false if reachable
+Result: ✖️ refuted if reachable
 
 Obligation: unreachable_assert
 Property: assert
@@ -46,11 +46,11 @@ Result: ✔️ pass if reachable
 
 Obligation: reachable_cover
 Property: cover
-Result: ✔️ pass if reachable
+Result: ➕ satisfiable
 
 Obligation: unsatisfiable_cover
 Property: cover
-Result: ➖ can be false if reachable
+Result: ✖️ refuted if reachable
 
 Obligation: reachable_assert
 Property: assert
@@ -82,11 +82,11 @@ spec {
 info:
 Obligation: ctest1
 Property: cover
-Result: ➖ can be false if reachable
+Result: ✖️ refuted if reachable
 
 Obligation: ctest2
 Property: cover
-Result: ✔️ pass if reachable
+Result: ➕ satisfiable
 
 Obligation: atest2
 Property: assert
@@ -175,11 +175,11 @@ Result: ✔️ pass if reachable
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ✔️ pass if reachable
+Result: ➕ satisfiable
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ➖ can be false if reachable
+Result: ✖️ refuted if reachable
 -/
 #guard_msgs in
 #eval verify reachCheckMixedPgm (options := {Options.quiet with checkAmount := .full})
@@ -225,7 +225,7 @@ Result: ⛔ unreachable
 
 Obligation: no_rc_cover
 Property: cover
-Result: ➖ can be false if reachable
+Result: ✖️ refuted if reachable
 -/
 #guard_msgs in
 #eval verify reachCheckPerStmtPgm (options := Options.quiet)
