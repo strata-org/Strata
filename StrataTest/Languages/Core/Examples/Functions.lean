@@ -70,7 +70,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify funcPgm
+#eval! verify funcPgm
 
 ---------------------------------------------------------------------
 
@@ -109,7 +109,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify multiArgFuncPgm
+#eval! verify multiArgFuncPgm
 
 ---------------------------------------------------------------------
 
@@ -149,6 +149,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify quantBodyFuncPgm
+#eval! verify quantBodyFuncPgm
 
 ---------------------------------------------------------------------
