@@ -355,7 +355,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- If the RHS is a direct imperative StaticCall, don't lift it —
       -- translateStmt handles Assign + StaticCall directly as a call statement.
       match _: valueMd with
-      | WithMetadata.mk value md =>
+      | WithMetadata.mk value _ =>
       match _: value with
       | .StaticCall callee args =>
           let model := (← get).model
