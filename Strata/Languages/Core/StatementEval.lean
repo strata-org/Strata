@@ -156,7 +156,7 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
 /--
 Evaluate a procedure call `lhs := pname(args)`.
 -/
-def Command.evalCall (E : Env) (old_var_subst : SubstMap)
+def Command.evalCall (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
@@ -225,7 +225,7 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
   | .call lhs pname args md =>
-    Command.evalCall E old_var_subst lhs pname args md
+    Command.evalCall E lhs pname args md
 
 ---------------------------------------------------------------------
 
