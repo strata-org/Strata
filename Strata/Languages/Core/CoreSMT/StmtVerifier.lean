@@ -32,84 +32,94 @@ open Strata.SMT
 open Lambda
 open Imperative
 
-/-- Proof check: check-sat of negation using check-sat-assuming -/
+/-- Run a verification check: for assert, negate the expression; for cover, use it directly. -/
+private def runCheck (state : CoreSMTState) (E : Core.Env)
+    (label : String) (expr : Core.Expression.Expr) (property : Imperative.PropertyType)
+    (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
+    : IO (Core.VCResult × Core.SMT.Context) := do
+  match translateExpr E expr smtCtx with
+  | .error msg =>
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label, property, assumptions := [], obligation := expr, metadata := md
+    }
+    return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
+  | .ok (term, smtCtx) =>
+    let isCover := property == .cover
+    let checkTerm := if isCover then term else Factory.not term
+    let decision ← state.solver.checkSatAssuming [checkTerm]
+    let outcome := match isCover, decision with
+      | true,  .sat     => Core.Outcome.pass
+      | true,  .unsat   => Core.Outcome.fail
+      | true,  .unknown => Core.Outcome.unknown
+      | false, .unsat   => Core.Outcome.pass
+      | false, .sat     => Core.Outcome.fail
+      | false, .unknown => Core.Outcome.unknown
+    let obligation : Imperative.ProofObligation Core.Expression := {
+      label, property, assumptions := [], obligation := expr, metadata := md
+    }
+    let smtObligationResult := match decision with
+      | .unsat   => SMT.Result.unsat
+      | .sat     => SMT.Result.unknown
+      | .unknown => SMT.Result.unknown
+    let diagnosis ← if outcome != .pass then
+      let diagResult ← diagnoseFailure state E expr isCover smtCtx
+      let pathCond := state.pathCondition
+      let failures := diagResult.diagnosedFailures.map fun f =>
+        { f with report := { f.report with context := { pathCondition := pathCond } } }
+      pure (some { isRefuted := failures.any (·.isRefuted), diagnosedFailures := failures })
+    else
+      pure none
+    return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
+
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
-    : IO (Core.VCResult × Core.SMT.Context) := do
-  match translateExpr E expr smtCtx with
-  | .error msg =>
-    let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .assert, assumptions := [], obligation := expr, metadata := md
-    }
-    return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
-  | .ok (term, smtCtx) =>
-    let solver : SMT.SolverInterface := state.solver
-    let decision ← solver.checkSatAssuming [Factory.not term]
-    let outcome := match decision with
-      | SMT.Decision.unsat   => Core.Outcome.pass
-      | SMT.Decision.sat     => Core.Outcome.fail
-      | SMT.Decision.unknown => Core.Outcome.unknown
-    let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .assert, assumptions := [], obligation := expr, metadata := md
-    }
-    let smtObligationResult := match decision with
-      | SMT.Decision.unsat => SMT.Result.unsat
-      | SMT.Decision.sat => SMT.Result.unknown
-      | SMT.Decision.unknown => SMT.Result.unknown
+    (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty) :=
+  runCheck state E label expr .assert smtCtx md
 
-    -- Add diagnosis for failures
-    let diagnosis ← if outcome != .pass then
-      let diagResult ← diagnoseFailure state E expr false smtCtx
-      let pathCond := state.pathCondition
-      -- Add path condition to each failure's report context
-      let failures := diagResult.diagnosedFailures.map fun f =>
-        { f with report := { f.report with context := { pathCondition := pathCond } } }
-      let isRefuted := failures.any (·.isRefuted)
-      pure (some { isRefuted, diagnosedFailures := failures })
-    else
-      pure none
-
-    return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
-
-/-- Cover check: check-sat of expression using check-sat-assuming -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
-    : IO (Core.VCResult × Core.SMT.Context) := do
-  match translateExpr E expr smtCtx with
-  | .error msg =>
-    let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .cover, assumptions := [], obligation := expr, metadata := md
-    }
-    return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
-  | .ok (term, smtCtx) =>
-    let solver : SMT.SolverInterface := state.solver
-    let decision ← solver.checkSatAssuming [term]
-    let outcome := match decision with
-      | SMT.Decision.sat     => Core.Outcome.pass      -- Reachable
-      | SMT.Decision.unsat   => Core.Outcome.fail      -- Unreachable
-      | SMT.Decision.unknown => Core.Outcome.unknown
-    let obligation : Imperative.ProofObligation Core.Expression := {
-      label, property := .cover, assumptions := [], obligation := expr, metadata := md
-    }
-    let smtObligationResult := match decision with
-      | SMT.Decision.sat => SMT.Result.unknown
-      | SMT.Decision.unsat => SMT.Result.unsat
-      | SMT.Decision.unknown => SMT.Result.unknown
+    (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty) :=
+  runCheck state E label expr .cover smtCtx md
 
-    -- Add diagnosis for failures (reach checks)
-    let diagnosis ← if outcome != .pass then
-      let diagResult ← diagnoseFailure state E expr true smtCtx  -- true for reach check
-      let pathCond := state.pathCondition
-      let failures := diagResult.diagnosedFailures.map fun f =>
-        { f with report := { f.report with context := { pathCondition := pathCond } } }
-      let isRefuted := failures.any (·.isRefuted)
-      pure (some { isRefuted, diagnosedFailures := failures })
-    else
-      pure none
-
-    return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
+private def processFuncDecl (state : CoreSMTState) (E : Core.Env)
+    (decl : Imperative.PureFunc Core.Expression) (smtCtx : Core.SMT.Context)
+    : IO (CoreSMTState × Core.SMT.Context × List Core.VCResult) := do
+  let inputTypesResult ← decl.inputs.foldlM (fun (acc : Except Std.Format (List TermType)) (_, ty) => do
+    match acc with
+    | .error msg => return .error msg
+    | .ok types =>
+      match translateType E ty smtCtx with
+      | .error msg => return .error msg
+      | .ok (smtTy, _) => return .ok (types ++ [smtTy])
+  ) (.ok [])
+  let mkError (msg : String) : Core.VCResult :=
+    let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
+    { obligation := { label := s!"funcDecl {decl.name.name}", property := .assert,
+                      assumptions := [], obligation := dummyExpr, metadata := .empty },
+      result := .implementationError msg }
+  match inputTypesResult with
+  | .error msg => return (state, smtCtx, [mkError s!"Type translation error: {toString msg}"])
+  | .ok inputTypes =>
+    match translateType E decl.output smtCtx with
+    | .error msg => return (state, smtCtx, [mkError s!"Output type translation error: {toString msg}"])
+    | .ok (outTy, smtCtx) =>
+      let ufArgs := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) => TermVar.mk name.name smtTy
+      let uf : UF := { id := decl.name.name, args := ufArgs, out := outTy }
+      let smtCtx := smtCtx.addUF uf
+      match decl.body with
+      | none =>
+        state.solver.declareFun decl.name.name inputTypes outTy
+        return ({ state with smtState := state.smtState.addItem (.funcDecl decl.name.name inputTypes outTy) }, smtCtx, [])
+      | some body =>
+        match translateExpr E body smtCtx with
+        | .error msg =>
+          return (state, smtCtx, [{ obligation := { label := s!"funcDecl {decl.name.name}", property := .assert,
+                                                    assumptions := [], obligation := body, metadata := .empty },
+                                    result := .implementationError s!"Body translation error: {msg}" }])
+        | .ok (bodyTerm, smtCtx) =>
+          let args := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) => (name.name, smtTy)
+          state.solver.defineFun decl.name.name args outTy bodyTerm
+          return ({ state with smtState := state.smtState.addItem (.funcDef decl.name.name args outTy bodyTerm) }, smtCtx, [])
 
 mutual
 /-- Process a single CoreSMT statement. Returns updated state, SMT context,
@@ -193,59 +203,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     return (state, smtCtx, results)
 
   | .funcDecl decl _ =>
-    -- Collect type translation results using foldlM
-    let result ← decl.inputs.foldlM (fun (acc : Except Std.Format (List TermType)) (_, ty) => do
-      match acc with
-      | .error msg => return .error msg
-      | .ok types =>
-        match translateType E ty smtCtx with
-        | .error msg => return .error msg
-        | .ok (smtTy, _) => return .ok (types ++ [smtTy])
-    ) (.ok [])
-
-    match result with
-    | .error msg =>
-      let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
-      let obligation : Imperative.ProofObligation Core.Expression := {
-        label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [],
-        obligation := dummyExpr, metadata := .empty
-      }
-      return (state, smtCtx, [{ obligation, result := .implementationError s!"Type translation error: {toString msg}" }])
-    | .ok inputTypes =>
-      match translateType E decl.output smtCtx with
-      | .error msg =>
-        let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
-        let obligation : Imperative.ProofObligation Core.Expression := {
-          label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [],
-          obligation := dummyExpr, metadata := .empty
-        }
-        return (state, smtCtx, [{ obligation, result := .implementationError s!"Output type translation error: {toString msg}" }])
-      | .ok (outTy, smtCtx) =>
-      -- Add function to smtCtx so expression translator can find it
-      let ufArgs := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) =>
-        TermVar.mk name.name smtTy
-      let uf : UF := { id := decl.name.name, args := ufArgs, out := outTy }
-      let smtCtx := smtCtx.addUF uf
-      match decl.body with
-      | none =>
-        let solver : SMT.SolverInterface := state.solver
-        solver.declareFun decl.name.name inputTypes outTy
-        let state := state.addItem (.funcDecl decl.name.name inputTypes outTy)
-        return (state, smtCtx, [])
-      | some body =>
-        match translateExpr E body smtCtx with
-        | .error msg =>
-          let obligation : Imperative.ProofObligation Core.Expression := {
-            label := s!"funcDecl {decl.name.name}", property := .assert, assumptions := [],
-            obligation := body, metadata := .empty
-          }
-          return (state, smtCtx, [{ obligation, result := .implementationError s!"Body translation error: {msg}" }])
-        | .ok (bodyTerm, smtCtx) =>
-          let args := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) => (name.name, smtTy)
-          let solver : SMT.SolverInterface := state.solver
-          solver.defineFun decl.name.name args outTy bodyTerm
-          let state := state.addItem (.funcDef decl.name.name args outTy bodyTerm)
-          return (state, smtCtx, [])
+    processFuncDecl state E decl smtCtx
 
   | _ =>
     let obligation : Imperative.ProofObligation Core.Expression := {
