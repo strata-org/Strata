@@ -159,7 +159,10 @@ def testVerification (prog : Program) : IO Unit := do
                   | [op] => op.ann.start | _ => { byteIdx := 0 }) fr.range
               | none => formatExpressionLocation prog b3Stmt
             let stmtFormatted := formatExpressionOnly prog b3Stmt
-            let stmtKind := if obl.property == .cover then "reach" else "check"
+            let stmtKind := if obl.property == .cover then "reach"
+              else match obl.metadata.find? (·.fld == .label "stmtKind") with
+                | some { value := .msg k, .. } => k
+                | _ => "check"
             IO.println s!"  {stmtLoc}: {stmtKind} {stmtFormatted}"
           | .error _ => pure ()
         | none => pure ()
@@ -330,7 +333,7 @@ procedure test_all_expressions() {
 -- Assertions are assumed so further checks pass
 /--
 info: test_assert_helps: ✗ unknown
-  (0,103): check f(5) > 1
+  (0,103): assert f(5) > 1
   └─ (0,110): could not prove f(5) > 1
      under the assumptions
        forall x0 : int f(x0) > 0
@@ -348,7 +351,7 @@ procedure test_assert_helps() {
 
 /--
 info: test_assert_with_trace: ✗ unknown
-  (0,138): check f(5) > 10
+  (0,138): assert f(5) > 10
   └─ (0,145): could not prove f(5) > 10
      under the assumptions
        forall x0 : int f(x0) > 0

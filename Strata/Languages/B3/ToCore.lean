@@ -190,12 +190,14 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
   | .check sr expr, procName =>
     let exprResult := convertExpr ctx expr
     let md : Imperative.MetaData Core.Expression :=
-      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } },
+        { fld := .label "stmtKind", value := .msg "check" }]
     { value := [Core.Statement.assert procName exprResult.value md], errors := exprResult.errors }
   | .assert sr expr, procName =>
     let exprResult := convertExpr ctx expr
     let md : Imperative.MetaData Core.Expression :=
-      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } },
+        { fld := .label "stmtKind", value := .msg "assert" }]
     { value := [Core.Statement.assert procName exprResult.value md,
                 Core.Statement.assume "assert-assume" exprResult.value .empty], errors := exprResult.errors }
   | .assume _ expr, _ =>
