@@ -49,7 +49,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
-  
+
   if bothChecks then
     -- Two-sided check: use check-sat-assuming for both Q and ¬Q
     if satisfiabilityCheck then
