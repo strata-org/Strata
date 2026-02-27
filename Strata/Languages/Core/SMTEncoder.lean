@@ -15,7 +15,7 @@ import Strata.DDM.Util.DecimalRat
 
 namespace Core
 open Std (ToFormat Format format)
-open Lambda Strata.SMT
+open Lambda Strata.SMT Strata.SMT.Encoder
 
 structure SMT.IF where
   uf : UF
@@ -269,7 +269,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       if bvs.any (fun (n, _) => n == candidate) ||
          ctx.ufs.any (fun uf => uf.id == candidate) ||
          fvarNames.contains candidate then
-        findUniqueName s!"{baseName}@{suffix}" (suffix + 1)
+        findUniqueName (disambiguateName baseName suffix) (suffix + 1)
       else
         candidate
     let x := findUniqueName baseName 1

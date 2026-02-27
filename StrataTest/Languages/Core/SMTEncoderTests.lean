@@ -170,7 +170,7 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
    (.eq () (.bvar () 1) (.bvar () 0))))
 
 -- Test name clash between two nested quantifiers with same name
--- Expected: Inner x should be disambiguated (e.g., x@1 or x_1)
+-- Expected: Inner x should be disambiguated to x@1
 /-- info: "(define-fun t0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
@@ -178,8 +178,18 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
    (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Old test - kept for reference (fvar "x" with bvar "x", no clash expected in old behavior)
--- Now with actual names: fvar uses "x", bvar should be disambiguated to "x@1"
+-- Test x, y, x@1 scenario: fvar "x", fvar "y", then bvar named "x@1"
+-- Expected: fvars stay x and y, bvar "x@1" becomes x@2 (clashes with x, gets next suffix)
+/-- info: "; x\n(declare-const x Int)\n; y\n(declare-const y Int)\n(define-fun t0 () Bool (forall ((x@1 Int)) (ite (= x@1 x) (= x@1 y) false)))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
+   (.ite ()
+    (.eq () (.bvar () 0) (.fvar () "x" (.some .int)))
+    (.eq () (.bvar () 0) (.fvar () "y" (.some .int)))
+    (.const () (.boolConst false))))
+
+
 /-- info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n" -/
 #guard_msgs in
 #eval toSMTTermString
@@ -213,39 +223,21 @@ spec {
 #end
 
 -- Test verification with axiomatized maps (default)
--- Note: Currently fails due to SMT-LIB reserved name collision with "select"
--- This is a pre-existing issue now exposed by using actual variable names
 /--
 info:
-
-Obligation UpdateAndRead_ensures_1: SMT Solver Invocation Error!
-
-Error: stderr:
-solver stdout: (error "Parse Error: /tmp/tmp.XXrbs6zC/UpdateAndRead_ensures_1_0.smt2:7.14: Symbol `select' is shadowing a theory function symbol")
-
-
----
-error: stderr:
-solver stdout: (error "Parse Error: /tmp/tmp.XXrbs6zC/UpdateAndRead_ensures_1_0.smt2:7.14: Symbol `select' is shadowing a theory function symbol")
+Obligation: UpdateAndRead_ensures_1
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval! verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
 
 -- Test verification with Array theory
--- Note: Currently fails due to SMT-LIB reserved name collision with "select"
--- This is a pre-existing issue now exposed by using actual variable names
 /--
 info:
-
-Obligation UpdateAndRead_ensures_1: SMT Solver Invocation Error!
-
-Error: stderr:
-solver stdout: (error "Parse Error: /tmp/tmp.XXrbs6zC/UpdateAndRead_ensures_1_0.smt2:7.14: Symbol `select' is shadowing a theory function symbol")
-
-
----
-error: stderr:
-solver stdout: (error "Parse Error: /tmp/tmp.XXrbs6zC/UpdateAndRead_ensures_1_0.smt2:7.14: Symbol `select' is shadowing a theory function symbol")
+Obligation: UpdateAndRead_ensures_1
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval! verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true})

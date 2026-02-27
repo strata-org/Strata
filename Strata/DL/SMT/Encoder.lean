@@ -65,6 +65,16 @@ abbrev EncoderM (α) := StateT EncoderState SolverM α
 
 namespace Encoder
 
+/-- SMT-LIB reserved keywords that should not be used as variable names -/
+def smtReservedKeywords : List String :=
+  ["select", "store", "assert", "check-sat", "declare-const", "declare-fun",
+   "define-fun", "exists", "forall", "let", "and", "or", "not", "ite",
+   "true", "false", "Int", "Bool", "Real", "Array", "BitVec"]
+
+/-- Generate a disambiguated name by appending @suffix -/
+def disambiguateName (baseName : String) (suffix : Nat) : String :=
+  s!"{baseName}@{suffix}"
+
 def termId (n : Nat)                    : String := s!"t{n}"
 def ufId (n : Nat)                      : String := s!"f{n}"
 def enumId (E : String) (n : Nat)       : String := s!"{E}_m{n}"
@@ -159,14 +169,14 @@ def defineRecord (tyEnc : String) (tEncs : List String) : EncoderM String := do
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
-  -- Check for name clashes with already-encoded UFs and disambiguate
+  -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
   let baseName := uf.id
   let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
   -- Find unique name by trying suffixes 1, 2, 3, ... up to a reasonable limit
   let rec findUniqueName (candidate : String) (suffix : Nat) (limit : Nat) : String :=
     if limit == 0 then candidate  -- Fallback after limit attempts
-    else if existingNames.contains candidate then
-      findUniqueName s!"{baseName}@{suffix}" (suffix + 1) (limit - 1)
+    else if existingNames.contains candidate || smtReservedKeywords.contains candidate then
+      findUniqueName (disambiguateName baseName suffix) (suffix + 1) (limit - 1)
     else
       candidate
   termination_by limit
