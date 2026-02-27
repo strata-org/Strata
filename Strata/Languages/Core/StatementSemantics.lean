@@ -18,7 +18,7 @@ inductive Value : Core.Expression.Expr → Prop where
   | const :  Value (.const () _)
   | bvar  :  Value (.bvar () _)
   | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () "" _ _)
+  | abs   :  Value (.abs () _ _ _)
 
 open Imperative
 
