@@ -24,6 +24,9 @@ instance : Coe String CoreIdent where
 
 def CoreIdent.toPretty (x : CoreIdent) : String := x.name
 
+/-- Create the `old g` identifier for a global variable named `name`. -/
+def CoreIdent.mkOld (name : String) : CoreIdent := ⟨"old " ++ name, ()⟩
+
 instance : ToFormat CoreIdent where
   format i := CoreIdent.toPretty i
 

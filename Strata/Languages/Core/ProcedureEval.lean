@@ -58,7 +58,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
   let globalNames : List String := E.program.decls.filterMap fun d =>
     match d with | .var name _ _ _ => some name.name | _ => none
   let old_g_subst := old_var_subst.filterMap fun (id, e) =>
-    if globalNames.contains id.name then some (⟨"old " ++ id.name, ()⟩, e) else none
+    if globalNames.contains id.name then some (CoreIdent.mkOld id.name, e) else none
   let postcond_asserts :=
     List.map (fun (label, check) =>
                 match check.attr with

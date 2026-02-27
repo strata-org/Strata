@@ -129,7 +129,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let oldVarBindings : List (CoreIdent × Lambda.LTy) :=
     p.decls.filterMap fun d =>
       match d with
-      | .var name ty _ _ => some (⟨"old " ++ name.name, ()⟩, ty)
+      | .var name ty _ _ => some (CoreIdent.mkOld name.name, ty)
       | _ => none
   let envWithOldVars := envWithOutputs.addInNewestContext oldVarBindings
 

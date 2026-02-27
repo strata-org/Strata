@@ -196,7 +196,7 @@ def Command.evalCall (E : Env)
     let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
     -- Build "old g" substitutions: map "old g" → pre-call value of g
     let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
-      let oldId : CoreIdent := ⟨"old " ++ id.name, ()⟩
+      let oldId : CoreIdent := CoreIdent.mkOld id.name
       some ((oldId, ty), e)
     -- Substitute: args/returns with fresh vars, globals with post-call fresh vars, "old g" with pre-call values
     let postcond_subst_map := postcond_subst_init ++ globals_post_subst ++ old_g_subst

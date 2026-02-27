@@ -31,7 +31,7 @@ def callElimCmd (cmd: Command)
         let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
         let oldVars := proc.spec.modifies.filter fun g =>
           isGlobalVar p g &&
-          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id.name == "old " ++ g.name))
+          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
         let argTrips
@@ -50,7 +50,7 @@ def callElimCmd (cmd: Command)
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOldTrips
         -- Map: ((fresh, ty), "old g") for substitution; init from original global g
-        let oldGVars := oldVars.map (fun g => ⟨"old " ++ g.name, ()⟩)
+        let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
         let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
           ((fresh, ty), oldG)
 
