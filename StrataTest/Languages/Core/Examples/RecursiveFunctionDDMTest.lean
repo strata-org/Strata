@@ -46,3 +46,37 @@ recursive function listLen (xs : IntList) : int
 #eval IO.println recFuncDDMPgm
 
 end Strata
+
+/-! ## Test: polymorphic recursive function — DDM parsing -/
+
+namespace Strata.RecFuncPolyTest
+
+def polyRecFuncPgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+recursive function len<a>(xs : MyList a) : int
+  decreases xs
+{
+  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+}
+
+#end
+
+/-- info: program Core;
+datatype MyList (a : Type) {(
+  (Nil())),
+  (Cons(hd : a, tl : (MyList a)))
+};
+recursive function len<a> (xs : (MyList a)) : int
+  decreases xs
+{
+  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+}
+-/
+#guard_msgs in
+#eval IO.println polyRecFuncPgm
+
+end Strata.RecFuncPolyTest

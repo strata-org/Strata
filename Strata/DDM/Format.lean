@@ -437,20 +437,20 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
                   a[alvl].snd
-          -- If @[scopeSelf] is present, insert the function name before the scope bindings
-          -- so that it gets a higher de Bruijn index (matching the elaborator order)
+          -- If @[scopeSelf] is present, insert the function name before the param bindings.
+          -- scopeSelf subsumes @[scope]: we get params from argsLevel directly.
           let s :=
                 match argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
                 | none => s
-                | some (⟨nameLvl, nameIsLt⟩, _, _) =>
+                | some (⟨nameLvl, nameIsLt⟩, ⟨argsLvl, argsIsLt⟩, _) =>
                   have _ : nameLvl < a.size := by simp at nameIsLt; omega
+                  have _ : argsLvl < a.size := by simp at argsIsLt; omega
                   match args[nameLvl] with
                   | .ident _ name =>
-                    -- Insert function name at the position just before scope bindings
+                    let paramBindings := a[argsLvl].snd.bindings
                     let scopeStart := initState.bindings.size
-                    let before := s.bindings.extract 0 scopeStart
-                    let after := s.bindings.extract scopeStart s.bindings.size
-                    { s with bindings := before ++ #[name] ++ after }
+                    let paramOnly := paramBindings.extract scopeStart paramBindings.size
+                    { s with bindings := s.bindings ++ #[name] ++ paramOnly }
                   | _ => s
           aux (a.push (args[lvl].mformatM c s))
         else

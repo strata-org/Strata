@@ -1439,11 +1439,15 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let orig_bbindings := bindings.boundVars
   -- For recursive functions, the DDM's @[scopeSelf] puts the function name
   -- before params in the typing context, so we mirror that order here.
+  -- The DDM elaborator also re-pushes type arg bindings between self and params,
+  -- so we must include placeholders for them to keep de Bruijn indices consistent.
   let bbindings ← match status with
     | .RecursiveDefinition =>
       let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
       let selfBinding := LExpr.op () fname fnTy
-      pure (bindings.boundVars ++ #[selfBinding] ++ in_bindings)
+      let tyArgPlaceholders := typeArgs.map fun ta =>
+        LExpr.op () (Core.CoreIdent.unres ta) .none
+      pure (bindings.boundVars ++ #[selfBinding] ++ tyArgPlaceholders ++ in_bindings)
     | _ => pure (bindings.boundVars ++ in_bindings)
   let bindings := { bindings with boundVars := bbindings }
   let (preconds, body, inline?, dec) ← match status with

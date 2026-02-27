@@ -1051,8 +1051,7 @@ partial def runSyntaxElaborator
     let tctx ←
       /- Recursive datatypes make this a bit complicated, since we need to make
       sure the type is resolved as an fvar even while processing it. -/
-      match ae.datatypeScope with
-      | some (nameLevel, typeParamsLevel) =>
+      if let some (nameLevel, typeParamsLevel) := ae.datatypeScope then
         let nameTree := trees[nameLevel]
         let typeParamsTree := trees[typeParamsLevel]
         match nameTree, typeParamsTree with
@@ -1084,15 +1083,11 @@ partial def runSyntaxElaborator
             ctx.push { ident := name, kind := .tvar loc name }
           pure tctx
         | _, _ => continue
-      | none =>
-        -- Check for @[scopeSelf(name, args, type)] — adds function name as expression binding
-        -- Push function name BEFORE params so params keep their expected bvar indices
-        let tctx ← match ae.scopeSelf with
-        | some (nameLevel, argsLevel, typeLevel) =>
-          let nameTree := trees[nameLevel]
-          let argsTree := trees[argsLevel]
-          let typeTree := trees[typeLevel]
-          match nameTree, argsTree, typeTree with
+      else if let some (nameLevel, argsLevel, typeLevel) := ae.scopeSelf then
+        -- @[scopeSelf(name, args, type)] — adds function name as expression binding
+        -- Push function name BEFORE params so params keep their expected bvar indices.
+        -- This subsumes @[scope] — we push both self and params here.
+        match trees[nameLevel], trees[argsLevel], trees[typeLevel] with
           | some nameT, some argsT, some typeT =>
             let fnName :=
               match nameT.info with
@@ -1109,22 +1104,17 @@ partial def runSyntaxElaborator
               | .ofTypeInfo info => info.typeExpr
               | _ => panic! "scopeSelf: expected type for return type"
             let fnType := TypeExprF.mkFunType typeT.info.loc params retType
-            pure (tctx0.push { ident := fnName, kind := .expr fnType })
-          | _, _, _ => pure tctx0
+            -- Push self-binding, then all param bindings on top
+            let tctx := tctx0.push { ident := fnName, kind := .expr fnType }
+            pure (paramBindings.foldl (init := tctx) fun ctx b => ctx.push b)
+          | _, _, _ => continue
+      else
+        match ae.contextLevel with
+        | some idx =>
+          match trees[idx] with
+          | some t => pure t.resultContext
+          | none => continue
         | none => pure tctx0
-        -- Then apply @[scope] on top (params)
-        let tctx ←
-          match ae.contextLevel with
-          | some idx =>
-            match trees[idx] with
-            | some t =>
-              -- Re-push param bindings on top of the function name binding
-              let inheritedCount := tctx0.bindings.size
-              let rc := t.resultContext
-              let newBindings := rc.bindings.toArray.extract inheritedCount rc.bindings.size
-              pure (newBindings.foldl (init := tctx) fun ctx b => ctx.push b)
-            | none => continue
-          | none => pure tctx
     let astx := args[ae.syntaxLevel]
     match getKind ⟨argLevel, argLevelP⟩ with
     | .preType expectedType =>
