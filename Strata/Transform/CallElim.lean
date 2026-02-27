@@ -21,7 +21,7 @@ The returned result is a sequence of statements
 def callElimCmd (cmd: Command)
   : CoreTransformM (Option (List Statement)) := do
     match cmd with
-      | .call lhs procName args _ =>
+      | .call lhs procName args md =>
 
         let some p := (← get).currentProgram | throw "program not available"
 
@@ -54,9 +54,9 @@ def callElimCmd (cmd: Command)
             ← genOldTrips
 
         -- initialize/declare the newly generated variables
-        let argInit := createInits argTrips
-        let outInit := createInitVars outTrips
-        let oldInit := createInitVars oldTrips
+        let argInit := createInits argTrips md
+        let outInit := createInitVars outTrips md
+        let oldInit := createInitVars oldTrips md
 
         -- construct substitutions of old variables
         let oldSubst := createOldVarsSubst oldTrips
@@ -65,8 +65,8 @@ def callElimCmd (cmd: Command)
         let postconditions := OldExpressions.substsOldExprs oldSubst postconditions
 
         -- generate havoc for return variables, modified variables
-        let havoc_ret := createHavocs lhs
-        let havoc_mod := createHavocs proc.spec.modifies
+        let havoc_ret := createHavocs lhs md
+        let havoc_mod := createHavocs proc.spec.modifies md
         let havocs := havoc_ret ++ havoc_mod
 
         -- construct substitutions for argument and return
@@ -79,10 +79,12 @@ def callElimCmd (cmd: Command)
         -- generate asserts based on pre-conditions, substituting procedure arguments
         let asserts ← createAsserts (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
                         (arg_subst ++ ret_subst)
+                        md
         -- generate assumes based on post-conditions, substituting procedure arguments and returns
         let assumes ← createAssumes
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
+                        md
 
         -- Update cached CallGraph
         let σ ← get
