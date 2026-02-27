@@ -63,10 +63,12 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
       | .unknown => SMT.Result.unknown
     let diagnosis ← if outcome != .pass then
       let diagResult ← diagnoseFailure state E expr isCover smtCtx
-      let pathCond := state.pathCondition
+      let statePathCond := state.pathCondition
       let failures := diagResult.diagnosedFailures.map fun f =>
-        { f with report := { f.report with context := { pathCondition := pathCond } } }
-      pure (some { isRefuted := failures.any (·.isRefuted), diagnosedFailures := failures })
+        { f with report := { f.report with context :=
+            { pathCondition := f.report.context.pathCondition ++ statePathCond } } }
+      pure (some { isRefuted := failures.any (·.isRefuted), diagnosedFailures := failures,
+                   statePathCondition := statePathCond })
     else
       pure none
     return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)

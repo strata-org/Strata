@@ -158,6 +158,7 @@ instance : ToFormat Outcome where
 structure DiagnosisInfo where
   isRefuted : Bool := false
   diagnosedFailures : List Strata.Core.CoreSMT.DiagnosedFailure := []
+  statePathCondition : List Core.Expression.Expr := []
   deriving Repr, Inhabited
 
 /--

@@ -175,15 +175,13 @@ def testVerification (prog : Program) : IO Unit := do
               let fullStr := formatExpressionOnly prog b3Full
               let fullPrefix := if obl.property == .cover then MSG_IMPOSSIBLE else MSG_COULD_NOT_PROVE
               IO.println s!"  └─ {fullLoc}: {fullPrefix} {fullStr}"
-              -- Show path conditions for the full obligation
-              if !diag.diagnosedFailures.isEmpty then
-                let pathCond := diag.diagnosedFailures.head!.report.context.pathCondition
-                if !pathCond.isEmpty then
-                  IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                  for assumption in pathCond.reverse do
-                    match B3.FromCore.exprFromCore assumption with
-                    | .ok b3Assumption => IO.println s!"       {formatExpressionOnly prog b3Assumption}"
-                    | .error _ => IO.println s!"       <assumption>"
+              -- Show state path conditions (from assume statements) for the full obligation
+              if !diag.statePathCondition.isEmpty then
+                IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
+                for assumption in diag.statePathCondition.reverse do
+                  match B3.FromCore.exprFromCore assumption with
+                  | .ok b3Assumption => IO.println s!"       {formatExpressionOnly prog b3Assumption}"
+                  | .error _ => IO.println s!"       <assumption>"
               pure (some fullStr)
             | .error _ => pure none
           | none => pure none
@@ -200,6 +198,13 @@ def testVerification (prog : Program) : IO Unit := do
                 if fullFormatted != some exprFormatted then
                   let exprLoc := formatExpressionLocation prog b3Expr
                   IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
+                  -- Show path conditions for this sub-expression
+                  if !failure.report.context.pathCondition.isEmpty then
+                    IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
+                    for assumption in failure.report.context.pathCondition.reverse do
+                      match B3.FromCore.exprFromCore assumption with
+                      | .ok b3Assumption => IO.println s!"       {formatExpressionOnly prog b3Assumption}"
+                      | .error _ => IO.println s!"       <assumption>"
               | .error _ =>
                 IO.println s!"  └─ {diagnosisPrefix} <expression>"
         | none => pure ()
@@ -213,6 +218,8 @@ info: test: ✗ counterexample found
   (0,61): check 8 == 8 && f(5) == 7
   └─ (0,67): could not prove 8 == 8 && f(5) == 7
   └─ (0,77): it is impossible that f(5) == 7
+     under the assumptions
+       8 == 8
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -265,6 +272,8 @@ info: test_fail: ✗ counterexample found
   (0,52): check 5 == 5 && f(5) == 10
   └─ (0,58): could not prove 5 == 5 && f(5) == 10
   └─ (0,68): could not prove f(5) == 10
+     under the assumptions
+       5 == 5
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -280,7 +289,11 @@ info: test_all_expressions: ✗ counterexample found
   (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,133): could not prove (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,213): could not prove notalwaystrue(1, 2)
+     under the assumptions
+       (false || true) && (if true true else false) && f(5)
   └─ (0,353): it is impossible that 1 + 2 == 4
+     under the assumptions
+       (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -375,6 +388,8 @@ procedure test_reach_bad() {
 info: test_reach_good: ✗ unknown
   (0,101): reach f(5) > 5
   └─ (0,107): it is impossible that f(5) > 5
+     under the assumptions
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -414,6 +429,9 @@ info: test_reach_diagnosis: ✗ counterexample found
      under the assumptions
        forall x0 : int f(x0) > 0
   └─ (0,124): it is impossible that f(5) < 0
+     under the assumptions
+       forall x0 : int f(x0) > 0
+       f(5) > 5
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -431,6 +449,8 @@ info: test_all_expressions: ✗ counterexample found
   (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,133): it is impossible that (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,353): it is impossible that 1 + 2 == 4
+     under the assumptions
+       (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -467,6 +487,8 @@ info: test_all_expressions: ✗ counterexample found
   (0,85): reach notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
   └─ (0,91): it is impossible that notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
   └─ (0,122): it is impossible that !notalwaystrue(1, 2)
+     under the assumptions
+       notalwaystrue(1, 2)
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
