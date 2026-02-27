@@ -20,6 +20,7 @@ program Core;
 procedure testFuncDecl(c: int) returns () {
   function double(x : int) : int { x + x + c}
   var y : int := 5;
+  assume true;
   var result : int := double(y);
   assert result == 12;
 };
@@ -33,6 +34,7 @@ procedure testFuncDecl (c : int) returns ()
 {
   function double (x : int) : int { x + x + c }
   var y : int := 5;
+  assume true;
   var result : int := double(y);
   assert result == 12;
 };
