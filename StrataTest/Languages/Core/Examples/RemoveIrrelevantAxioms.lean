@@ -1,37 +1,37 @@
 /-
   Copyright Strata Contributors
-
+ 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+ 
 import Strata.Languages.Core.Verifier
-
+ 
 ---------------------------------------------------------------------
 namespace Strata
-
+ 
 def irrelevantAxiomsTestPgm : Strata.Program :=
 #strata
 program Core;
 type StrataHeap;
 type StrataRef;
 type StrataField (t: Type);
-
+ 
 // Constants
 const a : bool;
 const b : bool;
 const c : bool;
 const d : bool;
-
+ 
 // Functions
 function f(x0 : int) : (bool);
-
+ 
 // Axioms
 axiom [ax_l11c1]: (forall x: int :: ((x >= 0) ==> f(x)));
-
+ 
 // Uninterpreted procedures
 // Implementations
 procedure P() returns ()
-
+ 
 {
   anon0: {
     assert ((a ==> ((b ==> c) ==> d)) <==> (a ==> ((b ==> c) ==> d)));
@@ -41,9 +41,9 @@ procedure P() returns ()
   }
   _exit : {}
 };
-
+ 
 procedure Q0(x : int) returns ()
-
+ 
 {
   anon0: {
     assert (x == 2);
@@ -51,9 +51,9 @@ procedure Q0(x : int) returns ()
   }
   _exit : {}
 };
-
+ 
 procedure Q1(x : int) returns ()
-
+ 
 {
   anon0: {
     assert (x == 2);
@@ -61,9 +61,9 @@ procedure Q1(x : int) returns ()
   }
   _exit : {}
 };
-
+ 
 procedure Q2(x : int) returns ()
-
+ 
 {
   anon0: {
     assert (x == 2);
@@ -71,9 +71,9 @@ procedure Q2(x : int) returns ()
   }
   _exit : {}
 };
-
+ 
 procedure Q3(x : int) returns ()
-
+ 
 {
   anon0: {
     assert (x == 2);
@@ -82,9 +82,9 @@ procedure Q3(x : int) returns ()
   _exit : {}
 };
 #end
-
+ 
 ---------------------------------------------------------------------
-
+ 
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
@@ -103,67 +103,67 @@ def normalizeModelValues (s : String) : String :=
     else
       line
   String.intercalate "\n" normalized
-
+ 
 /--
 info:
 Obligation: assert_0
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: assert_1
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_2
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: assert_3
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_4
 Property: assert
 Result: ➖ can be false if reachable
 Model:
 ($__x0, model_not_2)
-
+ 
 Obligation: assert_5
 Property: assert
 Result: ➖ can be false if reachable
 Model:
 ($__x0, model_not_2)
-
+ 
 Obligation: assert_6
 Property: assert
 Result: ➖ can be false if reachable
 Model:
 ($__x1, model_not_2)
-
+ 
 Obligation: assert_7
 Property: assert
 Result: ➖ can be false if reachable
 Model:
 ($__x1, model_not_2)
-
+ 
 Obligation: assert_8
 Property: assert
 Result: ➖ can be false if reachable
 Model:
 ($__x2, model_not_2)
-
+ 
 Obligation: assert_9
 Property: assert
 Result: ➖ can be false if reachable
 Model:
 ($__x2, model_not_2)
-
+ 
 Obligation: assert_10
 Property: assert
 Result: ➖ can be false if reachable
 Model:
 ($__x3, model_not_2)
-
+ 
 Obligation: assert_11
 Property: assert
 Result: ➖ can be false if reachable
@@ -175,55 +175,55 @@ Model:
   let results ← verify irrelevantAxiomsTestPgm
         (options := {Options.models with removeIrrelevantAxioms := true})
   IO.println (normalizeModelValues (toString results))
-
+ 
 ---------------------------------------------------------------------
-
+ 
 /--
 info:
 Obligation: assert_0
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: assert_1
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_2
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: assert_3
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_4
 Property: assert
 Result: ➖ can be false if reachable
-
+ 
 Obligation: assert_5
 Property: assert
 Result: ➖ can be false if reachable
-
+ 
 Obligation: assert_6
 Property: assert
 Result: ➖ can be false if reachable
-
+ 
 Obligation: assert_7
 Property: assert
 Result: ➖ can be false if reachable
-
+ 
 Obligation: assert_8
 Property: assert
 Result: ➖ can be false if reachable
-
+ 
 Obligation: assert_9
 Property: assert
 Result: ➖ can be false if reachable
-
+ 
 Obligation: assert_10
 Property: assert
 Result: ➖ can be false if reachable
-
+ 
 Obligation: assert_11
 Property: assert
 Result: ➖ can be false if reachable
@@ -231,56 +231,56 @@ Result: ➖ can be false if reachable
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
         (options := {Options.models with removeIrrelevantAxioms := false})
-
+ 
 /--
 info:
 Obligation: assert_0
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: assert_1
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_2
 Property: assert
 Result: ✔️ pass if reachable
-
+ 
 Obligation: assert_3
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_4
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_5
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_6
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_7
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_8
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_9
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_10
 Property: assert
 Result: ❓ unknown
-
+ 
 Obligation: assert_11
 Property: assert
 Result: ❓ unknown
 -/
-
+ 
 ---------------------------------------------------------------------
