@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core.Options
 import Strata.Languages.Core.Verifier
 
 ---------------------------------------------------------------------
@@ -57,7 +58,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm1 (options := Options.quiet)
+#eval verify coverPgm1 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -93,7 +94,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm2 (options := Options.quiet)
+#eval verify coverPgm2 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -129,7 +130,7 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
 
 ---------------------------------------------------------------------
 
@@ -182,7 +183,7 @@ Property: cover
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
 
 ---------------------------------------------------------------------
 
@@ -228,7 +229,7 @@ Property: cover
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify reachCheckPerStmtPgm (options := Options.quiet)
+#eval verify reachCheckPerStmtPgm (options := Core.VerifyOptions.quiet)
 
 ---------------------------------------------------------------------
 
@@ -255,7 +256,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {Options.quiet with reachCheck := true})
+  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -304,6 +305,6 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
 
 ---------------------------------------------------------------------

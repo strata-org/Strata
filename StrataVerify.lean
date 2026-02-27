@@ -13,12 +13,14 @@ import Strata.DL.SMT.Solver
 import Strata.Util.IO
 import Std.Internal.Parsec
 
+open Core (VerifyOptions defaultSolver)
+
 open Strata
 
-def parseOptions (args : List String) : Except Std.Format (Options × String × Option (List String)) :=
-  go Options.quiet args none
+def parseOptions (args : List String) : Except Std.Format (VerifyOptions × String × Option (List String)) :=
+  go .quiet args none
     where
-      go : Options → List String → Option (List String) → Except Std.Format (Options × String × Option (List String))
+      go : VerifyOptions → List String → Option (List String) → Except Std.Format (VerifyOptions × String × Option (List String))
       | opts, "--verbose" :: rest, procs => go {opts with verbose := .normal} rest procs
       | opts, "--check" :: rest, procs => go {opts with checkOnly := true} rest procs
       | opts, "--type-check" :: rest, procs => go {opts with typeCheckOnly := true} rest procs

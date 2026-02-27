@@ -6,8 +6,11 @@
 
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.DDMTransform.Translate
+import Strata.Languages.Core.Options
 import Strata.Languages.Core.Verifier
 import Strata.DL.Imperative.Stmt
+
+open Core
 
 namespace Strata
 
@@ -139,13 +142,13 @@ def to_core(program : C_Simp.Program) : Core.Program :=
 def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (p.commands))).fst
 
-def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
+def C_Simp.typeCheck (p : Strata.Program) (options : VerifyOptions := .default):
   Except DiagnosticModel Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
 def C_Simp.verify (p : Strata.Program)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (tempDir : Option String := .none):
   IO Core.VCResults := do
   let program := C_Simp.get_program p

@@ -8,6 +8,7 @@ import Strata.DL.SMT.Solver
 import Strata.DL.SMT.Term
 import Strata.DL.SMT.TermType
 import Strata.DL.SMT.DDMTransform.Translate
+import Strata.Languages.Core.Options
 
 /-!
 # SMT Solver Interface
@@ -120,7 +121,7 @@ private def initializeSolver (solver : Solver) : IO Unit := do
 
 /-- Create an SMTSolverInterface backed by cvc5 (default solver). -/
 def mkCvc5Solver : IO SolverInterface := do
-  let solver ← Solver.spawn defaultSolver #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
+  let solver ← Solver.spawn Core.defaultSolver #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
   initializeSolver solver
   mkSolverInterfaceFromSolver solver
 
