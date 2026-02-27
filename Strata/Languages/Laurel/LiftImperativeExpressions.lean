@@ -320,11 +320,13 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       return [bare (.Block seqStmts.flatten metadata)]
 
   | .LocalVariable name ty initializer =>
-      match initializer with
-      | some initExpr =>
+      match _ : initializer with
+      | some initExprMd =>
           -- If the initializer is a direct imperative StaticCall, don't lift it —
           -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
-          match initExpr.val with
+          match _: initExprMd with
+          | WithMetadata.mk initExpr md =>
+          match _: initExpr with
           | .StaticCall callee args =>
               let model := (← get).model
               match model.get callee with
@@ -334,25 +336,27 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
                     let seqArgs ← args.mapM transformExpr
                     let argPrepends ← takePrepends
                     modify fun s => { s with subst := [] }
-                    return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExpr.md⟩), md⟩]
+                    return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExprMd.md⟩), md⟩]
                   else
-                    let seqInit ← transformExpr initExpr
+                    let seqInit ← transformExpr initExprMd
                     let prepends ← takePrepends
                     modify fun s => { s with subst := [] }
                     return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
               | _ => panic "bbbb"
           | _ =>
-              let seqInit ← transformExpr initExpr
+              let seqInit ← transformExpr initExprMd
               let prepends ← takePrepends
               modify fun s => { s with subst := [] }
               return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
       | none =>
           return [stmt]
 
-  | .Assign targets value =>
+  | .Assign targets valueMd =>
       -- If the RHS is a direct imperative StaticCall, don't lift it —
       -- translateStmt handles Assign + StaticCall directly as a call statement.
-      match value.val with
+      match _: valueMd with
+      | WithMetadata.mk value md =>
+      match _: value with
       | .StaticCall callee args =>
           let model := (← get).model
           match model.get callee with
@@ -361,15 +365,15 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
               let seqArgs ← args.mapM transformExpr
               let argPrepends ← takePrepends
               modify fun s => { s with subst := [] }
-              return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, value.md⟩, md⟩]
+              return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, md⟩, md⟩]
             else
-              let seqValue ← transformExpr value
+              let seqValue ← transformExpr valueMd
               let prepends ← takePrepends
               modify fun s => { s with subst := [] }
               return prepends ++ [⟨.Assign targets seqValue, md⟩]
           | _ => panic "ccccc"
       | _ =>
-          let seqValue ← transformExpr value
+          let seqValue ← transformExpr valueMd
           let prepends ← takePrepends
           modify fun s => { s with subst := [] }
           return prepends ++ [⟨.Assign targets seqValue, md⟩]
@@ -405,7 +409,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   termination_by (sizeOf stmt, 0)
   decreasing_by
     all_goals (try term_by_mem)
-    all_goals sorry
+    all_goals (apply Prod.Lex.left; try term_by_mem)
 end
 
 def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
