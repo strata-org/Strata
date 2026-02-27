@@ -66,7 +66,7 @@ def genCoreVCs (program : Program) : Option Core.coreVCs := do
     let (program, #[]) := TransM.run default (translateProgram program) | none
     Core.genVCs program { (default : Options) with verbose := .quiet : Options }
   else if program.dialect == "C_Simp" then
-    let (program, #[]) := C_Simp.TransM.run (C_Simp.translateProgram (program.commands)) | none
+    let (program, #[]) := C_Simp.TransM.run default (C_Simp.translateProgram program.commands) | none
     C_Simp.genVCs program { (default : Options) with verbose := .quiet : Options }
   else if program.dialect == "Boole" then
     match Boole.getProgram program with
@@ -81,11 +81,8 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     let maybeTerms := Core.ProofObligation.toSMTTerms E ob
     match maybeTerms with
     | .error _ => none
-    | .ok (terms, ctx) =>
-        let t :: ts := terms | none
-        let (ts, t) := ((t :: ts).dropLast, (t :: ts).getLast?.get rfl)
-        let t := SMT.Factory.not t
-        (ob.label, ctx, ts, t)
+    | .ok (ts, t, ctx) =>
+      (ob.label, ctx, ts, SMT.Factory.not t)
 
 def denoteProofObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression) :
   Option Prop := do
