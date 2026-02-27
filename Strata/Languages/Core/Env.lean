@@ -201,6 +201,10 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
+/-- Add a function to the environment. For recursive functions, resolves the
+    `decreases` parameter name to an `inlineIfConstr` attribute index, and
+    rejects cases not yet supported for SMT verification (polymorphic recursive
+    functions, missing decreases clauses, non-parameter decreases expressions). -/
 def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
   if func.isRecursive && !func.typeArgs.isEmpty then
     .error (.fromFormat f!"Polymorphic recursive functions are not yet supported: '{func.name}'")
