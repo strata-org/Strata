@@ -77,11 +77,12 @@ inductive AstNode where
 def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
- | _ => panic s!"getType called on {repr node}"
+ | _ => panic s!"PANIC: getType called on {repr node}"
 
 /-! ## Resolution result -/
 
 structure SemanticModel where
+  nextId: Nat
   compositeCount: Nat
   refToDef: Std.HashMap Nat AstNode
   deriving Repr
@@ -397,7 +398,7 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
   return { name := name', type := ty', initializer := init' }
 
 /-- Run the full resolution pass on a Laurel program. -/
-def resolve (program : Program) : ResolutionResult :=
+def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   let action : ResolveM Program := do
     -- First pass: register all top-level type definitions so they can be referenced
     -- by procedures and other types
@@ -407,10 +408,12 @@ def resolve (program : Program) : ResolutionResult :=
     let staticProcs' ← program.staticProcedures.mapM resolveProcedure
     return { staticProcedures := staticProcs', staticFields := staticFields',
              types := types', constants := constants' }
-  let (program', finalState) := action.run {}
+  let nextId := existingModel.elim 1 (fun m => m.nextId)
+  let (program', finalState) := action.run { nextId := nextId }
   { program := program',
     model := {
       compositeCount := program.types.length,
-      refToDef := finalState.refToDef
+      refToDef := finalState.refToDef,
+      nextId := finalState.nextId
     }
   }

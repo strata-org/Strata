@@ -57,12 +57,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
         have := List.mem_of_getLast? _blockGetLastResult
         computeExprType model last
     | none => ⟨ .TVoid, md ⟩
-  -- Statements (void-typed)
+  -- Statements
   | .LocalVariable _ _ _ => ⟨ .TVoid, md ⟩
   | .While _ _ _ _ => ⟨ .TVoid, md ⟩
   | .Exit _ => ⟨ .TVoid, md ⟩
   | .Return _ => ⟨ .TVoid, md ⟩
-  | .Assign _ _ => ⟨ .TVoid, md ⟩
+  | .Assign _ value => computeExprType model value
   | .Assert _ => ⟨ .TVoid, md ⟩
   | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related

@@ -242,8 +242,11 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           | none => pure none
         -- Restore outer state
         modify fun s => { s with subst := savedSubst, prependedStmts := savedPrepends }
-        -- Infer type from the then-branch result
-        let condType ← computeType seqThen
+        -- Infer type from the ORIGINAL then-branch (not the transformed one),
+        -- because the transformed expression may reference freshly generated
+        -- variables (e.g. $c_2) that don't exist in the SemanticModel yet.
+        let condType ← computeType thenBranch
+        dbg_trace s!"condType: {repr condType}, thenBranch: {repr thenBranch}"
         -- IfThenElse added first (cons puts it deeper), then declaration (cons puts it on top)
         -- Output order: declaration, then if-then-else
         addPrepend (⟨.IfThenElse seqCond thenBlock seqElse, md⟩)

@@ -476,16 +476,19 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let diamondErrors := validateDiamondFieldAccesses model program
 
   let program := heapParameterization model program
-  let ⟨ program, model ⟩ := resolve program
+  let ⟨ program, model ⟩ := resolve program (some model)
   let program := typeHierarchyTransform model program
-  let ⟨ program, model ⟩ := resolve program
+  let ⟨ program, model ⟩ := resolve program (some model)
   let (program, modifiesDiags) := modifiesClausesTransform model program
-  let ⟨ program, model ⟩ := resolve program
+  let ⟨ program, model ⟩ := resolve program (some model)
   dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
   let program := liftExpressionAssignments model program
-  let ⟨ program, model ⟩ := resolve program
+  let ⟨ program, model ⟩ := resolve program (some model)
+  dbg_trace "===  Program after liftExpressionAssignments ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace "================================="
 
   -- Separate procedures that can be functions from those that must be procedures
   let (funcProcs, procProcs) := program.staticProcedures.partition canBeBoogieFunction
