@@ -116,15 +116,15 @@ Label: sum_ensures_1
 Property: assert
 Assumptions:
 sum_requires_0: $__n2 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then (0 < $__n2) else true
-assume_guard_0: if 0 < $__n2 then ($__i5 < $__n2) else true
-assume_invariant_0_0: if 0 < $__n2 then (0 <= $__i5) else true
-assume_invariant_0_1: if 0 < $__n2 then ($__i5 <= $__n2) else true
-assume_invariant_0_2: if 0 < $__n2 then ($__s6 == $__i5 * ($__i5 + 1) / 2) else true
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then 0 < $__n2 else true
+assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
+assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
+assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
+assume_invariant_0_2: if 0 < $__n2 then $__s6 == $__i5 * ($__i5 + 1) / 2 else true
 not_guard_0: if 0 < $__n2 then !($__i7 < $__n2) else true
-invariant_0_0: if 0 < $__n2 then (0 <= $__i7) else true
-invariant_0_1: if 0 < $__n2 then ($__i7 <= $__n2) else true
-invariant_0_2: if 0 < $__n2 then ($__s8 == $__i7 * ($__i7 + 1) / 2) else true
+invariant_0_0: if 0 < $__n2 then 0 <= $__i7 else true
+invariant_0_1: if 0 < $__n2 then $__i7 <= $__n2 else true
+invariant_0_2: if 0 < $__n2 then $__s8 == $__i7 * ($__i7 + 1) / 2 else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
 Obligation:
 if 0 < $__n2 then $__s8 else 0 == $__n2 * ($__n2 + 1) / 2
