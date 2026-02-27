@@ -18,7 +18,7 @@ open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.S
 info: Error:
 none
 Subst Map:
-(x, ($__x0 : int)) (y, ($__y1 : int))
+
 Expression Env:
 State:
 

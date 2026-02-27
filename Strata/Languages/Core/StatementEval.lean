@@ -58,8 +58,7 @@ private def callConditions (proc : Procedure)
 /--
 Create substitution mapping from formal parameters to actual arguments.
 -/
-private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env)
-    (_old_var_subst : SubstMap) : VarSubst :=
+private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env) : VarSubst :=
   let args' := args.map (fun a => E.exprEval a)
   let formal_tys := proc.header.inputs.keys.map
                       (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Unit)))
@@ -167,7 +166,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
       proc.header.outputs.values args lhs E
 
     -- (Pre-call) Create formal-to-actual argument mapping.
-    let formal_arg_subst := mkFormalArgSubst proc args E old_var_subst
+    let formal_arg_subst := mkFormalArgSubst proc args E
     -- (Pre-call) Get current global values for old expression handling.
     let current_globals := getCurrentGlobals E
     -- (Post-call) Create return variable mappings and fresh LHS variables.

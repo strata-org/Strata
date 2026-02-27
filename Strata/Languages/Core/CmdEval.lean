@@ -46,9 +46,9 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
   | none => none
 
 def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
-  -- Apply "old g" substitutions from substMap (only entries for "old ..." variables)
-  let oldSubst := E.substMap.filter (fun (id, _) => id.name.startsWith "old ")
-  let e := if oldSubst.isEmpty then e else Lambda.LExpr.substFvars e oldSubst
+  -- Substitute "old g" variables with their pre-state values.
+  -- substMap contains only "old g" → pre-state value entries (set by ProcedureEval).
+  let e := if E.substMap.isEmpty then e else Lambda.LExpr.substFvars e E.substMap
   match c with
   | .init _ _ eOpt _ =>
     -- The type checker only allows free variables to appear in `init`
