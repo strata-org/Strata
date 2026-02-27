@@ -27,12 +27,10 @@ structure SourceRange where
   stop : String.Pos.Raw
 deriving DecidableEq, Inhabited
 
-/-- Compact repr: `SourceRange.none` (start=stop=0) displays as `()` to match the
-    previous `Unit` metadata repr in tests that print Core expressions. -/
+/-- Compact repr: always displays as `()` to keep debug output readable.
+    Source location info is available via `SourceRange.format`. -/
 instance : Repr SourceRange where
-  reprPrec sr _ :=
-    if sr.start == 0 && sr.stop == 0 then "()"
-    else s!"\{start := {sr.start}, stop := {sr.stop}}"
+  reprPrec _ _ := "()"
 
 namespace SourceRange
 
@@ -42,7 +40,7 @@ def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
 
 /-- info: "()" -/
 #guard_msgs in #eval toString (reprPrec (none : SourceRange) 0)
-/-- info: "{start := 5, stop := 10}" -/
+/-- info: "()" -/
 #guard_msgs in #eval toString (reprPrec ({ start := ⟨5⟩, stop := ⟨10⟩ } : SourceRange) 0)
 
 instance : Std.ToFormat SourceRange where
