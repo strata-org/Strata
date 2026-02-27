@@ -286,6 +286,29 @@ public class StrataGenerator : ReadOnlyVisitor {
         _writer.WriteLine(text);
     }
 
+    // Emit `old expr` by distributing `old` inward through map accesses.
+    // old(A[i]) -> (old A)[i], old(v) -> old v
+    private void EmitOldExpr(Expr expr) {
+        switch (expr) {
+            case IdentifierExpr identExpr:
+                WriteText("old ");
+                WriteText(identExpr.Name);
+                break;
+            case NAryExpr { Fun: MapSelect } mapSelect:
+                WriteText("(");
+                EmitOldExpr(mapSelect.Args[0]);
+                WriteText(")[");
+                EmitSeparated(mapSelect.Args.Skip(1), (Expr e) => VisitExpr(e), "][");
+                WriteText("]");
+                break;
+            default:
+                // Fallback: wrap in old() — may not parse but better than silently wrong
+                WriteText("old ");
+                VisitExpr(expr);
+                break;
+        }
+    }
+
     private void EmitSeparated<T>(IEnumerable<T> elems, Action<T> action, string separator) {
         var started = false;
         foreach (var elem in elems) {
@@ -624,9 +647,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                 break;
             }
             case OldExpr oldExpr:
-                WriteText("old(");
-                VisitExpr(oldExpr.Expr);
-                WriteText(")");
+                EmitOldExpr(oldExpr.Expr);
                 break;
             case QuantifierExpr quantifierExpr: {
                 var quantifier = quantifierExpr.Kind switch {
