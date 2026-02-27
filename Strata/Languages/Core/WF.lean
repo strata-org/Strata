@@ -67,7 +67,7 @@ structure WFifProp    (Cmd : Type) (p : Program) (cond : Expression.Expr)  (then
 
 structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (b : Block) : Prop where
 
-structure WFgotoProp  (p : Program) (label : String) : Prop where
+structure WFexitProp  (p : Program) (label : Option String) : Prop where
 
 /-- Well-formedness for local function declarations.
     Checks that function parameter names are unique.
@@ -91,7 +91,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
      WFifProp (CmdExt Expression) p cond thenb elseb
   | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
-  | .goto (label : String) _ => WFgotoProp p label
+  | .exit (label : Option String) _ => WFexitProp p label
   | .funcDecl decl _ => WFfuncDeclProp p decl
 
 abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)

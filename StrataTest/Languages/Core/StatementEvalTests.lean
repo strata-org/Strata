@@ -47,9 +47,9 @@ Proof Obligation:
 #true
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ [.init "x" t[int] (some eb[#0]),
-                    .set "x" eb[#18],
-                    .assert "x_eq_18" eb[x == #18]]) |>.snd |> format
+#eval (evalOne ∅ ∅ [.init "x" t[int] (some eb[#0]) .empty,
+                    .set "x" eb[#18] .empty,
+                    .assert "x_eq_18" eb[x == #18] .empty]) |>.snd |> format
 
 /--
 info: Error:
@@ -87,9 +87,9 @@ Proof Obligation:
 #eval (evalOne
   ((Env.init (empty_factory := true)).pushScope [("y", (mty[int], eb[_yinit]))])
   ∅
-  [.init "x" t[int] (some eb[#0]),
-  .set "x" eb[y],
-  .assert "x_eq_12" eb[x == #12]]) |>.snd |> format
+  [.init "x" t[int] (some eb[#0]) .empty,
+  .set "x" eb[y] .empty,
+  .assert "x_eq_12" eb[x == #12] .empty]) |>.snd |> format
 
 /--
 info: Error:
@@ -122,7 +122,7 @@ Deferred Proof Obligations:
 -- though because `x` can't appear in its own initialization expression.
 #eval evalOne ∅ ∅
        [
-       .init "x" t[bool] (some eb[x == #true])
+       .init "x" t[bool] (some eb[x == #true]) .empty
        ] |>.snd |> format
 
 /--
@@ -178,14 +178,14 @@ Proof Obligation:
   ((Env.init (empty_factory := true)).pushScope
     [("minit", (mty[int → int], eb[(_minit : int → int)]))])
   ∅
-  [.init "m" t[int → int] (some eb[minit]),
-  .init "m0" t[int] (some eb[(m #0)]),
-  .set "m" eb[λ (if (%0 == #1) then #10 else ((m : int → int) %0))],
-  .set "m" eb[λ (if (%0 == #2) then #20 else ((m : int → int) %0))],
-  .assert "m_5_eq_50" eb[(m #5) == #50],
-  .assert "m_2_eq_20" eb[(m #2) == #20],
-  .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))],
-  .assert "m_1_eq_10" eb[(m #1) == #10]
+  [.init "m" t[int → int] (some eb[minit]) .empty,
+  .init "m0" t[int] (some eb[(m #0)]) .empty,
+  .set "m" eb[λ (if (%0 == #1) then #10 else ((m : int → int) %0))] .empty,
+  .set "m" eb[λ (if (%0 == #2) then #20 else ((m : int → int) %0))] .empty,
+  .assert "m_5_eq_50" eb[(m #5) == #50] .empty,
+  .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
+  .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))] .empty,
+  .assert "m_1_eq_10" eb[(m #1) == #10] .empty
   ]) |>.snd |> format
 
 /--
@@ -239,38 +239,40 @@ Proof Obligation:
 #eval (evalOne
   ((Env.init (empty_factory := true)).pushScope [("minit", (none, eb[_minit]))])
   ∅
-  [.init "m" t[int → int] (some eb[minit]),
-  .set "m" eb[λ (if (%0 == #1) then #10 else (m %0))],
-  .set "m" eb[λ (if (%0 == #2) then #20 else (m %0))],
-  .assert "m_5_eq_50" eb[(m #5) == #50],
-  .assert "m_2_eq_20" eb[(m #2) == #20],
-  .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))],
-  .assert "m_1_eq_10" eb[(m #1) == #10]
+  [.init "m" t[int → int] (some eb[minit]) .empty,
+  .set "m" eb[λ (if (%0 == #1) then #10 else (m %0))] .empty,
+  .set "m" eb[λ (if (%0 == #2) then #20 else (m %0))] .empty,
+  .assert "m_5_eq_50" eb[(m #5) == #50] .empty,
+  .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
+  .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))] .empty,
+  .assert "m_1_eq_10" eb[(m #1) == #10] .empty
   ]) |>.snd |> format
 
 
 
 private def prog1 : Statements :=
  [
- .init "x" t[int] (some eb[#0]),
- .init "y" t[int] (some eb[#6]),
+ .init "x" t[int] (some eb[#0]) .empty,
+ .init "y" t[int] (some eb[#6]) .empty,
  .block "label_0"
 
-   [Statement.init "z" t[bool] (some eb[zinit]),
-    Statement.assume "z_false" eb[z == #false],
+   [Statement.init "z" t[bool] (some eb[zinit]) .empty,
+    Statement.assume "z_false" eb[z == #false] .empty,
 
    .ite eb[z == #false]
-     [Statement.set "x" eb[y]]
+     [Statement.set "x" eb[y] .empty]
      -- The "trivial" assertion, though unreachable, is still verified away by the
      -- PE because the conclusion of the proof obligation evaluates to `true`.
      -- However, if the conclusion were anything else (including `false`) and
      -- the path conditions weren't empty, then this proof obligation would be
      -- sent on to the SMT solver.
-     [Statement.assert "trivial" eb[#true]],
+     [Statement.assert "trivial" eb[#true] .empty]
+     .empty,
 
-   Statement.assert "x_eq_y_label_0" eb[x == y],
-   ],
- .assert "x_eq_y" eb[x == y]
+   Statement.assert "x_eq_y_label_0" eb[x == y] .empty,
+   ]
+   .empty,
+ .assert "x_eq_y" eb[x == y] .empty
  ]
 
 /--
@@ -331,12 +333,12 @@ Proof Obligation:
 
 
 private def prog2 : Statements := [
-  .init "x" t[int] (some eb[#0]),
-  .set "x" eb[#1],
-  .havoc "x",
-  .assert "x_eq_1" eb[x == #1], -- error
-  .havoc "x",
-  .set "x" eb[#8]
+  .init "x" t[int] (some eb[#0]) .empty,
+  .set "x" eb[#1] .empty,
+  .havoc "x" .empty,
+  .assert "x_eq_1" eb[x == #1] .empty, -- error
+  .havoc "x" .empty,
+  .set "x" eb[#8] .empty
 ]
 
 /--
@@ -402,9 +404,9 @@ def testFuncDecl : List Statement :=
     axioms := []
   }
   [
-    .funcDecl doubleFunc,
-    .init "y" t[int] (some eb[(~double #5)]),
-    .assert "y_eq_10" eb[y == #10]
+    .funcDecl doubleFunc .empty,
+    .init "y" t[int] (some eb[(~double #5)]) .empty,
+    .assert "y_eq_10" eb[y == #10] .empty
   ]
 
 /--
@@ -459,11 +461,11 @@ def testFuncDeclSymbolic : List Statement :=
     axioms := []
   }
   [
-    .init "n" t[int] (some eb[#10]),  -- Initialize n to 10
-    .funcDecl addNFunc,  -- Function captures n = 10 at declaration time
-    .set "n" eb[#20],  -- Mutate n to 20
-    .init "result" t[int] (some eb[(~addN #5)]),  -- Call function
-    .assert "result_eq_15" eb[result == #15]  -- Result is 5 + 10 = 15 (uses captured value)
+    .init "n" t[int] (some eb[#10]) .empty,  -- Initialize n to 10
+    .funcDecl addNFunc .empty,  -- Function captures n = 10 at declaration time
+    .set "n" eb[#20] .empty,  -- Mutate n to 20
+    .init "result" t[int] (some eb[(~addN #5)]) .empty,  -- Call function
+    .assert "result_eq_15" eb[result == #15] .empty  -- Result is 5 + 10 = 15 (uses captured value)
   ]
 
 /--
@@ -527,13 +529,13 @@ def testPolymorphicFuncDecl : List Statement :=
     axioms := []
   }
   [
-    .funcDecl chooseFunc,
+    .funcDecl chooseFunc .empty,
     -- Use with int type (curried application)
-    .init "intResult" t[int] (some eb[(((~choose #true) #1) #2)]),
-    .assert "intResult_eq_1" eb[intResult == #1],
+    .init "intResult" t[int] (some eb[(((~choose #true) #1) #2)]) .empty,
+    .assert "intResult_eq_1" eb[intResult == #1] .empty,
     -- Use with bool type (curried application)
-    .init "boolResult" t[bool] (some eb[(((~choose #false) #true) #false)]),
-    .assert "boolResult_eq_false" eb[boolResult == #false]
+    .init "boolResult" t[bool] (some eb[(((~choose #false) #true) #false)]) .empty,
+    .assert "boolResult_eq_false" eb[boolResult == #false] .empty
   ]
 
 /--

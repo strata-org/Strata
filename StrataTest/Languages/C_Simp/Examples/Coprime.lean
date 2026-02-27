@@ -90,7 +90,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (CoprimePgm.commands))
+#eval TransM.run Inhabited.default ((translateProgram (CoprimePgm.commands)).map (·.stripMetaData))
 
 /--
 info: procedure coprime (a : int, b : int) returns (return : bool)
