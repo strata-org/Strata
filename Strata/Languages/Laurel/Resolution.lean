@@ -93,6 +93,10 @@ def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
   model.refToDef.get! uuid
   -- (panic s!"refToDef key '{id.name}', uuid {id.id} not found in model {repr model}")
 
+def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
+  match model.get id with
+  | .staticProcedure proc => proc.isFunctional
+  | _ => panic s!"{repr id} is not a procedure"
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where
@@ -118,7 +122,7 @@ structure ResolveState where
 abbrev ResolveM := StateM ResolveState
 
 /-- Allocate a fresh unique ID. -/
-def freshId : ResolveM Nat := do
+private def freshId : ResolveM Nat := do
   let s ← get
   let id := s.nextId
   set { s with nextId := id + 1 }
