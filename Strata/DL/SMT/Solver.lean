@@ -4,15 +4,23 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.SMT.DDMTransform.Translate
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.TermType
 import Strata.Languages.Core.Options
+import Std.Data.HashMap
 
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Solver.lean)
 This file defines a simple interface to an SMT solver running in a separate
-process. Callers communicate with the solver by issuing commands with
-s-expressions encoded as strings. The interface is based on
-[lean-smt](https://github.com/ufmg-smite/lean-smt/).
+process.
+
+## String formatting
+
+All `Term → SMT-LIB string` conversion lives in this module. The Encoder layer
+works purely with `Term` values and delegates string rendering to the Solver via
+`termToSMTString`, `typeToSMTString`, and the typed command API.
 -/
 
 namespace Strata.SMT
@@ -37,9 +45,27 @@ structure Solver where
   smtLibInput : IO.FS.Stream
   smtLibOutput : Option IO.FS.Stream
 
-abbrev SolverM (α) := ReaderT Solver IO α
+/-- State tracked by `SolverM`: caches `Term → SMT-LIB string` and
+    `TermType → SMT-LIB string` conversions so that the same term/type is
+    never converted twice. -/
+structure SolverState where
+  /-- Caches `Term → full SMT-LIB string` via `SMTDDM.termToString`. -/
+  termStrings : Std.HashMap Term String := {}
+  /-- Caches `TermType → full SMT-LIB string` via `SMTDDM.termTypeToString`. -/
+  typeStrings : Std.HashMap TermType String := {}
 
-def SolverM.run (solver : Solver) (x : SolverM α) : IO α := ReaderT.run x solver
+def SolverState.init : SolverState := {}
+
+abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
+
+def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
+  ReaderT.run (StateT.run x state) solver
+
+/-- A typed SMT-LIB datatype constructor: name + typed fields. -/
+structure SMTConstructor where
+  name : String
+  args : List (String × TermType)
+deriving Repr, Inhabited
 
 namespace Solver
 
@@ -90,11 +116,32 @@ def fileWriter (h : IO.FS.Handle) : IO Solver :=
 def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO Solver :=
   return ⟨IO.FS.Stream.ofBuffer b, .none⟩
 
+/-! ## Internal helpers -/
+
 private def emitln (str : String) : SolverM Unit := do
-  -- dbg_trace "{str}" -- uncomment to see input sent to the solver
   let solver ← read
   solver.smtLibInput.putStr s!"{str}\n"
   solver.smtLibInput.flush
+
+/-- Convert a `Term` to its SMT-LIB string, using the `SolverState` cache. -/
+def termToSMTString (t : Term) : SolverM String := do
+  if let (.some s) := (← get).termStrings.get? t then return s
+  match Strata.SMTDDM.termToString t with
+  | .ok s =>
+    modify fun st => { st with termStrings := st.termStrings.insert t s }
+    return s
+  | .error msg => panic! s!"Solver.termToSMTString failed: {msg}"
+
+/-- Convert a `TermType` to its SMT-LIB string, using the `SolverState` cache. -/
+def typeToSMTString (ty : TermType) : SolverM String := do
+  if let (.some s) := (← get).typeStrings.get? ty then return s
+  match Strata.SMTDDM.termTypeToString ty with
+  | .ok s =>
+    modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
+    return s
+  | .error msg => panic! s!"Solver.typeToSMTString failed: {msg}"
+
+/-! ## String-based commands (less critical, kept as-is) -/
 
 def setLogic (logic : String) : SolverM Unit :=
   emitln s!"(set-logic {logic})"
@@ -109,50 +156,91 @@ def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "
   emitln s!"; {inline}"
 
-def assert (expr : String) : SolverM Unit :=
-  emitln s!"(assert {expr})"
-
 def getValue (ids : List String) : SolverM Unit :=
   let ids := Std.Format.joinSep ids " "
   emitln s!"(get-value ({ids}))"
 
-def defineFun (id : String) (args : List (String × String)) (type expr : String) : SolverM Unit :=
-  let inline := String.intercalate " " (args.map (λ ⟨pᵢ, pₜ⟩ => s!"({pᵢ} {pₜ})"))
-  emitln s!"(define-fun {id} ({inline}) {type} {expr})"
-
-def declareConst (id type : String) : SolverM Unit :=
-  emitln s!"(declare-const {id} {type})"
-
 def declareSort (id : String) (arity : Nat) : SolverM Unit :=
   emitln s!"(declare-sort {id} {arity})"
 
-def declareFun (id : String) (args : List String) (type : String) : SolverM Unit :=
-  if args.isEmpty then
-    declareConst id type
+/-- Convert a single constructor to its SMT-LIB string representation. -/
+private def constructorToSMTString (c : SMTConstructor) : SolverM String := do
+  if c.args.isEmpty then return s!"({c.name})"
   else
-    let inline := String.intercalate " " args
-    emitln s!"(declare-fun {id} ({inline}) {type})"
+    let fieldStrs ← c.args.mapM fun (name, ty) => do
+      let tyStr ← typeToSMTString ty
+      return s!"({name} {tyStr})"
+    return s!"({c.name} {String.intercalate " " fieldStrs})"
 
-def declareDatatype (id : String) (params : List String) (constructors : List String) : SolverM Unit :=
-  let cInline := "\n  " ++ String.intercalate "\n  " constructors
+def declareDatatype (id : String) (params : List String) (constructors : List SMTConstructor) : SolverM Unit := do
+  let cStrs ← constructors.mapM constructorToSMTString
+  let cInline := "\n  " ++ String.intercalate "\n  " cStrs
   let pInline := String.intercalate " " params
   if params.isEmpty
   then emitln s!"(declare-datatype {id} ({cInline}))"
   else emitln s!"(declare-datatype {id} (par ({pInline}) ({cInline})))"
 
 /-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
-def declareDatatypes (dts : List (String × List String × List String)) : SolverM Unit := do
+def declareDatatypes (dts : List (String × List String × List SMTConstructor)) : SolverM Unit := do
   if dts.isEmpty then return
   let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
   let sortDeclStr := String.intercalate " " sortDecls
-  let bodies := dts.map fun (_, params, constrs) =>
-    let cInline := String.intercalate " " constrs
-    if params.isEmpty then s!"({cInline})"
+  let bodies ← dts.mapM fun (_, params, constrs) => do
+    let cStrs ← constrs.mapM constructorToSMTString
+    let cInline := String.intercalate " " cStrs
+    if params.isEmpty then return s!"({cInline})"
     else
       let pInline := String.intercalate " " params
-      s!"(par ({pInline}) ({cInline}))"
+      return s!"(par ({pInline}) ({cInline}))"
   let bodyStr := String.intercalate "\n  " bodies
   emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
+
+/-! ## Typed commands -/
+
+/-- Assert a `Term` (must be Bool-typed). Converts via the cached `termToSMTString`. -/
+def assert (t : Term) : SolverM Unit := do
+  let s ← termToSMTString t
+  emitln s!"(assert {s})"
+
+/-- Assert a raw SMT-LIB identifier string (e.g. an abbreviated name like `"t0"`).
+    Used by the Encoder after ANF decomposition, where the term has already been
+    broken into `define-fun` definitions and only the short name needs asserting. -/
+def assertId (id : String) : SolverM Unit :=
+  emitln s!"(assert {id})"
+
+/-- Declare a constant with a typed `TermType`. -/
+def declareConst (id : String) (ty : TermType) : SolverM Unit := do
+  let tyStr ← typeToSMTString ty
+  emitln s!"(declare-const {id} {tyStr})"
+
+/-- Declare a function with typed argument and return types. -/
+def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : SolverM Unit := do
+  let retStr ← typeToSMTString retTy
+  if argTys.isEmpty then
+    emitln s!"(declare-const {id} {retStr})"
+  else
+    let argStrs ← argTys.mapM typeToSMTString
+    let inline := String.intercalate " " argStrs
+    emitln s!"(declare-fun {id} ({inline}) {retStr})"
+
+/-- Define a function with typed return type and a raw SMT-LIB string body.
+    This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
+def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType)
+    (body : String) : SolverM Unit := do
+  let typedArgs ← args.mapM fun (name, ty) => do
+    let tyStr ← typeToSMTString ty
+    return s!"({name} {tyStr})"
+  let inline := String.intercalate " " typedArgs
+  let retStr ← typeToSMTString retTy
+  emitln s!"(define-fun {id} ({inline}) {retStr} {body})"
+
+/-- Define a function where the body is given as a `Term` (converted via cache). -/
+def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : TermType)
+    (body : Term) : SolverM Unit := do
+  let bodyStr ← termToSMTString body
+  defineFun id args retTy bodyStr
+
+/-! ## Solver control -/
 
 private def readlnD (dflt : String) : SolverM String := do
   match (← read).smtLibOutput with

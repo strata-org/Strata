@@ -21,7 +21,7 @@ open Strata.SMT
 
 /-- Format SMT term to SMT-LIB syntax using the SMT dialect's pretty-printer -/
 def formatTermDirect (t : Term) : String :=
-  match SMTDDM.toString t with
+  match SMTDDM.termToString t with
   | .ok s => s
   | .error msg => s!"(error: {msg})"
 
