@@ -16,8 +16,8 @@ open Strata.SMT
 /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
+  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
 /--
@@ -25,7 +25,7 @@ info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 /--
@@ -33,7 +33,7 @@ info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant ()  .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
+   (.quant ()  .exist "" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 
@@ -42,13 +42,13 @@ info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
+   (.quant () .exist "" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /-- info: "Cannot encode expression (f %0)" -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
+   (.quant () .exist "" (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /--
@@ -56,7 +56,7 @@ info: "; f\n(declare-const f0 (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int)
+   (.quant () .exist "" (.some .int)
    (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
    (ctx := SMT.Context.default)
@@ -72,7 +72,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
+   (.quant () .all "" (.some .int) (.bvar () 0) (.quant () .all "" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
@@ -90,7 +90,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
+   (.quant () .all "" (.some .int) (.bvar () 0) (.quant () .all "" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
@@ -160,6 +160,22 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
         factory := Core.Factory
       }
    }})
+
+-- Test variable naming in quantifiers
+/-- info: "(define-fun t0 () Bool (forall ((x Int)) (exists ((y Int)) (= x y))))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "y" (.some .int) (LExpr.noTrigger ())
+   (.eq () (.bvar () 1) (.bvar () 0))))
+
+-- Test empty string falls back to generated names
+/-- info: "(define-fun t0 () Bool (forall ((|$__bv0| Int)) (exists ((|$__bv1| Int)) (= |$__bv0| |$__bv1|))))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
+   (.eq () (.bvar () 1) (.bvar () 0))))
 
 end ArrayTheory
 

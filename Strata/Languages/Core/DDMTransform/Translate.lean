@@ -693,14 +693,14 @@ def translateQuantifier
 
     -- Create one quantifier constructor per variable
     -- Trigger attached to only the innermost quantifier
-    let buildQuantifier := fun (_, ty) (e, first) =>
+    let buildQuantifier := fun (name, ty) (e, first) =>
       match ty with
       | .forAll [] mty =>
         let triggers := if first then
             triggers
           else
             LExpr.noTrigger ()
-        (.quant () qk (.some mty) triggers e, false)
+        (.quant () qk name.name (.some mty) triggers e, false)
       | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
 
     return xsArray.foldr buildQuantifier (init := (b, true)) |>.1

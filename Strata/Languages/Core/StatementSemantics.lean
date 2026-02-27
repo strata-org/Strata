@@ -71,10 +71,10 @@ structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
       δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
       (δ σ (.eq m e₁ e₂) = δ σ' (.eq m e₁' e₂')))
-    quantcongr: (∀ σ σ' m k ty e₁ e₁' e₂ e₂',
+    quantcongr: (∀ σ σ' m k name ty e₁ e₁' e₂ e₂',
       δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
-      (δ σ (.quant m k ty e₁ e₂) = δ σ' (.quant m k ty e₁' e₂')))
+      (δ σ (.quant m k name ty e₁ e₂) = δ σ' (.quant m k name ty e₁' e₂')))
     itecongr: (∀ σ σ' m e₁ e₁' e₂ e₂' e₃ e₃',
       δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
