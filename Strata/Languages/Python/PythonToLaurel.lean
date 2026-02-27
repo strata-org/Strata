@@ -170,8 +170,8 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
 /-- Create a None value for a given OrNone type -/
 def mkNoneForType (typeName : String) : StmtExprMd :=
   -- First construct None_none(), then wrap it in the appropriate OrNone constructor
-  let noneVal := mkStmtExprMd (StmtExpr.StaticCall "None_none" [])
-  mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
+  let noneVal := mkStmtExprMd (StmtExpr.StaticCall (mkId "None_none") [])
+  mkStmtExprMd (StmtExpr.StaticCall (mkId s!"{typeName}_mk_none") [noneVal])
 
 /-- Look up a function call in the overload dispatch table.
     Extracts the bare function name from the call target, then
@@ -229,7 +229,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Variable references
   | .Name _ name _ =>
-    return mkStmtExprMd (StmtExpr.Identifier name.val)
+    return mkStmtExprMd (StmtExpr.Identifier $ mkId name.val)
 
   -- Binary operations
   | .BinOp _ left op right => do
@@ -636,11 +636,11 @@ def pythonToLaurel (prelude: Core.Program)
 
     let (_, bodyStmts) ← translateStmtList ctx otherStmts
     let bodyStmts := prependExceptHandlingHelper bodyStmts
-    let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" (mkHighTypeMd .TString) (some <| mkStmtExprMd (.LiteralString "__main__"))) :: bodyStmts
+    let bodyStmts := mkStmtExprMd (.LocalVariable (mkId "__name__") (mkHighTypeMd .TString) (some <| mkStmtExprMd (.LiteralString "__main__"))) :: bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
     let mainProc : Procedure := {
-      name := "__main__",
+      name := mkId "__main__",
       inputs := [],
       outputs := [],
       precondition := mkStmtExprMd (StmtExpr.LiteralBool true),

@@ -122,11 +122,11 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
 -/
-def validateDiamondFieldAccessesForStmtExpr (uri : Uri) (model : SemanticModel)
+def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
   | .FieldSelect target fieldName =>
-    let targetErrors := validateDiamondFieldAccessesForStmtExpr uri model target
+    let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
     let fieldError := match (computeExprType model target).val with
       | .UserDefined typeName =>
         if isDiamondInheritedField model typeName fieldName then
@@ -136,29 +136,29 @@ def validateDiamondFieldAccessesForStmtExpr (uri : Uri) (model : SemanticModel)
       | _ => []
     targetErrors ++ fieldError
   | .Block stmts _ =>
-    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr uri model s)
+    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
   | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri model t) []
-    targetErrors ++ validateDiamondFieldAccessesForStmtExpr uri model value
+    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model t) []
+    targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
   | .IfThenElse c t e =>
-    let errs := validateDiamondFieldAccessesForStmtExpr uri model c ++
-                validateDiamondFieldAccessesForStmtExpr uri model t
+    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
+                validateDiamondFieldAccessesForStmtExpr model t
     match e with
-    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr uri model eb
+    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
     | none => errs
   | .LocalVariable _ _ (some init) =>
-    validateDiamondFieldAccessesForStmtExpr uri model init
+    validateDiamondFieldAccessesForStmtExpr model init
   | .While c invs _ b =>
-    let errs := validateDiamondFieldAccessesForStmtExpr uri model c ++
-                validateDiamondFieldAccessesForStmtExpr uri model b
-    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr uri model cond
-  | .Assume cond => validateDiamondFieldAccessesForStmtExpr uri model cond
+    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
+                validateDiamondFieldAccessesForStmtExpr model b
+    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
+  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond
+  | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
   | .PrimitiveOp _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri model a) []
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .StaticCall _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr uri model a) []
-  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr uri model v
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
+  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
@@ -167,17 +167,17 @@ def validateDiamondFieldAccessesForStmtExpr (uri : Uri) (model : SemanticModel)
 Validate a Laurel program for diamond-inherited field accesses.
 Returns an array of DiagnosticModel errors.
 -/
-def validateDiamondFieldAccesses (uri : Uri) (model: SemanticModel) (program : Program) : Array DiagnosticModel :=
+def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Array DiagnosticModel :=
   let errors := program.staticProcedures.foldl (fun acc proc =>
     let bodyErrors := match proc.body with
-      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr uri model bodyExpr
+      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
       | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr uri model pc) []
+        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc) []
         let implErrors := match impl with
-          | some implExpr => validateDiamondFieldAccessesForStmtExpr uri model implExpr
+          | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
           | none => []
         postErrors ++ implErrors
-      | .Abstract postcond => validateDiamondFieldAccessesForStmtExpr uri model postcond
+      | .Abstract postcond => validateDiamondFieldAccessesForStmtExpr model postcond
     acc ++ bodyErrors) []
   errors.toArray
 

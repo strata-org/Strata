@@ -91,7 +91,7 @@ structure ResolutionResult where
   /-- The program with unique IDs on all definition and reference nodes. -/
   program : Program
   /-- Map from reference node ID to the definition it resolves to. -/
-  refToDef : Std.HashMap Nat AstNode
+  model : SemanticModel
 
 /-! ## ID assignment and resolution -/
 
@@ -405,4 +405,8 @@ def resolve (program : Program) : ResolutionResult :=
              types := types', constants := constants' }
   let (program', finalState) := action.run {}
   { program := program',
-    refToDef := finalState.refToDef }
+    model := {
+      compositeCount := program.types.length,
+      refToDef := finalState.refToDef
+    }
+  }
