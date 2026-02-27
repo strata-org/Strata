@@ -288,7 +288,6 @@ private protected def mformat : PreType → StrataFormat
 | .ident _ tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
 | .bvar _ idx => .bvar idx
 | .tvar _ name => mf!"{name}"
-| .fvar _ idx a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
 | .arrow _ a r => mf!"{a.mformat} -> {r.mformat}"
 | .funMacro _ idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
 
