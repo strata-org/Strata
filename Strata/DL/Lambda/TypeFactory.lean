@@ -484,41 +484,48 @@ def destructorConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.I
 
 def destructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier IDMeta) := d.name ++ ".." ++ name.name
 
-def unsafeDestructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier IDMeta) := destructorFuncName d name ++ "!"
+def unsafeDestructorSuffix := "!"
+
+def unsafeDestructorFuncName {IDMeta} (d: LDatatype IDMeta)
+  (name: Identifier IDMeta) :=
+  destructorFuncName d name ++ unsafeDestructorSuffix
+
+/-- Strip the unsafe destructor suffix to recover the safe (SMT-canonical) name. -/
+def stripUnsafeDestructorSuffix (name : String) : String :=
+  if name.endsWith unsafeDestructorSuffix then
+  (name.dropEnd unsafeDestructorSuffix.length).toString else name
+
+private def mkDestructorFunc {T} [BEq T.Identifier] [Inhabited T.IDMeta]
+  [Inhabited T.Metadata] (d : LDatatype T.IDMeta) (c : LConstr T.IDMeta)
+  (i : Nat) (name : Identifier T.IDMeta) (ty : LMonoTy) (safe : Bool) :
+  LFunc T :=
+  let arg := genArgName
+  let argExpr : LExpr T.mono := .fvar default arg .none
+  let testerExpr : LExpr T.mono := .app default (.op default c.testerName .none) argExpr
+  { name :=
+    if safe then destructorFuncName d name else unsafeDestructorFuncName d name,
+    typeArgs := d.typeArgs,
+    inputs := [(arg, dataDefault d)],
+    output := ty,
+    concreteEval := some (fun _ => destructorConcreteEval d c i),
+    attr := #[.evalIfConstr 0],
+    preconditions := if safe then [⟨testerExpr, default⟩] else [] }
 
 /--
 Generate destructor functions with a precondition that the corresponding tester holds, e.g.
 `List..head(x)` requires `List..isCons(x)`
 -/
-def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
-  c.args.mapIdx (fun i (name, ty) =>
-    let arg := genArgName
-    let argExpr : LExpr T.mono := .fvar default arg .none
-    let testerExpr : LExpr T.mono := .app default (.op default c.testerName .none) argExpr
-    {
-      name := destructorFuncName d name,
-      typeArgs := d.typeArgs,
-      inputs := [(arg, dataDefault d)],
-      output := ty,
-      concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[.evalIfConstr 0],
-      preconditions := [⟨testerExpr, default⟩]})
+def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]
+  [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) :
+  List (LFunc T) :=
+  c.args.mapIdx (fun i (name, ty) => mkDestructorFunc d c i name ty true)
 
 /--
 Generate unsafe destructor functions (with `!` suffix) without preconditions, e.g.
-`List..head! (Cons h t) = h`
-These functions are partial, `List..head! Nil` is undefined.
+`List..head!(x)` is partial — `List..head!(Nil)` is undefined.
 -/
-def unsafeDestructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
-  c.args.mapIdx (fun i (name, ty) =>
-    let arg := genArgName
-    {
-      name := unsafeDestructorFuncName d name,
-      typeArgs := d.typeArgs,
-      inputs := [(arg, dataDefault d)],
-      output := ty,
-      concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[.evalIfConstr 0]})
+def unsafeDestructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
+  c.args.mapIdx (fun i (name, ty) => mkDestructorFunc d c i name ty false)
 
 
 ---------------------------------------------------------------------

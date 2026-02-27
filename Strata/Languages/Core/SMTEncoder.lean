@@ -346,7 +346,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         Unsafe selectors (e.g. List..head!) use the safe name (List..head).
         -/
         let name := match kind with
-          | .selector => if fn.name.endsWith "!" then (fn.name.dropEnd 1).toString else fn.name
+          | .selector => stripUnsafeDestructorSuffix fn.name
           | _ => c.name.name
         Term.app (.datatype_op kind name) args retty
     .ok (adtApp, smt_outty, ctx)

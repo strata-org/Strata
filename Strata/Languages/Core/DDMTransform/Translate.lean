@@ -1528,27 +1528,11 @@ def filterDatatypeDecls (ldatatype : LDatatype Core.Visibility) (funcDecls : Lis
   let unsafeFieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
     acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name ++ "!")) []
 
-  let constructorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => constructorNames.contains f.name.name
-    | _ => false
+  let filterByNames (names : List String) := funcDecls.filter fun decl =>
+    match decl with | .func f => names.contains f.name.name | _ => false
 
-  let testerDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => testerNames.contains f.name.name
-    | _ => false
-
-  let fieldAccessorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => fieldAccessorNames.contains f.name.name
-    | _ => false
-
-  let unsafeFieldAccessorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => unsafeFieldAccessorNames.contains f.name.name
-    | _ => false
-
-  (constructorDecls, testerDecls, fieldAccessorDecls, unsafeFieldAccessorDecls)
+  (filterByNames constructorNames, filterByNames testerNames,
+   filterByNames fieldAccessorNames, filterByNames unsafeFieldAccessorNames)
 
 /--
 Build LConstr list from TransConstructorInfo array.
