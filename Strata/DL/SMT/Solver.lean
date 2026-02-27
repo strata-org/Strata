@@ -59,7 +59,7 @@ def spawn (path : String) (args : Array String) : IO Solver := do
     }
     return ⟨IO.FS.Stream.ofHandle proc.stdin, IO.FS.Stream.ofHandle proc.stdout⟩
   catch e =>
-    let suggestion := if path == defaultSolver || path.endsWith defaultSolver then s!" Ensure {defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
+    let suggestion := if path == Core.defaultSolver || path.endsWith Core.defaultSolver then s!" Ensure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
     throw (IO.userError s!"could not execute external process '{path}'.{suggestion} Original error: {e}")
 
 /--
