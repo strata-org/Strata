@@ -344,6 +344,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     return { name := procName', inputs := inputs', outputs := outputs',
+             isFunctional := proc.isFunctional,
              preconditions := pres', determinism := det', decreases := dec',
              body := body', md := proc.md }
 
@@ -364,6 +365,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     return { name := procName', inputs := inputs', outputs := outputs',
+             isFunctional := proc.isFunctional,
              preconditions := pres', determinism := det', decreases := dec',
              body := body', md := proc.md }
 

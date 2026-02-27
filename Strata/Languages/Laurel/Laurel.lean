@@ -156,7 +156,7 @@ structure Procedure : Type where
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
   /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
-  isFunctional : Bool := false
+  isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
   /-- Source-level metadata. -/

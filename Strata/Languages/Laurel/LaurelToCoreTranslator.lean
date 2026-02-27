@@ -620,7 +620,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with
     | .Datatype dt => some (translateDatatypeDefinition dt)
     | _ => none
-  pure ({ decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls }, modifiesDiags)
+  pure ({
+    decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls },
+    diamondErrors ++ modifiesDiags
+  )
 
 /--
 Verify a Laurel program using an SMT solver
