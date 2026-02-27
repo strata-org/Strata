@@ -60,28 +60,34 @@ def splitConjunction (e : Core.Expression.Expr) : Option (Core.Expression.Expr �
     else none
   | _ => none
 
-/-- Check if an expression is provably false (refuted) using push/pop -/
-def checkRefuted (state : CoreSMTState) (E : Core.Env) (expr : Core.Expression.Expr)
-    (smtCtx : Core.SMT.Context) : IO Bool := do
-  match translateExpr E expr smtCtx with
-  | Except.error _ => return false
-  | Except.ok (term, _) =>
-    state.solver.push
-    state.solver.assert term
-    let decision ← state.solver.checkSat
-    state.solver.pop
-    return decision == .unsat
-
 /-- Diagnose a failed verification check by splitting conjunctions -/
 partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
     (expr : Core.Expression.Expr) (isReachCheck : Bool)
     (smtCtx : Core.SMT.Context) : IO DiagnosisResult := do
   match splitConjunction expr with
   | none =>
-    let refuted ← checkRefuted state E expr smtCtx
-    let resultType := if refuted then DiagnosisResultType.refuted else DiagnosisResultType.unknown
-    let report : DiagnosisReport := { result := .error resultType, context := { pathCondition := [] } }
-    return { diagnosedFailures := [{ expression := expr, isRefuted := refuted, report }] }
+    match translateExpr E expr smtCtx with
+    | Except.error _ => return { diagnosedFailures := [] }
+    | Except.ok (term, _) =>
+      if isReachCheck then
+        -- Reach: check if expr is refuted (always false)
+        let decision ← state.solver.checkSatAssuming [term]
+        if decision == .unsat then
+          let report : DiagnosisReport := { result := .error .refuted, context := { pathCondition := [] } }
+          return { diagnosedFailures := [{ expression := expr, isRefuted := true, report }] }
+        else
+          return { diagnosedFailures := [] }  -- reachable, not the problem
+      else
+        -- Assert: check if expr is proved (not(expr) is unsat)
+        let provedDecision ← state.solver.checkSatAssuming [Factory.not term]
+        if provedDecision == .unsat then
+          return { diagnosedFailures := [] }  -- proved, not a failure
+        -- Check if expr is refuted (expr is unsat)
+        let refutedDecision ← state.solver.checkSatAssuming [term]
+        let isRefuted := refutedDecision == .unsat
+        let resultType := if isRefuted then DiagnosisResultType.refuted else DiagnosisResultType.unknown
+        let report : DiagnosisReport := { result := .error resultType, context := { pathCondition := [] } }
+        return { diagnosedFailures := [{ expression := expr, isRefuted, report }] }
   | some (lhs, rhs) =>
     -- Diagnose left conjunct
     let leftResult ← diagnoseFailure state E lhs isReachCheck smtCtx
