@@ -21,16 +21,13 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
   let rec go (fuel : Nat) (current : Identifier) : List CompositeType :=
     match fuel with
     | 0 =>
-      match model.get name with
+      match model.get current with
       | .compositeType (ty : CompositeType) => [ty]
       | _ => []
     | fuel' + 1 =>
       match model.get name with
         | .compositeType (ty : CompositeType) =>
-          [ty] ++ ty.extending.flatMap (fun parent =>
-            match model.get parent with
-            | .compositeType (ty : CompositeType) => go fuel' parent
-            | _ => [])
+          [ty] ++ ty.extending.flatMap (fun parent => go fuel' parent)
         | _ => []
   let seen : List Identifier := []
   (go model.compositeCount name).foldl (fun (acc, seen) ct =>

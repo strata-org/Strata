@@ -224,7 +224,7 @@ inductive StmtExpr : Type where
   /-- A string literal. -/
   | LiteralString (value : String)
   /-- A variable Identifier by name. -/
-  | Identifier (ref : Identifier)
+  | Identifier (ref : Identifier) -- TODO, rename to reference?
   /-- Assignment to one or more targets. Multiple targets are only allowed when the value is a `StaticCall` to a procedure with multiple outputs. -/
   | Assign (targets : List (WithMetadata StmtExpr)) (value : WithMetadata StmtExpr)
   /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
