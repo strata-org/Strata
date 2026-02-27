@@ -40,6 +40,11 @@ def none : SourceRange := { start := 0, stop := 0 }
 
 def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
 
+/-- info: "()" -/
+#guard_msgs in #eval toString (reprPrec (none : SourceRange) 0)
+/-- info: "{start := 5, stop := 10}" -/
+#guard_msgs in #eval toString (reprPrec ({ start := ⟨5⟩, stop := ⟨10⟩ } : SourceRange) 0)
+
 instance : Std.ToFormat SourceRange where
  format fr := f!"{fr.start}-{fr.stop}"
 
