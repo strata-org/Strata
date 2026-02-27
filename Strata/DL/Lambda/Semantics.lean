@@ -58,7 +58,7 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
   ∀ (e1 v2 eres:LExpr Tbase.mono),
     LExpr.isCanonicalValue F v2 →
     eres = LExpr.subst (fun _ => v2) e1 →
-    Step F rf (.app m1 (.abs m2 ty e1) v2) eres
+    Step F rf (.app m1 (.abs m2 _ ty e1) v2) eres
 
 /-- Call-by-value semantics: argument evaluation. -/
 | reduce_2:

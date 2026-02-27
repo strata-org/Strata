@@ -23,7 +23,7 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.
   | .bvar m n => .bvar m n
   | .fvar m n ty => .fvar m ⟨n.name, .unres⟩ ty
   | .abs m ty e => .abs m ty (translate_expr e)
-  | .quant m k ty tr e => .quant m k ty (translate_expr tr) (translate_expr e)
+  | .quant m k name ty tr e => .quant m k ty (translate_expr tr) (translate_expr e)
   | .app m fn e => .app m (translate_expr fn) (translate_expr e)
   | .ite m c t e => .ite m (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq m e1 e2 => .eq m (translate_expr e1) (translate_expr e2)

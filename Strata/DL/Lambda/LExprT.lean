@@ -32,9 +32,9 @@ partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.IDMeta] (et : LExp
   | .op m o _ => f!"(~{o} : {m.type})"
   | .bvar m i => f!"(%{i} : {m.type})"
   | .fvar m x _ => f!"({x} : {m.type})"
-  | .abs m _ e => f!"((λ {LExprT.format e}) : {m.type})"
-  | .quant m .all _ _ e => f!"(∀({m.type}) {LExprT.format e})"
-  | .quant m .exist _ _ e => f!"(∃({m.type}) {LExprT.format e})"
+  | .abs m _ _ e => f!"((λ {LExprT.format e}) : {m.type})"
+  | .quant m .all _ _ _ e => f!"(∀({m.type}) {LExprT.format e})"
+  | .quant m .exist _ _ _ e => f!"(∃({m.type}) {LExprT.format e})"
   | .app m e1 e2 => f!"({LExprT.format e1} {LExprT.format e2}) : {m.type})"
   | .ite m c t f => f!"(if {LExprT.format c} then \
                             {LExprT.format t} else \
@@ -58,8 +58,8 @@ Obtain the monotype from `LExprT e`.
 def toLMonoTy {T : LExprParamsT} (e : LExprT T) : LMonoTy :=
   match e with
   | .const m _ | .op m _ _ | .bvar m _ | .fvar m _ _
-  | .app m _ _ | .abs m _ _ | .ite m _ _ _ | .eq m _ _ => m.type
-  | .quant _ _ _ _ _ => LMonoTy.bool
+  | .app m _ _ | .abs m _ _ _ | .ite m _ _ _ | .eq m _ _ => m.type
+  | .quant _ _ _ _ _ _ => LMonoTy.bool
 
 /--
 Remove any type annotation stored in metadata for all
@@ -74,12 +74,12 @@ def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   | .fvar m f _ => .fvar m.underlying f (some m.type)
   | .app m e1 e2 =>
     .app m.underlying e1.unresolved e2.unresolved
-  | .abs ⟨underlying, .arrow aty _⟩ _ e =>
-    .abs underlying (some aty) e.unresolved
-  | .abs m t e => .abs m.underlying t e.unresolved
+  | .abs ⟨underlying, .arrow aty _⟩ _ _ e =>
+    .abs underlying "" (some aty) e.unresolved
+  | .abs m _ t e => .abs m.underlying "" t e.unresolved
   -- Since quantifiers are bools, the type stored in their
   -- metadata is the type of the argument
-  | .quant m qk _ tr e => .quant m.underlying qk (some m.type) tr.unresolved e.unresolved
+  | .quant m qk _ _ tr e => .quant m.underlying qk "" (some m.type) tr.unresolved e.unresolved
   | .ite m c t f => .ite m.underlying c.unresolved t.unresolved f.unresolved
   | .eq m e1 e2 => .eq m.underlying e1.unresolved e2.unresolved
 
@@ -97,13 +97,13 @@ def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType →
     let e1 := replaceUserProvidedType e1 f
     let e2 := replaceUserProvidedType e2 f
     .app m e1 e2
-  | .abs m uty e =>
+  | .abs m name uty e =>
     let e := replaceUserProvidedType e f
-    .abs m (uty.map f) e
-  | .quant m qk argTy tr e =>
+    .abs m name (uty.map f) e
+  | .quant m qk name argTy tr e =>
     let e := replaceUserProvidedType e f
     let tr := replaceUserProvidedType tr f
-    .quant m qk (argTy.map f) tr e
+    .quant m qk name (argTy.map f) tr e
   | .ite m c t f_expr =>
     let c := replaceUserProvidedType c f
     let t := replaceUserProvidedType t f
@@ -149,8 +149,8 @@ protected def varCloseT (k : Nat) (x : T.Identifier) (e : (LExprT T.mono)) : (LE
   | .bvar m i => .bvar m i
   | .fvar m y yty => if (x == y) then (.bvar m k)
                                 else (.fvar m y yty)
-  | .abs m ty e' => .abs m ty (.varCloseT (k + 1) x e')
-  | .quant m qk ty tr' e' => .quant m qk ty (.varCloseT (k + 1) x tr') (.varCloseT (k + 1) x e')
+  | .abs m name ty e' => .abs m name ty (.varCloseT (k + 1) x e')
+  | .quant m qk name ty tr' e' => .quant m qk name ty (.varCloseT (k + 1) x tr') (.varCloseT (k + 1) x e')
   | .app m e1 e2 => .app m (.varCloseT k x e1) (.varCloseT k x e2)
   | .ite m c t e => .ite m (.varCloseT k x c) (.varCloseT k x t) (.varCloseT k x e)
   | .eq m e1 e2 => .eq m (.varCloseT k x e1) (.varCloseT k x e2)
@@ -266,7 +266,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
     .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
-  | .abs m bty e    =>
+  | .abs m _ bty e    =>
     -- Generate a fresh expression variable to stand in for the bound variable
     -- For the bound variable, use type annotation if present. Otherwise,
     -- generate a fresh type variable.
@@ -287,9 +287,9 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     -- substitution. We could, of course, substitute `xty` in `etclosed`, but
     -- that'd require crawling over that expression, which could be expensive.
     let Env := Env.eraseFromContext xv
-    .ok ((.abs ⟨m, mty⟩ bty etclosed), Env)
+    .ok ((.abs ⟨m, mty⟩ "" bty etclosed), Env)
 
-  | .quant m qk bty triggers e =>
+  | .quant m qk _ bty triggers e =>
     let (xv, xty, Env) ← typeBoundVar C Env bty
     let e' := LExpr.varOpen 0 (xv, some xty) e
     have He'_size: (varOpen 0 (xv, some xty) e).sizeOf < 2 + e.sizeOf := by
@@ -315,7 +315,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     if ety != LMonoTy.bool then do
       .error f!"Quantifier body has non-Boolean type: {ety}"
     else
-      .ok (.quant ⟨m, xty⟩ qk xty triggersClosed etclosed, Env)
+      .ok (.quant ⟨m, xty⟩ qk "" xty triggersClosed etclosed, Env)
 
   | .eq m e1 e2    =>
     -- `.eq A B` is well-typed if there is some instantiation of

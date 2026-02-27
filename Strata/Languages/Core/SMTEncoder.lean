@@ -248,11 +248,11 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       let uf := { id := (toString $ format f), args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
-  | .abs _ ty e => .error f!"Cannot encode lambda abstraction {e}"
+  | .abs _ _ ty e => .error f!"Cannot encode lambda abstraction {e}"
 
-  | .quant _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
-  | .quant _ qk (.some ty) tr e =>
-    let x := s!"$__bv{bvs.length}"
+  | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
+  | .quant _ qk name (.some ty) tr e =>
+    let x := if name.isEmpty then s!"$__bv{bvs.length}" else name
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory

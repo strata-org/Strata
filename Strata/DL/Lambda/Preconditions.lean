@@ -89,12 +89,12 @@ where
       | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => []
       -- Need to quantify over bound variable
       -- e.g. λ x => 2 / x gives precondition ∀ x, x != 0
-      | .abs md ty body =>
+      | .abs md _ ty body =>
         (go F body implications).map fun ob =>
-          { ob with obligation := .quant md .all ty (.bvar md 0) ob.obligation }
-      | .quant md _ ty trigger body =>
+          { ob with obligation := .quant md .all "" ty (.bvar md 0) ob.obligation }
+      | .quant md _ _ ty trigger body =>
         (go F body implications).map fun ob =>
-          { ob with obligation := .quant md .all ty trigger ob.obligation }
+          { ob with obligation := .quant md .all "" ty trigger ob.obligation }
       /- If we are on the RHS of an implication, add assumption
         E.g. y > 0 ==> x / y = 1 should produce
         y > 0 ==> y != 0 -/
@@ -108,10 +108,10 @@ where
       /- Let-binding encoded as (λ x. body) arg:
          obligations from body are wrapped as let x := arg in ob,
          obligations from arg are collected directly -/
-      | .app md (.abs amd ty body) arg =>
+      | .app md (.abs amd _ ty body) arg =>
         let argObs := go F arg implications
         let bodyObs := (go F body implications).map fun ob =>
-          { ob with obligation := .app md (.abs amd ty ob.obligation) arg }
+          { ob with obligation := .app md (.abs amd "" ty ob.obligation) arg }
         argObs ++ bodyObs
       | .app _ fn arg => go F fn implications ++ go F arg implications
       | .ite md c t f =>

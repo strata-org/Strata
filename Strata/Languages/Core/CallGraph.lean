@@ -121,8 +121,8 @@ def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
   | .app _ fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
   | .ite _ c t e => extractFunctionCallsFromExpr c ++ extractFunctionCallsFromExpr t ++ extractFunctionCallsFromExpr e
   | .eq _ e1 e2 => extractFunctionCallsFromExpr e1 ++ extractFunctionCallsFromExpr e2
-  | .abs _ _ body => extractFunctionCallsFromExpr body
-  | .quant _ _ _ trigger body => extractFunctionCallsFromExpr trigger ++ extractFunctionCallsFromExpr body
+  | .abs _ _ _ body => extractFunctionCallsFromExpr body
+  | .quant _ _ _ _ trigger body => extractFunctionCallsFromExpr trigger ++ extractFunctionCallsFromExpr body
 
 def extractCallsFromFunction (func : Function) : List String :=
   match func.body with
