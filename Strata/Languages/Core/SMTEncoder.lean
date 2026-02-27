@@ -15,7 +15,7 @@ import Strata.DDM.Util.DecimalRat
 
 namespace Core
 open Std (ToFormat Format format)
-open Lambda Strata.SMT
+open Lambda Strata.SMT Strata.SMT.Encoder
 
 structure SMT.IF where
   uf : UF
@@ -245,14 +245,44 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     | none => .error f!"Cannot encode unannotated free variable {e}"
     | some ty =>
       let (tty, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
-      let uf := { id := (toString $ format f), args := [], out := tty }
+      let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
-  | .abs _ ty e => .error f!"Cannot encode lambda abstraction {e}"
+  | .abs _ _ ty e => .error f!"Cannot encode lambda abstraction {e}"
 
-  | .quant _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
-  | .quant _ qk (.some ty) tr e =>
-    let x := s!"$__bv{bvs.length}"
+  | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
+  | .quant _ qk name (.some ty) tr e =>
+    -- Collect fvar names from the body to check for clashes
+    let rec collectFvarNames : LExpr _ → List String
+      | .fvar _ f _ => [f.name]
+      | .abs _ _ _ e' => collectFvarNames e'
+      | .quant _ _ _ _ tr' e' => collectFvarNames tr' ++ collectFvarNames e'
+      | .app _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
+      | .ite _ c t e => collectFvarNames c ++ collectFvarNames t ++ collectFvarNames e
+      | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
+      | _ => []
+    let fvarNames := collectFvarNames e |>.toArray
+    -- Generate base name and extract any existing suffix
+    let (baseName, startSuffix) :=
+      if name.isEmpty then
+        (s!"$__bv{bvs.length}", 1)
+      else
+        -- Check if name already has @N suffix
+        match name.splitOn "@" with
+        | [base] => (base, 1)  -- No suffix, start at 1
+        | parts =>
+            -- Has @-separated parts, check if last part is a number
+            let lastPart := parts.getLast!
+            match lastPart.toNat? with
+            | some n => (String.intercalate "@" parts.dropLast, n + 1)  -- Has numeric suffix, increment it
+            | none => (name, 1)  -- Last part not numeric, treat whole thing as base
+    -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
+    let isUsed := fun candidate =>
+      bvs.any (fun (n, _) => n == candidate) ||
+      ctx.ufs.any (fun uf => uf.id == candidate) ||
+      fvarNames.contains candidate
+    let limit := bvs.length + ctx.ufs.size + fvarNames.size
+    let x := Encoder.findUniqueName baseName startSuffix isUsed limit
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory

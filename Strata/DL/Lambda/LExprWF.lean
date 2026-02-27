@@ -33,8 +33,8 @@ def freeVars (e : LExpr ⟨T, GenericTy⟩) : IdentTs GenericTy T.IDMeta :=
   | .op _ _ _ => []
   | .bvar _ _ => []
   | .fvar _ x ty => [(x, ty)]
-  | .abs _ _ e1 => freeVars e1
-  | .quant _ _ _ tr e1 => freeVars tr ++ freeVars e1
+  | .abs _ _ _ e1 => freeVars e1
+  | .quant _ _ _ _ tr e1 => freeVars tr ++ freeVars e1
   | .app _ e1 e2 => freeVars e1 ++ freeVars e2
   | .ite _ c t e => freeVars c ++ freeVars t ++ freeVars e
   | .eq _ e1 e2 => freeVars e1 ++ freeVars e2
@@ -51,20 +51,20 @@ def closed (e : LExpr ⟨T, GenericTy⟩) : Bool :=
 
 omit [DecidableEq T.IDMeta] in
 @[simp]
-theorem fresh_abs {x : IdentT GenericTy T.IDMeta} {m : T.Metadata} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
-  fresh x (.abs m ty e) = fresh x e := by
+theorem fresh_abs {x : IdentT GenericTy T.IDMeta} {m : T.Metadata} {name : String} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
+  fresh x (.abs m name ty e) = fresh x e := by
   simp [fresh, freeVars]
 
 omit [DecidableEq T.IDMeta] in
 @[simp]
-theorem freeVars_abs {m : T.Metadata} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
-  freeVars (.abs m ty e) = freeVars e := by
+theorem freeVars_abs {m : T.Metadata} {name : String} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
+  freeVars (.abs m name ty e) = freeVars e := by
   simp [freeVars]
 
 omit [DecidableEq T.IDMeta] in
 @[simp]
-theorem closed_abs {m : T.Metadata} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
-  closed (.abs m ty e) = closed e := by
+theorem closed_abs {m : T.Metadata} {name : String} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
+  closed (.abs m name ty e) = closed e := by
   simp [closed]
 
 ---------------------------------------------------------------------
@@ -85,8 +85,8 @@ def substK {T:LExprParamsT} (k : Nat) (s : T.base.Metadata → LExpr T)
   | .op m o ty => .op m o ty
   | .bvar m i => if i == k then s m else .bvar m i
   | .fvar m y ty => .fvar m y ty
-  | .abs m ty e' => .abs m ty (substK (k + 1) s e')
-  | .quant m qk ty tr' e' => .quant m qk ty (substK (k + 1) s tr') (substK (k + 1) s e')
+  | .abs m name ty e' => .abs m name ty (substK (k + 1) s e')
+  | .quant m qk name ty tr' e' => .quant m qk name ty (substK (k + 1) s tr') (substK (k + 1) s e')
   | .app m e1 e2 => .app m (substK k s e1) (substK k s e2)
   | .ite m c t e => .ite m (substK k s c) (substK k s t) (substK k s e)
   | .eq m e1 e2 => .eq m (substK k s e1) (substK k s e2)
@@ -173,8 +173,8 @@ def varClose {T} {GenericTy} [BEq (Identifier T.IDMeta)] [BEq GenericTy] (k : Na
   | .bvar m i => .bvar m i
   | .fvar m y (yty: Option GenericTy) => if x.fst == y && (yty == x.snd) then
                       (.bvar m k) else (.fvar m y yty)
-  | .abs m ty e' => .abs m ty (varClose (k + 1) x e')
-  | .quant m qk ty tr' e' => .quant m qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
+  | .abs m name ty e' => .abs m name ty (varClose (k + 1) x e')
+  | .quant m qk name ty tr' e' => .quant m qk name ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
   | .app m e1 e2 => .app m (varClose k x e1) (varClose k x e2)
   | .ite m c t e => .ite m (varClose k x c) (varClose k x t) (varClose k x e)
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
@@ -210,8 +210,8 @@ def lcAt (k : Nat) (e : LExpr ⟨T, GenericTy⟩) : Bool :=
   | .op _ _ _ => true
   | .bvar _ i => i < k
   | .fvar _ _ _ => true
-  | .abs _ _ e1 => lcAt (k + 1) e1
-  | .quant _ _ _ tr e1 => lcAt (k + 1) tr && lcAt (k + 1) e1
+  | .abs _ _ _ e1 => lcAt (k + 1) e1
+  | .quant _ _ _ _ tr e1 => lcAt (k + 1) tr && lcAt (k + 1) e1
   | .app _ e1 e2 => lcAt k e1 && lcAt k e2
   | .ite _ c t e' => lcAt k c && lcAt k t && lcAt k e'
   | .eq _ e1 e2 => lcAt k e1 && lcAt k e2
@@ -259,13 +259,13 @@ theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i +
 
 theorem lcAt_varOpen_abs
   (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
-  lcAt i (abs m ty y) := by
+  lcAt i (abs m name ty y) := by
   simp[lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
 
 theorem lcAt_varOpen_quant
   (hy : lcAt k (varOpen i x y)) (hki : k <= i)
   (htr: lcAt k (varOpen i x tr)) :
-  lcAt i (quant m qk ty tr y) := by
+  lcAt i (quant m qk name ty tr y) := by
   simp[lcAt]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
 
 /--
@@ -298,8 +298,8 @@ def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) (cutoff : Nat := 0) : LEx
   match e with
   | .const _ _ => e | .op _ _ _ => e | .fvar _ _ _ => e
   | .bvar m i => if i >= cutoff then .bvar m (i + n) else e
-  | .abs m ty e' => .abs m ty (liftBVars n e' (cutoff + 1))
-  | .quant m qk ty tr' e' => .quant m qk ty (liftBVars n tr' (cutoff + 1)) (liftBVars n e' (cutoff + 1))
+  | .abs m name ty e' => .abs m name ty (liftBVars n e' (cutoff + 1))
+  | .quant m qk name ty tr' e' => .quant m qk name ty (liftBVars n tr' (cutoff + 1)) (liftBVars n e' (cutoff + 1))
   | .app m fn e' => .app m (liftBVars n fn cutoff) (liftBVars n e' cutoff)
   | .ite m c t e' => .ite m (liftBVars n c cutoff) (liftBVars n t cutoff) (liftBVars n e' cutoff)
   | .eq m e1 e2 => .eq m (liftBVars n e1 cutoff) (liftBVars n e2 cutoff)
@@ -314,8 +314,8 @@ def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) 
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
   | .fvar _ name _ => if name == fr then to else e
-  | .abs m ty e' => .abs m ty (substFvar e' fr to)
-  | .quant m qk ty tr' e' => .quant m qk ty (substFvar tr' fr to) (substFvar e' fr to)
+  | .abs m name ty e' => .abs m name ty (substFvar e' fr to)
+  | .quant m qk name ty tr' e' => .quant m qk name ty (substFvar tr' fr to) (substFvar e' fr to)
   | .app m fn e' => .app m (substFvar fn fr to) (substFvar e' fr to)
   | .ite m c t e' => .ite m (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq m e1 e2 => .eq m (substFvar e1 fr to) (substFvar e2 fr to)
@@ -337,8 +337,8 @@ where
     match e with
     | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
     | .fvar _ name _ => if name == fr then liftBVars depth to else e
-    | .abs m ty e' => .abs m ty (go e' (depth + 1))
-    | .quant m qk ty tr' e' => .quant m qk ty (go tr' (depth + 1)) (go e' (depth + 1))
+    | .abs m name ty e' => .abs m name ty (go e' (depth + 1))
+    | .quant m qk name ty tr' e' => .quant m qk name ty (go tr' (depth + 1)) (go e' (depth + 1))
     | .app m fn e' => .app m (go fn depth) (go e' depth)
     | .ite m c t f => .ite m (go c depth) (go t depth) (go f depth)
     | .eq m e1 e2 => .eq m (go e1 depth) (go e2 depth)

@@ -13,50 +13,50 @@ namespace Core
 open Lambda
 open Strata.SMT
 
-/-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
+/-- info: "(define-fun t0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
+  (.quant () .all "n" (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "m" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
 /--
-info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (= $__bv0 f0)))\n"
+info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "i" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 f1) :pattern ((f0 $__bv0)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant ()  .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
+   (.quant ()  .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 
 /--
-info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) f1) :pattern ((f0 $__bv0)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
+   (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /-- info: "Cannot encode expression (f %0)" -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
+   (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-const f0 (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\n; x\n(declare-const f2 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f1 $__bv0) f2) :pattern (f0))))\n"
+info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist (.some .int)
+   (.quant () .exist "i" (.some .int)
    (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
    (ctx := SMT.Context.default)
@@ -68,11 +68,11 @@ info: "; f\n(declare-const f0 (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\
    }})
 
 /--
-info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) f1) :pattern ((f0 $__bv1 $__bv0)))))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
+   (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
@@ -86,11 +86,11 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 
 
 /--
-info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (= (f0 $__bv1 $__bv0) f1)))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((m Int) (n Int)) (= (f n m) x)))\n"
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
-   (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
+   (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
@@ -108,7 +108,7 @@ section ArrayTheory
 
 -- Test map select with Array theory enabled
 /--
-info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int) f0)\n; i\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n(define-fun t2 () Int (select t0 t1))\n"
+info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun t1 () Int i)\n(define-fun t2 () Int (select t0 t1))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -125,7 +125,7 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
 
 -- Test map update with Array theory enabled
 /--
-info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int) f0)\n; i\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; v\n(declare-const f2 Int)\n(define-fun t2 () Int f2)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n"
+info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun t1 () Int i)\n; v\n(declare-const v Int)\n(define-fun t2 () Int v)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -143,7 +143,7 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
 
 -- Test nested map operations with Array theory
 /--
-info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int) f0)\n; i\n(declare-const f1 Int)\n(define-fun t1 () Int f1)\n; v\n(declare-const f2 Int)\n(define-fun t2 () Int f2)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n; j\n(declare-const f3 Int)\n(define-fun t4 () Int f3)\n(define-fun t5 () Int (select t3 t4))\n"
+info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun t1 () Int i)\n; v\n(declare-const v Int)\n(define-fun t2 () Int v)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n; j\n(declare-const j Int)\n(define-fun t4 () Int j)\n(define-fun t5 () Int (select t3 t4))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -160,6 +160,40 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
         factory := Core.Factory
       }
    }})
+
+-- Test empty string falls back to generated names
+/-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
+   (.eq () (.bvar () 1) (.bvar () 0))))
+
+-- Test name clash between two nested quantifiers with same name
+-- Expected: Inner x should be disambiguated to x@1
+/-- info: "(define-fun t0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
+   (.eq () (.bvar () 1) (.bvar () 0))))
+
+-- Test x, x, x@1 scenario: nested quantifiers both named "x", then bvar named "x@1"
+-- Expected: outer x stays x, inner x becomes x@1, bvar "x@1" becomes x@2
+/-- info: "(define-fun t0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+    (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
+     (.eq () (.bvar () 0) (.bvar () 2)))))
+
+
+/-- info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 end ArrayTheory
 
@@ -195,7 +229,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
+#eval! verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
 
 -- Test verification with Array theory
 /--
@@ -205,6 +239,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true})
+#eval! verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true})
 
 end Strata

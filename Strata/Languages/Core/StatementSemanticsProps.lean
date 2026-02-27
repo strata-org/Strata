@@ -2084,10 +2084,10 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case abs m ty e ih =>
-    exact ih (Hwfc.definedness.absdef σ m ty e Hsome) v Hin
-  case quant m k ty tr e trih eih =>
-    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k ty tr e Hsome
+  case abs m name ty e ih =>
+    exact ih (Hwfc.definedness.absdef σ m name ty e Hsome) v Hin
+  case quant m k name ty tr e trih eih =>
+    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k name ty tr e Hsome
     grind
   case app m e₁ e₂ ih₁ ih₂ =>
     have ⟨h₁, h₂⟩ := Hwfc.definedness.appdef σ m e₁ e₂ Hsome

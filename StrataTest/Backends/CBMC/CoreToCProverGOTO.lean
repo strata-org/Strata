@@ -87,8 +87,8 @@ def substVarNames {Metadata IDMeta: Type} [DecidableEq IDMeta]
   | .fvar _ name ty =>
     let name_alt := frto.find? name.name
     .fvar () (Lambda.Identifier.mk (name_alt.getD name.name) Core.Visibility.unres) ty
-  | .abs _ ty e' => .abs () ty (substVarNames e' frto)
-  | .quant _ qk ty tr' e' => .quant () qk ty (substVarNames tr' frto) (substVarNames e' frto)
+  | .abs _ name ty e' => .abs () name ty (substVarNames e' frto)
+  | .quant _ qk name ty tr' e' => .quant () qk name ty (substVarNames tr' frto) (substVarNames e' frto)
   | .app _ f e' => .app () (substVarNames f frto) (substVarNames e' frto)
   | .ite _ c t e' => .ite () (substVarNames c frto) (substVarNames t frto) (substVarNames e' frto)
   | .eq _ e1 e2 => .eq () (substVarNames e1 frto) (substVarNames e2 frto)

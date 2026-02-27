@@ -226,7 +226,7 @@ def varClose (k : Nat) (x : IdentT LMonoTy TrivialParams.IDMeta) (e : LExpr Triv
   | .fvar m y yty => if x.fst == y && (yty == x.snd) then
                       (.bvar m k) else (.fvar m y yty)
   | .abs m ty e' => .abs m ty (varClose (k + 1) x e')
-  | .quant m qk ty tr' e' => .quant m qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
+  | .quant m qk _ ty tr' e' => .quant m qk "" ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
   | .app m e1 e2 => .app m (varClose k x e1) (varClose k x e2)
   | .ite m c t e => .ite m (varClose k x c) (varClose k x t) (varClose k x e)
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)

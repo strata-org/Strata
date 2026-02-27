@@ -128,8 +128,8 @@ private def getExprType (e : Expression.Expr) : Option LMonoTy :=
     | some (.tcons "arrow" [_, ret]) => some ret
     | _ => none
   | .eq _ _ _ => some .bool
-  | .quant _ _ _ _ _ => some .bool
-  | .abs _ ty e =>
+  | .quant _ _ _ _ _ _ => some .bool
+  | .abs _ _ ty e =>
     match ty, getExprType e with
     | some ty1, some ty2 => some (.arrow ty1 ty2)
     | _, _ => none

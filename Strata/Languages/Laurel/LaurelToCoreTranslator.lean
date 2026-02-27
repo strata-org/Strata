@@ -199,11 +199,11 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   | .Forall name ty body =>
       let coreTy := translateType ty
       let coreBody ← translateExpr env body (name :: boundVars) isPureContext
-      return LExpr.all () (some coreTy) coreBody
+      return LExpr.all () name (some coreTy) coreBody
   | .Exists name ty body =>
       let coreTy := translateType ty
       let coreBody ← translateExpr env body (name :: boundVars) isPureContext
-      return LExpr.exist () (some coreTy) coreBody
+      return LExpr.exist () name (some coreTy) coreBody
   | .Hole => return dummy
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr env e1 boundVars isPureContext

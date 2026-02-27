@@ -48,8 +48,8 @@ match ine with
     | .op m o oty => .op m (CoreIdent.unres o.name) oty
     | .bvar m deBruijnIndex => .bvar m deBruijnIndex
     | .fvar m name oty => .fvar m (CoreIdent.unres name.name) oty
-    | .abs m oty e => .abs m oty (ToCoreIdent e)
-    | .quant m k oty tr e => .quant m k oty (ToCoreIdent tr) (ToCoreIdent e)
+    | .abs m name oty e => .abs m name oty (ToCoreIdent e)
+    | .quant m k name oty tr e => .quant m k name oty (ToCoreIdent tr) (ToCoreIdent e)
     | .app m fn e => .app m (ToCoreIdent fn) (ToCoreIdent e)
     | .ite m c t e => .ite m (ToCoreIdent c) (ToCoreIdent t) (ToCoreIdent e)
     | .eq m e1 e2 => .eq m (ToCoreIdent e1) (ToCoreIdent e2)
