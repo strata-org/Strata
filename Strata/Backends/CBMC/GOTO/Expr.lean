@@ -50,6 +50,8 @@ inductive Unary where
   | Bitnot
   /-- `history_exprt` with `ID_old` -/
   | Old
+  /-- `array_of_exprt` (constant map/array) -/
+  | ArrayOf
   /-- `typecast_exprt` -/
   | Typecast
   deriving Repr, Inhabited, DecidableEq
@@ -61,6 +63,7 @@ instance : ToFormat Unary where
     | .Not => "not"
     | .Bitnot => "bitnot"
     | .Old => "old"
+    | .ArrayOf => "array_of"
     | .Typecast => "typecast"
 
 /--

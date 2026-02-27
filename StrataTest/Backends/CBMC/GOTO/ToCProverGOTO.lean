@@ -150,7 +150,8 @@ def ExampleStmt1 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
 info: ok: #[LOCATION skip,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
- ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32]))]
+ ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32])),
+ LOCATION skip]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test1" ExampleStmt1
@@ -232,6 +233,7 @@ info: ok: #[LOCATION skip,
  ASSIGN (assign (x : unsignedbv[32]) (100 : unsignedbv[32])),
  GOTO skip,
  LOCATION skip,
+ LOCATION skip,
  LOCATION skip]
 -/
 #guard_msgs in
@@ -250,7 +252,13 @@ def ExampleStmt5 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
      {}]
 
 /--
-info: error: exit: Unimplemented statement.
+info: ok: #[DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ GOTO skip,
+ ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
+ LOCATION skip,
+ ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32])),
+ LOCATION skip]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test5" ExampleStmt5
@@ -320,10 +328,13 @@ info: ok: #[LOCATION skip,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
  LOCATION skip,
+ LOCATION skip,
  DECL (decl (y : unsignedbv[32])),
  ASSIGN (assign (y : unsignedbv[32]) (20 : unsignedbv[32])),
  LOCATION skip,
- ASSIGN (assign (x : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32]))]
+ LOCATION skip,
+ ASSIGN (assign (x : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32])),
+ LOCATION skip]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test7" ExampleStmt7

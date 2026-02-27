@@ -52,6 +52,8 @@ structure GotoTransform (TypeEnv : Type) where
   nextLoc : Nat
   T : TypeEnv
   fileMap : Option Lean.FileMap := none
+  /-- Pending exit GOTOs: (instruction array index, target label). -/
+  pendingExits : List (Nat × Option String) := []
 
 /-- Extract a CProverGOTO.SourceLocation from Imperative metadata.
     Uses the FileMap (if available) to convert byte offsets to line/column. -/
@@ -270,7 +272,14 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     -- Block with label - emit a LOCATION instruction with the label, then process body
     let srcLoc := metadataToSourceLoc md functionName trans.fileMap
     let trans := emitLabel label srcLoc trans
-    Block.toGotoInstructions trans.T functionName body trans
+    let trans ← Block.toGotoInstructions trans.T functionName body trans
+    -- Patch any pending exits targeting this block's label (or unlabeled exits)
+    let end_loc := trans.nextLoc
+    let trans := emitLabel s!"end_block_{label}" srcLoc trans
+    let (matching, remaining) := trans.pendingExits.partition fun (_, l) =>
+      l == some label || l == none
+    let patches := matching.map fun (idx, _) => (idx, end_loc)
+    return patchGotoTargets { trans with pendingExits := remaining } patches
 
   | .ite cond thenb elseb md =>
     /-
@@ -337,9 +346,11 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       let trans := emitLabel s!"loop_end_{loop_start_loc}" srcLoc trans
       return patchGotoTargets trans [(goto_end_idx, loop_end_loc)]
 
-  | .exit _label _md =>
-    -- Exit statements are not supported in GOTO translation.
-    .error "exit: Unimplemented statement."
+  | .exit label md =>
+    -- Emit an unconditional GOTO whose target will be patched by the enclosing block.
+    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let (trans, idx) := emitUncondGoto srcLoc trans
+    return { trans with pendingExits := (idx, label) :: trans.pendingExits }
 
   | .funcDecl _decl _md =>
     -- Function declarations are not yet supported in GOTO translation
@@ -370,6 +381,13 @@ def Stmts.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident] (T : P.TyEnv)
     (functionName : String) (stmts : List (Stmt P (Cmd P))) (loc : Nat := 0)
     (fileMap : Option Lean.FileMap := none) :
     Except Format (GotoTransform P.TyEnv) := do
-  Block.toGotoInstructions T functionName stmts { instructions := #[], nextLoc := loc, T := T, fileMap := fileMap }
+  let trans ← Block.toGotoInstructions T functionName stmts
+    { instructions := #[], nextLoc := loc, T := T, fileMap := fileMap }
+  if !trans.pendingExits.isEmpty then
+    let labels := trans.pendingExits.map fun (_, l) => match l with
+      | some s => s!"exit {s}" | none => "exit (unlabeled)"
+    .error f!"Unresolved exit statements: {labels}"
+  else
+    return trans
 
 -------------------------------------------------------------------------------

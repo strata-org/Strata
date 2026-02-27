@@ -646,7 +646,13 @@ private partial def coreStmtsToGoto
         if hasCallStmt body then
           let srcLoc := Imperative.metadataToSourceLoc md pname trans.fileMap
           let trans := Imperative.emitLabel l srcLoc trans
-          coreStmtsToGoto Env pname rn body trans
+          let trans ← coreStmtsToGoto Env pname rn body trans
+          let end_loc := trans.nextLoc
+          let trans := Imperative.emitLabel s!"end_block_{l}" srcLoc trans
+          let (matching, remaining) := trans.pendingExits.partition fun (_, lab) =>
+            lab == some l || lab == none
+          let patches := matching.map fun (idx, _) => (idx, end_loc)
+          pure (Imperative.patchGotoTargets { trans with pendingExits := remaining } patches)
         else
           let impStmt ← unwrapCmdExt rn stmt
           Imperative.Stmt.toGotoInstructions trans.T pname impStmt trans
@@ -704,6 +710,7 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
     (fileMap : Option Lean.FileMap := none)
     (axioms : List Core.Axiom := [])
     (distincts : List (Core.Expression.Ident × List Core.Expression.Expr) := [])
+    (varTypes : Core.Expression.Ident → Option Core.Expression.Ty := fun _ => none)
     : Except Std.Format (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
   -- Lift local function declarations out of the body
   let (liftedFuncs, body) ← collectFuncDecls p.body
@@ -790,8 +797,12 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
   if !p.spec.modifies.isEmpty then
-    let modGoto := p.spec.modifies.map fun ident =>
-      CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) .Integer
+    let mut modGoto : List CProverGOTO.Expr := []
+    for ident in p.spec.modifies do
+      let ty ← match varTypes ident with
+        | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
+        | _ => pure .Integer
+      modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
     let modJson := modGoto.map CProverGOTO.exprToJson
     contracts := contracts ++ [("#spec_assigns",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr modJson.toArray)])]
@@ -1022,7 +1033,8 @@ def pyAnalyzeToGotoCommand : Command where
       let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
       let distincts := tcPgm.decls.filterMap fun d => match d with
         | .distinct name es _ => some (name, es) | _ => none
-      match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts) with
+      match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts)
+            (varTypes := tcPgm.getVarTy?) with
       | .error e => panic! s!"{e}"
       | .ok (ctx, liftedFuncs) =>
         let extraSyms ← match collectExtraSymbols tcPgm with
@@ -1114,7 +1126,8 @@ def pyAnalyzeLaurelToGotoCommand : Command where
         let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
         let distincts := tcPgm.decls.filterMap fun d => match d with
           | .distinct name es _ => some (name, es) | _ => none
-        match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts) with
+        match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts)
+              (varTypes := tcPgm.getVarTy?) with
         | .error e => panic! s!"{e}"
         | .ok (ctx, liftedFuncs) =>
           let extraSyms ← match collectExtraSymbols tcPgm with
@@ -1307,7 +1320,8 @@ def laurelAnalyzeToGotoCommand : Command where
         let mut allLiftedFuncs : List Core.Function := []
         for p in procs do
           let procName := Core.CoreIdent.toPretty p.header.name
-          match procedureToGotoCtx Env p (fileMap := fileMap) (axioms := axioms) (distincts := distincts) with
+          match procedureToGotoCtx Env p (fileMap := fileMap) (axioms := axioms) (distincts := distincts)
+                (varTypes := tcPgm.getVarTy?) with
           | .error e => panic! s!"{e}"
           | .ok (ctx, liftedFuncs) =>
             allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
