@@ -199,11 +199,9 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 recursive function contains (key : int, xs : IntList) : bool
   decreases xs
 {
-  ! (IntList..isNil(xs)) &&
-  (IntList..hd(xs) == key  || contains(key, IntList..tl(xs)))
-  //if IntList..isNil(xs) then false
-  //else if IntList..hd(xs) == key then true
-  //else contains(key, IntList..tl(xs))
+  if IntList..isNil(xs) then false
+  else if IntList..hd(xs) == key then true
+  else contains(key, IntList..tl(xs))
 }
 
 procedure TestContains() returns ()
@@ -246,7 +244,7 @@ Result: ✅ pass
 -- Test 4: imperative loop equivalent to recursive function
 ---------------------------------------------------------------------
 
--- TODO: without termination checking, this isn't really a proof
+-- Note: without termination checking, this isn't really a proof
 
 def impEquivPgm : Program :=
 #strata
