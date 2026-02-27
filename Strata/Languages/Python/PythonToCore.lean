@@ -569,10 +569,10 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       let k := PyExprToCore translation_ctx slice
       -- TODO: we need to plumb the type of `v` here
       match s!"{repr l.expr}" with
-      | "LExpr.fvar () { name := \"keys\", metadata := Core.Visibility.unres } none" =>
+      | "LExpr.fvar () { name := \"keys\", metadata := () } none" =>
           -- let access_check : Core.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
           {stmts := l.stmts ++ k.stmts, expr := .app () (.app () (.op () "list_str_get" none) l.expr) k.expr}
-      | "LExpr.fvar () { name := \"blended_cost\", metadata := Core.Visibility.unres } none" =>
+      | "LExpr.fvar () { name := \"blended_cost\", metadata := () } none" =>
           -- let access_check : Core.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
           {stmts := l.stmts ++ k.stmts, expr := .app () (.app () (.op () "dict_str_any_get_str" none) l.expr) k.expr}
       | _ =>
@@ -811,7 +811,7 @@ def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
   | _ => panic! s!"Unsupported type: {ty_str}"
 
 def pythonFuncToCore (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Core.Procedure.Spec) (translation_ctx : TranslationContext) : Core.Procedure :=
-  let inputs : List (Lambda.Identifier Core.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
+  let inputs : List (Lambda.Identifier Unit × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
   let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (some (.boolConst () false)) .empty), (.havoc "exception_ty_matches" .empty)]
   let stmts := (ArrPyStmtToCore translation_ctx body).fst
   let body := varDecls ++ [.block "end" stmts .empty]

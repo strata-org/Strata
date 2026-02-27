@@ -81,8 +81,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -103,8 +103,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -114,13 +114,12 @@ procedure h() returns () spec {
   var tmp_arg_0 : bool := k;
   var tmp_arg_1 : bool := l;
   var tmp_b_2 : bool := b;
-  var old_k_3 : bool := k;
-  var old_j_4 : bool := j;
-  assert [callElimAssert_f_requires_0_5]: i == !tmp_arg_0;
+  var old_j_3 : bool := j;
+  assert [callElimAssert_f_requires_0_4]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_1_6]: b == (old_k_3 && old_j_4);
-  assume [callElimAssume_f_ensures_2_7]: b == old_j_4;
+  assume [callElimAssume_f_ensures_1_5]: b == (k && old_j_3);
+  assume [callElimAssume_f_ensures_2_6]: b == old_j_3;
 };
 #end
 
@@ -134,8 +133,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -156,8 +155,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -167,13 +166,12 @@ procedure h() returns () spec {
   var tmp_arg_0 : bool := k && i || j;
   var tmp_arg_1 : bool := l;
   var tmp_b_2 : bool := b;
-  var old_k_3 : bool := k;
-  var old_j_4 : bool := j;
-  assert [callElimAssert_f_requires_0_5]: i == !tmp_arg_0;
+  var old_j_3 : bool := j;
+  assert [callElimAssert_f_requires_0_4]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_1_6]: b == (old_k_3 && old_j_4);
-  assume [callElimAssume_f_ensures_2_7]: b == old_j_4;
+  assume [callElimAssume_f_ensures_1_5]: b == (k && old_j_3);
+  assume [callElimAssume_f_ensures_2_6]: b == old_j_3;
 };
 #end
 
@@ -251,8 +249,5 @@ info: true
 -/
 #guard_msgs in
 #eval tests.all (λ (test, ans) ↦ (toString (callElim test).eraseTypes) == (toString ans.eraseTypes))
-
--- #eval callElim tests[0]!.fst
--- #eval tests[0]!.snd
 
 end CallElimExamples

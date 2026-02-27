@@ -21,10 +21,10 @@ abbrev Function := Lambda.LFunc CoreLParams
 
 -- Type class instances to enable type class resolution for CoreLParams.Identifier
 instance : DecidableEq CoreLParams.IDMeta :=
-  show DecidableEq Visibility from inferInstance
+  show DecidableEq Unit from inferInstance
 
 instance : ToFormat CoreLParams.IDMeta :=
-  show ToFormat Visibility from inferInstance
+  show ToFormat Unit from inferInstance
 
 /-- Convert a `PureFunc Expression` (with polytypes) to a `Function` (with monotypes).
     Returns an error if any type is not a monotype. -/
