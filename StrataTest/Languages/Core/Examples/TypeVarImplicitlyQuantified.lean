@@ -49,4 +49,4 @@ axiom [a2]: forall __q0 : bool :: forall __q1 : int :: forall __q2 : int :: fora
   (lambda_0(__q0, __q1, __q2))[__q3] == (lambda_0(__q0, __q2, __q1))[__q3];
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.default core_pgm.fst
+#eval Core.typeCheck .default core_pgm.fst
