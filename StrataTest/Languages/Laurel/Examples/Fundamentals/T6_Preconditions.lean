@@ -38,7 +38,7 @@ function aFunctionWithPrecondition(x: int): int
 
 procedure aFunctionWithPreconditionCaller() {
   var x: int := aFunctionWithPrecondition(0);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
 "
 

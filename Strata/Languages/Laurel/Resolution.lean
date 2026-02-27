@@ -77,6 +77,7 @@ inductive AstNode where
 def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
+ | .field _ f => f.type
  | _ => panic s!"PANIC: getType called on {repr node}"
 
 /-! ## Resolution result -/
@@ -89,9 +90,9 @@ structure SemanticModel where
 
 deriving instance Inhabited for Strata.Laurel.AstNode
 def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
-  let uuid := id.id.getD (panic s!"identifier {id.name} without number")
-  model.refToDef.get! uuid
-  -- (panic s!"refToDef key '{id.name}', uuid {id.id} not found in model {repr model}")
+  match id.id with
+  | some uuid => model.refToDef.get! uuid
+  | none => dbg_trace s!"PANIC: identifier {id.name} without number"; default
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
@@ -104,6 +105,8 @@ structure ResolutionResult where
   program : Program
   /-- Map from reference node ID to the definition it resolves to. -/
   model : SemanticModel
+  /-- Diagnostics collected during resolution (e.g. unresolved references). -/
+  errors : Array DiagnosticModel := #[]
 
 /-! ## ID assignment and resolution -/
 
@@ -118,6 +121,8 @@ structure ResolveState where
   scope : Scope := {}
   /-- Accumulated map from reference IDs to definition nodes. -/
   refToDef : Std.HashMap Nat AstNode := {}
+  /-- Diagnostics collected during resolution. -/
+  errors : Array DiagnosticModel := #[]
 
 abbrev ResolveM := StateM ResolveState
 
@@ -129,19 +134,20 @@ private def freshId : ResolveM Nat := do
   return id
 
 /-- Register a definition: assign a fresh ID to the identifier and record it in scope. -/
-def defineName (name : Identifier) (node : AstNode) : ResolveM Identifier := do
-  let name' ← if name.id == none then
+def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+  let resolutionName := overrideResolutionName.getD iden.name
+  let name' ← if iden.id == none then
     let id ← freshId
-    pure { name with id := some (id) }
+    pure { iden with id := some (id) }
   else
-    pure name
+    pure iden
 
-  modify fun s => { s with scope := s.scope.insert name.name (name'.id.getD (panic "key was just inserted"), node) }
+  modify fun s => { s with scope := s.scope.insert resolutionName (name'.id.getD (panic "key was just inserted"), node) }
   return name'
 
 /-- Resolve a reference: look up the name in scope, assign the definition's ID,
     and record the ref→def mapping. Returns the identifier with its ID filled in. -/
-def resolveRef (name : Identifier) : ResolveM Identifier := do
+def resolveRef (name : Identifier) (md : Imperative.MetaData Core.Expression := .empty) : ResolveM Identifier := do
   let s ← get
   match s.scope.get? name.name with
   | some (defId, defNode) =>
@@ -149,6 +155,8 @@ def resolveRef (name : Identifier) : ResolveM Identifier := do
     modify fun s => { s with refToDef := s.refToDef.insert defId defNode }
     return name'
   | none =>
+    let diag := md.toDiagnostic s!"Resolution failed: '{name.name}' is not defined"
+    modify fun s => { s with errors := s.errors.push diag }
     return { name with id := none }
 
 /-- Save and restore scope around a block (for lexical scoping). -/
@@ -165,7 +173,7 @@ mutual
 partial def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   let val' ← match ty.val with
   | .UserDefined ref =>
-    let ref' ← resolveRef ref
+    let ref' ← resolveRef ref ty.md
     pure (.UserDefined ref')
   | .TTypedField vt =>
     let vt' ← resolveHighType vt
@@ -220,7 +228,7 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralBool v => pure (.LiteralBool v)
   | .LiteralString v => pure (.LiteralString v)
   | .Identifier ref =>
-    let ref' ← resolveRef ref
+    let ref' ← resolveRef ref expr.md
     pure (.Identifier ref')
   | .Assign targets value =>
     let targets' ← targets.mapM resolveStmtExpr
@@ -228,22 +236,22 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.Assign targets' value')
   | .FieldSelect target fieldName =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveRef fieldName
+    let fieldName' ← resolveRef fieldName expr.md
     pure (.FieldSelect target' fieldName')
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveRef fieldName
+    let fieldName' ← resolveRef fieldName expr.md
     let newVal' ← resolveStmtExpr newVal
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
-    let callee' ← resolveRef callee
+    let callee' ← resolveRef callee expr.md
     let args' ← args.mapM resolveStmtExpr
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
     let args' ← args.mapM resolveStmtExpr
     pure (.PrimitiveOp op args')
   | .New ref =>
-    let ref' ← resolveRef ref
+    let ref' ← resolveRef ref expr.md
     pure (.New ref')
   | .This => pure .This
   | .ReferenceEquals lhs rhs =>
@@ -260,7 +268,7 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.IsType target' ty')
   | .InstanceCall target callee args =>
     let target' ← resolveStmtExpr target
-    let callee' ← resolveRef callee
+    let callee' ← resolveRef callee expr.md
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
   | .Forall param body =>
@@ -374,7 +382,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← defineName ct.name (.compositeType ct)
-    let extending' ← ct.extending.mapM resolveRef
+    let extending' ← ct.extending.mapM (resolveRef · .empty)
     let fields' ← ct.fields.mapM (resolveField ctName')
     let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
     return .Composite { name := ctName', extending := extending',
@@ -390,9 +398,10 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dtName' ctor)
-      let args' ← ctor.args.mapM fun (n, ty) => do
-        let ty' ← resolveHighType ty
-        return (n, ty')
+      let args' ← ctor.args.mapM fun p => do
+        let ty' ← resolveHighType p.type
+        let destructorId ← defineName p.name (.parameter p) (some $ dt.name.name ++ ".." ++ p.name.name)
+        return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
 
@@ -421,5 +430,6 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
       compositeCount := program.types.length,
       refToDef := finalState.refToDef,
       nextId := finalState.nextId
-    }
+    },
+    errors := finalState.errors
   }

@@ -537,7 +537,7 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
   | first :: rest =>
     let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun c =>
       { name := Core.CoreIdent.unres c.name.name
-        args := c.args.map fun (n, ty) => (Core.CoreIdent.unres n, translateType ty) }
+        args := c.args.map fun ⟨ n, ty ⟩ => (Core.CoreIdent.unres n.name, translateType ty) }
     let ldt : Lambda.LDatatype Core.Visibility := {
       name := dt.name.name
       typeArgs := dt.typeArgs
@@ -563,67 +563,87 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
-  let ⟨ program, model ⟩ := resolve program
+  dbg_trace "=== Before first resolve ==="
+  let result := resolve program
+  let (program, model) := (result.program, result.model)
+  let mut resolutionDiags := result.errors
+  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
+  dbg_trace "=== Before validateDiamondFieldAccesses ==="
   let diamondErrors := validateDiamondFieldAccesses model program
 
+  dbg_trace "=== Model before heapParameterization ==="
   let program := heapParameterization model program
-  let ⟨ program, model ⟩ := resolve program (some model)
-  let program := typeHierarchyTransform model program
-  let ⟨ program, model ⟩ := resolve program (some model)
-  let (program, modifiesDiags) := modifiesClausesTransform model program
-  let ⟨ program, model ⟩ := resolve program (some model)
-  dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  dbg_trace "================================="
-  let program := liftExpressionAssignments model program
-  let ⟨ program, model ⟩ := resolve program (some model)
-  dbg_trace "===  Program after liftExpressionAssignments ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  dbg_trace "================================="
+  dbg_trace "=== After heapParameterization ==="
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  dbg_trace "model: {repr model}"
+  resolutionDiags := resolutionDiags ++ result.errors
+  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
 
-  -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
-  let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
-  let initState : TranslateState := { model := model }
-  -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
-  let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
-    match tryTranslatePureToFunction p initState with
-    | .error es => (errs ++ es.toList, decls)
-    | .ok d     => (errs, decls.push d)) ([], #[])
-  -- Translate procedures using the monad, collecting diagnostics from the final state
-  let (procedures, procState) := runTranslateM initState do
-    procProcs.mapM translateProcedure
-  let procDiags := procState.diagnostics
+  panic "bla"
+  -- let program := typeHierarchyTransform model program
+  -- let result := resolve program (some model)
+  -- let (program, model) := (result.program, result.model)
+  -- resolutionDiags := resolutionDiags ++ result.errors
+  -- dbg_trace "=== After typeHierarchyTransform ==="
+  -- let (program, modifiesDiags) := modifiesClausesTransform model program
+  -- let result := resolve program (some model)
+  -- let (program, model) := (result.program, result.model)
+  -- resolutionDiags := resolutionDiags ++ result.errors
+  -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
+  -- let program := liftExpressionAssignments model program
+  -- let result := resolve program (some model)
+  -- let (program, model) := (result.program, result.model)
+  -- resolutionDiags := resolutionDiags ++ result.errors
+  -- dbg_trace "===  Program after liftExpressionAssignments ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
 
-  -- Translate Laurel constants to Core function declarations (0-ary functions)
-  let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
-    let coreTy := translateType c.type
-    let body ← c.initializer.mapM (translateExpr ·)
-    return Core.Decl.func {
-      name := Core.CoreIdent.unres c.name.name
-      typeArgs := []
-      inputs := []
-      output := coreTy
-      body := body
-    }
+  -- -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
+  -- let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
+  -- let initState : TranslateState := { model := model }
+  -- -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
+  -- let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
+  --   match tryTranslatePureToFunction p initState with
+  --   | .error es => (errs ++ es.toList, decls)
+  --   | .ok d     => (errs, decls.push d)) ([], #[])
+  -- -- Translate procedures using the monad, collecting diagnostics from the final state
+  -- let (procedures, procState) := runTranslateM initState do
+  --   procProcs.mapM translateProcedure
+  -- let procDiags := procState.diagnostics
 
-  -- Collect ALL errors from both functions and procedures before deciding whether to fail
-  let allErrors := pureErrors ++ procDiags ++ constantsState.diagnostics
-  if !allErrors.isEmpty then
-    .error allErrors.toArray
-  let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+  -- -- Translate Laurel constants to Core function declarations (0-ary functions)
+  -- let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
+  --   let coreTy := translateType c.type
+  --   let body ← c.initializer.mapM (translateExpr ·)
+  --   return Core.Decl.func {
+  --     name := Core.CoreIdent.unres c.name.name
+  --     typeArgs := []
+  --     inputs := []
+  --     output := coreTy
+  --     body := body
+  --   }
 
-  -- Filter out the Field and TypeTag opaque types. These are only in the prelude to satisfy the DDM type checker.
-  let preludeDecls := corePrelude.decls.filter fun d =>
-    d.name.name != "Field" && d.name.name != "TypeTag"
+  -- -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
+  -- let allErrors := resolutionDiags.toList ++ pureErrors ++ procDiags ++ constantsState.diagnostics
+  -- if !allErrors.isEmpty then
+  --   .error allErrors.toArray
+  -- let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
-  -- Translate Laurel datatype definitions to Core datatype declarations
-  let laurelDatatypeDecls := program.types.filterMap fun td => match td with
-    | .Datatype dt => some (translateDatatypeDefinition dt)
-    | _ => none
-  pure ({
-    decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls },
-    diamondErrors ++ modifiesDiags
-  )
+  -- -- Filter out the Field and TypeTag opaque types. These are only in the prelude to satisfy the DDM type checker.
+  -- let preludeDecls := corePrelude.decls.filter fun d =>
+  --   d.name.name != "Field" && d.name.name != "TypeTag"
+
+  -- -- Translate Laurel datatype definitions to Core datatype declarations
+  -- let laurelDatatypeDecls := program.types.filterMap fun td => match td with
+  --   | .Datatype dt => some (translateDatatypeDefinition dt)
+  --   | _ => none
+  -- pure ({
+  --   decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls },
+  --   diamondErrors ++ modifiesDiags
+  -- )
 
 /--
 Verify a Laurel program using an SMT solver

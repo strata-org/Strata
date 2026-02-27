@@ -191,7 +191,7 @@ def formatConstrainedType (ct : ConstrainedType) : Format :=
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format :=
   Format.text c.name.name ++
   if c.args.isEmpty then Format.nil
-  else "(" ++ Format.joinSep (c.args.map fun (n, ty) => Format.text n ++ ": " ++ formatHighType ty) ", " ++ ")"
+  else "(" ++ Format.joinSep (c.args.map fun p => formatParameter p) ", " ++ ")"
 
 def formatDatatypeDefinition (dt : DatatypeDefinition) : Format :=
   "datatype " ++ Format.text dt.name.name ++

@@ -382,7 +382,7 @@ structure ConstrainedType where
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/
 structure DatatypeConstructor where
   name : Identifier
-  args : List (String × HighTypeMd)
+  args : List Parameter
 
 /-- A Laurel datatype Identifier with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.

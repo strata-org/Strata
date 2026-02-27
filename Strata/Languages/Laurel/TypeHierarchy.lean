@@ -60,7 +60,7 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
   let mkInnerMap (ct : CompositeType) : StmtExprMd :=
     let ancestors := computeAncestors model ct.name
     let falseConst := mkMd (.LiteralBool false)
-    let emptyInner := mkMd (.StaticCall (mkId "Map.const") [falseConst])
+    let emptyInner := mkMd (.StaticCall (mkId "const") [falseConst])
     composites.foldl (fun acc otherCt =>
       let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.name ++ "_TypeTag") [])
       let isAncestor := ancestors.any (·.name == otherCt.name)
@@ -74,8 +74,8 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
       initializer := some (mkInnerMap ct) : Constant }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
   let falseConst := mkMd (.LiteralBool false)
-  let emptyInner := mkMd (.StaticCall (mkId "Map.const") [falseConst])
-  let emptyOuter := mkMd (.StaticCall (mkId "Map.const") [emptyInner])
+  let emptyInner := mkMd (.StaticCall (mkId "const") [falseConst])
+  let emptyOuter := mkMd (.StaticCall (mkId "const") [emptyInner])
   let outerMapExpr := composites.foldl (fun acc ct =>
     let typeConst := mkMd (.StaticCall (mkId $ ct.name.name ++ "_TypeTag") [])
     let innerMapRef := mkMd (.StaticCall (mkId s!"ancestorsFor{ct.name.name}") [])
