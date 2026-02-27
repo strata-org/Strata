@@ -832,6 +832,7 @@ def translateFunction (ctx : TranslationContext) (funcdecl : PythonFunctionDecl)
       preconditions := []
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
+      isFunctional := false
       body := Body.Transparent bodyBlock
       md := default
     }
@@ -942,9 +943,10 @@ def pythonToLaurel (prelude: Core.Program)
       preconditions := [],
       determinism := .deterministic none, --TODO: need to set reads
       decreases := none,
+      isFunctional := false
       body := .Transparent bodyBlock
       md := default
-      }
+    }
 
     let program : Laurel.Program := {
       staticProcedures := procedures ++ [mainProc]

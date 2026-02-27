@@ -82,7 +82,7 @@ fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
-fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:50 " else " f:50;
+fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:0 " else " f:0;
 
 fn old (tp : Type, v : tp) : tp => "old" "(" v ")";
 
@@ -227,7 +227,8 @@ op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
 @[scope(c)]
 op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b:0 "\n";
-op goto_statement (label : Ident) : Statement => "goto " label ";\n";
+op exit_statement (label : Ident) : Statement => "exit " label ";\n";
+op exit_unlabeled_statement : Statement => "exit;\n";
 
 category SpecElt;
 category Free;

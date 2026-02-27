@@ -223,8 +223,8 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty,
       guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md])
-  | .goto lbl md =>
-    return (false, [.goto lbl md])
+  | .exit lbl md =>
+    return (false, [.exit lbl md])
   | .funcDecl decl md => do
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
