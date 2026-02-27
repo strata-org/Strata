@@ -252,7 +252,15 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
 
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
-    let x := if name.isEmpty then s!"$__bv{bvs.length}" else name
+    -- Generate base name
+    let baseName := if name.isEmpty then s!"$__bv{bvs.length}" else name
+    -- Check for clashes with existing bvars and disambiguate if needed
+    let rec findUniqueName (candidate : String) (suffix : Nat) : String :=
+      if bvs.any (fun (n, _) => n == candidate) then
+        findUniqueName s!"{baseName}@{suffix}" (suffix + 1)
+      else
+        candidate
+    let x := findUniqueName baseName 1
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory

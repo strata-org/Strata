@@ -169,6 +169,23 @@ info: "; m\n(declare-const f0 (Array Int Int))\n(define-fun t0 () (Array Int Int
    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
+-- Test name clash between two nested quantifiers with same name
+-- Expected: Inner x should be disambiguated (e.g., x@1 or x_1)
+/-- info: "(define-fun t0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+   (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
+   (.eq () (.bvar () 1) (.bvar () 0))))
+
+-- Test name clash between bvar and fvar at Lean level
+-- In SMT: fvar gets encoded as f0, so no actual clash in output
+/-- info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (forall ((x Int)) (= x f0)))\n" -/
+#guard_msgs in
+#eval toSMTTermString
+  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+
 end ArrayTheory
 
 end Core
