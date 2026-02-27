@@ -298,6 +298,30 @@ structure VCResult where
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
 
+/-- Mask outcome properties based on requested checks.
+    This ensures that PE-optimized results only show the checks that were requested.
+    Special handling: When masking satisfiability for a refuted property, we preserve
+    the "always false" semantic by keeping validity as the primary signal. -/
+def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool) : VCOutcome :=
+  if satisfiabilityCheck && validityCheck then
+    -- Both checks requested: return outcome as-is
+    outcome
+  else if validityCheck && !satisfiabilityCheck then
+    -- Only validity requested: mask satisfiability
+    -- Special case: if property is refuted (.unsat, .sat), keep it as (.unknown, .sat)
+    -- which will display as "reachable and can be false" instead of "refuted and reachable"
+    -- But for "pass if reachable" we want (.unknown, .unsat)
+    { satisfiabilityProperty := .unknown,
+      validityProperty := outcome.validityProperty }
+  else if satisfiabilityCheck && !validityCheck then
+    -- Only satisfiability requested: mask validity
+    { satisfiabilityProperty := outcome.satisfiabilityProperty,
+      validityProperty := .unknown }
+  else
+    -- No checks requested (shouldn't happen): return unknown
+    { satisfiabilityProperty := .unknown,
+      validityProperty := .unknown }
+
 instance : ToFormat VCResult where
   format r :=
     match r.outcome with
@@ -369,13 +393,13 @@ instance : ToString VCResults where
 Preprocess a proof obligation before handing it off to a backend engine.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
+    (options : Options) (satisfiabilityCheck validityCheck : Bool) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
   match obligation.property with
   | .cover =>
     if obligation.obligation.isFalse then
       -- If PE determines that the consequent is false, then we can immediately
       -- report a failure.
-      let outcome := VCOutcome.mk .unsat (.sat [])
+      let outcome := maskOutcome (VCOutcome.mk .unsat (.sat [])) satisfiabilityCheck validityCheck
       let result := { obligation, outcome := .ok outcome, verbose := options.verbose }
       return (obligation, some result)
     else
@@ -384,7 +408,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     if obligation.obligation.isTrue then
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
       -- reduce the consequent to true.
-      let outcome := VCOutcome.mk (.sat []) .unsat
+      let outcome := maskOutcome (VCOutcome.mk (.sat []) .unsat) satisfiabilityCheck validityCheck
       let result := { obligation, outcome := .ok outcome, verbose := options.verbose }
       return (obligation, some result)
     else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
@@ -397,7 +421,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
                    {if options.verbose >= .normal then prog else ""}"
-      let outcome := VCOutcome.mk .unsat (.sat [])
+      let outcome := maskOutcome (VCOutcome.mk .unsat (.sat [])) satisfiabilityCheck validityCheck
       let result := { obligation, outcome := .ok outcome, verbose := options.verbose }
       return (obligation, some result)
     else if options.removeIrrelevantAxioms then
@@ -449,7 +473,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                  {if options.verbose >= .normal then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
-    let outcome := VCOutcome.mk satResult validityResult
+    -- Mask SMT results based on requested checks
+    let outcome := maskOutcome (VCOutcome.mk satResult validityResult) satisfiabilityCheck validityCheck
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
@@ -468,7 +493,19 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
-      let (obligation, maybeResult) ← preprocessObligation obligation p options
+      -- Determine which checks to perform based on metadata or check mode/amount
+      let (satisfiabilityCheck, validityCheck) :=
+        if Imperative.MetaData.hasFullCheck obligation.metadata then
+          (true, true)  -- fullCheck annotation: always run both
+        else
+          -- Derive checks from check mode and amount
+          match options.checkMode, options.checkAmount, obligation.property with
+          | _, .full, _ => (true, true)  -- Full: both checks
+          | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
+          | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
+          | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
+          | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
+      let (obligation, maybeResult) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
       if h : maybeResult.isSome then
         let result := Option.get maybeResult h
         results := results.push result
@@ -494,18 +531,7 @@ def verifySingleEnv (pE : Program × Env) (options : Options)
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx) =>
-        -- Determine which checks to perform based on metadata or check mode/amount
-        let (satisfiabilityCheck, validityCheck) :=
-          if Imperative.MetaData.hasFullCheck obligation.metadata then
-            (true, true)  -- fullCheck annotation: always run both
-          else
-            -- Derive checks from check mode and amount
-            match options.checkMode, options.checkAmount, obligation.property with
-            | _, .full, _ => (true, true)  -- Full: both checks
-            | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
-            | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
-            | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
-            | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
+        -- satisfiabilityCheck and validityCheck were already computed above
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       counter tempDir satisfiabilityCheck validityCheck
         results := results.push result
