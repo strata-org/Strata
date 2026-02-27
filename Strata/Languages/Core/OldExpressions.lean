@@ -87,11 +87,11 @@ def IsOldPred.decidablePred (e : Expression.Expr): Decidable (IsOldPred e) :=
     by apply isFalse; intros Hold; cases Hold
 
 inductive IsFvar : Expression.Expr → Prop where
-  | fvar : IsFvar (.fvar () v ty)
+  | fvar : ∀ m, IsFvar (.fvar m v ty)
 
 def IsFvar.decidablePred (e : Expression.Expr): Decidable (IsFvar e) :=
   match He : e with
-  | .fvar _ v ty => isTrue fvar
+  | .fvar m v ty => isTrue (fvar m)
   | .op _ _ _ | .const _ _ | .bvar _ _ | .abs _ _ _
   | .quant _ _ _ _ _ | .app _ _ _ | .ite _ _ _ _  | .eq _ _ _ =>
     by apply isFalse; intros H; cases H
@@ -467,7 +467,7 @@ case app fn e fn_ih e_ih =>
       split at Hnorm <;> simp_all
       simp [normalizeOldExpr] at Hnorm
       next o ty o' ty' _he h heq =>
-      generalize Hop : (Lambda.LExpr.op () o' ty') = op at Hnorm
+      generalize Hop : (Lambda.LExpr.op Strata.SourceRange.none o' ty') = op at Hnorm
       generalize Hne : (normalizeOldExpr e) = ne at *
       cases Hnorm <;> simp_all
     . intros Hold

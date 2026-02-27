@@ -25,13 +25,23 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving DecidableEq, Inhabited, Repr
+deriving DecidableEq, Inhabited
+
+/-- Compact repr: always displays as `()` to keep debug output readable.
+    Source location info is available via `SourceRange.format`. -/
+instance : Repr SourceRange where
+  reprPrec _ _ := "()"
 
 namespace SourceRange
 
 def none : SourceRange := { start := 0, stop := 0 }
 
 def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
+
+/-- info: "()" -/
+#guard_msgs in #eval toString (reprPrec (none : SourceRange) 0)
+/-- info: "()" -/
+#guard_msgs in #eval toString (reprPrec ({ start := ⟨5⟩, stop := ⟨10⟩ } : SourceRange) 0)
 
 instance : Std.ToFormat SourceRange where
  format fr := f!"{fr.start}-{fr.stop}"

@@ -50,7 +50,7 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
   { label := label
     property := .assert
     assumptions := []
-    obligation := Lambda.LExpr.boolConst () true
+    obligation := Lambda.LExpr.boolConst Strata.SourceRange.none true
     metadata := md }
 
 /-- Create a VCResult for testing -/

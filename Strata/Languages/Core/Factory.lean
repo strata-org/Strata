@@ -42,17 +42,17 @@ def TImplicit {Metadata: Type} (IDMeta: Type): LExprParamsT := ({Metadata := Met
   Convert an LExpr LMonoTy Unit to an LExpr LMonoTy Visibility
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
-def ToCoreIdent {M: Type} (ine: LExpr (@TImplicit M Unit)): LExpr (@TImplicit M Visibility) :=
+def ToCoreIdent {M: Type} (ine: LExpr (@TImplicit M Unit)): LExpr (@TImplicit Strata.SourceRange Visibility) :=
 match ine with
-    | .const m c => .const m c
-    | .op m o oty => .op m (CoreIdent.unres o.name) oty
-    | .bvar m deBruijnIndex => .bvar m deBruijnIndex
-    | .fvar m name oty => .fvar m (CoreIdent.unres name.name) oty
-    | .abs m oty e => .abs m oty (ToCoreIdent e)
-    | .quant m k oty tr e => .quant m k oty (ToCoreIdent tr) (ToCoreIdent e)
-    | .app m fn e => .app m (ToCoreIdent fn) (ToCoreIdent e)
-    | .ite m c t e => .ite m (ToCoreIdent c) (ToCoreIdent t) (ToCoreIdent e)
-    | .eq m e1 e2 => .eq m (ToCoreIdent e1) (ToCoreIdent e2)
+    | .const _ c => .const Strata.SourceRange.none c
+    | .op _ o oty => .op Strata.SourceRange.none (CoreIdent.unres o.name) oty
+    | .bvar _ deBruijnIndex => .bvar Strata.SourceRange.none deBruijnIndex
+    | .fvar _ name oty => .fvar Strata.SourceRange.none (CoreIdent.unres name.name) oty
+    | .abs _ oty e => .abs Strata.SourceRange.none oty (ToCoreIdent e)
+    | .quant _ k oty tr e => .quant Strata.SourceRange.none k oty (ToCoreIdent tr) (ToCoreIdent e)
+    | .app _ fn e => .app Strata.SourceRange.none (ToCoreIdent fn) (ToCoreIdent e)
+    | .ite _ c t e => .ite Strata.SourceRange.none (ToCoreIdent c) (ToCoreIdent t) (ToCoreIdent e)
+    | .eq _ e1 e2 => .eq Strata.SourceRange.none (ToCoreIdent e1) (ToCoreIdent e2)
 
 
 /-- Kind of bitvector evaluator, used to generate both the combinator name
@@ -409,7 +409,7 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
 instance : Inhabited CoreLParams.Metadata where
-  default := ()
+  default := Strata.SourceRange.none
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
@@ -433,7 +433,7 @@ def emptyTriggerGroupOp : Expression.Expr := emptyTriggerGroupFunc.opExpr
 def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 
 instance : Inhabited (⟨ExpressionMetadata, CoreIdent⟩: LExprParams).Metadata where
-  default := ()
+  default := Strata.SourceRange.none
 
 def intAddOp : Expression.Expr := (@intAddFunc CoreLParams _).opExpr
 def intSubOp : Expression.Expr := (@intSubFunc CoreLParams _).opExpr
@@ -485,11 +485,11 @@ def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
-  ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
+  ts.foldl (fun g t => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerOp t) g) emptyTriggerGroupOp
 
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
-  groups.foldl (fun gs g => .app () (.app () addTriggerGroupOp g) gs) emptyTriggersOp
+  groups.foldl (fun gs g => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerGroupOp g) gs) emptyTriggersOp
 
 /--
 Get all the built-in functions supported by Strata Core.

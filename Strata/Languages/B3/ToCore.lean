@@ -1,0 +1,331 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.Languages.B3.DDMTransform.DefinitionAST
+import Strata.Languages.Core.Statement
+import Strata.Languages.Core.Factory
+
+/-!
+# B3 to Core Conversion
+
+Converts B3 abstract syntax trees to Strata Core statements for the CoreSMT
+verifier pipeline. B3 uses de Bruijn indices for variable references while
+Core uses free variables, so the converter maintains a context mapping indices
+to Core identifiers.
+
+## TODO: Architectural Improvements
+
+1. **B3 → Core.Decl instead of Core.Statement**
+   - Currently converts to `Imperative.Stmt.funcDecl` (statement)
+   - Should convert to `Core.Decl.func` (declaration)
+   - Then add a phase: Core.Decl → CoreSMT statements (subset validation)
+   - This separates parsing from verification subset validation
+
+2. **Procedure Support**
+   - Currently only supports parameterless procedures
+   - Should convert B3 procedures to `Core.Decl.proc`
+   - Verification of each procedure done via CoreSMT on statements only
+-/
+
+namespace Strata.B3.ToCore
+
+open Strata.B3AST
+open Core
+open Lambda
+
+/-- Conversion errors -/
+inductive ConversionError where
+  | unsupportedFeature (feature : String) (context : String)
+  deriving Repr
+
+instance : ToString ConversionError where
+  toString
+    | .unsupportedFeature feat ctx => s!"Unsupported feature '{feat}' in {ctx}"
+
+/-- Conversion result with error collection -/
+structure ConvResult (α : Type) where
+  value : α
+  errors : List ConversionError
+  deriving Repr
+
+def ConvResult.ok (value : α) : ConvResult α := { value, errors := [] }
+def ConvResult.withError (value : α) (error : ConversionError) : ConvResult α := { value, errors := [error] }
+def ConvResult.addErrors (result : ConvResult α) (newErrors : List ConversionError) : ConvResult α :=
+  { result with errors := result.errors ++ newErrors }
+
+instance [Inhabited α] : Inhabited (ConvResult α) where
+  default := { value := default, errors := [] }
+
+/-- Conversion context: maps de Bruijn indices to Core identifiers. -/
+structure ConvContext where
+  vars : List (String × Lambda.LMonoTy)  -- index 0 = head
+  funcs : List (String × List Lambda.LMonoTy × Lambda.LMonoTy)  -- (name, argTypes, retType)
+  boundDepth : Nat := 0  -- number of enclosing quantifiers/abstractions
+
+def ConvContext.empty : ConvContext := { vars := [], funcs := [] }
+
+def ConvContext.push (ctx : ConvContext) (name : String) (ty : Lambda.LMonoTy) : ConvContext :=
+  { ctx with vars := (name, ty) :: ctx.vars }
+
+/-- Push a bound variable (for quantifiers/abstractions) -/
+def ConvContext.pushBound (ctx : ConvContext) (name : String) (ty : Lambda.LMonoTy) : ConvContext :=
+  { ctx with vars := (name, ty) :: ctx.vars, boundDepth := ctx.boundDepth + 1 }
+
+def ConvContext.addFunc (ctx : ConvContext) (name : String) (argTypes : List Lambda.LMonoTy) (retType : Lambda.LMonoTy) : ConvContext :=
+  { ctx with funcs := (name, argTypes, retType) :: ctx.funcs }
+
+/-- Look up a function's type as an arrow type -/
+def ConvContext.lookupFuncType (ctx : ConvContext) (name : String) : Option Lambda.LMonoTy :=
+  match ctx.funcs.find? (fun (n, _, _) => n == name) with
+  | some (_, argTypes, retType) =>
+    some (argTypes.foldr (fun argTy acc => .arrow argTy acc) retType)
+  | none => none
+
+/-- Map B3 type name to Core monomorphic type. -/
+def b3TypeToCoreTy (typeName : String) : Lambda.LMonoTy :=
+  match typeName with
+  | "int" => .tcons "int" []
+  | "bool" => .tcons "bool" []
+  | "real" => .tcons "real" []
+  | "string" => .tcons "string" []
+  | other => .tcons other []
+
+/-- Map B3 type name to Core type scheme. -/
+def b3TypeToCoreLTy (typeName : String) : Lambda.LTy :=
+  .forAll [] (b3TypeToCoreTy typeName)
+
+
+/-- Convert B3 binary operator to a Core expression builder.
+    Uses factory operator expressions with proper type annotations. -/
+def convertBinaryOp (sr : SourceRange) (op : BinaryOp M) (lhs rhs : Core.Expression.Expr) : Core.Expression.Expr :=
+  let mkBinApp (opExpr : Core.Expression.Expr) :=
+    .app sr (.app sr opExpr lhs) rhs
+  match op with
+  | .eq _ => .eq sr lhs rhs
+  | .neq _ => .app sr Core.boolNotOp (.eq sr lhs rhs)
+  | .and _ => mkBinApp Core.boolAndOp
+  | .or _ => mkBinApp Core.boolOrOp
+  | .implies _ => mkBinApp Core.boolImpliesOp
+  | .iff _ => mkBinApp Core.boolEquivOp
+  | .impliedBy _ =>
+    .app sr (.app sr Core.boolImpliesOp rhs) lhs
+  | .lt _ => mkBinApp Core.intLtOp
+  | .le _ => mkBinApp Core.intLeOp
+  | .gt _ => mkBinApp Core.intGtOp
+  | .ge _ => mkBinApp Core.intGeOp
+  | .add _ => mkBinApp Core.intAddOp
+  | .sub _ => mkBinApp Core.intSubOp
+  | .mul _ => mkBinApp Core.intMulOp
+  | .div _ => mkBinApp Core.intDivOp
+  | .mod _ => mkBinApp Core.intModOp
+
+/-- Convert B3 unary operator to a Core expression. -/
+def convertUnaryOp (sr : SourceRange) (op : UnaryOp M) (arg : Core.Expression.Expr) : Core.Expression.Expr :=
+  let opExpr := match op with
+    | .not _ => Core.boolNotOp
+    | .neg _ => Core.intNegOp
+  .app sr opExpr arg
+
+
+/-- Convert B3 expression to Core expression.
+    Uses de Bruijn indices from B3 AST, maps to free variables in Core. -/
+partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → ConvResult Core.Expression.Expr
+  | .literal sr (.intLit _ n) => .ok (.intConst sr (Int.ofNat n))
+  | .literal sr (.boolLit _ b) => .ok (.boolConst sr b)
+  | .literal sr (.stringLit _ s) => .ok (.strConst sr s)
+  | .id sr idx =>
+    if idx < ctx.boundDepth then
+      .ok (.bvar sr idx)
+    else
+      match ctx.vars[idx]? with
+      | some (name, ty) => .ok (.fvar sr (CoreIdent.unres name) (some ty))
+      | none => .withError (.intConst sr 0) (.unsupportedFeature s!"unbound variable at index {idx}" "expression")
+  | .binaryOp sr op lhs rhs =>
+    let lhsResult := convertExpr ctx lhs
+    let rhsResult := convertExpr ctx rhs
+    { value := convertBinaryOp sr op lhsResult.value rhsResult.value,
+      errors := lhsResult.errors ++ rhsResult.errors }
+  | .unaryOp sr op arg =>
+    let argResult := convertExpr ctx arg
+    { value := convertUnaryOp sr op argResult.value, errors := argResult.errors }
+  | .ite sr cond thn els =>
+    let condResult := convertExpr ctx cond
+    let thnResult := convertExpr ctx thn
+    let elsResult := convertExpr ctx els
+    { value := .ite sr condResult.value thnResult.value elsResult.value,
+      errors := condResult.errors ++ thnResult.errors ++ elsResult.errors }
+  | .functionCall sr fnName args =>
+    let fnTy := ctx.lookupFuncType fnName.val
+    let base : Core.Expression.Expr := .fvar sr (CoreIdent.unres fnName.val) fnTy
+    let argResults := args.val.toList.map (convertExpr ctx)
+    { value := argResults.foldl (fun acc argRes => .app sr acc argRes.value) base,
+      errors := argResults.flatMap (·.errors) }
+  | .letExpr sr varName value body =>
+    let valTy := LMonoTy.tcons "int" []
+    let valueResult := convertExpr ctx value
+    let bodyResult := convertExpr (ctx.pushBound varName.val valTy) body
+    { value := .app sr (.abs sr (some valTy) bodyResult.value) valueResult.value,
+      errors := valueResult.errors ++ bodyResult.errors }
+  | .quantifierExpr sr qk vars _patterns body =>
+    let qkind : Lambda.QuantifierKind := match qk with
+      | .forall _ => .all
+      | .exists _ => .exist
+    let varList := vars.val.toList.filterMap fun v =>
+      match v with
+      | .quantVarDecl _ name ty => some (name.val, b3TypeToCoreTy ty.val)
+    let ctx' := varList.foldl (fun c (name, ty) => c.pushBound name ty) ctx
+    let bodyResult := convertExpr ctx' body
+    { value := varList.foldr (fun (_, ty) acc =>
+        .quant sr qkind (some ty) (.boolConst sr true) acc
+      ) bodyResult.value,
+      errors := bodyResult.errors }
+  | .labeledExpr _ _label expr => convertExpr ctx expr
+
+
+/-- Convert a B3 statement to a list of Core statements. -/
+partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → String → ConvResult (List Core.Statement)
+  | .check sr expr, procName =>
+    let exprResult := convertExpr ctx expr
+    let md : Imperative.MetaData Core.Expression :=
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } },
+        { fld := .label "stmtKind", value := .msg "check" }]
+    { value := [Core.Statement.assert procName exprResult.value md], errors := exprResult.errors }
+  | .assert sr expr, procName =>
+    let exprResult := convertExpr ctx expr
+    let md : Imperative.MetaData Core.Expression :=
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } },
+        { fld := .label "stmtKind", value := .msg "assert" }]
+    { value := [Core.Statement.assert procName exprResult.value md,
+                Core.Statement.assume "assert-assume" exprResult.value .empty], errors := exprResult.errors }
+  | .assume _ expr, _ =>
+    let exprResult := convertExpr ctx expr
+    { value := [Core.Statement.assume "assume" exprResult.value .empty], errors := exprResult.errors }
+  | .reach sr expr, procName =>
+    let exprResult := convertExpr ctx expr
+    let md : Imperative.MetaData Core.Expression :=
+      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
+    { value := [Core.Statement.cover procName exprResult.value md], errors := exprResult.errors }
+  | .blockStmt _ stmts, procName =>
+    let results := stmts.val.toList.map (convertStmt ctx · procName)
+    { value := [Imperative.Stmt.block "block" (results.flatMap (·.value)) .empty],
+      errors := results.flatMap (·.errors) }
+  | .varDecl _ name ty _autoinv init, _ =>
+    let coreTy := match ty.val with
+      | some tyAnn => b3TypeToCoreLTy tyAnn.val
+      | none => b3TypeToCoreLTy "int"
+    match init.val with
+    | some initExpr =>
+      let initResult := convertExpr ctx initExpr
+      { value := [Core.Statement.init (CoreIdent.unres name.val) coreTy (some initResult.value) .empty],
+        errors := initResult.errors }
+    | none =>
+      .ok [Core.Statement.init (CoreIdent.unres name.val) coreTy none .empty]
+  | .assign _ lhs rhs, _ =>
+    let rhsResult := convertExpr ctx rhs
+    match ctx.vars[lhs.val]? with
+    | some (name, _) =>
+      { value := [Core.Statement.set (CoreIdent.unres name) rhsResult.value .empty],
+        errors := rhsResult.errors }
+    | none =>
+      .withError [] (.unsupportedFeature s!"unbound variable at index {lhs.val}" "assignment")
+  | .ifStmt _ cond thenBranch elseBranch, procName =>
+    let condResult := convertExpr ctx cond
+    let thenResult := convertStmt ctx thenBranch procName
+    let elseResult := match elseBranch.val with
+      | some s => convertStmt ctx s procName
+      | none => .ok []
+    { value := [Imperative.Stmt.ite condResult.value thenResult.value elseResult.value .empty],
+      errors := condResult.errors ++ thenResult.errors ++ elseResult.errors }
+  | .loop sr invariants body, procName =>
+    let guard : Core.Expression.Expr := .boolConst sr true
+    let invResults := invariants.val.toList.map (convertExpr ctx)
+    let invExprs := invResults.map (·.value)
+    let bodyResult := convertStmt ctx body procName
+    { value := [Imperative.Stmt.loop guard none invExprs bodyResult.value .empty],
+      errors := invResults.flatMap (·.errors) ++ bodyResult.errors }
+  | .choose _ branches, procName =>
+    let results := branches.val.toList.map (convertStmt ctx · procName)
+    { value := [Imperative.Stmt.block "choose" (results.flatMap (·.value)) .empty],
+      errors := results.flatMap (·.errors) }
+  | .labeledStmt _ _label stmt, procName => convertStmt ctx stmt procName
+  | _, _ => .withError [] (.unsupportedFeature "unknown statement type" "statement")
+
+
+/-- Convert a B3 function declaration to a Core funcDecl statement. -/
+def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → ConvResult (List Core.Statement)
+  | .function _ name params retType tag body =>
+    -- Check for unsupported features
+    let errors := []
+    let errors := if tag.val.isSome then
+      errors ++ [.unsupportedFeature "function tags" s!"function {name.val}"]
+    else errors
+    let errors := if params.val.toList.any (fun p => match p with | .fParameter _ inj _ _ => inj.val) then
+      errors ++ [.unsupportedFeature "injective parameters" s!"function {name.val}"]
+    else errors
+    let errors := if body.val.any (fun fb => match fb with | .functionBody _ whens _ => !whens.val.isEmpty) then
+      errors ++ [.unsupportedFeature "'when' clauses" s!"function {name.val}"]
+    else errors
+
+    let inputs : ListMap CoreIdent Lambda.LTy := params.val.toList.map fun p =>
+      match p with
+      | .fParameter _ _ pname pty => (CoreIdent.unres pname.val, b3TypeToCoreLTy pty.val)
+    let outputTy := b3TypeToCoreLTy retType.val
+    let bodyResult := body.val.bind fun fb =>
+      match fb with
+      | .functionBody _ _ bodyExpr =>
+        let paramCtx := params.val.toList.foldl (fun c p =>
+          match p with
+          | .fParameter _ _ pname pty => c.push pname.val (b3TypeToCoreTy pty.val)
+        ) ctx
+        some (convertExpr paramCtx bodyExpr)
+    let (coreBody, bodyErrors) := match bodyResult with
+      | some res => (some res.value, res.errors)
+      | none => (none, [])
+    let decl : Imperative.PureFunc Core.Expression := {
+      name := CoreIdent.unres name.val
+      inputs := inputs
+      output := outputTy
+      body := coreBody
+    }
+    { value := [Imperative.Stmt.funcDecl decl .empty], errors := errors ++ bodyErrors }
+  | _ => .ok []
+
+/-- Build a ConvContext with all function declarations from a B3 program. -/
+private def buildFuncContext (decls : List (B3AST.Decl SourceRange)) : ConvContext :=
+  decls.foldl (fun ctx decl =>
+    match decl with
+    | .function _ name params retType _ _ =>
+      let argTypes := params.val.toList.map fun p =>
+        match p with
+        | .fParameter _ _ _ pty => b3TypeToCoreTy pty.val
+      ctx.addFunc name.val argTypes (b3TypeToCoreTy retType.val)
+    | _ => ctx
+  ) ConvContext.empty
+
+/-- Convert a B3 program to a list of Core statements, collecting errors. -/
+def convertProgram : B3AST.Program SourceRange → ConvResult (List Core.Statement)
+  | .program _ decls =>
+    let ctx := buildFuncContext decls.val.toList
+    let results := decls.val.toList.map fun decl =>
+      match decl with
+      | .function _ _ _ _ _ _ => convertFuncDecl ctx decl
+      | .axiom _ _vars expr =>
+        let exprResult := convertExpr ctx expr
+        { value := [Core.Statement.assume "axiom" exprResult.value .empty], errors := exprResult.errors }
+      | .procedure _ name params specs body =>
+        let paramErrors := if params.val.isEmpty then []
+          else [ConversionError.unsupportedFeature "procedure parameters" s!"procedure {name.val}"]
+        let specErrors := if specs.val.isEmpty then []
+          else [ConversionError.unsupportedFeature "procedure specifications" s!"procedure {name.val}"]
+        match body.val with
+        | some bodyStmt =>
+          let result := convertStmt ctx bodyStmt name.val
+          { result with errors := paramErrors ++ specErrors ++ result.errors }
+        | none => { value := [], errors := paramErrors ++ specErrors }
+      | _ => .withError [] (.unsupportedFeature "unknown declaration type" "program")
+    { value := results.flatMap (·.value), errors := results.flatMap (·.errors) }
+
+end Strata.B3.ToCore

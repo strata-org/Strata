@@ -9,6 +9,7 @@ import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder
+import Strata.Languages.Core.CoreSMT.Diagnosis
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
@@ -23,6 +24,7 @@ namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
 open Strata
+open Strata.Core.CoreSMT
 
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
@@ -152,6 +154,13 @@ instance : ToFormat Outcome where
     | .unknown => "🟡 unknown"
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
+/-- Diagnosis information for verification failures -/
+structure DiagnosisInfo where
+  isRefuted : Bool := false
+  diagnosedFailures : List Strata.Core.CoreSMT.DiagnosedFailure := []
+  statePathCondition : List Core.Expression.Expr := []
+  deriving Repr, Inhabited
+
 /--
 A collection of all information relevant to a verification condition's
 analysis.
@@ -163,6 +172,7 @@ structure VCResult where
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
+  diagnosis : Option DiagnosisInfo := .none
 
 /--
 Map the result from an SMT backend engine to an `Outcome`.

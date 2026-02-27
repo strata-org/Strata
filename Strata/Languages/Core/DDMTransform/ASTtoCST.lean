@@ -789,6 +789,18 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
                   ⟨default, none⟩ tyCST
       let dl := DeclList.declAtom default bind
       pure (.varStatement default dl)
+    | some (.fvar _ f _) =>
+      -- Handle free variable initializers (e.g., `var tmp := x` from CallElim).
+      -- Look up the variable in the bound context; if not found, format it as an expression.
+      let ctx ← get
+      match ctx.freeVarIndex? f.name with
+      | some idx =>
+        let exprCST := CoreDDM.Expr.fvar default idx
+        pure (.initStatement default tyCST nameAnn exprCST)
+      | none => do
+        -- Free variable not in bound context - format as expression
+        let exprCST ← lexprToExpr (.fvar Strata.SourceRange.none f none) 0
+        pure (.initStatement default tyCST nameAnn exprCST)
     | some e =>
       let exprCST ← lexprToExpr e 0
       pure (.initStatement default tyCST nameAnn exprCST)

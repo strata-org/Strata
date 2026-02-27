@@ -5,6 +5,8 @@
 -/
 
 import Strata.Languages.B3.Verifier
+import Strata.Languages.B3.Format
+import Strata.Languages.B3.FromCore
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
 import Strata.DL.SMT.Solver
@@ -128,134 +130,107 @@ def testVerification (prog : Program) : IO Unit := do
   let ast ← match result with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Parse error: {msg}")
-  -- Create a fresh solver for each test to avoid state issues
-  let solver ← createInteractiveSolver "cvc5"
-  let reports ← programToSMT ast solver
-  -- Don't call exit - let the solver process terminate naturally
+  let solver ← Solver.spawn "cvc5" #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
+  let reports ← B3.Verifier.programToSMT ast solver
   for report in reports do
-    for (result, diagnosis) in report.results do
-      match result.context.decl with
-      | .procedure _ name _ _ _ =>
-          let marker := if result.result.isError then "✗" else "✓"
-          let description := match result.result with
-            | .error .counterexample => "counterexample found"
-            | .error .unknown => "unknown"
-            | .error .refuted => "refuted"
-            | .success .verified => "verified"
-            | .success .reachable => "reachable"
-            | .success .reachabilityUnknown => "reachability unknown"
+    for (result, _) in report.results do
+      let marker := match result.outcome with
+        | .pass => "✓"
+        | .fail => "✗"
+        | .unknown => "✗"
+        | .implementationError _ => "✗"
 
-          IO.println s!"{name.val}: {marker} {description}"
-          if result.result.isError then
-            let baseOffset := match prog.commands.toList with
-              | [op] => op.ann.start
-              | _ => { byteIdx := 0 }
+      let description := match result.outcome with
+        | .pass => "verified"
+        | .fail => "counterexample found"
+        | .unknown => "unknown"
+        | .implementationError msg => s!"error: {msg}"
 
-            let stmt := result.context.stmt
-            IO.println s!"  {formatStatementError prog stmt}"
-
-                -- Display diagnosis with VC for each failure, or top-level VC if no diagnosis
-                match diagnosis with
-                | some diag =>
-                    if !diag.diagnosedFailures.isEmpty then
-                      -- Show diagnosis with assumptions for each failure
-                      for failure in diag.diagnosedFailures do
-                        let exprLoc := formatExpressionLocation prog failure.expression
-                        let exprFormatted := formatExpressionOnly prog failure.expression
-                        let diagnosisPrefix := match failure.report.result with
-                          | .error .refuted => MSG_IMPOSSIBLE
-                          | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
-                          | .success _ => MSG_COULD_NOT_PROVE  -- Shouldn't happen
-
-                        -- Get statement location for comparison
-                        let stmtLoc := match stmt with
-                          | .check m _ | .assert m _ | .reach m _ => formatSourceLocation baseOffset m
-                          | _ => ""
-
-                        -- Only show location if different from statement location
-                        if exprLoc == stmtLoc then
-                          IO.println s!"  └─ {diagnosisPrefix} {exprFormatted}"
-                        else
-                          IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
-
-                        -- Show assumptions for this failure (from report context)
-                        if !failure.report.context.pathCondition.isEmpty then
-                          IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                          for expr in failure.report.context.pathCondition.reverse do
-                            -- Flatten conjunctions to show each on separate line
-                            for conjunct in flattenConjunction expr do
-                              let formatted := formatExpressionOnly prog conjunct
-                              IO.println s!"       {formatted}"
-                    else
-                      -- No specific diagnosis - use same format with └─
-                      if !result.context.pathCondition.isEmpty then
-                        match stmt with
-                        | .check m expr | .assert m expr =>
-                            let exprLoc := formatSourceLocation baseOffset m
-                            let formatted := formatExpressionOnly prog expr
-                            IO.println s!"  └─ {exprLoc}: {MSG_COULD_NOT_PROVE} {formatted}"
-                            IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                            for expr in result.context.pathCondition.reverse do
-                              -- Flatten conjunctions to show each on separate line
-                              for conjunct in flattenConjunction expr do
-                                let formatted := formatExpressionOnly prog conjunct
-                                IO.println s!"       {formatted}"
-                        | .reach m expr =>
-                            let exprLoc := formatSourceLocation baseOffset m
-                            let formatted := formatExpressionOnly prog expr
-                            IO.println s!"  └─ {exprLoc}: {MSG_IMPOSSIBLE} {formatted}"
-                            IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                            for expr in result.context.pathCondition.reverse do
-                              -- Flatten conjunctions to show each on separate line
-                              for conjunct in flattenConjunction expr do
-                                let formatted := formatExpressionOnly prog conjunct
-                                IO.println s!"       {formatted}"
-                        | _ => pure ()
-                | none =>
-                    -- No diagnosis - use same format with └─
-                    if !result.context.pathCondition.isEmpty then
-                      match stmt with
-                      | .check m expr | .assert m expr =>
-                          let exprLoc := formatSourceLocation baseOffset m
-                          let formatted := formatExpressionOnly prog expr
-                          IO.println s!"  └─ {exprLoc}: {MSG_COULD_NOT_PROVE} {formatted}"
-                          IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                          for expr in result.context.pathCondition.reverse do
-                            -- Flatten conjunctions to show each on separate line
-                            for conjunct in flattenConjunction expr do
-                              let formatted := formatExpressionOnly prog conjunct
-                              IO.println s!"       {formatted}"
-                      | .reach m expr =>
-                          let exprLoc := formatSourceLocation baseOffset m
-                          let formatted := formatExpressionOnly prog expr
-                          IO.println s!"  └─ {exprLoc}: {MSG_IMPOSSIBLE} {formatted}"
-                          IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                          for expr in result.context.pathCondition.reverse do
-                            -- Flatten conjunctions to show each on separate line
-                            for conjunct in flattenConjunction expr do
-                              let formatted := formatExpressionOnly prog conjunct
-                              IO.println s!"       {formatted}"
-                      | _ => pure ()
-      | _ => pure ()
+      IO.println s!"{result.label}: {marker} {description}"
+      if result.outcome != .pass then
+        -- Show the statement (obligation expression converted to B3)
+        match result.obligation with
+        | some obl =>
+          match B3.FromCore.exprFromCore obl.obligation with
+          | .ok b3Stmt =>
+            -- Use statement source range from metadata if available, else expression location
+            let stmtLoc := match Imperative.getFileRange obl.metadata with
+              | some fr => formatSourceLocation (match prog.commands.toList with
+                  | [op] => op.ann.start | _ => { byteIdx := 0 }) fr.range
+              | none => formatExpressionLocation prog b3Stmt
+            let stmtFormatted := formatExpressionOnly prog b3Stmt
+            let stmtKind := if obl.property == .cover then "reach"
+              else match obl.metadata.find? (·.fld == .label "stmtKind") with
+                | some { value := .msg k, .. } => k
+                | _ => "check"
+            IO.println s!"  {stmtLoc}: {stmtKind} {stmtFormatted}"
+          | .error _ => pure ()
+        | none => pure ()
+        -- Show diagnosis if available
+        match result.diagnosis with
+        | some diag =>
+          -- Show full obligation as first diagnosis line
+          let fullFormatted ← match result.obligation with
+          | some obl =>
+            match B3.FromCore.exprFromCore obl.obligation with
+            | .ok b3Full =>
+              let fullLoc := formatExpressionLocation prog b3Full
+              let fullStr := formatExpressionOnly prog b3Full
+              let fullPrefix := if obl.property == .cover then MSG_IMPOSSIBLE else MSG_COULD_NOT_PROVE
+              IO.println s!"  └─ {fullLoc}: {fullPrefix} {fullStr}"
+              -- Show state path conditions (from assume statements) for the full obligation
+              if !diag.statePathCondition.isEmpty then
+                IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
+                for assumption in diag.statePathCondition.reverse do
+                  match B3.FromCore.exprFromCore assumption with
+                  | .ok b3Assumption => IO.println s!"       {formatExpressionOnly prog b3Assumption}"
+                  | .error _ => IO.println s!"       <assumption>"
+              pure (some fullStr)
+            | .error _ => pure none
+          | none => pure none
+          -- Show sub-expressions that differ from the full obligation
+          for failure in diag.diagnosedFailures do
+              let diagnosisPrefix := match failure.report.result with
+                | .error .refuted => MSG_IMPOSSIBLE
+                | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
+                | .ok _ => MSG_COULD_NOT_PROVE
+              match B3.FromCore.exprFromCore failure.expression with
+              | .ok b3Expr =>
+                let exprFormatted := formatExpressionOnly prog b3Expr
+                -- Skip if identical to full obligation (single-expression check)
+                if fullFormatted != some exprFormatted then
+                  let exprLoc := formatExpressionLocation prog b3Expr
+                  IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
+                  -- Show path conditions for this sub-expression
+                  if !failure.report.context.pathCondition.isEmpty then
+                    IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
+                    for assumption in failure.report.context.pathCondition.reverse do
+                      match B3.FromCore.exprFromCore assumption with
+                      | .ok b3Assumption => IO.println s!"       {formatExpressionOnly prog b3Assumption}"
+                      | .error _ => IO.println s!"       <assumption>"
+              | .error _ =>
+                IO.println s!"  └─ {diagnosisPrefix} <expression>"
+        | none => pure ()
 
 ---------------------------------------------------------------------
 -- Example from Verifier.lean Documentation
 ---------------------------------------------------------------------
 
 /--
-info: Statement: check 8 == 8 && f(5) == 7
-✗ Unknown
-  Path condition:
-    forall x : int pattern f(x) f(x) == x + 1
-  Found 1 diagnosed failures
-Failing expression: f(5) == 7
-✗ Refuted (proved false/unreachable)
-  Path condition:
-    8 == 8
-    forall x : int pattern f(x) f(x) == x + 1
+info: test: ✗ counterexample found
+  (0,61): check 8 == 8 && f(5) == 7
+  └─ (0,67): could not prove 8 == 8 && f(5) == 7
+  └─ (0,77): it is impossible that f(5) == 7
+     under the assumptions
+       8 == 8
 -/
 #guard_msgs in
-#eval exampleVerification
+#eval testVerification $ #strata program B3CST;
+  function f(x : int) : int { x + 1 }
+  procedure test() {
+    check 8 == 8 && f(5) == 7
+  }
+#end
 
 ---------------------------------------------------------------------
 -- Check Statement Tests
@@ -264,14 +239,14 @@ Failing expression: f(5) == 7
 /--
 info: test_checks_are_not_learned: ✗ unknown
   (0,113): check f(5) > 1
-  └─ (0,113): could not prove f(5) > 1
+  └─ (0,119): could not prove f(5) > 1
      under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+       forall x0 : int f(x0) > 0
 test_checks_are_not_learned: ✗ unknown
   (0,130): check f(5) > 1
-  └─ (0,130): could not prove f(5) > 1
+  └─ (0,136): could not prove f(5) > 1
      under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -298,6 +273,7 @@ procedure test() {
 /--
 info: test_fail: ✗ counterexample found
   (0,52): check 5 == 5 && f(5) == 10
+  └─ (0,58): could not prove 5 == 5 && f(5) == 10
   └─ (0,68): could not prove f(5) == 10
      under the assumptions
        5 == 5
@@ -312,27 +288,15 @@ procedure test_fail() {
 
 
 /--
-info: test_all_expressions: ✗ unknown
-  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
+info: test_all_expressions: ✗ counterexample found
+  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  └─ (0,133): could not prove (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,213): could not prove notalwaystrue(1, 2)
      under the assumptions
-       forall x : int pattern f(x) f(x) == (x + 1 == 6)
-       false || true
-       if true true else false
-       f(5)
+       (false || true) && (if true true else false) && f(5)
   └─ (0,353): it is impossible that 1 + 2 == 4
      under the assumptions
-       forall x : int pattern f(x) f(x) == (x + 1 == 6)
-       false || true
-       if true true else false
-       f(5)
-       notalwaystrue(1, 2)
-       5 == 5
-       !(3 == 4)
-       2 < 3
-       2 <= 2
-       4 > 3
-       4 >= 4
+       (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -370,9 +334,9 @@ procedure test_all_expressions() {
 /--
 info: test_assert_helps: ✗ unknown
   (0,103): assert f(5) > 1
-  └─ (0,103): could not prove f(5) > 1
+  └─ (0,110): could not prove f(5) > 1
      under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+       forall x0 : int f(x0) > 0
 test_assert_helps: ✓ verified
 -/
 #guard_msgs in
@@ -388,11 +352,10 @@ procedure test_assert_helps() {
 /--
 info: test_assert_with_trace: ✗ unknown
   (0,138): assert f(5) > 10
-  └─ (0,138): could not prove f(5) > 10
+  └─ (0,145): could not prove f(5) > 10
      under the assumptions
-       forall x : int pattern f(x) f(x) > 0
-       f(1) > 0
-       f(4) > 0
+       forall x0 : int f(x0) > 0
+       f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -409,11 +372,11 @@ procedure test_assert_with_trace() {
 ---------------------------------------------------------------------
 
 /--
-info: test_reach_bad: ✗ refuted
+info: test_reach_bad: ✗ counterexample found
   (0,100): reach f(5) < 0
-  └─ (0,100): it is impossible that f(5) < 0
+  └─ (0,106): it is impossible that f(5) < 0
      under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -425,7 +388,11 @@ procedure test_reach_bad() {
 #end
 
 /--
-info: test_reach_good: ✓ reachability unknown
+info: test_reach_good: ✗ unknown
+  (0,101): reach f(5) > 5
+  └─ (0,107): it is impossible that f(5) > 5
+     under the assumptions
+       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -437,13 +404,12 @@ procedure test_reach_good() {
 #end
 
 /--
-info: test_reach_with_trace: ✗ refuted
+info: test_reach_with_trace: ✗ counterexample found
   (0,137): reach f(5) < 0
-  └─ (0,137): it is impossible that f(5) < 0
+  └─ (0,143): it is impossible that f(5) < 0
      under the assumptions
-       forall x : int pattern f(x) f(x) > 0
-       f(1) > 0
-       f(4) > 0
+       forall x0 : int f(x0) > 0
+       f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -460,11 +426,14 @@ procedure test_reach_with_trace() {
 ---------------------------------------------------------------------
 
 /--
-info: test_reach_diagnosis: ✗ refuted
+info: test_reach_diagnosis: ✗ counterexample found
   (0,106): reach f(5) > 5 && f(5) < 0
+  └─ (0,112): it is impossible that f(5) > 5 && f(5) < 0
+     under the assumptions
+       forall x0 : int f(x0) > 0
   └─ (0,124): it is impossible that f(5) < 0
      under the assumptions
-       forall x : int pattern f(x) f(x) > 0
+       forall x0 : int f(x0) > 0
        f(5) > 5
 -/
 #guard_msgs in
@@ -479,21 +448,12 @@ procedure test_reach_diagnosis() {
 
 
 /--
-info: test_all_expressions: ✗ refuted
-  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
+info: test_all_expressions: ✗ counterexample found
+  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  └─ (0,133): it is impossible that (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,353): it is impossible that 1 + 2 == 4
      under the assumptions
-       forall x : int pattern f(x) f(x) == (x + 1 == 6)
-       false || true
-       if true true else false
-       f(5)
-       notalwaystrue(1, 2)
-       5 == 5
-       !(3 == 4)
-       2 < 3
-       2 <= 2
-       4 > 3
-       4 >= 4
+       (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -526,8 +486,9 @@ procedure test_all_expressions() {
 
 
 /--
-info: test_all_expressions: ✗ refuted
+info: test_all_expressions: ✗ counterexample found
   (0,85): reach notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
+  └─ (0,91): it is impossible that notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
   └─ (0,122): it is impossible that !notalwaystrue(1, 2)
      under the assumptions
        notalwaystrue(1, 2)

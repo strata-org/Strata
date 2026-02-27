@@ -19,10 +19,10 @@ open Std.Format
 
 -- Type class instances to enable deriving for structures containing Expression.Expr
 instance : DecidableEq ExpressionMetadata :=
-  show DecidableEq Unit from inferInstance
+  inferInstanceAs (DecidableEq Strata.SourceRange)
 
 instance : Repr ExpressionMetadata :=
-  show Repr Unit from inferInstance
+  inferInstanceAs (Repr Strata.SourceRange)
 
 instance : DecidableEq (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
   show DecidableEq ExpressionMetadata from inferInstance

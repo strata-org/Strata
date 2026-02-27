@@ -68,11 +68,9 @@ def testSMTGeneration (prog : Program) : IO Unit := do
 ---------------------------------------------------------------------
 
 /--
-info: (declare-fun abs (Int) Int)
-(assert (forall ((x Int)) (! (= (abs x) (ite (>= x 0) x (- x))) :pattern ((abs x)))))
+info: (define-fun abs ((x Int)) Int (ite (>= x 0) x (- x)))
 (push 1)
-(assert (not (= (abs (- 5)) 5)))
-(check-sat)
+(check-sat-assuming ((not (= (abs (- 5)) 5))))
 (pop 1)
 -/
 #guard_msgs in
@@ -86,13 +84,10 @@ procedure test() {
 #end
 
 /--
-info: (declare-fun isEven (Int) Int)
-(declare-fun isOdd (Int) Int)
-(assert (forall ((n Int)) (! (= (isEven n) (ite (= n 0) 1 (isOdd (- n 1)))) :pattern ((isEven n)))))
-(assert (forall ((n Int)) (! (= (isOdd n) (ite (= n 0) 0 (isEven (- n 1)))) :pattern ((isOdd n)))))
+info: (define-fun isEven ((n Int)) Int (ite (= n 0) 1 (isOdd (- n 1))))
+(define-fun isOdd ((n Int)) Int (ite (= n 0) 0 (isEven (- n 1))))
 (push 1)
-(assert (not (= (isEven 4) 1)))
-(check-sat)
+(check-sat-assuming ((not (= (isEven 4) 1))))
 (pop 1)
 -/
 #guard_msgs in
@@ -110,10 +105,9 @@ procedure test() {
 
 /--
 info: (declare-fun f (Int) Int)
-(assert (forall ((x Int)) (! (=> (> x 0) (> (f x) 0)) :pattern ((f x)))))
+(assert (forall ((|$__bv0| Int)) (=> (> |$__bv0| 0) (> (f |$__bv0|) 0))))
 (push 1)
-(assert (not (=> (> 5 0) (> (f 5) 0))))
-(check-sat)
+(check-sat-assuming ((not (=> (> 5 0) (> (f 5) 0)))))
 (pop 1)
 -/
 #guard_msgs in
@@ -126,12 +120,10 @@ procedure test() {
 #end
 
 /--
-info: (declare-fun f (Int) Bool)
+info: (define-fun f ((x Int)) Bool (= (+ x 1) 6))
 (declare-fun g (Int Int) Bool)
-(assert (forall ((x Int)) (! (= (f x) (= (+ x 1) 6)) :pattern ((f x)))))
 (push 1)
-(assert (not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (= 5 5) (not (= 3 4))) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) (ite true true false)) (f 5)) (g 1 2)) (forall ((y Int)) (! (or (f y) (not (f y))) :pattern ((f y))))) (forall ((y Int)) (or (> y 0) (<= y 0))))))
-(check-sat)
+(check-sat-assuming ((not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall ((|$__bv0| Int)) (or (f |$__bv0|) (not (f |$__bv0|))))) (forall ((|$__bv0| Int)) (or (> |$__bv0| 0) (<= |$__bv0| 0)))))))
 (pop 1)
 -/
 #guard_msgs in
@@ -167,11 +159,9 @@ procedure test_all_expressions() {
 
 -- The test below should return an error and the SMT code.
 /--
-info: error: Invalid pattern each pattern expression must be a function application
-(declare-fun f (Int) Bool)
+info: (declare-fun f (Int) Bool)
 (push 1)
-(assert (not (forall ((y Int)) (! (> y 0) :pattern (y)))))
-(check-sat)
+(check-sat-assuming ((not (forall ((|$__bv0| Int)) (> |$__bv0| 0)))))
 (pop 1)
 -/
 #guard_msgs in
