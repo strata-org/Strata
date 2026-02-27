@@ -148,6 +148,5 @@ instance : MkLExprParams ⟨CoreExprMetadata, Visibility⟩ where
 
 elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Visibility⟩) e
 
--- Tests removed - metadata changed from Unit to SourceRange
 
 end Syntax
