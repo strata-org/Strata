@@ -65,7 +65,7 @@ def isCoreFunction (funcNames : FunctionNames) (name : Identifier) : Bool :=
   -- readField, updateField, and Box constructors/destructors are always functions
   name == "readField" || name == "updateField" || name == "increment" ||
   name == "MkHeap" || name == "Heap..data!" || name == "Heap..nextReference!" ||
-  name == "MkComposite" || name == "Composite..ref!" || name == "Composite..typeTag" ||
+  name == "MkComposite" || name == "Composite..ref!" || name == "Composite..typeTag!" ||
   name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
   name == "Box..intVal!" || name == "Box..boolVal!" || name == "Box..float64Val!" || name == "Box..compositeVal!" ||
   -- Map operations (select/update are built-in map functions, const creates a constant map)

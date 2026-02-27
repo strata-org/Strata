@@ -488,7 +488,7 @@ def unsafeDestructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier ID
 
 /--
 Generate destructor functions with a precondition that the corresponding tester holds, e.g.
-`List..head (Cons h t) = h`  requires `List..isCons(x)`
+`List..head(x)` requires `List..isCons(x)`
 -/
 def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
   c.args.mapIdx (fun i (name, ty) =>
