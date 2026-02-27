@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 /-!
@@ -71,19 +72,24 @@ inductive AstNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
+  deriving Repr
 
 def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .var _ type => type
- | _ => panic "oeps"
+ | _ => panic s!"getType called on {repr node}"
 
 /-! ## Resolution result -/
 
 structure SemanticModel where
   compositeCount: Nat
   refToDef: Std.HashMap Nat AstNode
+  deriving Repr
 
 deriving instance Inhabited for Strata.Laurel.AstNode
-def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode := model.refToDef.get! id.id.get!
+def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
+  let uuid := id.id.getD (panic "identifier without number")
+  model.refToDef.get! uuid
+  -- (panic s!"refToDef key '{id.name}', uuid {id.id} not found in model {repr model}")
 
 
 /-- The output of the resolution pass. -/
@@ -124,7 +130,7 @@ def defineName (name : Identifier) (node : AstNode) : ResolveM Identifier := do
   else
     pure name
 
-  modify fun s => { s with scope := s.scope.insert name.name (name.id.get!, node) }
+  modify fun s => { s with scope := s.scope.insert name.name (name'.id.getD (panic "key was just inserted"), node) }
   return name'
 
 /-- Resolve a reference: look up the name in scope, assign the definition's ID,
@@ -132,15 +138,12 @@ def defineName (name : Identifier) (node : AstNode) : ResolveM Identifier := do
 def resolveRef (name : Identifier) : ResolveM Identifier := do
   let s ← get
   match s.scope.get? name.name with
-  | some (_defId, defNode) =>
-    let refId ← freshId
-    let name' := { name with id := some refId }
-    modify fun s => { s with refToDef := s.refToDef.insert refId defNode }
+  | some (defId, defNode) =>
+    let name' := { name with id := some defId }
+    modify fun s => { s with refToDef := s.refToDef.insert defId defNode }
     return name'
   | none =>
-    -- Unresolved reference: assign a fresh ID but don't record a mapping
-    let refId ← freshId
-    return { name with id := some refId }
+    return { name with id := none }
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do

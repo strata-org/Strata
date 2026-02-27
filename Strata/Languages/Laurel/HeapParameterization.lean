@@ -227,7 +227,7 @@ where
     match _h : expr.val with
     | .FieldSelect selectTarget fieldName =>
         let qualifiedName := mkId $ resolveQualifiedFieldName model fieldName
-        let valTy := (model.get fieldName).getType.get!
+        let valTy := (model.get fieldName).getType.getD (panic "heapTransformExpr1")
         let readExpr := ⟨ .StaticCall (mkId "readField") [mkMd (.Identifier heapVar), selectTarget, mkMd (.Identifier qualifiedName)], md ⟩
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
@@ -284,7 +284,7 @@ where
           match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
             let qualifiedName := mkId $ resolveQualifiedFieldName model fieldName
-            let valTy := (model.get fieldName).getType.get!
+            let valTy := (model.get fieldName).getType.getD (panic "heapTransformExpr2")
             let target' ← recurse target
             let v' ← recurse v
             -- Wrap value in Box constructor

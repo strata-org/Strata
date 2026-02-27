@@ -252,4 +252,19 @@ instance : Std.ToFormat TypeDefinition where
 instance : Std.ToFormat Program where
   format := formatProgram
 
+instance : Repr StmtExpr where
+  reprPrec r _ := s!"{Std.format r}"
+
+instance : Repr HighType where
+  reprPrec r _ := s!"{Std.format r}"
+
+deriving instance Repr for Strata.Laurel.Parameter
+deriving instance Repr for Strata.Laurel.Procedure
+deriving instance Repr for Strata.Laurel.Field
+deriving instance Repr for Strata.Laurel.CompositeType
+deriving instance Repr for Strata.Laurel.ConstrainedType
+deriving instance Repr for Strata.Laurel.DatatypeConstructor
+deriving instance Repr for Strata.Laurel.DatatypeDefinition
+deriving instance Repr for Strata.Laurel.Constant
+
 end Laurel

@@ -102,7 +102,7 @@ def translateExpr (model: SemanticModel) (expr : StmtExprMd)
         --     .op () ident none
         | astNode =>
             let ident := Core.CoreIdent.locl name.name
-            .fvar () ident (some (translateType astNode.getType.get!))
+            .fvar () ident (some (translateType $ astNode.getType.getD (panic "LaurelToCore.translateExpr")))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not => .app () boolNotOp (translateExpr model e boundVars)

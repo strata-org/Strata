@@ -32,9 +32,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralBool _ => ⟨ .TBool, md ⟩
   | .LiteralString _ => ⟨ .TString, md ⟩
   -- Variables
-  | .Identifier id => (model.get id).getType.get!
+  | .Identifier id => (model.get id).getType.getD (panic "computeExprType1")
   -- Field access
-  | .FieldSelect _ fieldName => (model.get fieldName).getType.get!
+  | .FieldSelect _ fieldName => (model.get fieldName).getType.getD (panic "computeExprType2")
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — we don't track return types here, so fall back to TVoid

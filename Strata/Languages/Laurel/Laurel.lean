@@ -89,6 +89,7 @@ structure WithMetadata (t : Type) : Type where
   val : t
   /-- Source-level metadata (locations, annotations). -/
   md : Imperative.MetaData Core.Expression
+  deriving Repr
 
 /--
 The type system for Laurel programs.
