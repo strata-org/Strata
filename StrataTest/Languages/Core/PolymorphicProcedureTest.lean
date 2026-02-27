@@ -56,7 +56,7 @@ Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, (as Nil (List Int)))
+($__xs3, Nil)
 
 
 [DEBUG] Evaluated program:
@@ -88,7 +88,7 @@ Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, (as Nil (List Int)))
+($__xs3, Nil)
 
 Obligation: Test_ensures_0
 Property: assert

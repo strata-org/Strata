@@ -214,4 +214,81 @@ def toString (t:SMT.Term): Except String String := do
 
 end SMTDDM
 
+namespace SMTResponseDDM
+
+/-- The loaded dialects needed to parse SMTResponse commands. -/
+def smtResponseDialects : Strata.Elab.LoadedDialects :=
+  .ofDialects! #[Strata.initDialect, Strata.smtReservedKeywordsDialect,
+                 Strata.SMTCore, Strata.SMTResponse]
+
+/-- Format context for rendering SMTResponse `Arg` values back to strings. -/
+private def smtFormatContext : Strata.FormatContext :=
+  .ofDialects smtResponseDialects.dialects
+
+/-- Format state for rendering SMTResponse `Arg` values back to strings. -/
+private def smtFormatState : Strata.FormatState where
+  openDialects := smtResponseDialects.dialects.toList.foldl (init := {}) fun s d => s.insert d.name
+
+/-- Render a DDM `Arg` to a string using the SMTResponse dialect formatting. -/
+def formatArg (arg : Strata.Arg) : String :=
+  (Strata.mformat arg smtFormatContext smtFormatState).format.pretty
+
+/--
+Convert an `SMTResponseDDM.Term` (parsed from solver output) into a
+`Strata.SMT.Term`. Handles the common model-value cases:
+
+- Spec constants (numerals, decimals, strings, hex/binary literals)
+- Qualified identifiers (symbols like `true`, `false`, constructor names)
+- Function applications (constructor applications, `(as Nil (List Int))`)
+
+For cases that cannot be faithfully represented (e.g. `let`, `lambda`,
+quantifiers), falls back to `Term.prim (.string <formatted>)`.
+-/
+partial def translateFromDDMTerm (t : Strata.SMTResponseDDM.Term Strata.SourceRange)
+    : Strata.SMT.Term :=
+  match t with
+  | .spec_constant_term _ sc =>
+    match sc with
+    | .sc_numeral _ n     => .prim (.int n)
+    | .sc_numeral_neg _ n => .prim (.int (-(n : Int)))
+    | .sc_decimal _ d     => .prim (.real d)
+    | .sc_str _ s         => .prim (.string s)
+    | _  => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
+  | .qual_identifier _ qi =>
+    match resolveQI qi with
+    | some ("true", _)  => .prim (.bool true)
+    | some ("false", _) => .prim (.bool false)
+    | some (name, _)    => mkUFApp name []
+    | none              => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
+  | .qual_identifier_args _ qi args =>
+    match resolveQI qi with
+    | some (name, _) =>
+      let argTerms := args.val.toList.map translateFromDDMTerm
+      mkUFApp name argTerms
+    | none => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
+  | _ => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
+
+where
+  /-- Extract the name string from a QualIdentifier. -/
+  resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier Strata.SourceRange)
+      : Option (String × Option (Strata.SMTResponseDDM.SMTSort Strata.SourceRange)) :=
+    match qi with
+    | .qi_ident _ iden =>
+      match iden with
+      | .iden_simple _ sym | .iden_indexed _ sym _
+      => some (symbolToString sym, none)
+    | .qi_isort _ iden sort =>
+      match iden with
+      | .iden_simple _ sym | .iden_indexed _ sym _
+      => some (symbolToString sym, some sort)
+  /-- Extract the raw string from a Symbol. -/
+  symbolToString (sym : Strata.SMTResponseDDM.Symbol Strata.SourceRange) : String :=
+    formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))
+  /-- Build a `Term.app` with a UF op for a named function/constructor. -/
+  mkUFApp (name : String) (args : List Strata.SMT.Term) : Strata.SMT.Term :=
+    let uf : Strata.SMT.UF := { id := name, args := [], out := .bool }
+    .app (.core (.uf uf)) args .bool
+
+end SMTResponseDDM
+
 end Strata

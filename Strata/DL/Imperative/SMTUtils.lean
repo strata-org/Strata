@@ -6,6 +6,7 @@
 
 import Strata.DL.SMT.SMT
 import Strata.DL.SMT.DDMTransform.Parse
+import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DDM.Elab
 import Strata.DDM.Format
 import Strata.DL.Imperative.PureExpr
@@ -19,16 +20,22 @@ namespace SMT
 
 /--
 A counterexample derived from an SMT solver is a map from an identifier
-to a string.
+to an `SMT.Term`.
 -/
-abbrev CounterEx (Ident : Type) := Map Ident String
+abbrev CounterEx (Ident : Type) := Map Ident Strata.SMT.Term
+
+/-- Render an `SMT.Term` to a string via the SMTDDM translation. -/
+private def termToString (t : Strata.SMT.Term) : String :=
+  match Strata.SMTDDM.toString t with
+  | .ok s => s
+  | .error _ => repr t |>.pretty
 
 def CounterEx.format {Ident} [ToFormat Ident] (cex : CounterEx Ident) : Format :=
   match cex with
   | [] => ""
-  | [(id, v)] => f!"({id}, {v})"
+  | [(id, v)] => f!"({id}, {termToString v})"
   | (id, v) :: rest =>
-    (f!"({id}, {v}) ") ++ CounterEx.format rest
+    (f!"({id}, {termToString v}) ") ++ CounterEx.format rest
 
 instance {Ident} [ToFormat Ident] : ToFormat (CounterEx Ident) where
   format := CounterEx.format
@@ -100,23 +107,6 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
 -- SMTDDM-based parsing
 ---------------------------------------------------------------------
 
-/-- The loaded dialects needed to parse SMTResponse commands. -/
-private def smtResponseDialects : Strata.Elab.LoadedDialects :=
-  .ofDialects! #[Strata.initDialect, Strata.smtReservedKeywordsDialect,
-                 Strata.SMTCore, Strata.SMTResponse]
-
-/-- Format context for rendering SMTResponse `Arg` values back to strings. -/
-private def smtFormatContext : Strata.FormatContext :=
-  .ofDialects smtResponseDialects.dialects
-
-/-- Format state for rendering SMTResponse `Arg` values back to strings. -/
-private def smtFormatState : Strata.FormatState where
-  openDialects := smtResponseDialects.dialects.toList.foldl (init := {}) fun s d => s.insert d.name
-
-/-- Render a DDM `Arg` to a string using the SMTResponse dialect formatting. -/
-private def formatArg (arg : Strata.Arg) : String :=
-  (Strata.mformat arg smtFormatContext smtFormatState).format.pretty
-
 /--
 Parse a verdict line ("sat", "unsat", "unknown") via the SMTResponse DDM
 dialect. Returns `some .sat`, `some .unsat`, `some .unknown`, or `none`
@@ -126,7 +116,7 @@ private def parseVerdict (line : String) : IO (Option (Result PUnit)) := do
   let inputCtx := Strata.Parser.stringInputContext "solver" (line ++ "\n")
   let prg ←
     try Strata.Elab.parseStrataProgramFromDialect
-          smtResponseDialects "SMTResponse" inputCtx
+          Strata.SMTResponseDDM.smtResponseDialects "SMTResponse" inputCtx
     catch _ => return none
   if prg.commands.isEmpty then return none
   let op := prg.commands[0]!
@@ -142,32 +132,32 @@ Uses `parseCategoryFromDialect` targeting `SMTResponse.GetValueResponse`
 directly, which avoids the ambiguity that arises when parsing at the
 `Command` level.
 
-Returns a list of (key, value) string pairs on success.
+Returns a list of (key-string, value-Term) pairs on success.
 -/
-private def parseModelDDM (modelStr : String) : IO (List (String × String)) := do
+private def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) := do
   let inputCtx := Strata.Parser.stringInputContext "solver-model" modelStr
   let op ←
     try Strata.Elab.parseCategoryFromDialect
-          smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
+          Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
     catch _ => return []
   match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
   | .ok (.get_value_response _ vps) =>
     let pairs := vps.val.toList.filterMap fun vp =>
       match vp with
       | .valuation_pair _ t1 t2 =>
-        some (formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
-              formatArg (.op (Strata.SMTResponseDDM.Term.toAst t2)))
+        some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
+              Strata.SMTResponseDDM.translateFromDDMTerm t2)
     return pairs
   | .error _ => return []
 
 /--
-Process a parsed model (list of key-value string pairs) against the
+Process a parsed model (list of key-string / value-Term pairs) against the
 expected variables, matching each variable's SMT-encoded name to its
 value in the model.
 -/
 private def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
-    (vars : List P.TypedIdent) (pairs : List (String × String))
+    (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
     (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
   match vars with
   | [] => return []
@@ -176,7 +166,7 @@ private def processModel {P : PureExpr} [ToFormat P.Ident]
     let value ← findValue id pairs
     let rest ← processModel typedVarToSMTFn vrest pairs E
     .ok ((var, value) :: rest)
-  where findValue id pairs : Except Format String :=
+  where findValue id pairs : Except Format Strata.SMT.Term :=
     match pairs.find? (fun p => p.fst == id) with
     | none => .error f!"Cannot find model for id: {id}"
     | some p => .ok p.snd
