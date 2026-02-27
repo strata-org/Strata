@@ -4,16 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boole.DDMTransform.Parse
+import Strata.Languages.Boole.Boole
 import Strata.Languages.Core.Verifier
 import Strata.DL.Imperative.Stmt
-
-namespace BooleDDM
-
--- set_option trace.Strata.generator true in
-#strata_gen Boole
-
-end BooleDDM
 
 namespace Strata.Boole
 
@@ -25,9 +18,6 @@ Boole verification pipeline:
 `Strata.Program` -> `BooleDDM.Program.ofAst` -> `BooleDDM.Program`
 -> `toCoreProgram` -> `Core.Program` -> `Core.verify`
 -/
-abbrev BooleTy := BooleDDM.BooleType SourceRange
-abbrev Expr := BooleDDM.Expr SourceRange
-abbrev Program := BooleDDM.Program SourceRange
 
 structure TranslateState where
   fileName : String := ""
@@ -131,7 +121,7 @@ def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData Core.Exp
   let fileRangeElt := ⟨Imperative.MetaData.fileRange, .fileRange ⟨uri, sr⟩⟩
   return #[fileRangeElt]
 
-def toCoreMonoType (t : BooleTy) : TranslateM Lambda.LMonoTy := do
+def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with
   | .bvar m n => return .ftvar (← getTypeBVarName m n)
   | .tvar _ n => return .ftvar n
@@ -147,7 +137,7 @@ def toCoreMonoType (t : BooleTy) : TranslateM Lambda.LMonoTy := do
   | .Map _ v k => return .tcons "Map" [← toCoreMonoType k, ← toCoreMonoType v]
   | _ => throwAt default "Unsupported type"
 
-def toCoreType (t : BooleTy) : TranslateM Core.Expression.Ty := do
+def toCoreType (t : Boole.Type) : TranslateM Core.Expression.Ty := do
   return .forAll [] (← toCoreMonoType t)
 
 def toCoreBinding (b : BooleDDM.Binding SourceRange) : TranslateM (Core.Expression.Ident × Lambda.LMonoTy) := do
@@ -165,13 +155,13 @@ def toCoreMonoBind (b : BooleDDM.MonoBind SourceRange) : TranslateM (Core.Expres
   match b with
   | .mono_bind_mk _ ⟨_, n⟩ ty => return (mkIdent n, ← toCoreMonoType ty)
 
-def toCoreTypedUn (m : SourceRange) (ty : BooleTy) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
   let bop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", .unres⟩ none
   return .app () bop a
 
-def toCoreTypedBin (m : SourceRange) (ty : BooleTy) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
   let bop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", .unres⟩ none
