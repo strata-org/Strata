@@ -204,18 +204,18 @@ def polyOldFunc : WFLFunc CoreLParams :=
   polyUneval "old" ["a"] [("x", mty[%a])] mty[%a]
 
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
-   `Map.const(d)` returns a map where every key maps to the value `d`. -/
+   `const(d)` returns a map where every key maps to the value `d`. -/
 def mapConstFunc : WFLFunc CoreLParams :=
-  polyUneval "Map.const" ["k", "v"]
+  polyUneval "const" ["k", "v"]
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
       esM[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
-                ((~Map.const : %v → (Map %k %v)) %1)) %0)}
+                ((~const : %v → (Map %k %v)) %1)) %0)}
             (((~select : (Map %k %v) → %k → %v)
-                ((~Map.const : %v → (Map %k %v)) %1)) %0) == %1)]
+                ((~const : %v → (Map %k %v)) %1)) %0) == %1)]
     ])
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
