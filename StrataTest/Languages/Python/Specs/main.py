@@ -19,3 +19,7 @@ class MainClass:
 
 def main_function(x : MainClass):
     pass
+
+def kwargs_function(**kw: str) -> Any:
+    assert isinstance(kw["name"], str), f'Expected name to be str'
+    assert kw["count"] >= 1, f'Expected count >= 1'

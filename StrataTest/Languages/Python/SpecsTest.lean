@@ -20,8 +20,14 @@ function "dict_function" {
   ]
   kwonly: [
   ]
+  kwargs: [
+  ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 function "list_function" {
   args: [
@@ -29,8 +35,14 @@ function "list_function" {
   ]
   kwonly: [
   ]
+  kwargs: [
+  ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 function "sequence_function" {
   args: [
@@ -38,8 +50,14 @@ function "sequence_function" {
   ]
   kwonly: [
   ]
+  kwargs: [
+  ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 function "base_function"{
   args: [
@@ -47,10 +65,20 @@ function "base_function"{
   ]
   kwonly: [
   ]
+  kwargs: [
+  ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 class "MainClass" {
+  bases: []
+  fields: []
+  classVars: []
+  subclasses: []
   function "main_method"{
     args: [
       self : class(MainClass) [hasDefault: false]
@@ -58,8 +86,14 @@ class "MainClass" {
     ]
     kwonly: [
     ]
+    kwargs: [
+    ]
     return: ident("typing.Any")
     overload: false
+    preconditions: [
+    ]
+    postconditions: [
+    ]
   }
 }
 function "main_function"{
@@ -68,8 +102,31 @@ function "main_function"{
   ]
   kwonly: [
   ]
+  kwargs: [
+  ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
+}
+function "kwargs_function"{
+  args: [
+  ]
+  kwonly: [
+  ]
+  kwargs: [
+    kwargs kw : ident("builtins.str")
+  ]
+  return: ident("typing.Any")
+  overload: false
+  preconditions: [
+    isinstance(kw[name], "str") "Python.Call(Python.Name(\"isinstance\", Python.Load(););, Python.Subscript(Python.Name(\"kw\", Python.Load(););, Python.Constant(Python.ConString(\"name\");, );, Python.Load(););Python.Name(\"str\", Python.Load(););, );"
+    value_ge(kw[count], 1) "Python.Compare(Python.Subscript(Python.Name(\"kw\", Python.Load(););, Python.Constant(Python.ConString(\"count\");, );, Python.Load(););, Python.GtE();, Python.Constant(Python.ConPos(1);, ););"
+  ]
+  postconditions: [
+  ]
 }
 #end
 

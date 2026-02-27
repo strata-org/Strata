@@ -277,10 +277,13 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
 
 /-- Convert a class definition to Laurel types and procedures. -/
 def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
+  let laurelFields ← cls.fields.toList.mapM fun f => do
+    let ty ← specTypeToLaurelType f.type
+    pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
   pushType (.Composite {
     name := cls.name
-    extending := []
-    fields := []
+    extending := cls.bases.toList.map toString
+    fields := laurelFields
     instanceProcedures := []
   })
   for method in cls.methods do
