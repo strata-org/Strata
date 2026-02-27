@@ -21,9 +21,9 @@ def detCmdBlock [HasBool P] (c : CmdT) (k : Label) :
 
 open LabelGen
 
-/-- Flush the list of accumulated commands.  If the list is empty, propagate the
-provideded continuation.  If the list is non-empty, create a block containing
-the command that jumps to the provided continuation and provide the new block's
+/-- Flush the list of accumulated commands. If the list is empty, propagate the
+provided continuation. If the list is non-empty, create a block containing
+one command that jumps to the provided continuation and provide the new block's
 label as a new continuation.  -/
 def flushCmds
   [HasBool P]
