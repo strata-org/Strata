@@ -52,8 +52,22 @@ jobs:
         run: |
           wget https://github.com/diffblue/cbmc/releases/download/cbmc-6.4.1/ubuntu-22.04-cbmc-6.4.1-Linux.deb
           sudo dpkg -i ubuntu-22.04-cbmc-6.4.1-Linux.deb
+      - name: Restore lake cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build Strata
         uses: leanprover/lean-action@v1
+        with:
+          use-github-cache: false
+      - name: Save lake cache
+        uses: actions/cache/save@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
