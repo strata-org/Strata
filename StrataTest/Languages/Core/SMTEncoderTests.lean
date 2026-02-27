@@ -178,16 +178,15 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
    (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test x, y, x@1 scenario: fvar "x", fvar "y", then bvar named "x@1"
--- Expected: fvars stay x and y, bvar "x@1" becomes x@2 (clashes with x, gets next suffix)
-/-- info: "; x\n(declare-const x Int)\n; y\n(declare-const y Int)\n(define-fun t0 () Bool (forall ((x@1 Int)) (ite (= x@1 x) (= x@1 y) false)))\n" -/
+-- Test x, x, x@1 scenario: nested quantifiers both named "x", then bvar named "x@1"
+-- Expected: outer x stays x, inner x becomes x@1, bvar "x@1" becomes x@2
+/-- info: "(define-fun t0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
-   (.ite ()
-    (.eq () (.bvar () 0) (.fvar () "x" (.some .int)))
-    (.eq () (.bvar () 0) (.fvar () "y" (.some .int)))
-    (.const () (.boolConst false))))
+  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+    (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
+     (.eq () (.bvar () 0) (.bvar () 2)))))
 
 
 /-- info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n" -/

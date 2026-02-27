@@ -262,8 +262,20 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
       | _ => []
     let fvarNames := collectFvarNames e |>.toArray
-    -- Generate base name
-    let baseName := if name.isEmpty then s!"$__bv{bvs.length}" else name
+    -- Generate base name and extract any existing suffix
+    let (baseName, startSuffix) :=
+      if name.isEmpty then
+        (s!"$__bv{bvs.length}", 1)
+      else
+        -- Check if name already has @N suffix
+        match name.splitOn "@" with
+        | [base] => (base, 1)  -- No suffix, start at 1
+        | parts =>
+            -- Has @-separated parts, check if last part is a number
+            let lastPart := parts.getLast!
+            match lastPart.toNat? with
+            | some n => (String.intercalate "@" parts.dropLast, n + 1)  -- Has numeric suffix, increment it
+            | none => (name, 1)  -- Last part not numeric, treat whole thing as base
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
     let rec findUniqueName (candidate : String) (suffix : Nat) : String :=
       if bvs.any (fun (n, _) => n == candidate) ||
@@ -272,7 +284,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
         findUniqueName (disambiguateName baseName suffix) (suffix + 1)
       else
         candidate
-    let x := findUniqueName baseName 1
+    let x := findUniqueName (if startSuffix == 1 then baseName else disambiguateName baseName (startSuffix - 1)) startSuffix
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
