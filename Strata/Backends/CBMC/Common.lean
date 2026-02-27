@@ -79,6 +79,8 @@ def emptyType : Json := Json.mkObj [("id", "empty")]
 def boolType : Json := Json.mkObj [("id", "bool")]
 def integerType : Json := Json.mkObj [("id", "integer")]
 def stringType : Json := Json.mkObj [("id", "string")]
+def regexType : Json := Json.mkObj [("id", "regex")]
+def realType : Json := Json.mkObj [("id", "real")]
 
 def mkIntType (config : CBMCConfig := .empty) : Json :=
   Json.mkObj [
@@ -240,6 +242,16 @@ def i32ToHex (s : String) : String :=
     let unsigned := if n < 0 then UInt32.size + n else n
     ("".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString)))
   | none => panic! "Failed to convert String to int"
+
+/-- Convert a decimal integer string to hex for a bitvector of the given bit width.
+    Negative values are two's-complement encoded. -/
+def bvToHex (s : String) (width : Nat) : String :=
+  match s.toInt? with
+  | some n =>
+    let modulus := 2 ^ width
+    let unsigned := if n < 0 then modulus + n else n
+    "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
+  | none => panic! s!"Failed to convert '{s}' to int"
 
 def mkConstant (value : String) (base : String) (sourceLocation : Json) (config : CBMCConfig := .empty) : Json :=
   Json.mkObj [
