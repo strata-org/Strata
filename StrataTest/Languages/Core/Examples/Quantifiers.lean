@@ -48,26 +48,26 @@ spec {
 
 /--
 info: [Strata.Core] Type checking succeeded.
-
-
+ 
+ 
 VCs:
 Label: good_assert
 Property: assert
 Obligation:
 forall __q0 : int :: !(__q0 == __q0 + 1)
-
+ 
 Label: good
 Property: assert
 Obligation:
 forall __q0 : int :: exists __q1 : int :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1))
-
+ 
 Label: bad
 Property: assert
 Obligation:
 forall __q0 : int :: __q0 < $__x0
-
-
-
+ 
+ 
+ 
 Result: Obligation: bad
 Property: assert
 Result: ➖ can be false if reachable
