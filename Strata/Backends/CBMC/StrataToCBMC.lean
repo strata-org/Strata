@@ -43,7 +43,7 @@ int procedure simpleTest (x: int, y: int)
 #end
 
 open Strata.C_Simp in
-def SimpleTestEnvAST := TransM.run (translateProgram (SimpleTestEnv.commands))
+def SimpleTestEnvAST := TransM.run Inhabited.default (translateProgram (SimpleTestEnv.commands))
 
 def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 
