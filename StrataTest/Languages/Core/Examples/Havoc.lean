@@ -54,8 +54,6 @@ $__x1 == 1
 Result: Obligation: x_eq_1
 Property: assert
 Result: ➖ can be false if reachable
-Model:
-($__x1, 0)
 
 
 [DEBUG] Evaluated program:
@@ -72,8 +70,6 @@ info:
 Obligation: x_eq_1
 Property: assert
 Result: ➖ can be false if reachable
-Model:
-($__x1, 0)
 -/
 #guard_msgs in
 #eval verify havocPgm

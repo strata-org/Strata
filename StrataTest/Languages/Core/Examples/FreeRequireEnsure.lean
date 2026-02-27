@@ -66,8 +66,6 @@ $__g3 == 15
 Result: Obligation: g_eq_15_internal
 Property: assert
 Result: ➖ can be false if reachable
-Model:
-($__g3, 0)
 
 
 [DEBUG] Evaluated program:
