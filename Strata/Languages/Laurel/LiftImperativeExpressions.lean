@@ -76,6 +76,10 @@ structure LiftState where
   model : SemanticModel
   /-- Global counter for fresh conditional variables -/
   condCounter : Nat := 0
+  /-- Names of imperative procedures whose calls must be lifted from expression position -/
+  imperativeNames : List Identifier := []
+  /-- All procedures in the program, used to look up return types of imperative calls -/
+  procedures : List Procedure := []
 
 abbrev LiftM := StateM LiftState
 
@@ -118,18 +122,21 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
   return computeExprType s.model expr
 
-/-- Check if an expression contains any assignments (recursively). -/
-private def containsAssignment (expr : StmtExprMd) : Bool :=
+/-- Check if an expression contains any assignments or imperative calls (recursively). -/
+private def containsAssignmentOrImperativeCall (imperativeNames : List Identifier) (expr : StmtExprMd) : Bool :=
   match expr with
   | WithMetadata.mk val _ =>
   match val with
   | .Assign .. => true
-  | .StaticCall _ args1 => args1.attach.any (fun x => containsAssignment x.val)
-  | .PrimitiveOp _ args2 => args2.attach.any (fun x => containsAssignment x.val)
-  | .Block stmts _ => stmts.attach.any (fun x => containsAssignment x.val)
+  | .StaticCall name args1 =>
+      imperativeNames.contains name ||
+      args1.attach.any (fun x => containsAssignmentOrImperativeCall imperativeNames x.val)
+  | .PrimitiveOp _ args2 => args2.attach.any (fun x => containsAssignmentOrImperativeCall imperativeNames x.val)
+  | .Block stmts _ => stmts.attach.any (fun x => containsAssignmentOrImperativeCall imperativeNames x.val)
   | .IfThenElse cond th el =>
-      containsAssignment cond || containsAssignment th ||
-      match el with | some e => containsAssignment e | none => false
+      containsAssignmentOrImperativeCall imperativeNames cond ||
+      containsAssignmentOrImperativeCall imperativeNames th ||
+      match el with | some e => containsAssignmentOrImperativeCall imperativeNames e | none => false
   | _ => false
   termination_by expr
   decreasing_by
@@ -189,13 +196,26 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.PrimitiveOp op seqArgs.reverse, md⟩
 
   | .StaticCall name args =>
+      let imperative := (← get).imperativeNames
       let seqArgs ← args.reverse.mapM transformExpr
-      return ⟨.StaticCall name seqArgs.reverse, md⟩
+      let seqCall := ⟨.StaticCall name seqArgs.reverse, md⟩
+      if imperative.contains name then
+        -- Imperative call in expression position: lift it like an assignment
+        -- Order matters: assign must be prepended first (it's newest-first),
+        -- so that when reversed the var declaration comes before the call.
+        let callResultVar ← freshCondVar
+        let callResultType ← computeType expr
+        addPrepend (⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩)
+        addPrepend (bare (.LocalVariable callResultVar callResultType none))
+        return bare (.Identifier callResultVar)
+      else
+        return seqCall
 
   | .IfThenElse cond thenBranch elseBranch =>
-      let thenHasAssign := containsAssignment thenBranch
+      let imperative := (← get).imperativeNames
+      let thenHasAssign := containsAssignmentOrImperativeCall imperative thenBranch
       let elseHasAssign := match elseBranch with
-        | some e => containsAssignment e
+        | some e => containsAssignmentOrImperativeCall imperative e
         | none => false
       if thenHasAssign || elseHasAssign then
         -- Lift the entire if-then-else. Introduce a fresh variable for the result.
@@ -302,15 +322,14 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmt with
   | WithMetadata.mk val md =>
   match val with
-  | .Assert cond =>
-      let seqCond ← transformExpr cond
-      let prepends ← takePrepends
-      return prepends ++ [⟨.Assert seqCond, md⟩]
+  | .Assert _ =>
+      -- Do not transform assert conditions: impure expressions inside contracts
+      -- must be rejected by the translator, not silently lifted.
+      return [stmt]
 
-  | .Assume cond =>
-      let seqCond ← transformExpr cond
-      let prepends ← takePrepends
-      return prepends ++ [⟨.Assume seqCond, md⟩]
+  | .Assume _ =>
+      -- Do not transform assume conditions: same reasoning as assert.
+      return [stmt]
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
@@ -319,18 +338,51 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .LocalVariable name ty initializer =>
       match initializer with
       | some initExpr =>
-          let seqInit ← transformExpr initExpr
-          let prepends ← takePrepends
-          modify fun s => { s with subst := [] }
-          return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
+          -- If the initializer is a direct imperative StaticCall, don't lift it —
+          -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
+          match initExpr.val with
+          | .StaticCall callee args =>
+              let imperative := (← get).imperativeNames
+              if imperative.contains callee then
+                -- Pass through as-is; translateStmt will emit init + call
+                let seqArgs ← args.mapM transformExpr
+                let argPrepends ← takePrepends
+                modify fun s => { s with subst := [] }
+                return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExpr.md⟩), md⟩]
+              else
+                let seqInit ← transformExpr initExpr
+                let prepends ← takePrepends
+                modify fun s => { s with subst := [] }
+                return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
+          | _ =>
+              let seqInit ← transformExpr initExpr
+              let prepends ← takePrepends
+              modify fun s => { s with subst := [] }
+              return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
       | none =>
           return [stmt]
 
   | .Assign targets value =>
-      let seqValue ← transformExpr value
-      let prepends ← takePrepends
-      modify fun s => { s with subst := [] }
-      return prepends ++ [⟨.Assign targets seqValue, md⟩]
+      -- If the RHS is a direct imperative StaticCall, don't lift it —
+      -- translateStmt handles Assign + StaticCall directly as a call statement.
+      match value.val with
+      | .StaticCall callee args =>
+          let imperative := (← get).imperativeNames
+          if imperative.contains callee then
+            let seqArgs ← args.mapM transformExpr
+            let argPrepends ← takePrepends
+            modify fun s => { s with subst := [] }
+            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, value.md⟩, md⟩]
+          else
+            let seqValue ← transformExpr value
+            let prepends ← takePrepends
+            modify fun s => { s with subst := [] }
+            return prepends ++ [⟨.Assign targets seqValue, md⟩]
+      | _ =>
+          let seqValue ← transformExpr value
+          let prepends ← takePrepends
+          modify fun s => { s with subst := [] }
+          return prepends ++ [⟨.Assign targets seqValue, md⟩]
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond

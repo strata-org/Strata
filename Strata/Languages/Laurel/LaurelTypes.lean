@@ -18,10 +18,8 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-abbrev TypeEnv := List (Int × HighTypeMd)
-
 /--
-Compute the HighType of a StmtExpr given a type environment and type definitions.
+Compute the HighType of a StmtExpr given a type environment, type definitions, and procedure list.
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
 -/
@@ -40,7 +38,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — we don't track return types here, so fall back to TVoid
-  | .StaticCall _ _ => panic "Not supported StaticCall"
+  | .StaticCall callee _ => match model.get callee with
+    | .staticProcedure proc => match proc.outputs with
+      | [singleOutput] => singleOutput.type
+      | _ => { val := .TVoid, md := default }
+    | _ => panic "static call not to a procedure"
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
   -- Operators
   | .PrimitiveOp op _ =>

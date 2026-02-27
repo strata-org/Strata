@@ -59,7 +59,7 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
   let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, #[]⟩
   let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, #[]⟩
   -- Helper: build an inner map (Map TypeTag bool) for a given composite type
-  -- Start with Map.const(false), then update each composite type's entry
+  -- Start with const(false), then update each composite type's entry
   let mkInnerMap (ct : CompositeType) : StmtExprMd :=
     let ancestors := computeAncestors model ct.name
     let falseConst := mkMd (.LiteralBool false)
