@@ -98,7 +98,7 @@ def main (args : List String) : IO UInt32 := do
             let ast ← match Strata.B3.Verifier.programToB3AST pgm with
               | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
               | Except.ok ast => pure ast
-            let solver ← Strata.SMT.Solver.spawn opts.solver #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
+            let solver ← Strata.B3.Verifier.createInteractiveSolver opts.solver
             let reports ← Strata.B3.Verifier.programToSMT ast solver
             -- B3 uses a different result format, print directly and return empty array
             for report in reports do

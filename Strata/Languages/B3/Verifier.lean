@@ -39,6 +39,13 @@ def programToB3AST (prog : Program) : Except String (B3AST.Program SourceRange) 
 
 -- Minimal type stubs for B3 verifier API compatibility
 
+/-- Create an interactive solver with appropriate flags for the given solver path. -/
+def createInteractiveSolver (solverPath : String := "cvc5") : IO Solver :=
+  let args := if solverPath.endsWith "cvc5" || solverPath == "cvc5"
+    then #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
+    else #["-smt2", "-in"]  -- Z3 flags
+  Solver.spawn solverPath args
+
 /-- Create a buffer-backed solver for capturing SMT output without running a solver -/
 def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
   let buffer ← IO.mkRef {}
