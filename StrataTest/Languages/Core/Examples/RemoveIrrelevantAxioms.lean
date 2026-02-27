@@ -283,4 +283,4 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval verify removeIrrelevantAxiomsPgm2
+#eval verify irrelevantAxiomsTestPgm
