@@ -266,7 +266,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     let baseName := if name.isEmpty then s!"$__bv{bvs.length}" else name
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
     let rec findUniqueName (candidate : String) (suffix : Nat) : String :=
-      if bvs.any (fun (n, _) => n == candidate) || 
+      if bvs.any (fun (n, _) => n == candidate) ||
          ctx.ufs.any (fun uf => uf.id == candidate) ||
          fvarNames.contains candidate then
         findUniqueName s!"{baseName}@{suffix}" (suffix + 1)
