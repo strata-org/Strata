@@ -164,8 +164,8 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     let hasExecError := stderr.contains "could not execute external process"
     let hasFileError := stderr.contains "No such file or directory"
     let suggestion :=
-      if (hasExecError || hasFileError) && smtsolver == defaultSolver then
-        s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver."
+      if (hasExecError || hasFileError) && smtsolver == Core.defaultSolver then
+        s!" \nEnsure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver."
       else ""
     .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 

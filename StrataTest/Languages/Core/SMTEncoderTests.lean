@@ -195,7 +195,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
+#eval verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := false})
 
 -- Test verification with Array theory
 /--
@@ -205,6 +205,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true})
+#eval verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := true})
 
 end Strata
