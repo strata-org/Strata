@@ -148,5 +148,28 @@ instance : MkLExprParams ⟨CoreExprMetadata, Visibility⟩ where
 
 elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Visibility⟩) e
 
+/--
+info: Lambda.LExpr.op Strata.SourceRange.none (CoreIdent.unres "old")
+  none : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
+-/
+#guard_msgs in
+#check eb[~old]
+
+/--
+info: Lambda.LExpr.app Strata.SourceRange.none (Lambda.LExpr.op Strata.SourceRange.none (CoreIdent.unres "old") none)
+  (Lambda.LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "a")
+    none) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
+-/
+#guard_msgs in
+#check eb[(~old a)]
+
+open Lambda.LTy.Syntax in
+
+/--
+info: Lambda.LExpr.fvar Strata.SourceRange.none (CoreIdent.unres "x")
+  (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
+-/
+#guard_msgs in
+#check eb[(x : bool)]
 
 end Syntax
