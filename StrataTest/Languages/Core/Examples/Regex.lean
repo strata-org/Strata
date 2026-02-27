@@ -198,29 +198,24 @@ procedure main (n : int) returns ()
   assert [assert_1]: str.in.re("a", bad_re_loop(1));
   };
 
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
-Result: Obligation: assert_1
+VCs:
+Label: assert_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
-Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
+Obligation:
+!(str.in.re("0123456789a", bad_re_loop($__n0)))
+
+Label: assert_1
+Property: assert
+Obligation:
+str.in.re("a", bad_re_loop(1))
 
 
-[DEBUG] Evaluated program:
-function bad_re_loop (n : int) : regex {
-  re.loop(re.range("a", "z"), 1, n)
-}
-procedure main (n : int) returns ()
-{
-  var n1 : int;
-  n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
-  assert [assert_1]: str.in.re("a", bad_re_loop(1));
-  };
 
----
-info:
-Obligation: assert_0
+Result: Obligation: assert_0
 Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 
