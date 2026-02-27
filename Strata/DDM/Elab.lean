@@ -64,6 +64,25 @@ partial def elabHeader
   else
     (default, s.errors, 0)
 
+/-- Report errors for duplicate or conflicting constructor
+names before they reach `addCommand`. -/
+private def checkConstructorUniqueness
+    (dialects : DialectMap) (gctx : GlobalContext)
+    (cmd : Operation) : DeclM Unit := do
+  let names :=
+    GlobalContext.collectConstructorNames dialects cmd
+  let mut seen : Std.HashSet String := {}
+  for (name, loc) in names do
+    if seen.contains name then
+      logError loc
+        s!"Duplicate constructor name '{name}'."
+    else if name ∈ gctx then
+      logError loc
+        s!"Constructor name '{name}' conflicts \
+           with an existing definition."
+    else
+      seen := seen.insert name
+
 private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Operation) (stopPos : String.Pos.Raw) : DeclM (Array Operation) := do
   let iniPos := (←get).pos
   if iniPos >= stopPos then
@@ -77,6 +96,7 @@ private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Op
     return commands
   let cmd := tree.info.asOp!.op
   let dialects := (← read).loader.dialects
+  checkConstructorUniqueness dialects (← get).globalContext cmd
   modify fun s => { s with
     globalContext := s.globalContext.addCommand dialects cmd
   }

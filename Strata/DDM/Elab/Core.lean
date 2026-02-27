@@ -7,11 +7,11 @@ module
 
 public import Strata.DDM.Elab.DeclM
 public import Strata.DDM.Elab.Tree
-
+import Strata.DDM.HNF
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
 import all Strata.DDM.Util.Lean
-import Strata.DDM.HNF
+import Strata.Util.DecideProp
 
 open Lean (
     Message
@@ -864,7 +864,7 @@ def evalBindingSpec
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
     -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
     pure { ident, kind }
-  | .type b | .typeForward b =>
+  | .type b =>
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabTypeParams initSize args b.argsIndex
     let value : Option TypeExpr :=
@@ -1001,6 +1001,55 @@ def ofArgDeclKind : ArgDeclKind → ElabArgKind
 
 end ElabArgKind
 
+/-- Map a sequence category name to its separator format and child extraction function. -/
+private def scopeSepFormat (name : QualifiedIdent)
+    : Option (SepFormat × (Syntax → Array Syntax)) :=
+  match name with
+  | q`Init.Seq              => some (.none, Syntax.getArgs)
+  | q`Init.CommaSepBy       => some (.comma, Syntax.getSepArgs)
+  | q`Init.SpaceSepBy       => some (.space, Syntax.getSepArgs)
+  | q`Init.SpacePrefixSepBy => some (.spacePrefix, Syntax.getArgs)
+  | _ => none
+
+/--
+Extract type parameter names from a partially-elaborated typeParams tree.
+Compares the tree's result context against the inherited binding count
+to find newly introduced type bindings.
+-/
+private def extractParamNames (inheritedCount : Nat) (tpTree : Tree) : List String :=
+  let tpCtx := tpTree.resultContext
+  let newBindings := tpCtx.bindings.toArray.extract inheritedCount tpCtx.bindings.size
+  let names := newBindings.filterMap fun (b : Binding) =>
+    match b.kind with
+    | .type _ [] _ => some b.ident
+    | _            => none
+  names.toList
+
+/-- Pre-register a type in the global context so mutual references resolve.
+Reports an error if the type name is already declared (either from a
+previous child in the same mutual block or from outside the block).
+TODO: Use local bindings instead of the global context so that mutual
+types can be scoped. Currently blocked because `resolveTypeBinding`'s
+`.bvar` path does not support parametric types — only `.fvar` (global)
+entries handle type arguments (see `resolveTypeBinding`). -/
+private def preRegisterType (loc : SourceRange)
+    (tctx : TypingContext) (name : String)
+    (params : List String) : ElabM TypingContext := do
+  let gctx := tctx.globalContext
+  if h : name ∈ gctx then
+    logError loc s!"Type '{name}' is already declared."
+    return tctx
+  else
+    let gctx := gctx.define name (.type params none) h
+    return tctx.withGlobalContext gctx
+
+
+/-- Look up the syntax level for a given arg level
+via the precomputed `argElabIndex`. -/
+private def argSyntaxLevel?
+    (se : SyntaxElaborator) (argLevel : Nat) : Option Nat :=
+  se.argElabIndex[argLevel]?.join.bind fun idx =>
+    (se.argElaborators[idx]?).map (·.val.syntaxLevel)
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -1015,6 +1064,13 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     | return panic! s!"Unknown dialect {i.dialect} in {stx}"
   let some decl := d.ops[i.name]?
     | return panic! (f!"unknown operation {eformat i}").pretty
+  elabOperation' tctx stx loc decl
+
+partial def elabOperation' (tctx : TypingContext) (stx : Syntax)
+    (loc : SourceRange)
+    (decl : OpDecl) : ElabM Tree := do
+  let some i := qualIdentKind stx
+    | return panic! s!"Unknown command {stx.getKind}"
   let some se := (←read).syntaxElabs[i]?
     | return panic! s!"Unknown elaborator {i.fullName}"
   let initSize := tctx.bindings.size
@@ -1022,9 +1078,13 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
   if not success then
     return default
-  let isType i := .ofArgDeclKind argDecls[i].kind
+  let getKind i := .ofArgDeclKind argDecls[i].kind
   let ((args, newCtx), success) ← runChecked <|
-    runSyntaxElaborator (argc := argDecls.size) isType se tctx stxArgs
+    match se.preRegisterTypesScope with
+    | some scopeArgLevel =>
+      elaborateWithPreRegistration argDecls se tctx loc stxArgs scopeArgLevel
+    | none =>
+      runSyntaxElaborator (argc := argDecls.size) getKind se tctx stxArgs
   if !success then
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
@@ -1040,13 +1100,16 @@ partial def runSyntaxElaborator
   (getKind : Fin argc → ElabArgKind)
   (se : SyntaxElaborator)
   (tctx0 : TypingContext)
-  (args : Vector Syntax se.syntaxCount) : ElabM (Vector Tree argc × TypingContext) := do
+  (args : Vector Syntax se.syntaxCount)
+  : ElabM (Vector Tree argc × TypingContext) := do
   let isTypeP := fun i => (getKind i).isType
   let mut trees : Vector (Option Tree) argc := .replicate argc none
   for ⟨ae, sp⟩ in se.argElaborators do
     let argLevel := ae.argLevel
     let .isTrue argLevelP := inferInstanceAs (Decidable (argLevel < argc))
         | return panic! "Invalid argLevel"
+    -- Skip pre-elaborated args
+    if trees[argLevel].isSome then continue
     -- Compute the typing context for this argument
     let tctx ←
       /- Recursive datatypes make this a bit complicated, since we need to make
@@ -1072,10 +1135,9 @@ partial def runSyntaxElaborator
               | .type _ [] _ => some b.ident
               | _ => none
           -- Add the datatype name to the GlobalContext as a type
-          let gctx := baseCtx.globalContext
-          let gctx :=
-            if datatypeName ∈ gctx then gctx
-            else gctx.push datatypeName (GlobalKind.type typeParamNames.toList none)
+          -- Use tctx0.globalContext so pre-registered types are visible
+          let gctx := tctx0.globalContext
+          let gctx := gctx.ensureDefined datatypeName (GlobalKind.type typeParamNames.toList none)
           -- Add .tvar bindings for type parameters
           let loc := typeParamsT.info.loc
           -- Start with empty local bindings - don't inherit from baseCtx
@@ -1132,6 +1194,158 @@ partial def runSyntaxElaborator
         | return panic! "Invalid index"
       treesr[idx].resultContext
   return (treesr, tctx)
+
+/--
+Two-phase elaboration for operations annotated with `@[preRegisterTypes]`.
+
+When a parent operation (like `mutual`) has `@[preRegisterTypes(scope)]`, its children
+may reference each other's types before they are declared. This function handles that by:
+
+- **Phase 1**: For each child, partially elaborate name + typeParams args (which don't
+  reference sibling types) to extract type names and parameter names.
+- **Pre-register**: Pre-register all extracted types so mutual references resolve.
+- **Phase 2**: Fully elaborate each child with the updated context. Name args that were
+  already elaborated in Phase 1 are passed via `preElabMap` to avoid redundant work.
+  The remaining parent args are then elaborated by `runSyntaxElaborator`.
+
+**Known deviation**: typeParams args are elaborated twice — once in Phase 1 (against
+`tctx0`) to extract param names, and again in Phase 2 (against the per-child context).
+Phase 1 typeParams trees cannot be reused because `collectNewBindingsM` requires
+`tree.info.inputCtx.bindings.size ≥ initialScope`, which fails when the Phase 1 context
+is smaller than the Phase 2 per-child context.
+-/
+partial def elaborateWithPreRegistration
+    {argc : Nat}
+    (argDecls : Vector ArgDecl argc)
+    (se : SyntaxElaborator)
+    (tctx0 : TypingContext)
+    (fallbackLoc : SourceRange)
+    (stxArgs : Vector Syntax se.syntaxCount)
+    (scopeArgLevel : Nat) : ElabM (Vector Tree argc × TypingContext) := do
+  -- Resolve scope: find the scope arg's syntax, category, and children
+  let some scopeSyntaxLevel := argSyntaxLevel? se scopeArgLevel
+    | logInternalError fallbackLoc "elaborateWithPreRegistration: no syntax level for scope arg"
+      return default
+  let .isTrue scopeSLBound := inferInstanceAs (Decidable (scopeSyntaxLevel < se.syntaxCount))
+    | logInternalError fallbackLoc "elaborateWithPreRegistration: scope syntax level out of bounds"
+      return default
+  let scopeStx := stxArgs[scopeSyntaxLevel]
+  let .isTrue scopeALBound := inferInstanceAs (Decidable (scopeArgLevel < argc))
+    | logInternalError fallbackLoc "elaborateWithPreRegistration: scope arg level out of bounds"
+      return default
+  let scopeArgDecl := argDecls[scopeArgLevel]
+  let scopeCat ← do
+    match scopeArgDecl.kind with
+    | .cat c => pure c
+    | _ =>
+      logInternalError fallbackLoc "elaborateWithPreRegistration: expected category for scope arg"
+      return default
+  if scopeCat.args.size ≠ 1 then
+    logInternalError fallbackLoc
+      s!"elaborateWithPreRegistration: \
+         expected 1 scope cat arg, got {scopeCat.args.size}"
+    return default
+  let some (sep, getChildren) := scopeSepFormat scopeCat.name
+    | logInternalError fallbackLoc
+        s!"elaborateWithPreRegistration: \
+           unsupported scope category {scopeCat.name}"
+      return default
+  let children := getChildren scopeStx
+  -- Phase 1: Pre-register add all types so mutual references resolve
+  let preCtx ← children.foldlM (init := tctx0) fun preCtx child =>
+    extractChildTypeInfo preCtx child
+  -- Phase 2: Elaborate args with the scope tree pre-elaborated
+  let getKind (i : Fin argDecls.size) := ElabArgKind.ofArgDeclKind argDecls[i].kind
+  runSyntaxElaborator (argc := argDecls.size) getKind se preCtx stxArgs
+
+/--
+Phase 1 for a single child: elaborate its name and typeParams args to extract
+the type name and parameter names for pre-registration.
+Returns `(registrations, preElabMap)` where:
+- `registrations`: array of `(typeName, paramNames)` pairs
+- `preElabMap`: array of `(argLevel, tree)` for name args (passed to Phase 2)
+-/
+partial def extractChildTypeInfo (tctx0 : TypingContext) (child : Syntax)
+    : ElabM TypingContext := do
+  let dialects := (← read).dialects
+  let syntaxElabs := (← read).syntaxElabs
+  let some childIdent := qualIdentKind child
+    | return panic! s!"Unknown command {child.getKind}"
+
+  let some childLoc := mkSourceRange? child
+    | panic! "extractChildTypeInfo: child missing source location"
+  let some childDecl := dialects.lookupOpDecl childIdent
+    | logInternalError childLoc s!"extractChildTypeInfo: unknown op declaration {childIdent}"
+      return default
+  let some childSe := syntaxElabs[childIdent]?
+    | logInternalError childLoc s!"extractChildTypeInfo: no syntax elaborator for {childIdent}"
+      return default
+  let childStxArgs := child.getArgs
+  let childArgDecls := childDecl.argDecls.toArray
+
+  let mut tctx := tctx0
+  for spec in childDecl.newBindings do
+    let (nameArgLevel, typeParamsArgLevel?) ←
+      match spec with
+      | .datatype b => pure (b.nameIndex.toLevel, some b.typeParamsIndex.toLevel)
+      | .type b => pure (b.nameIndex.toLevel, b.argsIndex.map (·.toLevel))
+      | _ => continue
+    -- Elaborate name arg
+    let some nameSL := argSyntaxLevel? childSe nameArgLevel
+      | logInternalError childLoc
+          "extractChildTypeInfo: argLevelToSyntaxLevel \
+           failed for name"
+        continue
+    if nameSL ≥ childStxArgs.size then
+      logInternalError childLoc
+        s!"extractChildTypeInfo: nameSL {nameSL} \
+           out of bounds ({childStxArgs.size})"
+      continue
+    let .isTrue _ := decideProp (nameArgLevel < childArgDecls.size)
+      | logInternalError childLoc
+          s!"extractChildTypeInfo: nameArgLevel \
+             {nameArgLevel} out of bounds \
+             ({childArgDecls.size})"
+        continue
+    let nameCat := childArgDecls[nameArgLevel].kind.categoryOf
+    let (nameTree, nameSuccess) ← runChecked <|
+      catElaborator nameCat tctx0 childStxArgs[nameSL]!
+    if !nameSuccess then continue
+    let name ←
+      match nameTree.info with
+      | .ofIdentInfo info => pure info.val
+      | _ =>
+        logInternalError childLoc "extractChildTypeInfo: expected ident for type name"
+        continue
+    -- Elaborate typeParams to extract real param names
+    let some tpArgLevel := typeParamsArgLevel?
+      | -- .type spec with no argsIndex: register with empty params
+        tctx ← preRegisterType childLoc tctx name []
+        continue
+    let some tpSL := argSyntaxLevel? childSe tpArgLevel
+      | logInternalError childLoc
+          "extractChildTypeInfo: argLevelToSyntaxLevel \
+           failed for typeParams"
+        continue
+    if tpSL ≥ childStxArgs.size then
+      logInternalError childLoc
+        s!"extractChildTypeInfo: tpSL {tpSL} \
+           out of bounds ({childStxArgs.size})"
+      continue
+    if tpArgLevel ≥ childArgDecls.size then
+      logInternalError childLoc
+        s!"extractChildTypeInfo: tpArgLevel \
+           {tpArgLevel} out of bounds \
+           ({childArgDecls.size})"
+      continue
+    let tpCat := childArgDecls[tpArgLevel]!.kind.categoryOf
+    let (tpTree, tpSuccess) ← runChecked <|
+      catElaborator tpCat tctx0 childStxArgs[tpSL]!
+    if !tpSuccess then
+      return default
+    tctx ← preRegisterType childLoc tctx name (extractParamNames tctx0.bindings.size tpTree)
+  return tctx
+
 
 partial def elabType (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
   let (tree, success) ← runChecked <| elabOperation tctx stx
@@ -1242,7 +1456,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
     elabSeqWith c .newline "newlineSepBy" (·.getArgs)
   | _ =>
     assert! c.args.isEmpty
-    elabOperation
+    fun tctx stx => elabOperation tctx stx
 
 where
   elabSeqWith (c : SyntaxCat) (sep : SepFormat) (name : String) (getArgsFrom : Syntax → Array Syntax) : TypingContext → Syntax → ElabM Tree :=
