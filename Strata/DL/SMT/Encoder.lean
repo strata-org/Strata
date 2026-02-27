@@ -75,6 +75,21 @@ def smtReservedKeywords : List String :=
 def disambiguateName (baseName : String) (suffix : Nat) : String :=
   s!"{baseName}@{suffix}"
 
+/-- Find a unique name by trying candidates with increasing suffixes.
+    The `isUsed` predicate checks if a candidate name is already taken. -/
+def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → Bool) (limit : Nat := 1000) : String :=
+  let rec loop (candidate : String) (suffix : Nat) (remaining : Nat) : String :=
+    if h : remaining == 0 then candidate  -- Fallback after limit attempts
+    else if isUsed candidate then
+      loop (disambiguateName baseName suffix) (suffix + 1) (remaining - 1)
+    else
+      candidate
+  termination_by remaining
+  decreasing_by
+    have : remaining ≠ 0 := by intro h'; simp [h'] at h
+    omega
+  loop (if startSuffix == 1 then baseName else disambiguateName baseName (startSuffix - 1)) startSuffix limit
+
 def termId (n : Nat)                    : String := s!"t{n}"
 def ufId (n : Nat)                      : String := s!"f{n}"
 def enumId (E : String) (n : Nat)       : String := s!"{E}_m{n}"
@@ -172,16 +187,8 @@ def encodeUF (uf : UF) : EncoderM String := do
   -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
   let baseName := uf.id
   let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
-  -- Find unique name by trying suffixes 1, 2, 3, ... up to a reasonable limit
-  let rec findUniqueName (candidate : String) (suffix : Nat) (limit : Nat) : String :=
-    if limit == 0 then candidate  -- Fallback after limit attempts
-    else if existingNames.contains candidate || smtReservedKeywords.contains candidate then
-      findUniqueName (disambiguateName baseName suffix) (suffix + 1) (limit - 1)
-    else
-      candidate
-  termination_by limit
-  decreasing_by sorry  -- Termination obvious: limit decreases on each recursive call
-  let id := findUniqueName baseName 1 1000  -- Allow up to 1000 name clashes
+  let isUsed := fun candidate => existingNames.contains candidate || smtReservedKeywords.contains candidate
+  let id := findUniqueName baseName 1 isUsed (existingNames.size + smtReservedKeywords.length)
   comment uf.id
   let args ← uf.args.mapM (fun vt => encodeType vt.ty)
   declareFun id args (← encodeType uf.out)

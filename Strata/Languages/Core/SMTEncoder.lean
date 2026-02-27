@@ -277,14 +277,12 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
             | some n => (String.intercalate "@" parts.dropLast, n + 1)  -- Has numeric suffix, increment it
             | none => (name, 1)  -- Last part not numeric, treat whole thing as base
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
-    let rec findUniqueName (candidate : String) (suffix : Nat) : String :=
-      if bvs.any (fun (n, _) => n == candidate) ||
-         ctx.ufs.any (fun uf => uf.id == candidate) ||
-         fvarNames.contains candidate then
-        findUniqueName (disambiguateName baseName suffix) (suffix + 1)
-      else
-        candidate
-    let x := findUniqueName (if startSuffix == 1 then baseName else disambiguateName baseName (startSuffix - 1)) startSuffix
+    let isUsed := fun candidate =>
+      bvs.any (fun (n, _) => n == candidate) ||
+      ctx.ufs.any (fun uf => uf.id == candidate) ||
+      fvarNames.contains candidate
+    let limit := bvs.length + ctx.ufs.size + fvarNames.size
+    let x := Encoder.findUniqueName baseName startSuffix isUsed limit
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
