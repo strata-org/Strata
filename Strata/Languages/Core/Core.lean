@@ -34,7 +34,7 @@ open Strata
    requiring a tool like `BoogieToStrata` to desugar them.
 -/
 
-def typeCheck (options : Options) (program : Program)
+def typeCheck (options : VerifyOptions) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel Program := do
   let T := Lambda.TEnv.default
@@ -67,7 +67,7 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     Std.Format :=
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
-def typeCheckAndPartialEval (options : Options) (program : Program)
+def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
   let factory ← Core.Factory.addFactory moreFns
