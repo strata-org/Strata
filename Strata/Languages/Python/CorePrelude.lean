@@ -100,7 +100,7 @@ axiom (forall s1:StrOrNone, s2: StrOrNone :: {strOrNone_toObject(s1), strOrNone_
         strOrNone_toObject(s1) != strOrNone_toObject(s2));
 axiom (forall s : StrOrNone :: {StrOrNone..isStrOrNone_mk_str(s)}
         StrOrNone..isStrOrNone_mk_str(s) ==>
-        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone..str_val(s)));
+        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone..str_val!(s)));
 
 datatype AnyOrNone () {
   AnyOrNone_mk_str(str_val: string),
@@ -168,11 +168,11 @@ spec{
 {
   var days_i : int := 0;
   if (IntOrNone..isIntOrNone_mk_int(days)) {
-        days_i := IntOrNone..int_val(days);
+        days_i := IntOrNone..int_val!(days);
   }
   var hours_i : int := 0;
   if (IntOrNone..isIntOrNone_mk_int(hours)) {
-        hours_i := IntOrNone..int_val(hours);
+        hours_i := IntOrNone..int_val!(hours);
   }
   assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
 };
@@ -321,13 +321,13 @@ procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns
 spec {
   requires [req_name_is_foo]: req_name == "foo";
   requires [req_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
+  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val!(opt_name) == "bar") else true);
   ensures [ensures_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 }
 {
   assert [assert_name_is_foo]: req_name == "foo";
   assert [assert_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
+  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val!(opt_name) == "bar") else true);
   assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 };
 
