@@ -1088,9 +1088,9 @@ partial def runSyntaxElaborator
         -- Check for @[scopeSelf(name, args, type)] — adds function name as expression binding
         -- Push function name BEFORE params so params keep their expected bvar indices
         let tctx ← match ae.scopeSelf with
-        | some (nameLevel, _argsLevel, typeLevel) =>
+        | some (nameLevel, argsLevel, typeLevel) =>
           let nameTree := trees[nameLevel]
-          let argsTree := trees[_argsLevel]
+          let argsTree := trees[argsLevel]
           let typeTree := trees[typeLevel]
           match nameTree, argsTree, typeTree with
           | some nameT, some argsT, some typeT =>

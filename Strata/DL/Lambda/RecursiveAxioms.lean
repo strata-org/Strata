@@ -33,6 +33,8 @@ open Strata.DL.Util (FuncAttr)
 def checkRecursiveFunc [DecidableEq T.IDMeta]
     (func : LFunc T) (tf : @TypeFactory T.IDMeta)
     : Except Format (Nat × LDatatype T.IDMeta) := do
+  if func.inputs.isEmpty then
+    .error f!"Recursive function {func.name} must have at least one parameter"
   let recIdx ← FuncAttr.findInlineIfConstr func.attr |>.elim
     (.error f!"Recursive function {func.name} has no inlineIfConstr attribute") .ok
   let inputTys := func.inputs.values

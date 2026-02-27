@@ -1401,6 +1401,7 @@ def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) 
 inductive FnInterp where
   | Definition
   | Declaration
+  | RecursiveDefinition
   deriving Repr
 
 def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
@@ -1411,42 +1412,6 @@ def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) :
     let _ ← checkOpArg f q`Core.inline 0
     return #[.inline]
   | none => return #[]
-
-def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :
-  TransM (Core.Decl × TransBindings) := do
-  let _ ←
-    match status with
-    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  7
-    | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
-  let fname ← translateIdent Core.CoreIdent op.args[0]!
-  let typeArgs ← translateTypeArgs op.args[1]!
-  let sig ← translateBindings bindings op.args[2]!
-  let ret ← translateLMonoTy bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-  -- This bindings order -- original, then inputs, is
-  -- critical here. Is this right though?
-  let orig_bbindings := bindings.boundVars
-  let bbindings := bindings.boundVars ++ in_bindings
-  let bindings := { bindings with boundVars := bbindings }
-  let (preconds, body, inline?) ← match status with
-             | .Definition =>
-                let preconds ← translateFnPreconds p fname bindings op.args[4]!
-                let e ← translateExpr p bindings op.args[5]!
-                let inline? ← translateOptionInline op.args[6]!
-                pure (preconds, some e, inline?)
-             | .Declaration => pure ([], none, #[])
-  let md ← getOpMetaData op
-  let decl := .func { name := fname,
-                      typeArgs := typeArgs.toList,
-                      inputs := sig,
-                      output := ret,
-                      body := body,
-                      attr := inline?,
-                      preconditions := preconds } md
-  return (decl,
-          { bindings with
-            boundVars := orig_bbindings,
-            freeVars := bindings.freeVars.push decl })
 
 def translateDecreases (p : Program) (bindings : TransBindings) (arg : Arg)
     : TransM (Option (LExpr Core.CoreLParams.mono)) := do
@@ -1459,33 +1424,50 @@ def translateDecreases (p : Program) (bindings : TransBindings) (arg : Arg)
     let e ← translateExpr p bindings args[0]!
     return some e
 
-def translateRecFunction (p : Program) (bindings : TransBindings) (op : Operation)
-    : TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef 7
+def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ←
+    match status with
+    | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
+    | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
+    | .RecursiveDefinition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef  8
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   let orig_bbindings := bindings.boundVars
-  -- The DDM's @[scopeSelf] puts the function name before params in the typing context,
-  -- so we must mirror that order: push the function's op expr, then params.
-  let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
-  let selfBinding := LExpr.op () fname fnTy
-  let bbindings := bindings.boundVars ++ #[selfBinding] ++ in_bindings
+  -- For recursive functions, the DDM's @[scopeSelf] puts the function name
+  -- before params in the typing context, so we mirror that order here.
+  let bbindings ← match status with
+    | .RecursiveDefinition =>
+      let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
+      let selfBinding := LExpr.op () fname fnTy
+      pure (bindings.boundVars ++ #[selfBinding] ++ in_bindings)
+    | _ => pure (bindings.boundVars ++ in_bindings)
   let bindings := { bindings with boundVars := bbindings }
-  let dec ← translateDecreases p bindings op.args[4]!
-  let body ← translateExpr p bindings op.args[5]!
-  let inline? ← translateOptionInline op.args[6]!
+  let (preconds, body, inline?, dec) ← match status with
+    | .Definition | .RecursiveDefinition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let (dec, bodyIdx) ← match status with
+        | .RecursiveDefinition =>
+          let dec ← translateDecreases p bindings op.args[5]!
+          pure (dec, 6)
+        | _ => pure (none, 5)
+      let e ← translateExpr p bindings op.args[bodyIdx]!
+      let inline? ← translateOptionInline op.args[bodyIdx + 1]!
+      pure (preconds, some e, inline?, dec)
+    | .Declaration => pure ([], none, #[], none)
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
-                      isRecursive := true,
+                      isRecursive := status matches .RecursiveDefinition,
                       decreases := dec,
                       inputs := sig,
                       output := ret,
-                      body := some body,
-                      attr := inline? } md
+                      body := body,
+                      attr := inline?,
+                      preconditions := preconds } md
   return (decl,
           { bindings with
             boundVars := orig_bbindings,
@@ -1814,7 +1796,7 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
           | q`Core.command_recfndef =>
-            translateRecFunction p bindings op
+            translateFunction .RecursiveDefinition p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"

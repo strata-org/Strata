@@ -361,4 +361,97 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify impEquivPgm (options := .default)
 
+---------------------------------------------------------------------
+-- Test 5: recursive function with precondition
+---------------------------------------------------------------------
+
+def recPrecondPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+recursive function listLen (xs : IntList) : int
+  decreases xs
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+}
+
+recursive function nth (xs : IntList, n : int) : int
+  requires IntList..isCons(xs);
+  requires n >= 0;
+  requires n < listLen(xs);
+  decreases xs
+{
+  if n == 0 then IntList..hd(xs)
+  else nth(IntList..tl(xs), n - 1)
+}
+
+procedure TestNth() returns ()
+spec {
+  ensures true;
+}
+{
+  assert [first]:  nth(Cons(10, Cons(20, Nil())), 0) == 10;
+  assert [second]: nth(Cons(10, Cons(20, Nil())), 1) == 20;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram recPrecondPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: nth_body_calls_nth_0
+Property: assert
+Result: ✅ pass
+
+Obligation: nth_body_calls_nth_1
+Property: assert
+Result: ✅ pass
+
+Obligation: nth_body_calls_nth_2
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_first_calls_nth_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_first_calls_nth_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_first_calls_nth_2
+Property: assert
+Result: ✅ pass
+
+Obligation: first
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_second_calls_nth_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_second_calls_nth_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_second_calls_nth_2
+Property: assert
+Result: ✅ pass
+
+Obligation: second
+Property: assert
+Result: ✅ pass
+
+Obligation: TestNth_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify recPrecondPgm (options := .quiet)
+
 end Strata.RecursiveFunctionTest
