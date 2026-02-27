@@ -47,8 +47,8 @@ theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   sorry
   sorry
 
-theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) = Except.ok (pp, T', C') ↔
-  (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go P op C T ss acc1 = Except.ok (pp.drop acc2.length, T', C'))
+theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) labels = Except.ok (pp, T', C') ↔
+  (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go P op C T ss acc1 labels = Except.ok (pp.drop acc2.length, T', C'))
   := by
   induction ss generalizing pp acc1 acc2 T C
   simp [Statement.typeCheckAux.go]
@@ -64,15 +64,15 @@ theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (
   any_goals simp
   any_goals rw [← List.cons_append, ind]
 
-theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go P op C T ss [s] = Except.ok (pp, T', C') →
-  Statement.typeCheckAux.go P op C T ss [] = Except.ok (pp.drop 1, T', C') := by
+theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go P op C T ss [s] labels = Except.ok (pp, T', C') →
+  Statement.typeCheckAux.go P op C T ss [] labels = Except.ok (pp.drop 1, T', C') := by
   intro H
   have : [s] = [] ++ [s] := by simp
   rw [this, Statement.typeCheckAux_elim_acc] at H; simp at H
   simp [H]
 
 theorem Statement.typeCheckAux_go_WF :
-  Statement.typeCheckAux.go P op C T ss [] = Except.ok (pp', T', C') →
+  Statement.typeCheckAux.go P op C T ss [] labels = Except.ok (pp', T', C') →
   WF.WFStatementsProp P acc →
   WF.WFStatementsProp P (acc ++ ss) := by
   intros tcok h_acc_ok
@@ -121,7 +121,7 @@ theorem Statement.typeCheckAux_go_WF :
       simp [WFStatementsProp] at *
       simp [List.Forall_append, Forall, *]
       constructor
-    | goto l =>
+    | exit l =>
       simp [Except.bind] at tcok
       split at tcok <;> try contradiction
       have tcok := Statement.typeCheckAux_elim_singleton tcok
@@ -282,7 +282,7 @@ theorem Statement.typeCheckWF :
       rw [heq]
     | loop g m i b md =>
       sorry
-    | goto l =>
+    | exit l =>
       simp at Htc
       split at Htc <;> try simp_all
       split at Htc <;> try simp_all

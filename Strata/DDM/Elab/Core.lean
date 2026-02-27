@@ -53,7 +53,6 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   match f with
   | .ident loc i a => .ident loc i <$> a.mapM fun e => expandMacros m e args
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
-  | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
   | .tvar loc name => pure (.tvar loc name)
   | .funMacro loc i r => do
@@ -386,7 +385,7 @@ mutual
 
 partial def unifyTypeVectors
   {argc : Nat}
-  (b : Vector ArgDecl argc)
+  (isTypeP : Fin argc → Bool)
   (argLevel0 : Fin argc)
   (ea : Array TypeExpr)
   (tctx : TypingContext)
@@ -397,7 +396,7 @@ partial def unifyTypeVectors
   assert! ea.size = ia.size
   let mut res := args
   for i in Fin.range ea.size do
-    res ← unifyTypes b argLevel0 ea[i] tctx exprSyntax ia[i]! res
+    res ← unifyTypes isTypeP argLevel0 ea[i] tctx exprSyntax ia[i]! res
   return res
 
 /--
@@ -405,7 +404,7 @@ This compares the inferred type against the expected type for an argument to che
 argument value is well-typed and determine if additional type variables can be automatically
 inferred.
 
-- `b` is the bindings for the expression/operator this is for.
+- `isTypeP` returns true if the argument at the given index is a type.
 - `argLevel` refers to the index of the argument in `args`
 - `expectedType` is the type of the argument for the operation/expression.  Bound
   variables in it may refer to args in `args` less than `argIndex`.
@@ -419,7 +418,7 @@ inferred.
 -/
 partial def unifyTypes
     {argc : Nat}
-    (b : Vector ArgDecl argc)
+    (isTypeP : Fin argc → Bool)
     (argLevel0 : Fin argc)
     (expectedType : TypeExpr)
     (tctx : TypingContext)
@@ -442,7 +441,7 @@ partial def unifyTypes
         logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
         return args
       assert! ea.size = ia.size
-      unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+      unifyTypeVectors isTypeP argLevel0 ea tctx exprSyntax ia args
     | .tvar _ _ =>
       -- tvar inferred types are passed through; type inference will catch mismatches
       pure args
@@ -456,7 +455,7 @@ partial def unifyTypes
         logErrorMF exprLoc mf!"Encountered {inferredType} expression when {expectedType} expected."
         return args
       assert! ea.size = ia.size
-      unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+      unifyTypeVectors isTypeP argLevel0 ea tctx exprSyntax ia args
     | .tvar _ _ =>
       -- tvar inferred types are passed through; type inference will catch mismatches
       pure args
@@ -468,7 +467,7 @@ partial def unifyTypes
       | return panic! "Invalid index"
     let typeLevel := argLevel - (idx + 1)
     -- Verify type level is a type parameter.
-    assert! b[typeLevel].kind.isType
+    assert! isTypeP ⟨typeLevel, by omega⟩
 
     match args[typeLevel] with
     | none => do
@@ -497,8 +496,8 @@ partial def unifyTypes
       -- tvar inferred types are passed through; type inference will catch mismatches
       pure args
     | .arrow _ ia ir =>
-      let res ← unifyTypes b argLevel0 ea tctx exprSyntax ia args
-      unifyTypes b argLevel0 er tctx exprSyntax ir res
+      let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax ia args
+      unifyTypes isTypeP argLevel0 er tctx exprSyntax ir res
 
 end
 
@@ -982,6 +981,26 @@ def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : Ela
       return default
   return ⟨stxArgs, stxArgP⟩
 
+/-- The kind of elaboration to perform for an argument in `runSyntaxElaborator`.
+Unlike `ArgDeclKind`, this distinguishes pre-types (which need macro expansion)
+from already-resolved type expressions. -/
+inductive ElabArgKind where
+| preType (tp : PreType)
+| typeExpr (tp : TypeExpr)
+| cat (k : SyntaxCat)
+
+namespace ElabArgKind
+
+def isType : ElabArgKind → Bool
+| .cat c => c.isType
+| _ => false
+
+def ofArgDeclKind : ArgDeclKind → ElabArgKind
+| .type tp => .preType tp
+| .cat c => .cat c
+
+end ElabArgKind
+
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -1003,7 +1022,9 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
   if not success then
     return default
-  let ((args, newCtx), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs
+  let isType i := .ofArgDeclKind argDecls[i].kind
+  let ((args, newCtx), success) ← runChecked <|
+    runSyntaxElaborator (argc := argDecls.size) isType se tctx stxArgs
   if !success then
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
@@ -1016,10 +1037,11 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
 
 partial def runSyntaxElaborator
   {argc : Nat}
-  (argDecls : Vector ArgDecl argc)
+  (getKind : Fin argc → ElabArgKind)
   (se : SyntaxElaborator)
   (tctx0 : TypingContext)
   (args : Vector Syntax se.syntaxCount) : ElabM (Vector Tree argc × TypingContext) := do
+  let isTypeP := fun i => (getKind i).isType
   let mut trees : Vector (Option Tree) argc := .replicate argc none
   for ⟨ae, sp⟩ in se.argElaborators do
     let argLevel := ae.argLevel
@@ -1104,12 +1126,9 @@ partial def runSyntaxElaborator
             | none => continue
           | none => pure tctx
     let astx := args[ae.syntaxLevel]
-    let expectedKind := argDecls[argLevel].kind
-    match expectedKind with
-    | .type expectedType =>
+    match getKind ⟨argLevel, argLevelP⟩ with
+    | .preType expectedType =>
       let (tree, success) ← runChecked <| elabExpr tctx astx
-      -- If elaboration is successful, then we run type inference to see if we
-      -- can resolve additional type arguments.
       if success then
         let expr := tree.info.asExpr!.expr
         let inferredType ← inferType tctx expr
@@ -1121,13 +1140,23 @@ partial def runSyntaxElaborator
         | .error () =>
           panic! "Could not infer type."
         | .ok expectedType => do
-          trees ← unifyTypes argDecls ⟨argLevel, argLevelP⟩ expectedType tctx astx inferredType trees
+          trees ← unifyTypes isTypeP ⟨argLevel, argLevelP⟩
+            expectedType tctx astx inferredType trees
           assert! trees[argLevel].isNone
           trees := trees.set argLevel (some tree)
-      | .cat c =>
-        let (tree, success) ← runChecked <| catElaborator c tctx astx
-        if success then
-          trees := trees.set argLevel (some tree)
+    | .typeExpr expectedType =>
+      let (tree, success) ← runChecked <| elabExpr tctx astx
+      if success then
+        let expr := tree.info.asExpr!.expr
+        let inferredType ← inferType tctx expr
+        trees ← unifyTypes isTypeP ⟨argLevel, argLevelP⟩
+          expectedType tctx astx inferredType trees
+        assert! trees[argLevel].isNone
+        trees := trees.set argLevel (some tree)
+    | .cat c =>
+      let (tree, success) ← runChecked <| catElaborator c tctx astx
+      if success then
+        trees := trees.set argLevel (some tree)
   let treesr := trees.map (·.getD default)
   let mut tctx :=
     match se.resultScope with
@@ -1243,6 +1272,8 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
     elabSeqWith c .space "spaceSepBy" (·.getSepArgs)
   | q`Init.SpacePrefixSepBy =>
     elabSeqWith c .spacePrefix "spacePrefixSepBy" (·.getArgs)
+  | q`Init.NewlineSepBy =>
+    elabSeqWith c .newline "newlineSepBy" (·.getArgs)
   | _ =>
     assert! c.args.isEmpty
     elabOperation
@@ -1327,9 +1358,8 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
         return default
       | .ok p =>
         pure p
-    let mkArgDecl (tp : TypeExpr) : ArgDecl :=
-          { ident := "", kind := .type (.ofType tp) }
-    let argDecls := argTypes.map mkArgDecl
+    let getKind (i : Fin argTypes.size) : ElabArgKind :=
+          .typeExpr argTypes[i]
     let se : SyntaxElaborator := {
             syntaxCount := args.size
             argElaborators := Array.ofFn fun (⟨lvl, lvlp⟩ : Fin args.size) =>
@@ -1337,7 +1367,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
               ⟨e, lvlp⟩
             resultScope := none
           }
-    let (args, _) ← runSyntaxElaborator argDecls se tctx ⟨args, Eq.refl args.size⟩
+    let (args, _) ← runSyntaxElaborator getKind se tctx ⟨args, Eq.refl args.size⟩
     let e := args.toArray.foldl (init := fvar) fun e t =>
       .app { start := fnLoc.start, stop := t.info.loc.stop } e t.arg
     let info : ExprInfo := { toElabInfo := einfo, expr := e }
@@ -1358,7 +1388,10 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
     if !success then
       return default
-    let ((args, _), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs
+    let getKind (i : Fin argDecls.size) :=
+      ElabArgKind.ofArgDeclKind argDecls[i].kind
+    let ((args, _), success) ← runChecked <|
+      runSyntaxElaborator getKind se tctx stxArgs
     if !success then
       return default
     -- N.B. Every subterm gets the function location.

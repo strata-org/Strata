@@ -59,7 +59,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (MinPgm.commands))
+#eval TransM.run Inhabited.default ((translateProgram (MinPgm.commands)).map (·.stripMetaData))
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -69,7 +69,7 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt a b)>: if $__a0 < $__b1 then ($__a0 < $__b1) else true
+<label_ite_cond_true: (~Int.Lt a b)>: if $__a0 < $__b1 then $__a0 < $__b1 else true
 <label_ite_cond_false: !(~Int.Lt a b)>: if if $__a0 < $__b1 then false else true then if $__a0 < $__b1 then false else true else true
 Obligation:
 true

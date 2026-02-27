@@ -75,7 +75,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (SimpleTestEnv.commands))
+#eval TransM.run Inhabited.default ((translateProgram (SimpleTestEnv.commands)).map (·.stripMetaData))
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -93,9 +93,9 @@ Label: post
 Property: assert
 Assumptions:
 pre: $__y1 > 0
-<label_ite_cond_true: (~Int.Gt z #10)>: if $__x0 + $__y1 > 10 then ($__x0 + $__y1 > 10) else true
+<label_ite_cond_true: (~Int.Gt z #10)>: if $__x0 + $__y1 > 10 then $__x0 + $__y1 > 10 else true
 <label_ite_cond_false: !(~Int.Gt z #10)>: if if $__x0 + $__y1 > 10 then false else true then if $__x0 + $__y1 > 10 then false else true else true
-test_assume: if $__x0 + $__y1 > 10 then ($__x0 + $__y1 - 1) else ($__x0 + $__y1 + 1) > 0
+test_assume: if $__x0 + $__y1 > 10 then $__x0 + $__y1 - 1 else $__x0 + $__y1 + 1 > 0
 Obligation:
 true
 
