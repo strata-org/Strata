@@ -73,7 +73,7 @@ Obligation:
 info:
 Obligation: assert0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify QuantTypeAliases

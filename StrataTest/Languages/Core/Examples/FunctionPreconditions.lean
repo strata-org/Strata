@@ -36,7 +36,7 @@ Obligation:
 ---
 info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify divPgm
@@ -112,11 +112,11 @@ $__x1 == 1
 info:
 Obligation: init_calls_safeHead_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify listHeadPgm
@@ -181,11 +181,11 @@ Obligation:
 ---
 info: Obligation: foo_precond_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: foo_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify dependentPrecondPgm
@@ -229,11 +229,11 @@ Obligation:
 info:
 Obligation: doubleDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: doubleDiv_body_calls_Int.SafeDiv_1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify funcCallsFuncPgm
@@ -263,7 +263,7 @@ false
 
 Result: Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 
 [DEBUG] Evaluated program:
@@ -279,7 +279,7 @@ function badDiv (x : int) : int {
 info:
 Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify funcCallsFuncFailPgm
@@ -309,7 +309,7 @@ true
 ---
 info: Obligation: init_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify callUnconditionalPgm
@@ -345,7 +345,7 @@ Obligation:
 ---
 info: Obligation: set_z_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify callWithIfPgm
@@ -389,11 +389,11 @@ Obligation:
 ---
 info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: init_calls_safeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify callWithAssumePgm
@@ -437,11 +437,11 @@ forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
 ---
 info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify funcInQuantifierPgm
@@ -482,11 +482,11 @@ addPositive(3) == 8
 info:
 Obligation: init_calls_addPositive_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify funcDeclPgm
@@ -545,15 +545,15 @@ $__i1 + 1 >= 0
 info:
 Obligation: loop_guard_calls_Int.SafeDiv_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: entry_invariant_0_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify loopGuardPrecondPgm

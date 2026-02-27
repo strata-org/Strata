@@ -64,7 +64,7 @@ $__a1[0] == 1
 
 Result: Obligation: assert_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 
 [DEBUG] Evaluated program:
@@ -83,7 +83,7 @@ spec {
 info:
 Obligation: assert_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify failing
@@ -109,15 +109,15 @@ spec {
 info:
 Obligation: assert_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 Obligation: assert_1
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 Obligation: assert_2
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify failingThrice (options := .quiet)

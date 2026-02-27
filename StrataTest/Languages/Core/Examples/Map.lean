@@ -63,7 +63,7 @@ a[1]
 
 Result: Obligation: a_one_true
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 
 [DEBUG] Evaluated program:
@@ -79,11 +79,11 @@ procedure P () returns ()
 info:
 Obligation: a_zero_true
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a_one_true
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify mapPgm

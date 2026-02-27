@@ -60,7 +60,7 @@ true
 info:
 Obligation: post
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify TrivialPgm

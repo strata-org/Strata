@@ -203,31 +203,31 @@ true
 info:
 Obligation: entry_invariant_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_measure_pos
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: measure_decreases
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: measure_imp_not_guard
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: arbitrary_iter_maintain_invariant_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: i_eq_n
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: post
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify LoopTrivialPgm

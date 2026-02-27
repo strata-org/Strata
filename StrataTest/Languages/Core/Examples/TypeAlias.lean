@@ -90,7 +90,7 @@ fooConst1 == fooConst2
 info:
 Obligation: fooAssertion
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify goodTypeAlias
@@ -132,7 +132,7 @@ MapGetEq($__d0, $__k1, $__v2) == MapGetEq($__d0, $__k1, 0)
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify funcAndTypeAliasesPgm

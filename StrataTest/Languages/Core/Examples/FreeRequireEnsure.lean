@@ -65,9 +65,7 @@ $__g3 == 15
 
 Result: Obligation: g_eq_15_internal
 Property: assert
-Result: ❌ fail
-Model:
-($__g3, 0)
+Result: ➖ can be false if reachable
 
 
 [DEBUG] Evaluated program:
@@ -93,15 +91,15 @@ procedure ProcCaller () returns (x : int)
 info:
 Obligation: g_gt_10_internal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: g_lt_10
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: g_eq_15_internal
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__g3, 0)
 -/

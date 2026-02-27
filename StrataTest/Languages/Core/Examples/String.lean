@@ -77,19 +77,19 @@ str.substr("testing123", 2, 0) == ""
 info:
 Obligation: concrete_string_test
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: s1_s2_len_sum_eq_s3_len
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: substr_of_concat
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: substr_of_concat_concrete_test
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify strPgm

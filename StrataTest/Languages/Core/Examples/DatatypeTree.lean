@@ -66,23 +66,23 @@ spec {
 info:
 Obligation: isLeaf
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notNode
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: isNode
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: notLeaf
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeTesters_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeTesterPgm (options := .quiet)
@@ -124,11 +124,11 @@ spec {
 info:
 Obligation: notLeaf
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeHavocPgm (options := .quiet)
@@ -167,11 +167,11 @@ spec {
 info:
 Obligation: exhaustive
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeExhaustive_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeExhaustivePgm (options := .quiet)
@@ -213,11 +213,11 @@ spec {
 info:
 Obligation: mutualExclusion
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeMutualExclusion_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeMutualExclusionPgm (options := .quiet)
@@ -264,15 +264,15 @@ spec {
 info:
 Obligation: leafEquality
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: nodeEquality
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeEquality_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeEqualityPgm (options := .quiet)
@@ -312,11 +312,11 @@ spec {
 info:
 Obligation: leafVsNode
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeInequality_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeInequalityPgm (options := .quiet)
@@ -377,27 +377,27 @@ spec {
 info:
 Obligation: valIs42
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftIsLeaf
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftVal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: rightIsLeaf
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: rightVal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeDestructor_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeDestructorPgm (options := .quiet)
@@ -451,15 +451,15 @@ spec {
 info:
 Obligation: leftLeftIsLeaf
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftLeftVal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeNested_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeNestedPgm (options := .quiet)
@@ -505,11 +505,11 @@ spec {
 info:
 Obligation: valIs100
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeDestructorHavoc_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeDestructorHavocPgm (options := .quiet)
@@ -556,15 +556,15 @@ spec {
 info:
 Obligation: different_vals
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: different_children
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: TestTreeDifferentValues_ensures_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify treeDifferentValuesPgm (options := .quiet)

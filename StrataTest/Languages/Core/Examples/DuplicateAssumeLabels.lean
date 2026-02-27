@@ -57,11 +57,11 @@ $__n0 + $__n0 == $__n0 * 2
 info:
 Obligation: after_double_internal
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: double_correct
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify duplicateAssumes (options := .default)

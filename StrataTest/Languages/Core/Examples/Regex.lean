@@ -101,39 +101,39 @@ Obligation:
 info:
 Obligation: hello_dot_ends_with_period
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: dot_ends_with_period
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: bye_exclaim_no_end_with_period
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: ok_chars_str
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: cannot_contain_exclaim
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: has_to_be_at_least_1_char
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: cannot_exceed_10_chars
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: optionally_a_check1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: optionally_a_check2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify regexPgm1
@@ -198,35 +198,28 @@ procedure main (n : int) returns ()
   assert [assert_1]: str.in.re("a", bad_re_loop(1));
   };
 
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
-Result: Obligation: assert_1
+VCs:
+Label: assert_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
-Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
+Obligation:
+!(str.in.re("0123456789a", bad_re_loop($__n0)))
 
-
-[DEBUG] Evaluated program:
-function bad_re_loop (n : int) : regex {
-  re.loop(re.range("a", "z"), 1, n)
-}
-procedure main (n : int) returns ()
-{
-  var n1 : int;
-  n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
-  assert [assert_1]: str.in.re("a", bad_re_loop(1));
-  };
-
----
-info:
-Obligation: assert_0
+Label: assert_1
 Property: assert
+Obligation:
+str.in.re("a", bad_re_loop(1))
+
+
+
+Result: Obligation: assert_0
 Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 
 Obligation: assert_1
-Property: assert
 Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 -/
@@ -261,9 +254,8 @@ Obligation:
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify regexPgm3
 
----------------------------------------------------------------------

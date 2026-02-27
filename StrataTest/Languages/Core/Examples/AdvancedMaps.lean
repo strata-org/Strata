@@ -153,35 +153,35 @@ Obligation:
 info:
 Obligation: c_0_eq_a
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: c_1_eq_a
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a0eq0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a1eq1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a0eq1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a0neq2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: bTrueEqTrue
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: mix
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify mapPgm
@@ -259,35 +259,35 @@ Obligation:
 info:
 Obligation: c_0_eq_a
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: c_1_eq_a
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a0eq0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a1eq1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a0eq1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: a0neq2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: bTrueEqTrue
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: mix
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify mapPgm (options := { Options.default with useArrayTheory := true })

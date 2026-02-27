@@ -64,11 +64,11 @@ $__n0 <= 100 ==> if 100 < $__n0 then $__n0 - 10 else $__r3 == 91
 info:
 Obligation: n_gt_100_postcond
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: n_le_100_postcond
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify procIfPgm

@@ -192,7 +192,7 @@ spec {
 info:
 Obligation: UpdateAndRead_ensures_1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := false})
@@ -202,7 +202,7 @@ Result: ✅ pass
 info:
 Obligation: UpdateAndRead_ensures_1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify simpleMapProgram (options := {Options.quiet with useArrayTheory := true})

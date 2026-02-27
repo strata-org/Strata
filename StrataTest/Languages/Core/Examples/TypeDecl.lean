@@ -41,7 +41,7 @@ true
 info:
 Obligation: f_test
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify typeDeclPgm1
@@ -104,7 +104,7 @@ fooConst1 == fooConst2
 info:
 Obligation: fooAssertion
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify typeDeclPgm3

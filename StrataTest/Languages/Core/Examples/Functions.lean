@@ -63,11 +63,11 @@ true
 info:
 Obligation: barEq
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: fooEq
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify funcPgm
@@ -106,7 +106,7 @@ add($__a0, $__b1) == add($__b1, $__a0)
 info:
 Obligation: addComm
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify multiArgFuncPgm
@@ -146,7 +146,7 @@ $__n0 > 0 ==> allPositive($__n0)
 info:
 Obligation: quantOk
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify quantBodyFuncPgm

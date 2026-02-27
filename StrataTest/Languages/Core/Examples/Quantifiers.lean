@@ -70,9 +70,7 @@ forall __q0 : int :: __q0 < $__x0
 
 Result: Obligation: bad
 Property: assert
-Result: ❌ fail
-Model:
-($__x0, 0)
+Result: ➖ can be false if reachable
 
 
 [DEBUG] Evaluated program:
@@ -91,19 +89,18 @@ spec {
 info:
 Obligation: good_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: good
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: bad
 Property: assert
-Result: ❌ fail
-Model:
-($__x0, 0)
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
+#eval verify quantPgm (options := .default)
 #eval verify quantPgm (options := .default)
 
 /--
@@ -157,15 +154,15 @@ g(f($__x0), $__x0) < 0
 info:
 Obligation: trigger_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: multi_trigger_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: f_and_g
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify triggerPgm

@@ -34,27 +34,27 @@ procedure Test() returns ()
 info:
 Obligation: unreachable_cover1
 Property: cover
-Result: ❌ fail
+Result: ✖️ refuted if reachable
 
 Obligation: unreachable_cover2
 Property: cover
-Result: ❌ fail
+Result: ✖️ refuted if reachable
 
 Obligation: unreachable_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: reachable_cover
 Property: cover
-Result: ✅ pass
+Result: ➕ satisfiable
 
 Obligation: unsatisfiable_cover
 Property: cover
-Result: ❌ fail
+Result: ✖️ refuted if reachable
 
 Obligation: reachable_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify coverPgm1 (options := Options.quiet)
@@ -82,15 +82,15 @@ spec {
 info:
 Obligation: ctest1
 Property: cover
-Result: ❌ fail
+Result: ✖️ refuted if reachable
 
 Obligation: ctest2
 Property: cover
-Result: ✅ pass
+Result: ➕ satisfiable
 
 Obligation: atest2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify coverPgm2 (options := Options.quiet)
@@ -122,14 +122,14 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckGlobalPgm (options := {Options.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------
 
@@ -163,26 +163,26 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ✅ pass
+Result: ➕ satisfiable
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ❌ fail
+Result: ✖️ refuted if reachable
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckMixedPgm (options := {Options.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------
 
@@ -213,19 +213,19 @@ procedure Test() returns ()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: no_rc_assert
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: no_rc_cover
 Property: cover
-Result: ❌ fail
+Result: ✖️ refuted if reachable
 -/
 #guard_msgs in
 #eval verify reachCheckPerStmtPgm (options := Options.quiet)
@@ -255,7 +255,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {Options.quiet with reachCheck := true})
+  let results ← verify reachCheckDiagnosticsPgm (options := {Options.quiet with checkAmount := .full})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -289,21 +289,21 @@ procedure Test() returns ()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: pe_cover_fail
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ⛔ unreachable
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ⛔ unreachable
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckPEPgm (options := {Options.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------

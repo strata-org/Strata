@@ -40,7 +40,7 @@ true
 info:
 Obligation: constr_tester_cancel
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify testerEx
@@ -80,7 +80,7 @@ $__b0
 info:
 Obligation: constr_destr_cancel
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify destrEx

@@ -56,9 +56,9 @@ def verify (cmds : Commands) (verbose : Bool) :
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
                 Imperative.MetaData.empty "cvc5" filename.toString
-                #["--produce-models"] false false)
+                #["--produce-models"] false false true)
         match ans with
-        | .ok (_, result, estate) =>
+        | Except.ok (_, result, estate) =>
            let vcres := { obligation, result, estate }
            results := results.push vcres
            if result ≠ .unsat then
@@ -67,7 +67,7 @@ def verify (cmds : Commands) (verbose : Bool) :
                          \n\nResult: {vcres}\
                          {if verbose then prog else ""}"
             break
-        | .error e =>
+        | Except.error e =>
            results := results.push { obligation, result := .err (toString e) }
            let prog := f!"\n\nEvaluated program:\n{format cmds}"
            dbg_trace f!"\n\nObligation {obligation.label}: solver error!\

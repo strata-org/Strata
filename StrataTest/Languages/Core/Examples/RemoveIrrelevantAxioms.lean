@@ -108,128 +108,149 @@ def normalizeModelValues (s : String) : String :=
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_1
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_3
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: ❌ fail
-Model:
-($__x0, model_not_2)
-
+Result: ➖ can be false if reachable
 Obligation: assert_5
 Property: assert
-Result: ❌ fail
-Model:
-($__x0, model_not_2)
-
+Result: ➖ can be false if reachable
 Obligation: assert_6
 Property: assert
-Result: ❌ fail
-Model:
-($__x1, model_not_2)
-
+Result: ➖ can be false if reachable
 Obligation: assert_7
 Property: assert
-Result: ❌ fail
-Model:
-($__x1, model_not_2)
-
+Result: ➖ can be false if reachable
 Obligation: assert_8
 Property: assert
-Result: ❌ fail
-Model:
-($__x2, model_not_2)
-
+Result: ➖ can be false if reachable
 Obligation: assert_9
 Property: assert
-Result: ❌ fail
-Model:
-($__x2, model_not_2)
-
+Result: ➖ can be false if reachable
 Obligation: assert_10
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2)
-
+Result: ➖ can be false if reachable
 Obligation: assert_11
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2)
--/
-#guard_msgs in
-#eval do
-  let results ← verify irrelevantAxiomsTestPgm
-        (options := {Options.models with removeIrrelevantAxioms := true})
-  IO.println (normalizeModelValues (toString results))
-
+Result: ➖ can be false if reachable
 ---------------------------------------------------------------------
 
 /--
 info:
 Obligation: assert_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_1
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: assert_3
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_5
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_6
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_7
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_8
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_9
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_10
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_11
 Property: assert
-Result: 🟡 unknown
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
         (options := {Options.models with removeIrrelevantAxioms := false})
 
----------------------------------------------------------------------
+/--
+info:
+Obligation: assert_0
+Property: assert
+Result: ✔️ pass if reachable
+
+Obligation: assert_1
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_2
+Property: assert
+Result: ✔️ pass if reachable
+
+Obligation: assert_3
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_4
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_5
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_6
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_7
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_8
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_9
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_10
+Property: assert
+Result: ❓ unknown
+
+Obligation: assert_11
+Property: assert
+Result: ❓ unknown
+-/
+#guard_msgs in
+#eval verify irrelevantAxiomsTestPgm
