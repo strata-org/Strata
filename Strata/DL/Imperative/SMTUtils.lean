@@ -193,24 +193,25 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     (reachCheck : Bool := false)
     : IO (Except Format (Option (Result P.Ident) × Result P.Ident)) := do
   let stdout := output.stdout
-  -- When reachCheck is true, the first line of stdout is the reachability
-  -- verdict; strip it and parse it separately.
+  -- Split the next line from the remaining stdout, returning (line, rest).
+  let splitLine (s : String) : String × String :=
+    let pos := s.find (· == '\n')
+    let line := (s.extract s.startPos pos).trimAscii.toString
+    let rest := s.extract pos s.endPos
+    (line, rest)
+  -- When reachCheck is true, the first line is the reachability verdict.
   let (reachResult, proofStdout) ← if reachCheck then do
-    let pos := stdout.find (· == '\n')
-    let reachVerdictStr := (stdout.extract stdout.startPos pos).trimAscii.toString
+    let (reachLine, remaining) := splitLine stdout
     let reachResult : Result P.Ident ← do
-      match ← parseVerdict reachVerdictStr with
+      match ← parseVerdict reachLine with
       | some (.sat _) => pure (.sat [])
       | some .unsat   => pure .unsat
       | _             => pure .unknown
-    let remaining := (stdout.extract pos stdout.endPos).drop 1 |>.toString
-    pure (some reachResult, remaining)
+    pure (some reachResult, remaining.drop 1 |>.toString)
   else
     pure (none, stdout)
-  -- Parse the proof verdict from the (possibly trimmed) stdout
-  let pos := proofStdout.find (· == '\n')
-  let verdictStr := (proofStdout.extract proofStdout.startPos pos).trimAscii.toString
-  let rest := proofStdout.extract pos proofStdout.endPos
+  -- Parse the proof verdict from the (possibly trimmed) stdout.
+  let (verdictStr, rest) := splitLine proofStdout
   match ← parseVerdict verdictStr with
   | some (.sat _) =>
     -- Parse model via SMTDDM targeting GetValueResponse category directly.
