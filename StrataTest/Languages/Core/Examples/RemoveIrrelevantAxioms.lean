@@ -173,7 +173,7 @@ Model:
 #guard_msgs in
 #eval do
   let results ← verify irrelevantAxiomsTestPgm
-        (options := {Options.models with removeIrrelevantAxioms := true})
+        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := true})
   IO.println (normalizeModelValues (toString results))
 
 ---------------------------------------------------------------------
@@ -230,6 +230,6 @@ Result: 🟡 unknown
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
-        (options := {Options.models with removeIrrelevantAxioms := false})
+        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := false})
 
 ---------------------------------------------------------------------

@@ -131,7 +131,6 @@ theorem Program.typeCheck.goWF' :
               | intro l r =>
                 apply And.intro
                 . constructor
-                  -- 2. All declared global variables are `CoreIdent.glob`.
                   sorry
                 . exists v.1, {
                   context := res.snd.context.subst res.snd.state.substInfo.subst,
@@ -261,8 +260,7 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok (ds', T'
     any_goals simp [t_ih $ Program.typeCheckAux_elim_singleton tcok]
     have := Statement.typeCheckWF (by assumption)
     constructor
-    simp [WFCmdExtProp] at this
-    sorry
+    · sorry
     any_goals (apply Procedure.typeCheckWF (by assumption))
     any_goals constructor
 

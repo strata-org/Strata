@@ -38,23 +38,6 @@ def KnownTypes : KnownTypes :=
 
 def TImplicit {Metadata: Type} (IDMeta: Type): LExprParamsT := ({Metadata := Metadata, IDMeta}: LExprParams).mono
 
-/--
-  Convert an LExpr LMonoTy Unit to an LExpr LMonoTy Visibility
-  TODO: Remove when Lambda elaborator offers parametric identifier type
--/
-def ToCoreIdent {M: Type} (ine: LExpr (@TImplicit M Unit)): LExpr (@TImplicit M Visibility) :=
-match ine with
-    | .const m c => .const m c
-    | .op m o oty => .op m (CoreIdent.unres o.name) oty
-    | .bvar m deBruijnIndex => .bvar m deBruijnIndex
-    | .fvar m name oty => .fvar m (CoreIdent.unres name.name) oty
-    | .abs m oty e => .abs m oty (ToCoreIdent e)
-    | .quant m k oty tr e => .quant m k oty (ToCoreIdent tr) (ToCoreIdent e)
-    | .app m fn e => .app m (ToCoreIdent fn) (ToCoreIdent e)
-    | .ite m c t e => .ite m (ToCoreIdent c) (ToCoreIdent t) (ToCoreIdent e)
-    | .eq m e1 e2 => .eq m (ToCoreIdent e1) (ToCoreIdent e2)
-
-
 /-- Kind of bitvector evaluator, used to generate both the combinator name
     and the concrete-evaluator syntax for each BV operation. -/
 private inductive BVEvalKind
@@ -227,7 +210,7 @@ def mapConstFunc : WFLFunc CoreLParams :=
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
-      ToCoreIdent esM[∀ (%v): -- %1 d
+      esM[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
                 ((~const : %v → (Map %k %v)) %1)) %0)}
@@ -247,7 +230,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
     (mapTy mty[%k] mty[%v])
     (axioms := [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
-      ToCoreIdent esM[∀(Map %k %v):
+      esM[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
               (((~select : (Map %k %v) → %k → %v)
@@ -255,7 +238,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
-      ToCoreIdent esM[∀ (Map %k %v): -- %3 m
+      esM[∀ (Map %k %v): -- %3 m
           (∀ (%k): -- %2 okk
             (∀ (%k): -- %1 kk
               (∀ (%v): -- %0 vv

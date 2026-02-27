@@ -6,8 +6,11 @@
 
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.DDMTransform.Translate
+import Strata.Languages.Core.Options
 import Strata.Languages.Core.Verifier
 import Strata.DL.Imperative.Stmt
+
+open Core
 
 namespace Strata
 
@@ -19,9 +22,9 @@ namespace Strata
 def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
   | .const m c => .const m c
-  | .op m o ty => .op m ⟨o.name, .unres⟩ ty
+  | .op m o ty => .op m ⟨o.name, ()⟩ ty
   | .bvar m n => .bvar m n
-  | .fvar m n ty => .fvar m ⟨n.name, .unres⟩ ty
+  | .fvar m n ty => .fvar m ⟨n.name, ()⟩ ty
   | .abs m ty e => .abs m ty (translate_expr e)
   | .quant m k ty tr e => .quant m k ty (translate_expr tr) (translate_expr e)
   | .app m fn e => .app m (translate_expr fn) (translate_expr e)
@@ -35,9 +38,9 @@ def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExp
 
 def translate_cmd (c: C_Simp.Command) : Core.Command :=
   match c with
-  | .init name ty e _md => .cmd (.init ⟨name.name, .unres⟩ ty (translate_opt_expr e) {})
-  | .set name e _md => .cmd (.set ⟨name.name, .unres⟩ (translate_expr e) {})
-  | .havoc name _md => .cmd (.havoc ⟨name.name, .unres⟩ {})
+  | .init name ty e _md => .cmd (.init ⟨name.name, ()⟩ ty (translate_opt_expr e) {})
+  | .set name e _md => .cmd (.set ⟨name.name, ()⟩ (translate_expr e) {})
+  | .havoc name _md => .cmd (.havoc ⟨name.name, ()⟩ {})
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})
   | .cover label b _md =>  .cmd (.cover label (translate_expr b) {})
@@ -77,7 +80,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
     match measure, invList with
     | .some measure, _ =>
       -- let bodyss : := body.ss
-      let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, .unres⟩)
+      let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
       let measure_pos := (.app () (.app () (.op () "Int.Ge" none) (translate_expr measure)) (.intConst () 0))
@@ -133,13 +136,13 @@ def to_core(program : C_Simp.Program) : Core.Program :=
 def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (p.commands))).fst
 
-def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
+def C_Simp.typeCheck (p : Strata.Program) (options : VerifyOptions := .default):
   Except DiagnosticModel Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
 def C_Simp.verify (p : Strata.Program)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (tempDir : Option String := .none):
   IO Core.VCResults := do
   let program := C_Simp.get_program p

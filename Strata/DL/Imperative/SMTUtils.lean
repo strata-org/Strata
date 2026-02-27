@@ -164,8 +164,8 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     let hasExecError := stderr.contains "could not execute external process"
     let hasFileError := stderr.contains "No such file or directory"
     let suggestion :=
-      if (hasExecError || hasFileError) && smtsolver == defaultSolver then
-        s!" \nEnsure {defaultSolver} is on your PATH or use --solver to specify another SMT solver."
+      if (hasExecError || hasFileError) && smtsolver == Core.defaultSolver then
+        s!" \nEnsure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver."
       else ""
     .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
 
@@ -202,10 +202,12 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
-  let (ids, estate) ← encodeSMT solver
-  (addLocationInfo md ("sat-message", s!"\"Assertion cannot be proven\"")) solver
-
-  let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
+  let encodeAndCheck : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState) := do
+    let result ← encodeSMT
+    addLocationInfo md ("sat-message", s!"\"Assertion cannot be proven\"")
+    let _ ← Strata.SMT.Solver.checkSat result.1 -- Will return unknown for Solver.fileWriter
+    return result
+  let ((_ids, estate), _solverState) ← encodeAndCheck.run solver
   if printFilename then IO.println s!"Wrote problem to {filename}."
 
   let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)

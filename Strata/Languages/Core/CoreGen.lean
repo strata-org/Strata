@@ -26,9 +26,8 @@ structure CoreGenState where
 
 def CoreGenState.WF (σ : CoreGenState)
   := StringGenState.WF σ.cs ∧
-    List.map Core.CoreIdent.temp σ.cs.generated.unzip.snd = σ.generated ∧
-    σ.generated.Nodup ∧
-    Forall (CoreIdent.isTemp ·) σ.generated
+    List.map (fun s => (⟨s, ()⟩ : CoreIdent)) σ.cs.generated.unzip.snd = σ.generated ∧
+    σ.generated.Nodup
 
 instance : HasSubset CoreGenState where
   Subset σ₁ σ₂ := σ₁.generated.Subset σ₂.generated
@@ -43,42 +42,42 @@ def CoreGenState.emp : CoreGenState := { cs := .emp, generated := [] }
 def CoreGenState.gen (pf : CoreIdent) (σ : CoreGenState)
   : CoreIdent × CoreGenState :=
   let (s, cs') := StringGenState.gen pf.name σ.cs
-  let newState : CoreGenState := { cs := cs', generated := (.temp s) :: σ.generated }
-  ((.temp s), newState)
-
-theorem genCoreIdentTemp :
-  CoreGenState.gen pf s = (l, s') → CoreIdent.isTemp l := by
-  intros Hgen
-  simp [CoreGenState.gen] at Hgen
-  rw [← Hgen.1]
-  constructor
+  let newIdent : CoreIdent := ⟨s, ()⟩
+  let newState : CoreGenState := { cs := cs', generated := newIdent :: σ.generated }
+  (newIdent, newState)
 
 theorem CoreGenState.WFMono' :
   CoreGenState.WF s →
   CoreGenState.gen pf s = (l, s') →
   CoreGenState.WF s' := by
   intros Hwf Hgen
-  unfold CoreGenState.WF at Hwf
   simp [gen] at Hgen
-  simp [← Hgen]
+  simp [CoreGenState.WF, ← Hgen]
   generalize h1 : (StringGenState.gen pf.name s.cs).fst = st
   generalize h2 : (StringGenState.gen pf.name s.cs).snd = stg
-  have Hstrgen: StringGenState.gen pf.name s.cs = (st, stg) := by simp [← h1, ← h2]
-  have Hwf':= StringGenState.WFMono Hwf.left Hstrgen
+  have Hstrgen : StringGenState.gen pf.name s.cs = (st, stg) := by simp [← h1, ← h2]
+  have Hwf' := StringGenState.WFMono Hwf.left Hstrgen
   simp [StringGenState.gen] at Hstrgen
-  constructor <;> simp [*]
-  constructor
-  simp_all
-  simp [← Hwf.right.left, ← Hgen.left, ← Hstrgen.right, ← Hstrgen.left]
-  constructor <;> try simp [CoreIdent.isTemp]
-  simp [← Hwf.right.left]
-  intro x str Hx
-  false_or_by_contra
-  have: str = st := by injections
-  have Hnodup := Hwf'.right.right.left
-  simp [← Hstrgen.right, Hstrgen.left] at Hnodup
-  have Hnodup := Hnodup.left x
-  simp_all
+  refine ⟨Hwf', ?_, ?_⟩
+  · simp [← Hwf.right.left, ← Hstrgen.right, ← Hstrgen.left]
+  · have hnodup_old := Hwf.right.right
+    have hst_fresh : ⟨st, ()⟩ ∉ s.generated := by
+      intro hmem
+      rw [← Hwf.right.left] at hmem
+      have hst_in_snd : st ∈ s.cs.generated.unzip.snd := by
+        simp only [List.mem_map] at hmem
+        obtain ⟨s', hs', heq⟩ := hmem
+        have : s' = st := by simp [Lambda.Identifier.mk.injEq] at heq; exact heq
+        rw [← this]; exact hs'
+      have hnodup_new := Hwf'.right.right.left
+      simp [← Hstrgen.right, Hstrgen.left] at hnodup_new
+      have : ∃ x, (x, st) ∈ s.cs.generated := by
+        simp only [List.unzip_snd, List.mem_map] at hst_in_snd
+        obtain ⟨p, hp, heq⟩ := hst_in_snd
+        exact ⟨p.1, by cases p; simp_all⟩
+      obtain ⟨x, hx⟩ := this
+      exact hnodup_new.left x hx
+    exact ⟨hst_fresh, hnodup_old⟩
 
 theorem CoreGenState.WFMono : ∀ (γ γ' : CoreGenState) (pf l : CoreIdent),
   CoreGenState.gen pf γ = (l, γ') → WF γ → WF γ' ∧ l ∈ γ'.generated ∧ γ ⊆ γ' := by
@@ -86,10 +85,10 @@ theorem CoreGenState.WFMono : ∀ (γ γ' : CoreGenState) (pf l : CoreIdent),
   have Hwf':= WFMono' Hwf Hgen
   simp [gen] at Hgen
   refine ⟨?_, ?_, ?_⟩
-  assumption
-  simp [← Hgen.right, ← Hgen.left]
-  simp [Subset, ← Hgen.right]
-  apply List.subset_cons_self
+  · assumption
+  · simp [← Hgen.right, ← Hgen.left]
+  · simp only [Subset, ← Hgen.right]
+    exact List.subset_cons_self _ _
 
 /-- CoreLabelGen guarantees that all labels are .temp -/
 instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
@@ -99,7 +98,6 @@ instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
   wf := CoreGenState.WF
   wf_emp := by
     simp [CoreGenState.WF, StringGenState.WF, Counter.WF]
-    constructor
   wf_gen := CoreGenState.WFMono
 
 abbrev CoreGenM := StateM CoreGenState

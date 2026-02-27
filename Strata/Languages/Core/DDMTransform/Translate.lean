@@ -252,9 +252,9 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                     -- Datatype Declaration (possibly mutual)
                     -- Look up the type name from the GlobalContext using the fvar index
                     let gctx := (← StateT.get).globalContext
-                    let ldatatype : LDatatype Core.Visibility := match gctx.nameOf? i, block with
+                    let ldatatype : LDatatype Unit := match gctx.nameOf? i, block with
                       | some name, _ =>
-                        match block.find? (fun (d : LDatatype Core.Visibility) => d.name == name) with
+                        match block.find? (fun (d : LDatatype Unit) => d.name == name) with
                         | some d => d
                         | none => panic! s!"Error: datatype {name} not found in block"
                       | none, d :: _ => d
@@ -652,7 +652,6 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.bvextract_15_0_64 => return Core.bv64Extract_15_0_Op
   | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
 
-  | _, q`Core.old          => return Core.polyOldOp
   | _, q`Core.str_len      => return Core.strLengthOp
   | _, q`Core.str_concat   => return Core.strConcatOp
   | _, q`Core.str_substr   => return Core.strSubstrOp
@@ -838,7 +837,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      return .mkApp () Core.strSubstrOp [x, i, n]
   | .fn _ q`Core.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
-     return .mkApp () Core.polyOldOp [x]
+     match x with
+     | .fvar m ident ty => return .fvar m (Core.CoreIdent.mkOld ident.name) ty
+     | _ => TransM.error s!"old: expected an identifier, got {x}"
   | .fn _ q`Core.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
@@ -1538,7 +1539,7 @@ def translateDatatypeTypeArgs (bindings : TransBindings) (arg : Arg) (errorConte
 /--
 Create a placeholder LDatatype for recursive type references.
 -/
-def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDatatype Core.Visibility :=
+def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDatatype Unit :=
   { name := name
     typeArgs := typeArgs
     constrs := [{ name := name, args := [], testerName := "" }]
@@ -1548,7 +1549,7 @@ def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDat
 Filter factory function declarations to extract constructor, tester, and field accessor decls
 for a single datatype.
 -/
-def filterDatatypeDecls (ldatatype : LDatatype Core.Visibility) (funcDecls : List Core.Decl) :
+def filterDatatypeDecls (ldatatype : LDatatype Unit) (funcDecls : List Core.Decl) :
     List Core.Decl × List Core.Decl × List Core.Decl :=
   let constructorNames := ldatatype.constrs.map fun c => c.name.name
   let testerNames := ldatatype.constrs.map fun c => c.testerName
@@ -1576,7 +1577,7 @@ def filterDatatypeDecls (ldatatype : LDatatype Core.Visibility) (funcDecls : Lis
 Build LConstr list from TransConstructorInfo array.
 -/
 def buildLConstrs (datatypeName : String) (constructors : Array TransConstructorInfo) :
-    List (LConstr Core.Visibility) :=
+    List (LConstr Unit) :=
   let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
   constructors.toList.map fun constr =>
     let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
@@ -1587,7 +1588,7 @@ def buildLConstrs (datatypeName : String) (constructors : Array TransConstructor
 /--
 Generate factory function declarations from a list of LDatatypes.
 -/
-def genDatatypeFactory (ldatatypes : List (LDatatype Core.Visibility)) :
+def genDatatypeFactory (ldatatypes : List (LDatatype Unit)) :
     TransM (List Core.Decl) := do
   let factory ← match genBlockFactory ldatatypes (T := Core.CoreLParams) with
     | .ok f => pure f
@@ -1639,7 +1640,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
       simp [lConstrs, buildLConstrs]
       intro heq; subst_vars; apply h; rfl
 
-    let ldatatype : LDatatype Core.Visibility :=
+    let ldatatype : LDatatype Unit :=
       { name := datatypeName
         typeArgs := typeArgs
         constrs := lConstrs

@@ -7,7 +7,8 @@
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Imperative.StmtSemantics
-import Strata.Languages.Core.OldExpressions
+import Strata.Languages.Core.CoreGen
+import Strata.Languages.Core.Procedure
 
 ---------------------------------------------------------------------
 
@@ -178,22 +179,16 @@ def updatedStates
 -- where this condition will be asserted at procedures utilizing those two-state functions
 -/
 def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
-    open Core.OldExpressions in
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
         (HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
         ∀ v,
+          -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
-            ∀ oty mApp mOp mVar ty,
-              δ σ (@oldVar (tyold := oty) mApp mOp mVar v ty) = σ₀ v) ∧
-        -- if the variable is not modified, then old variable is identity
+            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
+          -- if the variable is not modified, "old g" is the same as g
           (¬ v ∈ vs →
-            ∀ oty mApp mOp mVar ty,
-              δ σ (@oldVar (tyold := oty) mApp mOp mVar v ty) = σ v)) ∧
-      -- evaluating on an old complex expression is the same as evlauating on its normal form
-      -- TODO: can possibly break this into more sub-components, proving it using congruence and normalization property
-      -- Might not be needed if we assume all expressions are normalized
-      (∀ e σ, δ σ e = δ σ (normalizeOldExpr e))
+            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ v))
 
 /-! ### Closure Capture for Function Declarations -/
 
