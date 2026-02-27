@@ -61,9 +61,6 @@ def testSMTGeneration (prog : Program) : IO Unit := do
     !line.startsWith "(set-option" &&
     !line.startsWith "(declare-datatype" &&
     !line.startsWith "  (" &&  -- datatype constructor lines
-    !line.startsWith "(push" &&
-    !line.startsWith "(pop" &&
-    !line.startsWith "(check-sat)" &&
     !line.startsWith "(exit"
   )
   IO.println (String.intercalate "\n" filtered)
@@ -74,7 +71,9 @@ def testSMTGeneration (prog : Program) : IO Unit := do
 
 /--
 info: (define-fun abs ((x Int)) Int (ite (>= x 0) x (- x)))
+(push 1)
 (check-sat-assuming ((not (= (abs (- 5)) 5))))
+(pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -89,7 +88,9 @@ procedure test() {
 /--
 info: (define-fun isEven ((n Int)) Int (ite (= n 0) 1 (isOdd (- n 1))))
 (define-fun isOdd ((n Int)) Int (ite (= n 0) 0 (isEven (- n 1))))
+(push 1)
 (check-sat-assuming ((not (= (isEven 4) 1))))
+(pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -107,7 +108,9 @@ procedure test() {
 /--
 info: (declare-fun f (Int) Int)
 (assert (forall ((|$__bv0| Int)) (=> (> |$__bv0| 0) (> (f |$__bv0|) 0))))
+(push 1)
 (check-sat-assuming ((not (=> (> 5 0) (> (f 5) 0)))))
+(pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -121,7 +124,9 @@ procedure test() {
 /--
 info: (define-fun f ((x Int)) Bool (= (+ x 1) 6))
 (declare-fun g (Int Int) Bool)
+(push 1)
 (check-sat-assuming ((not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall ((|$__bv0| Int)) (or (f |$__bv0|) (not (f |$__bv0|))))) (forall ((|$__bv0| Int)) (or (> |$__bv0| 0) (<= |$__bv0| 0)))))))
+(pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -157,7 +162,9 @@ procedure test_all_expressions() {
 -- The test below should return an error and the SMT code.
 /--
 info: (declare-fun f (Int) Bool)
+(push 1)
 (check-sat-assuming ((not (forall ((|$__bv0| Int)) (> |$__bv0| 0)))))
+(pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
