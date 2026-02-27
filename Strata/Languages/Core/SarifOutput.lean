@@ -27,17 +27,14 @@ def outcomeToLevel : Outcome → Level
   | .implementationError _ => .error
 
 /-- Convert Core Outcome to a descriptive message -/
-def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
+def outcomeToMessage (outcome : Outcome) (cex : LExprCounterEx) : String :=
   match outcome with
   | .pass => "Verification succeeded"
   | .fail =>
-    match smtResult with
-    | .sat m =>
-      if m.isEmpty then
-        "Verification failed"
-      else
-        s!"Verification failed with counterexample: {Std.format m}"
-    | _ => "Verification failed"
+    if cex.isEmpty then
+      "Verification failed"
+    else
+      s!"Verification failed with counterexample: {Std.format cex}"
   | .unknown => "Verification result unknown (solver timeout or incomplete)"
   | .implementationError msg => s!"Verification error: {msg}"
 
@@ -59,7 +56,7 @@ def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult)
   let level := outcomeToLevel vcr.result
   let messageText :=
     if vcr.isUnreachable then "Path is unreachable"
-    else outcomeToMessage vcr.result vcr.smtObligationResult
+    else outcomeToMessage vcr.result vcr.counterExample
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation files vcr.obligation.metadata with
