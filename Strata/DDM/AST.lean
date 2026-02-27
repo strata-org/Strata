@@ -926,122 +926,6 @@ def buildFunctionType (template : FunctionTemplate)
   .ok <| paramTypes.foldr (init := returnType) fun argType tp => .arrow default argType tp
 
 /--
-Result of expanding a single template.
-Contains the generated function signatures and any errors encountered.
--/
-structure TemplateExpansionResult where
-  /-- Generated function signatures as (name, type) pairs -/
-  functions : Array (String × TypeExpr)
-  /-- Errors encountered during expansion -/
-  errors : Array String
-  deriving Repr
-
-/--
-Expand a single function template based on its scope.
-
-Function templates specify patterns for generating auxiliary functions
-from datatype declarations. This function expands one template according to
-its iteration scope:
-
-- **perConstructor**: Generates one function per constructor (e.g., testers
-like `..isNone`)
-- **perField**: Generates one function per unique field across all constructors
-(e.g., accessors)
-
-**Parameters:**
-- `datatypeName`: Name of the datatype (used in name pattern expansion)
-- `datatypeType`: TypeExpr for the datatype (used in function signatures)
-- `constructorInfo`: Array of constructor information
-- `template`: The function template to expand
-- `dialectName`: Dialect name (for resolving builtin types)
-- `existingNames`: Set of already-used names (for duplicate detection)
-
-**Example:** For a `perConstructor` template defined as:
-```
-perConstructor([.datatype, .literal "..is", .constructor], [.datatype],
-.builtin "bool")
-```
-This specifies:
-- Name pattern: `[.datatype, .literal "..is", .constructor]` → generates names
-like `Option..isNone`
-- Parameter types: `[.datatype]` → takes one parameter of the datatype type
-- Return type: `.builtin "bool"` → returns a boolean
-
-Applied to `Option<T>` with constructors `None` and `Some`, this generates:
-- `Option..isNone : Option<T> -> bool`
-- `Option..isSome : Option<T> -> bool`
--/
-def expandSingleTemplate
-    (datatypeName : String)
-    (datatypeType : TypeExpr)
-    (constructorInfo : Array ConstructorInfo)
-    (template : FunctionTemplate)
-    (dialectName : String)
-    (existingNames : Std.HashSet String) : TemplateExpansionResult :=
-  -- First validate the pattern
-  match validateNamePattern template.namePattern template.scope with
-  | some err => { functions := #[], errors := #[err] }
-  | none =>
-    match template.scope with
-    | .perConstructor =>
-      -- Generate one function per constructor
-      let (funcs, errs, _) := constructorInfo.foldl (init := (#[], #[], existingNames)) fun (funcs, errs, names) constr =>
-        let funcName := expandNamePattern template.namePattern datatypeName (some constr.name)
-        if names.contains funcName then
-          (funcs, errs.push s!"Duplicate function name: {funcName}", names)
-        else
-          match buildFunctionType template datatypeType none dialectName with
-          | .ok funcType =>
-            (funcs.push (funcName, funcType), errs, names.insert funcName)
-          | .error e =>
-            (funcs, errs.push e, names)
-      { functions := funcs, errors := errs }
-
-    | .perField =>
-      -- Generate one function per unique field across all constructors
-      -- Error if the same field name appears with different types
-      let allFields := constructorInfo.foldl (init := #[]) fun acc c => acc ++ c.fields
-      let (funcs, errs, _) := allFields.foldl (init := (#[], #[], existingNames)) fun (funcs, errs, names) (fieldName, fieldTp) =>
-        let funcName := expandNamePattern template.namePattern datatypeName none (some fieldName)
-        if names.contains funcName then
-          (funcs, errs.push s!"Duplicate field name '{fieldName}' across constructors in datatype '{datatypeName}'", names)
-        else
-          match buildFunctionType template datatypeType (some fieldTp) dialectName with
-          | .ok funcType =>
-            (funcs.push (funcName, funcType), errs, names.insert funcName)
-          | .error e =>
-            (funcs, errs.push e, names)
-      { functions := funcs, errors := errs }
-
-/--
-This function generates function signatures for an array of function templates
-in order. Templates are specified in `@[declareDatatype]` annotations
-to automatically generate auxiliary functions like testers and field accessors.
-Within each template, functions are generated in constructor/field declaration order.
-
-**Parameters:**
-- `datatypeName`: Name of the datatype
-- `datatypeType`: TypeExpr for the datatype
-- `constructorInfo`: Array of constructor information
-- `templates`: Array of function templates to expand
-- `dialectName`: Dialect name (for resolving builtin types)
-- `existingNames`: Optional set of pre-existing names to avoid
--/
-def expandFunctionTemplates
-    (datatypeName : String)
-    (datatypeType : TypeExpr)
-    (constructorInfo : Array ConstructorInfo)
-    (templates : Array FunctionTemplate)
-    (dialectName : String)
-    (existingNames : Std.HashSet String := {}) : TemplateExpansionResult :=
-  templates.foldl (init := { functions := #[], errors := #[] }) fun acc template =>
-    -- Track names from previous templates to detect cross-template duplicates
-    let currentNames := acc.functions.foldl (init := existingNames) fun s (name, _) => s.insert name
-    let result := expandSingleTemplate datatypeName datatypeType constructorInfo template dialectName currentNames
-    { functions := acc.functions ++ result.functions
-      errors := acc.errors ++ result.errors }
-
-/--
 Specification for datatype declarations.
 Includes indices for extracting datatype information and optional function templates.
 -/
@@ -2056,6 +1940,118 @@ def extractConstructorInfo (dialects : DialectMap) (arg : Arg) : Array Construct
     simp_wf; rw[OperationF.sizeOf_spec]
     have := Array.sizeOf_get op.args (opDecl.argDecls.size - listIdx - 1) (by omega); omega
 
+private structure TemplateExpandState where
+  gctx : GlobalContext
+  errors : Array String := #[]
+
+private abbrev TemplateExpandM := StateM TemplateExpandState
+
+private def TemplateExpandM.addFunction
+    (name : String) (tp : TypeExpr) : TemplateExpandM Unit :=
+  modify fun s => { s with
+    gctx := s.gctx.ensureDefined name (.expr tp)
+  }
+
+private def TemplateExpandM.addError
+    (msg : String) : TemplateExpandM Unit :=
+  modify fun s => { s with errors := s.errors.push msg }
+
+private def TemplateExpandM.nameUsed
+    (name : String) : TemplateExpandM Bool :=
+  return name ∈ (← get).gctx
+
+/--
+Expand a single function template based on its scope.
+
+Function templates specify patterns for generating auxiliary functions
+from datatype declarations. This function expands one template according to
+its iteration scope:
+
+- **perConstructor**: Generates one function per constructor (e.g., testers
+like `..isNone`)
+- **perField**: Generates one function per unique field across all constructors
+(e.g., accessors)
+
+**Parameters:**
+- `datatypeName`: Name of the datatype (used in name pattern expansion)
+- `datatypeType`: TypeExpr for the datatype (used in function signatures)
+- `constructorInfo`: Array of constructor information
+- `template`: The function template to expand
+- `dialectName`: Dialect name (for resolving builtin types)
+
+**Example:** For a `perConstructor` template defined as:
+```
+perConstructor([.datatype, .literal "..is", .constructor], [.datatype],
+.builtin "bool")
+```
+This specifies:
+- Name pattern: `[.datatype, .literal "..is", .constructor]` → generates names
+like `Option..isNone`
+- Parameter types: `[.datatype]` → takes one parameter of the datatype type
+- Return type: `.builtin "bool"` → returns a boolean
+
+Applied to `Option<T>` with constructors `None` and `Some`, this generates:
+- `Option..isNone : Option<T> -> bool`
+- `Option..isSome : Option<T> -> bool`
+-/
+private def expandSingleTemplate
+    (datatypeName : String)
+    (datatypeType : TypeExpr)
+    (constructorInfo : Array ConstructorInfo)
+    (template : FunctionTemplate)
+    (dialectName : String) : TemplateExpandM Unit := do
+  if let some err :=
+      validateNamePattern template.namePattern template.scope then
+    TemplateExpandM.addError err
+    return
+  match template.scope with
+  | .perConstructor =>
+    for constr in constructorInfo do
+      let funcName := expandNamePattern
+        template.namePattern datatypeName (some constr.name)
+      if ← TemplateExpandM.nameUsed funcName then
+        TemplateExpandM.addError
+          s!"Duplicate function name: {funcName}"
+      else
+        match buildFunctionType
+            template datatypeType none dialectName with
+        | .ok funcType =>
+          TemplateExpandM.addFunction funcName funcType
+        | .error e => TemplateExpandM.addError e
+  | .perField =>
+    let allFields := constructorInfo.foldl
+      (init := #[]) fun acc c => acc ++ c.fields
+    for (fieldName, fieldTp) in allFields do
+      let funcName := expandNamePattern
+        template.namePattern datatypeName none (some fieldName)
+      if ← TemplateExpandM.nameUsed funcName then
+        TemplateExpandM.addError
+          s!"Duplicate field name '{fieldName}' across \
+             constructors in datatype '{datatypeName}'"
+      else
+        match buildFunctionType
+            template datatypeType (some fieldTp) dialectName
+        with
+        | .ok funcType =>
+          TemplateExpandM.addFunction funcName funcType
+        | .error e => TemplateExpandM.addError e
+
+private def expandFunctionTemplates
+    (datatypeName : String)
+    (datatypeType : TypeExpr)
+    (constructorInfo : Array ConstructorInfo)
+    (templates : Array FunctionTemplate)
+    (dialectName : String)
+    (gctx : GlobalContext)
+    : GlobalContext × Array String :=
+  let initState : TemplateExpandState := { gctx }
+  let ((), finalState) := StateT.run (m := Id) (do
+    for template in templates do
+      expandSingleTemplate datatypeName datatypeType
+        constructorInfo template dialectName
+  ) initState
+  (finalState.gctx, finalState.errors)
+
 /--
 Add all bindings for a datatype declaration to the GlobalContext when
 `@[declareDatatype]` is encountered. Bindings are 1) the type itself (added as
@@ -2101,8 +2097,6 @@ private def addDatatypeBindings
         | a => panic! s!"Expected ident for type param {repr a}"
     foldOverArgAtLevel dialects addBinding #[] argDecls args b.typeParamsIndex.toLevel
 
-  let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
-
   -- Step 1: Add datatype type, or skip if already pre-registered by addCommand.
   -- In mutual blocks, preRegisterTypeName adds types first to maintain index
   -- consistency with the elaboration-time context.
@@ -2112,22 +2106,18 @@ private def addDatatypeBindings
 
   -- Step 2: Add constructor signatures
   -- Duplicates are caught during elaboration; skip here.
+  let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
   let gctx := constructorInfo.foldl (init := gctx) fun gctx constr =>
     let constrType := mkConstructorType src datatypeType constr.fields
     gctx.ensureDefined constr.name (.expr constrType)
 
   -- Step 3: Expand and add function templates
-  let existingNames : Std.HashSet String :=
-    gctx.nameMap.fold (init := {}) fun s name _ => s.insert name
-  let result := expandFunctionTemplates datatypeName datatypeType
-    constructorInfo b.functionTemplates dialectName existingNames
-
-  if !result.errors.isEmpty then
-    panic! s!"Datatype template expansion errors: {result.errors}"
+  let (gctx, errors) := expandFunctionTemplates datatypeName datatypeType
+    constructorInfo b.functionTemplates dialectName gctx
+  if !errors.isEmpty then
+    panic! s!"Datatype template expansion errors: {errors}"
   else
-    result.functions.foldl (init := gctx) fun gctx (funcName, funcType) =>
-      -- Duplicates are caught during elaboration; skip here.
-      gctx.ensureDefined funcName (.expr funcType)
+    gctx
 
 private def preRegisterTypeName (dialects : DialectMap) (gctx : GlobalContext) (l : SourceRange)
     {argDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
