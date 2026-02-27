@@ -221,12 +221,10 @@ procedure main (n : int) returns ()
 ---
 info:
 Obligation: assert_0
-Property: assert
 Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 
 Obligation: assert_1
-Property: assert
 Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 -/

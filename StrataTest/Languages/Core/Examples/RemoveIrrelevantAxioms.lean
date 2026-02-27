@@ -198,11 +198,11 @@ Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_5
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false if reachable
 
 Obligation: assert_6
 Property: assert
