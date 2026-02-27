@@ -241,6 +241,7 @@ def preludeAtoms : List (String × PythonIdent) := [
 structure PySpecState where
   typeSigs : TypeSignature := preludeSig
   errors : Array SpecError := #[]
+  warnings : Array SpecError := #[]
   /--
   This maps global identifiers to their value.
   -/
@@ -262,6 +263,10 @@ def specErrorAt (file : System.FilePath) (loc : SourceRange) (message : String) 
 instance : PySpecMClass PySpecM where
   specError loc message := do
     specErrorAt (←read).pythonFile loc message
+  specWarning loc message := do
+    let file := (←read).pythonFile
+    let w : SpecError := { file, loc, message }
+    modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
     let r ← act
@@ -613,66 +618,199 @@ def pySpecArg (usedNames : Std.HashSet String)
 
 structure SpecAssertionContext where
   filePath : System.FilePath
+  kwargsParamName : Option String := none
 
-/--
-State for `SpecAssertionM`
-
-`argc` denotes the number of named arguments.
--/
-structure SpecAssertionState (argc : Nat) where
-  assertions : Array (Assertion argc) := #[]
-  postconditions : Array (SpecPred (argc + 1)) := #[]
+/-- State for `SpecAssertionM`. -/
+structure SpecAssertionState where
+  assertions : Array Assertion := #[]
+  postconditions : Array SpecExpr := #[]
   errors : Array SpecError := #[]
+  warnings : Array SpecError := #[]
 
-/--
-Monad for extracting pre and post conditions from methods.
--/
-abbrev SpecAssertionM (argc : Nat) := ReaderT SpecAssertionContext (StateM (SpecAssertionState argc))
+/-- Monad for extracting pre and post conditions from methods. -/
+abbrev SpecAssertionM := ReaderT SpecAssertionContext (StateM SpecAssertionState)
 
-instance {argc} : PySpecMClass (SpecAssertionM argc) where
+instance : PySpecMClass SpecAssertionM where
   specError loc message := do
     let file := (←read) |>.filePath
     let e : SpecError := { file, loc, message }
     modify fun s => { s with errors := s.errors.push e }
+  specWarning loc message := do
+    let file := (←read) |>.filePath
+    let w : SpecError := { file, loc, message }
+    modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
     let r ← act
     let new_cnt := (←get).errors.size
     return (cnt = new_cnt, r)
 
-def transPred {argc} (_e : expr SourceRange) : SpecAssertionM argc Pred := do
+def transPred (_e : expr SourceRange) : SpecAssertionM Pred := do
   -- FIXME
   pure (.const true)
 
-def transIter {argc} (_e : expr SourceRange) : SpecAssertionM argc Iterable := do
+def transIter (_e : expr SourceRange) : SpecAssertionM Iterable := do
   -- FIXME
   return .list
 
-def assumePred {argc} (_p : Pred) (act : SpecAssertionM argc Unit) : SpecAssertionM argc Unit := do
+def assumePred (_p : Pred) (act : SpecAssertionM Unit) : SpecAssertionM Unit := do
   act
+
+/-- Match a subscript expression `param["field"]` against the kwargs parameter
+    name from context, returning `(paramName, fieldName)` on success. -/
+def extractKwargsField (e : expr SourceRange)
+    : SpecAssertionM (Option (String × String)) := do
+  match e with
+  | .Subscript _ (.Name _ paramName (.Load _))
+      (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+    match (←read).kwargsParamName with
+    | some kn =>
+      if paramName.val == kn then return some (kn, fieldName.val)
+      else return none
+    | none => return none
+  | _ => return none
+
+/-- Collect all `== "value"` arms from a chain of `or`-ed comparisons,
+    returning the set of string values or `none` if the expression doesn't
+    fit the pattern `kwargs["X"] == "A" or kwargs["X"] == "B" or ...`. -/
+partial def collectEnumValues (e : expr SourceRange)
+    : SpecAssertionM (Option (String × String × Array String)) := do
+  match e with
+  | .BoolOp _ (.Or _) values =>
+    let mut result : Option (String × String × Array String) := none
+    for val in values.val do
+      match ← collectEnumValues val with
+      | some (kn, fn, vals) =>
+        match result with
+        | none => result := some (kn, fn, vals)
+        | some (kn', fn', acc) =>
+          if kn == kn' && fn == fn' then
+            result := some (kn, fn, acc ++ vals)
+          else return none
+      | none => return none
+    return result
+  | .Compare _ lhs ops comparators =>
+    let .isTrue _ := decideProp (ops.val.size = 1)
+      | return none
+    match ops.val[0] with
+    | .Eq _ =>
+      let .isTrue _ := decideProp (comparators.val.size = 1)
+        | return none
+      match ← extractKwargsField lhs with
+      | some (kn, fn) =>
+        match comparators.val[0] with
+        | .Constant _ (.ConString _ strVal) _ =>
+          return some (kn, fn, #[strVal.val])
+        | _ => return none
+      | none => return none
+    | _ => return none
+  | _ => return none
+
+/-- Translate a Python assert expression to a `SpecExpr`. Falls back to
+    `.placeholder` with a warning for unrecognized patterns. -/
+def transAssertExpr (e : expr SourceRange)
+    : SpecAssertionM SpecExpr := do
+  -- isinstance(kwargs["X"], T)
+  match e with
+  | .Call _ (.Name _ funcName (.Load _)) args _ =>
+    if funcName.val == "isinstance" then
+      if h : args.val.size = 2 then
+        match ← extractKwargsField args.val[0] with
+        | some (kn, fn) =>
+          match args.val[1] with
+          | .Name _ typeName (.Load _) =>
+            return .isInstanceOf (.getIndex (.var kn) fn) typeName.val
+          | _ =>
+            specWarning e.ann s!"isinstance: unsupported type argument"
+            return .placeholder
+        | none => pure () -- fall through
+    if funcName.val == "len" && args.val.size == 1 then
+      -- This is just len(x), not a comparison; fall through
+      pure ()
+  | _ => pure ()
+  -- len(kwargs["X"]) >= N / len(kwargs["X"]) <= N
+  match e with
+  | .Compare _ (.Call _ (.Name _ funcName (.Load _)) callArgs _) ops comparators =>
+    if funcName.val == "len" then
+      if h₁ : callArgs.val.size = 1 then
+        if h₂ : ops.val.size = 1 then
+          if h₃ : comparators.val.size = 1 then
+            match ← extractKwargsField callArgs.val[0] with
+            | some (kn, fn) =>
+              match ops.val[0] with
+              | .GtE _ =>
+                match comparators.val[0] with
+                | .Constant _ (.ConPos _ n) _ =>
+                  return .lenGe (.getIndex (.var kn) fn) n.val
+                | _ => pure ()
+              | .LtE _ =>
+                match comparators.val[0] with
+                | .Constant _ (.ConPos _ n) _ =>
+                  return .lenLe (.getIndex (.var kn) fn) n.val
+                | _ => pure ()
+              | _ => pure ()
+            | none => pure ()
+  | _ => pure ()
+  -- kwargs["X"] >= N / kwargs["X"] <= N
+  match e with
+  | .Compare _ lhs ops comparators =>
+    if h₁ : ops.val.size = 1 then
+      if h₂ : comparators.val.size = 1 then
+        match ← extractKwargsField lhs with
+        | some (kn, fn) =>
+          match ops.val[0] with
+          | .GtE _ =>
+            match comparators.val[0] with
+            | .Constant _ (.ConPos _ n) _ =>
+              return .valueGe (.getIndex (.var kn) fn) (Int.ofNat n.val)
+            | .Constant _ (.ConNeg _ n) _ =>
+              return .valueGe (.getIndex (.var kn) fn) (Int.negOfNat n.val)
+            | _ => pure ()
+          | .LtE _ =>
+            match comparators.val[0] with
+            | .Constant _ (.ConPos _ n) _ =>
+              return .valueLe (.getIndex (.var kn) fn) (Int.ofNat n.val)
+            | .Constant _ (.ConNeg _ n) _ =>
+              return .valueLe (.getIndex (.var kn) fn) (Int.negOfNat n.val)
+            | _ => pure ()
+          | _ => pure ()
+        | none => pure ()
+  | _ => pure ()
+  -- kwargs["X"] == "A" or kwargs["X"] == "B" or ...
+  match ← collectEnumValues e with
+  | some (kn, fn, vals) =>
+    return .enumMember (.getIndex (.var kn) fn) vals
+  | none => pure ()
+  -- Fallback: unrecognized pattern
+  specWarning e.ann s!"unrecognized assert pattern: {eformat e.toAst}"
+  return .placeholder
 
 mutual
 
-def blockStmt {argc : Nat} (s : stmt SourceRange) : SpecAssertionM argc Unit := do
+def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
   match s with
   | .Assign _ _targets _value _typeAnn =>
-    pure () -- FIXME
+    specWarning s.ann "skipped Assign in function body"
   | .AnnAssign .. =>
-    pure () -- FIXME
+    specWarning s.ann "skipped AnnAssign in function body"
   | .Expr .. =>
-    pure () -- FIXME
-  | .Assert .. => -- FIXME
-    pure ()
-  | .Return .. =>-- FIXME
-    pure ()
-  | .Raise .. =>-- FIXME
-    pure ()
-  | .ClassDef .. => -- FIXME
+    specWarning s.ann "skipped Expr in function body"
+  | .Assert _ test _msg =>
+    let formula ← transAssertExpr test
+    let message := toString (eformat test.toAst)
+    modify fun s => { s with
+      assertions := s.assertions.push { message, formula }
+    }
+  | .Return .. =>
+    specWarning s.ann "skipped Return in function body"
+  | .Raise .. =>
+    specWarning s.ann "skipped Raise in function body"
+  | .ClassDef .. =>
     specError s.ann s!"Inner classes are not supported."
   | .For _ _target _iter _body orelse type_comment =>
     assert! type_comment.val.isNone
     assert! orelse.val.size == 0
-    pure ()
+    specWarning s.ann "skipped For in function body"
   | .If _ pred t f =>
     let p ← transPred pred
     assumePred p <| blockStmts t.val
@@ -687,7 +825,7 @@ decreasing_by
   · cases f;
     decreasing_tactic
 
-def blockStmts {argc : Nat} (as : Array (stmt SourceRange)) : SpecAssertionM argc Unit := do
+def blockStmts (as : Array (stmt SourceRange)) : SpecAssertionM Unit := do
   as.attach.forM fun ⟨b, _⟩ => blockStmt b
 termination_by sizeOf as
 decreasing_by
@@ -695,12 +833,17 @@ decreasing_by
 
 end
 
-def collectAssertions (decls : ArgDecls) (_returnType : SpecType) (action : SpecAssertionM decls.count Unit) : PySpecM (SpecAssertionState decls.count) := do
+def collectAssertions (decls : ArgDecls) (_returnType : SpecType)
+    (action : SpecAssertionM Unit)
+    : PySpecM SpecAssertionState := do
   let errors := (←get).errors
-  modify fun s => { s with errors := #[] }
+  let warnings := (←get).warnings
+  modify fun s => { s with errors := #[], warnings := #[] }
   let filePath := (←read).pythonFile
-  let ((), as) := action { filePath } { errors }
-  modify fun s => { s with errors := as.errors }
+  let ctx : SpecAssertionContext :=
+    { filePath, kwargsParamName := decls.kwargs.map Prod.fst }
+  let ((), as) := action ctx { errors, warnings }
+  modify fun s => { s with errors := as.errors, warnings := as.warnings }
   pure as
 
 def pySpecFunctionArgs (fnLoc : SourceRange)
@@ -765,26 +908,18 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     let ba ← pySpecArg usedNames none a d
     usedNames := usedNames.insert ba.name
     kwSpecArgs := kwSpecArgs.push ba
-  -- Handle **kwargs: Unpack[TypedDict] expansion
+  -- Handle **kwargs: store parameter name and type
+  let mut kwargsOpt : Option (String × SpecType) := none
   match kwarg.val with
   | none => pure ()
   | some kwargArg =>
-    let .mk_arg kwargLoc _kwargName ⟨_, kwargType⟩ _ := kwargArg
+    let .mk_arg kwargLoc kwargParamName ⟨_, kwargType⟩ _ := kwargArg
     match kwargType with
     | some typeExpr =>
       let tp ← pySpecType typeExpr
-      match tp.asSingleton with
-      | some (.typedDict tdFields tdTypes tdRequired) =>
-        for ⟨i, _⟩ in Fin.range tdFields.size do
-          let arg : Arg := {
-            name := tdFields[i]!
-            type := tdTypes[i]!
-            hasDefault := !(tdRequired[i]!)
-          }
-          kwSpecArgs := kwSpecArgs.push arg
-      | _ => specError kwargLoc s!"**kwargs type must resolve to a TypedDict"
+      kwargsOpt := some (kwargParamName.val, tp)
     | none => specError kwargLoc s!"**kwargs requires type annotation"
-  let argDecls : ArgDecls := { args := specArgs, kwonly := kwSpecArgs }
+  let argDecls : ArgDecls := { args := specArgs, kwonly := kwSpecArgs, kwargs := kwargsOpt }
   let returnType : SpecType ←
         match returns with
         | none => pure <| .ident fnLoc .typingAny
@@ -802,12 +937,37 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     postconditions := as.postconditions
   }
 
-def pySpecClassBody (loc : SourceRange) (className : String) (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
+partial def pySpecClassBody (loc : SourceRange) (className : String)
+    (bases : Array PythonIdent)
+    (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
   let mut usedNames : Std.HashSet String := {}
+  let mut fields : Array ClassField := #[]
+  let mut classVars : Array ClassVariable := #[]
+  let mut subclasses : Array ClassDef := #[]
   let mut methods : Array FunctionDecl := #[]
   for stmt in body do
     match stmt with
-    | .Expr .. => pure () -- Skip expressions
+    | .Expr _ _ =>
+      specWarning stmt.ann s!"skipped Expr in class body ({className})"
+    | .AnnAssign _ target annotation _ _ =>
+      match target with
+      | .Name _ ⟨_, fieldName⟩ _ =>
+        let fieldType ← pySpecType annotation
+        fields := fields.push { name := fieldName, type := fieldType }
+      | _ => specError stmt.ann s!"Unsupported field target"
+    | .ClassDef innerLoc ⟨_, innerClassName⟩ _bases _keywords innerStmts
+                _decorators _typeParams =>
+      let innerDef ← pySpecClassBody innerLoc innerClassName #[] innerStmts.val
+      subclasses := subclasses.push innerDef
+    | .Assign _ ⟨_, targets⟩ value _typeAnn =>
+      if h : targets.size = 1 then
+        match targets[0], value with
+        | .Name _ ⟨_, varName⟩ _, .Name _ ⟨_, varValue⟩ _ =>
+          classVars := classVars.push { name := varName, value := varValue }
+        | _, _ => specError stmt.ann s!"Unsupported class variable assignment"
+      else
+        specError stmt.ann s!"Only single target expected in class variable"
+    | .Pass .. => pure ()       -- Skip pass statements
     | .FunctionDef loc ⟨_, name⟩  args ⟨_, body⟩ ⟨_, decorators⟩ ⟨_, returns⟩
                    ⟨_, type_comment⟩ ⟨_, type_params⟩ =>
       assert! type_comment.isNone
@@ -822,6 +982,10 @@ def pySpecClassBody (loc : SourceRange) (className : String) (body : Array (Stra
   return {
     loc := loc
     name := className
+    bases := bases
+    fields := fields
+    classVars := classVars
+    subclasses := subclasses
     methods := methods
   }
 
@@ -870,7 +1034,13 @@ def signatureValueMap (mod : String) (sigs : Array Signature) :
             name := d.name
           }
           m.insert d.name (.typeValue (.ident d.loc pyIdent))
-        | .functionDecl .. | .typeDef .. | .externTypeDecl .. => m
+        | .typeDef d =>
+          let pyIdent : PythonIdent := {
+            pythonModule := mod
+            name := d.name
+          }
+          m.insert d.name (.typeValue (.ident d.loc pyIdent))
+        | .functionDecl .. | .externTypeDecl .. => m
   sigs.foldl (init := {}) addType
 
 def checkOverloadBody (stmt : stmt SourceRange) : PySpecM Unit := do
@@ -985,10 +1155,9 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
         }
         pushSignature <| .typeDef d
       | _ =>
-        pure ()
+        specWarning loc s!"skipped non-type Assign ({name})"
     | .Expr .. =>
-      -- Skip expressions
-      pure ()
+      specWarning stmt.ann "skipped Expr at module level"
     | .FunctionDef loc
                    ⟨_funNameLoc, funName⟩
                    args
@@ -1019,14 +1188,33 @@ partial def translate (body : Array (Strata.Python.stmt Strata.SourceRange)) : P
         translateImportFrom mod types names
     | .ClassDef loc ⟨_classNameLoc, className⟩ bases keywords stmts decorators typeParams =>
       assert! _classNameLoc.isNone
-      assert! bases.val.size = 0
       assert! keywords.val.size = 0
       assert! decorators.val.size = 0
       assert! typeParams.val.size = 0
+      -- Extract base class names as PythonIdents
+      let mut baseIdents : Array PythonIdent := #[]
+      for base in bases.val do
+        match base with
+        | .Name _ ⟨_, name⟩ _ =>
+          if name == "Exception" then
+            baseIdents := baseIdents.push .builtinsException
+          else
+            match ← getNameValue? name with
+            | some (.typeValue tp) =>
+              match tp.asSingleton with
+              | some (.ident pyIdent _) =>
+                baseIdents := baseIdents.push pyIdent
+              | some (.pyClass clsName _) =>
+                baseIdents := baseIdents.push { pythonModule := "", name := clsName }
+              | _ =>
+                specError base.ann s!"Unknown base class '{name}'"
+            | _ =>
+              specError base.ann s!"Unknown base class '{name}'"
+        | _ => specError base.ann s!"Unsupported base class expression"
       let (success, _) ← runChecked <| recordTypeDef loc className
       -- Add the class to nameMap so it can be used in forward references
       setNameValue className (.typeValue (.pyClass loc className #[]))
-      let d ← pySpecClassBody loc className stmts.val
+      let d ← pySpecClassBody loc className baseIdents stmts.val
       if success then
         pushSignature (.classDef d)
     | _ => specError stmt.ann s!"Unknown statement {stmt}"
@@ -1079,7 +1267,10 @@ def translateModule
     pythonFile := pythonFile
   }
   let (res, s) ← translateModuleAux body |>.run ctx |>.run {}
-  pure (←fileMapsRef.get, res, s.errors)
+  let fmm ← fileMapsRef.get
+  for w in s.warnings do
+    let _ ← IO.eprintln s!"warning: {fmm.ppSourceRange w.file w.loc}: {w.message}" |>.toBaseIO
+  pure (fmm, res, s.errors)
 
 /-- Translates a Python source file to PySpec signatures. Main entry point for translation. -/
 public def translateFile
