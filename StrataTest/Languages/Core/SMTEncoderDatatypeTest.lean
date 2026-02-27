@@ -113,8 +113,8 @@ info: (declare-datatype TestOption (par (α) (
   (None)
   (Some (TestOption..val α)))))
 ; x
-(declare-const f0 (TestOption Int))
-(define-fun t0 () (TestOption Int) f0)
+(declare-const x (TestOption Int))
+(define-fun t0 () (TestOption Int) x)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -127,8 +127,8 @@ info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
-(declare-const f0 (TestList Int))
-(define-fun t0 () (TestList Int) f0)
+(declare-const xs (TestList Int))
+(define-fun t0 () (TestList Int) xs)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -141,8 +141,8 @@ info: (declare-datatype TestTree (par (α) (
   (Leaf)
   (Node (TestTree..value α) (TestTree..left (TestTree α)) (TestTree..right (TestTree α))))))
 ; tree
-(declare-const f0 (TestTree Bool))
-(define-fun t0 () (TestTree Bool) f0)
+(declare-const tree (TestTree Bool))
+(define-fun t0 () (TestTree Bool) tree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -155,8 +155,8 @@ info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; intList
-(declare-const f0 (TestList Int))
-(define-fun t0 () (TestList Int) f0)
+(declare-const intList (TestList Int))
+(define-fun t0 () (TestList Int) intList)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -169,8 +169,8 @@ info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; boolList
-(declare-const f0 (TestList Bool))
-(define-fun t0 () (TestList Bool) f0)
+(declare-const boolList (TestList Bool))
+(define-fun t0 () (TestList Bool) boolList)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -183,8 +183,8 @@ info: (declare-datatype TestTree (par (α) (
   (Leaf)
   (Node (TestTree..value α) (TestTree..left (TestTree α)) (TestTree..right (TestTree α))))))
 ; intTree
-(declare-const f0 (TestTree Int))
-(define-fun t0 () (TestTree Int) f0)
+(declare-const intTree (TestTree Int))
+(define-fun t0 () (TestTree Int) intTree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -200,8 +200,8 @@ info: (declare-datatype TestOption (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; listOfOption
-(declare-const f0 (TestList (TestOption Int)))
-(define-fun t0 () (TestList (TestOption Int)) f0)
+(declare-const listOfOption (TestList (TestOption Int)))
+(define-fun t0 () (TestList (TestOption Int)) listOfOption)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -258,8 +258,8 @@ info: (declare-datatype TestOption (par (α) (
   (None)
   (Some (TestOption..val α)))))
 ; x
-(declare-const f0 (TestOption Int))
-(define-fun t0 () (TestOption Int) f0)
+(declare-const x (TestOption Int))
+(define-fun t0 () (TestOption Int) x)
 (define-fun t1 () Bool (is-None t0))
 -/
 #guard_msgs in
@@ -274,8 +274,8 @@ info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
-(declare-const f0 (TestList Int))
-(define-fun t0 () (TestList Int) f0)
+(declare-const xs (TestList Int))
+(define-fun t0 () (TestList Int) xs)
 (define-fun t1 () Bool (is-Cons t0))
 -/
 #guard_msgs in
@@ -292,8 +292,8 @@ info: (declare-datatype TestOption (par (α) (
   (None)
   (Some (TestOption..val α)))))
 ; x
-(declare-const f0 (TestOption Int))
-(define-fun t0 () (TestOption Int) f0)
+(declare-const x (TestOption Int))
+(define-fun t0 () (TestOption Int) x)
 (define-fun t1 () Int (TestOption..val t0))
 -/
 #guard_msgs in
@@ -308,8 +308,8 @@ info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
-(declare-const f0 (TestList Int))
-(define-fun t0 () (TestList Int) f0)
+(declare-const xs (TestList Int))
+(define-fun t0 () (TestList Int) xs)
 (define-fun t1 () Int (TestList..head t0))
 -/
 #guard_msgs in
@@ -324,8 +324,8 @@ info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head α) (TestList..tail (TestList α))))))
 ; xs
-(declare-const f0 (TestList Int))
-(define-fun t0 () (TestList Int) f0)
+(declare-const xs (TestList Int))
+(define-fun t0 () (TestList Int) xs)
 (define-fun t1 () (TestList Int) (TestList..tail t0))
 -/
 #guard_msgs in
@@ -390,8 +390,8 @@ info: (declare-datatype Root (
 (declare-datatype Diamond (
   (DiamondValue (Diamond..left Left) (Diamond..right Right))))
 ; diamondVar
-(declare-const f0 Diamond)
-(define-fun t0 () Diamond f0)
+(declare-const diamondVar Diamond)
+(define-fun t0 () Diamond diamondVar)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -431,8 +431,8 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
   ((par (α) ((Node (RoseTree..node α) (RoseTree..children (Forest α)))))
   (par (α) ((FNil) (FCons (Forest..hd (RoseTree α)) (Forest..tl (Forest α)))))))
 ; tree
-(declare-const f0 (RoseTree Int))
-(define-fun t0 () (RoseTree Int) f0)
+(declare-const tree (RoseTree Int))
+(define-fun t0 () (RoseTree Int) tree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
@@ -449,8 +449,8 @@ info: (declare-datatype TestOption (par (α) (
   ((par (α) ((Node (RoseTree..node α) (RoseTree..children (Forest α)))))
   (par (α) ((FNil) (FCons (Forest..hd (RoseTree α)) (Forest..tl (Forest α)))))))
 ; optionTree
-(declare-const f0 (TestOption (RoseTree Int)))
-(define-fun t0 () (TestOption (RoseTree Int)) f0)
+(declare-const optionTree (TestOption (RoseTree Int)))
+(define-fun t0 () (TestOption (RoseTree Int)) optionTree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
