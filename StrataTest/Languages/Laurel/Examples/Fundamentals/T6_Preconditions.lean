@@ -42,5 +42,9 @@ procedure aFunctionWithPreconditionCaller() {
 }
 "
 
+/--
+error: Parse errors:
+  33:0: Syntax error: unrecognized syntax or unexpected token
+-/
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "Preconditions" program 14 processLaurelFile
