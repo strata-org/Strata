@@ -124,49 +124,49 @@ Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x0, model_not_2)
 
 Obligation: assert_5
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x0, model_not_2)
 
 Obligation: assert_6
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x1, model_not_2)
 
 Obligation: assert_7
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x1, model_not_2)
 
 Obligation: assert_8
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x2, model_not_2)
 
 Obligation: assert_9
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x2, model_not_2)
 
 Obligation: assert_10
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x3, model_not_2)
 
 Obligation: assert_11
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x3, model_not_2)
 -/

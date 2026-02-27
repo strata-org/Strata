@@ -70,7 +70,7 @@ forall __q0 : int :: __q0 < $__x0
 
 Result: Obligation: bad
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x0, 0)
 
@@ -99,7 +99,7 @@ Result: ✔️ pass if reachable
 
 Obligation: bad
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x0, 0)
 -/

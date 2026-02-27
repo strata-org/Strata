@@ -103,7 +103,7 @@ Result: ✔️ pass if reachable
 
 Obligation: unreachable_cover
 Property: cover
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 Obligation: unreachable_assert
 Property: assert

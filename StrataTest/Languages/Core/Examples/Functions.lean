@@ -67,7 +67,7 @@ Result: ✔️ pass if reachable
 
 Obligation: fooEq
 Property: assert
-Result: ✅ pass and reachable from declaration entry
+Result: ✔️ pass if reachable
 -/
 #guard_msgs in
 #eval verify funcPgm

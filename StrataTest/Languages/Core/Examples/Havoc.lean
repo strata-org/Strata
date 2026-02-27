@@ -53,7 +53,7 @@ $__x1 == 1
 
 Result: Obligation: x_eq_1
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x1, 0)
 
@@ -71,7 +71,7 @@ procedure S () returns ()
 info:
 Obligation: x_eq_1
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__x1, 0)
 -/

@@ -65,7 +65,7 @@ $__g3 == 15
 
 Result: Obligation: g_eq_15_internal
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__g3, 0)
 
@@ -101,7 +101,7 @@ Result: ✔️ pass if reachable
 
 Obligation: g_eq_15_internal
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__g3, 0)
 -/

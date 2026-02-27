@@ -54,7 +54,7 @@ true
 
 Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__xs3, (as Nil (List Int))
 
@@ -86,7 +86,7 @@ spec {
 info:
 Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 Model:
 ($__xs3, (as Nil (List Int))
 

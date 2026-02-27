@@ -70,7 +70,7 @@ x + y >= 4.0
 
 Result: Obligation: real_add_ge_bad
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 
 [DEBUG] Evaluated program:
@@ -92,7 +92,7 @@ Result: ✔️ pass if reachable
 
 Obligation: real_add_ge_bad
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify realPgm
@@ -226,7 +226,7 @@ Result: ✔️ pass if reachable
 
 Obligation: bad_shift
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify bvMoreOpsPgm (options := .quiet)

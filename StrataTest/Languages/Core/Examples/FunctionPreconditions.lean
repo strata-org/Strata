@@ -263,7 +263,7 @@ false
 
 Result: Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 
 
 [DEBUG] Evaluated program:
@@ -279,7 +279,7 @@ function badDiv (x : int) : int {
 info:
 Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: assert
-Result: ❌ fail
+Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify funcCallsFuncFailPgm
