@@ -245,18 +245,30 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     | none => .error f!"Cannot encode unannotated free variable {e}"
     | some ty =>
       let (tty, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
-      let uf := { id := (toString $ format f), args := [], out := tty }
+      let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
   | .abs _ _ ty e => .error f!"Cannot encode lambda abstraction {e}"
 
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
+    -- Collect fvar names from the body to check for clashes
+    let rec collectFvarNames : LExpr _ → List String
+      | .fvar _ f _ => [f.name]
+      | .abs _ _ _ e' => collectFvarNames e'
+      | .quant _ _ _ _ tr' e' => collectFvarNames tr' ++ collectFvarNames e'
+      | .app _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
+      | .ite _ c t e => collectFvarNames c ++ collectFvarNames t ++ collectFvarNames e
+      | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
+      | _ => []
+    let fvarNames := collectFvarNames e |>.toArray
     -- Generate base name
     let baseName := if name.isEmpty then s!"$__bv{bvs.length}" else name
-    -- Check for clashes with existing bvars and disambiguate if needed
+    -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
     let rec findUniqueName (candidate : String) (suffix : Nat) : String :=
-      if bvs.any (fun (n, _) => n == candidate) then
+      if bvs.any (fun (n, _) => n == candidate) || 
+         ctx.ufs.any (fun uf => uf.id == candidate) ||
+         fvarNames.contains candidate then
         findUniqueName s!"{baseName}@{suffix}" (suffix + 1)
       else
         candidate

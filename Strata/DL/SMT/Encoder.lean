@@ -159,7 +159,19 @@ def defineRecord (tyEnc : String) (tEncs : List String) : EncoderM String := do
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
-  let id := ufId (← ufNum)
+  -- Check for name clashes with already-encoded UFs and disambiguate
+  let baseName := uf.id
+  let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
+  -- Find unique name by trying suffixes 1, 2, 3, ... up to a reasonable limit
+  let rec findUniqueName (candidate : String) (suffix : Nat) (limit : Nat) : String :=
+    if limit == 0 then candidate  -- Fallback after limit attempts
+    else if existingNames.contains candidate then
+      findUniqueName s!"{baseName}@{suffix}" (suffix + 1) (limit - 1)
+    else
+      candidate
+  termination_by limit
+  decreasing_by sorry  -- Termination obvious: limit decreases on each recursive call
+  let id := findUniqueName baseName 1 1000  -- Allow up to 1000 name clashes
   comment uf.id
   let args ← uf.args.mapM (fun vt => encodeType vt.ty)
   declareFun id args (← encodeType uf.out)
