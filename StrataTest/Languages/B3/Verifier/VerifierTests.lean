@@ -166,27 +166,40 @@ def testVerification (prog : Program) : IO Unit := do
         -- Show diagnosis if available
         match result.diagnosis with
         | some diag =>
-          for failure in diag.diagnosedFailures do
-            let diagnosisPrefix := match failure.report.result with
-              | .error .refuted => MSG_IMPOSSIBLE
-              | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
-              | .ok _ => MSG_COULD_NOT_PROVE
-            match B3.FromCore.exprFromCore failure.expression with
-            | .ok b3Expr =>
-              let exprLoc := formatExpressionLocation prog b3Expr
-              let exprFormatted := formatExpressionOnly prog b3Expr
-              IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
-            | .error _ =>
-              IO.println s!"  └─ {diagnosisPrefix} <expression>"
-            -- Show assumptions
-            if !failure.report.context.pathCondition.isEmpty then
-              IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-              for assumption in failure.report.context.pathCondition.reverse do
-                match B3.FromCore.exprFromCore assumption with
-                | .ok b3Assumption =>
-                  let formatted := formatExpressionOnly prog b3Assumption
-                  IO.println s!"       {formatted}"
-                | .error _ => IO.println s!"       <assumption>"
+          -- Show full obligation as first diagnosis line
+          match result.obligation with
+          | some obl =>
+            match B3.FromCore.exprFromCore obl.obligation with
+            | .ok b3Full =>
+              let fullLoc := formatExpressionLocation prog b3Full
+              let fullFormatted := formatExpressionOnly prog b3Full
+              let fullPrefix := if obl.property == .cover then MSG_IMPOSSIBLE else MSG_COULD_NOT_PROVE
+              IO.println s!"  └─ {fullLoc}: {fullPrefix} {fullFormatted}"
+              -- Show path conditions for the full obligation
+              if !diag.diagnosedFailures.isEmpty then
+                let pathCond := diag.diagnosedFailures.head!.report.context.pathCondition
+                if !pathCond.isEmpty then
+                  IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
+                  for assumption in pathCond.reverse do
+                    match B3.FromCore.exprFromCore assumption with
+                    | .ok b3Assumption => IO.println s!"       {formatExpressionOnly prog b3Assumption}"
+                    | .error _ => IO.println s!"       <assumption>"
+            | .error _ => pure ()
+          | none => pure ()
+          -- Show sub-expression diagnosis if there are multiple failures
+          if diag.diagnosedFailures.length > 1 then
+            for failure in diag.diagnosedFailures do
+              let diagnosisPrefix := match failure.report.result with
+                | .error .refuted => MSG_IMPOSSIBLE
+                | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
+                | .ok _ => MSG_COULD_NOT_PROVE
+              match B3.FromCore.exprFromCore failure.expression with
+              | .ok b3Expr =>
+                let exprLoc := formatExpressionLocation prog b3Expr
+                let exprFormatted := formatExpressionOnly prog b3Expr
+                IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
+              | .error _ =>
+                IO.println s!"  └─ {diagnosisPrefix} <expression>"
         | none => pure ()
 
 ---------------------------------------------------------------------
@@ -196,6 +209,7 @@ def testVerification (prog : Program) : IO Unit := do
 /--
 info: test: ✗ counterexample found
   (0,61): check 8 == 8 && f(5) == 7
+  └─ (0,67): could not prove 8 == 8 && f(5) == 7
   └─ (0,67): could not prove 8 == 8
   └─ (0,77): it is impossible that f(5) == 7
 -/
@@ -248,6 +262,7 @@ procedure test() {
 /--
 info: test_fail: ✗ counterexample found
   (0,52): check 5 == 5 && f(5) == 10
+  └─ (0,58): could not prove 5 == 5 && f(5) == 10
   └─ (0,58): could not prove 5 == 5
   └─ (0,68): could not prove f(5) == 10
 -/
@@ -263,6 +278,7 @@ procedure test_fail() {
 /--
 info: test_all_expressions: ✗ counterexample found
   (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  └─ (0,133): could not prove (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,134): could not prove false || true
   └─ (0,161): could not prove if true true else false
   └─ (0,197): could not prove f(5)
@@ -376,7 +392,7 @@ procedure test_reach_bad() {
 /--
 info: test_reach_good: ✗ unknown
   (0,101): reach f(5) > 5
-  └─ (0,107): could not prove f(5) > 5
+  └─ (0,107): it is impossible that f(5) > 5
      under the assumptions
        forall x0 : int f(x0) > 0
 -/
@@ -414,12 +430,11 @@ procedure test_reach_with_trace() {
 /--
 info: test_reach_diagnosis: ✗ counterexample found
   (0,106): reach f(5) > 5 && f(5) < 0
+  └─ (0,112): it is impossible that f(5) > 5 && f(5) < 0
+     under the assumptions
+       forall x0 : int f(x0) > 0
   └─ (0,112): could not prove f(5) > 5
-     under the assumptions
-       forall x0 : int f(x0) > 0
   └─ (0,124): it is impossible that f(5) < 0
-     under the assumptions
-       forall x0 : int f(x0) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -435,6 +450,7 @@ procedure test_reach_diagnosis() {
 /--
 info: test_all_expressions: ✗ counterexample found
   (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  └─ (0,133): it is impossible that (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
   └─ (0,134): could not prove false || true
   └─ (0,161): could not prove if true true else false
   └─ (0,197): could not prove f(5)
@@ -480,6 +496,7 @@ procedure test_all_expressions() {
 /--
 info: test_all_expressions: ✗ counterexample found
   (0,85): reach notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
+  └─ (0,91): it is impossible that notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
   └─ (0,91): could not prove notalwaystrue(1, 2)
   └─ (0,122): it is impossible that !notalwaystrue(1, 2)
 -/

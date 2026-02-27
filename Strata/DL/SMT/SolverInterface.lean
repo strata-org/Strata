@@ -83,15 +83,22 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
       (Solver.checkSat []).run (← solverRef.get)
     checkSatAssuming := fun assumptions => do
       let s ← solverRef.get
-      s.smtLibInput.putStr "(push 1)\n"
-      for assumption in assumptions do
-        match termToString assumption with
-        | .ok termStr => (Solver.assert termStr).run s
+      let assumptionStrs ← assumptions.mapM fun a =>
+        match termToString a with
+        | .ok str => pure str
         | .error e => throw (IO.userError s!"Failed to convert term to string: {e}")
-      let result ← (Solver.checkSat []).run s
-      s.smtLibInput.putStr "(pop 1)\n"
+      let assumptionsStr := String.intercalate " " assumptionStrs
+      s.smtLibInput.putStr s!"(check-sat-assuming ({assumptionsStr}))\n"
       s.smtLibInput.flush
-      return result
+      match s.smtLibOutput with
+      | .some stdout =>
+        let result := (← stdout.getLine).trimAscii.toString
+        match result with
+        | "sat"     => return .sat
+        | "unsat"   => return .unsat
+        | "unknown" => return .unknown
+        | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
+      | .none => return .unsat  -- Buffer solver: assume proved (no diagnosis)
     getModel := fun vars => do
       let s ← solverRef.get
       let varsStr := String.intercalate " " vars
