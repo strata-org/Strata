@@ -33,7 +33,7 @@ open Lambda (LMonoTy LTy LExpr)
 /-
 Translate Laurel HighType to Core Type
 -/
-def translateType (ty : HighTypeMd) : LMonoTy :=
+def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   match _h : ty.val with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
@@ -41,9 +41,14 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
-  | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
-  | .TMap keyType valueType => Core.mapTy (translateType keyType) (translateType valueType)
-  | .UserDefined _ => .tcons "Composite" []
+  | .TSet elementType => Core.mapTy (translateType model elementType) LMonoTy.bool
+  | .TMap keyType valueType => Core.mapTy (translateType model keyType) (translateType model valueType)
+  | .UserDefined name =>
+    -- Composite types map to "Composite"; datatypes map to their own name
+    match name.id.bind model.refToDef.get? with
+    | some (.compositeType _) => .tcons "Composite" []
+    | some (.datatypeDefinition dt) => .tcons dt.name.name []
+    | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
   | .TFloat64 => LMonoTy.real -- Incorrect?
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
@@ -52,7 +57,7 @@ decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyTy
 
 def lookupType (model : SemanticModel) (name : Identifier) : LMonoTy :=
   match (model.get name).getType with
-  | .some ty => translateType ty
+  | .some ty => translateType model ty
   | none => panic s!"no type for {name.name}"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
@@ -147,7 +152,7 @@ def translateExpr (expr : StmtExprMd)
         --     .op () ident none
         | astNode =>
             let ident := Core.CoreIdent.locl name.name
-            return .fvar () ident (some (translateType $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
+            return .fvar () ident (some (translateType model $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -206,11 +211,11 @@ def translateExpr (expr : StmtExprMd)
   | .Block [single] _ => translateExpr single boundVars isPureContext
 
   | .Forall ⟨ name, ty ⟩ body =>
-      let coreTy := translateType ty
+      let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
       return LExpr.all () (some coreTy) coreBody
   | .Exists ⟨ name, ty ⟩ body =>
-      let coreTy := translateType ty
+      let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
       return LExpr.exist () (some coreTy) coreBody
   | .Hole => return dummy
@@ -256,7 +261,7 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
   s!"({fileRange.range.start})"
 
-def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
+def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expression.Expr :=
   match ty.val with
   | .TInt => .const () (.intConst 0)
   | .TBool => .const () (.boolConst false)
@@ -265,7 +270,7 @@ def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
     -- For types without a natural default (arrays, composites, etc.),
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
-    let coreTy := translateType ty
+    let coreTy := translateType model ty
     .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
 
 /--
@@ -287,7 +292,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts _ => stmts.flatMapM (fun s => translateStmt outputParams s)
   | .LocalVariable id ty initializer =>
-      let boogieMonoType := translateType ty
+      let boogieMonoType := translateType model ty
       let boogieType := LTy.forAll [] boogieMonoType
       let ident := Core.CoreIdent.locl id.name
       match initializer with
@@ -300,7 +305,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
-            let defaultExpr := defaultExprForType ty
+            let defaultExpr := defaultExprForType model ty
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.name coreArgs md
             return [initStmt, callStmt]
@@ -308,7 +313,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           let coreExpr ← translateExpr initExpr
           return [Core.Statement.init ident boogieType (some coreExpr) md]
       | none =>
-          let defaultExpr := defaultExprForType ty
+          let defaultExpr := defaultExprForType model ty
           return [Core.Statement.init ident boogieType (some defaultExpr) md]
   | .Assign targets value =>
       match targets with
@@ -397,9 +402,9 @@ private def translateChecks (checks : List StmtExprMd) (labelBase : String)
 /--
 Translate Laurel Parameter to Core Signature entry
 -/
-def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
+def translateParameterToCore (model : SemanticModel) (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
   let ident := Core.CoreIdent.locl param.name.name
-  let ty := translateType param.type
+  let ty := translateType model param.type
   (ident, ty)
 
 /--
@@ -408,9 +413,9 @@ Diagnostics from disallowed constructs in preconditions, postconditions, and bod
 are emitted into the monad state.
 -/
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
-  let inputPairs := proc.inputs.map translateParameterToCore
+  let inputPairs := proc.inputs.map (translateParameterToCore (← get).model)
   let inputs := inputPairs
-  let outputs := proc.outputs.map translateParameterToCore
+  let outputs := proc.outputs.map (translateParameterToCore (← get).model)
   let header : Core.Procedure.Header := {
     name := proc.name.name
     typeArgs := []
@@ -501,9 +506,10 @@ Translate a Laurel Procedure to a Core Function (when applicable) using `Transla
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
 def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
-  let inputs := proc.inputs.map translateParameterToCore
+  let model := (← get).model
+  let inputs := proc.inputs.map (translateParameterToCore model)
   let outputTy := match proc.outputs.head? with
-    | some p => translateType p.type
+    | some p => translateType model p.type
     | none => LMonoTy.int
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
@@ -529,7 +535,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
 Translate a Laurel DatatypeDefinition to a Core type declaration.
 Zero constructors produces an opaque (abstract) type; otherwise a Core datatype.
 -/
-def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
+def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition) : Core.Decl :=
   match h : dt.constructors with
   | [] =>
     -- Zero constructors: opaque type
@@ -537,7 +543,7 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
   | first :: rest =>
     let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun c =>
       { name := Core.CoreIdent.unres c.name.name
-        args := c.args.map fun ⟨ n, ty ⟩ => (Core.CoreIdent.unres n.name, translateType ty) }
+        args := c.args.map fun ⟨ n, ty ⟩ => (Core.CoreIdent.unres n.name, translateType model ty) }
     let ldt : Lambda.LDatatype Core.Visibility := {
       name := dt.name.name
       typeArgs := dt.typeArgs
@@ -616,7 +622,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   -- Translate Laurel constants to Core function declarations (0-ary functions)
   let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
-    let coreTy := translateType c.type
+    let coreTy := translateType model c.type
     let body ← c.initializer.mapM (translateExpr ·)
     return Core.Decl.func {
       name := Core.CoreIdent.unres c.name.name
@@ -639,7 +645,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   -- Translate Laurel datatype definitions to Core datatype declarations
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with
-    | .Datatype dt => some (translateDatatypeDefinition dt)
+    | .Datatype dt => some (translateDatatypeDefinition model dt)
     | _ => none
   pure ({
     decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls },
