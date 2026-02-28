@@ -85,7 +85,12 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     match op.name, op.args with
     | q`Laurel.intType, _ => return mkHighTypeMd .TInt md
     | q`Laurel.boolType, _ => return mkHighTypeMd .TBool md
+    | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 md
     | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
+    | q`Laurel.mapType, #[keyArg, valArg] =>
+      let keyType ← translateHighType keyArg
+      let valType ← translateHighType valArg
+      return mkHighTypeMd (.TMap keyType valType) md
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md
@@ -435,6 +440,51 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 
+def parseDatatypeConstructorArg (arg : Arg) : TransM Parameter := do
+  let .op op := arg
+    | TransM.error s!"parseDatatypeConstructorArg expects operation"
+  match op.name, op.args with
+  | q`Laurel.datatypeConstructorArg, #[nameArg, typeArg] =>
+    let name ← translateIdent nameArg
+    let argType ← translateHighType typeArg
+    return { name := name, type := argType }
+  | _, _ =>
+    TransM.error s!"parseDatatypeConstructorArg expects datatypeConstructorArg, got {repr op.name}"
+
+def parseDatatypeConstructor (arg : Arg) : TransM DatatypeConstructor := do
+  let .op op := arg
+    | TransM.error s!"parseDatatypeConstructor expects operation"
+  match op.name, op.args with
+  | q`Laurel.datatypeConstructor, #[nameArg, argsSeq] =>
+    let name ← translateIdent nameArg
+    let args ← match argsSeq with
+      | .seq _ .comma args => args.toList.mapM parseDatatypeConstructorArg
+      | _ => pure []
+    return { name := name, args := args }
+  | q`Laurel.datatypeConstructorNoArgs, #[nameArg] =>
+    let name ← translateIdent nameArg
+    return { name := name, args := [] }
+  | _, _ =>
+    TransM.error s!"parseDatatypeConstructor expects datatypeConstructor, got {repr op.name}"
+
+def parseDatatype (arg : Arg) : TransM TypeDefinition := do
+  let .op op := arg
+    | TransM.error s!"parseDatatype expects operation"
+  match op.name, op.args with
+  | q`Laurel.datatype, #[nameArg, constructorsArg] =>
+    let name ← translateIdent nameArg
+    let constructors ← match constructorsArg with
+      | .op listOp => match listOp.name, listOp.args with
+        | q`Laurel.datatypeConstructorList, #[csArg] =>
+          match csArg with
+          | .seq _ .comma args => args.toList.mapM parseDatatypeConstructor
+          | singleArg => do let c ← parseDatatypeConstructor singleArg; pure [c]
+        | _, _ => TransM.error s!"Expected datatypeConstructorList, got {repr listOp.name}"
+      | _ => TransM.error s!"Expected datatypeConstructorList operation"
+    return .Datatype { name := name, typeArgs := [], constructors := constructors }
+  | _, _ =>
+    TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
+
 def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
   let .op op := arg
     | TransM.error s!"parseTopLevel expects operation"
@@ -446,8 +496,11 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
   | q`Laurel.topLevelComposite, #[compositeArg] =>
     let typeDef ← parseComposite compositeArg
     return (none, some typeDef)
+  | q`Laurel.topLevelDatatype, #[datatypeArg] =>
+    let typeDef ← parseDatatype datatypeArg
+    return (none, some typeDef)
   | _, _ =>
-    TransM.error s!"parseTopLevel expects topLevelProcedure or topLevelComposite, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects topLevelProcedure, topLevelComposite, or topLevelDatatype, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax

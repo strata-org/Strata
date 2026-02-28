@@ -9,6 +9,7 @@ import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.CorePrelude
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.ToLaurel
@@ -405,12 +406,11 @@ structure PySpecPrelude where
     are appended to the base prelude (with duplicates filtered out).
     Also accumulates overload dispatch tables. -/
 def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
-  -- Laurel.translate prepends corePrelude.decls to every output.
-  -- Add them once here and strip the prefix from each translated result.
-  -- Accumulate into an Array for efficient appending; build Core.Program at the end.
-  let laurelPreludeSize := Strata.Laurel.corePrelude.decls.length
+  -- The Laurel prelude is now included during HeapParameterization at the Laurel level.
+  -- We no longer need to strip it from translate output.
+  let laurelPreludeSize := 0
   let mut preludeDecls : Array Core.Decl :=
-    Strata.Python.Core.prelude.decls.toArray ++ Strata.Laurel.corePrelude.decls.toArray
+    Strata.Python.Core.prelude.decls.toArray
   let mut existingNames : Std.HashSet String :=
     preludeDecls.foldl (init := {}) fun s d =>
       (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
@@ -439,7 +439,8 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
     | .error diagnostics =>
       exitFailure s!"PySpec Laurel to Core translation failed for {ionPath}: {diagnostics}"
     | .ok (coreSpec, _modifiesDiags) =>
-      -- Strip the Laurel corePrelude prefix (always emitted by Laurel.translate)
+      -- The Laurel prelude is now included at the Laurel level during HeapParameterization,
+      -- so translate output already contains the prelude declarations as normal decls.
       let pyspecDecls := coreSpec.decls.drop laurelPreludeSize
       -- Register new names, failing on collisions
       for d in pyspecDecls do
@@ -521,10 +522,10 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Core Program ===="
             IO.print (coreProgramDecls, modifiesDiags)
 
-          -- Strip the Laurel corePrelude prefix (always emitted by
-          -- Laurel.translate); already present in pyPrelude.
-          let laurelPreludeSize := Strata.Laurel.corePrelude.decls.length
-          let programDecls := coreProgramDecls.decls.drop laurelPreludeSize
+          -- The Laurel prelude is now included at the Laurel level during
+          -- HeapParameterization, so translate output contains prelude decls as normal decls.
+          -- No stripping needed.
+          let programDecls := coreProgramDecls.decls
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names

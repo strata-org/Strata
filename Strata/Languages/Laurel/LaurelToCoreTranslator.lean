@@ -15,7 +15,6 @@ import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.CorePrelude
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -147,7 +146,7 @@ def translateExpr (expr : StmtExprMd)
         --     .op () ident none
         | astNode =>
             let ident := Core.CoreIdent.locl name.name
-            return .fvar () ident (some (translateType $ astNode.getType.getD (panic "LaurelToCore.translateExpr")))
+            return .fvar () ident (some (translateType $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -576,74 +575,73 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   dbg_trace "=== After heapParameterization ==="
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  dbg_trace "model: {repr model}"
   resolutionDiags := resolutionDiags ++ result.errors
+
+  let program := typeHierarchyTransform model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  resolutionDiags := resolutionDiags ++ result.errors
+  dbg_trace "=== After typeHierarchyTransform ==="
+  let (program, modifiesDiags) := modifiesClausesTransform model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  resolutionDiags := resolutionDiags ++ result.errors
+  dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+
+  dbg_trace "================================="
+  let program := liftExpressionAssignments model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  resolutionDiags := resolutionDiags ++ result.errors
+  dbg_trace "===  Program after liftExpressionAssignments ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace "================================="
   dbg_trace s!"resolutionDiags {repr resolutionDiags}"
 
-  panic "bla"
-  -- let program := typeHierarchyTransform model program
-  -- let result := resolve program (some model)
-  -- let (program, model) := (result.program, result.model)
-  -- resolutionDiags := resolutionDiags ++ result.errors
-  -- dbg_trace "=== After typeHierarchyTransform ==="
-  -- let (program, modifiesDiags) := modifiesClausesTransform model program
-  -- let result := resolve program (some model)
-  -- let (program, model) := (result.program, result.model)
-  -- resolutionDiags := resolutionDiags ++ result.errors
-  -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace "================================="
-  -- let program := liftExpressionAssignments model program
-  -- let result := resolve program (some model)
-  -- let (program, model) := (result.program, result.model)
-  -- resolutionDiags := resolutionDiags ++ result.errors
-  -- dbg_trace "===  Program after liftExpressionAssignments ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace "================================="
+  -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
+  let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
+  let initState : TranslateState := { model := model }
+  -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
+  let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
+    match tryTranslatePureToFunction p initState with
+    | .error es => (errs ++ es.toList, decls)
+    | .ok d     => (errs, decls.push d)) ([], #[])
+  -- Translate procedures using the monad, collecting diagnostics from the final state
+  let (procedures, procState) := runTranslateM initState do
+    procProcs.mapM translateProcedure
+  let procDiags := procState.diagnostics
 
-  -- -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
-  -- let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
-  -- let initState : TranslateState := { model := model }
-  -- -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
-  -- let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
-  --   match tryTranslatePureToFunction p initState with
-  --   | .error es => (errs ++ es.toList, decls)
-  --   | .ok d     => (errs, decls.push d)) ([], #[])
-  -- -- Translate procedures using the monad, collecting diagnostics from the final state
-  -- let (procedures, procState) := runTranslateM initState do
-  --   procProcs.mapM translateProcedure
-  -- let procDiags := procState.diagnostics
+  -- Translate Laurel constants to Core function declarations (0-ary functions)
+  let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
+    let coreTy := translateType c.type
+    let body ← c.initializer.mapM (translateExpr ·)
+    return Core.Decl.func {
+      name := Core.CoreIdent.unres c.name.name
+      typeArgs := []
+      inputs := []
+      output := coreTy
+      body := body
+    }
 
-  -- -- Translate Laurel constants to Core function declarations (0-ary functions)
-  -- let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
-  --   let coreTy := translateType c.type
-  --   let body ← c.initializer.mapM (translateExpr ·)
-  --   return Core.Decl.func {
-  --     name := Core.CoreIdent.unres c.name.name
-  --     typeArgs := []
-  --     inputs := []
-  --     output := coreTy
-  --     body := body
-  --   }
+  -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
+  let allErrors := resolutionDiags.toList ++ pureErrors ++ procDiags ++ constantsState.diagnostics
+  if !allErrors.isEmpty then
+    .error allErrors.toArray
+  let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
-  -- -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-  -- let allErrors := resolutionDiags.toList ++ pureErrors ++ procDiags ++ constantsState.diagnostics
-  -- if !allErrors.isEmpty then
-  --   .error allErrors.toArray
-  -- let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+  -- Filter out the Field and TypeTag opaque types. These are only in the prelude to satisfy resolution.
+  -- The prelude is now prepended during HeapParameterization, so no separate preludeDecls needed.
+  let preludeDecls : List Core.Decl := []
 
-  -- -- Filter out the Field and TypeTag opaque types. These are only in the prelude to satisfy the DDM type checker.
-  -- let preludeDecls := corePrelude.decls.filter fun d =>
-  --   d.name.name != "Field" && d.name.name != "TypeTag"
-
-  -- -- Translate Laurel datatype definitions to Core datatype declarations
-  -- let laurelDatatypeDecls := program.types.filterMap fun td => match td with
-  --   | .Datatype dt => some (translateDatatypeDefinition dt)
-  --   | _ => none
-  -- pure ({
-  --   decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls },
-  --   diamondErrors ++ modifiesDiags
-  -- )
+  -- Translate Laurel datatype definitions to Core datatype declarations
+  let laurelDatatypeDecls := program.types.filterMap fun td => match td with
+    | .Datatype dt => some (translateDatatypeDefinition dt)
+    | _ => none
+  pure ({
+    decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls },
+    diamondErrors ++ modifiesDiags
+  )
 
 /--
 Verify a Laurel program using an SMT solver

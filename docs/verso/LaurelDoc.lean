@@ -190,4 +190,4 @@ procedures.
 The Laurel translator prepends a Core prelude that defines the heap model types and
 operations: `Composite`, `Field`, `Box`, `readField`, and `updateField`.
 
-{docstring Strata.Laurel.corePreludeDDM}
+{docstring Strata.Laurel.laurelPrelude}

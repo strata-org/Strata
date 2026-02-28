@@ -7,6 +7,7 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.CorePrelude
 import Strata.Util.Tactics
 
 /-
@@ -202,7 +203,7 @@ def findFieldOwner (types : List TypeDefinition) (typeName : Identifier) (fieldN
             else ct.extending.findSome? (go fuel')
           else none
         | _ => none
-  (go types.length typeName).getD (panic "type inheritance forms a cycle")
+  (go types.length typeName).getD (softPanic "type inheritance forms a cycle")
 
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.
@@ -211,7 +212,7 @@ Returns the qualified field name "DeclaringType.fieldName".
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : String :=
   match model.get fieldName with
     | .field owner _ => owner.name ++ "." ++ fieldName.name
-    | _ => panic "oops"
+    | _ => softPanic "oops"
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -227,7 +228,7 @@ where
     match _h : expr.val with
     | .FieldSelect selectTarget fieldName =>
         let qualifiedName := mkId $ resolveQualifiedFieldName model fieldName
-        let valTy := (model.get fieldName).getType.getD (panic "heapTransformExpr1")
+        let valTy := (model.get fieldName).getType.getD (softPanic "heapTransformExpr1")
         let readExpr := ⟨ .StaticCall (mkId "readField") [mkMd (.Identifier heapVar), selectTarget, mkMd (.Identifier qualifiedName)], md ⟩
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
@@ -284,7 +285,7 @@ where
           match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
             let qualifiedName := mkId $ resolveQualifiedFieldName model fieldName
-            let valTy := (model.get fieldName).getType.getD (panic "heapTransformExpr2")
+            let valTy := (model.get fieldName).getType.getD (softPanic "heapTransformExpr2")
             let target' ← recurse target
             let v' ← recurse v
             -- Wrap value in Box constructor
@@ -431,6 +432,11 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     return proc
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
+  -- Prepend the Laurel Core prelude members (heap model types and functions)
+  let prelude := laurelPrelude
+  let program := { program with
+    types := prelude.types ++ program.types
+    staticProcedures := prelude.staticProcedures ++ program.staticProcedures }
   let heapReaders := computeReadsHeap program.staticProcedures
   let heapWriters := computeWritesHeap program.staticProcedures
   let (procs', _) := (program.staticProcedures.mapM (heapTransformProcedure model)).run

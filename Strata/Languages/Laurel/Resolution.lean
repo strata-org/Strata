@@ -78,7 +78,7 @@ def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | _ => panic s!"PANIC: getType called on {repr node}"
+ | _ => softPanic s!"getType called on {repr node}"
 
 /-! ## Resolution result -/
 
@@ -92,12 +92,17 @@ deriving instance Inhabited for Strata.Laurel.AstNode
 def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
   match id.id with
   | some uuid => model.refToDef.get! uuid
-  | none => dbg_trace s!"PANIC: identifier {id.name} without number"; default
+  | none => softPanic s!"model.get called on identifier {id.name} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  match model.get id with
-  | .staticProcedure proc => proc.isFunctional
-  | _ => panic s!"{repr id} is not a procedure"
+  if id.id == none then
+    true
+  else
+    match model.get id with
+    | .staticProcedure proc => proc.isFunctional
+    | .parameter _ => true
+    | .datatypeConstructor _ _ => true
+    | _ => panic s!"{repr id} is not a procedure"
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where
@@ -398,7 +403,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dtName' ctor)
-      let args' ← ctor.args.mapM fun p => do
+      let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
         let destructorId ← defineName p.name (.parameter p) (some $ dt.name.name ++ ".." ++ p.name.name)
         return ⟨ destructorId, ty' ⟩
