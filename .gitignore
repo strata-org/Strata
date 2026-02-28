@@ -4,4 +4,12 @@
 # SMT files generated when running tests
 vcs/*.smt2
 
+# CBMC pipeline intermediate files
+*.full-symtab.json
+*.symtab.json
+*.goto.json
+*.gb
+*.py.ion
+*.py.ion.core.st
+
 Strata.code-workspace

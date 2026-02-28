@@ -16,6 +16,7 @@ import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
+import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
 
@@ -206,6 +207,8 @@ def ionPathToPythonPath (ionPath : String) : Option String :=
   if ionPath.endsWith ".python.st.ion" then
     let basePath := ionPath.dropEnd ".python.st.ion".length |>.toString
     some (basePath ++ ".py")
+  else if ionPath.endsWith ".py.ion" then
+    some (ionPath.dropEnd ".ion".length |>.toString)
   else
     none
 
@@ -498,6 +501,645 @@ def pyAnalyzeLaurelCommand : Command where
               | none => Map.empty
             Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
 
+private def deriveBaseName (file : String) : String :=
+  let name := System.FilePath.fileName file |>.getD file
+  if name.endsWith ".python.st.ion" then (name.dropEnd 14).toString
+  else if name.endsWith ".py.ion" then (name.dropEnd 7).toString
+  else if name.endsWith ".st.ion" then (name.dropEnd 7).toString
+  else if name.endsWith ".st" then (name.dropEnd 3).toString
+  else name
+
+private def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
+  match rn[id.name]? with
+  | some new => ⟨new, id.metadata⟩
+  | none => id
+
+/-! ## Core-to-GOTO translation
+
+### Known limitations
+
+#### Program-level declarations (`Core.Decl`)
+- **`Decl.var`** (global variables): Emitted as GOTO symbol table entries with
+  `isStaticLifetime := true`. Optional initializers are translated to the symbol's
+  `value` field.
+- **`Decl.ax`** (axioms): Emitted as ASSUME instructions at the start of each
+  procedure body.
+- **`Decl.distinct`**: Emitted as pairwise `!=` ASSUME instructions at the
+  start of each procedure body.
+
+#### Procedure contracts (`Core.Procedure.Spec`)
+Preconditions, postconditions, and modifies clauses are now emitted as
+`#spec_requires`, `#spec_ensures`, and `#spec_assigns` named sub-expressions
+on the code type in the symbol table. These are recognized by
+`goto-instrument --apply-code-contracts` (DFCC).
+
+The following are not yet handled:
+- **`free requires`/`free ensures`**: Silently skipped (not emitted as contract
+  annotations). CBMC's DFCC does not have a direct equivalent of Boogie's free specs.
+
+#### Procedure calls
+- **`CmdExt.call`**: Handled by `coreStmtsToGoto`, which emits FUNCTION_CALL
+  instructions directly. The `unwrapCmdExt` path (used when no calls are present)
+  returns an error on calls as a safety check.
+-/
+
+private partial def renameExpr (rn : Std.HashMap String String) : Core.Expression.Expr → Core.Expression.Expr
+  | .fvar m name ty => .fvar m (renameIdent rn name) ty
+  | .app m f e => .app m (renameExpr rn f) (renameExpr rn e)
+  | .abs m ty e => .abs m ty (renameExpr rn e)
+  | .quant m qk ty tr e => .quant m qk ty (renameExpr rn tr) (renameExpr rn e)
+  | .ite m c t e => .ite m (renameExpr rn c) (renameExpr rn t) (renameExpr rn e)
+  | .eq m e1 e2 => .eq m (renameExpr rn e1) (renameExpr rn e2)
+  | e => e
+
+private def renameCmd (rn : Std.HashMap String String) : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
+  | .init name ty e md => .init (renameIdent rn name) ty (e.map (renameExpr rn)) md
+  | .set name e md => .set (renameIdent rn name) (renameExpr rn e) md
+  | .havoc name md => .havoc (renameIdent rn name) md
+  | .assert l e md => .assert l (renameExpr rn e) md
+  | .assume l e md => .assume l (renameExpr rn e) md
+  | .cover l e md => .cover l (renameExpr rn e) md
+
+private partial def unwrapCmdExt (rn : Std.HashMap String String) : Core.Statement → Except Std.Format (Imperative.Stmt Core.Expression (Imperative.Cmd Core.Expression))
+  | .cmd (.cmd c) => .ok (.cmd (renameCmd rn c))
+  | .cmd (.call ..) => .error f!"[unwrapCmdExt] Unexpected call; use coreStmtsToGoto instead."
+  | .block l stmts md => do
+    let stmts' ← stmts.mapM (unwrapCmdExt rn)
+    .ok (.block l stmts' md)
+  | .ite c t e md => do
+    let t' ← t.mapM (unwrapCmdExt rn)
+    let e' ← e.mapM (unwrapCmdExt rn)
+    .ok (.ite (renameExpr rn c) t' e' md)
+  | .loop g m i body md => do
+    let body' ← body.mapM (unwrapCmdExt rn)
+    .ok (.loop (renameExpr rn g) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
+  | .exit l md => .ok (.exit l md)
+  | .funcDecl _d _md => .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
+
+/-- Check whether a Core statement list contains any call statements. -/
+private def hasCallStmt : List Core.Statement → Bool
+  | [] => false
+  | .cmd (.call ..) :: _ => true
+  | .block _ stmts _ :: rest => hasCallStmt stmts || hasCallStmt rest
+  | .ite _ t e _ :: rest => hasCallStmt t || hasCallStmt e || hasCallStmt rest
+  | .loop _ _ _ body _ :: rest => hasCallStmt body || hasCallStmt rest
+  | _ :: rest => hasCallStmt rest
+
+/-- Collect all funcDecl statements from a procedure body (recursively) and
+    return them as Core.Functions, stripping them from the body. -/
+private def collectFuncDecls : List Core.Statement →
+    Except Std.Format (List Core.Function × List Core.Statement)
+  | [] => return ([], [])
+  | .funcDecl decl _ :: rest => do
+    let f ← Core.Function.ofPureFunc decl
+    let (fs, rest') ← collectFuncDecls rest
+    return (f :: fs, rest')
+  | .block l stmts md :: rest => do
+    let (fs1, stmts') ← collectFuncDecls stmts
+    let (fs2, rest') ← collectFuncDecls rest
+    return (fs1 ++ fs2, .block l stmts' md :: rest')
+  | .ite c t e md :: rest => do
+    let (fs1, t') ← collectFuncDecls t
+    let (fs2, e') ← collectFuncDecls e
+    let (fs3, rest') ← collectFuncDecls rest
+    return (fs1 ++ fs2 ++ fs3, .ite c t' e' md :: rest')
+  | .loop g m i body md :: rest => do
+    let (fs1, body') ← collectFuncDecls body
+    let (fs2, rest') ← collectFuncDecls rest
+    return (fs1 ++ fs2, .loop g m i body' md :: rest')
+  | s :: rest => do
+    let (fs, rest') ← collectFuncDecls rest
+    return (fs, s :: rest')
+
+/-- Translate Core statements to GOTO instructions, handling calls at any nesting level. -/
+private partial def coreStmtsToGoto
+    (Env : Core.Expression.TyEnv) (pname : String)
+    (rn : Std.HashMap String String)
+    (stmts : List Core.Statement)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    : Except Std.Format (Imperative.GotoTransform Core.Expression.TyEnv) := do
+  let toExpr := Lambda.LExpr.toGotoExprCtx
+    (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) []
+  match stmts with
+  | [] => return trans
+  | stmt :: rest =>
+    let trans ← match stmt with
+      | .cmd (.call lhs procName args _md) =>
+        let renamedLhs := lhs.map (renameIdent rn)
+        let renamedArgs := args.map (renameExpr rn)
+        let argExprs ← renamedArgs.mapM toExpr
+        let lhsExpr := match renamedLhs with
+          | id :: _ =>
+            let name := Core.CoreIdent.toPretty id
+            let ty := match trans.T.context.types.find? id with
+              | some lty =>
+                lty.toMonoTypeUnsafe.toGotoType |>.toOption |>.getD .Integer
+              | none => .Integer
+            CProverGOTO.Expr.symbol name ty
+          | [] => CProverGOTO.Expr.symbol "" .Empty
+        let calleeExpr := CProverGOTO.Expr.symbol procName .Empty
+        let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
+        let inst : CProverGOTO.Instruction :=
+          { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }
+        pure { trans with instructions := trans.instructions.push inst, nextLoc := trans.nextLoc + 1 }
+      | .block l body md =>
+        if hasCallStmt body then
+          let srcLoc := Imperative.metadataToSourceLoc md pname trans.fileMap
+          let trans := Imperative.emitLabel l srcLoc trans
+          let trans ← coreStmtsToGoto Env pname rn body trans
+          let end_loc := trans.nextLoc
+          let trans := Imperative.emitLabel s!"end_block_{l}" srcLoc trans
+          let (matching, remaining) := trans.pendingExits.partition fun (_, lab) =>
+            lab == some l || lab == none
+          let patches := matching.map fun (idx, _) => (idx, end_loc)
+          pure (Imperative.patchGotoTargets { trans with pendingExits := remaining } patches)
+        else
+          let impStmt ← unwrapCmdExt rn stmt
+          Imperative.Stmt.toGotoInstructions trans.T pname impStmt trans
+      | .ite cond thenb elseb md =>
+        if hasCallStmt thenb || hasCallStmt elseb then
+          let srcLoc := Imperative.metadataToSourceLoc md pname trans.fileMap
+          let cond_expr ← toExpr (renameExpr rn cond)
+          let (trans, goto_else_idx) := Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr) srcLoc trans
+          let trans ← coreStmtsToGoto Env pname rn thenb trans
+          let (trans, goto_end_idx) := Imperative.emitUncondGoto srcLoc trans
+          let else_loc := trans.nextLoc
+          let trans := Imperative.emitLabel s!"else_{else_loc}" srcLoc trans
+          let trans ← coreStmtsToGoto Env pname rn elseb trans
+          let end_loc := trans.nextLoc
+          let trans := Imperative.emitLabel s!"end_if_{else_loc}" srcLoc trans
+          pure (Imperative.patchGotoTargets trans [(goto_else_idx, else_loc), (goto_end_idx, end_loc)])
+        else
+          let impStmt ← unwrapCmdExt rn stmt
+          Imperative.Stmt.toGotoInstructions trans.T pname impStmt trans
+      | .loop guard measure invariants body md =>
+        if hasCallStmt body then
+          let srcLoc := Imperative.metadataToSourceLoc md pname trans.fileMap
+          let loop_head := trans.nextLoc
+          let trans := Imperative.emitLabel s!"loop_{loop_head}" srcLoc trans
+          let guard_expr ← toExpr (renameExpr rn guard)
+          let (trans, goto_end_idx) := Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
+          let trans ← coreStmtsToGoto Env pname rn body trans
+          let mut backGuard := CProverGOTO.Expr.true
+          for inv in invariants do
+            let inv_expr ← toExpr (renameExpr rn inv)
+            backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
+          match measure with
+            | some meas =>
+              let meas_expr ← toExpr (renameExpr rn meas)
+              backGuard := backGuard.setNamedField "#spec_decreases" meas_expr
+            | none => pure ()
+          let backInst : CProverGOTO.Instruction :=
+            { type := .GOTO, guard := backGuard, target := some loop_head,
+              locationNum := trans.nextLoc, sourceLoc := srcLoc }
+          let trans := { trans with
+            instructions := trans.instructions.push backInst
+            nextLoc := trans.nextLoc + 1 }
+          let end_loc := trans.nextLoc
+          let trans := Imperative.emitLabel s!"end_loop_{loop_head}" srcLoc trans
+          pure (Imperative.patchGotoTargets trans [(goto_end_idx, end_loc)])
+        else
+          let impStmt ← unwrapCmdExt rn stmt
+          Imperative.Stmt.toGotoInstructions trans.T pname impStmt trans
+      | other => do
+        let impStmt ← unwrapCmdExt rn other
+        Imperative.Stmt.toGotoInstructions trans.T pname impStmt trans
+    coreStmtsToGoto Env pname rn rest trans
+
+def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
+    (fileMap : Option Lean.FileMap := none)
+    (axioms : List Core.Axiom := [])
+    (distincts : List (Core.Expression.Ident × List Core.Expression.Expr) := [])
+    (varTypes : Core.Expression.Ident → Option Core.Expression.Ty := fun _ => none)
+    : Except Std.Format (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
+  -- Lift local function declarations out of the body
+  let (liftedFuncs, body) ← collectFuncDecls p.body
+  let pname := Core.CoreIdent.toPretty p.header.name
+  if !p.header.typeArgs.isEmpty then
+    .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."
+  let ret_ty := CProverGOTO.Ty.Empty
+  let formals := p.header.inputs.keys.map Core.CoreIdent.toPretty
+  let formals_tys ← p.header.inputs.values.mapM Lambda.LMonoTy.toGotoType
+  let new_formals := formals.map (CProverGOTO.mkFormalSymbol pname ·)
+  let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
+  let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
+  let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
+  let locals := (Imperative.Block.definedVars body).map Core.CoreIdent.toPretty
+  let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
+  let rn : Std.HashMap String String :=
+    (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
+      (init := {}) fun m (k, v) => m.insert k v
+  -- Seed the type environment with renamed input and output parameter types
+  let inputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
+    (new_formals.zip p.header.inputs.values).map fun (n, ty) =>
+      (Core.CoreIdent.locl n, .forAll [] ty)
+  let outputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
+    (new_outputs.zip p.header.outputs.values).map fun (n, ty) =>
+      (Core.CoreIdent.locl n, .forAll [] ty)
+  let Env' : Core.Expression.TyEnv :=
+    @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Core.Visibility⟩ Env (inputEntries ++ outputEntries)
+  -- Emit axioms as ASSUME instructions at the start of the body
+  let mut axiomInsts : Array CProverGOTO.Instruction := #[]
+  let mut axiomLoc : Nat := 0
+  for ax in axioms do
+    let gotoExpr ← Lambda.LExpr.toGotoExprCtx
+      (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [] ax.e
+    axiomInsts := axiomInsts.push
+      { type := .ASSUME, locationNum := axiomLoc,
+        guard := gotoExpr,
+        sourceLoc := { CProverGOTO.SourceLocation.nil with function := pname, comment := s!"axiom {ax.name}" } }
+    axiomLoc := axiomLoc + 1
+  -- Emit distinct declarations as pairwise != ASSUME instructions
+  for (dname, exprs) in distincts do
+    let gotoExprs ← exprs.mapM
+      (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [])
+    for i in List.range gotoExprs.length do
+      for j in List.range gotoExprs.length do
+        if i < j then
+          let ei := gotoExprs[i]!
+          let ej := gotoExprs[j]!
+          let neqExpr : CProverGOTO.Expr :=
+            { id := .binary .NotEqual, type := .Boolean, operands := [ei, ej] }
+          let srcLoc : CProverGOTO.SourceLocation :=
+            { CProverGOTO.SourceLocation.nil with
+                function := pname
+                comment := s!"distinct {Core.CoreIdent.toPretty dname}" }
+          axiomInsts := axiomInsts.push
+            { type := .ASSUME, locationNum := axiomLoc, guard := neqExpr, sourceLoc := srcLoc }
+          axiomLoc := axiomLoc + 1
+  let ans ← if hasCallStmt body then
+    coreStmtsToGoto Env' pname rn body
+      { instructions := axiomInsts, nextLoc := axiomLoc, T := Env', fileMap := fileMap }
+  else do
+    let impBody ← body.mapM (unwrapCmdExt rn)
+    Imperative.Stmts.toGotoTransform Env' pname impBody (loc := axiomLoc) (fileMap := fileMap)
+      |>.map fun ans => { ans with instructions := axiomInsts ++ ans.instructions }
+  let ending_insts : Array CProverGOTO.Instruction :=
+    #[{ type := .END_FUNCTION, locationNum := ans.nextLoc + 1 }]
+  let pgm := { name := pname,
+               parameterIdentifiers := new_formals.toArray,
+               instructions := ans.instructions ++ ending_insts }
+  -- Translate procedure contracts to GOTO JSON annotations
+  -- Free specs (CheckAttr.Free) are assumed but not checked, so we skip them.
+  let mut contracts : List (String × Lean.Json) := []
+  let preExprs := p.spec.preconditions.values.filter (fun c => c.attr == .Default)
+    |>.map (fun c => renameExpr rn c.expr)
+  let postExprs := p.spec.postconditions.values.filter (fun c => c.attr == .Default)
+    |>.map (fun c => renameExpr rn c.expr)
+  if !preExprs.isEmpty then
+    let preGoto ← preExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [])
+    let preJson := preGoto.map CProverGOTO.exprToJson
+    contracts := contracts ++ [("#spec_requires",
+      Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr preJson.toArray)])]
+  if !postExprs.isEmpty then
+    let postGoto ← postExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [])
+    let postJson := postGoto.map CProverGOTO.exprToJson
+    contracts := contracts ++ [("#spec_ensures",
+      Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
+  if !p.spec.modifies.isEmpty then
+    let mut modGoto : List CProverGOTO.Expr := []
+    for ident in p.spec.modifies do
+      let ty ← match varTypes ident with
+        | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
+        | _ => pure .Integer
+      modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
+    let modJson := modGoto.map CProverGOTO.exprToJson
+    contracts := contracts ++ [("#spec_assigns",
+      Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr modJson.toArray)])]
+  -- Build localTypes map for output parameters (so they get proper types in symbol table)
+  let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
+  let localTypes : Std.HashMap String CProverGOTO.Ty :=
+    (outputs.zip output_tys).foldl (init := {}) fun m (k, v) => m.insert k v
+  let ctx : CoreToGOTO.CProverGOTO.Context :=
+    { program := pgm, formals := formals_tys, ret := ret_ty,
+      locals := outputs ++ locals, contracts := contracts,
+      localTypes := localTypes }
+  return (ctx, liftedFuncs)
+
+private def functionToGotoCtx (_Env : Core.Expression.TyEnv) (f : Core.Function)
+    : Except Std.Format CoreToGOTO.CProverGOTO.Context := do
+  let fname := Core.CoreIdent.toPretty f.name
+  if !f.typeArgs.isEmpty then
+    .error f!"[functionToGotoCtx] Polymorphic functions unsupported."
+  let some body := f.body
+    | .error f!"[functionToGotoCtx] Function {fname} has no body."
+  let ret_ty ← Lambda.LMonoTy.toGotoType f.output
+  let formals := f.inputs.keys.map Core.CoreIdent.toPretty
+  let formals_tys ← f.inputs.values.mapM Lambda.LMonoTy.toGotoType
+  let new_formals := formals.map (CProverGOTO.mkFormalSymbol fname ·)
+  let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
+  let rn : Std.HashMap String String :=
+    (formals.zip new_formals).foldl (init := {}) fun m (k, v) => m.insert k v
+  let bodyExpr := renameExpr rn body
+  let gotoBody ← Lambda.LExpr.toGotoExpr bodyExpr
+  let retInst : CProverGOTO.Instruction :=
+    { type := .SET_RETURN_VALUE, code := .set_return_value gotoBody, locationNum := 0 }
+  let endInst : CProverGOTO.Instruction :=
+    { type := .END_FUNCTION, locationNum := 1 }
+  let pgm := { name := fname,
+               parameterIdentifiers := new_formals.toArray,
+               instructions := #[retInst, endInst] }
+  return { program := pgm, formals := formals_tys, ret := ret_ty, locals := [] }
+
+/-- Emit a procedure context and its lifted functions as combined symtab/goto JSON. -/
+private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
+    (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
+    (extraSyms : Lean.Json)
+    : IO (Lean.Json × Lean.Json) := do
+  let json := CoreToGOTO.CProverGOTO.Context.toJson procName ctx
+  let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
+  let mut gotoFns := match json.goto with
+    | .obj m => match m.toList.find? (·.1 == "functions") with
+      | some (_, .arr fns) => fns | _ => #[]
+    | _ => #[]
+  for f in liftedFuncs do
+    let funcName := Core.CoreIdent.toPretty f.name
+    match functionToGotoCtx Env f with
+    | .error e => panic! s!"{e}"
+    | .ok fctx =>
+      let fjson := CoreToGOTO.CProverGOTO.Context.toJson funcName fctx
+      match fjson.symtab with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
+      match fjson.goto with
+      | .obj m => match m.toList.find? (·.1 == "functions") with
+        | some (_, .arr fns) => gotoFns := gotoFns ++ fns | _ => pure ()
+      | _ => pure ()
+  match extraSyms with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
+  return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
+
+private def datatypeToSymbolEntry (dt : Lambda.LDatatype Core.Visibility) :
+    Except Std.Format (String × CProverGOTO.CBMCSymbol) := do
+  let mut components : Array (String × Lean.Json) :=
+    #[("$tag", CProverGOTO.tyToJson .Integer)]
+  for constr in dt.constrs do
+    for (fieldId, fieldTy) in constr.args do
+      let gty ← Lambda.LMonoTy.toGotoType fieldTy
+      let tyJson := CProverGOTO.tyToJson gty
+      -- Recursive fields (type refers back to this datatype) must be pointers
+      let tyJson := match fieldTy with
+        | .tcons name _ =>
+          if name == dt.name then
+            Lean.Json.mkObj [
+              ("id", "pointer"),
+              ("sub", Lean.Json.arr #[tyJson]),
+              ("namedSub", Lean.Json.mkObj [("width", Lean.Json.mkObj [("id", "64")])])
+            ]
+          else tyJson
+        | _ => tyJson
+      components := components.push (fieldId.name, tyJson)
+  let componentsSub := components.map fun (name, tyJson) =>
+    Lean.Json.mkObj [
+      ("id", ""),
+      ("namedSub", Lean.Json.mkObj [
+        ("#pretty_name", Lean.Json.mkObj [("id", name)]),
+        ("name", Lean.Json.mkObj [("id", name)]),
+        ("type", tyJson)
+      ])
+    ]
+  let structTy := Lean.Json.mkObj [
+    ("id", "struct"),
+    ("namedSub", Lean.Json.mkObj [
+      ("tag", Lean.Json.mkObj [("id", dt.name)]),
+      ("components", Lean.Json.mkObj [
+        ("id", ""),
+        ("sub", Lean.Json.arr componentsSub)
+      ])
+    ])
+  ]
+  return (s!"tag-{dt.name}", {
+    baseName := dt.name
+    isType := true
+    mode := "C"
+    module := ""
+    name := s!"tag-{dt.name}"
+    prettyName := s!"struct {dt.name}"
+    type := structTy
+    value := Lean.Json.mkObj [("id", "nil")]
+  })
+
+private def typeConstructorToSymbolEntry (tc : Core.TypeConstructor) :
+    String × CProverGOTO.CBMCSymbol :=
+  let structTy := Lean.Json.mkObj [
+    ("id", "struct"),
+    ("namedSub", Lean.Json.mkObj [
+      ("tag", Lean.Json.mkObj [("id", tc.name)]),
+      ("components", Lean.Json.mkObj [
+        ("id", ""),
+        ("sub", Lean.Json.arr #[])
+      ])
+    ])
+  ]
+  (s!"tag-{tc.name}", {
+    baseName := tc.name
+    isType := true
+    mode := "C"
+    module := ""
+    name := s!"tag-{tc.name}"
+    prettyName := s!"struct {tc.name}"
+    type := structTy
+    value := Lean.Json.mkObj [("id", "nil")]
+  })
+
+private def collectDatatypeSymbols (pgm : Core.Program) :
+    Except Std.Format (Map String CProverGOTO.CBMCSymbol) := do
+  let mut syms : List (String × CProverGOTO.CBMCSymbol) := []
+  for decl in pgm.decls do
+    match decl with
+    | .type (.data dts) _ =>
+      for dt in dts do
+        if dt.typeArgs.isEmpty then
+          let entry ← datatypeToSymbolEntry dt
+          syms := syms ++ [entry]
+    | .type (.con tc) _ =>
+      if tc.numargs == 0 then
+        syms := syms ++ [typeConstructorToSymbolEntry tc]
+    | _ => pure ()
+  return syms
+
+/-- Collect global variable declarations and emit GOTO symbol table entries. -/
+private def collectGlobalSymbols (pgm : Core.Program) :
+    Except Std.Format (Map String CProverGOTO.CBMCSymbol) := do
+  let mut syms : List (String × CProverGOTO.CBMCSymbol) := []
+  for decl in pgm.decls do
+    match decl with
+    | .var name ty e _md =>
+      let gname := Core.CoreIdent.toPretty name
+      let gty ← Lambda.LMonoTy.toGotoType ty.toMonoTypeUnsafe
+      let tyJson := CProverGOTO.tyToJson gty
+      let valueJson ← match e with
+        | some expr =>
+          let gotoExpr ← Lambda.LExpr.toGotoExprCtx
+            (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [] expr
+          pure (CProverGOTO.exprToJson gotoExpr)
+        | none => pure (Lean.Json.mkObj [("id", "nil")])
+      syms := syms ++ [(gname, {
+        baseName := gname
+        isLvalue := true
+        isStaticLifetime := true
+        mode := "C"
+        module := ""
+        name := gname
+        prettyName := gname
+        type := tyJson
+        value := valueJson
+      })]
+    | _ => pure ()
+  return syms
+
+/-- Collect all extra symbol table entries (datatypes, type constructors, globals). -/
+def collectExtraSymbols (pgm : Core.Program) :
+    Except Std.Format (Map String CProverGOTO.CBMCSymbol) := do
+  let typeSyms ← collectDatatypeSymbols pgm
+  let globalSyms ← collectGlobalSymbols pgm
+  return typeSyms ++ globalSyms
+
+def pyAnalyzeToGotoCommand : Command where
+  name := "pyAnalyzeToGoto"
+  args := [ "file" ]
+  help := "Translate a Strata Python Ion file to CProver GOTO JSON files."
+  callback := fun v _ => do
+    let filePath := v[0]
+    let pgm ← readPythonStrata filePath
+    let pySourceOpt ← tryReadPythonSource filePath
+    let preludePgm := Strata.Python.Core.prelude
+    let sourcePathForMetadata := match pySourceOpt with
+      | some (pyPath, _) => pyPath
+      | none => filePath
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm sourcePathForMetadata
+    let fileMap := pySourceOpt.map (·.2)
+    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    match Core.Transform.runProgram (targetProcList := .none)
+          (Core.ProcedureInlining.inlineCallCmd
+            (doInline := λ name _ => name ≠ "main"))
+          newPgm .emp with
+    | ⟨.error e, _⟩ => panic! e
+    | ⟨.ok (_changed, newPgm), _⟩ =>
+      -- Type-check the full program (registers Python types like ExceptOrNone)
+      let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+      let Env := Lambda.TEnv.default
+      let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env newPgm with
+        | .ok r => pure r
+        | .error e => panic! s!"{e.format none}"
+      -- Find the main procedure
+      let some mainDecl := tcPgm.decls.find? fun d =>
+          match d with
+          | .proc p _ => Core.CoreIdent.toPretty p.header.name == "main"
+          | _ => false
+        | panic! "No main procedure found"
+      let some p := mainDecl.getProc?
+        | panic! "main is not a procedure"
+      -- Translate procedure to GOTO (mirrors CoreToGOTO.transformToGoto post-typecheck logic)
+      let baseName := deriveBaseName filePath
+      let procName := Core.CoreIdent.toPretty p.header.name
+      let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+      let distincts := tcPgm.decls.filterMap fun d => match d with
+        | .distinct name es _ => some (name, es) | _ => none
+      match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts)
+            (varTypes := tcPgm.getVarTy?) with
+      | .error e => panic! s!"{e}"
+      | .ok (ctx, liftedFuncs) =>
+        let extraSyms ← match collectExtraSymbols tcPgm with
+          | .ok s => pure (Lean.toJson s)
+          | .error e => panic! s!"{e}"
+        let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
+        let symTabFile := s!"{baseName}.symtab.json"
+        let gotoFile := s!"{baseName}.goto.json"
+        IO.FS.writeFile symTabFile symtab.pretty
+        IO.FS.writeFile gotoFile goto.pretty
+        IO.println s!"Written {symTabFile} and {gotoFile}"
+
+def pyTranslateLaurelCommand : Command where
+  name := "pyTranslateLaurel"
+  args := [ "file" ]
+  help := "Translate a Strata Python Ion file through Laurel to Strata Core. Write results to stdout."
+  callback := fun v _ => do
+    let pgm ← readPythonStrata v[0]
+    let cmds := Strata.toPyCommands pgm.commands
+    assert! cmds.size == 1
+    let prelude := Strata.Python.Core.prelude
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
+    match laurelPgm with
+    | .error e =>
+      exitFailure s!"Python to Laurel translation failed: {e}"
+    | .ok laurelProgram =>
+      match Strata.Laurel.translate laurelProgram with
+      | .error diagnostics =>
+        exitFailure s!"Laurel to Core translation failed: {diagnostics}"
+      | .ok coreProgram =>
+        let coreProgram : Core.Program := {decls := prelude.decls ++ coreProgram.fst.decls }
+        IO.print coreProgram
+
+def pyAnalyzeLaurelToGotoCommand : Command where
+  name := "pyAnalyzeLaurelToGoto"
+  args := [ "file" ]
+  help := "Translate a Strata Python Ion file through Laurel to CProver GOTO JSON files."
+  callback := fun v _ => do
+    let filePath := v[0]
+    let pgm ← readPythonStrata filePath
+    let pySourceOpt ← tryReadPythonSource filePath
+    let cmds := Strata.toPyCommands pgm.commands
+    assert! cmds.size == 1
+    let prelude := Strata.Python.Core.prelude
+    let sourcePathForMetadata := match pySourceOpt with
+      | some (pyPath, _) => pyPath
+      | none => filePath
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
+    match laurelPgm with
+    | .error e => exitFailure s!"Python to Laurel translation failed: {e}"
+    | .ok laurelProgram =>
+      match Strata.Laurel.translate laurelProgram with
+      | .error diagnostics =>
+        exitFailure s!"Laurel to Core translation failed: {diagnostics}"
+      | .ok coreProgram =>
+        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
+        -- Inline procedure calls (except main) repeatedly until fixpoint
+        let mut coreProgram := coreProgram
+        for _ in List.range 10 do
+          match Core.Transform.runProgram (targetProcList := .none)
+                (Core.ProcedureInlining.inlineCallCmd
+                  (doInline := λ name _ => name ≠ "main"))
+                coreProgram .emp with
+          | ⟨.ok (changed, pgm), _⟩ =>
+            coreProgram := pgm
+            if !changed then break
+          | ⟨.error e, _⟩ => panic! e
+        let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+        let Env := Lambda.TEnv.default
+        let fileMap := pySourceOpt.map (·.2)
+        let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
+          | .ok r => pure r
+          | .error e => panic! s!"{e.format none}"
+        -- Find the main procedure; fall back to __main__ for top-level scripts
+        let findProc (name : String) := tcPgm.decls.find? fun d =>
+            match d with
+            | .proc p _ => Core.CoreIdent.toPretty p.header.name == name
+            | _ => false
+        let mainDecl ← match findProc "main" with
+          | some d => pure d
+          | none => match findProc "__main__" with
+            | some d => pure d
+            | none => panic! "No main or __main__ procedure found"
+        let some p := mainDecl.getProc?
+          | panic! "entry point is not a procedure"
+        let baseName := deriveBaseName filePath
+        -- Always use "main" as the GOTO function name (CBMC expects --function main)
+        let procName := "main"
+        let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+        let distincts := tcPgm.decls.filterMap fun d => match d with
+          | .distinct name es _ => some (name, es) | _ => none
+        match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts)
+              (varTypes := tcPgm.getVarTy?) with
+        | .error e => panic! s!"{e}"
+        | .ok (ctx, liftedFuncs) =>
+          let extraSyms ← match collectExtraSymbols tcPgm with
+            | .ok s => pure (Lean.toJson s)
+            | .error e => panic! s!"{e}"
+          let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
+          let symTabFile := s!"{baseName}.symtab.json"
+          let gotoFile := s!"{baseName}.goto.json"
+          IO.FS.writeFile symTabFile symtab.pretty
+          IO.FS.writeFile gotoFile goto.pretty
+          IO.println s!"Written {symTabFile} and {gotoFile}"
+
 def javaGenCommand : Command where
   name := "javaGen"
   args := [ "dialect-file", "package", "output-dir" ]
@@ -522,8 +1164,8 @@ def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile
   | .ok files => pure files
   | .error msg => exitFailure msg
 
-def laurelAnalyzeCommand : Command where
-  name := "laurelAnalyze"
+def laurelAnalyzeBinaryCommand : Command where
+  name := "laurelAnalyzeBinary"
   args := []
   help := "Verify Laurel Ion programs read from stdin and print diagnostics. Combines multiple input files."
   callback := fun _ _ => do
@@ -586,6 +1228,200 @@ def pySpecToLaurelCommand : Command where
     for proc in pgm.staticProcedures do
       IO.println s!"  {Strata.Laurel.formatProcedure proc}"
 
+def laurelParseCommand : Command where
+  name := "laurelParse"
+  args := [ "file" ]
+  help := "Parse a Laurel source file (no verification)."
+  callback := fun v _ => do
+    let path : System.FilePath := v[0]
+    let content ← IO.FS.readFile path
+    let input := Strata.Parser.stringInputContext path content
+    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+
+    let uri := Strata.Uri.file path.toString
+    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
+    match transResult with
+    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
+    | .ok _ => IO.println "Parse successful"
+
+def laurelAnalyzeCommand : Command where
+  name := "laurelAnalyze"
+  args := [ "file" ]
+  help := "Analyze a Laurel source file. Write diagnostics to stdout."
+  callback := fun v _ => do
+    let path : System.FilePath := v[0]
+    let content ← IO.FS.readFile path
+    let input := Strata.Parser.stringInputContext path content
+    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+
+    let uri := Strata.Uri.file path.toString
+    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
+    match transResult with
+    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
+    | .ok laurelProgram =>
+      let results ← Strata.Laurel.verifyToVcResults laurelProgram { Options.default with solver := "z3" }
+      match results with
+      | .error errors =>
+        IO.println s!"==== ERRORS ===="
+        for err in errors do
+          IO.println s!"{err.message}"
+      | .ok vcResults =>
+        IO.println s!"==== RESULTS ===="
+        for vc in vcResults do
+          IO.println s!"{vc.obligation.label}: {repr vc.result}"
+
+def laurelAnalyzeToGotoCommand : Command where
+  name := "laurelAnalyzeToGoto"
+  args := [ "file" ]
+  help := "Translate a Laurel source file to CProver GOTO JSON files."
+  callback := fun v _ => do
+    let path : System.FilePath := v[0]
+    let content ← IO.FS.readFile path
+    let input := Strata.Parser.stringInputContext path content
+    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+
+    let uri := Strata.Uri.file path.toString
+    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
+    match transResult with
+    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
+    | .ok laurelProgram =>
+      match Strata.Laurel.translate laurelProgram with
+      | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
+      | .ok coreProgram =>
+        let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+        let Env := Lambda.TEnv.default
+        let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram.fst with
+          | .ok r => pure r
+          | .error e => panic! s!"{e.format none}"
+        let procs := tcPgm.decls.filterMap fun d => d.getProc?
+        let funcs := tcPgm.decls.filterMap fun d =>
+          match d.getFunc? with
+          | some f =>
+            let name := Core.CoreIdent.toPretty f.name
+            if f.body.isSome && f.typeArgs.isEmpty
+              && name != "Int.DivT" && name != "Int.ModT"
+            then some f else none
+          | none => none
+        if procs.isEmpty && funcs.isEmpty then panic! "No procedures or functions found"
+        let baseName := deriveBaseName path.toString
+        let typeSyms ← match collectExtraSymbols tcPgm with
+          | .ok s => pure s
+          | .error e => panic! s!"{e}"
+        let typeSymsJson := Lean.toJson typeSyms
+        let fileMap := Lean.FileMap.ofString content
+        let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+        let distincts := tcPgm.decls.filterMap fun d => match d with
+          | .distinct name es _ => some (name, es) | _ => none
+        let mut symtabPairs : List (String × Lean.Json) := []
+        let mut gotoFns : Array Lean.Json := #[]
+        let mut allLiftedFuncs : List Core.Function := []
+        for p in procs do
+          let procName := Core.CoreIdent.toPretty p.header.name
+          match procedureToGotoCtx Env p (fileMap := fileMap) (axioms := axioms) (distincts := distincts)
+                (varTypes := tcPgm.getVarTy?) with
+          | .error e => panic! s!"{e}"
+          | .ok (ctx, liftedFuncs) =>
+            allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
+            let json := CoreToGOTO.CProverGOTO.Context.toJson procName ctx
+            match json.symtab with
+            | .obj m => symtabPairs := symtabPairs ++ m.toList
+            | _ => pure ()
+            match json.goto with
+            | .obj m =>
+              match m.toList.find? (·.1 == "functions") with
+              | some (_, .arr fns) => gotoFns := gotoFns ++ fns
+              | _ => pure ()
+            | _ => pure ()
+        for f in funcs ++ allLiftedFuncs do
+          let funcName := Core.CoreIdent.toPretty f.name
+          match functionToGotoCtx Env f with
+          | .error e => panic! s!"{e}"
+          | .ok ctx =>
+            let json := CoreToGOTO.CProverGOTO.Context.toJson funcName ctx
+            match json.symtab with
+            | .obj m => symtabPairs := symtabPairs ++ m.toList
+            | _ => pure ()
+            match json.goto with
+            | .obj m =>
+              match m.toList.find? (·.1 == "functions") with
+              | some (_, .arr fns) => gotoFns := gotoFns ++ fns
+              | _ => pure ()
+            | _ => pure ()
+        match typeSymsJson with
+        | .obj m => symtabPairs := symtabPairs ++ m.toList
+        | _ => pure ()
+        -- Deduplicate: keep first occurrence of each symbol name (proper function
+        -- symbols come before basic symbol references from callers)
+        let mut seen : Std.HashSet String := {}
+        let mut dedupPairs : List (String × Lean.Json) := []
+        for (k, v) in symtabPairs do
+          if !seen.contains k then
+            seen := seen.insert k
+            dedupPairs := dedupPairs ++ [(k, v)]
+        let symtab := Lean.Json.mkObj dedupPairs
+        let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
+        let symTabFile := s!"{baseName}.symtab.json"
+        let gotoFile := s!"{baseName}.goto.json"
+        IO.FS.writeFile symTabFile symtab.pretty
+        IO.FS.writeFile gotoFile goto.pretty
+        IO.println s!"Written {symTabFile} and {gotoFile}"
+
+def laurelPrintCommand : Command where
+  name := "laurelPrint"
+  args := []
+  help := "Read Laurel Ion from stdin and print in concrete syntax to stdout."
+  callback := fun _ _ => do
+    let stdinBytes ← (← IO.getStdin).readBinToEnd
+    let strataFiles ← deserializeIonToLaurelFiles stdinBytes
+    for strataFile in strataFiles do
+      IO.println s!"// File: {strataFile.filePath}"
+      let p := strataFile.program
+      let c := p.formatContext {}
+      let s := p.formatState
+      let fmt := p.commands.foldl (init := f!"") fun f cmd =>
+        f ++ (Strata.mformat cmd c s).format
+      IO.println (fmt.pretty 100)
+      IO.println ""
+
+def prettyPrintCore (p : Core.Program) : String :=
+  let decls := p.decls.map fun d =>
+    let s := toString (Std.format d)
+    -- Add newlines after major sections in procedures
+    s.replace "preconditions:" "\n  preconditions:"
+     |>.replace "postconditions:" "\n  postconditions:"
+     |>.replace "body:" "\n  body:\n    "
+     |>.replace "assert [" "\n    assert ["
+     |>.replace "init (" "\n    init ("
+     |>.replace "while (" "\n    while ("
+     |>.replace "if (" "\n      if ("
+     |>.replace "call [" "\n    call ["
+     |>.replace "else{" "\n      else {"
+     |>.replace "}}" "}\n    }"
+  String.intercalate "\n" decls
+
+def laurelToCoreCommand : Command where
+  name := "laurelToCore"
+  args := [ "file" ]
+  help := "Translate a Laurel source file to Core and print to stdout."
+  callback := fun v _ => do
+    let path : System.FilePath := v[0]
+    let content ← IO.FS.readFile path
+    let input := Strata.Parser.stringInputContext path content
+    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+
+    let uri := Strata.Uri.file path.toString
+    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
+    match transResult with
+    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
+    | .ok laurelProgram =>
+      match Strata.Laurel.translate laurelProgram with
+      | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
+      | .ok coreProgram => IO.println (prettyPrintCore coreProgram.fst)
+
 /-- Print a string word-wrapped to `width` columns with `indent` spaces of indentation. -/
 private def printIndented (indent : Nat) (s : String) (width : Nat := 80) : IO Unit := do
   let pad := "".pushn ' ' indent
@@ -616,10 +1452,14 @@ def commandGroups : List CommandGroup := [
   { name := "Code Generation"
     commands := [javaGenCommand] },
   { name := "Python"
-    commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand, pyTranslateCommand,
-                 pySpecsCommand, pySpecToLaurelCommand] },
+    commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand,
+                 pySpecsCommand, pySpecToLaurelCommand,
+                 pyAnalyzeLaurelToGotoCommand, pyAnalyzeToGotoCommand,
+                 pyTranslateCommand, pyTranslateLaurelCommand] },
   { name := "Laurel"
-    commands := [laurelAnalyzeCommand] },
+    commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
+                 laurelAnalyzeToGotoCommand, laurelParseCommand,
+                 laurelPrintCommand, laurelToCoreCommand] },
 ]
 
 def commandList : List Command :=

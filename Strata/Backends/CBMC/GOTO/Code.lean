@@ -223,6 +223,12 @@ FIXME: Is this analogous to `SET_RETURN_VALUE`? -/
 def set_return_value (symbol : Expr) : Code :=
   { id := .function .return, operands := [symbol] }
 
+/-- Function call: `lhs := callee(args...)`.
+    Operands: [lhs, callee_symbol, arguments_node]. -/
+def functionCall (lhs callee : Expr) (args : List Expr) : Code :=
+  let argsNode : Expr := { id := .nullary (.symbol "arguments"), operands := args, type := .Empty }
+  { id := .function .functionCall, operands := [lhs, callee, argsNode] }
+
 end Code
 
 -------------------------------------------------------------------------------

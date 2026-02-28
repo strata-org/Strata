@@ -46,13 +46,25 @@ inductive Unary where
   | UnaryPlus
   /-- `not_exprt` -/
   | Not
+  /-- `bitnot_exprt` -/
+  | Bitnot
+  /-- `history_exprt` with `ID_old` -/
+  | Old
+  /-- `array_of_exprt` (constant map/array) -/
+  | ArrayOf
+  /-- `typecast_exprt` -/
+  | Typecast
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Unary where
   format u := match u with
-    | .UnaryMinus => "-"
-    | .UnaryPlus => "+"
+    | .UnaryMinus => "unary-"
+    | .UnaryPlus => "unary+"
     | .Not => "not"
+    | .Bitnot => "bitnot"
+    | .Old => "old"
+    | .ArrayOf => "array_of"
+    | .Typecast => "typecast"
 
 /--
 Representation of identifiers specific to binary expressions,
@@ -63,6 +75,8 @@ inductive Binary where
   | Div
   /-- `mod_exprt` -/
   | Mod
+  /-- `minus_exprt` -/
+  | Minus
   /-- `shl_exprt` -/
   | Shl
   /-- `ashr_exprt` -/
@@ -71,32 +85,63 @@ inductive Binary where
   | Lshr
   /-- `plus_overflow_exprt` -/
   | PlusOverflow
+  /-- `implies_exprt` -/
+  | Implies
+  /-- `index_exprt` (map/array select) -/
+  | Index
+  /-- `forall_exprt` -/
+  | Forall
+  /-- `exists_exprt` -/
+  | Exists
   | Gt | Lt | Ge | Le | Equal | NotEqual
+  /-- `bitand_exprt` -/
+  | Bitand
+  /-- `bitor_exprt` -/
+  | Bitor
+  /-- `bitxor_exprt` -/
+  | Bitxor
+  /-- `concatenation_exprt` (bitvector concatenation) -/
+  | Concatenation
+  /-- `extractbits_exprt` (bitvector extraction) -/
+  | Extractbits
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Binary where
   format b := match b with
-    | .Div => "div"
+    | .Div => "/"
     | .Mod => "mod"
+    | .Minus => "-"
     | .Shl => "shl"
     | .Ashr => "ashr"
     | .Lshr => "lshr"
     | .PlusOverflow => "overflow-+"
+    | .Implies => "=>"
+    | .Index => "index"
+    | .Forall => "forall"
+    | .Exists => "exists"
     | .Gt => ">"
     | .Lt => "<"
     | .Ge => ">="
     | .Le => "<="
     | .Equal => "="
     | .NotEqual => "!="
+    | .Bitand => "bitand"
+    | .Bitor => "bitor"
+    | .Bitxor => "bitxor"
+    | .Concatenation => "concatenation"
+    | .Extractbits => "extractbits"
 
 inductive Ternary where
   /-- `if_exprt` -/
   | ite
+  /-- `with_exprt` (map/array update) -/
+  | «with»
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Ternary where
   format t := match t with
     | .ite => "if"
+    | .«with» => "with"
 
 inductive Multiary where
   /-- `and_exprt` -/
@@ -137,6 +182,8 @@ inductive Identifier where
   | ternary (t : Identifier.Ternary)
   | multiary (m : Identifier.Multiary)
   | side_effect (s : Identifier.SideEffect)
+  /-- `function_application_exprt` - uninterpreted function application -/
+  | functionApplication (name : String)
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Identifier where
@@ -147,6 +194,7 @@ instance : ToFormat Identifier where
     | .ternary t => f!"{t}"
     | .multiary m => f!"{m}"
     | .side_effect s => f!"{s}"
+    | .functionApplication name => f!"function_application({name})"
 
 end Expr
 -------------------------------------------------------------------------------
@@ -250,6 +298,16 @@ def not (operand : Expr) : Expr :=
 /-- Overflow-+ -/
 def plus_overflow (left right : Expr) : Expr :=
   { id := .binary .PlusOverflow, type := Ty.Boolean, operands := [left, right] }
+
+/-- Typecast expression -/
+def typecast (operand : Expr) (targetType : Ty) : Expr :=
+  { id := .unary .Typecast, type := targetType, operands := [operand] }
+
+/-- Cast a bitvector expression to its signed interpretation. -/
+def toSigned (e : Expr) : Expr :=
+  match e.type.id with
+  | .bitVector (.unsignedbv w) => typecast e (Ty.SignedBV w)
+  | _ => e
 
 /-- Division -/
 def div (left right : Expr) : Expr :=

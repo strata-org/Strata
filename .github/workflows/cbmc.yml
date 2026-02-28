@@ -24,8 +24,8 @@ jobs:
                 echo "Unsupported architecture: $ARCH"
                 exit 1
               fi
-              wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-              unzip cvc5-Linux-${ARCH_NAME}-static.zip
+              wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+              unzip -q cvc5-Linux-${ARCH_NAME}-static.zip
               chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
               echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
       - name: Install z3
@@ -33,32 +33,34 @@ jobs:
         run: |
               ARCH=$(uname -m)
               if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
+                wget -q https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
                 ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
               elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
-                ARCHIVE_NAME="z3-4.15.2-arm64-win"
+                wget -q https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
+                ARCHIVE_NAME="z3-4.15.2-arm64-glibc-2.34"
               else
                 echo "Unsupported architecture: $ARCH"
                 exit 1
               fi
-              unzip "${ARCHIVE_NAME}.zip"
+              unzip -q "${ARCHIVE_NAME}.zip"
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
-      - name: Install CBMC
+      - name: Build CBMC from source (with string support patch)
         shell: bash
         run: |
-          wget https://github.com/diffblue/cbmc/releases/download/cbmc-6.4.1/ubuntu-22.04-cbmc-6.4.1-Linux.deb
-          sudo dpkg -i ubuntu-22.04-cbmc-6.4.1-Linux.deb
-      - name: Restore lake cache
-        uses: actions/cache/restore@v4
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y cmake ninja-build flex bison
+          git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
+          cd cbmc-src
+          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Python/cbmc-string-support.patch"
+          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/cbmc-bounds-check.patch"
+          git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
+          git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_JBMC=OFF
+          ninja -C build cbmc symtab2gb goto-instrument
+          echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
       - name: Build Strata
         uses: leanprover/lean-action@v1
         with:
@@ -71,8 +73,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - name: Run CBMC tests
+      - name: Run legacy CBMC test (C_Simp)
         shell: bash
         run: |
-          export CBMC_DIR="/usr/bin/"
+          export CBMC_DIR="$(dirname $(which cbmc))/"
           ./Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.csimp.st
+      - name: Run Python CBMC pipeline tests
+        shell: bash
+        run: |
+          pip install ./Tools/Python
+          ./StrataTest/Languages/Python/run_py_cbmc_tests.sh
+      - name: Run Laurel CBMC pipeline tests
+        shell: bash
+        run: |
+          ./StrataTest/Languages/Laurel/run_laurel_cbmc_tests.sh
