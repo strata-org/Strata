@@ -570,10 +570,62 @@ Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   dbg_trace "=== Before first resolve ==="
+
+  let selectProc: Procedure := {
+    name := { name := "select" },
+    inputs := [
+      ⟨mkId "map", default⟩,
+      ⟨mkId "key", default⟩
+    ],
+    outputs := [
+      ⟨mkId "result", default⟩
+    ],
+    preconditions := [],
+    determinism := .nondeterministic,
+    decreases := none,
+    isFunctional := true,
+    body := .Abstract [],
+    md := .empty
+  }
+  let updateProc: Procedure := {
+    name := { name := "update" },
+    inputs := [
+      ⟨mkId "map", default⟩,
+      ⟨mkId "key", default⟩,
+      ⟨mkId "value", default⟩
+    ],
+    outputs := [
+      ⟨mkId "result", default⟩
+    ],
+    preconditions := [],
+    determinism := .nondeterministic,
+    decreases := none,
+    isFunctional := true,
+    body := .Abstract [],
+    md := .empty
+  }
+  let constProc: Procedure := {
+    name := { name := "const" },
+    inputs := [
+      ⟨mkId "value", default⟩
+    ],
+    outputs := [
+      ⟨mkId "result", default⟩
+    ],
+    preconditions := [],
+    determinism := .nondeterministic,
+    decreases := none,
+    isFunctional := true,
+    body := .Abstract [],
+    md := .empty
+  }
+  let program := { program with
+    staticProcedures := [selectProc, updateProc, constProc] ++ program.staticProcedures
+  }
+
   let result := resolve program
   let (program, model) := (result.program, result.model)
   let mut resolutionDiags := result.errors
-  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   dbg_trace "=== Before validateDiamondFieldAccesses ==="
   -- dbg_trace "model: {repr model}"
   let diamondErrors := validateDiamondFieldAccesses model program

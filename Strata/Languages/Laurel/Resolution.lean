@@ -103,7 +103,7 @@ structure SemanticModel where
 deriving instance Inhabited for Strata.Laurel.AstNode
 def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
   match id.id with
-  | some uuid => model.refToDef.get! uuid
+  | some key => (model.refToDef.get? key).getD (softPanic s!"could not find key {key}")
   | none => softPanic s!"model.get called on identifier {id.name} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
@@ -655,57 +655,6 @@ def buildRefToDef (program : Program) : Std.HashMap Nat AstNode :=
 def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   -- Phase 1: assign IDs and resolve references
   let phase1 : ResolveM Program := do
-    let selectProc: Procedure := {
-      name := { name := "select", id := ← freshId},
-      inputs := [
-        ⟨mkId "heap", default⟩,
-        ⟨mkId "field", default⟩
-      ],
-      outputs := [
-        ⟨mkId "result", default⟩
-      ],
-      preconditions := [],
-      determinism := .nondeterministic,
-      decreases := none,
-      isFunctional := true,
-      body := .Abstract [],
-      md := .empty
-    }
-    _ ← defineName selectProc.name (.staticProcedure selectProc)
-    let updateProc: Procedure := {
-      name := { name := "update", id := ← freshId},
-      inputs := [
-        ⟨mkId "heap", default⟩,
-        ⟨mkId "field", default⟩
-      ],
-      outputs := [
-        ⟨mkId "result", default⟩
-      ],
-      preconditions := [],
-      determinism := .nondeterministic,
-      decreases := none,
-      isFunctional := true,
-      body := .Abstract [],
-      md := .empty
-    }
-    _ ← defineName updateProc.name (.staticProcedure updateProc)
-    let constProc: Procedure := {
-      name := { name := "const", id := ← freshId},
-      inputs := [
-        ⟨mkId "heap", default⟩,
-        ⟨mkId "field", default⟩
-      ],
-      outputs := [
-        ⟨mkId "result", default⟩
-      ],
-      preconditions := [],
-      determinism := .nondeterministic,
-      decreases := none,
-      isFunctional := true,
-      body := .Abstract [],
-      md := .empty
-    }
-    _ ← defineName constProc.name (.staticProcedure constProc)
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
     let staticFields' ← program.staticFields.mapM (resolveField (mkId "$static"))
