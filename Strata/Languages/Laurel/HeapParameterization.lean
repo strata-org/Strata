@@ -229,7 +229,7 @@ where
     | .FieldSelect selectTarget fieldName =>
         let qualifiedName := mkId $ resolveQualifiedFieldName model fieldName
         let valTy := (model.get fieldName).getType.getD (softPanic "heapTransformExpr1")
-        let readExpr := ⟨ .StaticCall (mkId "readField") [mkMd (.Identifier heapVar), selectTarget, mkMd (.Identifier qualifiedName)], md ⟩
+        let readExpr := ⟨ .StaticCall (mkId "readField") [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
     | .StaticCall callee args =>
@@ -291,7 +291,7 @@ where
             -- Wrap value in Box constructor
             let boxedVal := mkMd <| .StaticCall (boxConstructorName valTy.val) [v']
             let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall (mkId "updateField") [mkMd (.Identifier heapVar), target', mkMd (.Identifier qualifiedName), boxedVal])), md ⟩
+              (mkMd (.StaticCall (mkId "updateField") [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), md ⟩
             if valueUsed then
               return ⟨ .Block [heapAssign, v'] none, md ⟩
             else
