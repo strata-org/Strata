@@ -114,7 +114,7 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
     | .staticProcedure proc => proc.isFunctional
     | .parameter _ => true
     | .datatypeConstructor _ _ => true
-    | _ => panic s!"{repr id} is not a procedure"
+    | node => softPanic s!"id: {repr id}, is not a procedure, node {repr node}"
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where
@@ -127,8 +127,11 @@ structure ResolutionResult where
 
 /-! ## Phase 1: ID assignment and reference resolution -/
 
-/-- Scope maps a name to its definition-site ID. -/
-abbrev Scope := Std.HashMap String Nat
+/-- A scope entry stores the definition-site ID and the AstNode for type lookups. -/
+abbrev ScopeEntry := Nat × AstNode
+
+/-- Scope maps a name to its definition-site ID and optional AstNode. -/
+abbrev Scope := Std.HashMap String ScopeEntry
 
 /-- State threaded through the resolution pass. -/
 structure ResolveState where
@@ -148,8 +151,8 @@ private def freshId : ResolveM Nat := do
   set { s with nextId := id + 1 }
   return id
 
-/-- Register a definition: assign a fresh ID to the identifier and record it in scope. -/
-def defineName (iden : Identifier) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+/-- Register a definition: assign a fresh ID to the identifier and record it in scope with its AstNode. -/
+def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.name
   let name' ← if iden.id == none then
     let id ← freshId
@@ -157,7 +160,7 @@ def defineName (iden : Identifier) (overrideResolutionName: Option String := non
   else
     pure iden
 
-  modify fun s => { s with scope := s.scope.insert resolutionName (name'.id.getD (panic "key was just inserted")) }
+  modify fun s => { s with scope := s.scope.insert resolutionName (name'.id.getD (panic "key was just inserted"), node) }
   return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
@@ -165,13 +168,43 @@ def defineName (iden : Identifier) (overrideResolutionName: Option String := non
 def resolveRef (name : Identifier) (md : Imperative.MetaData Core.Expression := .empty) : ResolveM Identifier := do
   let s ← get
   match s.scope.get? name.name with
-  | some defId =>
+  | some (defId, _) =>
     let name' := { name with id := some defId }
     return name'
   | none =>
     let diag := md.toDiagnostic s!"Resolution failed: '{name.name}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with id := none }
+
+/-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
+private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
+  let s ← get
+  match target.val with
+  | .Identifier ref =>
+    match s.scope.get? ref.name with
+    | some (_, node) =>
+      match node.getType with
+      | some ty =>
+        match ty.val with
+        | .UserDefined typRef => pure (some typRef.name)
+        | _ => pure none
+      | none => pure none
+    | none => pure none
+  | _ => pure none
+
+/-- Resolve a field reference using the target's type to build a qualified lookup key.
+    Falls back to unqualified lookup if the target type cannot be determined. -/
+def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
+    (md : Imperative.MetaData Core.Expression) : ResolveM Identifier := do
+  let typeName? ← targetTypeName target
+  match typeName? with
+  | some typeName =>
+    let qualifiedKey := typeName ++ "." ++ fieldName.name
+    let s ← get
+    match s.scope.get? qualifiedKey with
+    | some (defId, _) => return { fieldName with id := some defId }
+    | none => resolveRef fieldName md
+  | none => resolveRef fieldName md
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
@@ -226,7 +259,7 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
   | .LocalVariable name ty init =>
     let ty' ← resolveHighType ty
     let init' ← init.mapM resolveStmtExpr
-    let name' ← defineName name
+    let name' ← defineName name (.var name ty')
     pure (.LocalVariable name' ty' init')
   | .While cond invs dec body =>
     let cond' ← resolveStmtExpr cond
@@ -250,11 +283,11 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.Assign targets' value')
   | .FieldSelect target fieldName =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveRef fieldName expr.md
+    let fieldName' ← resolveFieldRef target' fieldName expr.md
     pure (.FieldSelect target' fieldName')
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveRef fieldName expr.md
+    let fieldName' ← resolveFieldRef target' fieldName expr.md
     let newVal' ← resolveStmtExpr newVal
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
@@ -288,13 +321,13 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
   | .Forall param body =>
     withScope do
       let paramTy' ← resolveHighType param.type
-      let paramName' ← defineName param.name
+      let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
       let body' ← resolveStmtExpr body
       pure (.Forall ⟨paramName', paramTy'⟩ body')
   | .Exists param body =>
     withScope do
       let paramTy' ← resolveHighType param.type
-      let paramName' ← defineName param.name
+      let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
       let body' ← resolveStmtExpr body
       pure (.Exists ⟨paramName', paramTy'⟩ body')
   | .Assigned name =>
@@ -329,7 +362,7 @@ end
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let ty' ← resolveHighType param.type
-  let name' ← defineName param.name
+  let name' ← defineName param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
 /-- Resolve a procedure body. -/
@@ -357,7 +390,7 @@ def resolveDeterminism (d : Determinism) : ResolveM Determinism := do
 
 /-- Resolve a procedure: define its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← defineName proc.name
+  let procName' ← defineName proc.name (.staticProcedure proc)
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
@@ -370,15 +403,16 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
              preconditions := pres', determinism := det', decreases := dec',
              body := body', md := proc.md }
 
-/-- Resolve a field: define its name and resolve its type. -/
-def resolveField (_ownerName : Identifier) (field : Field) : ResolveM Field := do
+/-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
+def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   let ty' ← resolveHighType field.type
-  let name' ← defineName field.name
+  let qualifiedName := ownerName.name ++ "." ++ field.name.name
+  let name' ← defineName field.name (.field ownerName { field with type := ty' }) (some qualifiedName)
   return { name := name', isMutable := field.isMutable, type := ty' }
 
 /-- Resolve an instance procedure on a composite type. -/
-def resolveInstanceProcedure (_typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← defineName proc.name
+def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
+  let procName' ← defineName proc.name (.instanceProcedure typeName proc)
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
@@ -395,26 +429,26 @@ def resolveInstanceProcedure (_typeName : Identifier) (proc : Procedure) : Resol
 def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
-    let ctName' ← defineName ct.name
+    let ctName' ← defineName ct.name (.compositeType ct)
     let extending' ← ct.extending.mapM (resolveRef · .empty)
     let fields' ← ct.fields.mapM (resolveField ctName')
     let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
     return .Composite { name := ctName', extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
-    let ctName' ← defineName ct.name
+    let ctName' ← defineName ct.name (.constrainedType ct)
     let base' ← resolveHighType ct.base
     let constraint' ← resolveStmtExpr ct.constraint
     let witness' ← resolveStmtExpr ct.witness
     return .Constrained { name := ctName', base := base', valueName := ct.valueName,
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
-    let dtName' ← defineName dt.name
+    let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
-      let ctorName' ← defineName ctor.name
+      let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
-        let destructorId ← defineName p.name (some $ dt.name.name ++ ".." ++ p.name.name)
+        let destructorId ← defineName p.name (.parameter p) (some $ dt.name.name ++ ".." ++ p.name.name)
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
@@ -423,7 +457,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
   let init' ← c.initializer.mapM resolveStmtExpr
-  let name' ← defineName c.name
+  let name' ← defineName c.name (.constant c)
   return { name := name', type := ty', initializer := init' }
 
 /-! ## Phase 2: Build refToDef map from the resolved program -/

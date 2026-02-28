@@ -204,8 +204,18 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Constrained ty => formatConstrainedType ty
   | .Datatype ty => formatDatatypeDefinition ty
 
+def formatConstant (c : Constant) : Format :=
+  "const " ++ Format.text c.name.name ++ ": " ++ formatHighType c.type ++
+  match c.initializer with
+  | none => ""
+  | some e => " := " ++ formatStmtExpr e
+
 def formatProgram (prog : Program) : Format :=
-  Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
+  let types := prog.types.map formatTypeDefinition
+  let constants := prog.constants.map formatConstant
+  let fields := prog.staticFields.map formatField
+  let procs := prog.staticProcedures.map formatProcedure
+  Format.joinSep (types ++ constants ++ fields ++ procs) "\n\n"
 
 instance : Std.ToFormat Operation where
   format := formatOperation
@@ -245,6 +255,9 @@ instance : Std.ToFormat DatatypeConstructor where
 
 instance : Std.ToFormat DatatypeDefinition where
   format := formatDatatypeDefinition
+
+instance : Std.ToFormat Constant where
+  format := formatConstant
 
 instance : Std.ToFormat TypeDefinition where
   format := formatTypeDefinition

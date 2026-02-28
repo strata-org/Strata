@@ -439,4 +439,4 @@ structure Program where
 
 @[noinline, never_extract]
 def softPanic { α : Type} [self: Inhabited α] (msg: String): α :=
-  dbg_trace msg; default
+  dbg_trace ("PANIC:" ++ msg); default
