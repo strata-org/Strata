@@ -309,9 +309,13 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
     .Datatype { name := mkId "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := mkId $ n ++ "_TypeTag", args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
+  let remainingTypes := program.types.filter fun td =>
+    match td with
+    | .Composite _ => false
+    | _ => true
   { program with
     staticProcedures := procs',
-    types := [typeTagDatatype] ++ program.types,
+    types := [typeTagDatatype] ++ remainingTypes,
     constants := program.constants ++ typeHierarchyConstants }
 
 end Laurel
