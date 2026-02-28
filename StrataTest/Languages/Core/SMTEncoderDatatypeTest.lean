@@ -460,35 +460,35 @@ info: (declare-datatype TestOption (par (α) (
 /-! ## Recursive Function Axiom Tests -/
 
 /-- IntList = Nil | Cons(hd: int, tl: IntList) -/
-def intListDatatype : LDatatype Visibility :=
+def intListDatatype : LDatatype Unit :=
   { name := "IntList", typeArgs := [],
     constrs := [
-      { name := ⟨"Nil", .unres⟩, args := [], testerName := "isNil" },
-      { name := ⟨"Cons", .unres⟩,
-        args := [(⟨"hd", .unres⟩, .int), (⟨"tl", .unres⟩, .tcons "IntList" [])],
+      { name := "Nil", args := [], testerName := "isNil" },
+      { name := "Cons",
+        args := [("hd", .int), ("tl", .tcons "IntList" [])],
         testerName := "isCons" }
     ], constrs_ne := rfl }
 
 private def intListTy := LMonoTy.tcons "IntList" []
 
 private def listLenBody : LExpr CoreLParams.mono :=
-  let xs := LExpr.fvar () (CoreIdent.unres "xs") (.some intListTy)
-  let isNil_xs := LExpr.app () (LExpr.op () (CoreIdent.unres "isNil") (.some (LMonoTy.arrow intListTy .bool))) xs
-  let tl_xs := LExpr.app () (LExpr.op () (CoreIdent.unres "IntList..tl") (.some (LMonoTy.arrow intListTy intListTy))) xs
-  let listLen_tl := LExpr.app () (LExpr.op () (CoreIdent.unres "listLen") (.some (LMonoTy.arrow intListTy .int))) tl_xs
-  let one_plus := LExpr.app () (LExpr.app () (LExpr.op () (CoreIdent.unres "Int.Add") (.some (LMonoTy.arrow .int (LMonoTy.arrow .int .int)))) (LExpr.intConst () 1)) listLen_tl
+  let xs := LExpr.fvar () ⟨"xs", ()⟩ (.some intListTy)
+  let isNil_xs := LExpr.app () (LExpr.op () ⟨"isNil", ()⟩ (.some (LMonoTy.arrow intListTy .bool))) xs
+  let tl_xs := LExpr.app () (LExpr.op () ⟨"IntList..tl", ()⟩ (.some (LMonoTy.arrow intListTy intListTy))) xs
+  let listLen_tl := LExpr.app () (LExpr.op () ⟨"listLen", ()⟩ (.some (LMonoTy.arrow intListTy .int))) tl_xs
+  let one_plus := LExpr.app () (LExpr.app () (LExpr.op () ⟨"Int.Add", ()⟩ (.some (LMonoTy.arrow .int (LMonoTy.arrow .int .int)))) (LExpr.intConst () 1)) listLen_tl
   LExpr.ite () isNil_xs (LExpr.intConst () 0) one_plus
 
 private def listLenFunc : Lambda.LFunc CoreLParams :=
-  { name := CoreIdent.unres "listLen",
+  { name := "listLen",
     isRecursive := true,
-    inputs := [(CoreIdent.unres "xs", intListTy)],
+    inputs := [("xs", intListTy)],
     output := .int,
     body := some listLenBody,
     attr := #[.inlineIfConstr 0] }
 
 /-- Encode an expression in an environment with the given datatypes and recursive function. -/
-def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Visibility)))
+def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Unit)))
     (func : Lambda.LFunc CoreLParams) : IO String := do
   match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
@@ -528,14 +528,14 @@ info: (declare-datatype IntList (
 (define-fun t0 () IntList (as Nil IntList))
 (define-fun t1 () Int (f0 t0))
 (define-fun t2 () Bool (= t1 0))
-(define-fun t3 () Bool (forall (($__bv0 Int) ($__bv1 IntList)) (! (= (f0 ((as Cons IntList) $__bv0 $__bv1)) (+ 1 (f0 $__bv1))) :pattern ((f0 ((as Cons IntList) $__bv0 $__bv1))))))
+(define-fun t3 () Bool (forall ((|$__bv0| Int) (|$__bv1| IntList)) (! (= (f0 ((as Cons IntList) |$__bv0| |$__bv1|)) (+ 1 (f0 |$__bv1|))) :pattern ((f0 ((as Cons IntList) |$__bv0| |$__bv1|))))))
 (assert t2)
 (assert t3)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithRecFunc
-  (.app () (.op () (CoreIdent.unres "listLen") (.some (LMonoTy.arrow intListTy .int)))
-    (.op () (CoreIdent.unres "Nil") (.some intListTy)))
+  (.app () (.op () "listLen" (.some (LMonoTy.arrow intListTy .int)))
+    (.op () "Nil" (.some intListTy)))
   [[intListDatatype]]
   listLenFunc
 

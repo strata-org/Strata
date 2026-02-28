@@ -1446,8 +1446,8 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
     | .RecursiveDefinition =>
       let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
       let selfBinding := LExpr.op () fname fnTy
-      let tyArgPlaceholders := typeArgs.map fun ta =>
-        LExpr.op () (Core.CoreIdent.unres ta) .none
+      let tyArgPlaceholders := typeArgs.map fun (ta: TyIdentifier) =>
+        LExpr.op () (ta : Core.CoreIdent) .none
       pure (bindings.boundVars ++ #[selfBinding] ++ tyArgPlaceholders ++ in_bindings)
     | _ => pure (bindings.boundVars ++ in_bindings)
   let bindings := { bindings with boundVars := bbindings }
