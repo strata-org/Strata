@@ -436,18 +436,25 @@ def pyAnalyzeLaurelCommand : Command where
 
           -- Strip the Laurel corePrelude prefix (always emitted by
           -- Laurel.translate); already present in pyPrelude.
+          -- We don't want to strip types defined by the user program
+          -- (e.g., Class declarations), so we add those back.
           let laurelPreludeSize := Strata.Laurel.corePrelude.decls.length
+          let droppedPrefix := coreProgramDecls.decls.take laurelPreludeSize
           let programDecls := coreProgramDecls.decls.drop laurelPreludeSize
+          let pyPreludeDecls := pyPrelude.decls.map fun d =>
+            match droppedPrefix.find? (fun pd => pd.name.name == d.name.name) with
+            | some replacement => replacement
+            | none => d
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
-            pyPrelude.decls.flatMap Core.Decl.names
+            pyPreludeDecls.flatMap Core.Decl.names
               |>.foldl (init := {}) fun s n => s.insert n.name
           let collisions := programDecls.flatMap fun d =>
             d.names.filter fun n => preludeNames.contains n.name
           if !collisions.isEmpty then
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := pyPrelude.decls ++ programDecls }
+          let coreProgram := {decls := pyPreludeDecls ++ programDecls }
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
