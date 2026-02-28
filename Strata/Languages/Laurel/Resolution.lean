@@ -133,12 +133,17 @@ abbrev ScopeEntry := Nat × AstNode
 /-- Scope maps a name to its definition-site ID and optional AstNode. -/
 abbrev Scope := Std.HashMap String ScopeEntry
 
+/-- Per-composite-type scope mapping field names to their scope entries. -/
+abbrev TypeScopes := Std.HashMap String Scope
+
 /-- State threaded through the resolution pass. -/
 structure ResolveState where
   /-- Next fresh ID to allocate. -/
   nextId : Nat := 1
   /-- Current lexical scope (name → definition ID). -/
   scope : Scope := {}
+  /-- Per-composite-type field scopes (type name → field name → scope entry). -/
+  typeScopes : TypeScopes := {}
   /-- Diagnostics collected during resolution. -/
   errors : Array DiagnosticModel := #[]
 
@@ -199,10 +204,12 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   let typeName? ← targetTypeName target
   match typeName? with
   | some typeName =>
-    let qualifiedKey := typeName ++ "." ++ fieldName.name
     let s ← get
-    match s.scope.get? qualifiedKey with
-    | some (defId, _) => return { fieldName with id := some defId }
+    match s.typeScopes.get? typeName with
+    | some typeScope =>
+      match typeScope.get? fieldName.name with
+      | some (defId, _) => return { fieldName with id := some defId }
+      | none => resolveRef fieldName md
     | none => resolveRef fieldName md
   | none => resolveRef fieldName md
 
@@ -433,6 +440,22 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let extending' ← ct.extending.mapM (resolveRef · .empty)
     let fields' ← ct.fields.mapM (resolveField ctName')
     let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
+    -- Build per-type scope: start with inherited fields from parents, then add own fields
+    let s ← get
+    let mut typeScope : Scope := {}
+    for parent in extending' do
+      match s.typeScopes.get? parent.name with
+      | some parentScope =>
+        for (k, v) in parentScope do
+          typeScope := typeScope.insert k v
+      | none => pure ()
+    -- Add own fields (these override inherited ones with the same name)
+    for field in fields' do
+      let qualifiedKey := ctName'.name ++ "." ++ field.name.name
+      match s.scope.get? qualifiedKey with
+      | some entry => typeScope := typeScope.insert field.name.name entry
+      | none => pure ()
+    modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.name typeScope }
     return .Composite { name := ctName', extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
