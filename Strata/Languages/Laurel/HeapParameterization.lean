@@ -7,7 +7,7 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.CorePrelude
+import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
 
 /-

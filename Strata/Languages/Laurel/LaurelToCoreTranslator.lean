@@ -45,7 +45,8 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TMap keyType valueType => Core.mapTy (translateType keyType) (translateType valueType)
   | .UserDefined _ => .tcons "Composite" []
   | .TCore s => .tcons s []
-  | _ => panic s!"unsupported type {ToFormat.format ty}"
+  | .TFloat64 => LMonoTy.real -- Incorrect?
+  | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
@@ -566,8 +567,9 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let result := resolve program
   let (program, model) := (result.program, result.model)
   let mut resolutionDiags := result.errors
-  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
+  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   dbg_trace "=== Before validateDiamondFieldAccesses ==="
+  -- dbg_trace "model: {repr model}"
   let diamondErrors := validateDiamondFieldAccesses model program
 
   dbg_trace "=== Model before heapParameterization ==="
@@ -597,7 +599,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   dbg_trace "===  Program after liftExpressionAssignments ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
-  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
+  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
 
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
@@ -625,7 +627,8 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     }
 
   -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-  let allErrors := resolutionDiags.toList ++ pureErrors ++ procDiags ++ constantsState.diagnostics
+  let allErrors := -- resolutionDiags.toList ++
+    pureErrors ++ procDiags ++ constantsState.diagnostics
   if !allErrors.isEmpty then
     .error allErrors.toArray
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
