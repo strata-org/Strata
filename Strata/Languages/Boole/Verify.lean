@@ -21,6 +21,7 @@ Boole verification pipeline:
 
 structure TranslateState where
   fileName : String := ""
+  gctx : GlobalContext := {}
   fvars : Array String := #[]
   fvarIsOp : Array Bool := #[]
   tyBVars : Array String := #[]
@@ -76,14 +77,23 @@ def getTypeBVarName (m : SourceRange) (i : Nat) : TranslateM String := do
     throwAt m s!"Unknown bound type variable with index {i}"
 
 def getFVarName (m : SourceRange) (i : Nat) : TranslateM String := do
-  match (← get).fvars[i]? with
+  let st ← get
+  match st.gctx.nameOf? i with
   | some n => return n
-  | none => throwAt m s!"Unknown free variable with index {i}"
+  | none =>
+    match st.fvars[i]? with
+    | some n => return n
+    | none => throwAt m s!"Unknown free variable with index {i}"
 
 def getFVarIsOp (m : SourceRange) (i : Nat) : TranslateM Bool := do
-  match (← get).fvarIsOp[i]? with
+  let st ← get
+  match st.fvarIsOp[i]? with
   | some b => return b
-  | none => throwAt m s!"Unknown free variable with index {i}"
+  | none =>
+    match st.gctx.vars[i]? with
+    | some (_, .expr _, _) => return true
+    | some (_, .type _ _, _) => return false
+    | none => throwAt m s!"Unknown free variable with index {i}"
 
 def getBVarExpr (m : SourceRange) (i : Nat) : TranslateM Core.Expression.Expr := do
   let xs := (← get).bvars
@@ -339,7 +349,38 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     return .exit l (← toCoreMetaData m)
   | .exit_unlabeled_statement m =>
     return .exit none (← toCoreMetaData m)
-  | .funcDecl_statement m _ _ _ _ _ _ _ => throwAt m "Local function declarations are not yet supported"
+  | .funcDecl_statement m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
+    let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+    withTypeBVars tys do
+      let bsList := bindingsToList bs
+      let inputsMono ← bsList.mapM toCoreBinding
+      let outputMono ← toCoreMonoType ret
+      let inputs : ListMap Core.Expression.Ident Core.Expression.Ty :=
+        inputsMono.map (fun (id, mty) => (id, .forAll [] mty))
+      let inputNames := bsList.map fun (.mkBinding _ ⟨_, x⟩ _) => x
+      let (preconds, bodyExpr) ← withBVars inputNames do
+        let mut precondsRev : List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) := []
+        for p in pres.toList do
+          match p with
+          | .requires_spec _ _ _ cond =>
+            precondsRev := { expr := ← toCoreExpr cond, md := () } :: precondsRev
+          | _ => pure ()
+        let bodyExpr ← toCoreExpr body
+        pure (precondsRev.reverse, bodyExpr)
+      let funcTy := Lambda.LMonoTy.mkArrow outputMono ((inputsMono.map (·.2)).reverse)
+      let decl : Imperative.PureFunc Core.Expression := {
+        name := mkIdent n
+        typeArgs := tys
+        inputs := inputs
+        output := .forAll [] outputMono
+        body := some bodyExpr
+        attr := if inline?.isSome then #[.inline] else #[]
+        axioms := []
+        preconditions := preconds
+      }
+      -- Keep function name in local scope for subsequent statements.
+      modify fun st => { st with bvars := st.bvars.push (.op () (mkIdent n) (some funcTy)) }
+      return .funcDecl decl (← toCoreMetaData m)
   | .for_statement m v init guard step invs body =>
     let (id, ty) ← toCoreMonoBind v
     withBVars [id.name] do
@@ -556,11 +597,15 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       | throwAt m "Mutual block must contain at least one datatype declaration"
     return [.type (.data dts)]
 
-def toCoreProgram (p : Boole.Program) : Except DiagnosticModel Core.Program := do
+def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
     let (fvars, fvarIsOp) := initFVars p
-    let init : TranslateState := { fvars := fvars, fvarIsOp := fvarIsOp }
+    let init : TranslateState := {
+      gctx := gctx
+      fvars := fvars
+      fvarIsOp := fvarIsOp
+    }
     let act : TranslateM Core.Program := do
       let decls := (← cmds.mapM toCoreDecls).toList.flatten
       pure { decls := decls }
@@ -581,7 +626,7 @@ def getProgram (p : Strata.Program) : Except DiagnosticModel Boole.Program := do
 
 def typeCheck (p : Strata.Program) (options : Options := Options.default) : Except DiagnosticModel Core.Program := do
   let prog ← getProgram p
-  let coreProg ← toCoreProgram prog
+  let coreProg ← toCoreProgram prog p.globalContext
   Core.typeCheck options coreProg
 
 open Lean.Parser in
@@ -597,7 +642,7 @@ def verify
   | .error e =>
     throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
   | .ok prog =>
-    match toCoreProgram prog with
+    match toCoreProgram prog env.globalContext with
     | .error e =>
       throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
     | .ok cp =>
