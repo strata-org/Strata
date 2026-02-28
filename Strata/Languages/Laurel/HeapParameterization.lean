@@ -450,6 +450,6 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     .Datatype { name := mkId "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
   { program with
     staticProcedures := procs',
-    types := program.types ++ [fieldDatatype] }
+    types := [fieldDatatype] ++ program.types }
 
 end Strata.Laurel

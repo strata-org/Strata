@@ -311,7 +311,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
   { program with
     staticProcedures := procs',
-    types := program.types ++ [typeTagDatatype],
+    types := [typeTagDatatype] ++ program.types,
     constants := program.constants ++ typeHierarchyConstants }
 
 end Laurel

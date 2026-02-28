@@ -39,17 +39,8 @@ private def typeTagTy := mkTy (.UserDefined (mkId "TypeTag"))
 private def mapFieldBox := mkTy (.TMap fieldTy boxTy)
 private def mapCompositeInner := mkTy (.TMap compositeTy mapFieldBox)
 
--- Field and TypeTag: opaque types (zero-constructor datatypes).
--- The Laurel translator replaces them with datatypes that contain one
--- constructor for each field and composite type.
-private def fieldDatatype : TypeDefinition :=
-  .Datatype { name := mkId "Field", typeArgs := [], constructors := [] }
-
-private def typeTagDatatype : TypeDefinition :=
-  .Datatype { name := mkId "TypeTag", typeArgs := [], constructors := [] }
-
 -- Composite: datatype with a reference (int) and a runtime type tag
-private def compositeDatatype : TypeDefinition :=
+def compositeDatatype : TypeDefinition :=
   .Datatype { name := mkId "Composite", typeArgs := [], constructors := [
     { name := mkId "MkComposite", args := [
       { name := mkId "ref", type := intTy },
@@ -110,10 +101,10 @@ private def updateFieldFn : Procedure :=
     decreases := none
     isFunctional := true
     body := .Transparent (mkE (.StaticCall (mkId "MkHeap") [
-      mkE (.StaticCall (mkId "store")
+      mkE (.StaticCall (mkId "update")
         [mkE (.StaticCall (mkId "Heap..data") [mkE (.Identifier (mkId "heap"))]),
          mkE (.Identifier (mkId "obj")),
-         mkE (.StaticCall (mkId "store")
+         mkE (.StaticCall (mkId "update")
            [mkE (.StaticCall (mkId "select")
              [mkE (.StaticCall (mkId "Heap..data") [mkE (.Identifier (mkId "heap"))]),
               mkE (.Identifier (mkId "obj"))]),
@@ -144,7 +135,7 @@ private def incrementFn : Procedure :=
 def laurelPrelude : Program :=
   { staticProcedures := [readFieldFn, updateFieldFn, incrementFn]
     staticFields := []
-    types := [fieldDatatype, typeTagDatatype, compositeDatatype, boxDatatype, heapDatatype]
+    types := [compositeDatatype, boxDatatype, heapDatatype]
     constants := [] }
 
 end Strata.Laurel
