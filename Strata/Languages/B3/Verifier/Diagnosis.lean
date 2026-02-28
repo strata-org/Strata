@@ -90,9 +90,9 @@ partial def diagnoseFailureGeneric
       -- Check if provably false (not just unprovable)
       let _ ← push checkState
       let runCheck : SolverM Decision := do
-        Solver.assert (formatTermDirect convResult.term)
+        Solver.assert convResult.term
         Solver.checkSat []
-      let decision ← runCheck.run checkState.smtState.solver
+      let (decision, _) ← runCheck.run checkState.smtState.solver
       let _ ← pop checkState
       let isProvablyFalse := decision == .unsat
 

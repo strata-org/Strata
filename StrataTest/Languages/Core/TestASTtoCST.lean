@@ -154,7 +154,7 @@ spec {
   ensures (y == x);
   ensures (x == y);
   ensures (g == g);
-  ensures (g == old(g));
+  ensures (g == old g);
   ensures [List_head_test]: (IntList..isNil(Nil()));
 } {
   var b0 : bool;
@@ -183,7 +183,7 @@ spec {
   ensures [Test2_ensures_0]: y == x;
   ensures [Test2_ensures_1]: x == y;
   ensures [Test2_ensures_2]: g == g;
-  ensures [Test2_ensures_3]: g == old(g);
+  ensures [Test2_ensures_3]: g == old g;
   ensures [List_head_test]: IntList..isNil(Nil);
   } {
   var b0 : bool;
