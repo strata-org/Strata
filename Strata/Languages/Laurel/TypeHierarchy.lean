@@ -62,10 +62,12 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     let falseConst := mkMd (.LiteralBool false)
     let emptyInner := mkMd (.StaticCall (mkId "const") [falseConst])
     composites.foldl (fun acc otherCt =>
-      let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.name ++ "_TypeTag") [])
       let isAncestor := ancestors.any (·.name == otherCt.name)
-      let boolVal := mkMd (.LiteralBool isAncestor)
-      mkMd (.StaticCall (mkId "update") [acc, otherConst, boolVal])
+      if isAncestor then
+        let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.name ++ "_TypeTag") [])
+        let boolVal := mkMd (.LiteralBool true)
+        mkMd (.StaticCall (mkId "update") [acc, otherConst, boolVal])
+      else acc
     ) emptyInner
   -- Generate a separate constant `ancestorsFor<Type>` for each composite type
   let ancestorsForDecls := composites.map fun ct =>
