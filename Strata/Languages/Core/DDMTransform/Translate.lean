@@ -1438,10 +1438,13 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   let orig_bbindings := bindings.boundVars
-  -- For recursive functions, the DDM's @[scopeSelf] puts the function name
-  -- before params in the typing context, so we mirror that order here.
-  -- The DDM elaborator also re-pushes type arg bindings between self and params,
-  -- so we must include placeholders for them to keep de Bruijn indices consistent.
+  -- INVARIANT: The binding order here must exactly match the DDM elaborator's
+  -- typing context in `Elab/Core.lean` (the `scopeSelf` branch), which pushes:
+  --   [inherited..., self, typeArgTVars..., params...]
+  -- The `@[scope(typeArgs)] b : Bindings` grammar argument causes the DDM to
+  -- re-push type arg tvar bindings before the value param bindings. We must
+  -- include placeholders for these type args so that de Bruijn indices in the
+  -- elaborated body expression resolve correctly during translation.
   let bbindings ← match status with
     | .RecursiveDefinition =>
       let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
