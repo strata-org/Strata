@@ -200,13 +200,13 @@ def validateDiamondFieldAccesses (uri : Uri) (program : Program) : Array Diagnos
 
 /--
 Lower `IsType target ty` to Laurel-level map lookups:
-  `select(select(ancestorsPerType(), Composite..typeTag(target)), TypeName_TypeTag())`
+  `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
 -/
 def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   let typeName := match ty.val with
     | .UserDefined name => name
     | _ => panic! s!"IsType: expected UserDefined type"
-  let typeTag := mkMd (.StaticCall "Composite..typeTag" [target])
+  let typeTag := mkMd (.StaticCall "Composite..typeTag!" [target])
   let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
   let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
   let typeConst := mkMd (.StaticCall (typeName ++ "_TypeTag") [])
@@ -232,7 +232,7 @@ Lower `New name` to a block that:
 def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : THM StmtExprMd := do
   let heapVar := "$heap"
   let freshVar ← freshVarName
-  let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
+  let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
   let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
   let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
@@ -312,7 +312,7 @@ def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
 /--
 Type hierarchy transformation pass (Laurel → Laurel).
 
-1. Rewrites `IsType target ty` into `select(select(ancestorsPerType(), Composite..typeTag(target)), TypeName_TypeTag())`
+1. Rewrites `IsType target ty` into `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
 2. Rewrites `New name` into heap allocation + `MkComposite` construction
 3. Generates the `TypeTag` datatype with one constructor per composite type
 4. Generates type hierarchy constants (`ancestorsFor<Type>`, `ancestorsPerType`)

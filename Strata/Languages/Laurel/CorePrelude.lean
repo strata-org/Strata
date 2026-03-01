@@ -51,19 +51,19 @@ datatype Heap () {
   MkHeap(data: Map Composite (Map Field Box), nextReference: int)
 };
 
-// Read a field from the heap: readField(heap, obj, field) = Heap..data(heap)[obj][field]
+// Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]
 function readField(heap: Heap, obj: Composite, field: Field) : Box {
-  Heap..data(heap)[obj][field]
+  Heap..data!(heap)[obj][field]
 }
 
 // Update a field in the heap
 function updateField(heap: Heap, obj: Composite, field: Field, val: Box) : Heap {
-  MkHeap(Heap..data(heap)[obj := Heap..data(heap)[obj][field := val]], Heap..nextReference(heap))
+  MkHeap(Heap..data!(heap)[obj := Heap..data!(heap)[obj][field := val]], Heap..nextReference!(heap))
 }
 
 // Increment the heap allocation nextReference, returning a new heap
 function increment(heap: Heap) : Heap {
-  MkHeap(Heap..data(heap), Heap..nextReference(heap) + 1)
+  MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
 }
 
 #end

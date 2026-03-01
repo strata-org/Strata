@@ -1521,28 +1521,19 @@ Filter factory function declarations to extract constructor, tester, and field a
 for a single datatype.
 -/
 def filterDatatypeDecls (ldatatype : LDatatype Unit) (funcDecls : List Core.Decl) :
-    List Core.Decl × List Core.Decl × List Core.Decl :=
+    List Core.Decl × List Core.Decl × List Core.Decl × List Core.Decl :=
   let constructorNames := ldatatype.constrs.map fun c => c.name.name
   let testerNames := ldatatype.constrs.map fun c => c.testerName
   let fieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
     acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name)) []
+  let unsafeFieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
+    acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name ++ "!")) []
 
-  let constructorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => constructorNames.contains f.name.name
-    | _ => false
+  let filterByNames (names : List String) := funcDecls.filter fun decl =>
+    match decl with | .func f => names.contains f.name.name | _ => false
 
-  let testerDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => testerNames.contains f.name.name
-    | _ => false
-
-  let fieldAccessorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => fieldAccessorNames.contains f.name.name
-    | _ => false
-
-  (constructorDecls, testerDecls, fieldAccessorDecls)
+  (filterByNames constructorNames, filterByNames testerNames,
+   filterByNames fieldAccessorNames, filterByNames unsafeFieldAccessorNames)
 
 /--
 Build LConstr list from TransConstructorInfo array.
@@ -1624,8 +1615,8 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
     let typeDecl := Core.Decl.type (.data [ldatatype]) md
 
     -- Filter and add declarations to bindings
-    let (constructorDecls, testerDecls, fieldAccessorDecls) := filterDatatypeDecls ldatatype funcDecls
-    let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls
+    let (constructorDecls, testerDecls, fieldAccessorDecls, unsafeFieldAccessorDecls) := filterDatatypeDecls ldatatype funcDecls
+    let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls ++ unsafeFieldAccessorDecls
     let bindings := bindingDecls.foldl (fun b d =>
       { b with freeVars := b.freeVars.push d }
     ) bindings
@@ -1711,8 +1702,8 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
 
     -- Add constructor, tester, and accessor functions for each datatype
     for ldatatype in ldatatypes do
-      let (constructorDecls, testerDecls, fieldAccessorDecls) := filterDatatypeDecls ldatatype allFuncDecls
-      for d in constructorDecls ++ testerDecls ++ fieldAccessorDecls do
+      let (constructorDecls, testerDecls, fieldAccessorDecls, unsafeFieldAccessorDecls) := filterDatatypeDecls ldatatype allFuncDecls
+      for d in constructorDecls ++ testerDecls ++ fieldAccessorDecls ++ unsafeFieldAccessorDecls do
         finalBindings := { finalBindings with freeVars := finalBindings.freeVars.push d }
 
     return (mutualTypeDecl, finalBindings)

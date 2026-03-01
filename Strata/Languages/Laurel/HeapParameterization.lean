@@ -166,11 +166,11 @@ def lookupFieldType (name : Identifier) : TransformM (Option HighTypeMd) := do
 /-- Get the Box destructor name for a given Laurel HighType -/
 def boxDestructorName (ty : HighType) : Identifier :=
   match ty with
-  | .TInt => "Box..intVal"
-  | .TBool => "Box..boolVal"
-  | .TFloat64 => "Box..float64Val"
-  | .UserDefined _ => "Box..compositeVal"
-  | _ => "Box..intVal"  -- fallback
+  | .TInt => "Box..intVal!"
+  | .TBool => "Box..boolVal!"
+  | .TFloat64 => "Box..float64Val!"
+  | .UserDefined _ => "Box..compositeVal!"
+  | _ => "Box..intVal!"  -- fallback
 
 /-- Get the Box constructor name for a given Laurel HighType -/
 def boxConstructorName (ty : HighType) : Identifier :=
@@ -334,16 +334,16 @@ where
         let ty := (computeExprType env types e1).val
         match ty with
         | .UserDefined _ =>
-          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
-          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
+          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return ⟨ .PrimitiveOp .Eq [ref1, ref2], md ⟩
         | _ => return ⟨ .PrimitiveOp op args', md ⟩
       | .Neq, [e1, _e2] =>
         let ty := (computeExprType env types e1).val
         match ty with
         | .UserDefined _ =>
-          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
-          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
+          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return ⟨ .PrimitiveOp .Neq [ref1, ref2], md ⟩
         | _ => return ⟨ .PrimitiveOp op args', md ⟩
       | _, _ => return ⟨ .PrimitiveOp op args', md ⟩

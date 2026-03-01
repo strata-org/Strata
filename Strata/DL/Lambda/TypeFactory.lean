@@ -484,23 +484,48 @@ def destructorConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.I
 
 def destructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier IDMeta) := d.name ++ ".." ++ name.name
 
+def unsafeDestructorSuffix := "!"
+
+def unsafeDestructorFuncName {IDMeta} (d: LDatatype IDMeta)
+  (name: Identifier IDMeta) :=
+  destructorFuncName d name ++ unsafeDestructorSuffix
+
+/-- Strip the unsafe destructor suffix to recover the safe (SMT-canonical) name. -/
+def stripUnsafeDestructorSuffix (name : String) : String :=
+  if name.endsWith unsafeDestructorSuffix then
+  (name.dropEnd unsafeDestructorSuffix.length).toString else name
+
+private def mkDestructorFunc {T} [BEq T.Identifier] [Inhabited T.IDMeta]
+  [Inhabited T.Metadata] (d : LDatatype T.IDMeta) (c : LConstr T.IDMeta)
+  (i : Nat) (name : Identifier T.IDMeta) (ty : LMonoTy) (safe : Bool) :
+  LFunc T :=
+  let arg := genArgName
+  let argExpr : LExpr T.mono := .fvar default arg .none
+  let testerExpr : LExpr T.mono := .app default (.op default c.testerName .none) argExpr
+  { name :=
+    if safe then destructorFuncName d name else unsafeDestructorFuncName d name,
+    typeArgs := d.typeArgs,
+    inputs := [(arg, dataDefault d)],
+    output := ty,
+    concreteEval := some (fun _ => destructorConcreteEval d c i),
+    attr := #[.evalIfConstr 0],
+    preconditions := if safe then [⟨testerExpr, default⟩] else [] }
+
 /--
-Generate destructor functions for a constructor, which extract the
-constructor components, e.g.
-`List..head (Cons h t) = h`
-`List..tail (Cons h t) = t`
-These functions are partial, `List..head Nil` is undefined.
+Generate destructor functions with a precondition that the corresponding tester holds, e.g.
+`List..head(x)` requires `List..isCons(x)`
 -/
-def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
-  c.args.mapIdx (fun i (name, ty) =>
-    let arg := genArgName
-    {
-      name := destructorFuncName d name,
-      typeArgs := d.typeArgs,
-      inputs := [(arg, dataDefault d)],
-      output := ty,
-      concreteEval := some (fun _ => destructorConcreteEval d c i),
-      attr := #[.evalIfConstr 0]})
+def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]
+  [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) :
+  List (LFunc T) :=
+  c.args.mapIdx (fun i (name, ty) => mkDestructorFunc d c i name ty true)
+
+/--
+Generate unsafe destructor functions (with `!` suffix) without preconditions, e.g.
+`List..head!(x)` is partial — `List..head!(Nil)` is undefined.
+-/
+def unsafeDestructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
+  c.args.mapIdx (fun i (name, ty) => mkDestructorFunc d c i name ty false)
 
 
 ---------------------------------------------------------------------
@@ -731,17 +756,20 @@ def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype
 
 /--
 Constructs maps of generated functions for datatype `d`: map of
-constructors, testers, and destructors in order. Each maps names to
-the datatype and constructor AST.
+constructors, testers, destructors, and unsafe destructors in order.
+Each maps names to the datatype and constructor AST.
 -/
-def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
+def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [Inhabited T.Metadata] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) :=
   (Map.ofList (d.constrs.map (fun c => (c.name.name, (d, c)))),
    Map.ofList (d.constrs.map (fun c => (c.testerName, (d, c)))),
    Map.ofList (d.constrs.map (fun c =>
-      (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
+      (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten,
+   Map.ofList (d.constrs.map (fun c =>
+      (unsafeDestructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
 
 /--
 Generates the Factory (containing eliminators, constructors, testers, and destructors)
@@ -754,7 +782,8 @@ def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.I
   let constrs := block.flatMap (fun d => d.constrs.map (fun c => constrFunc c d))
   let testers := block.flatMap (fun d => d.constrs.map (fun c => testerFunc block d c inst.default))
   let destrs := block.flatMap (fun d => d.constrs.flatMap (fun c => destructorFuncs d c))
-  Factory.default.addFactory (elims ++ constrs ++ testers ++ destrs).toArray
+  let unsafeDestrs := block.flatMap (fun d => d.constrs.flatMap (fun c => unsafeDestructorFuncs d c))
+  Factory.default.addFactory (elims ++ constrs ++ testers ++ destrs ++ unsafeDestrs).toArray
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`.
