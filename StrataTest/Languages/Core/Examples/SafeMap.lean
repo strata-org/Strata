@@ -35,7 +35,7 @@ spec {
     modifies count;
     requires [id_not_in_registry]: !is_present(registry[id]);
     ensures  [registry_id_eq_val]: registry[id] == Some(value);
-    ensures  [count_incremented]:  count == old(count) + 1;
+    ensures  [count_incremented]:  count == old count + 1;
 }
 {
     registry := registry[id := Some(value)];
@@ -110,4 +110,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify safeMapPgm (options := Options.quiet)
+#eval verify safeMapPgm (options := .quiet)

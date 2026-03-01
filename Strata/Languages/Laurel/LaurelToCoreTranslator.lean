@@ -21,7 +21,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
-open Core (VCResult VCResults)
+open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
@@ -124,7 +124,7 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   -- Dummy expression used as placeholder when an error is emitted in pure context
-  let dummy := .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{← freshId}") none
+  let dummy := .fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
   let disallowed (e : StmtExprMd) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
@@ -145,14 +145,9 @@ def translateExpr (expr : StmtExprMd)
       | none =>
         match model.get name with
         | .field _ f =>
-            let ident := Core.CoreIdent.unres f.name.name
-            return .op () ident none
-        -- | .datatypeConstructor c =>
-        --     let ident := Core.CoreIdent.unres name
-        --     .op () ident none
+            return .op () ⟨f.name.name, ()⟩ none
         | astNode =>
-            let ident := Core.CoreIdent.locl name.name
-            return .fvar () ident (some (translateType model $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
+            return .fvar () ⟨name.name, ()⟩ (some (translateType model $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -204,7 +199,7 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && !model.isFunction callee then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () (Core.CoreIdent.unres callee.name) none
+        let fnOp : Core.Expression.Expr := .op () ⟨callee.name, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -271,7 +266,7 @@ def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expressi
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
     let coreTy := translateType model ty
-    .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
+    .fvar () (⟨"$default", ()⟩) (some coreTy)
 
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
@@ -294,7 +289,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .LocalVariable id ty initializer =>
       let boogieMonoType := translateType model ty
       let boogieType := LTy.forAll [] boogieMonoType
-      let ident := Core.CoreIdent.locl id.name
+      let ident := ⟨id.name, ()⟩
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
@@ -318,7 +313,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _ ⟩] =>
-          let ident := Core.CoreIdent.locl targetId.name
+          let ident := ⟨targetId.name, ()⟩
           -- Check if RHS is a procedure call (not a function)
           match value.val with
           | .StaticCall callee args =>
@@ -341,7 +336,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               let coreArgs ← args.mapM (fun a => translateExpr a)
               let lhsIdents := targets.filterMap fun t =>
                 match t.val with
-                | .Identifier name => some (Core.CoreIdent.locl name.name)
+                | .Identifier name => some (⟨name.name, ()⟩)
                 | _ => none
               return [Core.Statement.call lhsIdents callee.name coreArgs value.md]
           | _ =>
@@ -364,7 +359,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
-          let ident := Core.CoreIdent.locl outParam.name.name
+          let ident := ⟨outParam.name.name, ()⟩
           let coreExpr ← translateExpr value
           let assignStmt := Core.Statement.set ident coreExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
@@ -403,7 +398,7 @@ private def translateChecks (checks : List StmtExprMd) (labelBase : String)
 Translate Laurel Parameter to Core Signature entry
 -/
 def translateParameterToCore (model : SemanticModel) (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
-  let ident := Core.CoreIdent.locl param.name.name
+  let ident := ⟨param.name.name, ()⟩
   let ty := translateType model param.type
   (ident, ty)
 
@@ -524,7 +519,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
       some <$> translateExpr bodyExpr [] (isPureContext := true)
     | _ => pure none
   return .func {
-    name := Core.CoreIdent.unres proc.name.name
+    name := ⟨proc.name.name, ()⟩
     typeArgs := []
     inputs := inputs
     output := outputTy
@@ -542,10 +537,10 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
     -- Zero constructors: opaque type
     Core.Decl.type (.con { name := dt.name.name, numargs := dt.typeArgs.length })
   | first :: rest =>
-    let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun c =>
-      { name := Core.CoreIdent.unres c.name.name
-        args := c.args.map fun ⟨ n, ty ⟩ => (Core.CoreIdent.unres n.name, translateType model ty) }
-    let ldt : Lambda.LDatatype Core.Visibility := {
+    let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
+      { name := ⟨c.name.name, ()⟩
+        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.name, ()⟩, translateType model ty) }
+    let ldt : Lambda.LDatatype Unit := {
       name := dt.name.name
       typeArgs := dt.typeArgs
       constrs := constrs
@@ -684,7 +679,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     let coreTy := translateType model c.type
     let body ← c.initializer.mapM (translateExpr ·)
     return Core.Decl.func {
-      name := Core.CoreIdent.unres c.name.name
+      name := ⟨c.name.name, ()⟩
       typeArgs := []
       inputs := []
       output := coreTy
@@ -715,7 +710,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (program : Program)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     : IO (Except (Array DiagnosticModel) VCResults) := do
   let (strataCoreProgram, translateDiags) ← match translate program with
     | .error translateErrorDiags => return .error translateErrorDiags
@@ -740,14 +735,14 @@ def verifyToVcResults (program : Program)
 
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
-    (options : Options := Options.default): IO (Array Diagnostic) := do
+    (options : VerifyOptions := .default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (program : Program) (options : Options := Options.default) : IO (Array DiagnosticModel) := do
+def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors

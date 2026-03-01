@@ -90,7 +90,7 @@ private def renameAllLocalNames (c:Procedure)
   let labels := List.flatMap (fun s => Statement.labels s) c.body
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
-      (fun s => { name:=s, metadata := Visibility.temp })
+      (fun s => { name:=s, metadata := () })
   let label_map_id <- genOldToFreshIdMappings label_ids [] proc_name
   let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
 

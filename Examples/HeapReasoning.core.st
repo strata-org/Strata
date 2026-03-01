@@ -78,7 +78,7 @@ spec {
 
   free ensures (forall o: Ref ::
     { newHeap[o] }
-    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
+    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old tickingClock)
        ==> (newHeap[o] == heap[o] || o == r));
 
   // User provided ------------------------------------------------------------------------------------------------------------
@@ -88,7 +88,7 @@ spec {
   ensures UnboxingInt(newHeap[r][pineappleField]) == initialPineapple;
   ensures UnboxingRef(newHeap[r][nextField]) == initialNext;
 
-  ensures tickingClock >= old(tickingClock);
+  ensures tickingClock >= old tickingClock;
 
 }
 {
@@ -130,11 +130,11 @@ spec {
   requires isContainer(ref1);
   requires isContainer(ref2);
 
-  ensures tickingClock >= old(tickingClock);
+  ensures tickingClock >= old tickingClock;
 
   free ensures (forall o: Ref ::
     { newHeap[o] }
-    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
+    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old tickingClock)
        ==> (newHeap[o] == heap[o] || o == ref1));
 
   // User provided ------------------------------------------------------------------------------------------------------------
@@ -195,11 +195,11 @@ spec {
   modifies tickingClock;
 
   free requires tickingClock >= 0;
-  ensures tickingClock >= old(tickingClock);
+  ensures tickingClock >= old tickingClock;
 
   free ensures (forall o: Ref ::
     { newHeap[o] }
-    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
+    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old tickingClock)
        ==> (newHeap[o] == heap[o]));
 }
 {

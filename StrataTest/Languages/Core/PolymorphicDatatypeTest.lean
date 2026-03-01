@@ -35,7 +35,7 @@ info: ok: datatype Option (a : Type) {(
 };
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionDeclPgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram optionDeclPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 2: Option Used with Concrete Type (int)
@@ -82,7 +82,7 @@ spec {
   };
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 3: List Used with Concrete Type (int)
@@ -125,7 +125,7 @@ spec {
   };
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 4: Type with Multiple Parameters (Either)
@@ -173,7 +173,7 @@ spec {
   };
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 5: Nested Polymorphic Types (Option of List)
@@ -217,7 +217,7 @@ spec {
   };
 -/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 6: Polymorphic List Destructor with Havoc (SMT verification)

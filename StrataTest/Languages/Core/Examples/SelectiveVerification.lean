@@ -30,7 +30,7 @@ procedure MainProc() returns (output : int)
 spec {
   modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old(x) * 4);
+  ensures [output_property]: (output == old x * 4);
 }
 {
   call output := Helper(x);
@@ -72,7 +72,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := (some ["MainProc"]))
 
 --------- Verify all procedures (default behavior)
@@ -104,7 +104,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify selectiveVerificationPgm (options := Options.quiet)
+#eval verify selectiveVerificationPgm (options := .quiet)
 
 ---------- Verify only IndependentProc
 
@@ -116,7 +116,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := ["IndependentProc"])
 
 ---------- Verify multiple specific procedures
@@ -133,7 +133,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
-          (options := Options.quiet)
+          (options := .quiet)
           (proceduresToVerify := (some ["IndependentProc", "UnusedProc"]))
 
 ---------------------------------------------------------------------

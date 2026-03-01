@@ -402,7 +402,7 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
       "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
    "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
    "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
-   metadata := Core.Visibility.unres } (some Lambda.LMonoTy.tcons
+   metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
     Lambda.LMonoTy.tcons
@@ -410,7 +410,7 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
       [Lambda.LMonoTy.ftvar "k",
        Lambda.LMonoTy.ftvar
          "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
-   metadata := Core.Visibility.unres } (some Lambda.LMonoTy.tcons
+   metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
     Lambda.LMonoTy.tcons
@@ -432,7 +432,7 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
    "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
    "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
    "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
-   metadata := Core.Visibility.unres } (some Lambda.LMonoTy.tcons
+   metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
     Lambda.LMonoTy.tcons
@@ -440,7 +440,7 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
       [Lambda.LMonoTy.ftvar "k",
        Lambda.LMonoTy.ftvar
          "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
-   metadata := Core.Visibility.unres } (some Lambda.LMonoTy.tcons
+   metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
     Lambda.LMonoTy.tcons
@@ -454,7 +454,7 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
             [Lambda.LMonoTy.ftvar "k",
              Lambda.LMonoTy.ftvar
                "v"]]]])) (LExpr.bvar () 3)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 2)) (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
-   metadata := Core.Visibility.unres } (some Lambda.LMonoTy.tcons
+   metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
     Lambda.LMonoTy.tcons
