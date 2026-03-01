@@ -29,7 +29,38 @@ theorem snd_values_mem {ps : ListMap CoreLabel Procedure.Check} :
     case inr mem => right ; exact (ih mem)
   case nil => cases Hin
 
-theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
+theorem Procedure.typeCheckWF :
+    Procedure.typeCheck C T p pp md = Except.ok (pp', T') →
+    WFProcedureProp p pp := by
+  intro H
+  unfold Procedure.typeCheck at H
+  simp only [bind, Except.bind] at H
+  repeat (split at H <;> try contradiction)
+  have hnd := Procedure.checkNoDuplicates_ok (by assumption)
+  have hvs := Procedure.checkVariableScoping_ok (by assumption)
+  constructor
+  -- wfstmts: body type-checks successfully
+  · exact Statement.typeCheckWF (by assumption)
+  -- wfloclnd: local variable declarations have no duplicates
+  --   (not currently checked by the type checker)
+  · sorry
+  -- ioDisjoint: inputs ∩ outputs = ∅
+  · exact hvs
+  -- inputsNodup
+  · exact hnd.1
+  -- outputsNodup
+  · exact hnd.2.1
+  -- modNodup
+  · exact hnd.2.2
+  -- inputsLocl: inputs are all CoreIdent.locl
+  --   (not currently checked by the type checker)
+  · sorry
+  -- outputsLocl: outputs are all CoreIdent.locl
+  --   (not currently checked by the type checker)
+  · sorry
+  -- wfspec: spec well-formedness
+  --   (partially checked, but full proof requires additional type checker support)
+  · sorry
 
 
 /-
