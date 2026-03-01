@@ -287,6 +287,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     preconditions := []
     determinism := .nondeterministic
     decreases := none
+    isFunctional := false
     body := .Opaque [] none []
     md := .empty
   }

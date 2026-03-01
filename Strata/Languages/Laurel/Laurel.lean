@@ -25,6 +25,9 @@ structure Identifier where
   id : Option Nat := none
   deriving Repr, BEq, Inhabited, DecidableEq
 
+instance : ToString Identifier where
+  toString id := id.name
+
 def mkId (name: String): Identifier := Identifier.mk name none
 
 /--
