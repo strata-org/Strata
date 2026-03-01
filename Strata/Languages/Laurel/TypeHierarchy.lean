@@ -25,7 +25,7 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
       | .compositeType (ty : CompositeType) => [ty]
       | _ => []
     | fuel' + 1 =>
-      match model.get name with
+      match model.get current with
         | .compositeType (ty : CompositeType) =>
           [ty] ++ ty.extending.flatMap (fun parent => go fuel' parent)
         | _ => []
@@ -98,9 +98,8 @@ def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : I
     match fuel with
     | 0 => false
     | fuel' + 1 =>
-      match model.get typeName with
+      match model.get current with
       | .compositeType ct =>
-          ct.name == current &&
           (ct.fields.any (·.name == fieldName) ||
            ct.extending.any (go fuel'))
       | _ => false
@@ -193,7 +192,7 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaDat
     | .UserDefined name => name.name
     | _ => panic! s!"IsType: expected UserDefined type"
   let typeTag := mkMd (.StaticCall (mkId "Composite..typeTag") [target])
-  let ancestorsPerType := mkMd (.Identifier $ mkId "ancestorsPerType")
+  let ancestorsPerType := mkMd (.StaticCall (mkId "ancestorsPerType") [])
   let innerMap := mkMd (.StaticCall (mkId "select") [ancestorsPerType, typeTag])
   let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
   ⟨.StaticCall (mkId $ "select") [innerMap, typeConst], md⟩

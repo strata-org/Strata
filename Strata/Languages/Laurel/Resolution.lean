@@ -115,6 +115,7 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
     | .staticProcedure proc => proc.isFunctional
     | .parameter _ => true
     | .datatypeConstructor _ _ => true
+    | .constant _ => true
     | node => softPanic s!"id: {repr id}, is not a procedure, node {repr node}"
 
 /-- The output of the resolution pass. -/
