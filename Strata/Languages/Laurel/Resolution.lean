@@ -90,6 +90,7 @@ def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .parameter p => p.type
  | .field _ f => f.type
  | .datatypeConstructor type _ => some ⟨ .UserDefined type, default ⟩
+ | .constant c => c.type
  | _ => softPanic s!"getType called on {repr node}"
 
 /-! ## Resolution result -/

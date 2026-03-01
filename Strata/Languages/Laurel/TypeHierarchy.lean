@@ -193,7 +193,7 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaDat
     | .UserDefined name => name.name
     | _ => panic! s!"IsType: expected UserDefined type"
   let typeTag := mkMd (.StaticCall (mkId "Composite..typeTag") [target])
-  let ancestorsPerType := mkMd (.StaticCall (mkId "ancestorsPerType") [])
+  let ancestorsPerType := mkMd (.Identifier $ mkId "ancestorsPerType")
   let innerMap := mkMd (.StaticCall (mkId "select") [ancestorsPerType, typeTag])
   let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
   ⟨.StaticCall (mkId $ "select") [innerMap, typeConst], md⟩
