@@ -442,6 +442,8 @@ def transformProcedure (proc : Procedure) : LiftM Procedure := do
       pure { proc with body := .Opaque postconds impl' modif }
   | .Abstract _ =>
       pure proc
+  | .External =>
+      pure proc
 
 /--
 Transform a program to lift all assignments that occur in an expression context.

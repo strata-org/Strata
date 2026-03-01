@@ -198,6 +198,8 @@ inductive Body where
       (modifies : List (WithMetadata StmtExpr))
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
   | Abstract (postconditions : List (WithMetadata StmtExpr))
+  /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
+  | External
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -328,6 +330,10 @@ instance : BEq HighTypeMd where
 
 def HighType.isBool : HighType → Bool
   | TBool => true
+  | _ => false
+
+def Body.isExternal : Body → Bool
+  | .External => true
   | _ => false
 
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool

@@ -133,6 +133,7 @@ that all allocated objects are preserved between heaps:
 def transformModifiesClauses (model: SemanticModel)
     (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
   match proc.body with
+  | .External => .ok proc
   | .Opaque postconds impl modifiesExprs =>
       if hasHeapOut proc then
         let heapInName := mkId "$heap_in"

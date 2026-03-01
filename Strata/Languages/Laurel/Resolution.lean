@@ -386,6 +386,7 @@ def resolveBody (body : Body) : ResolveM Body := do
   | .Abstract posts =>
     let posts' ← posts.mapM resolveStmtExpr
     return .Abstract posts'
+  | .External => return .External
 
 /-- Resolve a determinism clause. -/
 def resolveDeterminism (d : Determinism) : ResolveM Determinism := do
@@ -584,6 +585,7 @@ private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
     let map := match impl with | some i => collectStmtExpr map i | none => map
     mods.foldl collectStmtExpr map
   | .Abstract posts => posts.foldl collectStmtExpr map
+  | .External => map
 
 private def collectDeterminism (map : Std.HashMap Nat AstNode) (d : Determinism)
     : Std.HashMap Nat AstNode :=
@@ -649,12 +651,50 @@ def buildRefToDef (program : Program) : Std.HashMap Nat AstNode :=
   let map := program.staticFields.foldl (collectField · (mkId "$static") ·) map
   program.staticProcedures.foldl (collectProcedure · · .staticProcedure) map
 
+/-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
+
+/-- A default AstNode used as a placeholder during pre-registration.
+    It will be overwritten with the real node when the definition is fully resolved. -/
+private def placeholderNode : AstNode := .var (mkId "$placeholder") ⟨.TVoid, #[]⟩
+
+/-- Pre-register all top-level names into scope so that declaration order doesn't matter.
+    This assigns fresh IDs and adds placeholder scope entries for:
+    - Type names (composite, constrained, datatype) and their constructors/destructors/fields
+    - Constant names
+    - Static procedure names -/
+private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
+  -- Pre-register type definitions
+  for td in program.types do
+    match td with
+    | .Composite ct =>
+      let _ ← defineName ct.name (.compositeType ct)
+      for field in ct.fields do
+        let qualifiedName := ct.name.name ++ "." ++ field.name.name
+        let _ ← defineName field.name placeholderNode (some qualifiedName)
+      for proc in ct.instanceProcedures do
+        let _ ← defineName proc.name placeholderNode
+    | .Constrained ct =>
+      let _ ← defineName ct.name (.constrainedType ct)
+    | .Datatype dt =>
+      let _ ← defineName dt.name (.datatypeDefinition dt)
+      for ctor in dt.constructors do
+        let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
+        for p in ctor.args do
+          let _ ← defineName p.name placeholderNode (some $ dt.name.name ++ ".." ++ p.name.name)
+  -- Pre-register constants
+  for c in program.constants do
+    let _ ← defineName c.name (.constant c)
+  -- Pre-register static procedures
+  for proc in program.staticProcedures do
+    let _ ← defineName proc.name (.staticProcedure proc)
+
 /-! ## Entry point -/
 
 /-- Run the full resolution pass on a Laurel program. -/
 def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
-  -- Phase 1: assign IDs and resolve references
+  -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
+    preRegisterTopLevel program
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
     let staticFields' ← program.staticFields.mapM (resolveField (mkId "$static"))

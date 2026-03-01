@@ -156,6 +156,7 @@ def formatBody : Body → Format
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
   | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
+  | .External => "external"
 
 def formatDeterminism : Determinism → Format
   | .deterministic none => "deterministic"

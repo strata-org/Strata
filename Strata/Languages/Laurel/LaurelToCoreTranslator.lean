@@ -499,6 +499,7 @@ private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
   | .Opaque _ bodyExprOption _ =>
     (bodyExprOption.map isPureExpr).getD true &&
     proc.outputs.length == 1
+  | .External => false
   | _ => false
 
 /--
@@ -584,7 +585,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     determinism := .nondeterministic,
     decreases := none,
     isFunctional := true,
-    body := .Abstract [],
+    body := .External,
     md := .empty
   }
   let updateProc: Procedure := {
@@ -601,7 +602,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     determinism := .nondeterministic,
     decreases := none,
     isFunctional := true,
-    body := .Abstract [],
+    body := .External,
     md := .empty
   }
   let constProc: Procedure := {
@@ -616,7 +617,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     determinism := .nondeterministic,
     decreases := none,
     isFunctional := true,
-    body := .Abstract [],
+    body := .External,
     md := .empty
   }
   let program := { program with
@@ -635,13 +636,17 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   dbg_trace "=== After heapParameterization ==="
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
+  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   resolutionDiags := resolutionDiags ++ result.errors
 
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   resolutionDiags := resolutionDiags ++ result.errors
-  dbg_trace "=== After typeHierarchyTransform ==="
+  dbg_trace "===  Program after typeHierarchyTransform ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
+  dbg_trace "================================="
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
@@ -650,6 +655,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
 
   dbg_trace "================================="
+  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   let program := liftExpressionAssignments model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
@@ -660,7 +666,9 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
 
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
-  let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
+  -- External procedures are completely ignored (not translated to Core).
+  let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
+  let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
   let initState : TranslateState := { model := model }
   -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
   let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>

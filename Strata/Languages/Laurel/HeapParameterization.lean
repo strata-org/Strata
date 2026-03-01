@@ -113,6 +113,7 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
             writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
             callees := r1.callees ++ r2.callees }
     | .Abstract postconds => (postconds.forM collectExprMd).run {} |>.2
+    | .External => {}
   -- Also analyze preconditions
   let precondResult := (proc.preconditions.forM collectExprMd).run {} |>.2
   { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
@@ -395,6 +396,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
           pure (.Abstract postconds')
+      | .External => pure .External
 
     return { proc with
       inputs := inputs',
@@ -421,6 +423,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
           pure (.Abstract postconds')
+      | .External => pure .External
 
     return { proc with
       inputs := inputs',
@@ -448,8 +451,13 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := mkId "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
+  -- Remove fields from composite types since they are now stored in the heap
+  let types' := program.types.map fun td =>
+    match td with
+    | .Composite ct => .Composite { ct with fields := [] }
+    | other => other
   { program with
     staticProcedures := procs',
-    types := [fieldDatatype] ++ program.types }
+    types := [fieldDatatype] ++ types' }
 
 end Strata.Laurel

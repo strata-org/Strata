@@ -180,6 +180,7 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Ar
           | none => []
         postErrors ++ implErrors
       | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p) []
+      | .External => []
     acc ++ bodyErrors) []
   errors.toArray
 
@@ -292,6 +293,7 @@ def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
         let modif' ← modif.mapM rewriteTypeHierarchyExpr
         pure (.Opaque postconds' impl' modif')
     | .Abstract postconds => pure (.Abstract (← postconds.mapM rewriteTypeHierarchyExpr))
+    | .External => pure .External
   return { proc with preconditions := preconditions', body := body' }
 
 /--
@@ -311,10 +313,11 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
     .Datatype { name := mkId "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := mkId $ n ++ "_TypeTag", args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
-  let remainingTypes := program.types.filter fun td =>
-    match td with
-    | .Composite _ => false
-    | _ => true
+  let remainingTypes := program.types
+    -- program.types.filter fun td =>
+    -- match td with
+    -- | .Composite _ => false
+    -- | _ => true
   { program with
     staticProcedures := procs',
     types := [typeTagDatatype] ++ remainingTypes,
