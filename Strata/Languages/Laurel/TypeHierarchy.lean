@@ -313,11 +313,18 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
     .Datatype { name := mkId "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := mkId $ n ++ "_TypeTag", args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
-  let remainingTypes := program.types
-    -- program.types.filter fun td =>
-    -- match td with
-    -- | .Composite _ => false
-    -- | _ => true
+  -- Update the Composite datatype to include the typeTag field (introduced in this phase)
+  let typeTagTy : HighTypeMd := ⟨.UserDefined (mkId "TypeTag"), #[]⟩
+  let remainingTypes := program.types.map fun td =>
+    match td with
+    | .Datatype dt =>
+      if dt.name.name == "Composite" then
+        .Datatype { dt with constructors := dt.constructors.map fun c =>
+          if c.name.name == "MkComposite" then
+            { c with args := c.args ++ [{ name := mkId "typeTag", type := typeTagTy }] }
+          else c }
+      else td
+    | _ => td
   { program with
     staticProcedures := procs',
     types := [typeTagDatatype] ++ remainingTypes,

@@ -43,8 +43,7 @@ private def mapCompositeInner := mkTy (.TMap compositeTy mapFieldBox)
 def compositeDatatype : TypeDefinition :=
   .Datatype { name := mkId "Composite", typeArgs := [], constructors := [
     { name := mkId "MkComposite", args := [
-      { name := mkId "ref", type := intTy },
-      { name := mkId "typeTag", type := typeTagTy }
+      { name := mkId "ref", type := intTy }
     ]}
   ]}
 
