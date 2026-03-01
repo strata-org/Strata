@@ -66,6 +66,8 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   name     : IdentT
   typeArgs : List TyIdentifier := []
   isConstr : Bool := false --whether function is datatype constructor
+  isRecursive : Bool := false
+  decreases : Option ExprT := none
   inputs   : ListMap IdentT TyT
   output   : TyT
   body     : Option ExprT := .none
@@ -93,8 +95,9 @@ def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat 
   let precondsStr := if preconds.isEmpty then f!"" else Format.line ++ Format.joinSep preconds Format.line
   let sep := if f.body.isNone then f!";" else f!" :="
   let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
+  let recPrefix := if f.isRecursive then f!"recursive " else f!""
   f!"{attr}\
-     func {f.name} : {type}{precondsStr}{sep}\
+     {recPrefix}func {f.name} : {type}{precondsStr}{sep}\
      {body}"
 
 instance {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] : ToFormat (Func IdentT ExprT TyT MetadataT) where

@@ -457,6 +457,88 @@ info: (declare-datatype TestOption (par (α) (
   (.fvar () (⟨"optionTree", ()⟩) (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
   [[optionDatatype], [roseTreeDatatype, forestDatatype]]
 
+/-! ## Recursive Function Axiom Tests -/
+
+/-- IntList = Nil | Cons(hd: int, tl: IntList) -/
+def intListDatatype : LDatatype Unit :=
+  { name := "IntList", typeArgs := [],
+    constrs := [
+      { name := "Nil", args := [], testerName := "isNil" },
+      { name := "Cons",
+        args := [("hd", .int), ("tl", .tcons "IntList" [])],
+        testerName := "isCons" }
+    ], constrs_ne := rfl }
+
+private def intListTy := LMonoTy.tcons "IntList" []
+
+private def listLenBody : LExpr CoreLParams.mono :=
+  let xs := LExpr.fvar () ⟨"xs", ()⟩ (.some intListTy)
+  let isNil_xs := LExpr.app () (LExpr.op () ⟨"isNil", ()⟩ (.some (LMonoTy.arrow intListTy .bool))) xs
+  let tl_xs := LExpr.app () (LExpr.op () ⟨"IntList..tl", ()⟩ (.some (LMonoTy.arrow intListTy intListTy))) xs
+  let listLen_tl := LExpr.app () (LExpr.op () ⟨"listLen", ()⟩ (.some (LMonoTy.arrow intListTy .int))) tl_xs
+  let one_plus := LExpr.app () (LExpr.app () (LExpr.op () ⟨"Int.Add", ()⟩ (.some (LMonoTy.arrow .int (LMonoTy.arrow .int .int)))) (LExpr.intConst () 1)) listLen_tl
+  LExpr.ite () isNil_xs (LExpr.intConst () 0) one_plus
+
+private def listLenFunc : Lambda.LFunc CoreLParams :=
+  { name := "listLen",
+    isRecursive := true,
+    inputs := [("xs", intListTy)],
+    output := .int,
+    body := some listLenBody,
+    attr := #[.inlineIfConstr 0] }
+
+/-- Encode an expression in an environment with the given datatypes and recursive function. -/
+def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Unit)))
+    (func : Lambda.LFunc CoreLParams) : IO String := do
+  match Env.init.addDatatypes blocks with
+  | .error msg => return s!"Error creating environment: {msg}"
+  | .ok env =>
+    match env.addFactoryFunc func with
+    | .error msg => return s!"Error adding function: {msg}"
+    | .ok env =>
+      let ctx := SMT.Context.default.withTypeFactory env.datatypes
+      match toSMTTerm env [] e ctx with
+      | .error err => return err.pretty
+      | .ok (smt, ctx) =>
+        let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+        let solver ← Strata.SMT.Solver.bufferWriter b
+        match (← ((do
+          ctx.emitDatatypes
+          let (_, estate) ← ctx.ufs.mapM (Strata.SMT.Encoder.encodeUF ·) |>.run Strata.SMT.EncoderState.init
+          let (axmIds, estate) ← ctx.axms.mapM (Strata.SMT.Encoder.encodeTerm false ·) |>.run estate
+          for id in axmIds do
+            Strata.SMT.Solver.assert id
+          let _ ← (Strata.SMT.Encoder.encodeTerm false smt).run estate
+        ).run solver).toBaseIO) with
+        | .error e => return s!"Error: {e}"
+        | .ok _ =>
+          let contents ← b.get
+          if h: contents.data.IsValidUTF8 then
+            return String.fromUTF8 contents.data h
+          else
+            return "Invalid UTF-8 in output"
+
+-- Test: listLen(Nil) — should show datatype, UF declaration, axioms, and the encoded call
+/--
+info: (declare-datatype IntList (
+  (Nil)
+  (Cons (IntList..hd Int) (IntList..tl IntList))))
+; listLen
+(declare-fun f0 (IntList) Int)
+(define-fun t0 () IntList (as Nil IntList))
+(define-fun t1 () Int (f0 t0))
+(define-fun t2 () Bool (= t1 0))
+(define-fun t3 () Bool (forall ((|$__bv0| Int) (|$__bv1| IntList)) (! (= (f0 ((as Cons IntList) |$__bv0| |$__bv1|)) (+ 1 (f0 |$__bv1|))) :pattern ((f0 ((as Cons IntList) |$__bv0| |$__bv1|))))))
+(assert t2)
+(assert t3)
+-/
+#guard_msgs in
+#eval format <$> toSMTStringWithRecFunc
+  (.app () (.op () "listLen" (.some (LMonoTy.arrow intListTy .int)))
+    (.op () "Nil" (.some intListTy)))
+  [[intListDatatype]]
+  listLenFunc
+
 end DatatypeTests
 
 end Core

@@ -208,14 +208,8 @@ def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TB
   | .true _ => eval n' σ t
   | .false _ => eval n' σ f
   | _ =>
-    -- It's important to at least substitute `.fvar`s in both branches of the
-    -- `ite` here so that we can replace the variables by the values in the
-    -- state; these variables can come from an imperative dialect.
-    -- (TODO): Is it worth it to evaluate these branches instead?
-    -- let t' := eval n' σ t
-    -- let f' := eval n' σ f
-    let t' := substFvarsFromState σ t
-    let f' := substFvarsFromState σ f
+    let t' := eval n' σ t
+    let f' := eval n' σ f
     .ite m c' t' f'
 
 def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=

@@ -201,7 +201,25 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
+/-- Add a function to the environment. For recursive functions, resolves the
+    `decreases` parameter name to an `inlineIfConstr` attribute index, and
+    rejects cases not yet supported for SMT verification (polymorphic recursive
+    functions, missing decreases clauses, non-parameter decreases expressions). -/
 def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
+  if func.isRecursive && !func.typeArgs.isEmpty then
+    .error (.fromFormat f!"Polymorphic recursive functions are not yet supported: '{func.name}'")
+  let func ← match func.decreases with
+    | some (.fvar _ name _) =>
+      match func.inputs.keys.findIdx? (· == name) with
+      | some i =>
+        .ok { func with attr := #[.inlineIfConstr i] ++ func.attr }
+      | none => .error (.fromFormat f!"decreases '{name}' is not a parameter of '{func.name}'")
+    | some _ => .error (.fromFormat
+        f!"decreases must be a parameter name. General decreases expressions are not yet supported.")
+    | none =>
+      if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isNone then
+        .error (.fromFormat f!"Recursive function '{func.name}' requires a decreases clause")
+      else .ok func
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 

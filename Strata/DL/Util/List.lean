@@ -442,4 +442,10 @@ theorem occurrences_find {α} [DecidableEq α] (l : List α) (x : α)
   induction ld <;> simp [List.find?, Function.comp_apply] <;>
     (first | grind | split <;> grind)
 
+/--
+`foldlIdx f init l` folds `f` over `l` with an index.
+-/
+def foldlIdx (f : β → Nat → α → β) (init : β) (l : List α) : β :=
+  ((List.range l.length).zip l).foldl (fun acc (i, a) => f acc i a) init
+
 end List

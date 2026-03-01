@@ -28,6 +28,9 @@ structure ArgElaborator where
   -- Datatype scope: (nameLevel, typeParamsLevel) for recursive datatype definitions
   -- When set, the datatype name is added to the typing context as a type
   datatypeScope : Option (Fin argLevel × Fin argLevel) := .none
+  -- Self scope: (nameLevel, argsLevel, typeLevel) for recursive function definitions
+  -- When set, the function name is added to the typing context as an expression
+  scopeSelf : Option (Fin argLevel × Fin argLevel × Fin argLevel) := .none
 deriving Inhabited, Repr
 
 abbrev ArgElaboratorArray (sc : Nat) :=
@@ -64,6 +67,7 @@ private def push (as : ArgElaborators)
     argLevel := argLevel.val
     contextLevel := argDecls.argScopeLevel argLevel
     datatypeScope := argDecls.argScopeDatatypeLevel argLevel
+    scopeSelf := argDecls.argScopeSelfLevel argLevel
   }
   have scp : sc < sc + 1 := by grind
   { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
@@ -109,6 +113,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       argLevel := 0
       contextLevel := argDecls.argScopeLevel ⟨0, h⟩
       datatypeScope := argDecls.argScopeDatatypeLevel ⟨0, h⟩
+      scopeSelf := argDecls.argScopeSelfLevel ⟨0, h⟩
     }
     {
       syntaxCount := 1

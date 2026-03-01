@@ -588,6 +588,14 @@ def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
   | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
   | some _ => panic! s!"Unexpected argument count to scopeDatatype"
 
+/-- Returns (nameIndex, argsIndex, typeIndex) if @[scopeSelf] is present.
+    Used to bring a function's own name into scope within its body. -/
+def scopeSelfIndex (metadata : Metadata) : Option (Nat × Nat × Nat) :=
+  match metadata[q`StrataDDL.scopeSelf]? with
+  | none => none
+  | some #[.catbvar n, .catbvar a, .catbvar t] => some (n, a, t)
+  | some _ => panic! s!"Unexpected argument count to scopeSelf"
+
 /-- Returns the name index if @[declareTVar] is present.
     Used for operations that introduce a type variable (creates .tvar binding in result context). -/
 def declareTVarIndex (metadata : Metadata) : Option Nat :=
@@ -820,6 +828,22 @@ def argScopeDatatypeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Op
         panic! s!"scopeDatatype typeParams index {typeParamsIdx} out of bounds ({level.val})"
     else
       panic! s!"scopeDatatype name index {nameIdx} out of bounds ({level.val})"
+
+/-- Returns (nameLevel, argsLevel, typeLevel) if @[scopeSelf] is present. -/
+def argScopeSelfLevel (argDecls : ArgDecls) (level : Fin argDecls.size)
+    : Option (Fin level.val × Fin level.val × Fin level.val) :=
+  match argDecls[level].metadata.scopeSelfIndex with
+  | none => none
+  | some (nIdx, aIdx, tIdx) =>
+    if h1 : nIdx < level.val then
+      if h2 : aIdx < level.val then
+        if h3 : tIdx < level.val then
+          some (⟨level.val - (nIdx + 1), by omega⟩,
+                ⟨level.val - (aIdx + 1), by omega⟩,
+                ⟨level.val - (tIdx + 1), by omega⟩)
+        else panic! s!"scopeSelf type index {tIdx} out of bounds ({level.val})"
+      else panic! s!"scopeSelf args index {aIdx} out of bounds ({level.val})"
+    else panic! s!"scopeSelf name index {nIdx} out of bounds ({level.val})"
 
 end ArgDecls
 

@@ -73,16 +73,12 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
     Step F rf e1 e1' →
     Step F rf (.app m e1 e2) (.app m' e1' e2)
 
-/-- Lazy evaluation of `ite`: condition is true. To evaluate `ite x e1 e2`, do
-not first evaluate `e1` and `e2`. In other words, `ite x e1 e2` is interpreted
-as `ite x (λ.e1) (λ.e2)`.  -/
+/-- Evaluation of `ite`: condition is true, select "then" branch. -/
 | ite_reduce_then:
   ∀ (ethen eelse:LExpr Tbase.mono),
     Step F rf (.ite m (.const mc (.boolConst true)) ethen eelse) ethen
 
-/-- Lazy evaluation of `ite`: condition is false. To evaluate `ite x e1 e2`, do
-not first evaluate `e1` and `e2`. In other words, `ite x e1 e2` is interpreted
-as `ite x (λ.e1) (λ.e2)`.  -/
+/-- Evaluation of `ite`: condition is false, select "else" branch. -/
 | ite_reduce_else:
   ∀ (ethen eelse:LExpr Tbase.mono),
     Step F rf (.ite m (.const mc (.boolConst false)) ethen eelse) eelse
@@ -92,6 +88,18 @@ as `ite x (λ.e1) (λ.e2)`.  -/
   ∀ (econd econd' ethen eelse:LExpr Tbase.mono),
     Step F rf econd econd' →
     Step F rf (.ite m econd ethen eelse) (.ite m' econd' ethen eelse)
+
+/-- Evaluation of `ite` "then" branch (when condition is not yet resolved). -/
+| ite_reduce_then_branch:
+  ∀ (econd ethen ethen' eelse:LExpr Tbase.mono),
+    Step F rf ethen ethen' →
+    Step F rf (.ite m econd ethen eelse) (.ite m' econd ethen' eelse)
+
+/-- Evaluation of `ite` "else" branch (when condition is not yet resolved). -/
+| ite_reduce_else_branch:
+  ∀ (econd ethen eelse eelse':LExpr Tbase.mono),
+    Step F rf eelse eelse' →
+    Step F rf (.ite m econd ethen eelse) (.ite m' econd ethen eelse')
 
 /-- Evaluation of equality. Reduce after both operands evaluate to values. -/
 | eq_reduce:

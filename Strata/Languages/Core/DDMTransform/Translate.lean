@@ -1402,6 +1402,7 @@ def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) 
 inductive FnInterp where
   | Definition
   | Declaration
+  | RecursiveDefinition
   deriving Repr
 
 def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
@@ -1413,32 +1414,60 @@ def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) :
     return #[.inline]
   | none => return #[]
 
+def translateDecreases (p : Program) (bindings : TransBindings) (arg : Arg)
+    : TransM (Option (LExpr Core.CoreLParams.mono)) := do
+  let .option _ dec := arg
+    | TransM.error s!"translateDecreases unexpected {repr arg}"
+  match dec with
+  | none => return none
+  | some d =>
+    let args ← checkOpArg d q`Core.decreases_clause 1
+    let e ← translateExpr p bindings args[0]!
+    return some e
+
 def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  7
-    | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
+    | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
+    | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
+    | .RecursiveDefinition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef  8
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-  -- This bindings order -- original, then inputs, is
-  -- critical here. Is this right though?
   let orig_bbindings := bindings.boundVars
-  let bbindings := bindings.boundVars ++ in_bindings
+  -- For recursive functions, the DDM's @[scopeSelf] puts the function name
+  -- before params in the typing context, so we mirror that order here.
+  -- The DDM elaborator also re-pushes type arg bindings between self and params,
+  -- so we must include placeholders for them to keep de Bruijn indices consistent.
+  let bbindings ← match status with
+    | .RecursiveDefinition =>
+      let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
+      let selfBinding := LExpr.op () fname fnTy
+      let tyArgPlaceholders := typeArgs.map fun (ta: TyIdentifier) =>
+        LExpr.op () (ta : Core.CoreIdent) .none
+      pure (bindings.boundVars ++ #[selfBinding] ++ tyArgPlaceholders ++ in_bindings)
+    | _ => pure (bindings.boundVars ++ in_bindings)
   let bindings := { bindings with boundVars := bbindings }
-  let (preconds, body, inline?) ← match status with
-             | .Definition =>
-                let preconds ← translateFnPreconds p fname bindings op.args[4]!
-                let e ← translateExpr p bindings op.args[5]!
-                let inline? ← translateOptionInline op.args[6]!
-                pure (preconds, some e, inline?)
-             | .Declaration => pure ([], none, #[])
+  let (preconds, body, inline?, dec) ← match status with
+    | .Definition | .RecursiveDefinition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let (dec, bodyIdx) ← match status with
+        | .RecursiveDefinition =>
+          let dec ← translateDecreases p bindings op.args[5]!
+          pure (dec, 6)
+        | _ => pure (none, 5)
+      let e ← translateExpr p bindings op.args[bodyIdx]!
+      let inline? ← translateOptionInline op.args[bodyIdx + 1]!
+      pure (preconds, some e, inline?, dec)
+    | .Declaration => pure ([], none, #[], none)
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
+                      isRecursive := status matches .RecursiveDefinition,
+                      decreases := dec,
                       inputs := sig,
                       output := ret,
                       body := body,
@@ -1771,6 +1800,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
+          | q`Core.command_recfndef =>
+            translateFunction .RecursiveDefinition p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"

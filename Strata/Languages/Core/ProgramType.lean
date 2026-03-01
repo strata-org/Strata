@@ -123,7 +123,10 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
       | .func func _ => try
         let Env := Env.pushEmptySubstScope
-        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        -- For recursive functions, add to context before type-checking so the
+        -- body can reference itself.
+        let C' := if func.isRecursive then C.addFactoryFunction func else C
+        let (func', Env) ← Function.typeCheck C' Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
         .ok (Decl.func func', C, Env)

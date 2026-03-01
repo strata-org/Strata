@@ -431,6 +431,9 @@ metadata declare(name : Ident, type : TypeOrCat);
 -- Declares a function in the resulting scope with name,
 -- arguments, and return type determined by the given arguments.
 metadata declareFn(name : Ident, args : Ident, type : Ident);
+-- Brings a function's own name into scope within its body,
+-- enabling recursive calls. Subsumes @[scope] for the annotated argument.
+metadata scopeSelf(name : Ident, args : Ident, type : Ident);
 -- Marks a list argument as requiring at least one element.
 metadata nonempty;
 ```
