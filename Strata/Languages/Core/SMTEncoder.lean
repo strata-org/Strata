@@ -37,7 +37,7 @@ structure SMT.Context where
   /-- Stores the TypeFactory purely for ordering datatype declarations
   correctly (TypeFactory in topological order) -/
   typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
-  seenDatatypes : Std.HashSet String := {}
+  seenDatatypes : List String := {}
   datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
 deriving Repr, Inhabited
 
