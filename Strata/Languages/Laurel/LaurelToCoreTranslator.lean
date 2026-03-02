@@ -59,7 +59,7 @@ decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyTy
 def lookupType (model : SemanticModel) (name : Identifier) : LMonoTy :=
   match (model.get name).getType with
   | .some ty => translateType model ty
-  | none => panic s!"no type for {name.text}"
+  | none => panic s!"no type for {name}"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -543,7 +543,7 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
         args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty) }
     let ldt : Lambda.LDatatype Unit := {
       name := dt.name.text
-      typeArgs := dt.typeArgs
+      typeArgs := dt.typeArgs.map (fun id => id.text)
       constrs := constrs
       constrs_ne := by simp [constrs]
     }
