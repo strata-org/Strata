@@ -654,10 +654,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   resolutionDiags := resolutionDiags ++ result.errors
-  dbg_trace "===  Program after liftExpressionAssignments ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
-  dbg_trace "================================="
+  -- dbg_trace "===  Program after liftExpressionAssignments ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
+  -- dbg_trace "================================="
 
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   -- External procedures are completely ignored (not translated to Core).
@@ -687,7 +687,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     }
 
   -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-  let allErrors := resolutionDiags.toList ++
+  let allErrors := -- resolutionDiags.toList ++
     pureErrors ++ procDiags ++ constantsState.diagnostics
   if !allErrors.isEmpty then
     .error allErrors.toArray

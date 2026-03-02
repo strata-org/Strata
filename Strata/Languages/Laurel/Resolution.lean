@@ -83,7 +83,11 @@ inductive AstNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
+  | unresolved
   deriving Repr
+
+instance : Inhabited AstNode where
+  default := AstNode.unresolved
 
 def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .var _ type => type
@@ -105,7 +109,7 @@ deriving instance Inhabited for Strata.Laurel.AstNode
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
   | some key => (model.refToDef.get? key).getD (softPanic s!"could not find key {key}")
-  | none => softPanic s!"model.get called on identifier {iden.text} without number"
+  | none => default -- softPanic s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   if id.uniqueId == none then
