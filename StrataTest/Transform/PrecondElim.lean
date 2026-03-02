@@ -81,7 +81,7 @@ function foo(x : int, y : int) : int
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure |safeMod$$wf| (x : int, y : int) returns ()
+info: procedure safeMod$$wf (x : int, y : int) returns ()
 {
   assume [precond_safeMod_0]: !(y == 0);
   assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
@@ -89,7 +89,7 @@ info: procedure |safeMod$$wf| (x : int, y : int) returns ()
 function safeMod (x : int, y : int) : int {
   x % y
 }
-procedure |foo$$wf| (x : int, y : int) returns ()
+procedure foo$$wf (x : int, y : int) returns ()
 {
   assert [foo_precond_calls_safeMod_0]: !(y == 0);
   assume [precond_foo_0]: safeMod(x, y) > 0;
@@ -134,7 +134,7 @@ info: datatype List {(
 function safeHead (xs : List) : int {
   List..head(xs)
 }
-procedure |test$$wf| (xs : List) returns ()
+procedure test$$wf (xs : List) returns ()
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_pre_test_requires_1_calls_safeHead_0]: List..isCons(xs);
@@ -191,7 +191,7 @@ function safeHead (xs : List) : int {
 function safeTail (xs : List) : List {
   List..tail(xs)
 }
-procedure |test$$wf| (xs : List) returns ()
+procedure test$$wf (xs : List) returns ()
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_post_test_ensures_1_calls_safeHead_0]: List..isCons(xs);
@@ -235,7 +235,7 @@ info: [Strata.Core] Type checking succeeded.
 info: procedure test () returns ()
 {
   var x : int := 1;
-  |safeDiv$$wf|: {
+  safeDiv$$wf: {
     var y : int;
     assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
     assume [precond_safeDiv_0]: y / x > 0;
@@ -279,7 +279,7 @@ info: [Strata.Core] Type checking succeeded.
 info: procedure test (cond : bool, x : int, y : int) returns ()
 {
   if (cond) {
-    |f$$wf|: {
+    f$$wf: {
       var a : int;
       assume [precond_f_0]: !(x == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
@@ -288,7 +288,7 @@ info: procedure test (cond : bool, x : int, y : int) returns ()
     assert [init_calls_f_0]: !(x == 0);
     var r1 : int := f(10);
     } else {
-    |f$$wf|: {
+    f$$wf: {
       var a : int;
       assume [precond_f_0]: !(y == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
@@ -332,7 +332,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: procedure proc1 (x : int) returns ()
 {
-  |f$$wf|: {
+  f$$wf: {
     var a : int;
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
@@ -343,7 +343,7 @@ info: procedure proc1 (x : int) returns ()
   };
 procedure proc2 (y : int) returns ()
 {
-  |f$$wf|: {
+  f$$wf: {
     var a : int;
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);

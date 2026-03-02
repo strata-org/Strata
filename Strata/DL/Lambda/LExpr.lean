@@ -126,12 +126,12 @@ inductive LExpr (T : LExprParamsT) : Type where
   | bvar    (m: T.base.Metadata) (deBruijnIndex : Nat)
   /-- A free variable, with an optional type annotation. -/
   | fvar    (m: T.base.Metadata) (name : Identifier T.base.IDMeta) (ty : Option T.TypeType)
-  /-- An abstraction, where `name` is a display name (empty string if none provided) and `ty` is the (optional) type of bound variable. -/
-  | abs     (m: T.base.Metadata) (name : String) (ty : Option T.TypeType) (e : LExpr T)
+  /-- An abstraction, where `prettyName` is a display name (empty string if none provided) and `ty` is the (optional) type of bound variable. -/
+  | abs     (m: T.base.Metadata) (prettyName : String) (ty : Option T.TypeType) (e : LExpr T)
   /-- A quantified expression, where `k` indicates whether it is universally or
-  existentially quantified, `name` is a display name (empty string if none provided), `ty` is the type of bound variable, and `trigger` is
+  existentially quantified, `prettyName` is a display name (empty string if none provided), `ty` is the type of bound variable, and `trigger` is
   a trigger pattern (primarily for use with SMT). -/
-  | quant   (m: T.base.Metadata) (k : QuantifierKind) (name : String) (ty : Option T.TypeType) (trigger: LExpr T) (e : LExpr T)
+  | quant   (m: T.base.Metadata) (k : QuantifierKind) (prettyName : String) (ty : Option T.TypeType) (trigger: LExpr T) (e : LExpr T)
   /-- A function application. -/
   | app     (m: T.base.Metadata) (fn e : LExpr T)
   /-- A conditional expression. This is a constructor rather than a built-in
