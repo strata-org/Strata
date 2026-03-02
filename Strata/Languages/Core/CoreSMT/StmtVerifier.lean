@@ -129,7 +129,8 @@ mutual
 partial def processStatement (state : CoreSMTState) (E : Core.Env)
     (stmt : Core.Statement) (smtCtx : Core.SMT.Context)
     : IO (CoreSMTState × Core.SMT.Context × List Core.VCResult) := do
-  if !isCoreSMTStmt stmt then
+  match checkCoreSMTStmt stmt with
+  | .error reason =>
     let obligation : Imperative.ProofObligation Core.Expression := {
       label := "non-CoreSMT"
       property := .assert
@@ -137,8 +138,9 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none
       metadata := .empty
     }
-    let result : Core.VCResult := { obligation, result := .implementationError "Statement not in CoreSMT subset" }
+    let result : Core.VCResult := { obligation, result := .implementationError s!"Statement not in CoreSMT subset: {reason}" }
     return (state, smtCtx, [result])
+  | .ok () =>
   match stmt with
   | Core.Statement.assume _label expr _ =>
     match translateExpr E expr smtCtx with
@@ -172,6 +174,10 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         let solver : SMT.SolverInterface := state.solver
         solver.defineFun name.name [] smtTy term
         let state := state.addItem (.varDef name.name smtTy term)
+        -- Track the definition as an assumption for diagnosis context (x == expr)
+        let nameExpr : Core.Expression.Expr := .fvar Strata.SourceRange.none name none
+        let eqExpr : Core.Expression.Expr := .eq Strata.SourceRange.none nameExpr expr
+        let state := state.addAssumption eqExpr
         return (state, smtCtx, [])
 
   | Core.Statement.init name ty none _ =>

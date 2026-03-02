@@ -126,9 +126,13 @@ def main (args : List String) : IO UInt32 := do
             let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
             let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
             let state := Core.CoreSMT.CoreSMTState.init solverInterface config
-            let stmts := coreProgram.decls.flatMap fun d => match d with
-              | .proc p _ => p.body
-              | _ => []
+            let stmts := coreProgram.decls.filterMap fun d => match d with
+              | .proc p _ =>
+                if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
+                  some (Imperative.Stmt.block p.header.name.name
+                    (Core.CoreSMT.removeUnusedVarsStmts p.body) .empty)
+                else none
+              | _ => none
             let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init stmts
             pure results.toArray
           else

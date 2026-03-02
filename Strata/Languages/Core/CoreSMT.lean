@@ -11,6 +11,7 @@ import Strata.Languages.Core.CoreSMT.ExprTranslator
 import Strata.Languages.Core.CoreSMT.StmtVerifier
 import Strata.Languages.Core.CoreSMT.Diagnosis
 import Strata.Languages.Core.CoreSMT.Verifier
+import Strata.Languages.Core.CoreSMT.RemoveUnusedVars
 
 namespace Strata.Core.CoreSMT
 
