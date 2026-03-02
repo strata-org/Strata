@@ -18,6 +18,7 @@ import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 
 import Strata.SimpleAPI
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.CoreSMT.Verifier
 import Strata.Languages.Core.CoreSMT.State
 import Strata.DL.SMT.SolverInterface
@@ -472,11 +473,61 @@ def pyAnalyzeLaurelCommand : Command where
               let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
               let config : Strata.Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
               let state := Strata.Core.CoreSMT.CoreSMTState.init solverInterface config
-              let stmts := programDecls.flatMap fun d => match d with
-                | .proc p _ => p.body
-                | _ => []
-              let (_, _, results) ← Strata.Core.CoreSMT.verify state Core.Env.init stmts
-              pure results.toArray
+              -- Extract parameterless procedure bodies, each wrapped in a labeled block
+              -- Apply dead variable elimination to remove unused init statements
+              let procs := programDecls.filterMap fun d => match d with
+                | .proc p _ =>
+                  if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
+                    let cleaned := Strata.Core.CoreSMT.removeUnusedVarsStmts p.body
+                    some (p.header.name.name, Imperative.Stmt.block p.header.name.name cleaned .empty)
+                  else none
+                | _ => none
+              -- Verify each procedure, grouping results by procedure name
+              let mut allResults : Array Core.VCResult := #[]
+              let mut state := state
+              let mut smtCtx := Core.SMT.Context.default
+              for (procName, block) in procs do
+                IO.println s!"procedure {procName}:"
+                let (state', smtCtx', results) ← Strata.Core.CoreSMT.verify state Core.Env.init [block] smtCtx
+                state := state'
+                smtCtx := smtCtx'
+                for r in results do
+                  let marker := match r.result with
+                    | .pass => "✅ pass"
+                    | .fail => "❌ fail"
+                    | .unknown => "❓ unknown"
+                    | .implementationError msg => s!"🚨 {msg}"
+                  let suffix := match Imperative.getFileRange r.obligation.metadata with
+                    | some fr =>
+                      if fr.range.isNone then ""
+                      else match pySourceOpt with
+                        | some (pyPath, fileMap) =>
+                          match fr.file with
+                          | .file path =>
+                            if path == pyPath then
+                              let pos := fileMap.toPosition fr.range.start
+                              s!" (line {pos.line}, col {pos.column})"
+                            else s!" (byte {fr.range.start})"
+                        | none => s!" (byte {fr.range.start})"
+                    | none => ""
+                  IO.println s!"  {r.obligation.label}: {marker}{suffix}"
+                  -- Print diagnosis details for failures
+                  if let some diag := r.diagnosis then
+                    for failure in diag.diagnosedFailures do
+                      let failureKind := if failure.isRefuted then
+                        "it is impossible that"
+                      else
+                        "could not prove"
+                      let exprStr := (Strata.Core.formatExprs [failure.expression]).pretty
+                      IO.println s!"    └─ {failureKind} {exprStr}"
+                      let assumptions := failure.report.context.pathCondition
+                      if !assumptions.isEmpty then
+                        IO.println s!"       under the assumptions"
+                        for assumption in assumptions do
+                          let assumStr := (Strata.Core.formatExprs [assumption]).pretty
+                          IO.println s!"         {assumStr}"
+                allResults := allResults ++ results.toArray
+              pure allResults
             else
               IO.FS.withTempDir (fun tempDir =>
                 EIO.toIO
@@ -484,10 +535,11 @@ def pyAnalyzeLaurelCommand : Command where
                   (Core.verify coreProgram tempDir .none
                     { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
 
-          -- Print results
-          IO.println "\n==== Verification Results ===="
-          let mut s := ""
-          for vcResult in vcResults do
+          -- Print results (non-interactive only; interactive prints per-procedure above)
+          if !interactive then do
+            IO.println "\n==== Verification Results ===="
+            let mut s := ""
+            for vcResult in vcResults do
             let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
               | some fr =>
                 if fr.range.isNone then ("", "")
@@ -511,7 +563,7 @@ def pyAnalyzeLaurelCommand : Command where
                     | _ => ("", s!" (at byte {fr.range.start})")
               | none => ("", "")
             s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
-          IO.println s
+            IO.println s
           -- Output in SARIF format if requested
           if outputSarif then
             let files := match pySourceOpt with
