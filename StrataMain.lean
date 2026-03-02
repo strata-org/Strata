@@ -744,6 +744,8 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
   for ax in axioms do
     let gotoExpr ← Lambda.LExpr.toGotoExprCtx
       (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] ax.e
+    -- Skip axioms with quantifiers over types unsupported by CBMC's SMT2 backend
+    if gotoExpr.hasUnsupportedQuantifierTypes then continue
     axiomInsts := axiomInsts.push
       { type := .ASSUME, locationNum := axiomLoc,
         guard := gotoExpr,

@@ -101,7 +101,24 @@ def exprToJson (expr : Expr) : Json :=
         srcField
       ]
     | .unary op => mkOpJson (toString f!"{op}")
-    | .binary op => mkOpJson (toString f!"{op}")
+    | .binary op =>
+      -- CBMC's binding_exprt expects op0 to be a tuple of bound variables
+      match op with
+      | .Forall | .Exists =>
+        let opStr := toString f!"{op}"
+        let subs := expr.operands.map exprToJson
+        let sub0 := Json.mkObj [
+          ("id", "tuple"),
+          ("namedSub", Json.mkObj [("type", Json.mkObj [("id", "tuple")])]),
+          ("sub", Json.arr #[subs[0]!])
+        ]
+        Json.mkObj [
+          ("id", opStr),
+          ("namedSub", Json.mkObj [("type", tyToJson expr.type)]),
+          ("sub", Json.arr #[sub0, subs[1]!]),
+          srcField
+        ]
+      | _ => mkOpJson (toString f!"{op}")
     | .multiary op => mkOpJson (toString f!"{op}")
     | .ternary op => mkOpJson (toString f!"{op}")
     | .side_effect effect =>

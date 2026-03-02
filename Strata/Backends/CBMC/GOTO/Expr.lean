@@ -365,6 +365,20 @@ def ite (cond then_expr else_expr : Expr) : Expr :=
 def side_effect_nondet (namedFields : List (String × Expr)) : Expr :=
   { id := .side_effect .Nondet, type := .Empty, namedFields := namedFields }
 
+/-- Check whether an expression contains quantifiers over types that CBMC's
+SMT2 backend cannot encode (e.g., struct_tag, regex). -/
+partial def hasUnsupportedQuantifierTypes (e : Expr) : Bool :=
+  match e.id with
+  | .binary .Forall =>
+    match e.operands with
+    | boundVar :: _ =>
+      match boundVar.type.id with
+      | .structTag _ | .primitive .regex | .primitive .empty
+      | .primitive .string => Bool.true
+      | _ => e.operands.any hasUnsupportedQuantifierTypes
+    | _ => false
+  | _ => e.operands.any hasUnsupportedQuantifierTypes
+
 end Expr
 
 -------------------------------------------------------------------------------
