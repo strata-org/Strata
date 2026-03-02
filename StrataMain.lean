@@ -438,17 +438,16 @@ def pyAnalyzeLaurelCommand : Command where
           -- HeapParameterization, so translate output contains prelude decls as normal decls.
           -- No stripping needed.
           let programDecls := coreProgramDecls.decls
-          let pyPreludeDecls := pyPrelude
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
-            pyPreludeDecls.flatMap Core.Decl.names
+            pyPrelude.decls.flatMap Core.Decl.names
               |>.foldl (init := {}) fun s n => s.insert n.name
           let collisions := programDecls.flatMap fun d =>
             d.names.filter fun n => preludeNames.contains n.name
           if !collisions.isEmpty then
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := pyPreludeDecls ++ programDecls }
+          let coreProgram := {decls := pyPrelude.decls ++ programDecls }
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>

@@ -1029,6 +1029,7 @@ def pythonToLaurel (prelude: Core.Program)
 
     let mainProc : Procedure := {
       name := "__main__",
+      inputs := [],
       outputs := [],
       preconditions := [],
       determinism := .deterministic none, --TODO: need to set reads
@@ -1036,7 +1037,7 @@ def pythonToLaurel (prelude: Core.Program)
       isFunctional := false
       body := .Transparent bodyBlock
       md := default
-      }
+    }
 
     let program : Laurel.Program := {
       staticProcedures := mainProc :: procedures
