@@ -44,7 +44,7 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
       | opts, "--reach-check" :: rest, procs => go {opts with reachCheck := true} rest procs
-      | opts, "--interactive" :: rest, procs => go {opts with interactive := true} rest procs
+      | opts, "--incremental" :: rest, procs => go {opts with incremental := true} rest procs
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -118,7 +118,7 @@ def main (args : List String) : IO UInt32 := do
                   | .implementationError msg => s!"error: {msg}"
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
-          else if opts.interactive then
+          else if opts.incremental then
             -- Interactive (in-memory) CoreSMT verification
             let (coreProgram, errors) := Core.getProgram pgm inputCtx
             if !errors.isEmpty then throw (IO.userError s!"DDM Transform Error: {repr errors}")

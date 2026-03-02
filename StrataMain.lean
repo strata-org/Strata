@@ -375,7 +375,7 @@ def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "interactive", help := "Use the interactive (in-memory) CoreSMT verification engine." },
+            { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." },
             { name := "pyspec",
               help := "Add PySpec-derived Laurel declarations.",
               takesArg := .repeat "ion_file" },
@@ -465,9 +465,13 @@ def pyAnalyzeLaurelCommand : Command where
           let coreProgram := {decls := pyPreludeDecls ++ programDecls }
 
           -- Verify using interactive CoreSMT engine or default Core verifier
-          let interactive := pflags.getBool "interactive"
+          let interactive := pflags.getBool "incremental"
           let vcResults ←
             if interactive then do
+              let procNames := programDecls.filterMap fun d => match d with
+                | .proc p _ => some s!"{p.header.name.name}({p.body.length} stmts)"
+                | _ => none
+              IO.println s!"[debug] programDecls: {programDecls.length}, procs: {procNames}"
               let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
               let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
               let config : Strata.Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }

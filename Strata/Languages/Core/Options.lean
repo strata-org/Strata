@@ -76,9 +76,9 @@ structure VerifyOptions where
 
   Off by default. CLI: `--reach-check`. -/
   reachCheck : Bool
-  /-- Use the interactive (in-memory) CoreSMT verification engine instead of
+  /-- Use the incremental (in-memory) CoreSMT verification engine instead of
       the default batch SMT file approach. -/
-  interactive : Bool
+  incremental : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -93,7 +93,7 @@ def VerifyOptions.default : VerifyOptions := {
   solver := defaultSolver
   vcDirectory := .none
   reachCheck := false
-  interactive := false
+  incremental := false
 }
 
 instance : Inhabited VerifyOptions where
