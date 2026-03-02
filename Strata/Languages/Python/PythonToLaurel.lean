@@ -207,6 +207,17 @@ def resolveDispatch (ctx : TranslationContext)
 
 /-! ## Expression Translation -/
 
+/-- Check if a Python expression has string type, using the Python AST and variable types.
+    Used to disambiguate `+` between arithmetic Add and string StrConcat. -/
+def isPyExprStringTyped (ctx : TranslationContext) (e : Python.expr SourceRange) : Bool :=
+  match e with
+  | .Constant _ (.ConString ..) _ => true
+  | .Name _ name _ =>
+    match ctx.variableTypes.find? (·.1 == name.val) with
+    | some (_, ty) => highEq ty (mkHighTypeMd .TString)
+    | none => false
+  | _ => false
+
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
   ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName
@@ -267,10 +278,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let laurelOp ← match op with
       -- Arithmetic
       | .Add _ =>
-        let typeEnv : Laurel.TypeEnv := ctx.variableTypes
-        let leftType := Laurel.computeExprType typeEnv [] leftExpr
-        -- Dispatch on left operand
-        if highEq leftType { val := .TString, md := leftExpr.md } then
+        -- Dispatch on left operand type (determined from Python AST)
+        if isPyExprStringTyped ctx left then
           .ok Operation.StrConcat
         else
           .ok Operation.Add
