@@ -1,7 +1,7 @@
 Successfully parsed.
-Implies.core.st(24, 4) [assert_0]: ✅ pass
+Implies.core.st(24, 4) [assert_0]: ✔️ pass if reachable
 Implies.core.st(25, 4) [assert_1]: 🟡 unknown
-Implies.core.st(26, 4) [assert_2]: ✅ pass
+Implies.core.st(26, 4) [assert_2]: ✔️ pass if reachable
 Implies.core.st(27, 4) [assert_3]: 🟡 unknown
 Implies.core.st(35, 4) [assert_4]: 🟡 unknown
 Implies.core.st(36, 4) [assert_5]: 🟡 unknown
