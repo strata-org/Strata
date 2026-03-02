@@ -198,14 +198,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let varType ← match typeArg with
         | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
           | q`Laurel.optionalType, #[typeArg0] => translateHighType typeArg0
-          | _, _ => TransM.error s!"Variable {name.text} requires explicit type"
-        | _ => TransM.error s!"Variable {name.text} requires explicit type"
+          | _, _ => TransM.error s!"Variable {name} requires explicit type"
+        | _ => TransM.error s!"Variable {name} requires explicit type"
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) => match assignOp.args with
           | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
-          | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name.text}"
+          | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
         | .option _ none => pure none
-        | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name.text}"
+        | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
       return mkStmtExprMd (.LocalVariable name varType value) md
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
