@@ -19,7 +19,7 @@ namespace Strata
 -- ✓ For loops down to
 -- Division operator `/`
 -- Array assignment syntax
--- Quantifier syntax (forall, exists)
+-- ✓ Quantifier syntax (forall, exists)
 -- Simple procedure calls
 -- Summation expressions
 -- Structures and records (basic support)
@@ -28,6 +28,16 @@ namespace Strata
 dialect Boole;
 
 import Core;
+
+// Unicode quantifier aliases.
+fn forall_unicode (d : DeclList, @[scope(d)] b : bool) : bool =>
+  "∀ " d " . " b:3;
+fn exists_unicode (d : DeclList, @[scope(d)] b : bool) : bool =>
+  "∃ " d " . " b:3;
+fn forall_unicodeT (d : DeclList, @[scope(d)] triggers : Triggers, @[scope(d)] b : bool) : bool =>
+  "∀ " d " . " triggers indent(2, b:3);
+fn exists_unicodeT (d : DeclList, @[scope(d)] triggers : Triggers, @[scope(d)] b : bool) : bool =>
+  "∃ " d " . " triggers indent(2, b:3);
 
 category Step;
 op step(e: Expr) : Step =>
