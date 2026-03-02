@@ -918,13 +918,23 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
 
 private def typeConstructorToSymbolEntry (tc : Core.TypeConstructor) :
     String × CProverGOTO.CBMCSymbol :=
+  -- CBMC requires structs to have at least one component.
+  -- Abstract type constructors have no fields, so add a dummy padding field.
+  let dummyComponent := Lean.Json.mkObj [
+    ("id", ""),
+    ("namedSub", Lean.Json.mkObj [
+      ("#pretty_name", Lean.Json.mkObj [("id", "__padding")]),
+      ("name", Lean.Json.mkObj [("id", "__padding")]),
+      ("type", Lean.Json.mkObj [("id", "bool")])
+    ])
+  ]
   let structTy := Lean.Json.mkObj [
     ("id", "struct"),
     ("namedSub", Lean.Json.mkObj [
       ("tag", Lean.Json.mkObj [("id", tc.name)]),
       ("components", Lean.Json.mkObj [
         ("id", ""),
-        ("sub", Lean.Json.arr #[])
+        ("sub", Lean.Json.arr #[dummyComponent])
       ])
     ])
   ]
