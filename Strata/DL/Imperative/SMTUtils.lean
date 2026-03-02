@@ -134,6 +134,16 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
   let stdout := output.stdout
 
   -- Helper to parse a single verdict and model
+  -- Skip lines until we find a verdict (sat/unsat/unknown) or run out of input.
+  -- This is needed because get-value commands in the file may produce error
+  -- output when the preceding check-sat returned unsat.
+  let skipToNextVerdict (input : String) : String :=
+    let lines := input.splitOn "\n"
+    let rest := lines.dropWhile (fun l =>
+      let t := l.trimAscii.toString
+      t != "sat" && t != "unsat" && t != "unknown" && !t.isEmpty)
+    "\n".intercalate rest
+
   let parseVerdict (input : String) : Except Format (Result P.Ident × String) := do
     let pos := input.find (· == '\n')
     let verdict := input.extract input.startPos pos |>.trimAscii
@@ -142,10 +152,10 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     | "sat" =>
       let rawModel ← getModel rest
       match (processModel typedVarToSMTFn vars rawModel E) with
-      | .ok model => .ok (.sat model, rest)
-      | .error _ => .ok (.sat [], rest)
-    | "unsat" => .ok (.unsat, rest)
-    | "unknown" => .ok (.unknown, rest)
+      | .ok model => .ok (.sat model, skipToNextVerdict rest)
+      | .error _ => .ok (.sat [], skipToNextVerdict rest)
+    | "unsat" => .ok (.unsat, skipToNextVerdict rest)
+    | "unknown" => .ok (.unknown, skipToNextVerdict rest)
     | _ =>
       let stderr := output.stderr
       let hasExecError := stderr.contains "could not execute external process"

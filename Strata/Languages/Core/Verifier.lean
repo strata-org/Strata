@@ -58,7 +58,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", s!"\"Property can be satisfied\""))
       let obligationStr ← Solver.termToSMTString obligationId
-      let _ ← Solver.checkSatAssuming [obligationStr] []
+      let _ ← Solver.checkSatAssuming [obligationStr] ids
 
     if validityCheck then
       Solver.comment "Validity check (can property be false?)"
@@ -66,7 +66,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
         (message := ("unsat-message", s!"\"Property is always true\""))
       let obligationStr ← Solver.termToSMTString obligationId
       let negObligationId := s!"(not {obligationStr})"
-      let _ ← Solver.checkSatAssuming [negObligationId] []
+      let _ ← Solver.checkSatAssuming [negObligationId] ids
   else
     if satisfiabilityCheck then
       Solver.comment "Satisfiability check (can property be true?)"
