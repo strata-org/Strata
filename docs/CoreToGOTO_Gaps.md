@@ -5,6 +5,8 @@ translation pipeline used for CBMC verification.
 
 ## Pipeline Overview
 
+### Laurel pipeline (with DFCC contracts)
+
 ```
 strata laurelAnalyzeToGoto <file.lr.st>
 python3 process_json.py combine defaults.json <basename>.symtab.json > full.symtab.json
@@ -14,6 +16,15 @@ goto-instrument --dfcc main output_cc.gb output_dfcc.gb
 cbmc output_dfcc.gb --function main
 ```
 
+### Python pipeline (direct verification)
+
+```
+strata pyAnalyzeLaurelToGoto <file.py.ion>
+python3 process_json.py combine defaults.json <basename>.symtab.json > full.symtab.json
+symtab2gb full.symtab.json --goto-functions <basename>.goto.json --out output.gb
+cbmc output.gb --function main --z3
+```
+
 ## Implemented Features
 
 - Global variables (`Decl.var`) with optional initializers
@@ -21,14 +32,20 @@ cbmc output_dfcc.gb --function main
 - Free requires/ensures: silently filtered (no CBMC equivalent)
 - `exit` statement → unconditional GOTO to end of enclosing labeled block
 - Loop invariants → `#spec_loop_invariant` on backward GOTO edge (multiple invariants supported)
-- `old(expr)` → GOTO unary `Old` expression
+- `old(expr)` → resolved by Core verifier before GOTO translation; `old`
+  variables appear as regular symbols in GOTO (no GOTO `Old` expression needed)
 - All arithmetic, comparison, boolean, bitvector, and real operators
 - BV Extract operations → `extractbits`
 - `cover` command → ASSERT instruction
-- Datatypes and type constructors → struct symbol table entries
+- Datatypes and type constructors → struct symbol table entries (type
+  constructors with no fields get a dummy `__padding` bool component to
+  satisfy CBMC's requirement that structs have at least one component)
 - Pure functions with bodies → GOTO functions with SET_RETURN_VALUE
 - Procedure calls → FUNCTION_CALL instructions (including inside if-then-else and loops)
-- Axioms (`Decl.ax`) → ASSUME instructions at procedure start
+- Axioms (`Decl.ax`) → ASSUME instructions at procedure start (axioms with
+  quantifiers over types unsupported by CBMC's SMT2 backend — `string`,
+  `struct_tag`, `regex`, `empty` — are silently skipped for soundness; see
+  Known Limitations below)
 - Distinct declarations (`Decl.distinct`) → pairwise `!=` ASSUME instructions
 - `Map.const` → GOTO `array_of` expression (constant-valued map/array)
 
@@ -152,14 +169,33 @@ still fail, as `integer` has no fixed bit width.
 
 ### CBMC crashes on quantifiers over non-integer types (patched)
 
-**Root cause:** CBMC's SSA renaming (`goto_symex_state.cpp`) and simplifier
-(`simplify_expr.cpp`) process all operands of quantifier expressions, including
-bound variables. This converts bound variable symbols into SSA expressions,
-violating the `quantifier_exprt` invariant that bound variables must be symbols.
+**Root cause:** CBMC's simplifier (`simplify_expr.cpp`) processes all operands
+of quantifier expressions, including bound variables. This converts bound
+variable symbols into non-symbol expressions, violating the `quantifier_exprt`
+invariant that bound variables must be symbols.
 
-**Fix:** The patch `cbmc-quantifier-simplify.patch` skips bound variables
-(operand 0) during SSA renaming and expression simplification. Applied
+**Fix:** The patch `cbmc-quantifier-simplify.patch` modifies the simplifier's
+preorder traversal to only simplify the body (operand 1) of quantifier
+expressions, leaving bound variables (operand 0) untouched. Applied
 automatically in CI.
+
+Additionally, quantifier bound variables are emitted wrapped in a `tuple`
+node in the GOTO JSON to match CBMC's `binding_exprt` internal structure,
+which expects `op0()` to be a tuple containing the variable list.
+
+### Axioms with quantifiers over non-primitive types are skipped
+
+**Root cause:** CBMC's SMT2 backend cannot encode quantifier bound variables
+of `string`, `struct_tag`, `regex`, or `empty` type. String-typed quantifier
+variables cause Z3 to hang; struct/regex/empty types have no SMT2 sort mapping
+for quantifier variable declarations.
+
+**Mitigation:** The `hasUnsupportedQuantifierTypes` filter in `Expr.lean`
+detects axioms containing quantifiers over these types. Such axioms are
+silently skipped during GOTO emission. This is sound: dropping an axiom
+(which is an ASSUME instruction) means the verifier considers more states,
+which is an over-approximation (may produce false positives, never false
+negatives).
 
 ### #490: DDM parser infinite loop with `modifies` before `ensures`
 
