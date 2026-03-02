@@ -42,6 +42,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
+    | .unresolved =>
+        -- The Python through Laurel pipeline does not resolve yet
+        { val := .TVoid, md := default }
     | astNode => softPanic s!"static call to {callee} not to a procedure but to a {repr astNode}"
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
   -- Operators

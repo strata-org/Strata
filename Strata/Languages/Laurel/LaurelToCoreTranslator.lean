@@ -643,10 +643,13 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with
     | .Datatype dt => some (translateDatatypeDefinition model dt)
     | _ => none
-  pure ({
-    decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls },
-    diamondErrors ++ modifiesDiags
-  )
+  let program := {
+    decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls }
+
+  -- dbg_trace "=== Generated Strata Core Program ==="
+  -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
+  -- dbg_trace "================================="
+  pure (program, diamondErrors ++ modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
@@ -661,9 +664,6 @@ def verifyToVcResults (program : Program)
   -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
   -- Debug: Print the generated Strata Core program
-  dbg_trace "=== Generated Strata Core Program ==="
-  dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram strataCoreProgram) 100))
-  dbg_trace "================================="
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))
         (Core.verify strataCoreProgram tempDir .none options)
