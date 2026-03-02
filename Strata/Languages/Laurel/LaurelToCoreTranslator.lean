@@ -560,7 +560,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   let result := resolve program
   let (program, model) := (result.program, result.model)
-  let mut resolutionDiags := result.errors
+  let mut _resolutionDiags := result.errors
   -- dbg_trace "=== Before validateDiamondFieldAccesses ==="
   -- dbg_trace "model: {repr model}"
   let diamondErrors := validateDiamondFieldAccesses model program
@@ -572,12 +572,12 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- dbg_trace "===  Program after heapParameterization ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
-  resolutionDiags := resolutionDiags ++ result.errors
+  _resolutionDiags := _resolutionDiags ++ result.errors
 
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  resolutionDiags := resolutionDiags ++ result.errors
+  _resolutionDiags := _resolutionDiags ++ result.errors
   -- dbg_trace "===  Program after typeHierarchyTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
@@ -585,7 +585,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  resolutionDiags := resolutionDiags ++ result.errors
+  _resolutionDiags := _resolutionDiags ++ result.errors
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
@@ -593,7 +593,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let program := liftExpressionAssignments model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  resolutionDiags := resolutionDiags ++ result.errors
+  _resolutionDiags := _resolutionDiags ++ result.errors
   -- dbg_trace "===  Program after liftExpressionAssignments ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
