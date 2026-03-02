@@ -37,6 +37,14 @@ Obligation: unreachable_cover1
 Property: cover
 Result: ✖️ refuted if reachable
 
+Obligation: unreachable_cover1
+Property: cover
+Result: ✖️ refuted if reachable
+
+Obligation: unreachable_cover2
+Property: cover
+Result: ✖️ refuted if reachable
+
 Obligation: unreachable_cover2
 Property: cover
 Result: ✖️ refuted if reachable
@@ -130,7 +138,7 @@ Property: cover
 Result: ⛔ unreachable
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {VerifyOptions.quiet with checkAmount := .full})
+#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------
 
@@ -172,18 +180,18 @@ Result: ⛔ unreachable
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✔️ pass if reachable
+Result: ❌ refuted and reachable from declaration entry
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ➕ satisfiable
+Result: 🔶 indecisive and reachable from declaration entry
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ✖️ refuted if reachable
+Result: ❌ refuted and reachable from declaration entry
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {VerifyOptions.quiet with checkAmount := .full})
+#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------
 
@@ -252,11 +260,11 @@ procedure Test() returns ()
 #end
 
 /--
-info: #["assertion holds vacuously (path unreachable)", "cover property is unreachable"]
+info: #[]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {VerifyOptions.quiet with checkAmount := .full})
+  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkAmount := .full})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -290,11 +298,11 @@ procedure Test() returns ()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ⛔ unreachable
+Result: ✅ pass and reachable from declaration entry
 
 Obligation: pe_cover_fail
 Property: cover
-Result: ⛔ unreachable
+Result: ❌ refuted and reachable from declaration entry
 
 Obligation: rc_assert
 Property: assert
@@ -305,6 +313,6 @@ Property: cover
 Result: ⛔ unreachable
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {VerifyOptions.quiet with checkAmount := .full})
+#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkAmount := .full})
 
 ---------------------------------------------------------------------

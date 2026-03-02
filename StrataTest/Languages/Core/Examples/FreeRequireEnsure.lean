@@ -100,8 +100,6 @@ Result: ✔️ pass if reachable
 Obligation: g_eq_15_internal
 Property: assert
 Result: ➖ can be false if reachable
-Model:
-($__g3, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

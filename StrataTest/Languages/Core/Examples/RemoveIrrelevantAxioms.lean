@@ -124,32 +124,39 @@ Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
+
 Obligation: assert_5
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
+
 Obligation: assert_6
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
+
 Obligation: assert_7
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
+
 Obligation: assert_8
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
+
 Obligation: assert_9
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
+
 Obligation: assert_10
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
+
 Obligation: assert_11
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
-        (options := {VerifyOptions.models with removeIrrelevantAxioms := false})
+        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := false})
 
 ---------------------------------------------------------------------
 
@@ -173,35 +180,35 @@ Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 
 Obligation: assert_5
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 
 Obligation: assert_6
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 
 Obligation: assert_7
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 
 Obligation: assert_8
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 
 Obligation: assert_9
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 
 Obligation: assert_10
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 
 Obligation: assert_11
 Property: assert
-Result: ➖ can be false if reachable
+Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
@@ -259,4 +266,5 @@ Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
+        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := false})
 
