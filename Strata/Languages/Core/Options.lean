@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+namespace Core
+
 inductive VerboseMode where
   | quiet
   | models
@@ -102,3 +104,5 @@ def VerifyOptions.models : VerifyOptions :=
 
 def VerifyOptions.debug : VerifyOptions :=
   { VerifyOptions.default with verbose := .debug }
+
+end Core
