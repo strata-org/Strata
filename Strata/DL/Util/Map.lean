@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 -- [STOPGAP] Should be replaced by Std.HashMap.
 
@@ -15,9 +16,9 @@ open Std (ToFormat Format format)
 A simple Map-like type based on lists
 -/
 
-def Map (α : Type u) (β : Type v) := List (α × β)
+@[expose] public def Map (α : Type u) (β : Type v) := List (α × β)
 
-instance [BEq α] [BEq β] : BEq (Map α β) where
+public instance [BEq α] [BEq β] : BEq (Map α β) where
   beq m1 m2 := go m1 m2 where
   go m1 m2 :=
     match m1, m2 with
@@ -26,49 +27,49 @@ instance [BEq α] [BEq β] : BEq (Map α β) where
       x == y && go xrest yrest
     | _, _ => false
 
-instance : Inhabited (Map α β) where
+public instance : Inhabited (Map α β) where
   default := []
 
-instance : EmptyCollection (Map α β) where
+public instance : EmptyCollection (Map α β) where
   emptyCollection := []
 
-instance : HAppend (Map α β) (Map α β) (Map α β) where
+public instance : HAppend (Map α β) (Map α β) (Map α β) where
   hAppend := List.append
 
-instance [DecidableEq α] [DecidableEq β] [LawfulBEq α] [LawfulBEq β] : DecidableEq (Map α β) :=
+public instance [DecidableEq α] [DecidableEq β] [LawfulBEq α] [LawfulBEq β] : DecidableEq (Map α β) :=
   List.hasDecEq
 
-instance [x : Repr (List (α × β))] : Repr (Map α β) where
+public instance [x : Repr (List (α × β))] : Repr (Map α β) where
   reprPrec := x.reprPrec
 
-def Map.ofList (l : List (α × β)) : Map α β := l
+@[expose] public def Map.ofList (l : List (α × β)) : Map α β := l
 
-def Map.toList (m : Map α β) : List (α × β) := m
+@[expose] public def Map.toList (m : Map α β) : List (α × β) := m
 
-def Map.format' [ToFormat α] [ToFormat β] (m : Map α β) : Format :=
+public def Map.format' [ToFormat α] [ToFormat β] (m : Map α β) : Format :=
   match m with
   | [] => ""
   | [(k, v)] => (format f!"({k}, {v})")
   | (k, v) :: rest =>
     (format f!"({k}, {v}) ") ++ Map.format' rest
 
-instance [ToFormat α] [ToFormat β] : ToFormat (Map α β) where
+public instance [ToFormat α] [ToFormat β] : ToFormat (Map α β) where
   format := Map.format'
 
-def Map.union (m1 m2 : Map α β) : Map α β :=
+public def Map.union (m1 m2 : Map α β) : Map α β :=
   List.append m1 m2
 
-abbrev Map.empty : Map α β := []
+public abbrev Map.empty : Map α β := []
 
-def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
+@[expose] public def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
   match m with
   | [] => none
   | (a, b) :: m => if a = a' then some b else find? m a'
 
-def Map.contains [DecidableEq α] (m : Map α β) (a : α) : Bool :=
+@[expose] public def Map.contains [DecidableEq α] (m : Map α β) (a : α) : Bool :=
   m.find? a |>.isSome
 
-def Map.insert [DecidableEq α] (m : Map α β) (a' : α) (b' : β) : Map α β :=
+@[expose] public def Map.insert [DecidableEq α] (m : Map α β) (a' : α) (b' : β) : Map α β :=
   match m with
   | [] => [(a', b')]
   | (a, b) :: m => if a = a' then (a', b') :: m else (a, b) :: insert m a' b'
@@ -76,7 +77,7 @@ def Map.insert [DecidableEq α] (m : Map α β) (a' : α) (b' : β) : Map α β 
 /--
 Remove the first occurence of element with key `a'` in `m`.
 -/
-def Map.remove [DecidableEq α] (m : Map α β) (a' : α) : Map α β :=
+@[expose] public def Map.remove [DecidableEq α] (m : Map α β) (a' : α) : Map α β :=
   match m with
   | [] => []
   | (a, b) :: m => if a = a' then m else (a, b) :: remove m a'
@@ -84,34 +85,34 @@ def Map.remove [DecidableEq α] (m : Map α β) (a' : α) : Map α β :=
 /--
 Remove all occurences of elements with key `a'` in `m`.
 -/
-def Map.erase [DecidableEq α] (m : Map α β) (a' : α) : Map α β :=
+@[expose] public def Map.erase [DecidableEq α] (m : Map α β) (a' : α) : Map α β :=
   match m with
   | [] => []
   | (a, b) :: m => if a = a' then erase m a' else (a, b) :: erase m a'
 
-def Map.isEmpty (m : Map α β) : Bool :=
+@[expose] public def Map.isEmpty (m : Map α β) : Bool :=
   match m with
   | [] => true
   | _ => false
 
-def Map.size (m : Map α β) : Nat :=
+@[expose] public def Map.size (m : Map α β) : Nat :=
   m.length
 
-def Map.keys (m : Map α β) : List α :=
+@[expose] public def Map.keys (m : Map α β) : List α :=
   match m with
   | [] => []
   | (a, _) :: m => a :: keys m
 
-def Map.values (m : Map α β) : List β :=
+@[expose] public def Map.values (m : Map α β) : List β :=
   match m with
   | [] => []
   | (_, a) :: m => a :: values m
 
 /-- Are the keys of `m1` and `m2` disjoint? -/
-def Map.disjointp [DecidableEq α] (m1 m2 : Map α β) : Prop :=
+public def Map.disjointp [DecidableEq α] (m1 m2 : Map α β) : Prop :=
   ∀ k, (m1.find? k) = none ∨ (m2.find? k = none)
 
-def Map.fmap (f: β → γ) (m: Map α β) : Map α γ :=
+public def Map.fmap (f: β → γ) (m: Map α β) : Map α γ :=
   List.map (fun (x, y) => (x, f y)) m
 
 ---------------------------------------------------------------------
@@ -205,7 +206,7 @@ theorem Map.insert_values [DecidableEq α] (m : Map α β) :
       grind
   done
 
-theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ List.map Prod.fst m ↔ Map.find? m a = none := by
+public theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ List.map Prod.fst m ↔ Map.find? m a = none := by
   induction m <;> simp [Map.find?]
   constructor <;> intro H
   split <;> simp_all

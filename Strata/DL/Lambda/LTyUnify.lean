@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.LTy
 import Strata.DL.Util.List
+import all Strata.DL.Util.List
 import Strata.DL.Util.Maps
+import all Strata.DL.Util.Maps
 
 /-!
 ## Type Substitution and Unification

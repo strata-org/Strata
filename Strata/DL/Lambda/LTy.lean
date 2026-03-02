@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Util.Map
 import Lean.Elab.Term
+public import Lean.Elab.Term.TermElabM
+public meta import Lean.Meta.AppBuilder
 
 /-! ## Formalization of Mono- and Poly- Types in Lambda
 
@@ -18,6 +21,8 @@ do not have `let`s in `LExpr`, so we do not tackle let-polymorphism yet.
 
 namespace Lambda
 open Std (ToFormat Format format)
+
+public section
 
 
 /-- Type identifiers. For now, these are just strings. -/
@@ -40,39 +45,39 @@ inductive LMonoTy : Type where
 
 abbrev LMonoTys := List LMonoTy
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bool : LMonoTy :=
   .tcons "bool" []
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.int : LMonoTy :=
   .tcons "int" []
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.real : LMonoTy :=
   .tcons "real" []
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv1 : LMonoTy :=
   .bitvec 1
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv8 : LMonoTy :=
   .bitvec 8
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv16 : LMonoTy :=
   .bitvec 16
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv32 : LMonoTy :=
   .bitvec 32
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv64 : LMonoTy :=
   .bitvec 64
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.string : LMonoTy :=
   .tcons "string" []
 
@@ -110,7 +115,7 @@ def LMonoTys.destructArrow (mtys : LMonoTys) : LMonoTys :=
     mtys ++ mrest_tys
 end
 
-theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
+private theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
   (mty.destructArrow) ≠ [] := by
   unfold destructArrow; split <;> simp_all
 
@@ -169,13 +174,13 @@ def LMonoTys.size (args : LMonoTys) : Nat :=
     | t :: rest => LMonoTy.size t + LMonoTys.size rest
 end
 
-theorem LMonoTy.size_gt_zero :
+public theorem LMonoTy.size_gt_zero :
   0 < LMonoTy.size ty := by
   induction ty <;>  simp_all [LMonoTy.size]
   unfold LMonoTys.size; split
   simp_all; omega
 
-theorem LMonoTy.size_lt_of_mem {ty: LMonoTy} {tys: LMonoTys} (h: ty ∈ tys):
+public theorem LMonoTy.size_lt_of_mem {ty: LMonoTy} {tys: LMonoTys} (h: ty ∈ tys):
   ty.size <= tys.size := by
   induction tys <;> simp only[LMonoTys.size]<;> grind
 
@@ -197,7 +202,7 @@ def LMonoTy.BEq (x y : LMonoTy) : Bool :=
     LMonoTy.BEq x y && go xrest yrest
 
 @[simp]
-theorem LMonoTy.BEq_refl : LMonoTy.BEq ty ty := by
+private theorem LMonoTy.BEq_refl : LMonoTy.BEq ty ty := by
   induction ty <;> simp_all [LMonoTy.BEq]
   rename_i name args ih
   induction args
@@ -277,7 +282,7 @@ def LMonoTys.freeVars (mtys : LMonoTys) : List TyIdentifier :=
 end
 
 @[simp]
-theorem LMonoTys.freeVars_of_cons :
+private theorem LMonoTys.freeVars_of_cons :
   LMonoTys.freeVars (x :: xs) = LMonoTy.freeVars x ++ LMonoTys.freeVars xs := by
   simp_all [LMonoTys.freeVars]
 
@@ -370,7 +375,7 @@ def LTy.toMonoTypeUnsafe (ty : LTy) : LMonoTy :=
 instance : ToString LMonoTy where
   toString x := toString (repr x)
 
-private def formatLMonoTy (lmonoty : LMonoTy) : Format :=
+def formatLMonoTy (lmonoty : LMonoTy) : Format :=
   match lmonoty with
   | .ftvar x => toString x
   | .bitvec n => f!"bv{n}"
@@ -424,7 +429,7 @@ scoped syntax tprim : tcons
 scoped syntax "(" lmonoty ")" : lmonoty
 
 open Lean Elab Meta in
-partial def elabLMonoTy : Lean.Syntax → MetaM Expr
+meta partial def elabLMonoTy : Lean.Syntax → MetaM Expr
   | `(lmonoty| %$f:ident) => do
      mkAppM ``LMonoTy.ftvar #[mkStrLit (toString f.getId)]
   | `(lmonoty| $ty1:lmonoty → $ty2:lmonoty) => do
@@ -464,7 +469,7 @@ scoped syntax "∀" (ident)* "." (lmonoty)* : lty
 scoped syntax "(" lty ")" : lty
 
 open Lean Elab Meta in
-partial def elabLTy : Lean.Syntax → MetaM Expr
+meta partial def elabLTy : Lean.Syntax → MetaM Expr
   | `(lty| ∀ $vars:ident* . $ty:lmonoty) => do
       let vars' := List.map (fun f => mkStrLit (toString f.getId)) vars.toList
       let varslist ← mkListLit (mkConst ``String) vars'
@@ -510,4 +515,5 @@ def LMonoTy.inputTypes (ty : LMonoTy) : List LMonoTy :=
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Lambda
