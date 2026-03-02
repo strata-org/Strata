@@ -435,11 +435,9 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     return proc
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
-  -- Prepend the Laurel Core prelude members (heap model types and functions)
-  let prelude := laurelPrelude
   let program := { program with
-    types := prelude.types ++ program.types
-    staticProcedures := prelude.staticProcedures ++ program.staticProcedures }
+    types := program.types
+    staticProcedures := program.staticProcedures }
   let heapReaders := computeReadsHeap program.staticProcedures
   let heapWriters := computeWritesHeap program.staticProcedures
   let (procs', _) := (program.staticProcedures.mapM (heapTransformProcedure model)).run
@@ -457,7 +455,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     | .Composite ct => .Composite { ct with fields := [] }
     | other => other
   { program with
-    staticProcedures := procs',
-    types := [fieldDatatype] ++ types' }
+    staticProcedures := heapConstants.staticProcedures ++ procs',
+    types := [fieldDatatype] ++ heapConstants.types ++ types' }
 
 end Strata.Laurel

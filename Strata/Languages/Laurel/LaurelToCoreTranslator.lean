@@ -15,6 +15,7 @@ import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -567,56 +568,8 @@ Translate Laurel Program to Core Program
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   dbg_trace "=== Before first resolve ==="
 
-  let selectProc: Procedure := {
-    name := { text := "select" },
-    inputs := [
-      ⟨"map", default⟩,
-      ⟨"key", default⟩
-    ],
-    outputs := [
-      ⟨"result", default⟩
-    ],
-    preconditions := [],
-    determinism := .nondeterministic,
-    decreases := none,
-    isFunctional := true,
-    body := .External,
-    md := .empty
-  }
-  let updateProc: Procedure := {
-    name := { text := "update" },
-    inputs := [
-      ⟨"map", default⟩,
-      ⟨"key", default⟩,
-      ⟨"value", default⟩
-    ],
-    outputs := [
-      ⟨"result", default⟩
-    ],
-    preconditions := [],
-    determinism := .nondeterministic,
-    decreases := none,
-    isFunctional := true,
-    body := .External,
-    md := .empty
-  }
-  let constProc: Procedure := {
-    name := { text := "const" },
-    inputs := [
-      ⟨"value", default⟩
-    ],
-    outputs := [
-      ⟨"result", default⟩
-    ],
-    preconditions := [],
-    determinism := .nondeterministic,
-    decreases := none,
-    isFunctional := true,
-    body := .External,
-    md := .empty
-  }
   let program := { program with
-    staticProcedures := [selectProc, updateProc, constProc] ++ program.staticProcedures
+    staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
 
   let result := resolve program

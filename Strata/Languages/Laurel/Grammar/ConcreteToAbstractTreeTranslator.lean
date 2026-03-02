@@ -375,14 +375,22 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Parse modifies clauses (zero or more)
     let modifies ← translateModifiesClauses modifiesArg
     -- Parse optional body
+    let isExternal ← match bodyArg with
+      | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
+        | q`Laurel.externalBody, #[] => pure true
+        | _, _ => pure false
+      | _ => pure false
     let body ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
         | q`Laurel.optionalBody, #[exprArg] => translateCommand exprArg >>= (pure ∘ some)
-        | _, _ => TransM.error s!"Expected optionalBody operation, got {repr bodyOp.name}"
+        | q`Laurel.externalBody, #[] => pure none
+        | _, _ => TransM.error s!"Expected optionalBody or externalBody operation, got {repr bodyOp.name}"
       | .option _ none => pure none
       | _ => TransM.error s!"Expected optionalBody, got {repr bodyArg}"
     -- Determine procedure body kind
-    let procBody := match postconditions, body with
+    let procBody :=
+      if isExternal then Body.External
+      else match postconditions, body with
       | _ :: _, bodyOpt => Body.Opaque postconditions bodyOpt modifies
       | [], some b => Body.Transparent b
       | [], none => Body.Opaque [] none modifies

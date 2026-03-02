@@ -140,6 +140,7 @@ op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "retu
 
 category OptionalBody;
 op optionalBody(body: StmtExpr): OptionalBody => body:0;
+op externalBody: OptionalBody => "external";
 
 category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
