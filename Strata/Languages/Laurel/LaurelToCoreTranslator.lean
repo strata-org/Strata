@@ -253,7 +253,11 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
           if isFieldName fieldNames name then
             return .op () ⟨name, ()⟩ none
           else
-            return .fvar () ⟨name, ()⟩ (some (lookupType env name))
+            let s ← get
+            let ty := match env.find? (fun (n, _) => n == name) with
+              | some (_, ty) => translateTypeWithCT s.ctMap ty
+              | none => lookupType env name
+            return .fvar () ⟨name, ()⟩ (some ty)
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>

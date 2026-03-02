@@ -13,3 +13,4 @@ namespace Strata.Laurel
 
 #load_dialect "./LaurelGrammar.st"
 -- Rebuild trigger: merged grammar
+-- Grammar updated for multiple requires
