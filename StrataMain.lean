@@ -540,29 +540,29 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Verification Results ===="
             let mut s := ""
             for vcResult in vcResults do
-            let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-              | some fr =>
-                if fr.range.isNone then ("", "")
-                else
-                  match pySourceOpt with
-                  | some (pyPath, fileMap) =>
-                    match fr.file with
-                    | .file path =>
-                      if path == pyPath then
-                        let pos := fileMap.toPosition fr.range.start
-                        match vcResult.result with
-                        | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                        | _ => ("", s!" (at line {pos.line}, col {pos.column})")
-                      else
-                        match vcResult.result with
-                        | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                        | _ => ("", s!" (at byte {fr.range.start})")
-                  | none =>
-                    match vcResult.result with
-                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                    | _ => ("", s!" (at byte {fr.range.start})")
-              | none => ("", "")
-            s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
+              let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+                | some fr =>
+                  if fr.range.isNone then ("", "")
+                  else
+                    match pySourceOpt with
+                    | some (pyPath, fileMap) =>
+                      match fr.file with
+                      | .file path =>
+                        if path == pyPath then
+                          let pos := fileMap.toPosition fr.range.start
+                          match vcResult.result with
+                          | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                          | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                        else
+                          match vcResult.result with
+                          | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                          | _ => ("", s!" (at byte {fr.range.start})")
+                    | none =>
+                      match vcResult.result with
+                      | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
+                      | _ => ("", s!" (at byte {fr.range.start})")
+                | none => ("", "")
+              s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
             IO.println s
           -- Output in SARIF format if requested
           if outputSarif then
