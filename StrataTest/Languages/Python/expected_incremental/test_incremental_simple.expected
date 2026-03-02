@@ -1,8 +1,8 @@
 procedure __main__:
   non-CoreSMT: 🚨 Statement not in CoreSMT subset: if-then-else statement is not in the CoreSMT subset
 procedure main:
-  assert(17): ✅ pass (line 2, col 4)
-  assert(56): ❌ fail (line 4, col 4)
+  assert(16): ✅ pass (line 2, col 4)
+  assert(53): ❌ fail (line 4, col 4)
     └─ it is impossible that x == 3
        under the assumptions
          5 == 3 + x
