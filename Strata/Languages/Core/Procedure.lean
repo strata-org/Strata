@@ -187,9 +187,9 @@ structure Procedure.Header where
   /-- Type parameters for polymorphic procedures. -/
   typeArgs : List TyIdentifier
   /-- Input parameters: passed by value from caller to callee (immutable in body). -/
-  inputs   : @LMonoTySignature Visibility
+  inputs   : @LMonoTySignature Unit
   /-- Output parameters: passed by value from callee to caller (mutable in body). -/
-  outputs  : @LMonoTySignature Visibility
+  outputs  : @LMonoTySignature Unit
   /-- If true, FilterProcedures will never remove this procedure. -/
   noFilter : Bool := false
   deriving Repr, DecidableEq, Inhabited

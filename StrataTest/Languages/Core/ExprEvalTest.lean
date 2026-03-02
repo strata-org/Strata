@@ -36,7 +36,7 @@ open Lambda
 open Std
 
 def encode (e:LExpr CoreLParams.mono)
-           (tenv:TEnv Visibility)
+           (tenv:TEnv Unit)
            (init_state:LState CoreLParams):
     Except Format (Option (Strata.SMT.Term × SMT.Context))
   := do
@@ -126,7 +126,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr CoreLParams.mono))
   | .tcons "regex" [] =>
     -- TODO: random regex generator
     return (.some (.app ()
-      (.op () (CoreIdent.unres "Str.ToRegEx") .none) (.strConst () ".*")))
+      (.op () (⟨"Str.ToRegEx", ()⟩) .none) (.strConst () ".*")))
   | .bitvec n =>
     let specialvals :=
       [0, 1, -1, Int.ofNat n, (Int.pow 2 (n-1)) - 1, -(Int.pow 2 (n-1))]
@@ -164,7 +164,7 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
         else
           let args := List.map (Option.get!) args
           let expr := List.foldl (fun e arg => (.app () e arg))
-            (LExpr.op () (CoreIdent.unres e.name.name) .none) args
+            (LExpr.op () (⟨e.name.name, ()⟩) .none) args
           let res <- checkValid expr
           if ¬ res then
             if cnt_skipped = 0 then
@@ -190,7 +190,7 @@ open Lambda.LTy.Syntax
 #guard_msgs in #eval (checkValid eb[if #1 == #2 then #false else #true])
 /-- info: true -/
 #guard_msgs in #eval (checkValid
-  (.app () (.app () (.op () (CoreIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
+  (.app () (.app () (.op () (⟨"Int.Add", ()⟩) .none) eb[#100]) eb[#50]))
 
 
 -- This may take a while
@@ -198,7 +198,7 @@ open Lambda.LTy.Syntax
 
 open Plausible TestGen
 
-deriving instance Arbitrary for Visibility
+deriving instance Arbitrary for Unit
 
 def test_lctx : LContext CoreLParams :=
 {
@@ -207,7 +207,7 @@ def test_lctx : LContext CoreLParams :=
   knownTypes := Core.KnownTypes
 }
 
-def test_ctx : TContext Visibility := ⟨[[]], []⟩
+def test_ctx : TContext Unit := ⟨[[]], []⟩
 
 abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
 #guard_msgs(drop all) in

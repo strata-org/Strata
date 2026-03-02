@@ -245,9 +245,9 @@ def makeVCResult (label : String) (outcome : Outcome)
 -- Test SARIF output with counter-example
 #guard
   let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
-    [({ name := "x", metadata := Visibility.unres }, .prim (.int 42))]
+    [({ name := "x", metadata := () }, .prim (.int 42))]
   let lexprCex : LExprCounterEx :=
-    [({ name := "x", metadata := Visibility.unres }, .intConst () 42)]
+    [({ name := "x", metadata := () }, .intConst () 42)]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
   let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md lexprCex

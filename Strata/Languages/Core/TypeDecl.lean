@@ -81,7 +81,7 @@ def TypeSynonym.toRHSLTy (t : TypeSynonym) : LTy :=
 inductive TypeDecl where
   | con : TypeConstructor → TypeDecl
   | syn : TypeSynonym → TypeDecl
-  | data : List (LDatatype Visibility) → TypeDecl
+  | data : List (LDatatype Unit) → TypeDecl
   deriving Repr
 
 instance : ToFormat TypeDecl where

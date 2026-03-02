@@ -66,16 +66,9 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
       -- created by CoreGenM.
-      -- new_expr has visibility of unres because that is the default setting
-      -- from DDM parsed program, and the substituted program is supposed to be
-      -- equivalent to the answer program translated from DDM
-      -- These must be reversed when checking e2 -> e1
-      let old_vis := if not isReverse then Visibility.temp else  Visibility.unres
-      let new_vis := if not isReverse then Visibility.unres else Visibility.temp
-      let old_id:Expression.Ident := { name := i1, metadata := old_vis }
-
-      let new_expr:Expression.Expr := .fvar ()
-          { name := i2, metadata := new_vis } .none
+      -- All variables now have Unit metadata; we substitute by name.
+      let old_id : Expression.Ident := { name := i1, metadata := () }
+      let new_expr : Expression.Expr := .fvar () { name := i2, metadata := () } .none
       e.substFvar old_id new_expr)
     e1
 
@@ -103,10 +96,6 @@ private def alphaEquivExprsList (l1 l2 : List Expression.Expr) (map : IdMap)
 
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
-  (-- Case 1: e1 is created from inliner, e2 was from DDM
-   (e1.metadata == Visibility.temp && e2.metadata == Visibility.unres) ||
-   -- Caes 2: both e1 and e2 are from DDM
-   (e1.metadata == e2.metadata)) &&
   (match Map.find? map.vars.fst e1.name, Map.find? map.vars.snd e2.name with
     | .some n', .some m' => n' == e2.name && m' == e1.name
     | .none, .none => e1.name == e2.name
