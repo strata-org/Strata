@@ -126,6 +126,24 @@ def strataDialectImpl: CommandElab := fun (stx : Syntax) => do
 
 declare_tagged_region term strataProgram "#strata" "#end"
 
+private def normalizeQuantifierUnicode (src : String) : String :=
+  let (out, _) := src.foldl
+    (init := ("", false))
+    (fun (st : String × Bool) (ch : Char) =>
+      let (acc, inBinder) := st
+      if !inBinder && ch == '∀' then
+        (acc ++ "forall ", true)
+      else if !inBinder && ch == '∃' then
+        (acc ++ "exists ", true)
+      else if inBinder && ch == '.' then
+        (acc ++ " :: ", false)
+      else
+        (acc.push ch, inBinder))
+  out
+
+private def isBooleProgram (src : String) : Bool :=
+  src.contains "program Boole;"
+
 @[term_elab strataProgram]
 meta def strataProgramImpl : TermElab := fun stx tp => do
   let .atom i v := stx[1]
@@ -133,9 +151,20 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
   let .original _ p _ e := i
         | throwError s!"Expected input context"
   let inputCtx ← (HasInputContext.getInputContext : CoreM _)
+  let snippet := String.Pos.Raw.extract inputCtx.inputString p e
+  let normalized :=
+    if isBooleProgram snippet then
+      normalizeQuantifierUnicode snippet
+    else
+      snippet
+  let inputCtx : InputContext := {
+    inputString := normalized
+    fileName := inputCtx.fileName
+    fileMap := FileMap.ofString normalized
+  }
   let s := (dialectExt.getState (←Lean.getEnv))
   let leanEnv ← Lean.mkEmptyEnvironment 0
-  match Elab.elabProgram s.loaded leanEnv inputCtx p e with
+  match Elab.elabProgram s.loaded leanEnv inputCtx 0 inputCtx.endPos with
   | .ok pgm =>
     -- Get Lean name for dialect
     let some (.str name root) := s.nameMap[pgm.dialect]?
