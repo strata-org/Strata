@@ -2,7 +2,7 @@ import Strata.MetaVerifier
 
 open Strata
 
-private def funDef :=
+private def function_definitions :=
 #strata
 program Boole;
 
@@ -25,8 +25,8 @@ spec {
 
 #end
 
-#eval Strata.Boole.verify "cvc5" funDef
+#eval Strata.Boole.verify "cvc5" function_definitions
 
-example : Strata.smtVCsCorrect funDef := by
+example : Strata.smtVCsCorrect function_definitions := by
   gen_smt_vcs
   all_goals (try grind)

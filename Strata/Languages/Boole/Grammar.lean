@@ -48,10 +48,6 @@ op for_down_to_by_statement (v : MonoBind, init : Expr, limit : Expr,
   @[scope(v)] body : Block) : Statement =>
   "for " v " := " init " downto " limit step invs body;
 
-// multi-dimensional array assignment
-op array_assign_2d (arr : Expr, idx1 : Expr, idx2 : Expr, rhs : Expr) : Statement =>
-  arr "[" idx1 "][" idx2 "]" " := " rhs ";";
-
 category Program;
 op prog (commands : SpacePrefixSepBy Command) : Program =>
   commands;

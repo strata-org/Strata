@@ -2,7 +2,7 @@ import Strata.MetaVerifier
 
 open Strata
 
-private def findMaxPgm: Strata.Program :=
+private def find_max_program : Strata.Program :=
 #strata
 program Boole;
 
@@ -27,8 +27,8 @@ spec
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" findMaxPgm
+#eval Strata.Boole.verify "cvc5" find_max_program
 
-theorem findMaxPgm_smtVCsCorrect : Strata.smtVCsCorrect findMaxPgm := by
+theorem find_max_program_smt_vcs_correct : Strata.smtVCsCorrect find_max_program := by
   gen_smt_vcs
   all_goals (try grind)

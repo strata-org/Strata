@@ -1,6 +1,6 @@
 import Strata.MetaVerifier
 
-private def bitVec :=
+private def bit_vectors :=
 #strata
 program Boole;
 
@@ -28,8 +28,8 @@ spec {
 
 #end
 
-#eval Strata.Boole.verify "cvc5" bitVec
+#eval Strata.Boole.verify "cvc5" bit_vectors
 
-example : Strata.smtVCsCorrect bitVec := by
+example : Strata.smtVCsCorrect bit_vectors := by
   gen_smt_vcs
   all_goals grind
