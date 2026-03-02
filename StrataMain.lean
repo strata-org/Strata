@@ -472,7 +472,7 @@ def pyAnalyzeLaurelCommand : Command where
               let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
               let config : Strata.Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
               let state := Strata.Core.CoreSMT.CoreSMTState.init solverInterface config
-              let stmts := coreProgram.decls.flatMap fun d => match d with
+              let stmts := programDecls.flatMap fun d => match d with
                 | .proc p _ => p.body
                 | _ => []
               let (_, _, results) ← Strata.Core.CoreSMT.verify state Core.Env.init stmts
