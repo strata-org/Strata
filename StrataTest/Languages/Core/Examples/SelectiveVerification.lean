@@ -30,7 +30,7 @@ procedure MainProc() returns (output : int)
 spec {
   modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old(x) * 4);
+  ensures [output_property]: (output == old x * 4);
 }
 {
   call output := Helper(x);

@@ -141,7 +141,7 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
       .ok (.bvar sr idx)
     else
       match ctx.vars[idx]? with
-      | some (name, ty) => .ok (.fvar sr (CoreIdent.unres name) (some ty))
+      | some (name, ty) => .ok (.fvar sr (⟨name, ()⟩) (some ty))
       | none => .withError (.intConst sr 0) (.unsupportedFeature s!"unbound variable at index {idx}" "expression")
   | .binaryOp sr op lhs rhs =>
     let lhsResult := convertExpr ctx lhs
@@ -159,7 +159,7 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
       errors := condResult.errors ++ thnResult.errors ++ elsResult.errors }
   | .functionCall sr fnName args =>
     let fnTy := ctx.lookupFuncType fnName.val
-    let base : Core.Expression.Expr := .fvar sr (CoreIdent.unres fnName.val) fnTy
+    let base : Core.Expression.Expr := .fvar sr (⟨fnName.val, ()⟩) fnTy
     let argResults := args.val.toList.map (convertExpr ctx)
     { value := argResults.foldl (fun acc argRes => .app sr acc argRes.value) base,
       errors := argResults.flatMap (·.errors) }
@@ -219,15 +219,15 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     match init.val with
     | some initExpr =>
       let initResult := convertExpr ctx initExpr
-      { value := [Core.Statement.init (CoreIdent.unres name.val) coreTy (some initResult.value) .empty],
+      { value := [Core.Statement.init (⟨name.val, ()⟩) coreTy (some initResult.value) .empty],
         errors := initResult.errors }
     | none =>
-      .ok [Core.Statement.init (CoreIdent.unres name.val) coreTy none .empty]
+      .ok [Core.Statement.init (⟨name.val, ()⟩) coreTy none .empty]
   | .assign _ lhs rhs, _ =>
     let rhsResult := convertExpr ctx rhs
     match ctx.vars[lhs.val]? with
     | some (name, _) =>
-      { value := [Core.Statement.set (CoreIdent.unres name) rhsResult.value .empty],
+      { value := [Core.Statement.set (⟨name, ()⟩) rhsResult.value .empty],
         errors := rhsResult.errors }
     | none =>
       .withError [] (.unsupportedFeature s!"unbound variable at index {lhs.val}" "assignment")
@@ -271,7 +271,7 @@ def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → ConvResult 
 
     let inputs : ListMap CoreIdent Lambda.LTy := params.val.toList.map fun p =>
       match p with
-      | .fParameter _ _ pname pty => (CoreIdent.unres pname.val, b3TypeToCoreLTy pty.val)
+      | .fParameter _ _ pname pty => (⟨pname.val, ()⟩, b3TypeToCoreLTy pty.val)
     let outputTy := b3TypeToCoreLTy retType.val
     let bodyResult := body.val.bind fun fb =>
       match fb with
@@ -285,7 +285,7 @@ def convertFuncDecl (ctx : ConvContext) : B3AST.Decl SourceRange → ConvResult 
       | some res => (some res.value, res.errors)
       | none => (none, [])
     let decl : Imperative.PureFunc Core.Expression := {
-      name := CoreIdent.unres name.val
+      name := ⟨name.val, ()⟩
       inputs := inputs
       output := outputTy
       body := coreBody

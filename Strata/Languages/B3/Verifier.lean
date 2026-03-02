@@ -77,7 +77,7 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
     throw (IO.userError s!"Conversion errors:\n{msg}")
   let coreStmts := convResult.value
   -- Initialize solver and wrap in SolverInterface
-  (Solver.setLogic "ALL").run solver
+  let _ ← (Solver.setLogic "ALL").run solver
   let solverInterface ← mkSolverInterfaceFromSolver solver
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config

@@ -48,9 +48,9 @@ structure SolverInterface where
   /-- Reset the solver state -/
   reset : IO Unit
 
-/-- Helper to convert Term to SMT-LIB string using SMTDDM.toString -/
+/-- Helper to convert Term to SMT-LIB string -/
 private def termToString (t : Term) : Except String String :=
-  SMTDDM.toString t
+  Strata.SMTDDM.termToString t
 
 /-- Helper to create an SMTSolverInterface from an initialized Solver -/
 def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
@@ -65,23 +65,15 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
       s.smtLibInput.putStr "(pop 1)\n"
       s.smtLibInput.flush
     declareSort := fun name arity => do
-      (Solver.declareSort name arity).run (← solverRef.get)
+      let _ ← (Solver.declareSort name arity).run (← solverRef.get)
     declareFun := fun name argTypes retType => do
-      let argStrs := argTypes.map TermType.toSMTString
-      let retStr := TermType.toSMTString retType
-      (Solver.declareFun name argStrs retStr).run (← solverRef.get)
+      let _ ← (Solver.declareFun name argTypes retType).run (← solverRef.get)
     defineFun := fun name args retType body => do
-      let argStrs := args.map fun (n, ty) => (n, TermType.toSMTString ty)
-      let retStr := TermType.toSMTString retType
-      match termToString body with
-      | .ok bodyStr => (Solver.defineFun name argStrs retStr bodyStr).run (← solverRef.get)
-      | .error e => throw (IO.userError s!"Failed to convert term to string: {e}")
+      let _ ← (Solver.defineFunTerm name args retType body).run (← solverRef.get)
     assert := fun term => do
-      match termToString term with
-      | .ok termStr => (Solver.assert termStr).run (← solverRef.get)
-      | .error e => throw (IO.userError s!"Failed to convert term to string: {e}")
+      let _ ← (Solver.assert term).run (← solverRef.get)
     checkSat := do
-      (Solver.checkSat []).run (← solverRef.get)
+      (Solver.checkSat []).run (← solverRef.get) >>= fun (d, _) => pure d
     checkSatAssuming := fun assumptions => do
       let s ← solverRef.get
       let assumptionStrs ← assumptions.mapM fun a =>
@@ -111,13 +103,13 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
         return vars.map fun v => (v, response)
       | .none => return []
     reset := do
-      (Solver.reset).run (← solverRef.get)
-      (Solver.setLogic "ALL").run (← solverRef.get)
+      let _ ← (Solver.reset).run (← solverRef.get)
+      let _ ← (Solver.setLogic "ALL").run (← solverRef.get)
   : SolverInterface }
 
 /-- Initialize a solver with standard settings -/
 private def initializeSolver (solver : Solver) : IO Unit := do
-  (Solver.setLogic "ALL").run solver
+  let _ ← (Solver.setLogic "ALL").run solver
 
 /-- Create an SMTSolverInterface backed by cvc5 (default solver). -/
 def mkCvc5Solver : IO SolverInterface := do

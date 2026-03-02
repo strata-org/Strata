@@ -134,7 +134,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       label := "non-CoreSMT"
       property := .assert
       assumptions := []
-      obligation := .fvar Strata.SourceRange.none (Core.CoreIdent.unres "error") none
+      obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none
       metadata := .empty
     }
     let result : Core.VCResult := { obligation, result := .implementationError "Statement not in CoreSMT subset" }
@@ -212,7 +212,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       label := "unknown"
       property := .assert
       assumptions := []
-      obligation := .fvar Strata.SourceRange.none (Core.CoreIdent.unres "error") none
+      obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none
       metadata := .empty
     }
     return (state, smtCtx, [{ obligation, result := .implementationError "Unexpected statement" }])

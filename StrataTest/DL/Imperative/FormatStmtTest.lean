@@ -16,8 +16,8 @@ private abbrev Ss := List S
 private abbrev E := Expression.Expr
 
 private def intTy : Expression.Ty := .forAll [] .int
-private def x : E := .fvar Strata.SourceRange.none (CoreIdent.unres "x") (some .int)
-private def y : E := .fvar Strata.SourceRange.none (CoreIdent.unres "y") (some .int)
+private def x : E := .fvar Strata.SourceRange.none (⟨"x", ()⟩) (some .int)
+private def y : E := .fvar Strata.SourceRange.none (⟨"y", ()⟩) (some .int)
 private def tt : E := .boolConst Strata.SourceRange.none true
 private def int0 : E := .intConst Strata.SourceRange.none 0
 private def int1 : E := .intConst Strata.SourceRange.none 1
@@ -156,7 +156,7 @@ info: while
 /-- info: funcDecl <function> -/
 #guard_msgs in
 #eval! format (Stmt.funcDecl
-  ({ name := CoreIdent.unres "f",
+  ({ name := ⟨"f", ()⟩,
      inputs := [("a", LTy.forAll [] .int)],
      output := LTy.forAll [] .int,
      body := some x } : PureFunc Expression) .empty : S)

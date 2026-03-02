@@ -13,7 +13,7 @@ import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Core
-open Lambda LTy.Syntax LExpr.SyntaxMono
+open Lambda LTy.Syntax LExpr.SyntaxMono Core.Syntax
 
 @[match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
@@ -38,21 +38,6 @@ def KnownTypes : KnownTypes :=
 
 def TImplicit {Metadata: Type} (IDMeta: Type): LExprParamsT := ({Metadata := Metadata, IDMeta}: LExprParams).mono
 
-/--
-  Convert an LExpr LMonoTy Unit to an LExpr LMonoTy Visibility
-  TODO: Remove when Lambda elaborator offers parametric identifier type
--/
-def ToCoreIdent {M: Type} (ine: LExpr (@TImplicit M Unit)): LExpr (@TImplicit Strata.SourceRange Visibility) :=
-match ine with
-    | .const _ c => .const Strata.SourceRange.none c
-    | .op _ o oty => .op Strata.SourceRange.none (CoreIdent.unres o.name) oty
-    | .bvar _ deBruijnIndex => .bvar Strata.SourceRange.none deBruijnIndex
-    | .fvar _ name oty => .fvar Strata.SourceRange.none (CoreIdent.unres name.name) oty
-    | .abs _ oty e => .abs Strata.SourceRange.none oty (ToCoreIdent e)
-    | .quant _ k oty tr e => .quant Strata.SourceRange.none k oty (ToCoreIdent tr) (ToCoreIdent e)
-    | .app _ fn e => .app Strata.SourceRange.none (ToCoreIdent fn) (ToCoreIdent e)
-    | .ite _ c t e => .ite Strata.SourceRange.none (ToCoreIdent c) (ToCoreIdent t) (ToCoreIdent e)
-    | .eq _ e1 e2 => .eq Strata.SourceRange.none (ToCoreIdent e1) (ToCoreIdent e2)
 
 
 /-- Kind of bitvector evaluator, used to generate both the combinator name
@@ -227,7 +212,7 @@ def mapConstFunc : WFLFunc CoreLParams :=
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
-      ToCoreIdent esM[∀ (%v): -- %1 d
+      eb[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
                 ((~const : %v → (Map %k %v)) %1)) %0)}
@@ -247,7 +232,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
     (mapTy mty[%k] mty[%v])
     (axioms := [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
-      ToCoreIdent esM[∀(Map %k %v):
+      eb[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
               (((~select : (Map %k %v) → %k → %v)
@@ -255,7 +240,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
-      ToCoreIdent esM[∀ (Map %k %v): -- %3 m
+      eb[∀ (Map %k %v): -- %3 m
           (∀ (%k): -- %2 okk
             (∀ (%k): -- %1 kk
               (∀ (%v): -- %0 vv
