@@ -55,6 +55,11 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
+  -- Strip Lean's «» guillemet notation that the DDM parser adds to identifiers
+  -- containing special characters (e.g. dots like Heap..data)
+  let id := if id.startsWith "«" && id.endsWith "»" then
+              (id.drop 1 |>.dropEnd 1 |>.toString)
+            else id
   return { text := id }
 
 def translateBool (arg : Arg) : TransM Bool := do

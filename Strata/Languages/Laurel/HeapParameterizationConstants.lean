@@ -66,6 +66,9 @@ function increment(heap: Heap): Heap {
   MkHeap(Heap..data(heap), Heap..nextReference(heap) + 1)
 }
 
+
+
+datatype Workaround  {}
 #end
 
 /-- The Laurel Core prelude as a Laurel Program. -/

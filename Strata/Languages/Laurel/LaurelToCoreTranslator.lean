@@ -583,7 +583,8 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  -- dbg_trace "=== After heapParameterization ==="
+  dbg_trace "===  Program after heapParameterization ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   resolutionDiags := resolutionDiags ++ result.errors
 
@@ -591,24 +592,24 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   resolutionDiags := resolutionDiags ++ result.errors
-  -- dbg_trace "===  Program after typeHierarchyTransform ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
-  -- dbg_trace "================================="
+  dbg_trace "===  Program after typeHierarchyTransform ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
+  dbg_trace "================================="
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   resolutionDiags := resolutionDiags ++ result.errors
-  -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
-  -- dbg_trace "================================="
+  dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace s!"resolutionDiags {repr resolutionDiags}"
+  dbg_trace "================================="
   let program := liftExpressionAssignments model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   resolutionDiags := resolutionDiags ++ result.errors
-  -- dbg_trace "===  Program after liftExpressionAssignments ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  dbg_trace "===  Program after liftExpressionAssignments ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   -- dbg_trace "================================="
 
