@@ -74,12 +74,12 @@ def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   | .fvar m f _ => .fvar m.underlying f (some m.type)
   | .app m e1 e2 =>
     .app m.underlying e1.unresolved e2.unresolved
-  | .abs ⟨underlying, .arrow aty _⟩ _ _ e =>
-    .abs underlying "" (some aty) e.unresolved
-  | .abs m _ t e => .abs m.underlying "" t e.unresolved
+  | .abs ⟨underlying, .arrow aty _⟩ name _ e =>
+    .abs underlying name (some aty) e.unresolved
+  | .abs m name t e => .abs m.underlying name t e.unresolved
   -- Since quantifiers are bools, the type stored in their
   -- metadata is the type of the argument
-  | .quant m qk _ _ tr e => .quant m.underlying qk "" (some m.type) tr.unresolved e.unresolved
+  | .quant m qk name _ tr e => .quant m.underlying qk name (some m.type) tr.unresolved e.unresolved
   | .ite m c t f => .ite m.underlying c.unresolved t.unresolved f.unresolved
   | .eq m e1 e2 => .eq m.underlying e1.unresolved e2.unresolved
 
@@ -266,7 +266,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
     .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
-  | .abs m _ bty e    =>
+  | .abs m name bty e    =>
     -- Generate a fresh expression variable to stand in for the bound variable
     -- For the bound variable, use type annotation if present. Otherwise,
     -- generate a fresh type variable.
@@ -287,9 +287,9 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     -- substitution. We could, of course, substitute `xty` in `etclosed`, but
     -- that'd require crawling over that expression, which could be expensive.
     let Env := Env.eraseFromContext xv
-    .ok ((.abs ⟨m, mty⟩ "" bty etclosed), Env)
+    .ok ((.abs ⟨m, mty⟩ name bty etclosed), Env)
 
-  | .quant m qk _ bty triggers e =>
+  | .quant m qk name bty triggers e =>
     let (xv, xty, Env) ← typeBoundVar C Env bty
     let e' := LExpr.varOpen 0 (xv, some xty) e
     have He'_size: (varOpen 0 (xv, some xty) e).sizeOf < 2 + e.sizeOf := by
@@ -315,7 +315,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     if ety != LMonoTy.bool then do
       .error f!"Quantifier body has non-Boolean type: {ety}"
     else
-      .ok (.quant ⟨m, xty⟩ qk "" xty triggersClosed etclosed, Env)
+      .ok (.quant ⟨m, xty⟩ qk name xty triggersClosed etclosed, Env)
 
   | .eq m e1 e2    =>
     -- `.eq A B` is well-typed if there is some instantiation of

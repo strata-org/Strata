@@ -247,16 +247,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
 
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
-    -- Collect fvar names from the body to check for clashes
-    let rec collectFvarNames : LExpr _ → List String
-      | .fvar _ f _ => [f.name]
-      | .abs _ _ _ e' => collectFvarNames e'
-      | .quant _ _ _ _ tr' e' => collectFvarNames tr' ++ collectFvarNames e'
-      | .app _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
-      | .ite _ c t e => collectFvarNames c ++ collectFvarNames t ++ collectFvarNames e
-      | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
-      | _ => []
-    let fvarNames := collectFvarNames e |>.toArray
+    let fvarNames := (e.collectFvarNames.map (·.name)).toArray
     -- Generate base name and extract any existing suffix
     let (baseName, startSuffix) :=
       if name.isEmpty then

@@ -129,7 +129,7 @@ inductive LExpr (T : LExprParamsT) : Type where
   /-- An abstraction, where `prettyName` is a display name (empty string if none provided) and `ty` is the (optional) type of bound variable. -/
   | abs     (m: T.base.Metadata) (prettyName : String) (ty : Option T.TypeType) (e : LExpr T)
   /-- A quantified expression, where `k` indicates whether it is universally or
-  existentially quantified, `prettyName` is a display name (empty string if none provided), `ty` is the type of bound variable, and `trigger` is
+  existentially quantified, `prettyName` is a display name (empty string if none provided) and `ty` is the type of bound variable; `trigger` is
   a trigger pattern (primarily for use with SMT). -/
   | quant   (m: T.base.Metadata) (k : QuantifierKind) (prettyName : String) (ty : Option T.TypeType) (trigger: LExpr T) (e : LExpr T)
   /-- A function application. -/
@@ -323,6 +323,16 @@ def getFVarName? {T : LExprParamsT} (e : LExpr T) : Option (Identifier T.base.ID
   match e with
   | .fvar _ name _ => some name
   | _ => none
+
+/-- Collect all free variable identifiers in an expression. -/
+def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.IDMeta)
+  | .fvar _ name _ => [name]
+  | .abs _ _ _ e => collectFvarNames e
+  | .quant _ _ _ _ tr e => collectFvarNames tr ++ collectFvarNames e
+  | .app _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
+  | .ite _ c t e => collectFvarNames c ++ collectFvarNames t ++ collectFvarNames e
+  | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
+  | _ => []
 
 def isConst {T : LExprParamsT} (e : LExpr T) : Bool :=
   match e with
