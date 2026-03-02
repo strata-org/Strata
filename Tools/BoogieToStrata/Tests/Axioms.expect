@@ -2,6 +2,6 @@ Successfully parsed.
 Axioms.core.st(26, 6) [assert_0]: ✔️ pass if reachable
 Axioms.core.st(27, 6) [assert_1]: ✔️ pass if reachable
 Axioms.core.st(28, 6) [assert_2]: ✔️ pass if reachable
-Axioms.core.st(39, 6) [assert_3]: 🟡 unknown
+Axioms.core.st(39, 6) [assert_3]: ❓ unknown
 Axioms.core.st(50, 4) [assert_4]: ✔️ pass if reachable
 Finished with 4 goals passed, 1 failed.
