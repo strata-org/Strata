@@ -66,6 +66,7 @@ $__g3 == 15
 Result: Obligation: g_eq_15_internal
 Property: assert
 Result: ➖ can be false if reachable
+Model (property false): ($__g3, 0)
 
 
 [DEBUG] Evaluated program:
@@ -100,6 +101,7 @@ Result: ✔️ pass if reachable
 Obligation: g_eq_15_internal
 Property: assert
 Result: ➖ can be false if reachable
+Model (property false): ($__g3, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm
