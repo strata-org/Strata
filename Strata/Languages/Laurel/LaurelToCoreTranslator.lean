@@ -554,8 +554,6 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
 Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
-  dbg_trace "=== Before first resolve ==="
-
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
