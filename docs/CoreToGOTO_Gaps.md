@@ -71,12 +71,13 @@ the translation.
   expressions (`.abs`), and statements (`funcDecl` at the Imperative level) return
   `Except.error`, halting the translation. They never silently produce wrong GOTO.
 
-- **Unknown operators over-approximate.** Operators not explicitly mapped (e.g.,
-  string operations, signed BV operations) fall through to `functionApplication`,
-  which CBMC encodes as uninterpreted functions in SMT. This is sound: the SMT
-  solver considers all possible return values, which is an over-approximation
-  (may produce false positives / spurious counterexamples, but never false
-  negatives).
+- **Unknown operators over-approximate.** Operators not explicitly mapped
+  fall through to `functionApplication`, which CBMC encodes as uninterpreted
+  functions in SMT. This is sound: the SMT solver considers all possible
+  return values, which is an over-approximation (may produce false positives /
+  spurious counterexamples, but never false negatives). String and regex
+  operations intentionally use `functionApplication` so that CBMC's string
+  solver patch maps them to the corresponding SMT-LIB theories.
 
 - **Unresolved `exit` statements abort.** If an `exit` targets a label with no
   matching enclosing block, `Stmts.toGotoTransform` returns an error rather than
@@ -94,10 +95,9 @@ the translation.
 
 - **Signed bitvector operations:** Core distinguishes signed (`SDiv`, `SMod`,
   `SLt`, `SLe`, `SGt`, `SGe`) from unsigned (`UDiv`, `UMod`, `ULt`, etc.)
-  bitvector operations. Since all bitvectors are emitted as `UnsignedBV` in GOTO,
-  signed operations cannot be correctly mapped to GOTO's unsigned operators.
-  Signed BV operations fall through to `functionApplication` for soundness.
-  Unsigned operations are mapped directly.
+  bitvector operations. Signed operations are mapped to the same GOTO operators
+  as their unsigned counterparts, but with operands cast from `unsignedbv` to
+  `signedbv` so that CBMC interprets them with signed semantics.
 
 - **`free requires` / `free ensures`:** Free specification clauses (assumed but
   not checked) are silently omitted from the GOTO output. This is sound:
