@@ -53,7 +53,7 @@ inductive CheckAmount where
   | full     -- Both checks for more informative messages
   deriving Inhabited, Repr, DecidableEq
 
-structure Options where
+structure VerifyOptions where
   verbose : VerboseMode
   parseOnly : Bool
   typeCheckOnly : Bool
@@ -75,7 +75,7 @@ structure Options where
   /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
   checkAmount : CheckAmount
 
-def Options.default : Options := {
+def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
   parseOnly := false,
   typeCheckOnly := false,
@@ -91,14 +91,14 @@ def Options.default : Options := {
   checkAmount := .minimal
 }
 
-instance : Inhabited Options where
+instance : Inhabited VerifyOptions where
   default := .default
 
-def Options.quiet : Options :=
-  { Options.default with verbose := .quiet }
+def VerifyOptions.quiet : VerifyOptions :=
+  { VerifyOptions.default with verbose := .quiet }
 
-def Options.models : Options :=
-  { Options.default with verbose := .models }
+def VerifyOptions.models : VerifyOptions :=
+  { VerifyOptions.default with verbose := .models }
 
-def Options.debug : Options :=
-  { Options.default with verbose := .debug }
+def VerifyOptions.debug : VerifyOptions :=
+  { VerifyOptions.default with verbose := .debug }
