@@ -77,7 +77,7 @@ def translateBool (arg : Arg) : TransM Bool := do
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 instance : Inhabited Parameter where
-  default := { name := { text := "" } , type := ⟨.TVoid, #[]⟩ }
+  default := { name := "" , type := ⟨.TVoid, #[]⟩ }
 
 def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
@@ -133,7 +133,7 @@ def translateParameters (arg : Arg) : TransM (List Parameter) := do
 
 instance : Inhabited Procedure where
   default := {
-    name := { text := "" }
+    name := ""
     inputs := []
     outputs := []
     preconditions := []
@@ -230,7 +230,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
         | .Identifier name => name
-        | _ => { text := "" }
+        | _ => ""
       let argsList ← match argsSeq with
         | .seq _ .comma args => args.toList.mapM translateStmtExpr
         | _ => pure []
@@ -355,7 +355,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | .option _ (some (.op returnTypeOp)) => match returnTypeOp.name, returnTypeOp.args with
         | q`Laurel.optionalReturnType, #[typeArg] =>
           let retType ← translateHighType typeArg
-          pure [{ name := { text := "result" }, type := retType : Parameter }]
+          pure [{ name := "result", type := retType : Parameter }]
         | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
       | .option _ none =>
         -- No return type, check returnParamsArg instead
