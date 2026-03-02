@@ -31,7 +31,7 @@ private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
 private def absMulti' (n: Nat) (body: LExpr TestParams.mono) : LExpr TestParams.mono :=
-  List.foldr (fun _ e => .abs () .none e) body (List.range n)
+  List.foldr (fun _ e => .abs () "" .none e) body (List.range n)
 
 /-
 We write the tests as pattern matches, even though we use eliminators
@@ -117,9 +117,9 @@ fst (snd ("a", (1, "b"))) ==> 1
 
 def tupTy : LDatatype Unit := {name := "Tup", typeArgs := ["a", "b"], constrs := [{name := "Prod", args := [("x", .ftvar "a"), ("y", .ftvar "b")], testerName := "Tup$isProd"}], constrs_ne := rfl}
 
-def fst (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () .none (.abs () .none (.bvar () 1))]
+def fst (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () "" .none (.abs () "" .none (.bvar () 1))]
 
-def snd (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () .none (.abs () .none (.bvar () 0))]
+def snd (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () "" .none (.abs () "" .none (.bvar () 0))]
 
 def prod (e1 e2: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () ("Prod" : TestParams.Identifier) .none).mkApp () [e1, e2]
 
@@ -201,7 +201,7 @@ info: #1
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [nil, (intConst () 1), .abs () .none (.abs () .none (.abs () .none (intConst () 1)))])
+  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [nil, (intConst () 1), .abs () "" .none (.abs () "" .none (.abs () "" .none (intConst () 1)))])
 
 -- Test: elim(cons 1 nil, 0, fun x y => x) -> (fun x y => x) 1 nil
 
@@ -219,7 +219,7 @@ info: #2
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [listExpr [intConst () 2], intConst () 0, .abs () .none (.abs () .none (.abs () .none (bvar () 2)))])
+  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [listExpr [intConst () 2], intConst () 0, .abs () "" .none (.abs () "" .none (.abs () "" .none (bvar () 2)))])
 
 -- Test testers (isNil and isCons)
 
@@ -369,10 +369,10 @@ info: #7
     ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp ()
       [listExpr [(prod (intConst () 3) (strConst () "a")), (prod (intConst () 4) (strConst () "b"))],
       intConst () 0,
-      .abs () .none (.abs () .none (.abs () .none
+      .abs () "" .none (.abs () "" .none (.abs () "" .none
         (addOp (fst (.bvar () 2))
           ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp ()
-            [.bvar () 1, intConst () 1, .abs () .none (.abs () .none (.abs () .none (fst (.bvar () 2))))]))))])
+            [.bvar () 1, intConst () 1, .abs () "" .none (.abs () "" .none (.abs () "" .none (fst (.bvar () 2))))]))))])
 
 -- Recursive tests
 
@@ -449,7 +449,7 @@ l₁ ++ l₂ := (@List$Elim (List α → List α) l₁ (fun x => x) (fun x xs re
 -/
 
 def append (l1 l2: LExpr TestParams.mono) : LExpr TestParams.mono :=
-  .app () ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [l1, .abs () .none (.bvar () 0), absMulti' 3 (.abs () .none (cons (.bvar () 3) (.app () (.bvar () 1) (.bvar () 0))))]) l2
+  .app () ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [l1, .abs () "" .none (.bvar () 0), absMulti' 3 (.abs () "" .none (cons (.bvar () 3) (.app () (.bvar () 1) (.bvar () 0))))]) l2
 
 def list1 :LExpr TestParams.mono := listExpr [intConst () 2, intConst () 4, intConst () 6]
 def list2 :LExpr TestParams.mono := listExpr [intConst () 1, intConst () 3, intConst () 5]
@@ -609,14 +609,14 @@ def treeTy : LDatatype Unit := {name := "tree", typeArgs := ["a"], constrs := [l
 def node (f: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () ("Node" : TestParams.Identifier) .none).mkApp () [f]
 def leaf (x: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () ("Leaf" : TestParams.Identifier) .none).mkApp () [x]
 
-def tree1 : LExpr TestParams.mono := node (.abs () .none (node (.abs () .none
+def tree1 : LExpr TestParams.mono := node (.abs () "" .none (node (.abs () "" .none
   (.ite () (.eq () (addOp (.bvar () 1) (.bvar () 0)) (intConst () 0))
-    (node (.abs () .none (leaf (intConst () 3))))
+    (node (.abs () "" .none (leaf (intConst () 3))))
     (leaf (intConst () 4))
   ))))
 
 def height (n: Nat) (t: LExpr TestParams.mono) : LExpr TestParams.mono :=
-  (LExpr.op () ("tree$Elim" : TestParams.Identifier) .none).mkApp () [t, .abs () .none (intConst () 0), absMulti' 2 (addOp (intConst () 1) (.app () (.bvar () 0) (intConst () n)))]
+  (LExpr.op () ("tree$Elim" : TestParams.Identifier) .none).mkApp () [t, .abs () "" .none (intConst () 0), absMulti' 2 (addOp (intConst () 1) (.app () (.bvar () 0) (intConst () n)))]
 
 /--
 info: Annotated expression:
@@ -928,12 +928,12 @@ treeSize = 5
 -/
 
 def nodeCaseFn' : LExpr TestParams.mono :=
-  .abs () .none (.abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))))
+  .abs () "" .none (.abs () "" .none (.abs () "" .none (addOp (intConst () 1) (.bvar () 0))))
 
 def fnilCaseFn' : LExpr TestParams.mono := intConst () 0
 
 def fconsCaseFn' : LExpr TestParams.mono :=
-  .abs () .none (.abs () .none (.abs () .none (.abs () .none (addOp (.bvar () 1) (.bvar () 0)))))
+  .abs () "" .none (.abs () "" .none (.abs () "" .none (.abs () "" .none (addOp (.bvar () 1) (.bvar () 0)))))
 
 def treeSize' (t : LExpr TestParams.mono) : LExpr TestParams.mono :=
   (LExpr.op () ("RoseTree$Elim" : TestParams.Identifier) .none).mkApp () [t, nodeCaseFn', fnilCaseFn', fconsCaseFn']
@@ -1089,9 +1089,9 @@ def threeWayTree : LExpr TestParams.mono :=
 def treeSizeA (t : LExpr TestParams.mono) : LExpr TestParams.mono :=
   (LExpr.op () ("TyA$Elim" : TestParams.Identifier) .none).mkApp ()
     [t,
-     .abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))),  -- MkA: 1 + rec(b)
-     .abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))),  -- MkB: 1 + rec(c)
-     .abs () .none (intConst () 1),                                       -- LeafC: 1
+     .abs () "" .none (.abs () "" .none (addOp (intConst () 1) (.bvar () 0))),  -- MkA: 1 + rec(b)
+     .abs () "" .none (.abs () "" .none (addOp (intConst () 1) (.bvar () 0))),  -- MkB: 1 + rec(c)
+     .abs () "" .none (intConst () 1),                                       -- LeafC: 1
      absMulti' 4 (addOp (intConst () 1) (addOp (.bvar () 1) (.bvar () 0)))]  -- NodeC: 1 + rec(l) + rec(r)
 
 /--

@@ -760,7 +760,7 @@ partial def elabLExprMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let e' ← elabLExprMono (T:=T) e
      let tMono ← mkAppM ``LExprParams.mono #[MkLExprParams.toExpr T]
      let metadata ← mkAppM ``Unit.unit #[]
-     return mkAppN (.const ``LExpr.abs []) #[tMono, metadata, lmonoty, e']
+     return mkAppN (.const ``LExpr.abs []) #[tMono, metadata, mkStrLit "", lmonoty, e']
   | `(lexprmono| ∀ $e:lexprmono) => do
      let e' ← elabLExprMono (T:=T) e
      let tMono ← mkAppM ``LExprParams.mono #[MkLExprParams.toExpr T]
@@ -1036,7 +1036,7 @@ partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let metadata ← mkAppM ``Unit.unit #[]
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
-     return mkAppN (.const ``LExpr.abs []) #[tParams, metadata, lty, e']
+     return mkAppN (.const ``LExpr.abs []) #[tParams, metadata, mkStrLit "", lty, e']
   | `(lexpr| ∀ $e:lexpr) => do
      let e' ← elabLExpr (T:=T) e
      let metadata ← mkAppM ``Unit.unit #[]
