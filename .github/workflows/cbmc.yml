@@ -59,7 +59,7 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_JBMC=OFF
-          ninja -C build cbmc symtab2gb goto-instrument
+          ninja -C build cbmc symtab2gb goto-cc goto-instrument
           echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
       - name: Build Strata
         uses: leanprover/lean-action@v1
