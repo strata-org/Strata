@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel]
-# Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel
+# Usage: ./run_py_analyze.sh [laurel|incremental]
+# Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel,
+# with "incremental" for pyAnalyzeLaurel --incremental
 
 failed=0
 mode="${1:-core}"
@@ -9,9 +10,9 @@ mode="${1:-core}"
 if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
-    skip_tests="test_datetime"
-elif [ "$mode" = "interactive" ]; then
-    command="pyAnalyzeLaurel --interactive"
+    skip_tests="test_datetime test_incremental_simple"
+elif [ "$mode" = "incremental" ]; then
+    command="pyAnalyzeLaurel --incremental"
     expected_dir="expected_interactive"
     skip_tests=""
 else
