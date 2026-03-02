@@ -1,12 +1,13 @@
--- TODO: This file needs to be updated for the new VCOutcome API
--- Temporarily disabled until the SARIF output format is updated
-#exit
-
 /-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+
+-- TODO: This file needs to be updated for the new VCOutcome API
+-- Temporarily disabled until the SARIF output format is updated
+#exit
+
 
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.Verifier

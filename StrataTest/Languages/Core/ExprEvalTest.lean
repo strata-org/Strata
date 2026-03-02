@@ -1,12 +1,13 @@
--- TODO: This file needs to be updated for the new dischargeObligation API
--- Temporarily disabled until the test is updated
-#exit
-
 /-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+
+-- TODO: This file needs to be updated for the new dischargeObligation API
+-- Temporarily disabled until the test is updated
+#exit
+
 
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Lambda.LExpr
