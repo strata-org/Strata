@@ -40,7 +40,7 @@ recursive function len<a>(xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
 
 /-- error: 🚨 Error during evaluation!
-[ERROR] Polymorphic recursive functions are not yet supported: 'len'
+[ERROR] Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 
 [DEBUG] Evaluated program: datatype MyList (a : Type) {(
   (Nil())),
