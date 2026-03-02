@@ -2,7 +2,7 @@ import Strata.MetaVerifier
 
 open Strata
 
-private def verificationCov :=
+private def verification_coverage :=
 #strata
 program Boole;
 
@@ -156,8 +156,8 @@ spec
 
 #end
 
-#eval Strata.Boole.verify "cvc5" verificationCov
+#eval Strata.Boole.verify "cvc5" verification_coverage
 
-example : Strata.smtVCsCorrect verificationCov := by
+example : Strata.smtVCsCorrect verification_coverage := by
   gen_smt_vcs
   all_goals grind

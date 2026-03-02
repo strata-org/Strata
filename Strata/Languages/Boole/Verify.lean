@@ -32,7 +32,7 @@ structure TranslateState where
 abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
 
 def mkIdent (name : String) : Core.Expression.Ident :=
-  ⟨name, .unres⟩
+  ⟨name, ()⟩
 
 def throwAt (m : SourceRange) (msg : String) : TranslateM α := do
   throw (.withRange ⟨⟨(← get).fileName⟩, m⟩ msg)
@@ -168,13 +168,13 @@ def toCoreMonoBind (b : BooleDDM.MonoBind SourceRange) : TranslateM (Core.Expres
 def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let bop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", .unres⟩ none
+  let bop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
   return .app () bop a
 
 def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let bop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", .unres⟩ none
+  let bop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
   return .mkApp () bop [a, b]
 
 mutual
@@ -242,10 +242,9 @@ def nestMapSet (base : Core.Expression.Expr) (idxs : List Core.Expression.Expr) 
   | [] => rhs
   | [i] => Lambda.LExpr.mkApp () Core.mapUpdateOp [base, i, rhs]
   | i :: rest =>
-    let first := Lambda.LExpr.mkApp () Core.mapSelectOp [base, i]
-    let inner := rest.dropLast.foldl (fun acc j => Lambda.LExpr.mkApp () Core.mapSelectOp [acc, j]) first
-    let inner' := Lambda.LExpr.mkApp () Core.mapUpdateOp [inner, rest.getLast!, rhs]
-    Lambda.LExpr.mkApp () Core.mapUpdateOp [base, i, inner']
+    let innerMap := Lambda.LExpr.mkApp () Core.mapSelectOp [base, i]
+    let updatedInner := nestMapSet innerMap rest rhs
+    Lambda.LExpr.mkApp () Core.mapUpdateOp [base, i, updatedInner]
 
 def toCoreInvariants (is : BooleDDM.Invariants SourceRange) : TranslateM (List Core.Expression.Expr) := do
   go [] is
@@ -426,13 +425,6 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         (Lambda.LExpr.mkApp () Core.intSubOp [.fvar () id none, stepExpr])
         (← toCoreInvariants invs)
         body
-  | .array_assign_2d m arr i j rhs =>
-    let baseExpr ← toCoreExpr arr
-    match baseExpr with
-    | .fvar _ id _ =>
-      return .cmd (.cmd (.set id (nestMapSet baseExpr [← toCoreExpr i, ← toCoreExpr j] (← toCoreExpr rhs)) (← toCoreMetaData m)))
-    | _ => throwAt m "2D array assignment target must be a variable"
-
 end
 
 def checkAttrOf (f? : Option (BooleDDM.Free SourceRange)) : Core.Procedure.CheckAttr :=
@@ -442,7 +434,7 @@ def checkAttrOf (f? : Option (BooleDDM.Free SourceRange)) : Core.Procedure.Check
 
 def toCoreDatatypeConstr
     (dtypeName : String)
-    (c : BooleDDM.Constructor SourceRange) : TranslateM (Lambda.LConstr Core.Visibility) := do
+    (c : BooleDDM.Constructor SourceRange) : TranslateM (Lambda.LConstr Unit) := do
   match c with
   | .constructor_mk _ ⟨_, cname⟩ ⟨_, fields?⟩ =>
     let args ← match fields? with
@@ -456,7 +448,7 @@ def toCoreDatatype
     (m : SourceRange)
     (dtypeName : String)
     (typeParams : List String)
-    (ctors : BooleDDM.ConstructorList SourceRange) : TranslateM (Lambda.LDatatype Core.Visibility) := do
+    (ctors : BooleDDM.ConstructorList SourceRange) : TranslateM (Lambda.LDatatype Unit) := do
   let ctorList := constructorListToList ctors
   let some _ := ctorList.head?
     | throwAt m s!"Datatype {dtypeName} must have at least one constructor"
@@ -580,8 +572,8 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       | some bs => (bindingsToList bs).map (fun | .mkBinding _ ⟨_, n⟩ _ => n)
     withTypeBVars typeParams do
       return [.type (.data [← toCoreDatatype m dtypeName typeParams ctors])]
-  | .command_mutual m ⟨_, cmds⟩ =>
-    let mut dts : List (Lambda.LDatatype Core.Visibility) := []
+      | .command_mutual m ⟨_, cmds⟩ =>
+    let mut dts : List (Lambda.LDatatype Unit) := []
     for cmd in cmds.toList do
       match cmd with
       | .command_datatype dm ⟨_, dtypeName⟩ ⟨_, typeParams?⟩ ctors =>
@@ -624,7 +616,7 @@ def getProgram (p : Strata.Program) : Except DiagnosticModel Boole.Program := do
   | .ok prog => return prog
   | .error e => throw (.fromMessage e)
 
-def typeCheck (p : Strata.Program) (options : Options := Options.default) : Except DiagnosticModel Core.Program := do
+def typeCheck (p : Strata.Program) (options : Core.VerifyOptions := .default) : Except DiagnosticModel Core.Program := do
   let prog ← getProgram p
   let coreProg ← toCoreProgram prog p.globalContext
   Core.typeCheck options coreProg
@@ -634,7 +626,7 @@ def verify
     (smtsolver : String) (env : Strata.Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : Core.VerifyOptions := .default)
     (tempDir : Option String := .none)
     : IO Core.VCResults := do
   let options := { options with solver := smtsolver }

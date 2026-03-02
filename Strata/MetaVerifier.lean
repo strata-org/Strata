@@ -34,7 +34,7 @@ def genVCsSingleENV (pE : Program × Env) : Option coreVCs := do
   | some _ => none
   | _ => return E.deferred.toList.map (fun ob => (E, ob))
 
-def genVCs (program : Program) (options : Options := Options.default) : Option coreVCs := do
+def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
   match Core.typeCheckAndPartialEval options program with
   | .error _ => none
   | .ok pEs =>
@@ -45,7 +45,7 @@ end Core
 
 namespace C_Simp
 
-def genVCs (program : Strata.C_Simp.Program) (options : Options := Options.default) : Option Core.coreVCs := do
+def genVCs (program : Strata.C_Simp.Program) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
   let program := Strata.to_core program
   Core.genVCs program options
 
@@ -53,7 +53,7 @@ end C_Simp
 
 namespace Boole
 
-def genVCs (program : Strata.Boole.Program) (options : Options := Options.default) : Option Core.coreVCs := do
+def genVCs (program : Strata.Boole.Program) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
   let program ← (Strata.Boole.toCoreProgram program).toOption
   Core.genVCs program options
 
@@ -64,14 +64,14 @@ namespace Strata
 def genCoreVCs (program : Program) : Option Core.coreVCs := do
   if program.dialect == "Core" then
     let (program, #[]) := TransM.run default (translateProgram program) | none
-    Core.genVCs program { (default : Options) with verbose := .quiet : Options }
+    Core.genVCs program { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
   else if program.dialect == "C_Simp" then
     let (program, #[]) := C_Simp.TransM.run default (C_Simp.translateProgram program.commands) | none
-    C_Simp.genVCs program { (default : Options) with verbose := .quiet : Options }
+    C_Simp.genVCs program { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
   else if program.dialect == "Boole" then
     match Boole.getProgram program with
     | .ok booleProgram =>
-      Boole.genVCs booleProgram { (default : Options) with verbose := .quiet : Options }
+      Boole.genVCs booleProgram { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
     | .error _ => none
   else
     none
@@ -287,7 +287,6 @@ deriving instance ToExpr for QuantifierKind
 deriving instance ToExpr for SMT.Term
 deriving instance ToExpr for Core.SMT.Sort
 deriving instance ToExpr for Core.SMT.IF
-deriving instance ToExpr for Core.Visibility
 deriving instance ToExpr for Core.CoreExprMetadata
 deriving instance ToExpr for Lambda.LMonoTy
 

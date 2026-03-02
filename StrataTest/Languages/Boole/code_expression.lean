@@ -2,7 +2,7 @@ import Strata.MetaVerifier
 
 open Strata
 
-private def codeExpr :=
+private def code_expression :=
 #strata
 program Boole;
 
@@ -61,8 +61,8 @@ procedure D(a : (Map int T), n : int) returns ()
 
 #end
 
-#eval Strata.Boole.verify "cvc5" codeExpr
+#eval Strata.Boole.verify "cvc5" code_expression
 
-example : Strata.smtVCsCorrect codeExpr := by
+example : Strata.smtVCsCorrect code_expression := by
   gen_smt_vcs
   all_goals (try grind)

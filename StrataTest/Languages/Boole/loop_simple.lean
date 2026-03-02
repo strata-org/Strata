@@ -2,11 +2,11 @@ import Strata.MetaVerifier
 
 open Strata
 
-def loopSimple : Strata.Program :=
+def loop_simple_program : Strata.Program :=
 #strata
 program Boole;
 
-procedure loopSimple (n: int) returns (r: int)
+procedure loop_simple (n: int) returns (r: int)
 spec {
   requires [non_negative]: (n >= 0);
   ensures [sum_assert]: ((n * (n-1)) div 2 == r);
@@ -23,10 +23,10 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" loopSimple
+#eval Strata.Boole.verify "cvc5" loop_simple_program
 
 open Strata.SMT
 
-theorem loopSimple_smtVCsCorrect : smtVCsCorrect loopSimple := by
+theorem loop_simple_smt_vcs_correct : smtVCsCorrect loop_simple_program := by
   gen_smt_vcs
   all_goals (try grind)
