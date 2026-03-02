@@ -290,6 +290,6 @@ Property: assert
 Result: ✔️ pass if reachable
 -/
 #guard_msgs in
-#eval verify mapPgm (options := { Options.default with useArrayTheory := true })
+#eval verify mapPgm (options := { Core.VerifyOptions.default with useArrayTheory := true })
 
 ---------------------------------------------------------------------

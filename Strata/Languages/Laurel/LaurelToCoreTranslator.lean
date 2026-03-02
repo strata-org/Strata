@@ -22,7 +22,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
-open Core (VCResult VCResults)
+open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
@@ -114,7 +114,7 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   let fieldNames := s.fieldNames
   let funcNames := s.funcNames
   -- Dummy expression used as placeholder when an error is emitted in pure context
-  let dummy := .fvar () (Core.CoreIdent.locl s!"DUMMY_VAR_{env.length}") none
+  let dummy := .fvar () (⟨s!"DUMMY_VAR_{env.length}", ()⟩) none
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
   let disallowed (e : StmtExprMd) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
@@ -135,10 +135,9 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       | none =>
           -- Check if this is a field name (datatype constructor) or local variable
           if isFieldName fieldNames name then
-            let ident := Core.CoreIdent.unres name
-            return .op () ident none
+            return .op () ⟨name, ()⟩ none
           else
-            return .fvar () (Core.CoreIdent.locl name) (some (lookupType env name))
+            return .fvar () ⟨name, ()⟩ (some (lookupType env name))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -190,12 +189,11 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       if isPureContext && !isCoreFunction funcNames name then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () (Core.CoreIdent.unres name) none
+        let fnOp : Core.Expression.Expr := .op () ⟨name, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr env arg boundVars isPureContext
           return .app () acc re) fnOp
   | .Block [single] _ => translateExpr env single boundVars isPureContext
-
   | .Forall name ty body =>
       let coreTy := translateType ty
       let coreBody ← translateExpr env body (name :: boundVars) isPureContext
@@ -221,7 +219,6 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
-
   | .Block _ _ => panic "block expression not yet implemented (should be lowered in a separate pass)"
   | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
   | .Return _ => disallowed expr "return expression not yet implemented (should be lowered in a separate pass)"
@@ -257,7 +254,7 @@ def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
     let coreTy := translateType ty
-    .fvar () (Core.CoreIdent.locl "$default") (some coreTy)
+    .fvar () (⟨"$default", ()⟩) (some coreTy)
 
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
@@ -285,7 +282,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       let env' := (name, ty) :: env
       let boogieMonoType := translateType ty
       let boogieType := LTy.forAll [] boogieMonoType
-      let ident := Core.CoreIdent.locl name
+      let ident := ⟨name, ()⟩
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
@@ -309,7 +306,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
-          let ident := Core.CoreIdent.locl name
+          let ident := ⟨name, ()⟩
           -- Check if RHS is a procedure call (not a function)
           match value.val with
           | .StaticCall callee args =>
@@ -332,7 +329,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
               let coreArgs ← args.mapM (fun a => translateExpr env a)
               let lhsIdents := targets.filterMap fun t =>
                 match t.val with
-                | .Identifier name => some (Core.CoreIdent.locl name)
+                | .Identifier name => some (⟨name, ()⟩)
                 | _ => none
               return (env, [Core.Statement.call lhsIdents callee coreArgs value.md])
           | _ =>
@@ -355,7 +352,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
-          let ident := Core.CoreIdent.locl outParam.name
+          let ident := ⟨outParam.name, ()⟩
           let coreExpr ← translateExpr env value
           let assignStmt := Core.Statement.set ident coreExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
@@ -394,7 +391,7 @@ private def translateChecks (env : TypeEnv) (checks : List StmtExprMd) (labelBas
 Translate Laurel Parameter to Core Signature entry
 -/
 def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
-  let ident := Core.CoreIdent.locl param.name
+  let ident := ⟨param.name, ()⟩
   let ty := translateType param.type
   (ident, ty)
 
@@ -516,7 +513,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
       some <$> translateExpr initEnv bodyExpr [] (isPureContext := true)
     | _ => pure none
   return .func {
-    name := Core.CoreIdent.unres proc.name
+    name := ⟨proc.name, ()⟩
     typeArgs := []
     inputs := inputs
     output := outputTy
@@ -534,10 +531,10 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
     -- Zero constructors: opaque type
     Core.Decl.type (.con { name := dt.name, numargs := dt.typeArgs.length })
   | first :: rest =>
-    let constrs : List (Lambda.LConstr Core.Visibility) := (first :: rest).map fun c =>
-      { name := Core.CoreIdent.unres c.name
-        args := c.args.map fun (n, ty) => (Core.CoreIdent.unres n, translateType ty) }
-    let ldt : Lambda.LDatatype Core.Visibility := {
+    let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
+      { name := ⟨c.name, ()⟩
+        args := c.args.map fun (n, ty) => (⟨n, ()⟩, translateType ty) }
+    let ldt : Lambda.LDatatype Unit := {
       name := dt.name
       typeArgs := dt.typeArgs
       constrs := constrs
@@ -595,7 +592,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     let coreTy := translateType c.type
     let body ← c.initializer.mapM (translateExpr [] ·)
     return Core.Decl.func {
-      name := Core.CoreIdent.unres c.name
+      name := ⟨c.name, ()⟩
       typeArgs := []
       inputs := []
       output := coreTy
@@ -622,7 +619,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (program : Program)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     : IO (Except (Array DiagnosticModel) VCResults) := do
   let (strataCoreProgram, translateDiags) ← match translate program with
     | .error translateErrorDiags => return .error translateErrorDiags
@@ -647,7 +644,7 @@ def verifyToVcResults (program : Program)
 
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
-    (options : Options := Options.default): IO (Array Diagnostic) := do
+    (options : VerifyOptions := .default): IO (Array Diagnostic) := do
   -- Validate for diamond-inherited field accesses before translation
   let uri := files.keys.head!
   let diamondErrors := validateDiamondFieldAccesses uri program
@@ -659,7 +656,7 @@ def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (program : Program) (options : Options := Options.default) : IO (Array DiagnosticModel) := do
+def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
   let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors

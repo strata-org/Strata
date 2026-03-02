@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core.Options
 import Strata.Languages.Core.Verifier
 
 ---------------------------------------------------------------------
@@ -57,7 +58,7 @@ Property: assert
 Result: ✔️ pass if reachable
 -/
 #guard_msgs in
-#eval verify coverPgm1 (options := Options.quiet)
+#eval verify coverPgm1 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -93,7 +94,7 @@ Property: assert
 Result: ✔️ pass if reachable
 -/
 #guard_msgs in
-#eval verify coverPgm2 (options := Options.quiet)
+#eval verify coverPgm2 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -228,7 +229,7 @@ Property: cover
 Result: ✖️ refuted if reachable
 -/
 #guard_msgs in
-#eval verify reachCheckPerStmtPgm (options := Options.quiet)
+#eval verify reachCheckPerStmtPgm (options := Core.VerifyOptions.quiet)
 
 ---------------------------------------------------------------------
 

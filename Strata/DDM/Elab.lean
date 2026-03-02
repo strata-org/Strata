@@ -10,7 +10,6 @@ public import Strata.DDM.Ion
 import Strata.DDM.Elab.DialectM
 import Strata.DDM.BuiltinDialects
 import Strata.DDM.Util.Ion.Serialize
-import Strata.Util.IO
 
 import all Strata.DDM.Util.ByteArray
 import all Strata.DDM.Util.Lean
