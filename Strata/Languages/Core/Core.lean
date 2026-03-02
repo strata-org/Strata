@@ -26,14 +26,15 @@ open Strata
 
 3. Strata.Core does not (yet) support polymorphism.
 
-4. Strata.Core does not (yet) support arbitrary gotos. All gotos must
-   currently be to labels later in the program.
+4. Strata.Core supports `exit` statements that exit the nearest enclosing
+   block with a matching label (or the nearest block if no label is given).
+   Strata does not support arbitrary `goto` statements.
 
 5. Strata.Core does not support `where` clauses and `unique` constants,
    requiring a tool like `BoogieToStrata` to desugar them.
 -/
 
-def typeCheck (options : Options) (program : Program)
+def typeCheck (options : VerifyOptions) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel Program := do
   let T := Lambda.TEnv.default
@@ -66,7 +67,7 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     Std.Format :=
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
-def typeCheckAndPartialEval (options : Options) (program : Program)
+def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
   let factory ← Core.Factory.addFactory moreFns

@@ -34,37 +34,10 @@ import Strata.DL.Util.ListUtils
 namespace CallElimCorrect
 open Core Core.Transform CallElim
 
-theorem CoreIdent.isGlob_isGlobOrLocl :
-  PredImplies (CoreIdent.isGlob ·) (CoreIdent.isGlobOrLocl ·) := by
-  intros x H
-  simp [CoreIdent.isGlobOrLocl]
-  exact Or.symm (Or.inr H)
-
-theorem CoreIdent.isLocl_isGlobOrLocl :
-  PredImplies (CoreIdent.isLocl ·) (CoreIdent.isGlobOrLocl ·) := by
-  intros x H
-  simp [CoreIdent.isGlobOrLocl]
-  exact Or.symm (Or.inl H)
-
-theorem CoreIdent.Disjoint_isTemp_isGlobOrLocl :
-  PredDisjoint (CoreIdent.isTemp ·) (CoreIdent.isGlobOrLocl ·) := by
-  intros x H1 H2
-  simp [CoreIdent.isTemp] at H1
-  simp [CoreIdent.isGlobOrLocl] at H2
-  split at H1 <;> simp_all
-  cases H2 <;> simp [CoreIdent.isGlob, CoreIdent.isLocl] at *
-
-theorem CoreIdent.Disjoint_isLocl_isGlob :
-  PredDisjoint (CoreIdent.isLocl ·) (CoreIdent.isGlob ·) := by
-  intros x H1 H2
-  simp [CoreIdent.isLocl] at H1
-  simp [CoreIdent.isGlob] at H2
-  split at H1 <;> simp_all
-
 -- inidividual lemmas
 
 theorem createHavocsApp :
-createHavocs (a ++ b) = createHavocs a ++ createHavocs b := by
+createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
 simp [createHavocs]
 
 theorem createFvarsApp :
@@ -182,7 +155,7 @@ theorem callElimBlockNoExcept :
   cases st with
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
-  | goto l b => exists [.goto l b]
+  | exit l b => exists [.exit l b]
   | loop g m i b md => exists [.loop g m i b md]
   | funcDecl f md => exists [.funcDecl f md]
   | cmd c =>
@@ -3311,7 +3284,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
         <;> try simp [Helim]
   case block => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case ite => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case goto => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
+  case exit => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case loop => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case funcDecl => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case cmd c =>

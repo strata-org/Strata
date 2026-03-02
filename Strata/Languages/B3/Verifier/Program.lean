@@ -30,7 +30,7 @@ open Strata.B3AST
 ---------------------------------------------------------------------
 
 /-- Extract function declarations from a B3 program -/
-def extractFunctionDeclarations (prog : B3AST.Program SourceRange) : List (String × List String × String) :=
+def extractFunctionDeclarations (prog : B3AST.Program SourceRange) : List (String × List TermType × TermType) :=
   match prog with
   | .program _ decls =>
       decls.val.toList.filterMap (fun decl =>
@@ -39,9 +39,9 @@ def extractFunctionDeclarations (prog : B3AST.Program SourceRange) : List (Strin
             if body.val.isNone then
               let argTypes := params.val.toList.map (fun p =>
                 match p with
-                | .fParameter _ _ _ ty => b3TypeToSMT ty.val
+                | .fParameter _ _ _ ty => b3TypeToSMTType ty.val
               )
-              let retType := b3TypeToSMT resultType.val
+              let retType := b3TypeToSMTType resultType.val
               some (name.val, argTypes, retType)
             else
               none

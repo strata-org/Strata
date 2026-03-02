@@ -44,7 +44,6 @@ def typeCheckAndPartialEval
   Except DiagnosticModel (LExpr T.mono) := do
   let E := TEnv.default
   let C := LContext.default.addFactoryFunctions f
-  let _ ← TypeFactory.checkInhab t
   let C ← C.addTypeFactory t
   let (et, _T) ← LExpr.annotate C E e |>.mapError DiagnosticModel.fromFormat
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"

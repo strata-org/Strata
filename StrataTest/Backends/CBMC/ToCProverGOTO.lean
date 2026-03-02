@@ -59,8 +59,12 @@ instance : Imperative.ToGoto LExprTP where
 open Lambda.LTy.Syntax
 
 def ExampleProgram1 : Imperative.Cmds LExprTP :=
-  [.init (Lambda.Identifier.mk "s" ()) mty[bv32] (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
-   .set (Lambda.Identifier.mk "s" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100))]
+  [.init (Lambda.Identifier.mk "s" ()) mty[bv32]
+    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)))
+    .empty,
+   .set (Lambda.Identifier.mk "s" ())
+    (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100))
+    .empty]
 
 /--
 info: ok: #[DECL (decl (s : unsignedbv[32])),
@@ -82,8 +86,13 @@ private def addBV32LExpr (op1 op2 : Lambda.LExprT TestParams.mono) : Lambda.LExp
     op2)
 
 def ExampleProgram2 : Imperative.Cmds LExprTP :=
-  [.init (Lambda.Identifier.mk "s" ()) mty[bv32] (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
-   .set (Lambda.Identifier.mk "s" ()) (addBV32LExpr (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100)) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 200)))]
+  [.init (Lambda.Identifier.mk "s" ()) mty[bv32]
+    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)))
+    .empty,
+   .set (Lambda.Identifier.mk "s" ())
+    (addBV32LExpr (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100))
+    (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 200)))
+    .empty]
 
 /--
 info: ok: #[DECL (decl (s : unsignedbv[32])),
@@ -99,11 +108,17 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
 -- (FIXME) Is this the right way to deal with non-det. expressions?
 
 def ExampleProgram3 : Imperative.Cmds LExprTP :=
-  [.init (Lambda.Identifier.mk "x" ()) mty[bv32] (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
-   .init (Lambda.Identifier.mk "y" ()) mty[bv32] (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
-   .havoc (Lambda.Identifier.mk "x" ()),
-   .havoc (Lambda.Identifier.mk "y" ()),
-   .init (Lambda.Identifier.mk "z" ()) mty[bv32] (some (addBV32LExpr (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "x" ()) (some mty[bv32])) (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "y" ()) (some mty[bv32]))))]
+  [.init (Lambda.Identifier.mk "x" ()) mty[bv32]
+    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)))
+    .empty,
+   .init (Lambda.Identifier.mk "y" ()) mty[bv32]
+    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)))
+    .empty,
+   .havoc (Lambda.Identifier.mk "x" ()) .empty,
+   .havoc (Lambda.Identifier.mk "y" ()) .empty,
+   .init (Lambda.Identifier.mk "z" ()) mty[bv32]
+    (some (addBV32LExpr (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "x" ()) (some mty[bv32])) (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "y" ()) (some mty[bv32]))))
+    .empty]
 
 /--
 info: ok: #[DECL (decl (x : unsignedbv[32])),

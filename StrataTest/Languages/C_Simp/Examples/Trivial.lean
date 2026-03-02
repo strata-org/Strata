@@ -44,7 +44,7 @@ info: function trivial {
 Errors: #[]
 -/
 #guard_msgs in
-#eval Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (TrivialPgm.commands))
+#eval Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (TrivialPgm.commands))
 
 /--
 info: [Strata.Core] Type checking succeeded.

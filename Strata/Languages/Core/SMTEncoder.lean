@@ -82,32 +82,26 @@ def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory Co
   { ctx with typeFactory := tf }
 
 /--
-Helper function to convert LMonoTy to SMT string representation.
-For now, handles only monomorphic types and type variables without substitution.
+Helper function to convert LMonoTy to TermType for datatype constructor fields.
+Handles monomorphic types and type variables (as `.constr tv []`).
 -/
-private def lMonoTyToSMTString (ty : LMonoTy) : String :=
+private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   match ty with
-  | .bitvec n => s!"(_ BitVec {n})"
-  | .tcons "bool" [] => "Bool"
-  | .tcons "int" [] => "Int"
-  | .tcons "real" [] => "Real"
-  | .tcons "string" [] => "String"
-  | .tcons "regex" [] => "RegLan"
-  | .tcons "Map" [k, v] => s!"(Array {lMonoTyToSMTString k} {lMonoTyToSMTString v})"
-  | .tcons name args =>
-    if args.isEmpty then name
-    else s!"({name} {String.intercalate " " (args.map lMonoTyToSMTString)})"
-  | .ftvar tv => tv
+  | .bitvec n => .bitvec n
+  | .tcons "bool" [] => .bool
+  | .tcons "int" [] => .int
+  | .tcons "real" [] => .real
+  | .tcons "string" [] => .string
+  | .tcons "regex" [] => .regex
+  | .tcons name args => .constr name (args.map lMonoTyToTermType)
+  | .ftvar tv => .constr tv []
 
-/-- Convert a datatype's constructors to SMT format. -/
-private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List String :=
+/-- Convert a datatype's constructors to typed SMT constructors. -/
+private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List SMTConstructor :=
   d.constrs.map fun c =>
-    let fieldPairs := c.args.map fun (name, fieldTy) =>
-              (d.name ++ ".." ++ name.name, lMonoTyToSMTString fieldTy)
-    let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
-    let fieldsStr := String.intercalate " " fieldStrs
-    if c.args.isEmpty then s!"({c.name.name})"
-    else s!"({c.name.name} {fieldsStr})"
+    let fields := c.args.map fun (name, fieldTy) =>
+      (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
+    { name := c.name.name, args := fields }
 
 /--
 Emit datatype declarations to the solver.
@@ -651,7 +645,7 @@ cover is violated. If the result is `sat`, then the cover succeeds.
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false) :
-  Except Format ((List Term) × SMT.Context) := do
+  Except Format (List Term × Term × SMT.Context) := do
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
@@ -664,7 +658,7 @@ def ProofObligation.toSMTTerms (E : Env)
       obligation_pos_term
     else
       Factory.not obligation_pos_term
-  .ok ((distinct_assumptions ++ assumptions_terms ++ [obligation_term]), ctx)
+  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
 
 ---------------------------------------------------------------------
 

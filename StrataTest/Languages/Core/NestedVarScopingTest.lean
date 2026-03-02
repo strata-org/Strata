@@ -42,16 +42,17 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: procedure test (cond : bool, x : int, y : int) returns ()
 {
-  if(cond){
+  if (cond) {
     function f (a : int) : int { a + x }
     var r1 : int := f(10);
-    }else{
+    } else {
     function f (a : int) : int { a + y }
     var r2 : int := f(20);
-    }};
+    }
+  };
 -/
 #guard_msgs in
-#eval (Std.format (Core.typeCheck Options.default (translatePgm issue436Pgm).stripMetaData))
+#eval (Std.format (Core.typeCheck .default (translatePgm issue436Pgm).stripMetaData))
 
 ---------------------------------------------------------------------
 -- Regression test for issue #445: function declaration statement
@@ -88,4 +89,4 @@ info: ok: procedure test () returns ()
 
 -/
 #guard_msgs in
-#eval (Std.format (Core.typeCheck Options.default (translatePgm issue445Pgm).stripMetaData))
+#eval (Std.format (Core.typeCheck .default (translatePgm issue445Pgm).stripMetaData))

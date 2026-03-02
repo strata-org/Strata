@@ -57,7 +57,9 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
 def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
   let level := outcomeToLevel vcr.result
-  let messageText := outcomeToMessage vcr.result vcr.smtResult
+  let messageText :=
+    if vcr.isUnreachable then "Path is unreachable"
+    else outcomeToMessage vcr.result vcr.smtObligationResult
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation files vcr.obligation.metadata with

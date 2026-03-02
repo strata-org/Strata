@@ -53,6 +53,7 @@ private def fmtHighType : HighType → String
   | .THeap => "THeap"
   | .TTypedField _ => "TTypedField"
   | .TSet _ => "TSet"
+  | .TMap _ _ => "TMap"
   | .UserDefined name => s!"UserDefined({name})"
   | .Applied _ _ => "Applied"
   | .Pure _ => "Pure"
@@ -73,6 +74,7 @@ private def fmtProc (p : Procedure) : String :=
 private def fmtTypeDef : TypeDefinition → String
   | .Composite ty => s!"type {ty.name}"
   | .Constrained ty => s!"constrained {ty.name}"
+  | .Datatype ty => s!"datatype {ty.name}"
 
 /-- Run signaturesToLaurel and print formatted output. Asserts no errors. -/
 private def runTest (sigs : Array Signature) : IO Unit := do

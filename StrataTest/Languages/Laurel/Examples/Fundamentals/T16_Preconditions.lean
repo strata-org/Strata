@@ -29,6 +29,17 @@ procedure caller() {
   var x: int := hasRequires(1);
   var y: int := hasRequires(3);
 }
+
+function aFunctionWithPrecondition(x: int): int
+  requires x == 10
+{
+  x
+}
+
+procedure aFunctionWithPreconditionCaller() {
+  var x: int := aFunctionWithPrecondition(0);
+//              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+}
 "
 
 #guard_msgs (drop info, error) in

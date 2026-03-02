@@ -25,7 +25,7 @@ info: ok: (procedure P :  ((x : int)) → ((y : int))
    }
  },
  context:
- types:   
+ types:   ⏎
  aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in
@@ -39,7 +39,7 @@ info: ok: (procedure P :  ((x : int)) → ((y : int))
                                          preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                                          postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                                body := [
-                                 Statement.set "y" eb[((~Int.Sub #0) x)]
+                                 Statement.set "y" eb[((~Int.Sub #0) x)] .empty
                                ]
                              }
                             .empty
@@ -48,7 +48,7 @@ info: ok: (procedure P :  ((x : int)) → ((y : int))
 /--
 info: ok: procedure P :  ((a : int)) → ()
   modifies: [g]
-  preconditions: 
+  preconditions: ⏎
   postconditions: (P.g_eq_a, ((g : int) == ((~Int.Add : (arrow int (arrow int int)))
     ((~old : (arrow int int)) (g : int))
     (a : int))))
@@ -60,10 +60,10 @@ info: ok: procedure P :  ((a : int)) → ()
 -/
 #guard_msgs in
 #eval do
-  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let g : TGenEnv Unit := { @TGenEnv.default Unit with context := {types := [[("g", t[int])]] }};
   let ans ←
-              typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
-                              functions := Core.Factory} {@TEnv.default Visibility with genEnv := g}
+              typeCheck { @LContext.default ⟨Unit, Unit⟩ with
+                              functions := Core.Factory} {@TEnv.default Unit with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -75,17 +75,17 @@ info: ok: procedure P :  ((a : int)) → ()
                           postconditions :=
                             [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default, #[]⟩)] },
                           body :=
-                            [Statement.set "g" eb[((~Int.Add a) g)]]
+                            [Statement.set "g" eb[((~Int.Add a) g)] .empty]
                         } .empty
           return format ans.fst
 
 /--
 info: ok: procedure P :  ((a : int)) → ()
   modifies: [g]
-  preconditions: 
+  preconditions: ⏎
   postconditions: (P.g_eq_a, ((g : int) == ((~Int.Add : (arrow int (arrow int int)))
-    ((~old : (arrow int int)) (a : int))
-    ((~old : (arrow int int)) (g : int)))))
+    ((~old : (arrow int int)) (g : int))
+    (a : int))))
 {
   {
     g := ((~Int.Add : (arrow int (arrow int int))) (a : int) (g : int))
@@ -94,11 +94,11 @@ info: ok: procedure P :  ((a : int)) → ()
 -/
 #guard_msgs in
 #eval do
-  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let g : TGenEnv Unit := { @TGenEnv.default Unit with context := {types := [[("g", t[int])]] }};
   let ans ←
-              typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
+              typeCheck { @LContext.default ⟨Unit, Unit⟩ with
                               functions := Core.Factory}
-                        { @TEnv.default Visibility with genEnv := g}
+                        { @TEnv.default Unit with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -108,9 +108,9 @@ info: ok: procedure P :  ((a : int)) → ()
                           modifies := [("g")],
                           preconditions := [],
                           postconditions :=
-                            [("P.g_eq_a", ⟨eb[g == (~old ((~Int.Add a) g))], .Default, #[]⟩)] },
+                            [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default, #[]⟩)] },
                           body :=
-                            [Statement.set "g" eb[((~Int.Add a) g)]]
+                            [Statement.set "g" eb[((~Int.Add a) g)] .empty]
                         } .empty
           return format ans.fst
 

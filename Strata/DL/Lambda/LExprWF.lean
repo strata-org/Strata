@@ -323,6 +323,11 @@ def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) 
 /--
 Like `substFvar`, but properly lifts de Bruijn indices in `to` when going under
 binders. Use this when `to` contains bound variables that should be preserved.
+
+**Important:** `to` is interpreted in the *outer* scope (before entering `e`).
+Any bvars in `to` must refer to binders *outside* `e`, not to binders within `e`.
+When the traversal descends under a binder in `e`, `liftBVars` shifts `to`'s
+indices so they continue to point to the same outer binders.
 -/
 def substFvarLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
   : (LExpr ⟨T, GenericTy⟩) :=

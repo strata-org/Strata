@@ -42,15 +42,15 @@ inductive NondetStmt (P : PureExpr) (Cmd : Type) : Type where
   | loop     (s : NondetStmt P Cmd)
   deriving Inhabited
 
-abbrev NondetStmt.init {P : PureExpr} (name : P.Ident) (ty : P.Ty) (expr : P.Expr) (md : MetaData P := .empty) :=
+abbrev NondetStmt.init {P : PureExpr} (name : P.Ident) (ty : P.Ty) (expr : P.Expr) (md : MetaData P) :=
   NondetStmt.cmd (P:=P) (Cmd.init name ty expr md)
-abbrev NondetStmt.set {P : PureExpr} (name : P.Ident) (expr : P.Expr) (md : MetaData P := .empty) :=
+abbrev NondetStmt.set {P : PureExpr} (name : P.Ident) (expr : P.Expr) (md : MetaData P) :=
   NondetStmt.cmd (P:=P) (Cmd.set name expr md)
-abbrev NondetStmt.havoc {P : PureExpr} (name : P.Ident) (md : MetaData P := .empty) :=
+abbrev NondetStmt.havoc {P : PureExpr} (name : P.Ident) (md : MetaData P) :=
   NondetStmt.cmd (P:=P) (Cmd.havoc name md)
-abbrev NondetStmt.assert {P : PureExpr} (label : String) (b : P.Expr) (md : MetaData P := .empty) :=
+abbrev NondetStmt.assert {P : PureExpr} (label : String) (b : P.Expr) (md : MetaData P) :=
   NondetStmt.cmd (P:=P) (Cmd.assert label b md)
-abbrev NondetStmt.assume {P : PureExpr} (label : String) (b : P.Expr) (md : MetaData P := .empty) :=
+abbrev NondetStmt.assume {P : PureExpr} (label : String) (b : P.Expr) (md : MetaData P) :=
   NondetStmt.cmd (P:=P) (Cmd.assume label b md)
 
 mutual

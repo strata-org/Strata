@@ -53,6 +53,12 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
   -- `Statement.eval` will substitute `old <var>` where `<var>` is a local
   -- variable with the value of `<var>` at each given statement.
   let old_var_subst := E.exprEnv.state.oldest.map (fun (i, _, e) => (i, e))
+  -- Build "old g" → pre-state value substitutions for all declared globals.
+  -- These are passed as substMap so preprocess can substitute them in postcondition asserts.
+  let globalNames : List String := E.program.decls.filterMap fun d =>
+    match d with | .var name _ _ _ => some name.name | _ => none
+  let old_g_subst := old_var_subst.filterMap fun (id, e) =>
+    if globalNames.contains id.name then some (CoreIdent.mkOld id.name, e) else none
   let postcond_asserts :=
     List.map (fun (label, check) =>
                 match check.attr with
@@ -74,9 +80,12 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
                 | _ => (.assert label check.expr check.md))
       p.spec.postconditions
   let precond_assumes :=
-    List.map (fun (label, check) => (.assume label check.expr)) p.spec.preconditions
-  let body' : List Statement := p.body.map Stmt.removeLoops
-  let ssEs := Statement.eval E old_var_subst (precond_assumes ++ body' ++ postcond_asserts)
+    List.map (fun (label, check) =>
+      /- the assumptions from preconditions are set to have empty metadata  -/
+      (.assume label check.expr check.md))
+      p.spec.preconditions
+  let body' : List Statement := (StateT.run (Block.removeLoopsM p.body) 0).fst
+  let ssEs := Statement.eval E old_g_subst (precond_assumes ++ body' ++ postcond_asserts)
   ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))
 
 ---------------------------------------------------------------------
