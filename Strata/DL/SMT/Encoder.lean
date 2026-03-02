@@ -88,7 +88,9 @@ namespace Encoder
 def smtReservedKeywords : List String :=
   ["select", "store", "assert", "check-sat", "declare-const", "declare-fun",
    "define-fun", "exists", "forall", "let", "and", "or", "not", "ite",
-   "true", "false", "Int", "Bool", "Real", "Array", "BitVec"]
+   "true", "false", "Int", "Bool", "Real", "Array", "BitVec",
+   -- Theory function symbols that cvc5 disallows shadowing
+   "abs", "mod", "div", "to_real", "to_int", "is_int"]
 
 /-- Generate a disambiguated name by appending @suffix -/
 def disambiguateName (baseName : String) (suffix : Nat) : String :=

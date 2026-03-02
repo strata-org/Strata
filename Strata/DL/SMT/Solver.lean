@@ -145,13 +145,13 @@ def typeToSMTString (ty : TermType) : SolverM String := do
 
 /-- Quote an identifier for SMT-LIB if it contains special characters. -/
 private def quoteIdent (s : String) : String :=
-  if s.isEmpty then "|" ++ s ++ "|"
-  else if !isIdBegin (s.get 0) || s.any (fun c => !isIdContinue c) then
+  if h : s.isEmpty then "|" ++ s ++ "|"
+  else if !isIdBegin (s.startPos.get (by simp_all)) || s.any (fun c => !isIdContinue c) then
     "|" ++ s ++ "|"
   else s
 where
   isIdBegin (c : Char) : Bool := c.isAlpha || c == '_'
-  isIdContinue (c : Char) : Bool := c.isAlphanum || c == '_' || c == '.' || c == '\'' || c == '!'
+  isIdContinue (c : Char) : Bool := c.isAlphanum || c == '_' || c == '.' || c == '\'' || c == '?' || c == '!'
 
 def setLogic (logic : String) : SolverM Unit :=
   emitln s!"(set-logic {logic})"
