@@ -10,9 +10,9 @@ if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
     skip_tests="test_datetime"
-elif [ "$mode" = "interactive" ]; then
-    command="pyAnalyzeLaurel --interactive"
-    expected_dir="expected_interactive"
+elif [ "$mode" = "incremental" ]; then
+    command="pyAnalyzeLaurel --incremental"
+    expected_dir="expected_incremental"
     skip_tests=""
 else
     command="pyAnalyze"

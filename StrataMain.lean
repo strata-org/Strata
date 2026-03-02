@@ -468,10 +468,6 @@ def pyAnalyzeLaurelCommand : Command where
           let interactive := pflags.getBool "incremental"
           let vcResults ←
             if interactive then do
-              let procNames := programDecls.filterMap fun d => match d with
-                | .proc p _ => some s!"{p.header.name.name}({p.body.length} stmts)"
-                | _ => none
-              IO.println s!"[debug] programDecls: {programDecls.length}, procs: {procNames}"
               let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
               let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
               let config : Strata.Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
