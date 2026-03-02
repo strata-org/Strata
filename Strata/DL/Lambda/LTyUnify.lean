@@ -5,11 +5,11 @@
 -/
 module
 
-import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.LTy
+public import Strata.DL.Util.List
+public import Strata.DL.Util.Maps
 import all Strata.DL.Lambda.LTy
-import Strata.DL.Util.List
 import all Strata.DL.Util.List
-import Strata.DL.Util.Maps
 import all Strata.DL.Util.Maps
 
 /-!
@@ -25,23 +25,25 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
+public section
+
 /-! ### Type Substitution -/
 
 /-- Substitution mapping type variables to `LMonoTy`. -/
-abbrev SubstOne := Map TyIdentifier LMonoTy
-abbrev SubstOne.empty : SubstOne := []
+@[expose] abbrev SubstOne := Map TyIdentifier LMonoTy
+@[expose] abbrev SubstOne.empty : SubstOne := []
 
 /--
 Substitution mapping type variables to `LMonoTy`, taking scopes into
 account. The oldest scope can be obtained via `Maps.oldest`.
 -/
-abbrev Subst := Maps TyIdentifier LMonoTy
-abbrev Subst.empty : Subst := []
+@[expose] abbrev Subst := Maps TyIdentifier LMonoTy
+@[expose] abbrev Subst.empty : Subst := []
 /--
 A `Subst` with an empty scope, typically meant for storing global type
 substitutions.
 -/
-abbrev Subst.emptyScope : Subst := [[]]
+@[expose] abbrev Subst.emptyScope : Subst := [[]]
 
 instance : ToFormat Subst where
   format := Maps.format'
@@ -49,7 +51,7 @@ instance : ToFormat Subst where
 /--
 Check if `Subst` contains only empty scopes.
 -/
-def Subst.hasEmptyScopes (S : Subst) : Bool :=
+@[expose] def Subst.hasEmptyScopes (S : Subst) : Bool :=
   S.all (fun s => s.isEmpty)
 
 @[simp]
@@ -68,7 +70,7 @@ every type in `S`.
 
 Note that we do not deduplicate the resulting list.
 -/
-def Subst.freeVars (S : Subst) : List TyIdentifier :=
+@[expose] def Subst.freeVars (S : Subst) : List TyIdentifier :=
   S.values.flatMap LMonoTy.freeVars
 
 @[simp]
@@ -93,7 +95,7 @@ theorem Subst.freeVars_of_find_subset (S : Subst) (hi : Maps.find? S i = some st
 A substitution map `S` is well-formed if no key appears in the free type
 variables of the values.
 -/
-def SubstWF (S : Subst) : Bool :=
+@[expose] def SubstWF (S : Subst) : Bool :=
   S.keys.all (fun k => k ∉ Subst.freeVars S)
 
 @[simp]
@@ -151,7 +153,7 @@ structure SubstInfo where
   isWF : SubstWF subst
   deriving Repr
 
-def SubstInfo.empty : SubstInfo :=
+@[expose] def SubstInfo.empty : SubstInfo :=
   { subst := Subst.empty,
     isWF := SubstWF_of_empty }
 
@@ -162,7 +164,7 @@ mutual
 /--
 Apply substitution `S` to monotype `mty`.
 -/
-def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
+@[expose] def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
   if Subst.hasEmptyScopes S then mty else
   match mty with
   | .ftvar x => match S.find? x with
@@ -173,13 +175,12 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
 /--
 Apply substitution `S` to monotypes `mtys`.
 -/
-def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
-  if Subst.hasEmptyScopes S then mtys else substAux S mtys []
-where
-  substAux S mtys acc : LMonoTys :=
+@[expose] def LMonoTys.subst.substAux (S : Subst) (mtys : LMonoTys) (acc : LMonoTys) : LMonoTys :=
   match mtys with
   | [] => acc.reverse
-  | ty :: rest => substAux S rest (LMonoTy.subst S ty :: acc)
+  | ty :: rest => LMonoTys.subst.substAux S rest (LMonoTy.subst S ty :: acc)
+@[expose] def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+  if Subst.hasEmptyScopes S then mtys else LMonoTys.subst.substAux S mtys []
 end
 
 /--
@@ -187,7 +188,7 @@ Non tail-recursive version of `LMonoTys.subst`, useful for proofs.
 
 See theorem `LMonoTys.subst_eq_substLogic`.
 -/
-def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+@[expose] def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
   if S.hasEmptyScopes then mtys else
   match mtys with
   | [] => []
@@ -329,7 +330,7 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
 /--
 Apply `new` to `old` substitution.
 -/
-def SubstOne.apply (new old : SubstOne) : SubstOne :=
+@[expose] def SubstOne.apply (new old : SubstOne) : SubstOne :=
   applyAux new old []
   where applyAux (new old acc : SubstOne) : SubstOne :=
   match old with
@@ -340,7 +341,7 @@ def SubstOne.apply (new old : SubstOne) : SubstOne :=
 /--
 Non tail-recursive version of `SubstOne.apply`, useful for proofs.
 -/
-def SubstOne.applyLogic (new old : SubstOne) : SubstOne :=
+@[expose] def SubstOne.applyLogic (new old : SubstOne) : SubstOne :=
   match old with
   | [] => []
   | (id, lty) :: rest =>
@@ -388,7 +389,7 @@ theorem SubstOne.keys_of_apply_eq :
 /--
 Apply the `new` substitution to the `old` one.
 -/
-def Subst.apply (new : SubstOne) (old : Subst) : Subst :=
+@[expose] def Subst.apply (new : SubstOne) (old : Subst) : Subst :=
   match old with
   | [] => old
   | o :: orest => SubstOne.apply new o :: (Subst.apply new orest)
@@ -528,7 +529,7 @@ theorem SubstWF.cons_of_subst_apply (S : SubstInfo) (id : TyIdentifier) (ty newt
 /--
 Apply substitution `S` to the free type variables in `ty`.
 -/
-def LTy.subst (S : Subst) (ty : LTy) : LTy :=
+@[expose] def LTy.subst (S : Subst) (ty : LTy) : LTy :=
   match ty with
   | .forAll xs ty =>
     let S' := go xs S
@@ -545,23 +546,23 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
 A type constraint `(ty1, ty2)` that records that `ty1` and `ty2` must
 have a common substitution instance.
 -/
-abbrev Constraint := (LMonoTy × LMonoTy)
+@[expose] abbrev Constraint := (LMonoTy × LMonoTy)
 /--
 A list of type constraints. These should really be viewed as a set.
 -/
-abbrev Constraints := List Constraint
+@[expose] abbrev Constraints := List Constraint
 
 /--
 Get the free type variables in the type constraint `c`.
 -/
-def Constraint.freeVars (c : Constraint) : List TyIdentifier :=
+@[expose] def Constraint.freeVars (c : Constraint) : List TyIdentifier :=
   let (t1, t2) := c
   LMonoTy.freeVars t1 ++ LMonoTy.freeVars t2
 
 /--
 Get the free type variables in type constraints `cs`.
 -/
-def Constraints.freeVars (cs : Constraints) : List TyIdentifier :=
+@[expose] def Constraints.freeVars (cs : Constraints) : List TyIdentifier :=
   match cs with
   | [] => []
   | c :: c_rest =>
@@ -643,7 +644,7 @@ theorem Constraints.freeVars_zip_dedup_length (h : args1.length = args2.length) 
 /--
 The size of a constraint, useful for termination arguments.
 -/
-def Constraint.size (c : Constraint) : Nat :=
+@[expose] def Constraint.size (c : Constraint) : Nat :=
   c.fst.size + c.snd.size
 
 @[simp]
@@ -655,7 +656,7 @@ theorem Constraint.size_gt_zero : 0 < Constraint.size c := by
 /--
 The size of a set of constraint, where each constituent type is sized as a tree.
 -/
-def Constraints.size (cs : Constraints) : Nat :=
+@[expose] def Constraints.size (cs : Constraints) : Nat :=
   match cs with
   | [] => 0
   | c :: rest => c.size + Constraints.size rest
@@ -693,7 +694,7 @@ theorem Constraints.size_zip_eq (h : args1.length = args2.length) :
 /--
 Apply substitution `S` to type constraints `cs`.
 -/
-def Constraints.subst (S : Subst) (cs : Constraints) : Constraints :=
+@[expose] def Constraints.subst (S : Subst) (cs : Constraints) : Constraints :=
   match cs with
   | [] => []
   | (lty1, lty2) :: rest =>
@@ -712,7 +713,7 @@ theorem Constraints.subst.length_same : (Constraints.subst S cs).length = cs.len
 Function encoding the property that the free variables in a substitution `newS`
 are a subset of those in constraints `cs` and substitution `oldS`.
 -/
-def Subst.freeVars_subset_prop (cs : Constraints) (newS oldS : SubstInfo) : Prop :=
+@[expose] def Subst.freeVars_subset_prop (cs : Constraints) (newS oldS : SubstInfo) : Prop :=
   Subst.freeVars newS.subst ⊆
   Constraints.freeVars cs ++ Subst.freeVars oldS.subst
 
@@ -1023,7 +1024,7 @@ inductive UnifyError where
   | FailedOccursCheck (tyvar : TyIdentifier) (ty : LMonoTy) (c : Constraint) (original : Option Constraint := .none)
   deriving Repr, Inhabited, DecidableEq
 
-def UnifyError.addOriginalConstraint (e : UnifyError) (o : Constraint) : UnifyError :=
+@[expose] def UnifyError.addOriginalConstraint (e : UnifyError) (o : Constraint) : UnifyError :=
   match e with
   | ImpossibleToUnify c _ => ImpossibleToUnify c o
   | FailedOccursCheck tyvar ty c _ => FailedOccursCheck tyvar ty c o
@@ -1054,7 +1055,7 @@ mutual
 Type unification for a single constraint `c` w.r.t. a well-formed type
 substitution `S`. See `Constraints.unify` for the top-level function.
 -/
-def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
+@[expose] def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
   Except UnifyError (ValidSubstRelation [c] S) :=
   let (t1, t2) := c
   if _h1: t1 == t2 then
@@ -1141,7 +1142,7 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
 Type unification for constraints `cs` w.r.t. a well-formed type
 substitution `S`. See `Constraints.unify` for the top-level function.
 -/
-def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
+@[expose] def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
     Except UnifyError (ValidSubstRelation cs S) := do
   match _h0 : cs with
   | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
@@ -1175,11 +1176,13 @@ failure would be the _first_ mismatching one, not necessarily the only one.
 
 Returns a well-formed `S` w.r.t. `cs` otherwise.
 -/
-def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
+@[expose] def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
     Except UnifyError SubstInfo := do
     let relS ← Constraints.unifyCore constraints S
     .ok relS.newS
 
 ---------------------------------------------------------------------
+
+end -- public section
 
 end Lambda

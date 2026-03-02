@@ -115,7 +115,7 @@ def LMonoTys.destructArrow (mtys : LMonoTys) : LMonoTys :=
     mtys ++ mrest_tys
 end
 
-private theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
+public theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
   (mty.destructArrow) ≠ [] := by
   unfold destructArrow; split <;> simp_all
 
