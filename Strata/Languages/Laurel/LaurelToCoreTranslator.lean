@@ -301,7 +301,7 @@ def expandArrayArgs (env : TypeEnv) (args : List StmtExprMd) (translatedArgs : L
       | none => [translated]
     | _ => [translated]
 
-partial def translateExpr (env : TypeEnv) (expr : StmtExprMd)
+def translateExpr (env : TypeEnv) (expr : StmtExprMd)
     (boundVars : List Identifier := []) (isPureContext : Bool := false)
     : TranslateM Core.Expression.Expr := do
   let s ← get
@@ -389,10 +389,9 @@ partial def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       if isPureContext && !isCoreFunction funcNames norm && !norm.startsWith "Array." && !norm.startsWith "Seq." then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else if norm == "Array.Get" then do
-        match args with
-        | [arrArg, idxArg] =>
-          let arrExpr ← translateExpr env arrArg boundVars isPureContext
-          let idxExpr ← translateExpr env idxArg boundVars isPureContext
+        let translated ← args.attach.mapM (fun ⟨arg, _⟩ => translateExpr env arg boundVars isPureContext)
+        match translated with
+        | [arrExpr, idxExpr] =>
           let selectOp := LExpr.op () ⟨"select", ()⟩ none
           return LExpr.mkApp () selectOp [arrExpr, idxExpr]
         | _ => panic! s!"Array.Get expects 2 args, got {args.length}"
@@ -405,12 +404,12 @@ partial def translateExpr (env : TypeEnv) (expr : StmtExprMd)
           | _ => panic! "Array.Length on complex expressions not supported"
         | _ => panic! s!"Array.Length expects 1 arg, got {args.length}"
       else if norm == "Seq.Contains" then do
-        match args with
-        | [seqArg, targetArg] =>
+        let translated ← args.attach.mapM (fun ⟨arg, _⟩ => translateExpr env arg boundVars isPureContext)
+        match args, translated with
+        | [seqArg, _], [_, targetExpr] =>
           let bounds : SeqBounds := match translateSeqBounds env seqArg with
             | .ok b => b
             | .error e => panic! s!"Seq.Contains: {e}"
-          let targetExpr ← translateExpr env targetArg boundVars isPureContext
           -- exists __q0 :: start <= __q0 && __q0 < end && arr[__q0] == target
           let qvar := LExpr.bvar () 0
           let selectOp := LExpr.op () ⟨"select", ()⟩ none
@@ -421,7 +420,7 @@ partial def translateExpr (env : TypeEnv) (expr : StmtExprMd)
               LExpr.mkApp () intLtOp [qvar, bounds.«end»],
               .eq () elemExpr targetExpr]]
           return LExpr.exist () (some LMonoTy.int) inRange
-        | _ => panic! s!"Seq.Contains expects 2 args, got {args.length}"
+        | _, _ => panic! s!"Seq.Contains expects 2 args, got {args.length}"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨norm, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
@@ -515,6 +514,53 @@ def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Core.Exp
     let coreTy := translateType ⟨resolved, ty.md⟩
     .fvar () (⟨"$default", ()⟩) (some coreTy)
 
+
+def getArrayElemConstrainedType (env : TypeEnv) (arr : StmtExprMd) : Option Identifier :=
+  match arr.val with
+  | .Identifier name =>
+    if let some (_, { val := .Applied { val := .UserDefined "Array", ..} [{ val := .UserDefined elemName, ..}], ..}) := env.find? (fun (n, _) => n == name) then
+      some elemName
+    else none
+  | _ => none
+
+def collectConstrainedArrayAccesses (env : TypeEnv) (tcMap : TranslatedConstraintMap) (e : StmtExprMd) : List (StmtExprMd × StmtExprMd × TranslatedConstraint) :=
+  match _h : e.val with
+  | .StaticCall callee [arr, idx] =>
+    let sub := collectConstrainedArrayAccesses env tcMap arr ++ collectConstrainedArrayAccesses env tcMap idx
+    if normalizeCallee callee == "Array.Get" then
+      match getArrayElemConstrainedType env arr >>= tcMap.get? with
+      | some tc => (arr, idx, tc) :: sub
+      | none => sub
+    else sub
+  | .PrimitiveOp _ args | .StaticCall _ args =>
+    args.attach.flatMap fun ⟨a, _⟩ => collectConstrainedArrayAccesses env tcMap a
+  | .IfThenElse c t el =>
+    collectConstrainedArrayAccesses env tcMap c ++
+    collectConstrainedArrayAccesses env tcMap t ++
+    (match el with | some x => collectConstrainedArrayAccesses env tcMap x | none => [])
+  | .Assign ts v =>
+    ts.attach.flatMap (fun ⟨a, _⟩ => collectConstrainedArrayAccesses env tcMap a) ++
+    collectConstrainedArrayAccesses env tcMap v
+  | .Assert cond | .Assume cond =>
+    collectConstrainedArrayAccesses env tcMap cond
+  | .Return (some v) =>
+    collectConstrainedArrayAccesses env tcMap v
+  | .LocalVariable _ _ (some init) =>
+    collectConstrainedArrayAccesses env tcMap init
+  | _ => []
+termination_by sizeOf e
+decreasing_by stmtexpr_wf e, _h
+
+def genArrayElemAssumes (tcMap : TranslatedConstraintMap) (env : TypeEnv) (expr : StmtExprMd)
+    (translateExprFn : StmtExprMd → TranslateM Core.Expression.Expr) : TranslateM (List Core.Statement) := do
+  let accesses := collectConstrainedArrayAccesses env tcMap expr
+  accesses.mapM fun (arr, idx, tc) => do
+    let arrExpr ← translateExprFn arr
+    let idxExpr ← translateExprFn idx
+    let selectExpr := LExpr.mkApp () (LExpr.op () ⟨"select", ()⟩ none) [arrExpr, idxExpr]
+    let constraintExpr := tc.coreConstraint.substFvar ⟨tc.valueName, ()⟩ selectExpr
+    pure (Core.Statement.assume "array_elem_constraint" constraintExpr expr.md)
+
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
@@ -524,19 +570,20 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
   let s ← get
   let functionNames := s.funcNames
   let md := stmt.md
-  match _h : stmt.val with
+  let arrayElemAssumes ← genArrayElemAssumes s.tcMap env stmt (translateExpr env · [] true)
+  let (env', stmts) ← match _h : stmt.val with
   | @StmtExpr.Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
       let coreExpr ← translateExpr env cond [] (isPureContext := true)
-      return (env, [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md])
+      pure (env, [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md])
   | @StmtExpr.Assume cond =>
       let coreExpr ← translateExpr env cond [] (isPureContext := true)
-      return (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md])
+      pure (env, [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md])
   | .Block stmts _ =>
       let (env', stmtsList) ← stmts.attach.foldlM (fun (e, acc) ⟨s, _hs⟩ => do
         let (e', ss) ← translateStmt e outputParams s
         return (e', acc ++ ss)) (env, [])
-      return (env', stmtsList)
+      pure (env', stmtsList)
   | .LocalVariable name ty initializer =>
       let s ← get
       let env' := (name, ty) :: env
@@ -550,7 +597,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
             -- Translate as expression (function application)
             let boogieExpr ← translateExpr env (⟨ .StaticCall callee args, callMd ⟩)
             let cc := genConstraintAssert s.ctMap s.tcMap name ty md
-            return (env', [Core.Statement.init ident boogieType (some boogieExpr) md] ++ cc)
+            pure (env', [Core.Statement.init ident boogieType (some boogieExpr) md] ++ cc)
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr env a)
@@ -558,15 +605,15 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee (expandArrayArgs env args coreArgs) md
             let cc := genConstraintAssert s.ctMap s.tcMap name ty md
-            return (env', [initStmt, callStmt] ++ cc)
+            pure (env', [initStmt, callStmt] ++ cc)
       | some initExpr =>
           let coreExpr ← translateExpr env initExpr
           let cc := genConstraintAssert s.ctMap s.tcMap name ty md
-          return (env', [Core.Statement.init ident boogieType (some coreExpr) md] ++ cc)
+          pure (env', [Core.Statement.init ident boogieType (some coreExpr) md] ++ cc)
       | none =>
           let defaultExpr := defaultExprForType (← get).ctMap ty
           let cc := genConstraintAssert s.ctMap s.tcMap name ty md
-          return (env', [Core.Statement.init ident boogieType (some defaultExpr) md] ++ cc)
+          pure (env', [Core.Statement.init ident boogieType (some defaultExpr) md] ++ cc)
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -577,14 +624,14 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
               if isCoreFunction functionNames callee then
                 -- Functions are translated as expressions
                 let boogieExpr ← translateExpr env value
-                return (env, [Core.Statement.set ident boogieExpr md])
+                pure (env, [Core.Statement.set ident boogieExpr md])
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr env a)
-                return (env, [Core.Statement.call [ident] callee (expandArrayArgs env args coreArgs) md])
+                pure (env, [Core.Statement.call [ident] callee (expandArrayArgs env args coreArgs) md])
           | _ =>
               let boogieExpr ← translateExpr env value
-              return (env, [Core.Statement.set ident boogieExpr md])
+              pure (env, [Core.Statement.set ident boogieExpr md])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
@@ -595,7 +642,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
                 match t.val with
                 | .Identifier name => some (⟨name, ()⟩)
                 | _ => none
-              return (env, [Core.Statement.call lhsIdents callee (expandArrayArgs env args coreArgs) value.md])
+              pure (env, [Core.Statement.call lhsIdents callee (expandArrayArgs env args coreArgs) value.md])
           | _ =>
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
@@ -604,15 +651,15 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       let belse ← match elseBranch with
                   | some e => (·.2) <$> translateStmt env outputParams e
                   | none => pure []
-      return (env, [Imperative.Stmt.ite bcond bthen belse .empty])
+      pure (env, [Imperative.Stmt.ite bcond bthen belse .empty])
   | .StaticCall name args =>
       -- Check if this is a function or procedure
       if isCoreFunction functionNames name then
         -- Functions as statements have no effect (shouldn't happen in well-formed programs)
-        return (env, [])
+        pure (env, [])
       else
         let coreArgs ← args.mapM (fun a => translateExpr env a)
-        return (env, [Core.Statement.call [] name (expandArrayArgs env args coreArgs) md])
+        pure (env, [Core.Statement.call [] name (expandArrayArgs env args coreArgs) md])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
@@ -620,10 +667,10 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
           let coreExpr ← translateExpr env value
           let assignStmt := Core.Statement.set ident coreExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          return (env, [assignStmt, noFallThrough])
+          pure (env, [assignStmt, noFallThrough])
       | none, _ =>
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          return (env, [noFallThrough])
+          pure (env, [noFallThrough])
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
@@ -631,9 +678,9 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       let invExprs ← invariants.mapM (translateExpr env)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr env)
       let (_, bodyStmts) ← translateStmt env outputParams body
-      return (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md])
-  | _ => return (env, [])
-  termination_by sizeOf stmt
+      pure (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md])
+  | _ => pure (env, [])
+  return (env', arrayElemAssumes ++ stmts)  termination_by sizeOf stmt
   decreasing_by
     all_goals
       have hlt := WithMetadata.sizeOf_val_lt stmt

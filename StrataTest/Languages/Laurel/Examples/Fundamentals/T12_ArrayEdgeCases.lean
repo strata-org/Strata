@@ -9,7 +9,15 @@ open StrataTest.Util
 namespace Strata.Laurel
 
 def arrayEdgeCasesProgram := r"
-// TODO: Add constrained array element test once collectConstrainedArrayAccesses is implemented
+constrained int32 = x: int where x >= -2147483648 && x <= 2147483647 witness 0
+
+// Array of constrained element type — constraint on accessed elements
+procedure constrainedElements(arr: Array<int32>)
+  requires Array.Length(arr) > 0
+  ensures arr[0] >= -2147483648
+{
+  assert arr[0] >= -2147483648;
+}
 
 // Empty prefix — Seq.Take with 0
 procedure emptyPrefix(arr: Array<int>, len: int, target: int)
