@@ -13,7 +13,7 @@ Tests that counterexamples returned by the SMT solver are correctly
 converted from `SMT.Term` to Core `LExpr` via `smtTermToLExpr` /
 `convertCounterEx`.  Each test defines a Strata Core program with a
 deliberately failing assertion, runs `verify`, and checks the
-`VCResult.counterExample` field via `#guard_msgs` or `#eval` assertions.
+`VCResult.lexprModel` field via `#guard_msgs` or `#eval` assertions.
 -/
 
 namespace Strata.CounterExampleLiftTest
@@ -50,8 +50,8 @@ Model:
 #eval do
   let results ← verify intCexPgm (options := .models)
   let failures := results.filter fun r => Core.VCResult.isFailure r
-  let cex : Core.LExprCounterEx := match failures[0]? with
-    | some r => r.counterExample
+  let cex : Core.LExprModel := match failures[0]? with
+    | some r => r.lexprModel
     | none => []
   let allInt := cex.all fun (_, expr) =>
     match expr with | .intConst _ _ => true | _ => false

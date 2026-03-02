@@ -152,10 +152,10 @@ instance : ToFormat Outcome where
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
 /--
-A counterexample expressed as Core `LExpr` values, suitable for display
+A model expressed as Core `LExpr` values, suitable for display
 using Core's expression formatter and for future use as program metadata.
 -/
-abbrev LExprCounterEx := List (Expression.Ident × LExpr CoreLParams.mono)
+abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
 
 /--
 A collection of all information relevant to a verification condition's
@@ -168,10 +168,10 @@ structure VCResult where
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
-  /-- Counterexample with values converted from `SMT.Term` to Core `LExpr`.
+  /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with smtObligationResult, if
       smtObligationResult was .sat. -/
-  counterExample : LExprCounterEx := []
+  lexprModel : LExprModel := []
 
 /--
 Map the result from an SMT backend engine to an `Outcome`.
@@ -196,7 +196,7 @@ private def formatCexValue (e : LExpr CoreLParams.mono) : Format :=
 /--
 Format a counterexample whose values are Core `LExpr`s.
 -/
-def LExprCounterEx.format (cex : LExprCounterEx) : Format :=
+def LExprModel.format (cex : LExprModel) : Format :=
   match cex with
   | [] => ""
   | [(id, e)] => f!"({id}, {formatCexValue e})"
@@ -204,14 +204,14 @@ def LExprCounterEx.format (cex : LExprCounterEx) : Format :=
     let first := f!"({id}, {formatCexValue e}) "
     rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatCexValue e'}) ") first
 
-instance : ToFormat LExprCounterEx where
-  format := LExprCounterEx.format
+instance : ToFormat LExprModel where
+  format := LExprModel.format
 
 instance : ToFormat VCResult where
   format r :=
     let modelFmt :=
-      if r.verbose >= .models && !r.counterExample.isEmpty then
-        f!"\nModel:\n{r.counterExample}"
+      if r.verbose >= .models && !r.lexprModel.isEmpty then
+        f!"\nModel:\n{r.lexprModel}"
       else f!""
     f!"Obligation: {r.obligation.label}\n\
        Property: {r.obligation.property}\n\
@@ -348,7 +348,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                      smtObligationResult := smt_result,
                      estate,
                      verbose := options.verbose,
-                     counterExample := cex }
+                     lexprModel := cex }
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)

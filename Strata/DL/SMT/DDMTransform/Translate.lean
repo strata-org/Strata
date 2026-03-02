@@ -273,32 +273,34 @@ Convert an `SMTResponseDDM.Term` (parsed from solver output) into a
 - Qualified identifiers (symbols like `true`, `false`, constructor names)
 - Function applications (constructor applications, `(as Nil (List Int))`)
 
-For cases that cannot be faithfully represented (e.g. `let`, `lambda`,
-quantifiers), falls back to `Term.prim (.string <formatted>)`.
+Note that the returned SMT.Term might not have the right type information, as
+the type information does not exist in the Term itself. It is the caller's
+responsibility to correctly fill in the types in .app/.uf, or faithfully
+ignore these.
 -/
-partial def translateFromDDMTerm (t : Strata.SMTResponseDDM.Term Strata.SourceRange)
-    : Strata.SMT.Term :=
+partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata.SourceRange)
+    : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
     match sc with
-    | .sc_numeral _ n     => .prim (.int n)
-    | .sc_numeral_neg _ n => .prim (.int (-(n : Int)))
-    | .sc_decimal _ d     => .prim (.real d)
-    | .sc_str _ s         => .prim (.string s)
-    | _  => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
+    | .sc_numeral _ n     => return .prim (.int n)
+    | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
+    | .sc_decimal _ d     => return .prim (.real d)
+    | .sc_str _ s         => return .prim (.string s)
+    | _  => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | .qual_identifier _ qi =>
     match resolveQI qi with
-    | some ("true", _)  => .prim (.bool true)
-    | some ("false", _) => .prim (.bool false)
-    | some (name, _)    => mkUFApp name []
-    | none              => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
+    | some ("true", _)  => return .prim (.bool true)
+    | some ("false", _) => return .prim (.bool false)
+    | some (name, _)    => return mkUFApp name []
+    | none              => throw s!"translateFromDDMTermUnsafe: don't know how to convert {repr t}"
   | .qual_identifier_args _ qi args =>
     match resolveQI qi with
     | some (name, _) =>
-      let argTerms := args.val.toList.map translateFromDDMTerm
-      mkUFApp name argTerms
-    | none => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
-  | _ => panic! s!"translateFromDDMTerm: don't know how to convert {repr t}"
+      let argTerms ← args.val.toList.mapM translateFromDDMTermToUntyped
+      return mkUFApp name argTerms
+    | none => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
+  | _ => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
 
 where
   /-- Extract the name string from a QualIdentifier. -/
@@ -316,7 +318,10 @@ where
   /-- Extract the raw string from a Symbol. -/
   symbolToString (sym : Strata.SMTResponseDDM.Symbol Strata.SourceRange) : String :=
     formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))
-  /-- Build a `Term.app` with a UF op for a named function/constructor. -/
+  /-- Build a `Term.app` with a UF op for a named function/constructor.
+      Since the SMTDDM's term does not have any type annotation, the return
+      type is always filled with a placeholder .bool. Also, its arguments are
+      simply assigned an empty list. -/
   mkUFApp (name : String) (args : List Strata.SMT.Term) : Strata.SMT.Term :=
     let uf : Strata.SMT.UF := { id := name, args := [], out := .bool }
     .app (.core (.uf uf)) args .bool

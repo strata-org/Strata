@@ -142,11 +142,14 @@ private def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.T
     catch _ => return []
   match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
   | .ok (.get_value_response _ vps) =>
-    let pairs := vps.val.toList.filterMap fun vp =>
+    let pairs ← vps.val.toList.filterMapM fun vp =>
       match vp with
-      | .valuation_pair _ t1 t2 =>
-        some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
-              Strata.SMTResponseDDM.translateFromDDMTerm t2)
+      | .valuation_pair _ t1 t2 => do
+        match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 with
+        | .ok t2' =>
+          return .some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
+                  t2')
+        | .error msg => throw (IO.userError msg)
     return pairs
   | .error _ => return []
 

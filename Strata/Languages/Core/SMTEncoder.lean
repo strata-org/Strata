@@ -687,7 +687,7 @@ for any unsupported term shape.
 bare `SMT.Term.var` matches a constructor name (zero-argument constructor
 such as `Nil`), the result uses `.op` instead of `.fvar` so that the
 counterexample formatter can distinguish constructors from plain variables
-and render them with the correct Core syntax (e.g. `Nil()`).
+and render them with the correct Core data structure.
 -/
 def smtTermToLExpr (t : Strata.SMT.Term)
     (constructorNames : Std.HashSet String := {}) : LExpr CoreLParams.mono :=
@@ -706,8 +706,7 @@ def smtTermToLExpr (t : Strata.SMT.Term)
       .fvar () v.id none
   | .app (.core (.uf uf)) args _retTy =>
     -- Constructor names use `.op` so the formatter can distinguish them
-    -- from plain variables and emit proper Core syntax (e.g. `Nil()`,
-    -- `Cons(0, Nil())`).
+    -- from plain variables (e.g., `Nil` constructor must not be .fvar)
     let fnExpr : LExpr CoreLParams.mono :=
       if constructorNames.contains uf.id then
         .op () uf.id none
@@ -742,8 +741,7 @@ Convert a counterexample map from `SMT.Term` values to `LExpr` values,
 so that model values can be displayed using Core's expression formatter.
 
 `constructorNames` allows zero-argument constructors (which the SMT solver
-returns as plain variables) to be distinguished from ordinary variables and
-formatted with proper Core syntax (e.g. `Nil()`).
+returns as plain variables) to be distinguished from ordinary variables (.fvar)
 -/
 def convertCounterEx (cex : Imperative.SMT.CounterEx Expression.Ident)
     (constructorNames : Std.HashSet String := {})

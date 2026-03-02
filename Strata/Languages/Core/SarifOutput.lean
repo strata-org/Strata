@@ -27,7 +27,7 @@ def outcomeToLevel : Outcome → Level
   | .implementationError _ => .error
 
 /-- Convert Core Outcome to a descriptive message -/
-def outcomeToMessage (outcome : Outcome) (cex : LExprCounterEx) : String :=
+def outcomeToMessage (outcome : Outcome) (cex : LExprModel) : String :=
   match outcome with
   | .pass => "Verification succeeded"
   | .fail =>
@@ -56,7 +56,7 @@ def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult)
   let level := outcomeToLevel vcr.result
   let messageText :=
     if vcr.isUnreachable then "Path is unreachable"
-    else outcomeToMessage vcr.result vcr.counterExample
+    else outcomeToMessage vcr.result vcr.lexprModel
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation files vcr.obligation.metadata with

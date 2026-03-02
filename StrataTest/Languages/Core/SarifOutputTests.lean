@@ -57,12 +57,12 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
 /-- Create a VCResult for testing -/
 def makeVCResult (label : String) (outcome : Outcome)
   (smtResult : Result := .unknown) (md : MetaData Expression := #[])
-  (counterExample : LExprCounterEx := []) : VCResult :=
+  (lexprModel : LExprModel := []) : VCResult :=
   { obligation := makeObligation label md
     smtObligationResult := smtResult
     result := outcome
     verbose := .normal
-    counterExample := counterExample }
+    lexprModel := lexprModel }
 
 /-! ## Level Conversion Tests -/
 
@@ -246,7 +246,7 @@ def makeVCResult (label : String) (outcome : Outcome)
 #guard
   let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
     [({ name := "x", metadata := () }, .prim (.int 42))]
-  let lexprCex : LExprCounterEx :=
+  let lexprCex : LExprModel :=
     [({ name := "x", metadata := () }, .intConst () 42)]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
