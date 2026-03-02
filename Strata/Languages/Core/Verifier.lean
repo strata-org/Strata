@@ -597,7 +597,7 @@ namespace Strata
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
 
-def typeCheck (ictx : InputContext) (env : Program) (options : VerifyOptions := VerifyOptions.default)
+def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
   Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
@@ -616,7 +616,7 @@ def verify
     (env : Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
-    (options : VerifyOptions := VerifyOptions.default)
+    (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
