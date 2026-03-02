@@ -102,13 +102,13 @@ structure SemanticModel where
   deriving Repr
 
 deriving instance Inhabited for Strata.Laurel.AstNode
-def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
-  match id.id with
+def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
+  match iden.uniqueId with
   | some key => (model.refToDef.get? key).getD (softPanic s!"could not find key {key}")
-  | none => softPanic s!"model.get called on identifier {id.text} without number"
+  | none => softPanic s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  if id.id == none then
+  if id.uniqueId == none then
     true
   else
     match model.get id with
@@ -161,13 +161,13 @@ private def freshId : ResolveM Nat := do
 /-- Register a definition: assign a fresh ID to the identifier and record it in scope with its AstNode. -/
 def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
-  let name' ← if iden.id == none then
+  let name' ← if iden.uniqueId == none then
     let id ← freshId
-    pure { iden with id := some (id) }
+    pure { iden with uniqueId := some (id) }
   else
     pure iden
 
-  modify fun s => { s with scope := s.scope.insert resolutionName (name'.id.getD (panic "key was just inserted"), node) }
+  modify fun s => { s with scope := s.scope.insert resolutionName (name'.uniqueId.getD (panic "key was just inserted"), node) }
   return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
@@ -176,12 +176,12 @@ def resolveRef (name : Identifier) (md : Imperative.MetaData Core.Expression := 
   let s ← get
   match s.scope.get? name.text with
   | some (defId, _) =>
-    let name' := { name with id := some defId }
+    let name' := { name with uniqueId := some defId }
     return name'
   | none =>
     let diag := md.toDiagnostic s!"Resolution failed: '{name.text}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
-    return { name with id := none }
+    return { name with uniqueId := none }
 
 /-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
@@ -210,7 +210,7 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
     match s.typeScopes.get? typeName with
     | some typeScope =>
       match typeScope.get? fieldName.text with
-      | some (defId, _) => return { fieldName with id := some defId }
+      | some (defId, _) => return { fieldName with uniqueId := some defId }
       | none => resolveRef fieldName md
     | none => resolveRef fieldName md
   | none => resolveRef fieldName md
@@ -491,7 +491,7 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
 /-- Insert a definition into the refToDef map using the ID already on the identifier. -/
 private def register (map : Std.HashMap Nat AstNode) (iden : Identifier) (node : AstNode)
     : Std.HashMap Nat AstNode :=
-  match iden.id with
+  match iden.uniqueId with
   | some uuid => map.insert uuid node
   | none => map  -- shouldn't happen after Phase 1
 

@@ -22,7 +22,7 @@ structure Identifier where
   /-- The declared name. -/
   text : String
   /-- Unique ID assigned by the resolution pass. -/
-  id : Option Nat := none
+  uniqueId : Option Nat := none
   deriving Repr, BEq, Inhabited, DecidableEq
 
 instance : ToString Identifier where

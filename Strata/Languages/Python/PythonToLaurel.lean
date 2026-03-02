@@ -178,8 +178,8 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
 /-- Create a None value for a given OrNone type -/
 def mkNoneForType (typeName : String) : StmtExprMd :=
   -- First construct None_none(), then wrap it in the appropriate OrNone constructor
-  let noneVal := mkStmtExprMd (StmtExpr.StaticCall (mkId "None_none") [])
-  mkStmtExprMd (StmtExpr.StaticCall (mkId s!"{typeName}_mk_none") [noneVal])
+  let noneVal := mkStmtExprMd (StmtExpr.StaticCall "None_none" [])
+  mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
 
 /-- Look up a function call in the overload dispatch table.
     Extracts the bare function name from the call target, then
@@ -258,7 +258,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Variable references
   | .Name _ name _ =>
-    return mkStmtExprMd (StmtExpr.Identifier $ mkId name.val)
+    return mkStmtExprMd (StmtExpr.Identifier name.val)
 
   -- Binary operations
   | .BinOp _ left op right => do
@@ -895,6 +895,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       determinism := .nondeterministic
+      isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
       md := default
@@ -1018,8 +1019,7 @@ def pythonToLaurel (prelude: Core.Program)
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
     let mainProc : Procedure := {
-      name := mkId "__main__",
-      inputs := [],
+      name := "__main__",
       outputs := [],
       preconditions := [],
       determinism := .deterministic none, --TODO: need to set reads

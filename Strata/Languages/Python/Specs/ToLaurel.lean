@@ -90,7 +90,7 @@ private def freshId : ToLaurelM Nat := do
 /-- Create an `Identifier` with a fresh ID. -/
 private def mkDef (name : String) : ToLaurelM Identifier := do
   let id ← freshId
-  return { text := name, id := id }
+  return { text := name, uniqueId := id }
 
 /-! ## Helper Functions -/
 
