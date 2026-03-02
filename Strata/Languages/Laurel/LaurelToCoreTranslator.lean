@@ -46,9 +46,19 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TMap keyType valueType => Core.mapTy (translateType keyType) (translateType valueType)
   | .UserDefined _ => .tcons "Composite" []
   | .TCore s => .tcons s []
+  | .Applied ctor [elemTy] =>
+    match ctor.val with
+    | .UserDefined "Array" => .tcons "Array" [translateType elemTy]
+    | _ => panic s!"unsupported applied type {repr ty}"
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by ty.val
-decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
+decreasing_by
+  all_goals first
+    | (cases elementType; term_by_mem)
+    | (cases keyType; term_by_mem)
+    | (cases valueType; term_by_mem)
+    | (cases elemTy; term_by_mem)
+    | (cases ctor; term_by_mem)
 
 def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
@@ -223,7 +233,75 @@ because `liftImperativeExpressions` should have already removed them.
 When an Identifier matches a bound name at index `i`, it becomes `bvar i` (de Bruijn index)
 instead of `fvar`.
 -/
-def translateExpr (env : TypeEnv) (expr : StmtExprMd)
+
+def normalizeCallee (callee : Identifier) : Identifier :=
+  if callee.startsWith "«" && callee.endsWith "»" then
+    (callee.drop 1 |>.dropEnd 1).toString
+  else callee
+
+structure SeqBounds where
+  arr : Core.Expression.Expr := default
+  start : Core.Expression.Expr := default
+  «end» : Core.Expression.Expr := default
+
+instance : Inhabited SeqBounds := ⟨{}⟩
+
+def translateSimpleBound (expr : StmtExprMd) : Except String Core.Expression.Expr :=
+  match expr.val with
+  | .Identifier name => pure (.fvar () ⟨name, ()⟩ (some LMonoTy.int))
+  | .LiteralInt i => pure (.const () (.intConst i))
+  | _ => throw "Expected simple bound expression (identifier or literal)"
+
+partial def translateSeqBounds (env : TypeEnv) (expr : StmtExprMd) : Except String SeqBounds :=
+  match expr.val with
+  | .StaticCall callee [arg] =>
+    let norm := normalizeCallee callee
+    if norm == "Seq.From" then
+      match arg.val with
+      | .Identifier name =>
+        match env.find? (fun (n, _) => n == name) with
+        | some (_, ty) =>
+          match ty.val with
+          | .Applied ctor _ =>
+            match ctor.val with
+            | .UserDefined "Array" =>
+              pure { arr := .fvar () ⟨name, ()⟩ none
+                   , start := .const () (.intConst 0)
+                   , «end» := .fvar () ⟨name ++ "_len", ()⟩ (some LMonoTy.int) }
+            | _ => throw s!"Seq.From expects array, got {repr ty}"
+          | _ => throw s!"Seq.From expects array, got {repr ty}"
+        | none => throw s!"Unknown identifier in Seq.From: {name}"
+      | _ => throw "Seq.From on complex expressions not supported"
+    else throw s!"Not a sequence expression: {callee}"
+  | .StaticCall callee [seq, bound] =>
+    let norm := normalizeCallee callee
+    if norm == "Seq.Take" then do
+      let inner ← translateSeqBounds env seq
+      let boundExpr ← translateSimpleBound bound
+      pure { inner with «end» := boundExpr }
+    else if norm == "Seq.Drop" then do
+      let inner ← translateSeqBounds env seq
+      let boundExpr ← translateSimpleBound bound
+      pure { inner with start := boundExpr }
+    else throw s!"Not a sequence expression: {callee}"
+  | _ => throw "Not a sequence expression"
+
+def expandArrayArgs (env : TypeEnv) (args : List StmtExprMd) (translatedArgs : List Core.Expression.Expr) : List Core.Expression.Expr :=
+  (args.zip translatedArgs).flatMap fun (arg, translated) =>
+    match arg.val with
+    | .Identifier arrName =>
+      match env.find? (fun (n, _) => n == arrName) with
+      | some (_, ty) =>
+        match ty.val with
+        | .Applied ctor _ =>
+          match ctor.val with
+          | .UserDefined "Array" => [translated, .fvar () ⟨arrName ++ "_len", ()⟩ (some LMonoTy.int)]
+          | _ => [translated]
+        | _ => [translated]
+      | none => [translated]
+    | _ => [translated]
+
+partial def translateExpr (env : TypeEnv) (expr : StmtExprMd)
     (boundVars : List Identifier := []) (isPureContext : Bool := false)
     : TranslateM Core.Expression.Expr := do
   let s ← get
@@ -305,11 +383,47 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
             translateExpr env e boundVars isPureContext
       return .ite () bcond bthen belse
   | .StaticCall name args =>
+      -- Normalize callee name (strip «» quotes)
+      let norm := if name.startsWith "«" && name.endsWith "»" then (name.drop 1 |>.dropEnd 1).toString else name
       -- In a pure context, only Core functions (not procedures) are allowed
-      if isPureContext && !isCoreFunction funcNames name then
+      if isPureContext && !isCoreFunction funcNames norm && !norm.startsWith "Array." && !norm.startsWith "Seq." then
         disallowed expr "calls to procedures are not supported in functions or contracts"
+      else if norm == "Array.Get" then do
+        match args with
+        | [arrArg, idxArg] =>
+          let arrExpr ← translateExpr env arrArg boundVars isPureContext
+          let idxExpr ← translateExpr env idxArg boundVars isPureContext
+          let selectOp := LExpr.op () ⟨"select", ()⟩ none
+          return LExpr.mkApp () selectOp [arrExpr, idxExpr]
+        | _ => panic! s!"Array.Get expects 2 args, got {args.length}"
+      else if norm == "Array.Length" then do
+        match args with
+        | [arrArg] =>
+          match arrArg.val with
+          | .Identifier arrName =>
+            return .fvar () ⟨arrName ++ "_len", ()⟩ (some LMonoTy.int)
+          | _ => panic! "Array.Length on complex expressions not supported"
+        | _ => panic! s!"Array.Length expects 1 arg, got {args.length}"
+      else if norm == "Seq.Contains" then do
+        match args with
+        | [seqArg, targetArg] =>
+          let bounds : SeqBounds := match translateSeqBounds env seqArg with
+            | .ok b => b
+            | .error e => panic! s!"Seq.Contains: {e}"
+          let targetExpr ← translateExpr env targetArg boundVars isPureContext
+          -- exists __q0 :: start <= __q0 && __q0 < end && arr[__q0] == target
+          let qvar := LExpr.bvar () 0
+          let selectOp := LExpr.op () ⟨"select", ()⟩ none
+          let elemExpr := LExpr.mkApp () selectOp [bounds.arr, qvar]
+          let inRange := LExpr.mkApp () boolAndOp [
+            LExpr.mkApp () intLeOp [bounds.start, qvar],
+            LExpr.mkApp () boolAndOp [
+              LExpr.mkApp () intLtOp [qvar, bounds.«end»],
+              .eq () elemExpr targetExpr]]
+          return LExpr.exist () (some LMonoTy.int) inRange
+        | _ => panic! s!"Seq.Contains expects 2 args, got {args.length}"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨name, ()⟩ none
+        let fnOp : Core.Expression.Expr := .op () ⟨norm, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr env arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -366,7 +480,9 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   | .This => panic "This expression not implemented"
   termination_by expr
   decreasing_by
-    all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+    all_goals first
+      | (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+      | (simp_wf; have := WithMetadata.sizeOf_val_lt expr; omega)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
@@ -423,7 +539,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
             let coreArgs ← args.mapM (fun a => translateExpr env a)
             let defaultExpr := defaultExprForType ty
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee coreArgs md
+            let callStmt := Core.Statement.call [ident] callee (expandArrayArgs env args coreArgs) md
             return (env', [initStmt, callStmt])
       | some initExpr =>
           let coreExpr ← translateExpr env initExpr
@@ -445,7 +561,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr env a)
-                return (env, [Core.Statement.call [ident] callee coreArgs md])
+                return (env, [Core.Statement.call [ident] callee (expandArrayArgs env args coreArgs) md])
           | _ =>
               let boogieExpr ← translateExpr env value
               return (env, [Core.Statement.set ident boogieExpr md])
@@ -459,7 +575,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
                 match t.val with
                 | .Identifier name => some (⟨name, ()⟩)
                 | _ => none
-              return (env, [Core.Statement.call lhsIdents callee coreArgs value.md])
+              return (env, [Core.Statement.call lhsIdents callee (expandArrayArgs env args coreArgs) value.md])
           | _ =>
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
@@ -476,7 +592,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
         return (env, [])
       else
         let coreArgs ← args.mapM (fun a => translateExpr env a)
-        return (env, [Core.Statement.call [] name coreArgs md])
+        return (env, [Core.Statement.call [] name (expandArrayArgs env args coreArgs) md])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
@@ -524,13 +640,24 @@ def translateParameterToCore (param : Parameter) : TranslateM (Core.CoreIdent ×
   let ty := translateTypeWithCT s.ctMap param.type
   return (ident, ty)
 
+def expandArrayParam (param : Parameter) : TranslateM (List (Core.CoreIdent × LMonoTy)) := do
+  let s ← get
+  let base ← translateParameterToCore param
+  match param.type.val with
+  | .Applied ctor _ =>
+    match ctor.val with
+    | .UserDefined "Array" =>
+      return [base, (⟨param.name ++ "_len", ()⟩, LMonoTy.int)]
+    | _ => return [base]
+  | _ => return [base]
+
 /--
 Translate Laurel Procedure to Core Procedure using `TranslateM`.
 Diagnostics from disallowed constructs in preconditions, postconditions, and body
 are emitted into the monad state.
 -/
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
-  let inputPairs := ← proc.inputs.mapM translateParameterToCore
+  let inputPairs := (← proc.inputs.mapM expandArrayParam).flatten
   let inputs := inputPairs
   let outputs := ← proc.outputs.mapM translateParameterToCore
   let header : Core.Procedure.Header := {
@@ -746,7 +873,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with
     | .Datatype dt => some (translateDatatypeDefinition dt)
     | _ => none
-  pure ({ decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls }, modifiesDiags)
+  pure ({ decls := laurelDatatypeDecls ++ preludeDecls ++ [arrayTypeSynonym] ++ constantDecls ++ pureFuncDecls.toList ++ procDecls }, modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
