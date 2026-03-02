@@ -488,16 +488,31 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
   s!"({fileRange.range.start})"
 
-def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
-  match ty.val with
+
+def genConstraintCheck (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (param : Parameter) : Option Core.Expression.Expr :=
+  match param.type.val with
+  | .UserDefined name =>
+    match tcMap.get? name with
+    | some tc =>
+      let paramIdent : Core.CoreIdent := ⟨param.name, ()⟩
+      let valueIdent : Core.CoreIdent := ⟨tc.valueName, ()⟩
+      let baseTy := translateTypeWithCT ctMap param.type
+      some (tc.coreConstraint.substFvar valueIdent (.fvar () paramIdent (some baseTy)))
+    | none => none
+  | _ => none
+
+def genConstraintAssert (ctMap : ConstrainedTypeMap) (tcMap : TranslatedConstraintMap) (name : Identifier) (ty : HighTypeMd) (md : Imperative.MetaData Core.Expression) : List Core.Statement :=
+  match genConstraintCheck ctMap tcMap { name, type := ty } with
+  | some expr => [Core.Statement.assert s!"{name}_constraint" expr md]
+  | none => []
+def defaultExprForType (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : Core.Expression.Expr :=
+  let resolved := resolveBaseType ctMap ty.val
+  match resolved with
   | .TInt => .const () (.intConst 0)
   | .TBool => .const () (.boolConst false)
   | .TString => .const () (.strConst "")
   | _ =>
-    -- For types without a natural default (arrays, composites, etc.),
-    -- use a fresh free variable. This is only used when the value is
-    -- immediately overwritten by a procedure call.
-    let coreTy := translateType ty
+    let coreTy := translateType ⟨resolved, ty.md⟩
     .fvar () (⟨"$default", ()⟩) (some coreTy)
 
 /--
@@ -523,8 +538,9 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
         return (e', acc ++ ss)) (env, [])
       return (env', stmtsList)
   | .LocalVariable name ty initializer =>
+      let s ← get
       let env' := (name, ty) :: env
-      let boogieMonoType := translateType ty
+      let boogieMonoType := translateTypeWithCT s.ctMap ty
       let boogieType := LTy.forAll [] boogieMonoType
       let ident := ⟨name, ()⟩
       match initializer with
@@ -533,20 +549,24 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
           if isCoreFunction functionNames callee then
             -- Translate as expression (function application)
             let boogieExpr ← translateExpr env (⟨ .StaticCall callee args, callMd ⟩)
-            return (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
+            let cc := genConstraintAssert s.ctMap s.tcMap name ty md
+            return (env', [Core.Statement.init ident boogieType (some boogieExpr) md] ++ cc)
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr env a)
-            let defaultExpr := defaultExprForType ty
+            let defaultExpr := defaultExprForType (← get).ctMap ty
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee (expandArrayArgs env args coreArgs) md
-            return (env', [initStmt, callStmt])
+            let cc := genConstraintAssert s.ctMap s.tcMap name ty md
+            return (env', [initStmt, callStmt] ++ cc)
       | some initExpr =>
           let coreExpr ← translateExpr env initExpr
-          return (env', [Core.Statement.init ident boogieType (some coreExpr) md])
+          let cc := genConstraintAssert s.ctMap s.tcMap name ty md
+          return (env', [Core.Statement.init ident boogieType (some coreExpr) md] ++ cc)
       | none =>
-          let defaultExpr := defaultExprForType ty
-          return (env', [Core.Statement.init ident boogieType (some defaultExpr) md])
+          let defaultExpr := defaultExprForType (← get).ctMap ty
+          let cc := genConstraintAssert s.ctMap s.tcMap name ty md
+          return (env', [Core.Statement.init ident boogieType (some defaultExpr) md] ++ cc)
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -670,6 +690,14 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
                            proc.outputs.map (fun p => (p.name, p.type))
   -- Translate preconditions
   let preconditions ← translateChecks initEnv proc.preconditions "requires"
+  -- Add constraint checks for input parameters
+  let s ← get
+  let inputConstraints : ListMap Core.CoreLabel Core.Procedure.Check :=
+    proc.inputs.filterMap fun p =>
+      match genConstraintCheck s.ctMap s.tcMap p with
+      | some expr => some (s!"{p.name}_constraint", { expr, md := p.type.md })
+      | none => none
+  let preconditions := inputConstraints ++ preconditions
 
   -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←

@@ -4,12 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
-The purpose of this test is to ensure we're using functions and procedures as well as
-Strata Core supports them. When Strata Core makes procedures more powerful, so we
-won't need functions any more, then this test can be merged into other tests.
--/
-
 import StrataTest.Util.TestDiagnostics
 import StrataTest.Languages.Laurel.TestExamples
 
@@ -19,30 +13,39 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-procedure syntacticallyABoogieFunction(x: int): int {
-  x + 1
+procedure fooReassign(): int {
+  var x: int := 0;
+  x := x + 1;
+  assert x == 1;
+  x := x + 1;
+  x
 }
 
-procedure noFunctionBecauseContract() returns (r: int)
-  ensures r > 0
+procedure fooSingleAssign(): int {
+  var x: int := 0;
+  var x2: int := x + 1;
+  var x3: int := x2 + 1;
+  x3
+}
+
+procedure fooProof() {
+  var x: int := fooReassign();
+  var y: int := fooSingleAssign();
+// The following assertions fails while it should succeed,
+// because Core does not yet support transparent procedures
+//  assert x == y;
+}
+
+function aFunction(x: int): int
 {
-  return 10;
+  x
 }
 
-procedure noFunctionBecauseStatements(): int {
-  var x: int := 3;
-  x + 1
-}
-
-procedure caller() {
-  assert syntacticallyABoogieFunction(1) == 2;
-  var x: int := noFunctionBecauseContract();
-  assert x > 0;
-  var y: int := noFunctionBecauseStatements();
-    assert y == 4;
-//. ^^^^^^^^^^^^^^ error: assertion does not hold
+procedure aFunctionCaller() {
+  var x: int := aFunction(3);
+  assert x == 3;
 }
 "
 
-#guard_msgs(drop info, error) in
-#eval! testInputWithOffset "ContractsCalls" program 20 processLaurelFile
+#guard_msgs (drop info, error) in
+#eval testInputWithOffset "ProcedureCalls" program 14 processLaurelFile
