@@ -487,7 +487,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
       let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
       return (ctx, assignStmt)
-    | .Attribute _ obj attr _ =>
+    | .Attribute _ _ _ _ =>
       -- Field assignment: obj.field = expr or self.field = expr
       let valueExpr ← translateExpr ctx value
       let targetExpr ← translateExpr ctx targets.val[0]!  -- This will handle self.field via translateExpr

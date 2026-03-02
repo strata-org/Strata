@@ -42,7 +42,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
-    | _ => panic "static call not to a procedure"
+    | astNode => softPanic s!"static call to {callee} not to a procedure but to a {repr astNode}"
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
   -- Operators
   | .PrimitiveOp op _ =>

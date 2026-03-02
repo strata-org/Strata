@@ -25,6 +25,9 @@ structure Identifier where
   uniqueId : Option Nat := none
   deriving Repr, BEq, Inhabited, DecidableEq
 
+instance : Inhabited Identifier where
+ default := { text := "defaultIdentifier" }
+
 instance : ToString Identifier where
   toString id := id.text
 

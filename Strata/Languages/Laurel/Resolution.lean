@@ -105,7 +105,6 @@ structure SemanticModel where
   refToDef: Std.HashMap Nat AstNode
   deriving Repr
 
-deriving instance Inhabited for Strata.Laurel.AstNode
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
   | some key => (model.refToDef.get? key).getD (softPanic s!"could not find key {key}")
@@ -113,7 +112,7 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   if id.uniqueId == none then
-    true
+    false -- used by the Python pipeline which has resolution errors
   else
     match model.get id with
     | .staticProcedure proc => proc.isFunctional

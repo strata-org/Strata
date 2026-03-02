@@ -67,18 +67,6 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
 /-- Set of names that are translated to Core functions (not procedures) -/
 abbrev FunctionNames := List Identifier
 
-def isCoreFunction (model : SemanticModel) (id : Identifier) : Bool :=
-  match model.get id with
-  | .staticProcedure proc => proc.isFunctional
-  | _ =>
-    let name := id.text
-    -- readField, updateField, and Box constructors/destructors are always functions
-    name == "readField" || name == "updateField" || name == "increment" ||
-    name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
-    name == "MkComposite" || name == "Composite..ref" || name == "Composite..typeTag" ||
-    name == "BoxInt" || name == "BoxBool" || name == "BoxFloat64" || name == "BoxComposite" ||
-    name == "Box..intVal" || name == "Box..boolVal" || name == "Box..float64Val" || name == "Box..compositeVal"
-
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
   /-- Diagnostics accumulated during translation -/
