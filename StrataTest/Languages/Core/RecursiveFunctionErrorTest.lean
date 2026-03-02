@@ -27,7 +27,7 @@ program Core;
 
 datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
-recursive function len<a>(xs : MyList a) : int
+rec function len<a>(xs : MyList a) : int
   decreases xs
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
@@ -59,7 +59,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-recursive function listLen (xs : IntList) : int
+rec function listLen (xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
@@ -86,7 +86,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-recursive function listLen (xs : IntList) : int
+rec function listLen (xs : IntList) : int
   decreases IntList..tl(xs)
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))

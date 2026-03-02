@@ -45,27 +45,27 @@ inline function val(t : IntTree) : int
   requires IntTree..isNode(t);
 { IntTree..val(t) }
 
-recursive function listLen (xs : IntList) : int
+rec function listLen (xs : IntList) : int
   decreases xs
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(tail(xs))
 }
 
-recursive function append (xs : IntList, ys : IntList) : IntList
+rec function append (xs : IntList, ys : IntList) : IntList
   decreases xs
 {
   if IntList..isNil(xs) then ys
   else Cons(head(xs), append(tail(xs), ys))
 }
 
-recursive function size (t : IntTree) : int
+rec function size (t : IntTree) : int
   decreases t
 {
   if IntTree..isLeaf(t) then 0
   else 1 + size(left(t)) + size(right(t))
 }
 
-recursive function toList (t : IntTree) : IntList
+rec function toList (t : IntTree) : IntList
   decreases t
 {
   if IntTree..isLeaf(t) then Nil()

@@ -26,7 +26,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-recursive function listLen (xs : IntList) : int
+rec function listLen (xs : IntList) : int
   decreases xs
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
@@ -104,7 +104,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-recursive function listLen (xs : IntList) : int
+rec function listLen (xs : IntList) : int
   decreases xs
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
@@ -196,7 +196,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-recursive function contains (key : int, xs : IntList) : bool
+rec function contains (key : int, xs : IntList) : bool
   decreases xs
 {
   if IntList..isNil(xs) then false
@@ -252,7 +252,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-recursive function listLen (xs : IntList) : int
+rec function listLen (xs : IntList) : int
   decreases xs
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
@@ -369,13 +369,13 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-recursive function listLen (xs : IntList) : int
+rec function listLen (xs : IntList) : int
   decreases xs
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
 
-recursive function nth (xs : IntList, n : int) : int
+rec function nth (xs : IntList, n : int) : int
   requires IntList..isCons(xs);
   requires n >= 0;
   requires n < listLen(xs);

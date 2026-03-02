@@ -321,7 +321,7 @@ op command_recfndef (name : Ident,
                      @[scope(b)] dec : Option DecreasesClause,
                      @[scopeSelf(name, b, r)] c : r,
                      inline? : Option Inline) : Command =>
-  "recursive " inline? "function " name typeArgs b " : " r indent(2, preconds) "\n  " dec "\n{\n  " indent(2, c) "\n}\n";
+  "rec " inline? "function " name typeArgs b " : " r indent(2, preconds) "\n  " dec "\n{\n  " indent(2, c) "\n}\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]

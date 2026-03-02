@@ -95,7 +95,7 @@ def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat 
   let precondsStr := if preconds.isEmpty then f!"" else Format.line ++ Format.joinSep preconds Format.line
   let sep := if f.body.isNone then f!";" else f!" :="
   let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
-  let recPrefix := if f.isRecursive then f!"recursive " else f!""
+  let recPrefix := if f.isRecursive then f!"rec " else f!""
   f!"{attr}\
      {recPrefix}func {f.name} : {type}{precondsStr}{sep}\
      {body}"
