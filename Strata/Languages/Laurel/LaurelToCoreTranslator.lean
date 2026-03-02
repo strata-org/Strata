@@ -60,10 +60,6 @@ decreasing_by
     | (cases elemTy; term_by_mem)
     | (cases ctor; term_by_mem)
 
-def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
-  match env.find? (fun (n, _) => n == name) with
-  | some (_, ty) => translateType ty
-  | none => panic s!"could not find variable {name} in environment '{Std.format env}'"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -138,6 +134,10 @@ partial def resolveBaseType (ctMap : ConstrainedTypeMap) (ty : HighType) : HighT
 def translateTypeWithCT (ctMap : ConstrainedTypeMap) (ty : HighTypeMd) : LMonoTy :=
   translateType ⟨resolveBaseType ctMap ty.val, ty.md⟩
 
+def lookupType (env : TypeEnv) (name : Identifier) (ctMap : ConstrainedTypeMap := {}) : LMonoTy :=
+  match env.find? (fun (n, _) => n == name) with
+  | some (_, ty) => translateTypeWithCT ctMap ty
+  | none => panic s!"could not find variable {name} in environment '{Std.format env}'"
 def lookupTypeWithCT (ctMap : ConstrainedTypeMap) (env : TypeEnv) (name : Identifier) : Except String LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
   | some (_, ty) => pure (translateTypeWithCT ctMap ty)
@@ -334,10 +334,7 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
             return .op () ⟨name, ()⟩ none
           else
             let s ← get
-            let ty := match env.find? (fun (n, _) => n == name) with
-              | some (_, ty) => translateTypeWithCT s.ctMap ty
-              | none => lookupType env name
-            return .fvar () ⟨name, ()⟩ (some ty)
+            return .fvar () ⟨name, ()⟩ (some (lookupType env name s.ctMap))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -573,6 +570,8 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
   let functionNames := s.funcNames
   let md := stmt.md
   let arrayElemAssumes ← genArrayElemAssumes s.tcMap env stmt (translateExpr env · [] true)
+  -- Note: cases use `pure` not `return` because `return` would exit translateStmt,
+  -- bypassing the arrayElemAssumes prepend below.
   let (env', stmts) ← match _h : stmt.val with
   | @StmtExpr.Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
