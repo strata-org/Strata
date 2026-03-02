@@ -97,7 +97,7 @@ def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .constant c => c.type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    some ⟨ .TVoid, default ⟩
+    some ⟨ .UserDefined "dummyName", default ⟩
  | _ => softPanic s!"getType called on {repr node}"
 
 /-! ## Resolution result -/
@@ -115,10 +115,11 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   if id.uniqueId == none then
-    id.text != "test_helper_procedure" -- Unresolved identifiers are treated as functions to avoid incorrect lifting.
-         -- The Python pipeline generates constructor/discriminator calls that may not
-         -- be resolved at the Laurel level. Treating them as functions keeps them as
-         -- expressions; any real errors will be caught during Core type checking.
+    id.text != "test_helper_procedure"
+        -- Unresolved identifiers are treated as functions to avoid incorrect lifting.
+        -- The Python pipeline generates constructor/discriminator calls that may not
+        -- be resolved at the Laurel level. Treating them as functions keeps them as
+        -- expressions; any real errors will be caught during Core type checking.
   else
     match model.get id with
     | .staticProcedure proc => proc.isFunctional

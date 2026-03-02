@@ -448,6 +448,9 @@ def pyAnalyzeLaurelCommand : Command where
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
           let coreProgram := {decls := pyPrelude.decls ++ programDecls }
+          -- dbg_trace "=== Generated Strata Core Program ==="
+          -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram coreProgram) 100))
+          -- dbg_trace "================================="
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
