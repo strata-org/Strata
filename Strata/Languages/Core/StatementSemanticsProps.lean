@@ -11,7 +11,6 @@ import Strata.DL.Util.Nodup
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Statement
-import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.StatementSemantics
 import Strata.Util.Tactics
 

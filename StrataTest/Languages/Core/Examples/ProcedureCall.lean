@@ -23,8 +23,8 @@ spec {
   modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
   requires [a_positive]:      (a > 0);
-  ensures  [new_g_value]:     (counter == old(counter) + a);
-  ensures  [old_g_property]:  (ret - a == old(counter));
+  ensures  [new_g_value]:     (counter == old counter + a);
+  ensures  [old_g_property]:  (ret - a == old counter);
 }
 {
   counter := Add(counter, a);
@@ -35,7 +35,7 @@ procedure P() returns (b : int)
 spec {
   modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
-  ensures [return_value_lemma]: (b == old(counter) + 16);
+  ensures [return_value_lemma]: (b == old counter + 16);
 }
 {
   call b := Inc(8);

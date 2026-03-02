@@ -35,7 +35,7 @@ VCs:
 info:
 -/
 #guard_msgs in
-#eval verify program (options := Options.default)
+#eval verify program (options := .default)
 
 ---------------------------------------------------------------------
 end Strata

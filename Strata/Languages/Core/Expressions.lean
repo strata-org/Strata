@@ -19,13 +19,13 @@ def ExpressionMetadata := Unit
 
 abbrev Expression : Imperative.PureExpr :=
    { Ident := CoreIdent,
-     EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier _))
-     Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Visibility⟩, Lambda.LMonoTy⟩,
+     EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
+     Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩,
      Ty := Lambda.LTy,
      ExprMetadata := ExpressionMetadata,
-     TyEnv := @Lambda.TEnv Visibility,
-     TyContext := @Lambda.LContext ⟨ExpressionMetadata, Visibility⟩,
-     EvalEnv := Lambda.LState ⟨ExpressionMetadata, Visibility⟩ }
+     TyEnv := @Lambda.TEnv Unit,
+     TyContext := @Lambda.LContext ⟨ExpressionMetadata, Unit⟩,
+     EvalEnv := Lambda.LState ⟨ExpressionMetadata, Unit⟩ }
 
 instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars

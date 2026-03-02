@@ -46,14 +46,14 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify noFilterWFPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := some ["P"])
 
 -- Don't verify P, and don't produce a procedure for the contract
 /-- info: -/
 #guard_msgs in
 #eval verify noFilterWFPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := some [])
 
 end Strata

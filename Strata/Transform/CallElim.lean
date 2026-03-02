@@ -5,7 +5,6 @@
 -/
 
 import Strata.Transform.CoreTransform
-import Strata.Languages.Core.OldExpressions
 
 /-! # Call Elimination Transformation -/
 
@@ -27,15 +26,12 @@ def callElimCmd (cmd: Command)
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
-        let postconditions := OldExpressions.normalizeOldExprs $ proc.spec.postconditions.values.map Procedure.Check.expr
-
-        -- extract old variables in all post conditions
-        let oldVars := postconditions.flatMap OldExpressions.extractOldExprVars
-
-        let oldVars := List.eraseDups oldVars
-
-        -- filter out non-global variables
-        let oldVars := oldVars.filter (isGlobalVar p)
+        -- For each global in modifies, generate a fresh variable to hold its pre-call value,
+        -- but only if "old g" is actually referenced in the postconditions.
+        let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
+        let oldVars := proc.spec.modifies.filter fun g =>
+          isGlobalVar p g &&
+          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
         let argTrips
@@ -47,22 +43,28 @@ def callElimCmd (cmd: Command)
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOutTrips
 
-        -- Monadic operation, generate var mapping for each unique oldVars.
+        -- Generate fresh variables for "old g" (one per modified global).
+        -- Look up types using the original global names, but substitute "old g" in postconditions.
         let genOldTrips := genOldExprIdentsTrip p oldVars
-        let oldTrips
+        let oldTripsRaw
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOldTrips
+        -- Map: ((fresh, ty), "old g") for substitution; init from original global g
+        let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
+        let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
+          ((fresh, ty), oldG)
 
-        -- initialize/declare the newly generated variables
+        -- initialize/declare the newly generated variables (init from original global value)
         let argInit := createInits argTrips md
         let outInit := createInitVars outTrips md
-        let oldInit := createInitVars oldTrips md
+        -- Initialize fresh vars from the current (pre-call) values of the original globals
+        let oldInit := createInitVars oldTripsRaw md
 
-        -- construct substitutions of old variables
+        -- Substitute "old g" with the fresh pre-call variable in postconditions
         let oldSubst := createOldVarsSubst oldTrips
 
-        -- only need to substitute post conditions.
-        let postconditions := OldExpressions.substsOldExprs oldSubst postconditions
+        let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
+          (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
 
         -- generate havoc for return variables, modified variables
         let havoc_ret := createHavocs lhs md
@@ -85,7 +87,6 @@ def callElimCmd (cmd: Command)
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
                         md
-
         -- Update cached CallGraph
         let σ ← get
         match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
