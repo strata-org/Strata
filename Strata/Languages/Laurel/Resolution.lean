@@ -650,14 +650,14 @@ def buildRefToDef (program : Program) : Std.HashMap Nat AstNode :=
   let map : Std.HashMap Nat AstNode := {}
   let map := program.types.foldl collectTypeDefinition map
   let map := program.constants.foldl collectConstant map
-  let map := program.staticFields.foldl (collectField · (mkId "$static") ·) map
+  let map := program.staticFields.foldl (collectField · "$static" ·) map
   program.staticProcedures.foldl (collectProcedure · · .staticProcedure) map
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
 /-- A default AstNode used as a placeholder during pre-registration.
     It will be overwritten with the real node when the definition is fully resolved. -/
-private def placeholderNode : AstNode := .var (mkId "$placeholder") ⟨.TVoid, #[]⟩
+private def placeholderNode : AstNode := .var "$placeholder" ⟨.TVoid, #[]⟩
 
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:
@@ -699,7 +699,7 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
     preRegisterTopLevel program
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
-    let staticFields' ← program.staticFields.mapM (resolveField (mkId "$static"))
+    let staticFields' ← program.staticFields.mapM (resolveField "$static")
     let staticProcs' ← program.staticProcedures.mapM resolveProcedure
     return { staticProcedures := staticProcs', staticFields := staticFields',
              types := types', constants := constants' }

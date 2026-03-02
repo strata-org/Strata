@@ -158,20 +158,20 @@ abbrev TransformM := StateM TransformState
 /-- Get the Box destructor name for a given Laurel HighType -/
 def boxDestructorName (ty : HighType) : Identifier :=
   match ty with
-  | .TInt => mkId "Box..intVal"
-  | .TBool => mkId "Box..boolVal"
-  | .TFloat64 => mkId "Box..float64Val"
-  | .UserDefined _ => mkId "Box..compositeVal"
-  | _ => mkId "Box..intVal"  -- fallback
+  | .TInt => "Box..intVal"
+  | .TBool => "Box..boolVal"
+  | .TFloat64 => "Box..float64Val"
+  | .UserDefined _ => "Box..compositeVal"
+  | _ => "Box..intVal"  -- fallback
 
 /-- Get the Box constructor name for a given Laurel HighType -/
 def boxConstructorName (ty : HighType) : Identifier :=
   match ty with
-  | .TInt => mkId "BoxInt"
-  | .TBool => mkId "BoxBool"
-  | .TFloat64 => mkId "BoxFloat64"
-  | .UserDefined _ => mkId "BoxComposite"
-  | _ => mkId "BoxInt"  -- fallback
+  | .TInt => "BoxInt"
+  | .TBool => "BoxBool"
+  | .TFloat64 => "BoxFloat64"
+  | .UserDefined _ => "BoxComposite"
+  | _ => "BoxInt"  -- fallback
 
 def readsHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapReaders.contains name
@@ -182,7 +182,7 @@ def writesHeap (name : Identifier) : TransformM Bool := do
 def freshVarName : TransformM Identifier := do
   let s ← get
   set { s with freshCounter := s.freshCounter + 1 }
-  return mkId s!"$tmp{s.freshCounter}"
+  return s!"$tmp{s.freshCounter}"
 
 /-- Helper to wrap a StmtExpr into StmtExprMd with empty metadata -/
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
@@ -228,9 +228,9 @@ where
     let md := expr.md
     match _h : expr.val with
     | .FieldSelect selectTarget fieldName =>
-        let qualifiedName := mkId $ resolveQualifiedFieldName model fieldName
+        let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
         let valTy := (model.get fieldName).getType.getD (softPanic "heapTransformExpr1")
-        let readExpr := ⟨ .StaticCall (mkId "readField") [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
     | .StaticCall callee args =>
@@ -285,14 +285,14 @@ where
         | [fieldSelectMd] =>
           match _h2 : fieldSelectMd.val with
           | .FieldSelect target fieldName =>
-            let qualifiedName := mkId $ resolveQualifiedFieldName model fieldName
+            let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
             let valTy := (model.get fieldName).getType.getD (softPanic "heapTransformExpr2")
             let target' ← recurse target
             let v' ← recurse v
             -- Wrap value in Box constructor
             let boxedVal := mkMd <| .StaticCall (boxConstructorName valTy.val) [v']
             let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall (mkId "updateField") [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), md ⟩
+              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), md ⟩
             if valueUsed then
               return ⟨ .Block [heapAssign, v'] none, md ⟩
             else
@@ -315,16 +315,16 @@ where
         let ty := (computeExprType model e1).val
         match ty with
         | .UserDefined _ =>
-          let ref1 := mkMd (.StaticCall (mkId "Composite..ref") [args'[0]!])
-          let ref2 := mkMd (.StaticCall (mkId "Composite..ref") [args'[1]!])
+          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
           return ⟨ .PrimitiveOp .Eq [ref1, ref2], md ⟩
         | _ => return ⟨ .PrimitiveOp op args', md ⟩
       | .Neq, [e1, _e2] =>
         let ty := (computeExprType model e1).val
         match ty with
         | .UserDefined _ =>
-          let ref1 := mkMd (.StaticCall (mkId "Composite..ref") [args'[0]!])
-          let ref2 := mkMd (.StaticCall (mkId "Composite..ref") [args'[1]!])
+          let ref1 := mkMd (.StaticCall "Composite..ref" [args'[0]!])
+          let ref2 := mkMd (.StaticCall "Composite..ref" [args'[1]!])
           return ⟨ .PrimitiveOp .Neq [ref1, ref2], md ⟩
         | _ => return ⟨ .PrimitiveOp op args', md ⟩
       | _, _ => return ⟨ .PrimitiveOp op args', md ⟩
@@ -358,8 +358,8 @@ where
             (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; term_by_mem)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
-  let heapName := mkId "$heap"
-  let heapInName := mkId "$heap_in"
+  let heapName : Identifier := "$heap"
+  let heapInName : Identifier := "$heap_in"
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
@@ -447,10 +447,10 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- Collect all qualified field names and generate a Field datatype
   let fieldNames := program.types.foldl (fun acc td =>
     match td with
-    | .Composite ct => acc ++ ct.fields.map (fun f => mkId $ ct.name.name ++ "." ++ f.name.name)
+    | .Composite ct => acc ++ ct.fields.map (fun f => (ct.name.name ++ "." ++ f.name.name : Identifier))
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
-    .Datatype { name := mkId "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
+    .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
   -- Remove fields from composite types since they are now stored in the heap
   let types' := program.types.map fun td =>
     match td with

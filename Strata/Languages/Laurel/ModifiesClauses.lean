@@ -64,7 +64,7 @@ def buildNotModifiedForEntry (obj : StmtExprMd) (entry : ModifiesEntry) : StmtEx
   | .single expr =>
     mkMd <| .PrimitiveOp .Neq [obj, expr]
   | .set expr =>
-    let membership := mkMd <| .StaticCall (mkId "select") [expr, obj]
+    let membership := mkMd <| .StaticCall "select" [expr, obj]
     mkMd <| .PrimitiveOp .Not [membership]
 
 /-- Conjoin a list of StmtExprs with `&&`. -/
@@ -87,15 +87,15 @@ Returns `none` if there are no entries.
 def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs : List StmtExprMd)
     (heapInName heapOutName : Identifier) : Option StmtExprMd :=
   let entries := extractModifiesEntries model modifiesExprs
-  let objName := mkId "$modifies_obj"
-  let fldName := mkId "$modifies_fld"
+  let objName : Identifier := "$modifies_obj"
+  let fldName : Identifier := "$modifies_fld"
   let obj := mkMd <| .Identifier objName
   let fld := mkMd <| .Identifier fldName
   let heapIn := mkMd <| .Identifier heapInName
   let heapOut := mkMd <| .Identifier heapOutName
       -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.nextReference
-  let heapCounter := mkMd <| .StaticCall (mkId "Heap..nextReference") [heapIn]
-  let objRef := mkMd <| .StaticCall (mkId "Composite..ref") [obj]
+  let heapCounter := mkMd <| .StaticCall "Heap..nextReference" [heapIn]
+  let objRef := mkMd <| .StaticCall "Composite..ref" [obj]
   let objAllocated := mkMd <| .PrimitiveOp .Lt [objRef, heapCounter]
   let antecedent := if entries.isEmpty
     then objAllocated
@@ -105,14 +105,14 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
       let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
       mkMd <| .PrimitiveOp .And [objAllocated, notModified]
   -- Build: readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
-  let readIn := mkMd <| .StaticCall (mkId "readField") [heapIn, obj, fld]
-  let readOut := mkMd <| .StaticCall (mkId "readField") [heapOut, obj, fld]
+  let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
+  let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
   let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
   let innerForall := mkMd <| .Forall ⟨ fldName, (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) ⟩ implBody
-  let outerForall := ⟨ .Forall ⟨ objName, (⟨ .UserDefined (mkId "Composite"), .empty ⟩) ⟩   innerForall, proc.md ⟩
+  let outerForall := ⟨ .Forall ⟨ objName, (⟨ .UserDefined "Composite", .empty ⟩) ⟩   innerForall, proc.md ⟩
   some outerForall
 
 /--
@@ -136,8 +136,8 @@ def transformModifiesClauses (model: SemanticModel)
   | .External => .ok proc
   | .Opaque postconds impl modifiesExprs =>
       if hasHeapOut proc then
-        let heapInName := mkId "$heap_in"
-        let heapName := mkId "$heap"
+        let heapInName : Identifier := "$heap_in"
+        let heapName : Identifier := "$heap"
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
           | some frame => postconds ++ [frame]

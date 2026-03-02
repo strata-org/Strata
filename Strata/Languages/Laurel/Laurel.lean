@@ -28,6 +28,9 @@ structure Identifier where
 instance : ToString Identifier where
   toString id := id.name
 
+instance : Coe String Identifier where
+  coe s := Identifier.mk s none
+
 def mkId (name: String): Identifier := Identifier.mk name none
 
 /--

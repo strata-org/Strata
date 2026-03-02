@@ -93,12 +93,12 @@ private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters
   let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
   modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
-  return mkId $ s!"${varName.name}_{counter}"
+  return s!"${varName.name}_{counter}"
 
 private def freshCondVar : LiftM Identifier := do
   let n := (← get).condCounter
   modify fun s => { s with condCounter := n + 1 }
-  return mkId $ s!"$c_{n}"
+  return s!"$c_{n}"
 
 private def addPrepend (stmt : StmtExprMd) : LiftM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }

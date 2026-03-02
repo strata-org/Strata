@@ -60,31 +60,31 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
   let mkInnerMap (ct : CompositeType) : StmtExprMd :=
     let ancestors := computeAncestors model ct.name
     let falseConst := mkMd (.LiteralBool false)
-    let emptyInner := mkMd (.StaticCall (mkId "const") [falseConst])
+    let emptyInner := mkMd (.StaticCall "const" [falseConst])
     composites.foldl (fun acc otherCt =>
       let isAncestor := ancestors.any (·.name == otherCt.name)
       if isAncestor then
-        let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.name ++ "_TypeTag") [])
+        let otherConst := mkMd (.StaticCall (otherCt.name.name ++ "_TypeTag") [])
         let boolVal := mkMd (.LiteralBool true)
-        mkMd (.StaticCall (mkId "update") [acc, otherConst, boolVal])
+        mkMd (.StaticCall "update" [acc, otherConst, boolVal])
       else acc
     ) emptyInner
   -- Generate a separate constant `ancestorsFor<Type>` for each composite type
   let ancestorsForDecls := composites.map fun ct =>
-    { name := mkId s!"ancestorsFor{ct.name.name}"
+    { name := s!"ancestorsFor{ct.name.name}"
       type := innerMapTy
       initializer := some (mkInnerMap ct) : Constant }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
   let falseConst := mkMd (.LiteralBool false)
-  let emptyInner := mkMd (.StaticCall (mkId "const") [falseConst])
-  let emptyOuter := mkMd (.StaticCall (mkId "const") [emptyInner])
+  let emptyInner := mkMd (.StaticCall "const" [falseConst])
+  let emptyOuter := mkMd (.StaticCall "const" [emptyInner])
   let outerMapExpr := composites.foldl (fun acc ct =>
-    let typeConst := mkMd (.StaticCall (mkId $ ct.name.name ++ "_TypeTag") [])
-    let innerMapRef := mkMd (.StaticCall (mkId s!"ancestorsFor{ct.name.name}") [])
-    mkMd (.StaticCall (mkId "update") [acc, typeConst, innerMapRef])
+    let typeConst := mkMd (.StaticCall (ct.name.name ++ "_TypeTag") [])
+    let innerMapRef := mkMd (.StaticCall s!"ancestorsFor{ct.name.name}" [])
+    mkMd (.StaticCall "update" [acc, typeConst, innerMapRef])
   ) emptyOuter
   let ancestorsDecl : Constant :=
-    { name := mkId "ancestorsPerType"
+    { name := "ancestorsPerType"
       type := outerMapTy
       initializer := some outerMapExpr }
   ancestorsForDecls ++ [ancestorsDecl]
@@ -191,11 +191,11 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaDat
   let typeName := match ty.val with
     | .UserDefined name => name.name
     | _ => panic! s!"IsType: expected UserDefined type"
-  let typeTag := mkMd (.StaticCall (mkId "Composite..typeTag") [target])
-  let ancestorsPerType := mkMd (.StaticCall (mkId "ancestorsPerType") [])
-  let innerMap := mkMd (.StaticCall (mkId "select") [ancestorsPerType, typeTag])
-  let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
-  ⟨.StaticCall (mkId $ "select") [innerMap, typeConst], md⟩
+  let typeTag := mkMd (.StaticCall "Composite..typeTag" [target])
+  let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
+  let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
+  let typeConst := mkMd (.StaticCall (typeName ++ "_TypeTag") [])
+  ⟨.StaticCall "select" [innerMap, typeConst], md⟩
 
 /-- State for the type hierarchy rewrite monad -/
 structure THState where
@@ -206,7 +206,7 @@ abbrev THM := StateM THState
 private def freshVarName : THM Identifier := do
   let s ← get
   set { s with freshCounter := s.freshCounter + 1 }
-  return mkId $ s!"$th_tmp{s.freshCounter}"
+  return s!"$th_tmp{s.freshCounter}"
 
 /--
 Lower `New name` to a block that:
@@ -215,13 +215,13 @@ Lower `New name` to a block that:
 3. Constructs a `MkComposite(counter, name_TypeTag())` value
 -/
 def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : THM StmtExprMd := do
-  let heapVar := mkId "$heap"
+  let heapVar : Identifier := "$heap"
   let freshVar ← freshVarName
-  let getCounter := mkMd (.StaticCall (mkId "Heap..nextReference") [mkMd (.Identifier heapVar)])
+  let getCounter := mkMd (.StaticCall "Heap..nextReference" [mkMd (.Identifier heapVar)])
   let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
-  let newHeap := mkMd (.StaticCall (mkId "increment") [mkMd (.Identifier heapVar)])
+  let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
   let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-  let compositeResult := mkMd (.StaticCall (mkId "MkComposite") [mkMd (.Identifier freshVar), mkMd (.StaticCall (mkId $ name.name ++ "_TypeTag") [])])
+  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.name ++ "_TypeTag") [])])
   return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
 
 /--
@@ -309,18 +309,18 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
     | .Composite ct => some ct.name.name
     | _ => none
   let typeTagDatatype : TypeDefinition :=
-    .Datatype { name := mkId "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := mkId $ n ++ "_TypeTag", args := [] } }
+    .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (n ++ "_TypeTag" : Identifier), args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
-  let typeTagTy : HighTypeMd := ⟨.UserDefined (mkId "TypeTag"), #[]⟩
+  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
   let remainingTypes := program.types.map fun td =>
     match td with
     | .Datatype dt =>
       if dt.name.name == "Composite" then
         .Datatype { dt with constructors := dt.constructors.map fun c =>
           if c.name.name == "MkComposite" then
-            { c with args := c.args ++ [{ name := mkId "typeTag", type := typeTagTy }] }
+            { c with args := c.args ++ [{ name := ("typeTag" : Identifier), type := typeTagTy }] }
           else c }
       else td
     | _ => td

@@ -570,11 +570,11 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let selectProc: Procedure := {
     name := { name := "select" },
     inputs := [
-      ⟨mkId "map", default⟩,
-      ⟨mkId "key", default⟩
+      ⟨"map", default⟩,
+      ⟨"key", default⟩
     ],
     outputs := [
-      ⟨mkId "result", default⟩
+      ⟨"result", default⟩
     ],
     preconditions := [],
     determinism := .nondeterministic,
@@ -586,12 +586,12 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let updateProc: Procedure := {
     name := { name := "update" },
     inputs := [
-      ⟨mkId "map", default⟩,
-      ⟨mkId "key", default⟩,
-      ⟨mkId "value", default⟩
+      ⟨"map", default⟩,
+      ⟨"key", default⟩,
+      ⟨"value", default⟩
     ],
     outputs := [
-      ⟨mkId "result", default⟩
+      ⟨"result", default⟩
     ],
     preconditions := [],
     determinism := .nondeterministic,
@@ -603,10 +603,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let constProc: Procedure := {
     name := { name := "const" },
     inputs := [
-      ⟨mkId "value", default⟩
+      ⟨"value", default⟩
     ],
     outputs := [
-      ⟨mkId "result", default⟩
+      ⟨"result", default⟩
     ],
     preconditions := [],
     determinism := .nondeterministic,
