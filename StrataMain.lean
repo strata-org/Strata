@@ -212,15 +212,14 @@ def ionPathToPythonPath (ionPath : String) : Option String :=
   else
     none
 
-/-- Try to read Python source file and create a FileMap for line/column conversion -/
-def tryReadPythonSource (ionPath : String) : IO (Option (String × Lean.FileMap)) := do
+/-- Try to read Python source file for source location reconstruction -/
+def tryReadPythonSource (ionPath : String) : IO (Option (String × String)) := do
   match ionPathToPythonPath ionPath with
   | none => return none
   | some pyPath =>
     try
       let content ← IO.FS.readFile pyPath
-      let fileMap := Lean.FileMap.ofString content
-      return some (pyPath, fileMap)
+      return some (pyPath, content)
     catch _ =>
       return none
 
@@ -282,12 +281,12 @@ def pyAnalyzeCommand : Command where
             else
               -- Convert byte offset to line/column if we have the source
               match pySourceOpt with
-              | some (pyPath, fileMap) =>
+              | some (pyPath, srcText) =>
                 -- Check if this metadata is from the Python source (not CorePrelude)
                 match fr.file with
                 | .file path =>
                   if path == pyPath then
-                    let pos := fileMap.toPosition fr.range.start
+                    let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
                     -- For failures, show at beginning; for passes, show at end
                     match vcResult.result with
                     | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
@@ -307,7 +306,7 @@ def pyAnalyzeCommand : Command where
       -- Output in SARIF format if requested
       if outputSarif then
         let files := match pySourceOpt with
-          | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
+          | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
           | none => Map.empty
         Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
 
@@ -475,11 +474,11 @@ def pyAnalyzeLaurelCommand : Command where
                 if fr.range.isNone then ("", "")
                 else
                   match pySourceOpt with
-                  | some (pyPath, fileMap) =>
+                  | some (pyPath, srcText) =>
                     match fr.file with
                     | .file path =>
                       if path == pyPath then
-                        let pos := fileMap.toPosition fr.range.start
+                        let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
                         match vcResult.result with
                         | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
                         | _ => ("", s!" (at line {pos.line}, col {pos.column})")
@@ -497,7 +496,7 @@ def pyAnalyzeLaurelCommand : Command where
           -- Output in SARIF format if requested
           if outputSarif then
             let files := match pySourceOpt with
-              | some (pyPath, fileMap) => Map.empty.insert (Strata.Uri.file pyPath) fileMap
+              | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
               | none => Map.empty
             Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
 
@@ -644,7 +643,7 @@ private partial def coreStmtsToGoto
         pure { trans with instructions := trans.instructions.push inst, nextLoc := trans.nextLoc + 1 }
       | .block l body md =>
         if hasCallStmt body then
-          let srcLoc := Imperative.metadataToSourceLoc md pname trans.fileMap
+          let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText
           let trans := Imperative.emitLabel l srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
           let end_loc := trans.nextLoc
@@ -658,7 +657,7 @@ private partial def coreStmtsToGoto
           Imperative.Stmt.toGotoInstructions trans.T pname impStmt trans
       | .ite cond thenb elseb md =>
         if hasCallStmt thenb || hasCallStmt elseb then
-          let srcLoc := Imperative.metadataToSourceLoc md pname trans.fileMap
+          let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText
           let cond_expr ← toExpr (renameExpr rn cond)
           let (trans, goto_else_idx) := Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn thenb trans
@@ -674,7 +673,7 @@ private partial def coreStmtsToGoto
           Imperative.Stmt.toGotoInstructions trans.T pname impStmt trans
       | .loop guard measure invariants body md =>
         if hasCallStmt body then
-          let srcLoc := Imperative.metadataToSourceLoc md pname trans.fileMap
+          let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText
           let loop_head := trans.nextLoc
           let trans := Imperative.emitLabel s!"loop_{loop_head}" srcLoc trans
           let guard_expr ← toExpr (renameExpr rn guard)
@@ -707,7 +706,7 @@ private partial def coreStmtsToGoto
     coreStmtsToGoto Env pname rn rest trans
 
 def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
-    (fileMap : Option Lean.FileMap := none)
+    (sourceText : Option String := none)
     (axioms : List Core.Axiom := [])
     (distincts : List (Core.Expression.Ident × List Core.Expression.Expr) := [])
     (varTypes : Core.Expression.Ident → Option Core.Expression.Ty := fun _ => none)
@@ -771,10 +770,10 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
           axiomLoc := axiomLoc + 1
   let ans ← if hasCallStmt body then
     coreStmtsToGoto Env' pname rn body
-      { instructions := axiomInsts, nextLoc := axiomLoc, T := Env', fileMap := fileMap }
+      { instructions := axiomInsts, nextLoc := axiomLoc, T := Env', sourceText := sourceText }
   else do
     let impBody ← body.mapM (unwrapCmdExt rn)
-    Imperative.Stmts.toGotoTransform Env' pname impBody (loc := axiomLoc) (fileMap := fileMap)
+    Imperative.Stmts.toGotoTransform Env' pname impBody (loc := axiomLoc) (sourceText := sourceText)
       |>.map fun ans => { ans with instructions := axiomInsts ++ ans.instructions }
   let ending_insts : Array CProverGOTO.Instruction :=
     #[{ type := .END_FUNCTION, locationNum := ans.nextLoc + 1 }]
@@ -1017,7 +1016,7 @@ def pyAnalyzeToGotoCommand : Command where
       | some (pyPath, _) => pyPath
       | none => filePath
     let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm sourcePathForMetadata
-    let fileMap := pySourceOpt.map (·.2)
+    let sourceText := pySourceOpt.map (·.2)
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     match Core.Transform.runProgram (targetProcList := .none)
           (Core.ProcedureInlining.inlineCallCmd
@@ -1045,7 +1044,7 @@ def pyAnalyzeToGotoCommand : Command where
       let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
       let distincts := tcPgm.decls.filterMap fun d => match d with
         | .distinct name es _ => some (name, es) | _ => none
-      match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts)
+      match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
             (varTypes := tcPgm.getVarTy?) with
       | .error e => panic! s!"{e}"
       | .ok (ctx, liftedFuncs) =>
@@ -1116,7 +1115,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
           | ⟨.error e, _⟩ => panic! e
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
         let Env := Lambda.TEnv.default
-        let fileMap := pySourceOpt.map (·.2)
+        let sourceText := pySourceOpt.map (·.2)
         let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
           | .ok r => pure r
           | .error e => panic! s!"{e.format none}"
@@ -1138,7 +1137,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
         let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
         let distincts := tcPgm.decls.filterMap fun d => match d with
           | .distinct name es _ => some (name, es) | _ => none
-        match procedureToGotoCtx Env p fileMap (axioms := axioms) (distincts := distincts)
+        match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
               (varTypes := tcPgm.getVarTy?) with
         | .error e => panic! s!"{e}"
         | .ok (ctx, liftedFuncs) =>
@@ -1323,7 +1322,7 @@ def laurelAnalyzeToGotoCommand : Command where
           | .ok s => pure s
           | .error e => panic! s!"{e}"
         let typeSymsJson := Lean.toJson typeSyms
-        let fileMap := Lean.FileMap.ofString content
+        let sourceText := some content
         let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
         let distincts := tcPgm.decls.filterMap fun d => match d with
           | .distinct name es _ => some (name, es) | _ => none
@@ -1332,7 +1331,7 @@ def laurelAnalyzeToGotoCommand : Command where
         let mut allLiftedFuncs : List Core.Function := []
         for p in procs do
           let procName := Core.CoreIdent.toPretty p.header.name
-          match procedureToGotoCtx Env p (fileMap := fileMap) (axioms := axioms) (distincts := distincts)
+          match procedureToGotoCtx Env p (sourceText := sourceText) (axioms := axioms) (distincts := distincts)
                 (varTypes := tcPgm.getVarTy?) with
           | .error e => panic! s!"{e}"
           | .ok (ctx, liftedFuncs) =>

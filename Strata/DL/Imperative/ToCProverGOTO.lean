@@ -51,27 +51,27 @@ structure GotoTransform (TypeEnv : Type) where
   instructions : Array CProverGOTO.Instruction
   nextLoc : Nat
   T : TypeEnv
-  fileMap : Option Lean.FileMap := none
+  sourceText : Option String := none
   /-- Pending exit GOTOs: (instruction array index, target label). -/
   pendingExits : List (Nat × Option String) := []
 
 /-- Extract a CProverGOTO.SourceLocation from Imperative metadata.
-    Uses the FileMap (if available) to convert byte offsets to line/column. -/
+    Reconstructs line/column from byte offsets using the source text. -/
 def metadataToSourceLoc {P : PureExpr} [BEq P.Ident]
-    (md : MetaData P) (functionName : String) (fileMap : Option Lean.FileMap)
+    (md : MetaData P) (functionName : String) (sourceText : Option String)
     (comment : String := "") : SourceLocation :=
   match Imperative.getFileRange md with
   | some fr =>
     let file := match fr.file with | .file path => path
-    let (line, column) := match fileMap with
-      | some fm =>
-        let pos := fm.toPosition fr.range.start
-        (pos.line, pos.column)
+    let (line, column) := match sourceText with
+      | some src =>
+        let target := fr.range.start.byteIdx
+        let (ln, lineStart, _) := src.foldl (init := (1, 0, 0)) fun (ln, lineStart, i) c =>
+          if i >= target then (ln, lineStart, i)
+          else if c == '\n' then (ln + 1, i + 1, i + 1)
+          else (ln, lineStart, i + 1)
+        (ln, target - lineStart)
       | none =>
-        -- Without a FileMap we cannot map byte offsets to line/column.
-        -- Fall back to the 1D byte offset as the line number.
-        -- All current callers (coreAnalyzeToGoto, laurelAnalyzeToGoto,
-        -- pyAnalyzeToGoto) provide a FileMap built from the source file.
         (fr.range.start.byteIdx, 0)
     { file, line, column, function := functionName, workingDir := "", comment }
   | none =>
@@ -98,7 +98,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let T := G.updateType T v ty
     let gty ← G.toGotoType ty
     let v_expr := Expr.symbol (G.identToString v) gty
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let decl_inst :=
       { type := .DECL, locationNum := trans.nextLoc,
         sourceLoc := srcLoc,
@@ -123,7 +123,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let gty ← G.lookupType T v
     let v_expr := Expr.symbol (G.identToString v) gty
     let e_expr ← G.toGotoExpr e
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let assign_inst :=
       { type := .ASSIGN, locationNum := trans.nextLoc,
         sourceLoc := srcLoc,
@@ -134,7 +134,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
              T := T }
   | .assert name b md =>
     let expr ← G.toGotoExpr b
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap (comment := name)
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText (comment := name)
     let assert_inst :=
     { type := .ASSERT, locationNum := trans.nextLoc,
       sourceLoc := srcLoc
@@ -145,7 +145,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
               T := T }
   | .assume name b md =>
     let expr ← G.toGotoExpr b
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap (comment := name)
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText (comment := name)
     let assume_inst :=
     { type := .ASSUME, locationNum := trans.nextLoc,
       sourceLoc := srcLoc
@@ -157,7 +157,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
   | .havoc v md =>
     let gty ← G.lookupType T v
     let v_expr := Expr.symbol (G.identToString v) gty
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let e_expr :=
       { id := .side_effect .Nondet,
         sourceLoc := srcLoc,
@@ -175,7 +175,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
               T := T }
   | .cover name b md =>
     let expr ← G.toGotoExpr b
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap (comment := s!"cover {name}")
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText (comment := s!"cover {name}")
     let assert_inst :=
     { type := .ASSERT, locationNum := trans.nextLoc,
       sourceLoc := srcLoc
@@ -187,7 +187,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
 
 def Cmds.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident]
     (T : P.TyEnv) (functionName : String) (cs : Cmds P) (loc : Nat := 0)
-    (fileMap : Option Lean.FileMap := none) :
+    (sourceText : Option String := none) :
     Except Format (GotoTransform P.TyEnv) := do
   let rec go (trans : GotoTransform P.TyEnv) (cs' : List (Cmd P)) :
       Except Format (GotoTransform P.TyEnv) :=
@@ -196,7 +196,7 @@ def Cmds.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident]
     | c :: rest => do
       let new_trans ← Cmd.toGotoInstructions trans.T functionName c trans
       go new_trans rest
-  go { instructions := #[], nextLoc := loc, T := T, fileMap := fileMap } cs
+  go { instructions := #[], nextLoc := loc, T := T, sourceText := sourceText } cs
 
 -------------------------------------------------------------------------------
 
@@ -272,7 +272,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
 
   | .block label body md =>
     -- Block with label - emit a LOCATION instruction with the label, then process body
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let trans := emitLabel label srcLoc trans
     let trans ← Block.toGotoInstructions trans.T functionName body trans
     -- Patch any pending exits targeting this block's label (or unlabeled exits)
@@ -294,7 +294,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       <else branch instructions>
       LOCATION end_label         ; after conditional
     -/
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let cond_expr ← G.toGotoExpr cond
     let (trans, goto_else_idx) := emitCondGoto (Expr.not cond_expr) srcLoc trans
     let trans ← Block.toGotoInstructions trans.T functionName thenb trans
@@ -317,7 +317,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       GOTO loop_start            ; back edge (with optional loop invariants/decreases)
       LOCATION loop_end          ; after loop
     -/
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let loop_start_loc := trans.nextLoc
     let trans := emitLabel s!"loop_start_{loop_start_loc}" srcLoc trans
     let guard_expr ← G.toGotoExpr guard
@@ -350,7 +350,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
 
   | .exit label md =>
     -- Emit an unconditional GOTO whose target will be patched by the enclosing block.
-    let srcLoc := metadataToSourceLoc md functionName trans.fileMap
+    let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let (trans, idx) := emitUncondGoto srcLoc trans
     return { trans with pendingExits := (idx, label) :: trans.pendingExits }
 
@@ -381,10 +381,10 @@ This is the main entry point for statement transformation.
 -/
 def Stmts.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident] (T : P.TyEnv)
     (functionName : String) (stmts : List (Stmt P (Cmd P))) (loc : Nat := 0)
-    (fileMap : Option Lean.FileMap := none) :
+    (sourceText : Option String := none) :
     Except Format (GotoTransform P.TyEnv) := do
   let trans ← Block.toGotoInstructions T functionName stmts
-    { instructions := #[], nextLoc := loc, T := T, fileMap := fileMap }
+    { instructions := #[], nextLoc := loc, T := T, sourceText := sourceText }
   if !trans.pendingExits.isEmpty then
     let labels := trans.pendingExits.map fun (_, l) => match l with
       | some s => s!"exit {s}" | none => "exit (unlabeled)"

@@ -211,7 +211,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       let cmds := Core.Cmds.renameVars args_renamed cmds
 
       let ans ← @Imperative.Cmds.toGotoTransform Core.ExprStr
-                    CoreToGOTO.instToGotoExprStr _ Env pname cmds (loc := 0) (fileMap := none)
+                    CoreToGOTO.instToGotoExprStr _ Env pname cmds (loc := 0) (sourceText := none)
       let ending_insts : Array CProverGOTO.Instruction := #[
         -- (FIXME): Add lifetime markers.
         -- { type := .DEAD, locationNum := ans.nextLoc + 1,
