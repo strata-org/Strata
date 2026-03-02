@@ -10,7 +10,6 @@ import Strata.Languages.Core.Options
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
-import Strata.Languages.Laurel.CorePrelude
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.ToLaurel

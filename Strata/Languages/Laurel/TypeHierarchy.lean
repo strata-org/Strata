@@ -64,7 +64,7 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     composites.foldl (fun acc otherCt =>
       let isAncestor := ancestors.any (·.name == otherCt.name)
       if isAncestor then
-        let otherConst := mkMd (.StaticCall (otherCt.name.name ++ "_TypeTag") [])
+        let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.name ++ "_TypeTag") [])
         let boolVal := mkMd (.LiteralBool true)
         mkMd (.StaticCall "update" [acc, otherConst, boolVal])
       else acc

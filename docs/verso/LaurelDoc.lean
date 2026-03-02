@@ -12,7 +12,6 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.CorePrelude
 
 open Strata.Laurel
 
