@@ -1,3 +1,5 @@
+// Changes in this file are not automatically tracked by the build system.
+// Modify LaurelGrammar.lean (e.g. update its comment) to trigger a rebuild after changing this file.
 dialect Laurel;
 
 // Types
@@ -15,15 +17,15 @@ op string (s: Str): StmtExpr => s;
 
 // Variable declarations
 category OptionalType;
-op optionalType(varType: LaurelType): OptionalType => ": " varType;
+op optionalType(varType: LaurelType): OptionalType => ":" varType;
 
 category OptionalAssignment;
-op optionalAssignment(value: StmtExpr): OptionalAssignment => " := " value:0;
+op optionalAssignment(value: StmtExpr): OptionalAssignment => ":=" value:0;
 
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
   => @[prec(0)] "var " name varType assignment ";";
 
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => @[prec(95)] callee:85 "(" args ")";
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
@@ -39,7 +41,7 @@ op identifier (name: Ident): StmtExpr => name;
 op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
-op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value ";";
+op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value ";";
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
@@ -58,6 +60,7 @@ op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " >= " rhs;
 op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
 op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " || " rhs;
 op implies (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(15), rightassoc] lhs " ==> " rhs;
+op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ++ " rhs;
 
 // Unary operators
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
@@ -71,15 +74,15 @@ op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
 
 // If-else
 category OptionalElse;
-op optionalElse(stmts : StmtExpr) : OptionalElse => "else " stmts:0;
+op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
-  @[prec(20)] "if (" cond ") " thenBranch:0 " " elseBranch:0;
+  @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
 
 op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
 op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";
 op return (value : StmtExpr) : StmtExpr => "return " value ";";
-op block (stmts : NewlineSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" indent(2, "\n" stmts) "\n}";
+op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
 
 // While loops
 category InvariantClause;
@@ -89,25 +92,33 @@ op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): Stmt
   => "while" "(" cond ")" invariants body:0;
 
 category Parameter;
-op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
+op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;
 
 // Composite types
 category Field;
 op mutableField (name: Ident, fieldType: LaurelType): Field => "var " name ":" fieldType;
 op immutableField (name: Ident, fieldType: LaurelType): Field => name ":" fieldType;
 
+// Type checking and casting
+op isType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " is " typeName;
+op asType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " as " typeName;
+
+// Composite types with optional extends
+category OptionalExtends;
+op optionalExtends(parents: CommaSepBy Ident): OptionalExtends => "extends " parents;
+
 category Composite;
-op composite (name: Ident, fields: Seq Field): Composite => "composite " name "{" fields "}";
+op composite (name: Ident, extending: Option OptionalExtends, fields: Seq Field): Composite => "composite " name extending "{" fields "}";
 
 // Procedures
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
-category RequiresClause;
-op requiresClause(cond: StmtExpr): RequiresClause => "requires " cond:0;
+category OptionalRequires;
+op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
 
 category EnsuresClause;
-op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures " cond:0;
+op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures" cond:0;
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "modifies" refs;
@@ -122,11 +133,20 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: NewlineSepBy RequiresClause,
-  ensures: NewlineSepBy EnsuresClause,
+  requires: Option OptionalRequires,
+  ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters indent(2, "\n" requires "\n" ensures) modifies "\n" body;
+  "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
+
+op function (name : Ident, parameters: CommaSepBy Parameter,
+  returnType: Option OptionalReturnType,
+  returnParameters: Option ReturnParameters,
+  requires: Option OptionalRequires,
+  ensures: Seq EnsuresClause,
+  modifies: Seq ModifiesClause,
+  body : Option OptionalBody) : Procedure =>
+  "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
 
 // Constrained types
 category ConstrainedType;
@@ -135,9 +155,8 @@ op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
   => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
 
 category TopLevel;
-op topLevelComposite(composite: Composite): TopLevel => composite "\n";
-op topLevelProcedure(procedure: Procedure): TopLevel => procedure "\n";
-op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct "\n";
+op topLevelComposite(composite: Composite): TopLevel => composite;
+op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
+op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct;
 
 op program (items: Seq TopLevel): Command => items;
-

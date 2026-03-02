@@ -12,3 +12,4 @@ import Strata.DDM.Integration.Lean
 namespace Strata.Laurel
 
 #load_dialect "./LaurelGrammar.st"
+-- Rebuild trigger: merged grammar
