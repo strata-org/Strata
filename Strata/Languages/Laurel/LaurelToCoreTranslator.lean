@@ -705,6 +705,13 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | .Opaque postconds _ _ =>
         translateChecks initEnv postconds "postcondition"
     | _ => pure []
+  -- Add output parameter constraints as postconditions
+  let outputConstraints : ListMap Core.CoreLabel Core.Procedure.Check :=
+    proc.outputs.filterMap fun p =>
+      match genConstraintCheck s.ctMap s.tcMap p with
+      | some expr => some (s!"{p.name}_constraint", { expr, md := p.type.md })
+      | none => none
+  let postconditions := postconditions ++ outputConstraints
   let modifies : List Core.Expression.Ident := []
   let body : List Core.Statement ←
     match proc.body with
