@@ -710,7 +710,6 @@ def translateParameterToCore (param : Parameter) : TranslateM (Core.CoreIdent ×
   return (ident, ty)
 
 def expandArrayParam (param : Parameter) : TranslateM (List (Core.CoreIdent × LMonoTy)) := do
-  let s ← get
   let base ← translateParameterToCore param
   match param.type.val with
   | .Applied ctor _ =>
