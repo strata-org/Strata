@@ -7,9 +7,12 @@
 -- Executable for verifying a Strata program from a file.
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.CoreSMT.Verifier
+import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier
 import Strata.DL.SMT.Solver
+import Strata.DL.SMT.SolverInterface
 import Strata.Util.IO
 import Std.Internal.Parsec
 
@@ -41,6 +44,7 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
       | opts, "--reach-check" :: rest, procs => go {opts with reachCheck := true} rest procs
+      | opts, "--interactive" :: rest, procs => go {opts with interactive := true} rest procs
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -114,6 +118,19 @@ def main (args : List String) : IO UInt32 := do
                   | .implementationError msg => s!"error: {msg}"
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
+          else if opts.interactive then
+            -- Interactive (in-memory) CoreSMT verification
+            let (coreProgram, errors) := Core.getProgram pgm inputCtx
+            if !errors.isEmpty then throw (IO.userError s!"DDM Transform Error: {repr errors}")
+            let solver ← Strata.B3.Verifier.createInteractiveSolver opts.solver
+            let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
+            let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
+            let state := Core.CoreSMT.CoreSMTState.init solverInterface config
+            let stmts := coreProgram.decls.flatMap fun d => match d with
+              | .proc p _ => p.body
+              | _ => []
+            let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init stmts
+            pure results.toArray
           else
             verify pgm inputCtx proceduresToVerify opts
         catch e =>

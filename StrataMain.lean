@@ -18,6 +18,13 @@ import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 
 import Strata.SimpleAPI
+import Strata.Languages.Core.CoreSMT.Verifier
+import Strata.Languages.Core.CoreSMT.State
+import Strata.DL.SMT.SolverInterface
+import Strata.Languages.B3.Verifier
+import Strata.Languages.Core.CoreSMT.Verifier
+import Strata.Languages.Core.CoreSMT.State
+import Strata.DL.SMT.SolverInterface
 
 open Core (VerifyOptions VerboseMode)
 
@@ -368,6 +375,7 @@ def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
+            { name := "interactive", help := "Use the interactive (in-memory) CoreSMT verification engine." },
             { name := "pyspec",
               help := "Add PySpec-derived Laurel declarations.",
               takesArg := .repeat "ion_file" },
@@ -449,12 +457,25 @@ def pyAnalyzeLaurelCommand : Command where
             exitFailure s!"Core name collision between program and prelude: {names}"
           let coreProgram := {decls := pyPrelude.decls ++ programDecls }
 
-          -- Verify using Core verifier
-          let vcResults ← IO.FS.withTempDir (fun tempDir =>
-              EIO.toIO
-                (fun f => IO.Error.userError (toString f))
-                (Core.verify coreProgram tempDir .none
-                  { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
+          -- Verify using interactive CoreSMT engine or default Core verifier
+          let interactive := pflags.getBool "interactive"
+          let vcResults ←
+            if interactive then do
+              let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
+              let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
+              let config : Strata.Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
+              let state := Strata.Core.CoreSMT.CoreSMTState.init solverInterface config
+              let stmts := coreProgram.decls.flatMap fun d => match d with
+                | .proc p _ => p.body
+                | _ => []
+              let (_, _, results) ← Strata.Core.CoreSMT.verify state Core.Env.init stmts
+              pure results.toArray
+            else
+              IO.FS.withTempDir (fun tempDir =>
+                EIO.toIO
+                  (fun f => IO.Error.userError (toString f))
+                  (Core.verify coreProgram tempDir .none
+                    { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
 
           -- Print results
           IO.println "\n==== Verification Results ===="
