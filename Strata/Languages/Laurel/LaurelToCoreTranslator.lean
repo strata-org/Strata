@@ -252,8 +252,8 @@ def translateSimpleBound (expr : StmtExprMd) : Except String Core.Expression.Exp
   | .LiteralInt i => pure (.const () (.intConst i))
   | _ => throw "Expected simple bound expression (identifier or literal)"
 
-partial def translateSeqBounds (env : TypeEnv) (expr : StmtExprMd) : Except String SeqBounds :=
-  match expr.val with
+def translateSeqBounds (env : TypeEnv) (expr : StmtExprMd) : Except String SeqBounds :=
+  match _h : expr.val with
   | .StaticCall callee [arg] =>
     let norm := normalizeCallee callee
     if norm == "Seq.From" then
@@ -285,6 +285,8 @@ partial def translateSeqBounds (env : TypeEnv) (expr : StmtExprMd) : Except Stri
       pure { inner with start := boundExpr }
     else throw s!"Not a sequence expression: {callee}"
   | _ => throw "Not a sequence expression"
+termination_by sizeOf expr
+decreasing_by stmtexpr_wf expr, _h
 
 def expandArrayArgs (env : TypeEnv) (args : List StmtExprMd) (translatedArgs : List Core.Expression.Expr) : List Core.Expression.Expr :=
   (args.zip translatedArgs).flatMap fun (arg, translated) =>
