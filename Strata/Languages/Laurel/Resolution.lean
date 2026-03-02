@@ -183,7 +183,7 @@ def resolveRef (name : Identifier) (md : Imperative.MetaData Core.Expression := 
     let name' := { name with uniqueId := some defId }
     return name'
   | none =>
-    let diag := md.toDiagnostic s!"Resolution failed: '{name.text}' is not defined"
+    let diag := md.toDiagnostic s!"Resolution failed: '{name}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
 

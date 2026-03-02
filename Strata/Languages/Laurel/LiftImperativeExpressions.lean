@@ -195,27 +195,21 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let seqArgs ← args.reverse.mapM transformExpr
       return ⟨.PrimitiveOp op seqArgs.reverse, md⟩
 
-  | .StaticCall name args =>
+  | .StaticCall callee args =>
     let model := (← get).model
     let seqArgs ← args.reverse.mapM transformExpr
-    let seqCall := ⟨.StaticCall name seqArgs.reverse, md⟩
-    match model.get name with
-    | .staticProcedure proc =>
-        if proc.isFunctional then
-          return seqCall
-        else
-          -- Imperative call in expression position: lift it like an assignment
-          -- Order matters: assign must be prepended first (it's newest-first),
-          -- so that when reversed the var declaration comes before the call.
-          let callResultVar ← freshCondVar
-          let callResultType ← computeType expr
-          addPrepend (⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩)
-          addPrepend (bare (.LocalVariable callResultVar callResultType none))
-          return bare (.Identifier callResultVar)
-    | .parameter _ =>
+    let seqCall := ⟨.StaticCall callee seqArgs.reverse, md⟩
+    if model.isFunction callee then
       return seqCall
-    | _ =>
-      return seqCall -- softPanic s!"aaa: name: {repr name}, astNode: {repr astNode}"
+    else
+      -- Imperative call in expression position: lift it like an assignment
+      -- Order matters: assign must be prepended first (it's newest-first),
+      -- so that when reversed the var declaration comes before the call.
+      let callResultVar ← freshCondVar
+      let callResultType ← computeType expr
+      addPrepend (⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩)
+      addPrepend (bare (.LocalVariable callResultVar callResultType none))
+      return bare (.Identifier callResultVar)
 
   | .IfThenElse cond thenBranch elseBranch =>
       let model :=  (← get).model
@@ -332,25 +326,17 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
           match _: initExpr with
           | .StaticCall callee args =>
               let model := (← get).model
-              match model.get callee with
-              | .staticProcedure proc =>
-                if !proc.isFunctional then
-                  -- Pass through as-is; translateStmt will emit init + call
-                  let seqArgs ← args.mapM transformExpr
-                  let argPrepends ← takePrepends
-                  modify fun s => { s with subst := [] }
-                  return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExprMd.md⟩), md⟩]
-                else
-                  let seqInit ← transformExpr initExprMd
-                  let prepends ← takePrepends
-                  modify fun s => { s with subst := [] }
-                  return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
-              | .parameter p =>
-                  let seqInit ← transformExpr initExprMd
-                  let prepends ← takePrepends
-                  modify fun s => { s with subst := [] }
-                  return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
-              | astNode => softPanic s!"bbbb. name {repr callee} {repr astNode}"
+              if model.isFunction callee then
+                let seqInit ← transformExpr initExprMd
+                let prepends ← takePrepends
+                modify fun s => { s with subst := [] }
+                return prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]
+              else
+                -- Pass through as-is; translateStmt will emit init + call
+                let seqArgs ← args.mapM transformExpr
+                let argPrepends ← takePrepends
+                modify fun s => { s with subst := [] }
+                return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExprMd.md⟩), md⟩]
           | _ =>
               let seqInit ← transformExpr initExprMd
               let prepends ← takePrepends
@@ -367,24 +353,16 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       match _: value with
       | .StaticCall callee args =>
           let model := (← get).model
-          match model.get callee with
-          | .staticProcedure proc =>
-            if !proc.isFunctional then
-              let seqArgs ← args.mapM transformExpr
-              let argPrepends ← takePrepends
-              modify fun s => { s with subst := [] }
-              return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, md⟩, md⟩]
-            else
-              let seqValue ← transformExpr valueMd
-              let prepends ← takePrepends
-              modify fun s => { s with subst := [] }
-              return prepends ++ [⟨.Assign targets seqValue, md⟩]
-          | .parameter p =>
-              let seqValue ← transformExpr valueMd
-              let prepends ← takePrepends
-              modify fun s => { s with subst := [] }
-              return prepends ++ [⟨.Assign targets seqValue, md⟩]
-          | _ => softPanic "ccccc"
+          if model.isFunction callee then
+            let seqValue ← transformExpr valueMd
+            let prepends ← takePrepends
+            modify fun s => { s with subst := [] }
+            return prepends ++ [⟨.Assign targets seqValue, md⟩]
+          else
+            let seqArgs ← args.mapM transformExpr
+            let argPrepends ← takePrepends
+            modify fun s => { s with subst := [] }
+            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, md⟩, md⟩]
       | _ =>
           let seqValue ← transformExpr valueMd
           let prepends ← takePrepends
