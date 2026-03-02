@@ -56,13 +56,15 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.comment "Satisfiability check (can property be true?)"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", s!"\"Property can be satisfied\""))
-      let _ ← Solver.checkSatAssuming [obligationId] []
+      let obligationStr ← Solver.termToSMTString obligationId
+      let _ ← Solver.checkSatAssuming [obligationStr] []
 
     if validityCheck then
       Solver.comment "Validity check (can property be false?)"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
-      let negObligationId := s!"(not {obligationId})"
+      let obligationStr ← Solver.termToSMTString obligationId
+      let negObligationId := s!"(not {obligationStr})"
       let _ ← Solver.checkSatAssuming [negObligationId] []
   else
     -- Single check: use assert + check-sat (matches pre-PR behavior)
