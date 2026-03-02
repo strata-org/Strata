@@ -47,7 +47,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
     -- Composite types map to "Composite"; datatypes map to their own name
     match name.id.bind model.refToDef.get? with
     | some (.compositeType _) => .tcons "Composite" []
-    | some (.datatypeDefinition dt) => .tcons dt.name.name []
+    | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
   | .TFloat64 => LMonoTy.real -- Incorrect?
@@ -58,7 +58,7 @@ decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyTy
 def lookupType (model : SemanticModel) (name : Identifier) : LMonoTy :=
   match (model.get name).getType with
   | .some ty => translateType model ty
-  | none => panic s!"no type for {name.name}"
+  | none => panic s!"no type for {name.text}"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -70,7 +70,7 @@ def isCoreFunction (model : SemanticModel) (id : Identifier) : Bool :=
   match model.get id with
   | .staticProcedure proc => proc.isFunctional
   | _ =>
-    let name := id.name
+    let name := id.text
     -- readField, updateField, and Box constructors/destructors are always functions
     name == "readField" || name == "updateField" || name == "increment" ||
     name == "MkHeap" || name == "Heap..data" || name == "Heap..nextReference" ||
@@ -145,9 +145,9 @@ def translateExpr (expr : StmtExprMd)
       | none =>
         match model.get name with
         | .field _ f =>
-            return .op () ⟨f.name.name, ()⟩ none
+            return .op () ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar () ⟨name.name, ()⟩ (some (translateType model $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
+            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -199,7 +199,7 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && !model.isFunction callee then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨callee.name, ()⟩ none
+        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -229,7 +229,7 @@ def translateExpr (expr : StmtExprMd)
   | .FieldSelect target fieldId =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
-      panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.name}"
+      panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}"
 
   | .Block _ _ => panic "block expression not yet implemented (should be lowered in a separate pass)"
   | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
@@ -289,7 +289,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .LocalVariable id ty initializer =>
       let boogieMonoType := translateType model ty
       let boogieType := LTy.forAll [] boogieMonoType
-      let ident := ⟨id.name, ()⟩
+      let ident := ⟨id.text, ()⟩
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
@@ -302,7 +302,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr := defaultExprForType model ty
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.name coreArgs md
+            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
             return [initStmt, callStmt]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
@@ -313,7 +313,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _ ⟩] =>
-          let ident := ⟨targetId.name, ()⟩
+          let ident := ⟨targetId.text, ()⟩
           -- Check if RHS is a procedure call (not a function)
           match value.val with
           | .StaticCall callee args =>
@@ -324,7 +324,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
-                return [Core.Statement.call [ident] callee.name coreArgs md]
+                return [Core.Statement.call [ident] callee.text coreArgs md]
           | _ =>
               let boogieExpr ← translateExpr value
               return [Core.Statement.set ident boogieExpr md]
@@ -336,9 +336,9 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               let coreArgs ← args.mapM (fun a => translateExpr a)
               let lhsIdents := targets.filterMap fun t =>
                 match t.val with
-                | .Identifier name => some (⟨name.name, ()⟩)
+                | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
-              return [Core.Statement.call lhsIdents callee.name coreArgs value.md]
+              return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
           | _ =>
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
@@ -355,11 +355,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
         return []
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        return [Core.Statement.call [] callee.name coreArgs md]
+        return [Core.Statement.call [] callee.text coreArgs md]
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
-          let ident := ⟨outParam.name.name, ()⟩
+          let ident := ⟨outParam.name.text, ()⟩
           let coreExpr ← translateExpr value
           let assignStmt := Core.Statement.set ident coreExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
@@ -398,7 +398,7 @@ private def translateChecks (checks : List StmtExprMd) (labelBase : String)
 Translate Laurel Parameter to Core Signature entry
 -/
 def translateParameterToCore (model : SemanticModel) (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
-  let ident := ⟨param.name.name, ()⟩
+  let ident := ⟨param.name.text, ()⟩
   let ty := translateType model param.type
   (ident, ty)
 
@@ -412,7 +412,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let inputs := inputPairs
   let outputs := proc.outputs.map (translateParameterToCore (← get).model)
   let header : Core.Procedure.Header := {
-    name := proc.name.name
+    name := proc.name.text
     typeArgs := []
     inputs := inputs
     outputs := outputs
@@ -519,7 +519,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
       some <$> translateExpr bodyExpr [] (isPureContext := true)
     | _ => pure none
   return .func {
-    name := ⟨proc.name.name, ()⟩
+    name := ⟨proc.name.text, ()⟩
     typeArgs := []
     inputs := inputs
     output := outputTy
@@ -535,13 +535,13 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
   match h : dt.constructors with
   | [] =>
     -- Zero constructors: opaque type
-    Core.Decl.type (.con { name := dt.name.name, numargs := dt.typeArgs.length })
+    Core.Decl.type (.con { name := dt.name.text, numargs := dt.typeArgs.length })
   | first :: rest =>
     let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
-      { name := ⟨c.name.name, ()⟩
-        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.name, ()⟩, translateType model ty) }
+      { name := ⟨c.name.text, ()⟩
+        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty) }
     let ldt : Lambda.LDatatype Unit := {
-      name := dt.name.name
+      name := dt.name.text
       typeArgs := dt.typeArgs
       constrs := constrs
       constrs_ne := by simp [constrs]
@@ -568,7 +568,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   dbg_trace "=== Before first resolve ==="
 
   let selectProc: Procedure := {
-    name := { name := "select" },
+    name := { text := "select" },
     inputs := [
       ⟨"map", default⟩,
       ⟨"key", default⟩
@@ -584,7 +584,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     md := .empty
   }
   let updateProc: Procedure := {
-    name := { name := "update" },
+    name := { text := "update" },
     inputs := [
       ⟨"map", default⟩,
       ⟨"key", default⟩,
@@ -601,7 +601,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     md := .empty
   }
   let constProc: Procedure := {
-    name := { name := "const" },
+    name := { text := "const" },
     inputs := [
       ⟨"value", default⟩
     ],
@@ -679,7 +679,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     let coreTy := translateType model c.type
     let body ← c.initializer.mapM (translateExpr ·)
     return Core.Decl.func {
-      name := ⟨c.name.name, ()⟩
+      name := ⟨c.name.text, ()⟩
       typeArgs := []
       inputs := []
       output := coreTy

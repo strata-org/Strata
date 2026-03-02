@@ -212,7 +212,7 @@ Returns the qualified field name "DeclaringType.fieldName".
 -/
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : String :=
   match model.get fieldName with
-    | .field owner _ => owner.name ++ "." ++ fieldName.name
+    | .field owner _ => owner.text ++ "." ++ fieldName.text
     | _ => softPanic "oops"
 
 /--
@@ -447,7 +447,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- Collect all qualified field names and generate a Field datatype
   let fieldNames := program.types.foldl (fun acc td =>
     match td with
-    | .Composite ct => acc ++ ct.fields.map (fun f => (ct.name.name ++ "." ++ f.name.name : Identifier))
+    | .Composite ct => acc ++ ct.fields.map (fun f => (mkId $ ct.name.text ++ "." ++ f.name.text))
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }

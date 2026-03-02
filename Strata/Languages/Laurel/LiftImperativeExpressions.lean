@@ -93,7 +93,7 @@ private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters
   let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
   modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
-  return s!"${varName.name}_{counter}"
+  return s!"${varName.text}_{counter}"
 
 private def freshCondVar : LiftM Identifier := do
   let n := (← get).condCounter

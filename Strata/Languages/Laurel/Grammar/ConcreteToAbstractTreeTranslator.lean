@@ -55,7 +55,7 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  return { name := id }
+  return { text := id }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -72,7 +72,7 @@ def translateBool (arg : Arg) : TransM Bool := do
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 instance : Inhabited Parameter where
-  default := { name := { name := "" } , type := ⟨.TVoid, #[]⟩ }
+  default := { name := { text := "" } , type := ⟨.TVoid, #[]⟩ }
 
 def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
@@ -128,7 +128,7 @@ def translateParameters (arg : Arg) : TransM (List Parameter) := do
 
 instance : Inhabited Procedure where
   default := {
-    name := { name := "" }
+    name := { text := "" }
     inputs := []
     outputs := []
     preconditions := []
@@ -193,14 +193,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let varType ← match typeArg with
         | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
           | q`Laurel.optionalType, #[typeArg0] => translateHighType typeArg0
-          | _, _ => TransM.error s!"Variable {name.name} requires explicit type"
-        | _ => TransM.error s!"Variable {name.name} requires explicit type"
+          | _, _ => TransM.error s!"Variable {name.text} requires explicit type"
+        | _ => TransM.error s!"Variable {name.text} requires explicit type"
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) => match assignOp.args with
           | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
-          | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name.name}"
+          | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name.text}"
         | .option _ none => pure none
-        | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name.name}"
+        | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name.text}"
       return mkStmtExprMd (.LocalVariable name varType value) md
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
@@ -225,7 +225,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
         | .Identifier name => name
-        | _ => { name := "" }
+        | _ => { text := "" }
       let argsList ← match argsSeq with
         | .seq _ .comma args => args.toList.mapM translateStmtExpr
         | _ => pure []
@@ -350,7 +350,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | .option _ (some (.op returnTypeOp)) => match returnTypeOp.name, returnTypeOp.args with
         | q`Laurel.optionalReturnType, #[typeArg] =>
           let retType ← translateHighType typeArg
-          pure [{ name := { name := "result" }, type := retType : Parameter }]
+          pure [{ name := { text := "result" }, type := retType : Parameter }]
         | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
       | .option _ none =>
         -- No return type, check returnParamsArg instead

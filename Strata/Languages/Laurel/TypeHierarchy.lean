@@ -64,14 +64,14 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     composites.foldl (fun acc otherCt =>
       let isAncestor := ancestors.any (·.name == otherCt.name)
       if isAncestor then
-        let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.name ++ "_TypeTag") [])
+        let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.text ++ "_TypeTag") [])
         let boolVal := mkMd (.LiteralBool true)
         mkMd (.StaticCall "update" [acc, otherConst, boolVal])
       else acc
     ) emptyInner
   -- Generate a separate constant `ancestorsFor<Type>` for each composite type
   let ancestorsForDecls := composites.map fun ct =>
-    { name := s!"ancestorsFor{ct.name.name}"
+    { name := s!"ancestorsFor{ct.name.text}"
       type := innerMapTy
       initializer := some (mkInnerMap ct) : Constant }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
@@ -79,8 +79,8 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
   let emptyInner := mkMd (.StaticCall "const" [falseConst])
   let emptyOuter := mkMd (.StaticCall "const" [emptyInner])
   let outerMapExpr := composites.foldl (fun acc ct =>
-    let typeConst := mkMd (.StaticCall (ct.name.name ++ "_TypeTag") [])
-    let innerMapRef := mkMd (.StaticCall s!"ancestorsFor{ct.name.name}" [])
+    let typeConst := mkMd (.StaticCall (mkId $ ct.name.text ++ "_TypeTag") [])
+    let innerMapRef := mkMd (.StaticCall s!"ancestorsFor{ct.name.text}" [])
     mkMd (.StaticCall "update" [acc, typeConst, innerMapRef])
   ) emptyOuter
   let ancestorsDecl : Constant :=
@@ -189,12 +189,12 @@ Lower `IsType target ty` to Laurel-level map lookups:
 -/
 def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   let typeName := match ty.val with
-    | .UserDefined name => name.name
+    | .UserDefined name => name.text
     | _ => panic! s!"IsType: expected UserDefined type"
   let typeTag := mkMd (.StaticCall "Composite..typeTag" [target])
   let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
   let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
-  let typeConst := mkMd (.StaticCall (typeName ++ "_TypeTag") [])
+  let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
   ⟨.StaticCall "select" [innerMap, typeConst], md⟩
 
 /-- State for the type hierarchy rewrite monad -/
@@ -221,7 +221,7 @@ def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : TH
   let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
   let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.name ++ "_TypeTag") [])])
+  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
   return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
 
 /--
@@ -306,10 +306,10 @@ Type hierarchy transformation pass (Laurel → Laurel).
 def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program :=
   let compositeNames := program.types.filterMap fun td =>
     match td with
-    | .Composite ct => some ct.name.name
+    | .Composite ct => some ct.name.text
     | _ => none
   let typeTagDatatype : TypeDefinition :=
-    .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (n ++ "_TypeTag" : Identifier), args := [] } }
+    .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
@@ -317,9 +317,9 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   let remainingTypes := program.types.map fun td =>
     match td with
     | .Datatype dt =>
-      if dt.name.name == "Composite" then
+      if dt.name.text == "Composite" then
         .Datatype { dt with constructors := dt.constructors.map fun c =>
-          if c.name.name == "MkComposite" then
+          if c.name.text == "MkComposite" then
             { c with args := c.args ++ [{ name := ("typeTag" : Identifier), type := typeTagTy }] }
           else c }
       else td

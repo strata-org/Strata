@@ -105,7 +105,7 @@ deriving instance Inhabited for Strata.Laurel.AstNode
 def SemanticModel.get (model: SemanticModel) (id: Identifier): AstNode :=
   match id.id with
   | some key => (model.refToDef.get? key).getD (softPanic s!"could not find key {key}")
-  | none => softPanic s!"model.get called on identifier {id.name} without number"
+  | none => softPanic s!"model.get called on identifier {id.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   if id.id == none then
@@ -160,7 +160,7 @@ private def freshId : ResolveM Nat := do
 
 /-- Register a definition: assign a fresh ID to the identifier and record it in scope with its AstNode. -/
 def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
-  let resolutionName := overrideResolutionName.getD iden.name
+  let resolutionName := overrideResolutionName.getD iden.text
   let name' ← if iden.id == none then
     let id ← freshId
     pure { iden with id := some (id) }
@@ -174,12 +174,12 @@ def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Opt
     Returns the identifier with its ID filled in. -/
 def resolveRef (name : Identifier) (md : Imperative.MetaData Core.Expression := .empty) : ResolveM Identifier := do
   let s ← get
-  match s.scope.get? name.name with
+  match s.scope.get? name.text with
   | some (defId, _) =>
     let name' := { name with id := some defId }
     return name'
   | none =>
-    let diag := md.toDiagnostic s!"Resolution failed: '{name.name}' is not defined"
+    let diag := md.toDiagnostic s!"Resolution failed: '{name.text}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with id := none }
 
@@ -188,12 +188,12 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
   let s ← get
   match target.val with
   | .Identifier ref =>
-    match s.scope.get? ref.name with
+    match s.scope.get? ref.text with
     | some (_, node) =>
       match node.getType with
       | some ty =>
         match ty.val with
-        | .UserDefined typRef => pure (some typRef.name)
+        | .UserDefined typRef => pure (some typRef.text)
         | _ => pure none
       | none => pure none
     | none => pure none
@@ -209,7 +209,7 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
     let s ← get
     match s.typeScopes.get? typeName with
     | some typeScope =>
-      match typeScope.get? fieldName.name with
+      match typeScope.get? fieldName.text with
       | some (defId, _) => return { fieldName with id := some defId }
       | none => resolveRef fieldName md
     | none => resolveRef fieldName md
@@ -416,7 +416,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
 def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   let ty' ← resolveHighType field.type
-  let qualifiedName := ownerName.name ++ "." ++ field.name.name
+  let qualifiedName := ownerName.text ++ "." ++ field.name.text
   let name' ← defineName field.name (.field ownerName { field with type := ty' }) (some qualifiedName)
   return { name := name', isMutable := field.isMutable, type := ty' }
 
@@ -447,18 +447,18 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let s ← get
     let mut typeScope : Scope := {}
     for parent in extending' do
-      match s.typeScopes.get? parent.name with
+      match s.typeScopes.get? parent.text with
       | some parentScope =>
         for (k, v) in parentScope do
           typeScope := typeScope.insert k v
       | none => pure ()
     -- Add own fields (these override inherited ones with the same name)
     for field in fields' do
-      let qualifiedKey := ctName'.name ++ "." ++ field.name.name
+      let qualifiedKey := ctName'.text ++ "." ++ field.name.text
       match s.scope.get? qualifiedKey with
-      | some entry => typeScope := typeScope.insert field.name.name entry
+      | some entry => typeScope := typeScope.insert field.name.text entry
       | none => pure ()
-    modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.name typeScope }
+    modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.text typeScope }
     return .Composite { name := ctName', extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
@@ -474,7 +474,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
-        let destructorId ← defineName p.name (.parameter p) (some $ dt.name.name ++ ".." ++ p.name.name)
+        let destructorId ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text)
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
@@ -671,7 +671,7 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
     | .Composite ct =>
       let _ ← defineName ct.name (.compositeType ct)
       for field in ct.fields do
-        let qualifiedName := ct.name.name ++ "." ++ field.name.name
+        let qualifiedName := ct.name.text ++ "." ++ field.name.text
         let _ ← defineName field.name placeholderNode (some qualifiedName)
       for proc in ct.instanceProcedures do
         let _ ← defineName proc.name placeholderNode
@@ -682,7 +682,7 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
       for ctor in dt.constructors do
         let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineName p.name placeholderNode (some $ dt.name.name ++ ".." ++ p.name.name)
+          let _ ← defineName p.name placeholderNode (some $ dt.name.text ++ ".." ++ p.name.text)
   -- Pre-register constants
   for c in program.constants do
     let _ ← defineName c.name (.constant c)

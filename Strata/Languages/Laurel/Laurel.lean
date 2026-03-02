@@ -20,13 +20,13 @@ namespace Laurel
     Carries a mandatory unique ID assigned by the resolution pass. -/
 structure Identifier where
   /-- The declared name. -/
-  name : String
+  text : String
   /-- Unique ID assigned by the resolution pass. -/
   id : Option Nat := none
   deriving Repr, BEq, Inhabited, DecidableEq
 
 instance : ToString Identifier where
-  toString id := id.name
+  toString id := id.text
 
 instance : Coe String Identifier where
   coe s := Identifier.mk s none
@@ -317,7 +317,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
-  | HighType.UserDefined r1, HighType.UserDefined r2 => r1.name == r2.name
+  | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
