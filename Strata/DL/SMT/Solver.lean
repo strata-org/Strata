@@ -143,6 +143,16 @@ def typeToSMTString (ty : TermType) : SolverM String := do
 
 /-! ## String-based commands (less critical, kept as-is) -/
 
+/-- Quote an identifier for SMT-LIB if it contains special characters. -/
+private def quoteIdent (s : String) : String :=
+  if s.isEmpty then "|" ++ s ++ "|"
+  else if !isIdBegin (s.get 0) || s.any (fun c => !isIdContinue c) then
+    "|" ++ s ++ "|"
+  else s
+where
+  isIdBegin (c : Char) : Bool := c.isAlpha || c == '_'
+  isIdContinue (c : Char) : Bool := c.isAlphanum || c == '_' || c == '.' || c == '\'' || c == '!'
+
 def setLogic (logic : String) : SolverM Unit :=
   emitln s!"(set-logic {logic})"
 
@@ -211,17 +221,17 @@ def assertId (id : String) : SolverM Unit :=
 /-- Declare a constant with a typed `TermType`. -/
 def declareConst (id : String) (ty : TermType) : SolverM Unit := do
   let tyStr ← typeToSMTString ty
-  emitln s!"(declare-const {id} {tyStr})"
+  emitln s!"(declare-const {quoteIdent id} {tyStr})"
 
 /-- Declare a function with typed argument and return types. -/
 def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : SolverM Unit := do
   let retStr ← typeToSMTString retTy
   if argTys.isEmpty then
-    emitln s!"(declare-const {id} {retStr})"
+    emitln s!"(declare-const {quoteIdent id} {retStr})"
   else
     let argStrs ← argTys.mapM typeToSMTString
     let inline := String.intercalate " " argStrs
-    emitln s!"(declare-fun {id} ({inline}) {retStr})"
+    emitln s!"(declare-fun {quoteIdent id} ({inline}) {retStr})"
 
 /-- Define a function with typed return type and a raw SMT-LIB string body.
     This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
@@ -229,10 +239,10 @@ def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType
     (body : String) : SolverM Unit := do
   let typedArgs ← args.mapM fun (name, ty) => do
     let tyStr ← typeToSMTString ty
-    return s!"({name} {tyStr})"
+    return s!"({quoteIdent name} {tyStr})"
   let inline := String.intercalate " " typedArgs
   let retStr ← typeToSMTString retTy
-  emitln s!"(define-fun {id} ({inline}) {retStr} {body})"
+  emitln s!"(define-fun {quoteIdent id} ({inline}) {retStr} {body})"
 
 /-- Define a function where the body is given as a `Term` (converted via cache). -/
 def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : TermType)
