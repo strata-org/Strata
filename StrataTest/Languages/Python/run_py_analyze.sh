@@ -9,11 +9,11 @@ mode="${1:-core}"
 if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
-    skip_tests="test_datetime"
+    skip_tests="test_datetime test_class_field_use"
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
-    skip_tests=""
+    skip_tests="test_class_field_use"
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)

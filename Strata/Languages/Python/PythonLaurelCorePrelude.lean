@@ -170,8 +170,8 @@ inline function isUndefinedError (e: Error) : Any {
   from_bool (Error..isUndefinedError(e))
 }
 
-inline function isError (e: Error) : Any {
-  from_bool (! Error..isNoError(e))
+inline function isError (e: Error) : bool {
+  ! Error..isNoError(e)
 }
 
 function is_IntReal (v: Any) : bool;
@@ -557,6 +557,8 @@ spec {
   assert [assert_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar"));
   //assume [assume_maybe_except_none]: (Error..isNoError(maybe_except));
 };
+
+procedure test_helper_create_client(name : Any) returns (result : Any);
 
 procedure print(msg : Any) returns ();
 

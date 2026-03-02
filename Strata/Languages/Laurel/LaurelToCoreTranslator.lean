@@ -233,7 +233,16 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   | .ContractOf _ _ => panic "contractOf expression not implemented"
   | .Abstract => panic "abstract expression not implemented"
   | .All => panic "all expression not implemented"
-  | .InstanceCall _ _ _ => panic "InstanceCall not implemented"
+  | .InstanceCall target callee args =>
+      if isPureContext then
+        disallowed expr "calls to instance methods are not supported in functions or contracts"
+      else
+        let fnOp : Core.Expression.Expr := .op () ⟨callee, ()⟩ none
+        let coreTarget ← translateExpr env target boundVars isPureContext
+        let withTarget := .app () fnOp coreTarget
+        args.attach.foldlM (fun acc ⟨arg, _⟩ => do
+          let re ← translateExpr env arg boundVars isPureContext
+          return .app () acc re) withTarget
   | .PureFieldUpdate _ _ _ => panic "This expression not implemented"
   | .This => panic "This expression not implemented"
   termination_by expr
@@ -297,6 +306,13 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee coreArgs md
             return (env', [initStmt, callStmt])
+      | some (⟨ .InstanceCall .., _⟩) =>
+          -- Instance method call as initializer: var name := target.method(args)
+          -- Havoc the result since instance methods may be on unmodeled types
+          let defaultExpr := defaultExprForType ty
+          let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
+          let havocStmt := Core.Statement.havoc ident md
+          return (env', [initStmt, havocStmt])
       | some initExpr =>
           let coreExpr ← translateExpr env initExpr
           return (env', [Core.Statement.init ident boogieType (some coreExpr) md])
@@ -318,6 +334,9 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr env a)
                 return (env, [Core.Statement.call [ident] callee coreArgs md])
+          | .InstanceCall .. =>
+              -- Instance method call: havoc the target variable
+              return (env, [Core.Statement.havoc ident md])
           | _ =>
               let boogieExpr ← translateExpr env value
               return (env, [Core.Statement.set ident boogieExpr md])
@@ -332,6 +351,13 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
                 | .Identifier name => some (⟨name, ()⟩)
                 | _ => none
               return (env, [Core.Statement.call lhsIdents callee coreArgs value.md])
+          | .InstanceCall .. =>
+              -- Instance method call: havoc all target variables
+              let havocStmts := targets.filterMap fun t =>
+                match t.val with
+                | .Identifier name => some (Core.Statement.havoc ⟨name, ()⟩ md)
+                | _ => none
+              return (env, havocStmts)
           | _ =>
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
@@ -349,6 +375,9 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       else
         let coreArgs ← args.mapM (fun a => translateExpr env a)
         return (env, [Core.Statement.call [] name coreArgs md])
+  | .InstanceCall .. =>
+      -- Instance method call as statement: no return value, treated as no-op
+      return (env, [])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
@@ -461,7 +490,7 @@ private def isPureExpr(expr: StmtExprMd): Bool :=
   | .This => panic s!"isPureExpr not implemented for This"
   | .AsType .. => panic s!"isPureExpr not supported for AsType"
   | .IsType .. => panic s!"isPureExpr not supported for IsType"
-  | .InstanceCall .. => panic s!"isPureExpr not implemented for InstanceCall"
+  | .InstanceCall .. => false
   -- Verification specific
   | .Forall .. => panic s!"isPureExpr not implemented for Forall"
   | .Exists .. => panic s!"isPureExpr not implemented for Exists"
