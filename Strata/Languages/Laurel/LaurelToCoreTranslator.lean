@@ -835,9 +835,10 @@ Translate a Laurel Procedure to a Core Function (when applicable) using `Transla
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
 def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
-  let inputs := ← proc.inputs.mapM translateParameterToCore
+  let inputs := (← proc.inputs.mapM expandArrayParam).flatten
+  let s ← get
   let outputTy := match proc.outputs.head? with
-    | some p => translateType p.type
+    | some p => translateTypeWithCT s.ctMap p.type
     | none => LMonoTy.int
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type))
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
@@ -932,7 +933,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   -- Translate Laurel constants to Core function declarations (0-ary functions)
   let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
-    let coreTy := translateType c.type
+    let coreTy := translateTypeWithCT (← get).ctMap c.type
     let body ← c.initializer.mapM (translateExpr [] ·)
     return Core.Decl.func {
       name := ⟨c.name, ()⟩
