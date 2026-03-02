@@ -194,7 +194,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
-  (md : Imperative.MetaData P)
+  (_md : Imperative.MetaData P)
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool) :
