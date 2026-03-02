@@ -23,7 +23,11 @@ structure Identifier where
   text : String
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
-  deriving Repr, BEq, Inhabited, DecidableEq
+  deriving Repr, Inhabited, DecidableEq
+
+-- Temporary hack because the Python through Laurel pipeline doesn't resolve
+instance : BEq Identifier where
+  beq a b := a.text == b.text
 
 instance : Inhabited Identifier where
  default := { text := "defaultIdentifier" }
