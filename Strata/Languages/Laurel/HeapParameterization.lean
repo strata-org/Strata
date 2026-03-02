@@ -188,32 +188,13 @@ def freshVarName : TransformM Identifier := do
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 /--
-Find the composite type that actually declares a given field, walking up the inheritance chain.
-Returns the declaring type's name, or falls back to the given type name.
--/
-def findFieldOwner (types : List TypeDefinition) (typeName : Identifier) (fieldName : Identifier) : Identifier :=
-  let rec go (fuel : Nat) (current : Identifier) : Option Identifier :=
-    match fuel with
-    | 0 => none
-    | fuel' + 1 =>
-      types.findSome? fun td =>
-        match td with
-        | .Composite ct =>
-          if ct.name == current then
-            if ct.fields.any (·.name == fieldName) then some ct.name
-            else ct.extending.findSome? (go fuel')
-          else none
-        | _ => none
-  (go types.length typeName).getD (softPanic "type inheritance forms a cycle")
-
-/--
 Resolve the owning composite type name for a field access by computing the target expression's type.
 Returns the qualified field name "DeclaringType.fieldName".
 -/
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : String :=
   match model.get fieldName with
     | .field owner _ => owner.text ++ "." ++ fieldName.text
-    | _ => softPanic "oops"
+    | _ => softPanic s!"resolveQualifiedFieldName {fieldName} did not resolve to a field"
 
 /--
 Transform an expression, adding heap parameters where needed.
