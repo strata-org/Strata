@@ -94,16 +94,9 @@ Check if a field can be reached through a given type (directly declared or inher
 Returns true if the type or any of its ancestors declares the field.
 -/
 def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
-  let rec go (fuel : Nat) (current : Identifier) : Bool :=
-    match fuel with
-    | 0 => false
-    | fuel' + 1 =>
-      match model.get current with
-      | .compositeType ct =>
-          (ct.fields.any (·.name == fieldName) ||
-           ct.extending.any (go fuel'))
-      | _ => false
-  go model.compositeCount typeName
+  match model.get fieldName with
+  | .field owner _ => ((computeAncestors model typeName).find? (fun t => t.name == owner)).isSome
+  | _ => softPanic s!"{fieldName} did not resolve to a field"
 
 /--
 Check if a field is inherited through multiple parent paths (diamond inheritance).
