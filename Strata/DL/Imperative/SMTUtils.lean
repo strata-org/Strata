@@ -207,7 +207,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
     addLocationInfo md ("sat-message", s!"\"Assertion cannot be proven\"")
     let _ ← Strata.SMT.Solver.checkSat result.1 -- Will return unknown for Solver.fileWriter
     return result
-  let ((ids, estate), _solverState) ← encodeAndCheck.run solver
+  let ((_ids, estate), _solverState) ← encodeAndCheck.run solver
 
   -- Note: encodeSMT already emits check-sat commands, so we don't call checkSat here
   if printFilename then IO.println s!"Wrote problem to {filename}."

@@ -57,7 +57,7 @@ procedure caller() {
 //}
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
 // the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
    ensures true
 {
@@ -74,7 +74,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 }
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
   ensures true
   modifies d

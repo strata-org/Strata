@@ -20,7 +20,7 @@ requires true
 {
   var message: string := "Hello";
   assert(message == "Hell");
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
 
   return message;
 }
@@ -47,7 +47,7 @@ requires true
 {
   var result: string := "a" ++ "b";
   assert(result == "cd");
-//^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
 }
 
 procedure testStringVarConcatOK()
@@ -64,7 +64,7 @@ requires true
   var x: string := "Hello";
   var result: string := x ++ " World";
   assert(result == "Goodbye");
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
 }
 "#
 

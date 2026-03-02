@@ -15,13 +15,13 @@ namespace Strata.Laurel
 def program := r"
 procedure hasRequires(x: int) returns (r: int)
   requires x > 2
-//         ^^^^^ error: assertion does not hold
+//         ^^^^^ error: assertion can be false
 // Core does not seem to report precondition errors correctly.
 // This should occur at the call site and with a different message
 {
   assert x > 0;
     assert x > 3;
-//  ^^^^^^^^^^^^^ error: assertion does not hold
+//  ^^^^^^^^^^^^^ error: assertion can be false
   x + 1
 }
 
@@ -38,7 +38,7 @@ function aFunctionWithPrecondition(x: int): int
 
 procedure aFunctionWithPreconditionCaller() {
   var x: int := aFunctionWithPrecondition(0);
-//              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
 }
 "
 

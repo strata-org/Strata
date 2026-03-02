@@ -38,7 +38,7 @@ requires true
   var b: string := " World";
   var c: string := a ++ b;
   assert c == "Goodbye";
-//^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
 }
 "#
 
