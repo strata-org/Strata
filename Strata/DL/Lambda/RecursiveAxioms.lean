@@ -59,9 +59,16 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
   dt.constrs.mapM fun c => do
     let numFields := c.args.length
     let totalBvs := numFields + formals.length - 1
-    -- Binding order (outermost → innermost): other params, then constructor fields.
-    -- Example: lookup(key:int, xs:IntList) with recIdx=1, Cons(hd,tl):
-    --   ∀ key:int. ∀ hd:int. ∀ tl:IntList. lookup(key=%2, Cons(hd=%1, tl=%0)) = ...
+    /-
+    De Bruijn indices (bvar 0 = innermost binder).
+    Binding order outer→inner: other params (excl. recIdx), then fields.
+      field i       → bvar (numFields - 1 - i)
+      other formal  → bvar (totalBvs - 1 - otherIdx idx)
+        where otherIdx skips recIdx: idx if idx < recIdx, else idx - 1
+
+    E.g. f(a:int, xs:IntList, b:bool), recIdx=1, Cons(hd, tl):
+      ∀ a. ∀ b. ∀ hd. ∀ tl. f(a=%3, Cons(hd=%1, tl=%0), b=%2) = ...
+    -/
     let dtTy : LMonoTy := .tcons dt.name []
     let constrTy := c.args.foldr (fun (_, argTy) acc => .arrow argTy acc) dtTy
     let constrApp := c.args.foldlIdx (fun acc i _ =>
@@ -79,10 +86,16 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
     let rhs := pe lhs
     if lhs == rhs then
       .error f!"Recursive function {func.name}: PE did not reduce axiom for \
-               constructor {c.name}. Ensure the function is in the factory with inlineIfConstr."
+               constructor {c.name}. Ensure the function is in the factory \
+               and that the function body can be partially evaluated when \
+               the recursive parameter is a constructor."
     let eq : LExpr T.mono := .eq m lhs rhs
-    -- Wrap in quantifiers innermost-first: fields (with trigger on innermost),
-    -- then other params.
+    /-
+    Quantifiers are wrapped innermost-first: field types (reversed so the
+    last field becomes bvar 0), then other param types (also reversed).
+    The innermost quantifier carries the LHS as a trigger pattern for SMT;
+    the rest use noTrigger.
+    -/
     let allTys := (c.args.map (·.snd)).reverse ++ (inputTys.eraseIdx recIdx).reverse
     match allTys with
     | [] => .ok eq

@@ -207,7 +207,8 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
     functions, missing decreases clauses, non-parameter decreases expressions). -/
 def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
   if func.isRecursive && !func.typeArgs.isEmpty then
-    .error (.fromFormat f!"Polymorphic recursive functions are not yet supported: '{func.name}'")
+    .error (.fromFormat f!"Polymorphic recursive functions are not yet supported for SMT \
+      verification: '{func.name}'. SMT solvers require monomorphic axioms.")
   let func ← match func.decreases with
     | some (.fvar _ name _) =>
       match func.inputs.keys.findIdx? (· == name) with
