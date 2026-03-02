@@ -619,7 +619,7 @@ private partial def coreStmtsToGoto
     (trans : Imperative.GotoTransform Core.Expression.TyEnv)
     : Except Std.Format (Imperative.GotoTransform Core.Expression.TyEnv) := do
   let toExpr := Lambda.LExpr.toGotoExprCtx
-    (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) []
+    (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []
   match stmts with
   | [] => return trans
   | stmt :: rest =>
@@ -732,18 +732,18 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
   -- Seed the type environment with renamed input and output parameter types
   let inputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     (new_formals.zip p.header.inputs.values).map fun (n, ty) =>
-      (Core.CoreIdent.locl n, .forAll [] ty)
+      (((n : Core.CoreIdent)), .forAll [] ty)
   let outputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     (new_outputs.zip p.header.outputs.values).map fun (n, ty) =>
-      (Core.CoreIdent.locl n, .forAll [] ty)
+      (((n : Core.CoreIdent)), .forAll [] ty)
   let Env' : Core.Expression.TyEnv :=
-    @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Core.Visibility⟩ Env (inputEntries ++ outputEntries)
+    @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Unit⟩ Env (inputEntries ++ outputEntries)
   -- Emit axioms as ASSUME instructions at the start of the body
   let mut axiomInsts : Array CProverGOTO.Instruction := #[]
   let mut axiomLoc : Nat := 0
   for ax in axioms do
     let gotoExpr ← Lambda.LExpr.toGotoExprCtx
-      (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [] ax.e
+      (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] ax.e
     axiomInsts := axiomInsts.push
       { type := .ASSUME, locationNum := axiomLoc,
         guard := gotoExpr,
@@ -752,7 +752,7 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
   -- Emit distinct declarations as pairwise != ASSUME instructions
   for (dname, exprs) in distincts do
     let gotoExprs ← exprs.mapM
-      (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [])
+      (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [])
     for i in List.range gotoExprs.length do
       for j in List.range gotoExprs.length do
         if i < j then
@@ -787,12 +787,12 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
   let postExprs := p.spec.postconditions.values.filter (fun c => c.attr == .Default)
     |>.map (fun c => renameExpr rn c.expr)
   if !preExprs.isEmpty then
-    let preGoto ← preExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [])
+    let preGoto ← preExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [])
     let preJson := preGoto.map CProverGOTO.exprToJson
     contracts := contracts ++ [("#spec_requires",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr preJson.toArray)])]
   if !postExprs.isEmpty then
-    let postGoto ← postExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [])
+    let postGoto ← postExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [])
     let postJson := postGoto.map CProverGOTO.exprToJson
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
@@ -866,7 +866,7 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
   match extraSyms with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
   return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
-private def datatypeToSymbolEntry (dt : Lambda.LDatatype Core.Visibility) :
+private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
     Except Std.Format (String × CProverGOTO.CBMCSymbol) := do
   let mut components : Array (String × Lean.Json) :=
     #[("$tag", CProverGOTO.tyToJson .Integer)]
@@ -968,7 +968,7 @@ private def collectGlobalSymbols (pgm : Core.Program) :
       let valueJson ← match e with
         | some expr =>
           let gotoExpr ← Lambda.LExpr.toGotoExprCtx
-            (TBase := ⟨Core.ExpressionMetadata, Core.Visibility⟩) [] expr
+            (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] expr
           pure (CProverGOTO.exprToJson gotoExpr)
         | none => pure (Lean.Json.mkObj [("id", "nil")])
       syms := syms ++ [(gname, {
@@ -1261,7 +1261,7 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults laurelProgram { Options.default with solver := "z3" }
+      let results ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
       match results with
       | .error errors =>
         IO.println s!"==== ERRORS ===="
