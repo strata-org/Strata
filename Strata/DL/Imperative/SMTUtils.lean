@@ -194,7 +194,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
-  (_md : Imperative.MetaData P)
+  (md : Imperative.MetaData P)
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool) :
@@ -204,6 +204,8 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
 
   let encodeAndCheck : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState) := do
     let result ← encodeSMT
+    addLocationInfo md ("sat-message", s!"\"Assertion cannot be proven\"")
+    let _ ← Strata.SMT.Solver.checkSat result.1
     return result
   let ((_ids, estate), _solverState) ← encodeAndCheck.run solver
 

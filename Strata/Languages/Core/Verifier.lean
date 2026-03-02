@@ -73,13 +73,11 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", s!"\"Property can be satisfied\""))
       Solver.assert obligationId
-      let _ ← Solver.checkSat ids
     else if validityCheck then
       Solver.comment "Validity check (can property be false?)"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
       Solver.assert obligationId
-      let _ ← Solver.checkSat ids
 
   return (ids, estate)
 
