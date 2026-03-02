@@ -149,7 +149,7 @@ Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
-        (options := {VerifyVerifyOptions.models with removeIrrelevantAxioms := false})
+        (options := {VerifyOptions.models with removeIrrelevantAxioms := false})
 
 ---------------------------------------------------------------------
 
@@ -205,7 +205,7 @@ Result: ➖ can be false if reachable
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
-        (options := {Core.VerifyVerifyOptions.models with removeIrrelevantAxioms := false})
+        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := false})
 
 /--
 info:
