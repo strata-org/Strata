@@ -55,6 +55,7 @@ true
 Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ➖ can be false if reachable
+Model (property false): ($__xs3, (as Nil (List Int))
 
 
 [DEBUG] Evaluated program:
@@ -85,6 +86,7 @@ info:
 Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ➖ can be false if reachable
+Model (property false): ($__xs3, (as Nil (List Int))
 
 Obligation: Test_ensures_0
 Property: assert
