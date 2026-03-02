@@ -25,38 +25,53 @@ symtab2gb full.symtab.json --goto-functions <basename>.goto.json --out output.gb
 cbmc output.gb --function main --z3
 ```
 
+Both pipelines require a patched CBMC build (see "CBMC Patches" below).
+
 ## Implemented Features
 
 - Global variables (`Decl.var`) with optional initializers
 - Procedure contracts: `requires`, `ensures`, `modifies` → DFCC annotations
+  (`#spec_requires`, `#spec_ensures`, `#spec_assigns`)
 - Free requires/ensures: silently filtered (no CBMC equivalent)
 - `exit` statement → unconditional GOTO to end of enclosing labeled block
-- Loop invariants → `#spec_loop_invariant` on backward GOTO edge (multiple invariants supported)
-- `old(expr)` → resolved by Core verifier before GOTO translation; `old`
-  variables appear as regular symbols in GOTO (no GOTO `Old` expression needed)
+- Loop invariants → `#spec_loop_invariant` on backward GOTO edge (multiple
+  invariants supported)
+- Loop measure (decreases clause) → `#spec_decreases` on backward GOTO edge
+- `old(expr)` → GOTO unary `Old` expression when `old` appears as a function
+  application; in pipelines where the Core verifier resolves `old` to plain
+  variables (e.g., after contract inlining), `old` variables appear as regular
+  symbols in GOTO
 - All arithmetic, comparison, boolean, bitvector, and real operators
+- Integer Euclidean division/modulo (`Int.Div`, `Int.SafeDiv`, `Int.Mod`,
+  `Int.SafeMod`) → expanded into compound GOTO expressions using truncating
+  div/mod with a correction term
+- Integer truncating division/modulo (`Int.DivT`, `Int.ModT`) → GOTO `div`/`mod`
+  directly
+- Signed bitvector operations (`SDiv`, `SMod`, `SLt`, `SLe`, `SGt`, `SGe`) →
+  same GOTO operators as unsigned, with operands cast from `unsignedbv` to
+  `signedbv`
 - BV Extract operations → `extractbits`
 - `cover` command → ASSERT instruction
 - Datatypes and type constructors → struct symbol table entries (type
   constructors with no fields get a dummy `__padding` bool component to
   satisfy CBMC's requirement that structs have at least one component)
 - Pure functions with bodies → GOTO functions with SET_RETURN_VALUE
-- Procedure calls → FUNCTION_CALL instructions (including inside if-then-else and loops)
+- Procedure calls → FUNCTION_CALL instructions (including inside if-then-else
+  and loops)
 - Axioms (`Decl.ax`) → ASSUME instructions at procedure start (axioms with
   quantifiers over types unsupported by CBMC's SMT2 backend — `string`,
-  `struct_tag`, `regex`, `empty` — are silently skipped for soundness; see
-  Known Limitations below)
+  `struct_tag`, `regex`, `empty` — are silently skipped; see Known Limitations)
 - Distinct declarations (`Decl.distinct`) → pairwise `!=` ASSUME instructions
 - `Map.const` → GOTO `array_of` expression (constant-valued map/array)
-
-- Loop measure (decreases clause) → `#spec_decreases` on backward GOTO edge
 - Regex type → GOTO primitive type `regex`, CBMC maps to SMT-LIB `RegLan`
-- String/regex operations → `function_application` in GOTO, CBMC maps to SMT-LIB
+- String/regex operations → `function_application` in GOTO; CBMC's string
+  solver patch maps these to the corresponding SMT-LIB theories
   (`Str.Length` → `str.len`, `Re.Star` → `re.*`, etc.)
 - Local function declarations (`funcDecl`) → lifted to top-level GOTO functions
 - Multi-procedure programs: symbol table deduplication preserves proper code types
 - Output parameter types emitted in GOTO symbol table (not empty)
-- Source locations propagated to GOTO instructions (CBMC reports correct line numbers)
+- Source locations reconstructed from byte offsets in the source text and
+  propagated to GOTO instructions (CBMC reports correct line numbers)
 
 ## Soundness
 
@@ -83,24 +98,13 @@ the translation.
   matching enclosing block, `Stmts.toGotoTransform` returns an error rather than
   producing a GOTO instruction with no target.
 
-### Operator semantics
+- **Skipped axioms are sound.** Axioms with quantifiers over types unsupported
+  by CBMC's SMT2 backend are silently skipped. Dropping an axiom (which is an
+  ASSUME instruction) means the verifier considers more states, which is an
+  over-approximation (may produce false positives, never false negatives).
 
-- **Integer division/modulo:** Core has three variants with different semantics:
-  - `Int.Div` / `Int.SafeDiv` / `Int.Mod` / `Int.SafeMod`: Euclidean (Lean's
-    `· / ·`, rounds toward negative infinity). These are **not** mapped to GOTO's
-    `div`/`mod` (which is truncating) — they fall through to `functionApplication`
-    for soundness.
-  - `Int.DivT` / `Int.ModT`: Truncating (rounds toward zero). These match CBMC's
-    `div`/`mod` semantics and are mapped directly.
-
-- **Signed bitvector operations:** Core distinguishes signed (`SDiv`, `SMod`,
-  `SLt`, `SLe`, `SGt`, `SGe`) from unsigned (`UDiv`, `UMod`, `ULt`, etc.)
-  bitvector operations. Signed operations are mapped to the same GOTO operators
-  as their unsigned counterparts, but with operands cast from `unsignedbv` to
-  `signedbv` so that CBMC interprets them with signed semantics.
-
-- **`free requires` / `free ensures`:** Free specification clauses (assumed but
-  not checked) are silently omitted from the GOTO output. This is sound:
+- **Dropped free specs are sound.** Free specification clauses (assumed but not
+  checked) are silently omitted from the GOTO output:
   - Dropping a `free requires` means the implementation is verified under
     *weaker* assumptions (more input states considered).
   - Dropping a `free ensures` means callers cannot assume the postcondition
@@ -165,68 +169,66 @@ the program's declarations) instead of hardcoded `integer`, which fixes the
 Programs that genuinely use mathematical integers in `modifies` targets will
 still fail, as `integer` has no fixed bit width.
 
+#### Procedure inlining duplicates variable declarations
+
+The `ProcedureInlining` transform does not rename local variables when inlining
+a procedure body. If multiple inlined procedures declare a variable with the
+same name (e.g., `maybe_except`), the type checker rejects the program with
+"Variable ... already in context." This affects `test_function_def_calls` in
+the Python pipeline.
+
+## CBMC Patches
+
+The CI builds CBMC 6.8.0 from source with four patches applied:
+
+1. **`cbmc-string-support.patch`** (`StrataTest/Languages/Python/`): Adds
+   `String` as a recognized type in CBMC's SMT2 backend, enabling string
+   constants and operations to be encoded in SMT-LIB.
+
+2. **`cbmc-bounds-check.patch`** (`StrataTest/Languages/Laurel/`): Adjusts
+   bounds checking for the Laurel pipeline.
+
+3. **`cbmc-regex-support.patch`** (`StrataTest/Backends/CBMC/`): Adds `regex`
+   as a primitive type in CBMC, mapped to SMT-LIB `RegLan`.
+
+4. **`cbmc-quantifier-simplify.patch`** (`StrataTest/Backends/CBMC/`): Modifies
+   the simplifier's preorder traversal to only simplify the body (operand 1) of
+   quantifier expressions, leaving bound variables (operand 0) untouched. Without
+   this patch, the simplifier converts bound variable symbols into non-symbol
+   expressions, violating the `quantifier_exprt` invariant.
+
+Additionally, quantifier bound variables are emitted wrapped in a `tuple` node
+in the GOTO JSON to match CBMC's `binding_exprt` internal structure, which
+expects `op0()` to be a tuple containing the variable list.
+
 ## Known Issues
-
-### CBMC crashes on quantifiers over non-integer types (patched)
-
-**Root cause:** CBMC's simplifier (`simplify_expr.cpp`) processes all operands
-of quantifier expressions, including bound variables. This converts bound
-variable symbols into non-symbol expressions, violating the `quantifier_exprt`
-invariant that bound variables must be symbols.
-
-**Fix:** The patch `cbmc-quantifier-simplify.patch` modifies the simplifier's
-preorder traversal to only simplify the body (operand 1) of quantifier
-expressions, leaving bound variables (operand 0) untouched. Applied
-automatically in CI.
-
-Additionally, quantifier bound variables are emitted wrapped in a `tuple`
-node in the GOTO JSON to match CBMC's `binding_exprt` internal structure,
-which expects `op0()` to be a tuple containing the variable list.
 
 ### Axioms with quantifiers over non-primitive types are skipped
 
-**Root cause:** CBMC's SMT2 backend cannot encode quantifier bound variables
-of `string`, `struct_tag`, `regex`, or `empty` type. String-typed quantifier
-variables cause Z3 to hang; struct/regex/empty types have no SMT2 sort mapping
-for quantifier variable declarations.
+CBMC's SMT2 backend cannot encode quantifier bound variables of `string`,
+`struct_tag`, `regex`, or `empty` type. String-typed quantifier variables cause
+Z3 to hang; struct/regex/empty types have no SMT2 sort mapping for quantifier
+variable declarations.
 
-**Mitigation:** The `hasUnsupportedQuantifierTypes` filter in `Expr.lean`
-detects axioms containing quantifiers over these types. Such axioms are
-silently skipped during GOTO emission. This is sound: dropping an axiom
-(which is an ASSUME instruction) means the verifier considers more states,
-which is an over-approximation (may produce false positives, never false
-negatives).
+The `hasUnsupportedQuantifierTypes` filter in `Expr.lean` detects axioms
+containing quantifiers over these types. Such axioms are silently skipped
+during GOTO emission (see Soundness section for why this is safe).
+
+### Z3 timeout on complex quantified axioms
+
+Some tests (`test_missing_models`, `test_precondition_verification` in the
+Python pipeline) produce axioms with deeply nested integer quantifiers that
+cause Z3 to hang indefinitely. These tests are marked SKIP in
+`cbmc_expected.txt`.
 
 ### #490: DDM parser infinite loop with `modifies` before `ensures`
-
-**Root cause:** The Laurel DDM grammar defines the procedure syntax as:
-```
-op procedure (..., ensures, modifies, body) =>
-  "procedure " ... ensures modifies body;
-```
 
 The DDM parser expects `ensures` clauses before `modifies` clauses. When
 `modifies` appears before `ensures` in the source text, the parser enters an
 infinite loop instead of reporting a syntax error.
 
-**Reproduction:**
-```
-procedure test(x: int) returns (r: int)
-  modifies x        -- modifies BEFORE ensures → infinite loop
-  ensures r > 0
-{ r := 1; }
-```
+**Workaround:** Always write `ensures` before `modifies`.
 
-**Workaround:** Always write `ensures` before `modifies`:
-```
-procedure test(x: int) returns (r: int)
-  ensures r > 0     -- ensures FIRST → works
-  modifies x
-{ r := 1; }
-```
-
-**Proper fix:** The DDM parser should either:
-1. Accept clauses in any order (preferred), or
-2. Report a clear syntax error when clauses are out of order.
-
+**Proper fix:** The DDM parser should either accept clauses in any order
+(preferred) or report a clear syntax error when clauses are out of order.
 This is a DDM infrastructure issue, not specific to the GOTO backend.
