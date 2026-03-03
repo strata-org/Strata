@@ -1,5 +1,5 @@
 Successfully parsed.
 BooleanQuantification2.core.st(18, 4) [assert_0]: ✔️ pass if reachable
 BooleanQuantification2.core.st(19, 4) [assert_1]: ✔️ pass if reachable
-BooleanQuantification2.core.st(20, 4) [assert_2]: ➖ can be false if reachable
+BooleanQuantification2.core.st(20, 4) [assert_2]: ➖ can be false and is reachable
 Finished with 2 goals passed, 1 failed.

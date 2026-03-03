@@ -1,6 +1,6 @@
 Successfully parsed.
-Unique.core.st(28, 4) [assert_0]: ➖ can be false if reachable
+Unique.core.st(28, 4) [assert_0]: ➖ can be false and is reachable
 Unique.core.st(29, 4) [assert_1]: ✔️ pass if reachable
-Unique.core.st(37, 4) [assert_2]: ➖ can be false if reachable
+Unique.core.st(37, 4) [assert_2]: ➖ can be false and is reachable
 Unique.core.st(38, 4) [assert_3]: ✔️ pass if reachable
 Finished with 2 goals passed, 2 failed.

@@ -3,6 +3,6 @@ IfThenElse1.core.st(18, 4) [assert_0]: ✔️ pass if reachable
 IfThenElse1.core.st(19, 4) [assert_1]: ✔️ pass if reachable
 IfThenElse1.core.st(33, 4) [assert_2]: ✔️ pass if reachable
 IfThenElse1.core.st(35, 4) [assert_3]: ✔️ pass if reachable
-IfThenElse1.core.st(46, 4) [assert_4]: ➖ can be false if reachable
-IfThenElse1.core.st(57, 4) [assert_5]: ➖ can be false if reachable
+IfThenElse1.core.st(46, 4) [assert_4]: ➖ can be false and is reachable
+IfThenElse1.core.st(57, 4) [assert_5]: ➖ can be false and is reachable
 Finished with 4 goals passed, 2 failed.

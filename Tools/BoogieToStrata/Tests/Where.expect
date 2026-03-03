@@ -1,14 +1,14 @@
 Successfully parsed.
 Where.core.st(16, 4) [assert_0]: ✔️ pass if reachable
 Where.core.st(17, 4) [assert_1]: ✔️ pass if reachable
-Where.core.st(18, 4) [assert_2]: ➖ can be false if reachable
+Where.core.st(18, 4) [assert_2]: ➖ can be false and is reachable
 Where.core.st(33, 4) [assert_3]: ✔️ pass if reachable
 Where.core.st(36, 4) [assert_4]: ✔️ pass if reachable
-Where.core.st(37, 4) [assert_5]: ➖ can be false if reachable
-Where.core.st(53, 4) [assert_6]: ➖ can be false if reachable
+Where.core.st(37, 4) [assert_5]: ➖ can be false and is reachable
+Where.core.st(53, 4) [assert_6]: ➖ can be false and is reachable
 Where.core.st(70, 4) [assert_7]: ✔️ pass if reachable
-Where.core.st(71, 4) [assert_8]: ➖ can be false if reachable
+Where.core.st(71, 4) [assert_8]: ➖ can be false and is reachable
 Where.core.st(87, 4) [assert_9]: ✔️ pass if reachable
 Where.core.st(92, 4) [assert_10]: ✔️ pass if reachable
-Where.core.st(93, 4) [assert_11]: ➖ can be false if reachable
+Where.core.st(93, 4) [assert_11]: ➖ can be false and is reachable
 Finished with 7 goals passed, 5 failed.
