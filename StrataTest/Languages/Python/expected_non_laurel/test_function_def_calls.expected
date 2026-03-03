@@ -1,32 +1,32 @@
 
-datetime_now_ensures_0: ✅ pass (at byte 7131)
+datetime_now_ensures_0: ✅ pass (at byte 7134)
 
-datetime_utcnow_ensures_0: ✅ pass (at byte 7369)
+datetime_utcnow_ensures_0: ✅ pass (at byte 7372)
 
-ensures_str_strp_reverse: ✅ pass (at byte 8763)
+ensures_str_strp_reverse: ✅ pass (at byte 8766)
 
-assert_name_is_foo: ✅ pass (at byte 11077)
+assert_name_is_foo: ✅ pass (at byte 11081)
 
-assert_opt_name_none_or_str: ✅ pass (at byte 11127)
+assert_opt_name_none_or_str: ✅ pass (at byte 11131)
 
-assert_opt_name_none_or_bar: ✅ pass (at byte 11274)
+assert_opt_name_none_or_bar: ✅ pass (at byte 11278)
 
-ensures_maybe_except_none: ✅ pass (at byte 10980)
+ensures_maybe_except_none: ✅ pass (at byte 10984)
 
-Assertion failed at byte 11077: test_helper_procedure_assert_name_is_foo_3: ❌ fail
+Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_3: ❌ fail
 
-test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11127)
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11131)
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11274)
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11278)
 
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10643)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10646)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10692)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10695)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10838)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10841)
 
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10643)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10646)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10692)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10695)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10838)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10841)
