@@ -378,8 +378,8 @@ def polyFuncProg : Program := { decls := [
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0;
-function makePair<|$__ty1|, |$__ty2|> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+info: ok: function identity<$__ty0> (x : $__ty0) : $__ty0;
+function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
 procedure Test () returns ()
 {
   var m : (Map int bool);
