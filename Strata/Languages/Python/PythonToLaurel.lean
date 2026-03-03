@@ -617,13 +617,8 @@ partial def translateCall (ctx : TranslationContext)
   --   Resolve to ClassName_method(obj, args)
 
   let (funcName, opt_firstarg, _unknowtype) := refineFunctionCallExpr ctx f
-  /- One option, keep as reference
-  let args :=
-    match opt_firstarg with
-        | some firstarg => firstarg::args
-        | _ => args
-  -/
-
+  if !hasModel ctx funcName then
+    return mkStmtExprMd .Hole
   -- Step 3: translate the resolved call
   let (args, kwords, funcdecl_has_kwargs) := match ctx.functionSignatures.find? (λ x => x.name == funcName) with
     | .some funcdecl =>
@@ -646,8 +641,6 @@ partial def translateCall (ctx : TranslationContext)
         return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | _ =>  throw (.unsupportedConstruct "Invalidcall construct" (toString (repr f)))
 
-  --let typeof_expr := if unknowtype then [mkStmtExprMd (.StaticCall "TypeOf" [trans_args[0]!])] else []
-  --return mkStmtExprMd (StmtExpr.StaticCall funcName (typeof_expr ++ trans_args ++ trans_kwords_exprs))
 
 end
 
@@ -672,6 +665,10 @@ partial def translateAssign  (ctx : TranslationContext)
                              (rhs: Python.expr SourceRange)
                     : Except TranslationError (TranslationContext × List StmtExprMd) := do
   let rhs_trans ←  translateExpr ctx rhs
+  if let .Hole := rhs_trans.val then
+  {
+    return (ctx, [mkStmtExprMd .Hole])
+  }
   let mut newctx := ctx
   match lhs with
     | .Name _ n _ =>
