@@ -223,8 +223,6 @@ end;
 -- Constructor Mk is allowed in both, but the tester ..isMk collides.
 /--
 error: Mk already defined.
----
-error: Duplicate function name: ..isMk
 -/
 #guard_msgs in
 #eval #strata
@@ -240,8 +238,6 @@ end;
 -- tester template ..isMkExisting collides.
 /--
 error: MkExisting already defined.
----
-error: Duplicate function name: ..isMkExisting
 -/
 #guard_msgs in
 #eval #strata

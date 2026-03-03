@@ -1980,6 +1980,12 @@ private abbrev TemplateExpandM := StateM TemplateExpandState
 
 namespace TemplateExpandM
 
+private def runChecked (act : TemplateExpandM Unit) : TemplateExpandM Bool := do
+  let oldCount := (←get).errors.size
+  act
+  let newCount := (←get).errors.size
+  return oldCount = newCount
+
 private def addError (msg : String) : TemplateExpandM Unit :=
   modify (·.addError msg)
 
@@ -2088,12 +2094,20 @@ def expandFunctionTemplates
   let ((), finalState) := StateT.run (m := Id) (do
     -- Pass 1: Register all constructor signatures first to maintain
     -- FreeVarIndex ordering (constructors before template functions).
+    let mut  failures : Std.HashSet String := {}
     for constr in constructorInfo do
       let constrType := mkConstructorType src datatypeType constr.fields
-      TemplateExpandM.addFunction constr.name constrType
+      let success ← TemplateExpandM.runChecked <|
+            TemplateExpandM.addFunction constr.name constrType
+      if not success then
+        failures := failures.insert constr.name
+
     -- Pass 2: Expand all templates for all constructors.
-    for constr in constructorInfo do
-      for template in templates do
+    for template in templates do
+      for constr in constructorInfo do
+        -- Skip constructors that failed to be added.
+        if constr.name ∈ failures then
+          continue
         expandSingleTemplate1 dialectName datatypeName datatypeType constr template
   ) initState
   (finalState.gctx, finalState.errors)
