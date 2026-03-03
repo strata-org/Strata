@@ -210,12 +210,14 @@ inductive DenotesT {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
   | dabs : ∀ val m x_mty e_mty e (y : IdentT LMonoTy T.IDMeta)
       (f : denoteLMonoTyT ctx x_mty → denoteLMonoTyT ctx e_mty),
       LExpr.fresh y e →
+      y.snd.isSome = true →
       (∀ a, DenotesT C ctx interp (updateVal val y.fst.name x_mty a) (LExpr.varOpen 0 y e) e_mty (f a)) →
       DenotesT C ctx interp val (.abs m (some x_mty) e) (.arrow x_mty e_mty) f
 
   | dquant_all : ∀ val m x_mty tr e (y : IdentT LMonoTy T.IDMeta)
       (bodyBool : denoteLMonoTyT ctx x_mty → Bool),
       LExpr.fresh y e →
+      y.snd.isSome = true →
       (∀ d, DenotesT C ctx interp (updateVal val y.fst.name x_mty d) (LExpr.varOpen 0 y e) .bool ⟨bodyBool d⟩) →
       (∀ d, bodyBool d = true) →
       DenotesT C ctx interp val (.quant m .all (some x_mty) tr e) .bool ⟨true⟩
@@ -223,6 +225,7 @@ inductive DenotesT {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
   | dquant_all_false : ∀ val m x_mty tr e (y : IdentT LMonoTy T.IDMeta)
       (bodyBool : denoteLMonoTyT ctx x_mty → Bool),
       LExpr.fresh y e →
+      y.snd.isSome = true →
       (∀ d, DenotesT C ctx interp (updateVal val y.fst.name x_mty d) (LExpr.varOpen 0 y e) .bool ⟨bodyBool d⟩) →
       ¬(∀ d, bodyBool d = true) →
       DenotesT C ctx interp val (.quant m .all (some x_mty) tr e) .bool ⟨false⟩
@@ -230,6 +233,7 @@ inductive DenotesT {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
   | dquant_exist : ∀ val m x_mty tr e (y : IdentT LMonoTy T.IDMeta)
       (bodyBool : denoteLMonoTyT ctx x_mty → Bool),
       LExpr.fresh y e →
+      y.snd.isSome = true →
       (∀ d, DenotesT C ctx interp (updateVal val y.fst.name x_mty d) (LExpr.varOpen 0 y e) .bool ⟨bodyBool d⟩) →
       (∃ d, bodyBool d = true) →
       DenotesT C ctx interp val (.quant m .exist (some x_mty) tr e) .bool ⟨true⟩
@@ -237,6 +241,7 @@ inductive DenotesT {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
   | dquant_exist_false : ∀ val m x_mty tr e (y : IdentT LMonoTy T.IDMeta)
       (bodyBool : denoteLMonoTyT ctx x_mty → Bool),
       LExpr.fresh y e →
+      y.snd.isSome = true →
       (∀ d, DenotesT C ctx interp (updateVal val y.fst.name x_mty d) (LExpr.varOpen 0 y e) .bool ⟨bodyBool d⟩) →
       ¬(∃ d, bodyBool d = true) →
       DenotesT C ctx interp val (.quant m .exist (some x_mty) tr e) .bool ⟨false⟩
@@ -303,23 +308,33 @@ theorem HasTypeT.abs_asArrow {C : LContext T} {Γ m o} {e : LExpr T.mono} {mty}
   | tabs _ _ _ x_mty _ e_mty _ _ _ => simp [asArrowT, LMonoTy.arrow]
 
 /-- Generate `n` distinct candidate names: `_x0`, `_x1`, ... -/
-private def candidates [Inhabited T.IDMeta] (n : Nat) : List (IdentT LMonoTy T.IDMeta) :=
-  (List.range n).map fun i => (⟨s!"_x{i}", default⟩, none)
+private def candidates [Inhabited T.IDMeta] (n : Nat) (ty : LMonoTy) : List (IdentT LMonoTy T.IDMeta) :=
+  (List.range n).map fun i => (⟨s!"_x{i}", default⟩, some ty)
 
 /-- Compute a fresh `IdentT` for an expression by pigeonhole:
     generate `|freeVars| + 1` candidates; at least one has a name not among
     the free variable names. -/
-def findFresh [Inhabited T.IDMeta] [DecidableEq T.IDMeta] (e : LExpr T.mono) :
+def findFresh [Inhabited T.IDMeta] [DecidableEq T.IDMeta] (e : LExpr T.mono) (ty : LMonoTy) :
     IdentT LMonoTy T.IDMeta :=
   let fvNames := (LExpr.freeVars e).map Prod.fst
-  let cands := candidates (fvNames.length + 1)
+  let cands := candidates (fvNames.length + 1) ty
   match cands.find? (fun c => c.fst ∉ fvNames) with
   | some y => y
-  | none => (⟨"_unreachable", default⟩, none)  -- unreachable by pigeonhole
+  | none => (⟨"_unreachable", default⟩, some ty)  -- unreachable by pigeonhole
 
 theorem findFresh_fresh [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
-    (e : LExpr T.mono) : LExpr.fresh (findFresh e) e := by
+    (e : LExpr T.mono) (ty : LMonoTy) : LExpr.fresh (findFresh e ty) e := by
   sorry
+
+theorem findFresh_isSome [Inhabited T.IDMeta]
+    (e : LExpr T.mono) (ty : LMonoTy) : (findFresh e ty).snd.isSome = true := by
+  simp only [findFresh, candidates]
+  split
+  . rename_i Hfind
+    have Hex := List.exists_of_mem_map (List.mem_of_find?_eq_some Hfind)
+    rcases Hex with ⟨a, ⟨ a1, a2⟩ ⟩
+    subst_vars; rfl
+  . rfl
 
 /-! ## Renaming lemma -/
 
@@ -381,94 +396,6 @@ Match only on the expression. Use type-recovery lemmas to obtain type
 equalities, and `asArrowT` to decompose arrow types in data context.
 -/
 
-noncomputable def denoteLExprT
-    {T : LExprParams}
-    [Inhabited T.IDMeta]
-    [DecidableEq T.IDMeta]
-    (C : LContext T)
-    (Γ : TContext T.IDMeta)
-    (ctx : TypeContextT)
-    (interp : OpInterpretation ctx)
-    (val : ValuationT ctx) :
-    (e : LExpr T.mono) →
-    (mty : LMonoTy) →
-    HasTypeT C Γ e mty →
-    denoteLMonoTyT ctx mty
-
-  | .boolConst _ b, mty, hwt =>
-    hwt.boolConst_ty ▸ (⟨b⟩ : denoteLMonoTyT ctx .bool)
-
-  | .intConst _ i, mty, hwt =>
-    hwt.intConst_ty ▸ (⟨i⟩ : denoteLMonoTyT ctx .int)
-
-  | .strConst _ s, mty, hwt =>
-    hwt.strConst_ty ▸ (⟨s⟩ : denoteLMonoTyT ctx .string)
-
-  | .bitvecConst _ n bv, mty, hwt =>
-    hwt.bitvecConst_ty ▸ (⟨bv⟩ : denoteLMonoTyT ctx (.bitvec n))
-
-  | .realConst _ r, mty, hwt =>
-    hwt.realConst_ty ▸ (⟨r⟩ : denoteLMonoTyT ctx .real)
-
-  | .ite _ c t e, mty, hwt =>
-    let vc := denoteLExprT C Γ ctx interp val c .bool hwt.ite_cond
-    let vt := denoteLExprT C Γ ctx interp val t mty hwt.ite_then
-    let ve := denoteLExprT C Γ ctx interp val e mty hwt.ite_else
-    if vc.down then vt else ve
-
-  | .eq _ e1 e2, mty, hwt =>
-    -- To compute equality we'd need DecidableEq on denoteLMonoTyT for the
-    -- sub-expression type, which we don't have in general.
-    hwt.eq_ty ▸ (sorry : denoteLMonoTyT ctx .bool)
-
-  | .abs _ (some x_mty) e, mty, hwt =>
-    match harr : asArrowT mty with
-    | some (t1, t2) =>
-      let heq := asArrowT_some harr
-      let hx := hwt.abs_x_mty harr
-      let y := findFresh e
-      heq ▸
-        let Γ' := { Γ with types := Γ.types.insert y.fst (.forAll [] t1) }
-        (fun (a : denoteLMonoTyT ctx t1) =>
-          let val' := updateVal val y.fst.name t1 a
-          denoteLExprT C Γ' ctx interp val' (LExpr.varOpen 0 y e) t2
-            (hwt.abs_body harr hx y (findFresh_fresh e))
-        : denoteLMonoTyT ctx (.arrow t1 t2))
-    | none => absurd harr hwt.abs_asArrow
-
-  | .abs _ none _, _, _ => sorry
-
-  | .quant _ k (some x_mty) _tr e, mty, hwt =>
-    hwt.quant_ty ▸
-      let y := findFresh e
-      let Γ' := { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
-      let bodyBool := fun (d : denoteLMonoTyT ctx x_mty) =>
-        let val' := updateVal val y.fst.name x_mty d
-        (denoteLExprT C Γ' ctx interp val' (LExpr.varOpen 0 y e) .bool
-          (hwt.quant_body y (findFresh_fresh e))).down
-      let result : Bool := match k with
-        | .all   => if (Classical.propDecidable (∀ d, bodyBool d = true)).decide then true else false
-        | .exist => if (Classical.propDecidable (∃ d, bodyBool d = true)).decide then true else false
-      (⟨result⟩ : denoteLMonoTyT ctx .bool)
-
-  | .quant _ _ none _ _, _, _ => sorry
-  | .app _ _ _, _, _ => sorry
-
-  | .fvar _ name _, mty, _ => val name.name mty
-
-  | .bvar _ _, _, hwt => nomatch hwt
-
-  | .op _ name _, mty, _ => interp name.name mty
-
-termination_by e => e.sizeOf
-decreasing_by
-  all_goals simp_wf
-  all_goals first
-    | omega
-    | (rw [LExpr.varOpen_sizeOf]; omega)
-
-/-! ## Equivalence theorems -/
-
 inductive annotated {T : LExprParams} : LExpr T.mono → Prop where
   | ann_const : ∀ m c, annotated (.const m c)
   | ann_fvar : ∀ m name ty, annotated (.fvar m name (some ty))
@@ -479,6 +406,12 @@ inductive annotated {T : LExprParams} : LExpr T.mono → Prop where
   | ann_ite : ∀ m c t e, annotated c → annotated t → annotated e → annotated (.ite m c t e)
   -- | ann_eq : ∀ m e1 e2, annotated e1 → annotated e2 → annotated (.eq m e1 e2)
   -- | ann_app : ∀ m e1 e2, annotated e1 → annotated e2 → annotated (.app m e1 e2)
+
+theorem annotated.ite_cond {T : LExprParams} {m} {c t e : LExpr T.mono} (h : annotated (.ite m c t e)) : annotated c := by cases h; assumption
+theorem annotated.ite_then {T : LExprParams} {m} {c t e : LExpr T.mono} (h : annotated (.ite m c t e)) : annotated t := by cases h; assumption
+theorem annotated.ite_else {T : LExprParams} {m} {c t e : LExpr T.mono} (h : annotated (.ite m c t e)) : annotated e := by cases h; assumption
+theorem annotated.abs_body {T : LExprParams} {m} {ty : T.mono.TypeType} {e : LExpr T.mono} (h : annotated (.abs m (some ty) e)) : annotated e := by cases h; assumption
+theorem annotated.quant_body {T : LExprParams} {m} {k} {ty : T.mono.TypeType} {tr e : LExpr T.mono} (h : annotated (.quant m k (some ty) tr e)) : annotated e := by cases h; assumption
 
 theorem annotated_varOpen {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
     {e : LExpr T.mono} {x' : IdentT LMonoTy T.IDMeta} {k : Nat}
@@ -512,6 +445,93 @@ theorem annotated_varOpen {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.
   --   show annotated (LExpr.varOpen k x' (.app _ _ _))
   --   unfold LExpr.varOpen LExpr.substK; exact .ann_app _ _ _ ih1 ih2
 
+noncomputable def denoteLExprT
+    {T : LExprParams}
+    [Inhabited T.IDMeta]
+    [DecidableEq T.IDMeta]
+    (C : LContext T)
+    (Γ : TContext T.IDMeta)
+    (ctx : TypeContextT)
+    (interp : OpInterpretation ctx)
+    (val : ValuationT ctx) :
+    (e : LExpr T.mono) →
+    (mty : LMonoTy) →
+    HasTypeT C Γ e mty →
+    annotated e →
+    denoteLMonoTyT ctx mty
+
+  | .boolConst _ b, mty, hwt, _ =>
+    hwt.boolConst_ty ▸ (⟨b⟩ : denoteLMonoTyT ctx .bool)
+
+  | .intConst _ i, mty, hwt, _ =>
+    hwt.intConst_ty ▸ (⟨i⟩ : denoteLMonoTyT ctx .int)
+
+  | .strConst _ s, mty, hwt, _ =>
+    hwt.strConst_ty ▸ (⟨s⟩ : denoteLMonoTyT ctx .string)
+
+  | .bitvecConst _ n bv, mty, hwt, _ =>
+    hwt.bitvecConst_ty ▸ (⟨bv⟩ : denoteLMonoTyT ctx (.bitvec n))
+
+  | .realConst _ r, mty, hwt, _ =>
+    hwt.realConst_ty ▸ (⟨r⟩ : denoteLMonoTyT ctx .real)
+
+  | .ite _ c t e, mty, hwt, ha =>
+    let vc := denoteLExprT C Γ ctx interp val c .bool hwt.ite_cond ha.ite_cond
+    let vt := denoteLExprT C Γ ctx interp val t mty hwt.ite_then ha.ite_then
+    let ve := denoteLExprT C Γ ctx interp val e mty hwt.ite_else ha.ite_else
+    if vc.down then vt else ve
+
+  | .abs _ (some x_mty) e, mty, hwt, ha =>
+    match harr : asArrowT mty with
+    | some (t1, t2) =>
+      let heq := asArrowT_some harr
+      let hx := hwt.abs_x_mty harr
+      let y := findFresh e t1
+      heq ▸
+        let Γ' := { Γ with types := Γ.types.insert y.fst (.forAll [] t1) }
+        (fun (a : denoteLMonoTyT ctx t1) =>
+          let val' := updateVal val y.fst.name t1 a
+          denoteLExprT C Γ' ctx interp val' (LExpr.varOpen 0 y e) t2
+            (hwt.abs_body harr hx y (findFresh_fresh e t1))
+            (annotated_varOpen ha.abs_body (findFresh_isSome e t1))
+        : denoteLMonoTyT ctx (.arrow t1 t2))
+    | none => absurd harr hwt.abs_asArrow
+
+  | .abs _ none _, _, _, ha => nomatch ha
+
+  | .quant _ k (some x_mty) _tr e, mty, hwt, ha =>
+    hwt.quant_ty ▸
+      let y := findFresh e x_mty
+      let Γ' := { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
+      let bodyBool := fun (d : denoteLMonoTyT ctx x_mty) =>
+        let val' := updateVal val y.fst.name x_mty d
+        (denoteLExprT C Γ' ctx interp val' (LExpr.varOpen 0 y e) .bool
+          (hwt.quant_body y (findFresh_fresh e x_mty))
+          (annotated_varOpen ha.quant_body (findFresh_isSome e x_mty))).down
+      let result : Bool := match k with
+        | .all   => if (Classical.propDecidable (∀ d, bodyBool d = true)).decide then true else false
+        | .exist => if (Classical.propDecidable (∃ d, bodyBool d = true)).decide then true else false
+      (⟨result⟩ : denoteLMonoTyT ctx .bool)
+
+  | .quant _ _ none _ _, _, _, ha => nomatch ha
+  | .app _ _ _, _, _, ha => nomatch ha
+  | .eq _ _ _, _, _, ha => nomatch ha
+
+  | .fvar _ name _, mty, _, _ => val name.name mty
+
+  | .bvar _ _, _, hwt, _ => nomatch hwt
+
+  | .op _ name _, mty, _, _ => interp name.name mty
+
+termination_by e => e.sizeOf
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (rw [LExpr.varOpen_sizeOf]; omega)
+
+/-! ## Equivalence theorems -/
+
 /-
 Theorem: denoteLExprT is sound w.r.t. DenotesT.
 
@@ -519,6 +539,7 @@ Theorem: denoteLExprT is sound w.r.t. DenotesT.
 
 Proof: By induction on e, constructing the DenotesT derivation.
 -/
+set_option pp.proofs true
 theorem denoteLExprT_sound
     {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
     {C : LContext T} {Γ : TContext T.IDMeta} {ctx : TypeContextT}
@@ -526,68 +547,60 @@ theorem denoteLExprT_sound
     (val : ValuationT ctx)
     (e : LExpr T.mono)
     (mty : LMonoTy)
-    (h : HasTypeT C Γ e mty) :
-    DenotesT C ctx interp val e mty (denoteLExprT C Γ ctx interp val e mty h) := by
-  fun_induction denoteLExprT C Γ ctx interp val e mty h
-  case case1 Γ' val' m b mty' hty' hty => -- boolConst
+    (h : HasTypeT C Γ e mty)
+    (ha : annotated e) :
+    DenotesT C ctx interp val e mty (denoteLExprT C Γ ctx interp val e mty h ha) := by
+  fun_induction denoteLExprT C Γ ctx interp val e mty h ha
+  case case1 Γ' val' m b mty' ha1 ha2 hty' hty => -- boolConst
     have heq := hty.boolConst_ty
     subst heq
     exact .dbool val' m b
-  case case2 Γ' val' m i mty' hty' hwt => -- intConst
+  case case2 Γ' val' m i mty' ha1 ha2 hty' hwt => -- intConst
     have heq := hwt.intConst_ty; subst heq
     exact .dint val' m i
-  case case3 Γ' val' m s mty' hty' hwt => -- strConst
+  case case3 Γ' val' m s mty' ha1 ha2 hty' hwt => -- strConst
     have heq := hwt.strConst_ty; subst heq
     exact .dstr val' m s
-  case case4 Γ' val' m n bv mty' hty' hwt => -- bitvecConst
+  case case4 Γ' val' m n bv mty' ha1 ha2 hty' hwt => -- bitvecConst
     have heq := hwt.bitvecConst_ty; subst heq
     exact .dbitvec val' m n bv
-  · -- realConst
-    rename_i Γ' val' m r mty' hty' hwt
+  case case5 Γ' val' m r bv mty' ha1 ha2 hwt =>
     have heq := hwt.realConst_ty; subst heq
     exact .dreal val' m r
-  case case6 Γ' val' m c t e mty' hty d1 d2 hcond hwt ih_c ih_t ih_e => -- ite true
-    simp [denoteLExprT] at *
-    cases hc : (denoteLExprT C Γ' ctx interp val' c .bool hwt.ite_cond).down with
+  case case6 Γ' val' m c t e mty' hty ha1 d1 d2 hcond ha2 hwt ih_c ih_t ih_e => -- ite true
+    cases hc : (denoteLExprT C Γ' ctx interp val' c .bool (HasTypeT.ite_cond hty) (annotated.ite_cond ha1)).down with
     | true => exact .dite_true val' m c t e mty' _ _ ih_c hc ih_t
     | false => unfold d1 at hcond; rw[hcond] at hc; contradiction
-  case case7 Γ' val' m c t e mty' hty d1 d2 hcond hwt ih_c ih_t ih_e => -- ite false
-    simp [denoteLExprT] at *
-    cases hc : (denoteLExprT C Γ' ctx interp val' c .bool hwt.ite_cond).down with
+  case case7 Γ' val' m c t e mty' hty ha1 d1 d2 hcond ha2 hwt ih_c ih_t ih_e => -- ite false
+    simp [] at *
+    cases hc : (denoteLExprT C Γ' ctx interp val' c .bool (HasTypeT.ite_cond hty) (annotated.ite_cond ha1)).down with
     | true => unfold d1 at hcond; rw[hcond] at hc; contradiction
     | false => exact .dite_false val' m c t e mty' _ _ ih_c hc ih_e
-  · -- eq
-    sorry
-  case case9 Γ' val' m' e' ty1 ty2 y harr hty1 hty2 ih => -- abs some, asArrow
-    -- simp only []
-    exact .dabs val' m' ty1 ty2 e' y _ (findFresh_fresh e') (fun a => ih a)
-  . -- abs none
-    sorry
-  case case11 Γ' val' m k x_mty tr e' mty' hwt y ih_body => -- quant some
+  case case8 Γ' val' m' e' ty1 ty2 y harr ha1 ha2 hty1 hty2 ih => -- abs some, asArrow
+    exact .dabs val' m' ty1 ty2 e' y _ (findFresh_fresh e' _) (findFresh_isSome e' _) (fun a => ih a)
+  case case9 Γ' val' m k x_mty tr e' mty' hwt ha1 ha2 y ih_body => -- quant some
     have hmty := hwt.quant_ty; subst hmty
-    have hfresh := findFresh_fresh e'
+    have hfresh := findFresh_fresh e' x_mty
+    have ha: (varOpen 0 (e'.findFresh x_mty) e').annotated := by
+      refine annotated_varOpen (annotated.quant_body ha1) (findFresh_isSome _ _)
     cases k with
     | all =>
-      by_cases hall : ∀ d, (denoteLExprT C _ ctx interp (updateVal val' (findFresh e').fst.name x_mty d)
-        (LExpr.varOpen 0 (findFresh e') e') .bool (hwt.quant_body (findFresh e') hfresh)).down = true
+      by_cases hall : ∀ d, (denoteLExprT C _ ctx interp (updateVal val' (findFresh e' x_mty).fst.name x_mty d)
+        (LExpr.varOpen 0 (findFresh e' _) e') .bool (hwt.quant_body (findFresh e' _) hfresh) ha).down = true
       · simp [hall]
-        exact .dquant_all val' m x_mty tr e' (findFresh e') _ hfresh (fun d => ih_body d) hall
+        exact .dquant_all val' m x_mty tr e' (findFresh e' _) _ hfresh (findFresh_isSome _ _) (fun d => ih_body d) hall
       · simp [hall]
-        exact .dquant_all_false val' m x_mty tr e' (findFresh e') _ hfresh (fun d => ih_body d) hall
+        exact .dquant_all_false val' m x_mty tr e' (findFresh e' _) _ hfresh (findFresh_isSome _ _) (fun d => ih_body d) hall
     | exist =>
-      by_cases hex : ∃ d, (denoteLExprT C _ ctx interp (updateVal val' (findFresh e').fst.name x_mty d)
-        (LExpr.varOpen 0 (findFresh e') e') .bool (hwt.quant_body (findFresh e') hfresh)).down = true
+      by_cases hex : ∃ d, (denoteLExprT C _ ctx interp (updateVal val' (findFresh e' x_mty).fst.name x_mty d)
+        (LExpr.varOpen 0 (findFresh e' _) e') .bool (hwt.quant_body (findFresh e' _) hfresh) ha).down = true
       · simp [hex]
-        exact .dquant_exist val' m x_mty tr e' (findFresh e') _ hfresh (fun d => ih_body d) hex
+        exact .dquant_exist val' m x_mty tr e' (findFresh e' _) _ hfresh (findFresh_isSome _ _) (fun d => ih_body d) hex
       · simp [hex]
-        exact .dquant_exist_false val' m x_mty tr e' (findFresh e') _ hfresh (fun d => ih_body d) hex
-  · -- quant none
-    sorry
-  · -- app
-    sorry
-  case case14 mty Γ' val' m' name ty mty hty1 hty2 =>
+        exact .dquant_exist_false val' m x_mty tr e' (findFresh e' _) _ hfresh (findFresh_isSome _ _) (fun d => ih_body d) hex
+  case case10 mty Γ' val' m' name ty mty hty1 ha1 ha2 hty2 =>
     exact (DenotesT.dfvar val' m' name ty mty)
-  case case15 mty Γ' val' m' name ty mty hty1 hty2 =>
+  case case11 mty Γ' val' m' name ty mty hty1 ha1 ha2 hty2 =>
     exact (DenotesT.dop val' m' name ty mty)
 
 /-- Renaming lemma for denoteLExprT: the denotation of `varOpen 0 x e` is the same
@@ -604,11 +617,13 @@ theorem denoteLExprT_rename_fresh
     {Γx : TContext T.IDMeta} {Γy : TContext T.IDMeta}
     (hx : HasTypeT C Γx (LExpr.varOpen 0 x e) mty)
     (hy : HasTypeT C Γy (LExpr.varOpen 0 y e) mty)
+    (hax : annotated (LExpr.varOpen 0 x e))
+    (hay : annotated (LExpr.varOpen 0 y e))
     (a : denoteLMonoTyT ctx x_mty) :
     denoteLExprT C Γy ctx interp (updateVal val y.fst.name x_mty a)
-      (LExpr.varOpen 0 y e) mty hy =
+      (LExpr.varOpen 0 y e) mty hy hay =
     denoteLExprT C Γx ctx interp (updateVal val x.fst.name x_mty a)
-      (LExpr.varOpen 0 x e) mty hx := by
+      (LExpr.varOpen 0 x e) mty hx hax := by
   sorry
 
 /-
@@ -626,122 +641,137 @@ theorem denotesT_complete
     (val : ValuationT ctx)
     {e : LExpr T.mono} {mty : LMonoTy} {v : denoteLMonoTyT ctx mty}
     (hd : DenotesT C ctx interp val e mty v)
-    (h : HasTypeT C Γ e mty) :
-    denoteLExprT C Γ ctx interp val e mty h = v := by
+    (h : HasTypeT C Γ e mty)
+    (ha : annotated e) :
+    denoteLExprT C Γ ctx interp val e mty h ha = v := by
     induction hd generalizing Γ <;> try solve | unfold denoteLExprT; rfl
     case dite_true val m c t e mty vc vt hd1 hcond hd2 ih1 ih2 =>
       unfold denoteLExprT; simp only[]
-      rw[ih1, hcond]; simp; apply ih2
+      rw[ih1 (HasTypeT.ite_cond h), hcond]; simp; apply ih2 (HasTypeT.ite_then h)
     case dite_false val m c t e mty vc vt hd1 hcond hd2 ih1 ih2 =>
       unfold denoteLExprT; simp only[]
-      rw[ih1, hcond]; simp; apply ih2
-    case dabs val m x_mty e_mty e y f hfresh a ih =>
+      rw[ih1 (HasTypeT.ite_cond h), hcond]; simp; apply ih2 (HasTypeT.ite_else h)
+    case dabs val m x_mty e_mty e y f hfresh hyann a ih =>
       unfold denoteLExprT;
       split
       . simp; apply funext; intros x
         rename_i t1 t2 heq
-        -- eliminate cast
         have heq' : x_mty = t1 ∧ e_mty = t2 := by
           cases heq; grind
         cases heq'; subst_vars
         simp only[]
-        rw [denoteLExprT_rename_fresh interp val hfresh (findFresh_fresh e)  (HasTypeT.rename_fresh (findFresh_fresh e) hfresh (h.abs_body (asArrowT_arrow) rfl (findFresh e) (findFresh_fresh e))) (HasTypeT.rename_fresh hfresh (findFresh_fresh e) _)]
-        . apply ih
+        have ha_body := ha.abs_body
+        have ha_vo_ff := annotated_varOpen (k := 0) ha_body (findFresh_isSome e t1)
+        have ha_vo_y := annotated_varOpen (k := 0) ha_body hyann
+        rw [denoteLExprT_rename_fresh interp val hfresh (findFresh_fresh e t1)
+            (HasTypeT.rename_fresh (findFresh_fresh e t1) hfresh (h.abs_body (asArrowT_arrow) rfl (findFresh e t1) (findFresh_fresh e t1)))
+            (HasTypeT.rename_fresh hfresh (findFresh_fresh e t1) _)
+            ha_vo_y ha_vo_ff]
+        . apply ih _ _ ha_vo_y
         . cases h
           apply (HasTypeT.rename_fresh) <;> assumption
       . contradiction
-    case dquant_all val' m' x_mty tr e y bodyBool hfresh hdenotes htrue ih =>
-      -- have hmty := h.quant_ty; subst hmty
+    case dquant_all val' m' x_mty tr e y bodyBool hfresh hyann hdenotes htrue ih =>
       unfold denoteLExprT; simp only []
       congr 1
-      -- Show ∀ d, bodyBool'(d) = true, where bodyBool' uses findFresh e
-      -- Then the Classical.propDecidable branch evaluates to true
-      have hfresh' := findFresh_fresh e
+      have ha_body := ha.quant_body
+      have hfresh' := findFresh_fresh e x_mty
+      have ha_vo_ff := annotated_varOpen (k := 0) ha_body (findFresh_isSome e x_mty)
+      have ha_vo_y := annotated_varOpen (k := 0) ha_body hyann
       have hbody_eq : ∀ d,
-          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
-            (LExpr.varOpen 0 (findFresh e) e) .bool
-            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+            (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = bodyBool d := by
         intro d
         have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
             (LExpr.varOpen 0 y e) .bool :=
-          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e x_mty) hfresh')
         have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
-            hty_y (h.quant_body (findFresh e) hfresh') d
-        have hih := ih d hty_y
+            hty_y (h.quant_body (findFresh e x_mty) hfresh') ha_vo_y ha_vo_ff d
+        have hih := ih d hty_y ha_vo_y
         simp [hrename, hih]
       have hall : ∀ d, (denoteLExprT C _ ctx interp
-          (updateVal val' (findFresh e).fst.name x_mty d)
-          (LExpr.varOpen 0 (findFresh e) e) .bool
-          (h.quant_body (findFresh e) hfresh')).down = true := by
+          (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+          (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = true := by
         intro d; rw [hbody_eq d]; exact htrue d
       simp [hall]
-    case dquant_all_false val' m' x_mty tr e y bodyBool hfresh hdenotes hntrue ih =>
+    case dquant_all_false val' m' x_mty tr e y bodyBool hfresh hyann hdenotes hntrue ih =>
       unfold denoteLExprT; simp only []
       congr 1
-      have hfresh' := findFresh_fresh e
+      have ha_body := ha.quant_body
+      have hfresh' := findFresh_fresh e x_mty
+      have ha_vo_ff := annotated_varOpen (k := 0) ha_body (findFresh_isSome e x_mty)
+      have ha_vo_y := annotated_varOpen (k := 0) ha_body hyann
       have hbody_eq : ∀ d,
-          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
-            (LExpr.varOpen 0 (findFresh e) e) .bool
-            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+            (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = bodyBool d := by
         intro d
         have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
             (LExpr.varOpen 0 y e) .bool :=
-          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e x_mty) hfresh')
         have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
-            hty_y (h.quant_body (findFresh e) hfresh') d
-        have hih := ih d hty_y
+            hty_y (h.quant_body (findFresh e x_mty) hfresh') ha_vo_y ha_vo_ff d
+        have hih := ih d hty_y ha_vo_y
         simp [hrename, hih]
       have hnall : ¬∀ d, (denoteLExprT C _ ctx interp
-          (updateVal val' (findFresh e).fst.name x_mty d)
-          (LExpr.varOpen 0 (findFresh e) e) .bool
-          (h.quant_body (findFresh e) hfresh')).down = true := by
+          (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+          (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = true := by
         rwa [show (∀ d, _ = true) ↔ (∀ d, bodyBool d = true) from
           ⟨fun h d => by rw [← hbody_eq d]; exact h d,
            fun h d => by rw [hbody_eq d]; exact h d⟩]
       simp [hnall]
-    case dquant_exist val' m' x_mty tr e y bodyBool hfresh hdenotes hex ih =>
+    case dquant_exist val' m' x_mty tr e y bodyBool hfresh hyann hdenotes hex ih =>
       unfold denoteLExprT; simp only []
       congr 1
-      have hfresh' := findFresh_fresh e
+      have ha_body := ha.quant_body
+      have hfresh' := findFresh_fresh e x_mty
+      have ha_vo_ff := annotated_varOpen (k := 0) ha_body (findFresh_isSome e x_mty)
+      have ha_vo_y := annotated_varOpen (k := 0) ha_body hyann
       have hbody_eq : ∀ d,
-          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
-            (LExpr.varOpen 0 (findFresh e) e) .bool
-            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+            (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = bodyBool d := by
         intro d
         have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
             (LExpr.varOpen 0 y e) .bool :=
-          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e x_mty) hfresh')
         have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
-            hty_y (h.quant_body (findFresh e) hfresh') d
-        have hih := ih d hty_y
+            hty_y (h.quant_body (findFresh e x_mty) hfresh') ha_vo_y ha_vo_ff d
+        have hih := ih d hty_y ha_vo_y
         simp [hrename, hih]
       have hexf : ∃ d, (denoteLExprT C _ ctx interp
-          (updateVal val' (findFresh e).fst.name x_mty d)
-          (LExpr.varOpen 0 (findFresh e) e) .bool
-          (h.quant_body (findFresh e) hfresh')).down = true := by
+          (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+          (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = true := by
         obtain ⟨d, hd⟩ := hex
         exact ⟨d, by rw [hbody_eq d]; exact hd⟩
       simp [hexf]
-    case dquant_exist_false val' m' x_mty tr e y bodyBool hfresh hdenotes hnex ih =>
+    case dquant_exist_false val' m' x_mty tr e y bodyBool hfresh hyann hdenotes hnex ih =>
       unfold denoteLExprT; simp only []
       congr 1
-      have hfresh' := findFresh_fresh e
+      have ha_body := ha.quant_body
+      have hfresh' := findFresh_fresh e x_mty
+      have ha_vo_ff := annotated_varOpen (k := 0) ha_body (findFresh_isSome e x_mty)
+      have ha_vo_y := annotated_varOpen (k := 0) ha_body hyann
       have hbody_eq : ∀ d,
-          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
-            (LExpr.varOpen 0 (findFresh e) e) .bool
-            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+            (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = bodyBool d := by
         intro d
         have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
             (LExpr.varOpen 0 y e) .bool :=
-          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e x_mty) hfresh')
         have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
-            hty_y (h.quant_body (findFresh e) hfresh') d
-        have hih := ih d hty_y
+            hty_y (h.quant_body (findFresh e x_mty) hfresh') ha_vo_y ha_vo_ff d
+        have hih := ih d hty_y ha_vo_y
         simp [hrename, hih]
       have hnexf : ¬∃ d, (denoteLExprT C _ ctx interp
-          (updateVal val' (findFresh e).fst.name x_mty d)
-          (LExpr.varOpen 0 (findFresh e) e) .bool
-          (h.quant_body (findFresh e) hfresh')).down = true := by
+          (updateVal val' (findFresh e x_mty).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e x_mty) e) .bool
+          (h.quant_body (findFresh e x_mty) hfresh') ha_vo_ff).down = true := by
         rwa [show (∃ d, _ = true) ↔ (∃ d, bodyBool d = true) from
           ⟨fun ⟨d, hd⟩ => ⟨d, by rw [← hbody_eq d]; exact hd⟩,
            fun ⟨d, hd⟩ => ⟨d, by rw [hbody_eq d]; exact hd⟩⟩]
@@ -752,8 +782,26 @@ theorem denotesT_complete
     for every function with a body, evaluating the body equals the interpretation,
     and for every function with a concreteEvalFunction, it agrees with the interpretation. -/
 def OpInterpretation.Consistent {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
-    (_C : LContext T) (_ctx : TypeContextT) (_interp : OpInterpretation _ctx) : Prop :=
-  sorry
+    (C : LContext T) (ctx : TypeContextT) (interp : OpInterpretation ctx) : Prop :=
+  ∀ f ∈ C.functions, ∀ (mty : LMonoTy) (Γ : TContext T.IDMeta) (val : ValuationT ctx),
+    -- If the function has a body, its denotation equals the interpretation
+    (∀ (body : LExpr T.mono) (_h_body : f.body = some body)
+       (hty : HasTypeT C Γ body mty) (ha : annotated body),
+       denoteLExprT C Γ ctx interp val body mty hty ha = interp f.name.name mty) ∧
+    -- If the function has a concrete evaluator, it is consistent with the interpretation
+    (∀ (ev : T.mono.base.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+       (_h_ev : f.concreteEval = some ev)
+       (m : T.mono.base.Metadata) (args : List (LExpr T.mono)) (result : LExpr T.mono)
+       (_h_res : ev m args = some result)
+       (hty : HasTypeT C Γ result mty) (ha : annotated result),
+       denoteLExprT C Γ ctx interp val result mty hty ha = interp f.name.name mty)
+
+def ValidT.{u} {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
+    (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono)
+    (h : HasTypeT C Γ e .bool) (ha : annotated e) : Prop :=
+  ∀ (ctx : TypeContextT.{u}) (interp : OpInterpretation ctx) (val : ValuationT ctx),
+    interp.Consistent C ctx →
+    (denoteLExprT C Γ ctx interp val e .bool h ha).down = true
 
 end LExpr
 end Lambda
