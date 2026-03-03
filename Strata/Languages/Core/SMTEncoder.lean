@@ -253,15 +253,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       if name.isEmpty then
         (s!"$__bv{bvs.length}", 1)
       else
-        -- Check if name already has @N suffix
-        match name.splitOn "@" with
-        | [base] => (base, 1)  -- No suffix, start at 1
-        | parts =>
-            -- Has @-separated parts, check if last part is a number
-            let lastPart := parts.getLast!
-            match lastPart.toNat? with
-            | some n => (String.intercalate "@" parts.dropLast, n + 1)  -- Has numeric suffix, increment it
-            | none => (name, 1)  -- Last part not numeric, treat whole thing as base
+        Encoder.breakDisambiguatedName name
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
     let isUsed := fun candidate =>
       bvs.any (fun (n, _) => n == candidate) ||

@@ -84,10 +84,14 @@ abbrev EncoderM (α) := StateT EncoderState SolverM α
 
 namespace Encoder
 
-/-- SMT-LIB reserved keywords that should not be used as variable names -/
+/-- SMT-LIB reserved keywords that should not be used as variable names.
+    Includes command names, logical connectives, sort names, and theory
+    function symbols that cvc5 disallows shadowing. -/
 def smtReservedKeywords : List String :=
-  ["select", "store", "assert", "check-sat", "declare-const", "declare-fun",
-   "define-fun", "exists", "forall", "let", "and", "or", "not", "ite",
+  -- SMT-LIB reserved words from the DDM parser
+  let parserKeywords := _root_.Strata.reservedKeywords.map (·.2)
+  -- Additional keywords not in the parser list
+  parserKeywords ++ ["select", "store", "and", "or", "not", "ite",
    "true", "false", "Int", "Bool", "Real", "Array", "BitVec",
    -- Theory function symbols that cvc5 disallows shadowing
    "abs", "mod", "div", "to_real", "to_int", "is_int"]
@@ -95,6 +99,34 @@ def smtReservedKeywords : List String :=
 /-- Generate a disambiguated name by appending @suffix -/
 def disambiguateName (baseName : String) (suffix : Nat) : String :=
   s!"{baseName}@{suffix}"
+
+/-- Parse a list of digit characters as a natural number. -/
+def digitsToNat (cs : List Char) : Nat :=
+  cs.foldl (fun n c => n * 10 + (c.toNat - '0'.toNat)) 0
+
+/-- Break a potentially disambiguated name into its base name and next suffix.
+    If the name has an `@N` suffix, returns `(base, N + 1)`.
+    Otherwise returns `(name, 1)`. -/
+def breakDisambiguatedName (name : String) : String × Nat :=
+  let cs := name.toList
+  let digitSuffix := cs.reverse.takeWhile Char.isDigit |>.reverse
+  let rest := cs.reverse.dropWhile Char.isDigit |>.reverse
+  match rest.reverse, digitSuffix with
+  | '@' :: _, _ :: _ => (String.ofList rest.dropLast, digitsToNat digitSuffix + 1)
+  | _, _ => (name, 1)
+
+-- Concrete roundtrip checks
+#guard breakDisambiguatedName (disambiguateName "x" 1) == ("x", 2)
+#guard breakDisambiguatedName (disambiguateName "x" 0) == ("x", 1)
+#guard breakDisambiguatedName (disambiguateName "foo" 42) == ("foo", 43)
+#guard breakDisambiguatedName (disambiguateName "$__bv0" 1) == ("$__bv0", 2)
+-- Non-disambiguated names
+#guard breakDisambiguatedName "x" == ("x", 1)
+#guard breakDisambiguatedName "hello" == ("hello", 1)
+-- Names with @ but no numeric suffix
+#guard breakDisambiguatedName "x@y" == ("x@y", 1)
+-- Names with existing disambiguation
+#guard breakDisambiguatedName "x@1" == ("x", 2)
 
 /-- Find a unique name by trying candidates with increasing suffixes.
     The `isUsed` predicate checks if a candidate name is already taken. -/
