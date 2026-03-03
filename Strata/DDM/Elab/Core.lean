@@ -119,8 +119,6 @@ def applyNArgs (tctx : TypingContext) (e : TypeExpr) (n : Nat) := aux #[] e
 
 end TypingContext
 
-def commaPrec := 30
-
 def elabIdent (stx : Syntax) : String :=
   assert! stx.getKind = `ident
   match stx with
@@ -807,15 +805,17 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     logInternalError argInfo.loc s!"translateArgDeclKind given invalid kind {opInfo.op.name}"
     return default
 
+private def checkIsTypeKind (argLoc : SourceRange) (b : Binding) : ElabM Unit :=
+  match b.kind with
+  | .type _ [] _ => pure ()
+  | .tvar .. | .type .. | .expr _ | .cat _ =>
+    logError argLoc s!"{b.ident} must have type Type instead of {repr b.kind}."
+
 /-- Extract type parameter names from a bindings argument. -/
 def elabTypeParams {n} (initSize : Nat) (args : Vector Tree n)
     (idx : Option (DebruijnIndex n)) : ElabM (List String) := do
   let params ← elabArgIndex initSize args idx fun argLoc b => do
-    match b.kind with
-    | .type _ [] _ => pure ()
-    | .tvar _ _ => pure ()
-    | .type .. | .expr _ | .cat _ =>
-      logError argLoc s!"{b.ident} must have type Type instead of {repr b.kind}."
+    checkIsTypeKind argLoc b
     return b.ident
   pure params.toList
 
@@ -1046,20 +1046,6 @@ private def scopeSepFormat (name : QualifiedIdent)
   | q`Init.SpaceSepBy       => some (.space, Syntax.getSepArgs)
   | q`Init.SpacePrefixSepBy => some (.spacePrefix, Syntax.getArgs)
   | _ => none
-
-/--
-Extract type parameter names from a partially-elaborated typeParams tree.
-Compares the tree's result context against the inherited binding count
-to find newly introduced type bindings.
--/
-private def extractParamNames (tpTree : Tree) : List String :=
-  let tpCtx := tpTree.resultContext
-  let newBindings := tpCtx.bindings.toArray
-  let names := newBindings.filterMap fun (b : Binding) =>
-    match b.kind with
-    | .type _ [] _ => some b.ident
-    | _            => none
-  names.toList
 
 /-- Look up the syntax level for a given arg level
 via the precomputed `argElabIndex`. -/
@@ -1403,8 +1389,10 @@ partial def extractDatatypeInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM
       catElaborator tpCat (.empty gctx0) childStxArgs[tpSL]!
     if !tpSuccess then
       return default
-    let params := extractParamNames tpTree
-    gctxLoop := gctx.define name (.type params none) nameIsNew
+    let params ← collectNewBindingsM 0 tpTree fun argLoc b => do
+      checkIsTypeKind argLoc b
+      return b.ident
+    gctxLoop := gctx.define name (.type params.toList none) nameIsNew
 
   return gctxLoop
 
