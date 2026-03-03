@@ -22,9 +22,28 @@ procedure multiContract(x: int) returns (r: int)
 {
   return x + 5;
 }
+
+procedure earlyReturnCorrect(x: int) returns (r: int)
+  ensures r >= 0
+{
+  if (x < 0) {
+    return -x;
+  }
+  return x;
+}
+
+procedure earlyReturnBuggy(x: int) returns (r: int)
+  ensures r >= 0
+{
+  if (x < 0) {
+    return x;
+//  ^^^^^^^^^ error: assertion does not hold
+  }
+  return x;
+}
 "
 
-#guard_msgs(drop info) in
+#guard_msgs(drop info, error) in
 #eval testInputWithOffset "Contracts" program 5 processLaurelFile
 
 end Strata.Laurel

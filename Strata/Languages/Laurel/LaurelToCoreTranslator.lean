@@ -100,6 +100,8 @@ structure TranslateState where
   ctMap : ConstrainedTypeMap := {}
   /-- Pre-translated constraints -/
   tcMap : TranslatedConstraintMap := {}
+  /-- Postconditions to assert at early return points (soundness fix) -/
+  postconds : List (String × Core.Expression.Expr) := []
 
 /-- The translation monad: state over Id -/
 abbrev TranslateM := StateT TranslateState Id
@@ -662,16 +664,20 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
         let coreArgs ← args.mapM (fun a => translateExpr env a)
         pure (env, [Core.Statement.call [] name (expandArrayArgs env args coreArgs) md])
   | .Return valueOpt =>
+      -- Early returns need postcondition asserts before assume false,
+      -- because assume false makes the path vacuously true and Core's VCG
+      -- won't check postconditions on it. See PR #385 discussion.
+      let postAsserts := s.postconds.map fun (label, expr) => Core.Statement.assert label expr md
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           let ident := ⟨outParam.name, ()⟩
           let coreExpr ← translateExpr env value
           let assignStmt := Core.Statement.set ident coreExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          pure (env, [assignStmt, noFallThrough])
+          pure (env, arrayElemAssumes ++ [assignStmt] ++ postAsserts ++ [noFallThrough])
       | none, _ =>
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          pure (env, [noFallThrough])
+          pure (env, arrayElemAssumes ++ postAsserts ++ [noFallThrough])
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
@@ -759,6 +765,8 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
       | some expr => some (s!"{p.name}_constraint", { expr, md := p.type.md })
       | none => none
   let postconditions := postconditions ++ outputConstraints
+  -- Store postconditions in state for early return assertion (soundness fix)
+  modify fun s => { s with postconds := postconditions.map fun (label, check) => (label, check.expr) }
   let modifies : List Core.Expression.Ident := []
   let body : List Core.Statement ←
     match proc.body with
