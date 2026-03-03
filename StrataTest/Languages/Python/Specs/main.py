@@ -21,5 +21,5 @@ def main_function(x : MainClass):
     pass
 
 def kwargs_function(**kw: str) -> Any:
-    assert isinstance(kw["name"], str), f'Expected name to be str'
-    assert kw["count"] >= 1, f'Expected count >= 1'
+    assert isinstance(kw["name"], str), 'Expected name to be str'
+    assert kw["count"] >= 1, 'Expected count >= 1'

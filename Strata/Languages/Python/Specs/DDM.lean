@@ -337,7 +337,7 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDe
     postconditions := postconditions.map (·.fromDDM)
   }
 
-private partial def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
+private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
   let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩ ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ := d
   {
     loc := ann

@@ -795,9 +795,14 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
     specWarning s.ann "skipped AnnAssign in function body"
   | .Expr .. =>
     specWarning s.ann "skipped Expr in function body"
-  | .Assert _ test _msg =>
+  | .Assert _ test msg =>
     let formula ← transAssertExpr test
-    let message := toString (eformat test.toAst)
+    let message ← match msg.val with
+      | some (.Constant _ (.ConString _ str) _) => pure str.val
+      | none => pure ""
+      | some e =>
+        specWarning e.ann "assert message is not a string literal"
+        pure ""
     modify fun s => { s with
       assertions := s.assertions.push { message, formula }
     }

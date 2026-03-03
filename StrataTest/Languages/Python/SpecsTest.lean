@@ -122,8 +122,8 @@ function "kwargs_function"{
   return: ident("typing.Any")
   overload: false
   preconditions: [
-    isinstance(kw[name], "str") "Python.Call(Python.Name(\"isinstance\", Python.Load(););, Python.Subscript(Python.Name(\"kw\", Python.Load(););, Python.Constant(Python.ConString(\"name\");, );, Python.Load(););Python.Name(\"str\", Python.Load(););, );"
-    value_ge(kw[count], 1) "Python.Compare(Python.Subscript(Python.Name(\"kw\", Python.Load(););, Python.Constant(Python.ConString(\"count\");, );, Python.Load(););, Python.GtE();, Python.Constant(Python.ConPos(1);, ););"
+    isinstance(kw[name], "str") "Expected name to be str"
+    value_ge(kw[count], 1) "Expected count >= 1"
   ]
   postconditions: [
   ]
