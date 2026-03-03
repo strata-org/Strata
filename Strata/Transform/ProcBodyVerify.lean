@@ -7,6 +7,7 @@
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Identifiers
+import Strata.Transform.CoreTransform
 
 /-! # Procedure Body Verification Transformation
 
@@ -47,7 +48,7 @@ block "verify_P" {
 
 namespace Core.ProcBodyVerify
 
-open Core Imperative
+open Core Imperative Transform
 
 /-- Convert preconditions to assume statements -/
 def requiresToAssumes (preconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
@@ -64,7 +65,7 @@ def ensuresToAsserts (postconditions : ListMap CoreLabel Procedure.Check) : List
     | .Default => some (Statement.assert label check.expr check.md)
 
 /-- Main transformation: convert a procedure to a verification statement -/
-def procToVerifyStmt (proc : Procedure) : Statement :=
+def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement := do
   let procName := proc.header.name.name
   let bodyLabel := s!"body_{procName}"
   let verifyLabel := s!"verify_{procName}"
@@ -78,12 +79,12 @@ def procToVerifyStmt (proc : Procedure) : Statement :=
     Statement.init id (Lambda.LTy.forAll [] ty) none #[]
   
   -- Initialize modified globals: old_g (no RHS), then g := old_g
-  let modifiesInits := proc.spec.modifies.flatMap fun g =>
+  let modifiesInits ← proc.spec.modifies.mapM fun g => do
     let oldG := CoreIdent.mkOld g.name
-    -- TODO: Get actual type from program context
-    let gTy := Lambda.LTy.forAll [] Lambda.LMonoTy.int -- placeholder
-    [ Statement.init oldG gTy none #[],
-      Statement.init g gTy (some (.fvar () oldG none)) #[] ]
+    let gTy ← getIdentTy! p g
+    return [ Statement.init oldG gTy none #[],
+             Statement.init g gTy (some (.fvar () oldG none)) #[] ]
+  let modifiesInits := modifiesInits.flatten
   
   -- Convert preconditions to assumes
   let assumes := requiresToAssumes proc.spec.preconditions
@@ -96,6 +97,6 @@ def procToVerifyStmt (proc : Procedure) : Statement :=
   
   -- Combine all parts
   let allStmts := inputInits ++ outputInits ++ modifiesInits ++ assumes ++ [bodyBlock] ++ asserts
-  Stmt.block verifyLabel allStmts #[]
+  return Stmt.block verifyLabel allStmts #[]
 
 end Core.ProcBodyVerify
