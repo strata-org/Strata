@@ -20,8 +20,6 @@ function "dict_function" {
   ]
   kwonly: [
   ]
-  kwargs: [
-  ]
   return: ident("typing.Any")
   overload: false
   preconditions: [
@@ -34,8 +32,6 @@ function "list_function" {
     x : ident("typing.List", ident("builtins.int")) [hasDefault: false]
   ]
   kwonly: [
-  ]
-  kwargs: [
   ]
   return: ident("typing.Any")
   overload: false
@@ -50,8 +46,6 @@ function "sequence_function" {
   ]
   kwonly: [
   ]
-  kwargs: [
-  ]
   return: ident("typing.Any")
   overload: false
   preconditions: [
@@ -64,8 +58,6 @@ function "base_function"{
     x : ident("basetypes.BaseClass") [hasDefault: false]
   ]
   kwonly: [
-  ]
-  kwargs: [
   ]
   return: ident("typing.Any")
   overload: false
@@ -86,8 +78,6 @@ class "MainClass" {
     ]
     kwonly: [
     ]
-    kwargs: [
-    ]
     return: ident("typing.Any")
     overload: false
     preconditions: [
@@ -102,8 +92,6 @@ function "main_function"{
   ]
   kwonly: [
   ]
-  kwargs: [
-  ]
   return: ident("typing.Any")
   overload: false
   preconditions: [
@@ -116,9 +104,7 @@ function "kwargs_function"{
   ]
   kwonly: [
   ]
-  kwargs: [
-    kwargs kw : ident("builtins.int")
-  ]
+  kwargs: kw : ident("builtins.int")
   return: ident("typing.Any")
   overload: false
   preconditions: [

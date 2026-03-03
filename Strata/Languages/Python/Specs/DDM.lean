@@ -56,7 +56,7 @@ op mkArgDecl (name : Ident, argType : SpecType, hasDefault : Bool) : ArgDecl =>
 
 category KwargsDecl;
 op mkKwargsDecl(name : Ident, kwargsType : SpecType) : KwargsDecl =>
-  "kwargs " name " : " kwargsType "\n";
+  "kwargs" ": " name " : " kwargsType "\n";
 
 category SpecExprDecl;
 op placeholderExpr() : SpecExprDecl =>
@@ -86,7 +86,7 @@ category FunDecl;
 op mkFunDecl (name : Str,
               args : Seq ArgDecl,
               kwonly : Seq ArgDecl,
-              kwargs : Seq KwargsDecl,
+              kwargs : Option KwargsDecl,
               returnType : SpecType,
               isOverload : Bool,
               preconditions : Seq Assertion,
@@ -99,9 +99,7 @@ op mkFunDecl (name : Str,
     "kwonly" ": " "[\n"
     indent(2, kwonly)
     "]\n"
-    "kwargs" ": " "[\n"
-    indent(2, kwargs)
-    "]\n"
+    kwargs
     "return" ": " returnType "\n"
     "overload" ": " isOverload "\n"
     "preconditions" ": " "[\n"
@@ -219,8 +217,9 @@ private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
     (args := ⟨.none, d.args.args.map (·.toDDM)⟩)
     (kwonly := ⟨.none, d.args.kwonly.map (·.toDDM)⟩)
     (kwargs := ⟨.none, match d.args.kwargs with
-      | none => #[]
-      | some (name, tp) => #[.mkKwargsDecl .none ⟨.none, name⟩ tp.toDDM]⟩)
+      | none => none
+      | some (name, tp) =>
+        some (.mkKwargsDecl .none ⟨.none, name⟩ tp.toDDM)⟩)
     (returnType := d.returnType.toDDM)
     (isOverload := ⟨.none, d.isOverload⟩)
     (preconditions := ⟨.none, d.preconditions.map (·.toDDM)⟩)
@@ -316,14 +315,13 @@ private def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assert
   { message := message, formula := formula.fromDDM }
 
 private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
-  let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩ ⟨_, kwargs⟩
-                 returnType ⟨_, isOverload⟩ ⟨_, preconditions⟩
-                 ⟨_, postconditions⟩ := d
+  let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
+                 ⟨_, kwargs⟩ returnType ⟨_, isOverload⟩
+                 ⟨_, preconditions⟩ ⟨_, postconditions⟩ := d
   let kwargsOpt : Option (String × Specs.SpecType) :=
-    if h : kwargs.size > 0 then
-      let .mkKwargsDecl _ ⟨_, kn⟩ tp := kwargs[0]
-      some (kn, tp.fromDDM)
-    else none
+    match kwargs with
+    | some (.mkKwargsDecl _ ⟨_, kn⟩ tp) => some (kn, tp.fromDDM)
+    | none => none
   {
     loc := loc
     nameLoc := nameLoc
