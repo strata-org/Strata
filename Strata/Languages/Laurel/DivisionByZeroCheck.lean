@@ -16,9 +16,6 @@ every division or modulo operation (`Div`, `Mod`, `DivT`, `ModT`).
 
 namespace Strata.Laurel
 
-private def emptyMd : Imperative.MetaData Core.Expression := #[]
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, emptyMd⟩
-
 /-- Returns true for operations that require a non-zero divisor. -/
 private def isDivisionOp : Operation → Bool
   | .Div | .Mod | .DivT | .ModT => true
@@ -42,10 +39,11 @@ partial def collectDivChecks (expr : StmtExprMd) : List StmtExprMd :=
       | [_, divisor] => childChecks ++ [mkDivByZeroAssert divisor]
       | _ => childChecks
     else childChecks
-  | .IfThenElse cond thenBr elseBr =>
-    collectDivChecks cond ++
-    collectDivChecks thenBr ++
-    (elseBr.map collectDivChecks |>.getD [])
+  | .IfThenElse cond _ _ =>
+    -- Only collect checks from the condition; branch checks are inserted
+    -- inside each branch by insertDivChecksStmt to avoid false positives
+    -- on non-taken branches.
+    collectDivChecks cond
   | .Block stmts _ => stmts.flatMap collectDivChecks
   | .Assign _ value => collectDivChecks value
   | .StaticCall _ args => args.flatMap collectDivChecks
@@ -55,10 +53,10 @@ partial def collectDivChecks (expr : StmtExprMd) : List StmtExprMd :=
   | .PureFieldUpdate target _ newVal =>
     collectDivChecks target ++ collectDivChecks newVal
   | .LocalVariable _ _ init => init.map collectDivChecks |>.getD []
-  | .While cond invs _ body =>
-    collectDivChecks cond ++
-    invs.flatMap collectDivChecks ++
-    collectDivChecks body
+  | .While cond _ _ _ =>
+    -- Only collect checks from the condition; body checks are inserted
+    -- inside the body by insertDivChecksStmt.
+    collectDivChecks cond
   | .Assert cond => collectDivChecks cond
   | .Assume cond => collectDivChecks cond
   | .Forall _ _ body => collectDivChecks body

@@ -89,6 +89,28 @@ deterministic
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
+/-! ## Unit test: division inside if-then-else branch is not hoisted -/
+
+def ifBranchDivProgram : String := r"
+procedure ifBranchDiv(x: int, b: bool) {
+  if (b) {
+    var z: int := 10 / x;
+  }
+}
+"
+
+/--
+info: procedure ifBranchDiv(x: int, b: bool) returns ⏎
+()
+deterministic
+{ if b then { assert x != 0; var z: int := 10 / x } }
+-/
+#guard_msgs in
+#eval! do
+  let program ← parseLaurelAndInsertDivChecks ifBranchDivProgram
+  for proc in program.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+
 /-! ## End-to-end test: safe division (no errors) and unsafe division (error) -/
 
 def processLaurelWithDivChecks (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
