@@ -16,6 +16,15 @@ def PyThonLaurelprelude :=
 #strata
 program Core;
 
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Exceptions
+// TODO: Formalize the exception hierarchy here:
+// https://docs.python.org/3/library/exceptions.html#exception-hierarchy
+// We use the name "Error" to stand for Python's Exceptions +
+// our own special indicator, Unimplemented which is an artifact of
+// Strata that indicates that our models is partial.
+
 datatype Error () {
   NoError (),
   TypeError (Type_msg : string),
@@ -26,12 +35,23 @@ datatype Error () {
   IndexError (IndexError_msg : string)
 };
 
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Any type modelling for Python
+// We model Any type of Python as an inductive type in Strata,
+// where the value of each type is wrapped around by a constructor.
+// In the PythonToLaurel translator, all user-defined variables
+// and input/outputs of all user-defined functions are
+// translated into variables of this Any type.
+// We also add exception constructor for Any type to catch
+// errors in the functions that model Python operators that
+// appears later in this prelude.
+// In this prelude, we model datetime as a single int and assume
+// that the conversion from a string constant is handled by the translator.
+
 type DictStrAny;
-
-// Any and ListAny types
-
-forward type ListAny;
 forward type Any;
+forward type ListAny;
 
 mutual
 datatype Any () {
@@ -54,11 +74,10 @@ datatype ListAny () {
 
 end;
 
-datatype Box () {
-  BoxInt(intVal: Any)
-};
+// /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of variables
 
-// Accessible to users
 inline function isBool (v: Any) : Any {
   from_bool (Any..isfrom_bool(v))
 }
@@ -99,53 +118,11 @@ inline function isInstance_of_Float (v: Any) : Any {
   from_bool (Any..isfrom_float(v) || Any..isfrom_int(v) || Any..isfrom_bool(v))
 }
 
-inline function Any_to_bool (v: Any) : bool {
-  if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
-  if (Any..isfrom_none(v)) then false else
-  if (Any..isfrom_string(v)) then !(Any..as_string!(v) == "") else
-  if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
-  false
-  //TOBE MORE
-}
+// /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of errors
+// /////////////////////////////////////////////////////////////////////////////////////
 
-function to_string(a: Any) : string;
-
-function to_string_any(a: Any) : Any {
-  from_string(to_string(a))
-}
-
-function to_int(a: Any) : int;
-
-function to_int_any(a: Any) : Any {
-  from_int(to_int(a))
-}
-
-function datetime_strptime(dtstring: Any, format: Any) : Any;
-
-axiom [datetime_tostring_cancel]: forall dt: Any, format: Any ::{datetime_strptime(to_string_any(dt), format)}
-  datetime_strptime(to_string_any(dt), format) == dt;
-
-// ListAny functions
-function List_contains (l : ListAny, x: Any) : bool;
-function List_len (l : ListAny) : int;
-function List_extend (l1 : ListAny, l2: ListAny) : ListAny;
-function List_append (l: ListAny, x: Any) : ListAny;
-function List_get_func (l : ListAny, i : int) : Any;
-function List_set_func (l : ListAny, i : int, v: Any) : ListAny;
-function List_reverse (l: ListAny) : ListAny;
-function List_index! (l: ListAny, v: Any): int;
-function List_index (l: ListAny, v: Any): int;
-function List_repeat (l: ListAny, n: int): ListAny;
-function List_insert (l: ListAny, i: int, v: Any): ListAny;
-function List_remove (l: ListAny, v: Any): ListAny;
-function List_pop (l: ListAny, i: int): ListAny;
-function List_lt (l1: ListAny, L2: ListAny): bool;
-function List_le (l1: ListAny, L2: ListAny): bool;
-function List_gt (l1: ListAny, L2: ListAny): bool;
-function List_ge (l1: ListAny, L2: ListAny): bool;
-
-
-// Accessible to users
 inline function isTypeError (e: Error) : Any {
   from_bool (Error..isTypeError(e))
 }
@@ -170,9 +147,62 @@ inline function isError (e: Error) : bool {
   ! Error..isNoError(e)
 }
 
+// /////////////////////////////////////////////////////////////////////////////////////
+//The following function convert Any type to bool
+//based on the Python definition of truthiness for basic types
+// https://docs.python.org/3/library/stdtypes.html
+// /////////////////////////////////////////////////////////////////////////////////////
+
+inline function Any_to_bool (v: Any) : bool
+  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v));
+{
+  if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
+  if (Any..isfrom_none(v)) then false else
+  if (Any..isfrom_string(v)) then !(Any..as_string!(v) == "") else
+  if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  false
+  //WILL BE ADDED
+}
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// ListAny functions
+// Those functions are opaque until Strata support recursive functions
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function List_contains (l : ListAny, x: Any) : bool;
+function List_len (l : ListAny) : int;
+function List_extend (l1 : ListAny, l2: ListAny) : ListAny;
+function List_append (l: ListAny, x: Any) : ListAny;
+function List_get_func (l : ListAny, i : int) : Any;
+function List_set_func (l : ListAny, i : int, v: Any) : ListAny;
+function List_reverse (l: ListAny) : ListAny;
+function List_index! (l: ListAny, v: Any): int;
+function List_index (l: ListAny, v: Any): int;
+function List_repeat (l: ListAny, n: int): ListAny;
+function List_insert (l: ListAny, i: int, v: Any): ListAny;
+function List_remove (l: ListAny, v: Any): ListAny;
+function List_pop (l: ListAny, i: int): ListAny;
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// DictStrAny functions what support constructing DictStrAny value in the translator
+// Those functions are opaque until Strata support recursive functions
+// /////////////////////////////////////////////////////////////////////////////////////
+function DictStrAny_empty () : DictStrAny;
+function DictStrAny_insert (d: DictStrAny, key: string, v: Any) : DictStrAny;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// ListAny functions
+// Those functions are opaque until Strata support recursive functions
+// /////////////////////////////////////////////////////////////////////////////////////
+
 function is_IntReal (v: Any) : bool;
 function Any_real_to_int (v: Any) : int;
-// to be extended
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Python treats some values of different types to be equivalent
+// This function models that behavior
+// /////////////////////////////////////////////////////////////////////////////////////
 inline function normalize_any (v : Any) : Any {
   if v == from_bool(true) then from_int(1)
   else (if v == from_bool(false) then from_int(0) else
@@ -180,19 +210,28 @@ inline function normalize_any (v : Any) : Any {
         v)
 }
 
+// /////////////////////////////////////////////////////////////////////////////////////
+// MODELLING PYTHON OPERATIONS
+// Note that there is no official document that define the semantic of Python operations
+// The model of them in this prelude is based on experiments of basic types
+// /////////////////////////////////////////////////////////////////////////////////////
 
-function TypeOf (v: Any) : string;
-function DictStrAny_empty () : DictStrAny;
-function DictStrAny_insert (d: DictStrAny, key: string, v: Any) : DictStrAny;
 
-
+// /////////////////////////////////////////////////////////////////////////////////////
+// This function convert an int to a real
+// Need to connect to an SMT function
 function int_to_real (i: int) : real;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Converting bool to int or real
+// Used to in Python binary operators' modelling
 inline function bool_to_int (bval: bool) : int {if bval then 1 else 0}
 inline function bool_to_real (b: bool) : real {if b then 1.0 else 0.0}
 
-function string_repeat (s: string, i: int) : string;
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python unary operations
+// /////////////////////////////////////////////////////////////////////////////////////
 
-// Unary operations
 inline function PNeg (v: Any) : Any
 {
   if Any..isexception(v) then v
@@ -224,11 +263,10 @@ inline function PNot (v: Any) : Any
 }
 
 
-//Binary operations
-function string_lt (s1: string, s2: string) : bool;
-function string_le (s1: string, s2: string) : bool;
-function string_gt (s1: string, s2: string) : bool;
-function string_ge (s1: string, s2: string) : bool;
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python binary operations
+// /////////////////////////////////////////////////////////////////////////////////////
+
 inline function PAdd (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
@@ -291,6 +329,8 @@ inline function PSub (v1: Any, v2: Any) : Any
 }
 
 
+function string_repeat (s: string, i: int) : string;
+
 inline function PMul (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
@@ -328,7 +368,7 @@ inline function PMul (v1: Any, v2: Any) : Any
     exception(UndefinedError ("Operand Type is not defined"))
 }
 
-inline function PDiv (v1: Any, v2: Any) : Any
+inline function PFloorDiv (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) then
@@ -337,21 +377,24 @@ inline function PDiv (v1: Any, v2: Any) : Any
     from_int(bool_to_int(Any..as_bool!(v1)) div Any..as_int!(v2))
   else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
     from_int(Any..as_int!(v1) div bool_to_int(Any..as_bool!(v2)))
-  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) then
-    from_float(bool_to_real(Any..as_bool!(v1)) div Any..as_float!(v2))
-  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) then
-    from_float(Any..as_float!(v1) div bool_to_real(Any..as_bool!(v2)))
   else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) then
     from_int(Any..as_int!(v1) div Any..as_int!(v2))
-  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) then
-    from_float(int_to_real(Any..as_int!(v1)) div Any..as_float!(v2))
-  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) then
-    from_float(Any..as_float!(v1) div int_to_real(Any..as_int!(v2)) )
-  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) then
-    from_float(Any..as_float!(v1) div Any..as_float!(v2))
   else
     exception(UndefinedError ("Operand Type is not defined"))
 }
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python comparision operations
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function string_lt (s1: string, s2: string) : bool;
+function string_le (s1: string, s2: string) : bool;
+function string_gt (s1: string, s2: string) : bool;
+function string_ge (s1: string, s2: string) : bool;
+function List_lt (l1: ListAny, L2: ListAny): bool;
+function List_le (l1: ListAny, L2: ListAny): bool;
+function List_gt (l1: ListAny, L2: ListAny): bool;
+function List_ge (l1: ListAny, L2: ListAny): bool;
 
 inline function PLt (v1: Any, v2: Any) : Any
 {
@@ -477,17 +520,6 @@ inline function PGe (v1: Any, v2: Any) : Any
     exception(UndefinedError ("Operand Type is not defined"))
 }
 
-
-inline function PAnd (v1: Any, v2: Any) : Any
-{
-  from_bool(Any_to_bool (v1) && Any_to_bool (v2))
-}
-
-inline function POr (v1: Any, v2: Any) : Any
-{
-  from_bool(Any_to_bool (v1) || Any_to_bool (v2))
-}
-
 inline function PEq (v: Any, v': Any) : Any {
   from_bool(normalize_any(v) == normalize_any (v'))
 }
@@ -496,18 +528,51 @@ inline function PNEq (v: Any, v': Any) : Any {
   from_bool(normalize_any(v) != normalize_any (v'))
 }
 
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python Boolean operations And and Or
+// /////////////////////////////////////////////////////////////////////////////////////
+
+inline function PAnd (v1: Any, v2: Any) : Any
+  requires Any..isfrom_bool(v1) && Any..isfrom_bool(v2);
+{
+  from_bool(Any_to_bool (v1) && Any_to_bool (v2))
+}
+
+inline function POr (v1: Any, v2: Any) : Any
+  requires Any..isfrom_bool(v1) && Any..isfrom_bool(v2);
+{
+  from_bool(Any_to_bool (v1) || Any_to_bool (v2))
+}
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of other Python operations, currrently unsupported
+// /////////////////////////////////////////////////////////////////////////////////////
 inline function PPow (v1: Any, v2: Any) : Any
 {
-  from_none()
+  exception(UnimplementedError ("Pow operator is not suuported"))
 }
 
 inline function PMod (v1: Any, v2: Any) : Any
 {
-  from_none()
+  exception(UnimplementedError ("Mod operator is not suuported"))
 }
 
 
-// Python proc
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling some datetime-related Python operations, for testing purpose
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function to_string(a: Any) : string;
+
+function to_string_any(a: Any) : Any {
+  from_string(to_string(a))
+}
+
+function datetime_strptime(dtstring: Any, format: Any) : Any;
+
+axiom [datetime_tostring_cancel]: forall dt: Any ::
+  datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)
 spec {
@@ -558,6 +623,10 @@ spec{
   delta := from_int ((((days_i * 24) + hours_i) * 3600) * 1000000);
 };
 
+// /////////////////////////////////////////////////////////////////////////////////////
+// For testing purpose
+// /////////////////////////////////////////////////////////////////////////////////////
+
 procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
 spec {
   requires [req_name_is_foo]: req_name == from_string("foo");
@@ -572,9 +641,13 @@ spec {
   assume [assume_maybe_except_none]: (Error..isNoError(maybe_except));
 };
 
-procedure test_helper_create_client(name : Any) returns (result : Any);
-
 procedure print(msg : Any) returns ();
+
+//This is only used to overwrite the Box datatype of Laurel prelude
+//WILL BE REMOVED
+datatype Box () {
+  BoxInt(intVal: Any)
+};
 
 #end
 

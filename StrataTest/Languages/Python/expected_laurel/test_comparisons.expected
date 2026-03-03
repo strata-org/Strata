@@ -1,15 +1,25 @@
 
 ==== Verification Results ====
-ret_type: ✅ pass (at byte 20590)
-ret_type: ✅ pass (at byte 21023)
-ret_pos: ✅ pass (at byte 21521)
-assert_name_is_foo: ✅ pass (at byte 22323)
-assert_opt_name_none_or_str: ✅ pass (at byte 22386)
-assert_opt_name_none_or_bar: ✅ pass (at byte 22490)
-ensures_maybe_except_none: ✅ pass (at byte 22246)
+PAnd_body_calls_Any_to_bool_0: ✅ pass
+PAnd_body_calls_Any_to_bool_1: ✅ pass
+POr_body_calls_Any_to_bool_0: ✅ pass
+POr_body_calls_Any_to_bool_1: ✅ pass
+ret_type: ✅ pass (at byte 25099)
+ret_type: ✅ pass (at byte 25532)
+ret_pos: ✅ pass (at byte 26030)
+assert_name_is_foo: ✅ pass (at byte 27034)
+assert_opt_name_none_or_str: ✅ pass (at byte 27097)
+assert_opt_name_none_or_bar: ✅ pass (at byte 27201)
+ensures_maybe_except_none: ✅ pass (at byte 26957)
+assert_assert(89)_calls_Any_to_bool_0: ✅ pass (at line 5, col 4)
 assert(89): ✅ pass (at line 5, col 4)
+assert_assert(190)_calls_Any_to_bool_0: ✅ pass (at line 9, col 4)
 assert(190): ✅ pass (at line 9, col 4)
+assert_assert(328)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
 assert(328): ✅ pass (at line 14, col 4)
+assert_assert(385)_calls_Any_to_bool_0: ✅ pass (at line 15, col 4)
 assert(385): ✅ pass (at line 15, col 4)
+assert_assert(439)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
 assert(439): ✅ pass (at line 16, col 4)
+assert_assert(506)_calls_Any_to_bool_0: ✅ pass (at line 17, col 4)
 assert(506): ✅ pass (at line 17, col 4)

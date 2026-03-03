@@ -1,18 +1,22 @@
 
 ==== Verification Results ====
-ret_type: ✅ pass (at byte 20590)
-ret_type: ✅ pass (at byte 21023)
-ret_pos: ✅ pass (at byte 21521)
-assert_name_is_foo: ✅ pass (at byte 22323)
-assert_opt_name_none_or_str: ✅ pass (at byte 22386)
-assert_opt_name_none_or_bar: ✅ pass (at byte 22490)
-ensures_maybe_except_none: ✅ pass (at byte 22246)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 21979)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 22041)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 22144)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 21979)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 22041)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 22144)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 21979)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 22041)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 22144)
+PAnd_body_calls_Any_to_bool_0: ✅ pass
+PAnd_body_calls_Any_to_bool_1: ✅ pass
+POr_body_calls_Any_to_bool_0: ✅ pass
+POr_body_calls_Any_to_bool_1: ✅ pass
+ret_type: ✅ pass (at byte 25099)
+ret_type: ✅ pass (at byte 25532)
+ret_pos: ✅ pass (at byte 26030)
+assert_name_is_foo: ✅ pass (at byte 27034)
+assert_opt_name_none_or_str: ✅ pass (at byte 27097)
+assert_opt_name_none_or_bar: ✅ pass (at byte 27201)
+ensures_maybe_except_none: ✅ pass (at byte 26957)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 26690)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 26752)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 26855)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 26690)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 26752)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 26855)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 26690)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 26752)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 26855)

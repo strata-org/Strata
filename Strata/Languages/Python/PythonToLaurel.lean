@@ -261,7 +261,7 @@ def resolveDispatch (ctx : TranslationContext)
 
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
-  ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName
+  ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName || ctx.preludeFunctions.contains funcName
 
 mutual
 
@@ -308,7 +308,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Add _ => .ok "PAdd"
       | .Sub _ => .ok "PSub"
       | .Mult _ => .ok "PMul"
-      | .FloorDiv _ => .ok "PDiv"  -- Python // maps to Laurel Div
+      | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
       | .BitAnd _ => .ok "PBitAnd"
       -- Unsupported for now
