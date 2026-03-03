@@ -15,11 +15,29 @@ import Std.Data.HashMap
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Encoder.lean)
-This differs from Cedar's implementation in that we save the problem to a string instead of piping it to the solver
-as we construct the problem.
 
 This file defines the encoder, which translates a list of boolean Terms
 into a list of SMT assertions. Term encoding is trusted.
+
+## Architecture
+
+The encoding pipeline has two layers:
+
+1. **Solver layer** (`SolverM`): A stateful monad that wraps the solver process
+   and caches `Term → SMT-LIB string` and `TermType → SMT-LIB string`
+   conversions. All string formatting lives in the Solver layer.
+
+2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages
+   A-normal form decomposition purely in the `Term` domain:
+   - **Term → abbreviated Term cache** (`terms`): Maps each `Term` to its
+     abbreviated `Term.var` reference (e.g., a variable named `t0`, `t1`).
+     Large terms are broken into small `define-fun` definitions with short
+     names, and the Solver handles all `Term → String` conversion.
+   - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
+     their abbreviated identifiers (e.g., `f0`, `f1`).
+
+The Encoder works purely with `Term` values. The `SolverM` layer handles all
+string conversion and caching when emitting commands.
 
  We will use the following type representations for primitive types:
  * `TermType.bool`:     builtin SMT `Bool` type
@@ -51,13 +69,14 @@ namespace Strata.SMT
 open Solver
 
 structure EncoderState where
-  terms : Std.HashMap Term String
-  types : Std.HashMap TermType String
+  /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `t0`).
+      This is a cache after converting terms to A-Normal Form. -/
+  terms : Std.HashMap Term Term
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f0`, `f1`). -/
   ufs   : Std.HashMap UF String
 
 def EncoderState.init : EncoderState where
   terms := {}
-  types := {}
   ufs := {}
 
 abbrev EncoderM (α) := StateT EncoderState SolverM α
@@ -67,111 +86,54 @@ namespace Encoder
 
 def termId (n : Nat)                    : String := s!"t{n}"
 def ufId (n : Nat)                      : String := s!"f{n}"
-def enumId (E : String) (n : Nat)       : String := s!"{E}_m{n}"
 
-def typeNum : EncoderM Nat := do return (← get).types.size
 def termNum : EncoderM Nat := do return (← get).terms.size
 def ufNum   : EncoderM Nat := do return (← get).ufs.size
 
 def declareType (id : String) (mks : List String) : EncoderM String := do
-  declareDatatype id [] mks
+  let constrs := mks.map fun name => SMTConstructor.mk name []
+  declareDatatype id [] constrs
   return id
 
-def encodeType (ty : TermType) : EncoderM String := do
-  if let (.some enc) := (← get).types.get? ty then return enc
-  let enc ←
-    match ty with
-    | .bool             => return "Bool"
-    | .int              => return "Int"
-    | .real             => return "Real"
-    | .string           => return "String"
-    | .regex            => return "RegLan"
-    | .trigger          => return "Trigger"
-    | .bitvec n         => return s!"(_ BitVec {n})"
-    | .option oty       => return s!"(Option {← encodeType oty})"
-    | .constr id targs  =>
-      -- let targs' ← targs.mapM (fun t => encodeType t)
-      let targs' ← go targs
-      let targs' := Std.Format.joinSep targs' f!" "
-      if targs.isEmpty then return id else return s!"({id} {targs'})"
-  -- modifyGet λ state => (enc, {state with types := state.types.insert ty enc})
-  where go (ts : List TermType) : EncoderM (List String) := do
-  match ts with
-  | [] => return []
-  | t1 :: trest => do
-    let t1' ← encodeType t1
-    let trest' ← go trest
-    return (t1' :: trest')
-
-/-
-String printing has to be done carefully in the presence of
-non-ASCII characters.  See the SMTLib standard for the details:
-https://smtlib.cs.uiowa.edu/theories-UnicodeStrings.shtml. Here,
-we're assuming ASCII strings for simplicity.
--/
-def encodeString (s : String) : String :=
-  s!"\"{s}\""
-
-def encodeInt (i : Int) : String :=
-  s!"{i}"
-
-def encodeBitVec {n : Nat} (bv : _root_.BitVec n) : String :=
-  s!"(_ bv{bv.toNat} {n})"
-
-/--
-A constant in the theory of unicode strings denoting the set of all strings of
-length 1.
-No enclosing parentheses should be used here.
--/
-def encodeReAllChar : String :=
-  s!"re.allchar"
-
-/--
-A constant in the theory of unicode strings denoting the set of all strings.
-No enclosing parentheses should be used here.
--/
-def encodeReAll : String :=
-  s!"re.all"
-
-/--
-A constant in the theory of unicode strings denoting the empty set of strings.
-No enclosing parentheses should be used here.
--/
-def encodeReNone : String :=
-  s!"re.none"
-
-def defineTerm (inBinder : Bool) (tyEnc tEnc : String) : EncoderM String := do
+/-- Emit a `define-fun` for a term in ANF. When not in a binder, emits a
+    `define-fun` with the given body `Term` and returns a `Term.var` reference
+    to the abbreviated name. When in a binder, just returns the body term. -/
+def defineTerm (inBinder : Bool) (ty : TermType) (body : Term) : EncoderM Term := do
   if inBinder
-  then return tEnc
+  then return body
   else do
     let id := termId (← termNum)
-    defineFun id [] tyEnc tEnc
-    return id
+    Solver.defineFunTerm id [] ty body
+    return .var ⟨id, ty⟩
 
 def defineTermBound := defineTerm True
 def defineTermUnbound := defineTerm False
 
-def defineSet (tyEnc : String) (tEncs : List String) : EncoderM String := do
-  defineTermUnbound tyEnc (tEncs.foldl (λ acc t => s!"(set.insert {t} {acc})") s!"(as set.empty {tyEnc})")
+def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
+  -- Build: (set.insert tN ... (set.insert t2 (set.insert t1 (as set.empty ty))))
+  let empty : Term := .app (.datatype_op .constructor "set.empty") [] ty
+  let result := tEncs.foldl (fun acc t => Term.app (.uf ⟨"set.insert", [⟨"x", t.typeOf⟩, ⟨"s", ty⟩], ty⟩) [t, acc] ty) empty
+  defineTermUnbound ty result
 
-def defineRecord (tyEnc : String) (tEncs : List String) : EncoderM String := do
-  defineTermUnbound tyEnc s!"({tyEnc} {String.intercalate " " tEncs})"
+def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
+  defineTermUnbound ty (.app (.datatype_op .constructor ty.mkName) tEncs ty)
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
   let id := ufId (← ufNum)
   comment uf.id
-  let args ← uf.args.mapM (fun vt => encodeType vt.ty)
-  declareFun id args (← encodeType uf.out)
+  let argTys := uf.args.map (fun vt => vt.ty)
+  Solver.declareFun id argTys uf.out
   modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
 
- def encodeOp : Op → String
-  | .eq            => "="
-  | .zero_extend n => s!"(_ zero_extend {n})"
-  | .re_index n    => s!"(_ re.^ {n})"
-  | .re_loop n₁ n₂ => s!"(_ re.loop {n₁} {n₂})"
-  | .option_get    => "val"
-  | op             => op.mkName
+def defineApp (inBinder : Bool) (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := do
+  match op with
+  | .uf f =>
+    let ufName ← encodeUF f
+    let ufRef : UF := { id := ufName, args := f.args, out := f.out }
+    defineTerm inBinder ty (.app (.uf ufRef) tEncs ty)
+  | _ =>
+    defineTerm inBinder ty (.app op tEncs ty)
 
 def extractTriggerGroup : Term -> List Term
 | .app .triggers ts .trigger => ts
@@ -181,121 +143,112 @@ def extractTriggers : Term -> List (List Term)
 | .app .triggers ts .trigger => ts.map extractTriggerGroup
 | e => [[e]]
 
-def encodeTriggerGroup (trEncs : List String) : String :=
-  s!":pattern ({String.intercalate " " trEncs})"
+/-- Every term in `extractTriggerGroup t` has `sizeOf ≤ sizeOf t`. -/
+private theorem extractTriggerGroup_sizeOf (t ti : Term) (h : ti ∈ extractTriggerGroup t) :
+    sizeOf ti ≤ sizeOf t := by
+  unfold extractTriggerGroup at h
+  split at h
+  · have := List.sizeOf_lt_of_mem h; simp_all; omega
+  · simp_all
 
-def encodeTriggers (trs : List (List String)) : String :=
-  String.intercalate " " (trs.map encodeTriggerGroup)
-
-def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String) (_ts : List Term): EncoderM String := do
-  let args := String.intercalate " " tEncs
-  match op with
-  | .uf f          =>
-    if f.args.isEmpty then
-      -- 0-ary function (i.e., a constant); shouldn't add parentheses here.
-      defineTerm inBinder tyEnc s!"{← encodeUF f}"
-    else
-      defineTerm inBinder tyEnc s!"({← encodeUF f} {args})"
-  | .datatype_op .constructor name =>
-    -- Zero-argument constructors are constants in SMT-LIB, not function applications
-    -- For parametric datatypes, we need to cast the constructor to the concrete type
-    if tEncs.isEmpty then
-      defineTerm inBinder tyEnc s!"(as {name} {tyEnc})"
-    else
-      defineTerm inBinder tyEnc s!"((as {name} {tyEnc}) {args})"
-  | .datatype_op _ _ =>
-    defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
-  | _ =>
-    if tEncs.isEmpty then
-      defineTerm inBinder tyEnc s!"({encodeOp op})"
-    else
-      defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
+/-- Every term nested in `extractTriggers t` has `sizeOf ≤ sizeOf t`. -/
+private theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
+    (hts : ts ∈ extractTriggers t) (hti : ti ∈ ts) :
+    sizeOf ti ≤ sizeOf t := by
+  unfold extractTriggers at hts
+  split at hts
+  · rw [List.mem_map] at hts
+    obtain ⟨t_elem, h_mem, h_eq⟩ := hts
+    subst h_eq
+    have h1 := extractTriggerGroup_sizeOf t_elem ti hti
+    have h2 := List.sizeOf_lt_of_mem h_mem
+    simp_all; omega
+  · simp_all
 
 -- Helper function for quantifier generation
-def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
-  defineTerm inBinder "Bool" $
-    match trEncs with
-    | [] =>
-      s!"({quantKind} ({varDecls}) {tEnc})"
-    | _ =>
-      s!"({quantKind} ({varDecls}) (! {tEnc} {encodeTriggers trEncs}))"
+def defineQuantifierHelper (inBinder : Bool) (qk : QuantifierKind) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term := do
+  let tr : Term := match trEncs with
+    | [] => .app .triggers [] .trigger  -- empty trigger
+    | groups =>
+      -- Build trigger term from encoded trigger groups
+      let triggerTerms := groups.map fun group =>
+        .app .triggers group .trigger
+      .app .triggers triggerTerms .trigger
+  defineTerm inBinder .bool (.quant qk args tr bodyEnc)
 
-def defineMultiAll (inBinder : Bool) (args : List TermVar) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
-  let varDecls ← args.mapM (fun ⟨x, ty⟩ => do
-    let tyEnc ← encodeType ty
-    return s!"({x} {tyEnc})")
-  let varDeclsStr := String.intercalate " " varDecls
-  -- For multi-variable, we check if trigger equals the variable declarations string
-  defineQuantifierHelper inBinder "forall" varDeclsStr trEncs tEnc
+def defineMultiAll (inBinder : Bool) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper inBinder .all args trEncs bodyEnc
 
-def defineMultiExist (inBinder : Bool) (args : List TermVar) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
-  let varDecls ← args.mapM (fun ⟨x, ty⟩ => do
-    let tyEnc ← encodeType ty
-    return s!"({x} {tyEnc})")
-  let varDeclsStr := String.intercalate " " varDecls
-  -- For multi-variable, we check if trigger equals the variable declarations string
-  defineQuantifierHelper inBinder "exists" varDeclsStr trEncs tEnc
+def defineMultiExist (inBinder : Bool) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper inBinder .exist args trEncs bodyEnc
 
--- Convenience wrappers for single-variable quantifiers - implemented in terms of helper
-def defineAll (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
-  defineQuantifierHelper inBinder "forall" s!"({xEnc} {tyEnc})" trEncs tEnc
+-- Convenience wrappers for single-variable quantifiers
+def defineAll (inBinder : Bool) (x : String) (xty : TermType) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper inBinder .all [⟨x, xty⟩] trEncs bodyEnc
 
-def defineExist (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
-  defineQuantifierHelper inBinder "exists" s!"({xEnc} {tyEnc})" trEncs tEnc
+def defineExist (inBinder : Bool) (x : String) (xty : TermType) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper inBinder .exist [⟨x, xty⟩] trEncs bodyEnc
 
 def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
   xs.attach.mapM f
 
-partial
-def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
+def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
   if let (.some enc) := (← get).terms.get? t then return enc
-  let tyEnc ← encodeType t.typeOf
+  let ty := t.typeOf
   let enc ←
     match t with
-    | .var v            => return v.id
-    | .prim _           =>
-      match SMTDDM.toString t with
-      | .ok s => return s
-      | .error _ => return "<error>"
-    | .none _           => defineTerm inBinder tyEnc s!"(as none {tyEnc})"
-    | .some t₁          => defineTerm inBinder tyEnc s!"(some {← encodeTerm inBinder t₁})"
-    | .app .re_allchar [] .regex => return encodeReAllChar
-    | .app .re_all     [] .regex => return encodeReAll
-    | .app .re_none    [] .regex => return encodeReNone
-    | .app .bvnego [t] .bool =>
-      -- don't encode bvnego itself, for compatibility with older CVC5 (bvnego was
-      -- introduced in CVC5 1.1.2)
-      -- this rewrite is done in the encoder and is thus trusted
-      match t.typeOf with
+    | .var _            => return t
+    | .prim _           => return t
+    | .none _           => defineTerm inBinder ty t
+    | .some t₁          =>
+      let t₁Enc ← encodeTerm inBinder t₁
+      defineTerm inBinder ty (.some t₁Enc)
+    | .app .re_allchar [] .regex => return t
+    | .app .re_all     [] .regex => return t
+    | .app .re_none    [] .regex => return t
+    | .app .bvnego [inner] .bool =>
+      match inner.typeOf with
       | .bitvec n =>
-        -- more fancy and possibly more optimized, but hard to prove termination:
-        -- encodeTerm (Factory.eq t (BitVec.intMin n))
-        defineApp inBinder tyEnc .eq [← encodeTerm inBinder t, encodeBitVec (BitVec.intMin n)] [t, BitVec.intMin n]
+        let innerEnc ← encodeTerm inBinder inner
+        let minVal : Term := .prim (.bitvec (BitVec.intMin n))
+        defineApp inBinder ty .eq [innerEnc, minVal]
       | _ =>
-        -- we could put anything here and be sound, because `bvnego` should only be
-        -- applied to Terms of type .bitvec
-        return "false"
-    | .app op ts _         => defineApp inBinder tyEnc op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ)) ts
-    | .quant qk args tr t =>
+        return Term.bool false
+    | .app op ts _         => defineApp inBinder ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
+    | .quant qk qargs tr body =>
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨t, _⟩ => encodeTerm True t))
-      match qk, args with
-      | .all, [⟨x, ty⟩] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
-      | .all, _ => defineMultiAll inBinder args trEncs (← encodeTerm True t)
-      | .exist, [⟨x, ty⟩] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
-      | .exist, _ => defineMultiExist inBinder args trEncs (← encodeTerm True t)
+      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm True ti))
+      let bodyEnc ← encodeTerm True body
+      match qk, qargs with
+      | .all, [⟨x, xty⟩] => defineAll inBinder x xty trEncs bodyEnc
+      | .all, _ => defineMultiAll inBinder qargs trEncs bodyEnc
+      | .exist, [⟨x, xty⟩] => defineExist inBinder x xty trEncs bodyEnc
+      | .exist, _ => defineMultiExist inBinder qargs trEncs bodyEnc
   if inBinder
   then pure enc
   else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
+termination_by sizeOf t
+decreasing_by
+  all_goals first
+    | term_by_mem
+    | -- Trigger case: ti ∈ ts, ts ∈ trExprs, trExprs from extractTriggers tr
+      -- Grab the membership hypotheses via ‹›, inline the let-binding
+      -- (trExprs is definitionally the if-then-else), split, and apply our lemma.
+      add_mem_size_lemmas
+      have hmem : _ ∈ (if Factory.isSimpleTrigger tr then ([] : List (List Term)) else extractTriggers tr) := ‹_ ∈ trExprs›
+      split at hmem
+      · simp at hmem
+      · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
+        simp_all; omega
 
 def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
   let id := ufId (← ufNum)
   comment uf.id
-  let ids ← uf.args.mapM (fun vt => pure vt.id)
-  let args ← uf.args.mapM (fun vt => encodeType vt.ty)
-  defineFun id (ids.zip args) (← encodeType uf.out) (← encodeTerm true body)
+  let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
+  let bodyEnc ← encodeTerm true body
+  Solver.defineFunTerm id argPairs uf.out bodyEnc
   modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
 
 /-- A utility for debugging. -/
@@ -325,10 +278,11 @@ etc.
 def encode (ts : List Term) : SolverM Unit := do
   Solver.reset
   Solver.setLogic "ALL"
-  Solver.declareDatatype "Option" ["X"] ["(none)", "(some (val X))"]
-  let (ids, _) ← ts.mapM (encodeTerm False) |>.run EncoderState.init
-  for id in ids do
-    Solver.assert id
+  Solver.declareDatatype "Option" ["X"]
+    [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]
+  let (termEncs, _) ← ts.mapM (encodeTerm False) |>.run EncoderState.init
+  for t in termEncs do
+    Solver.assert t
 
 end Encoder
 namespace Strata.SMT

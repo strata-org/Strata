@@ -82,7 +82,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify roseTreeTesterPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Rose Tree Destructor Functions
@@ -160,7 +160,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify roseTreeDestructorPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Rose Tree Equality
@@ -225,7 +225,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify roseTreeEqualityPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: Polymorphic Rose Tree with Havoc (SMT verification)
@@ -286,7 +286,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify polyRoseTreeHavocPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: Imperative Stmt/StmtList with Havoc (SMT verification)
@@ -360,6 +360,6 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify stmtListHavocPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 end Strata.MutualDatatypeTest
