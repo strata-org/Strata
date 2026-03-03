@@ -34,9 +34,9 @@ VCs:
 Label: reflexive
 Property: assert
 Assumptions:
-xy_eq: x == y
+xy_eq: $__x0 == $__y1
 Obligation:
-x == x
+true
 
 ---
 info:

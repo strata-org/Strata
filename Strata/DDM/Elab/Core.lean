@@ -864,7 +864,7 @@ def evalBindingSpec
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
     -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
     pure { ident, kind }
-  | .type b | .typeForward b =>
+  | .type b | .globalType b | .typeForward b =>
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabTypeParams initSize args b.argsIndex
     let value : Option TypeExpr :=
@@ -1028,7 +1028,22 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   if !success then
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
-    ctx.push <$> evalBindingSpec loc initSize spec args
+    let binding ← evalBindingSpec loc initSize spec args
+    match spec with
+    | .globalType _ =>
+      -- For global types, add to GlobalContext instead of local bindings
+      let gctx := ctx.globalContext
+      let kind := match binding.kind with
+        | .type loc params value => GlobalKind.type params value
+        | _ => panic! "globalType binding must have type kind"
+      match gctx.define binding.ident kind with
+      | .ok newGctx => pure (ctx.withGlobalContext newGctx)
+      | .error msg => do
+        logError loc msg
+        pure ctx
+    | _ =>
+      -- For other bindings, add to local context as usual
+      pure (ctx.push binding)
   let op : Operation := { ann := loc, name := i, args := args.toArray.map (·.arg) }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."
