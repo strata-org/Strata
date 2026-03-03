@@ -492,7 +492,7 @@ inline function PEq (v: Any, v': Any) : Any {
   from_bool(normalize_any(v) == normalize_any (v'))
 }
 
-inline function PNEq (v: Any, v': Any) : Any {
+inline function PNeq (v: Any, v': Any) : Any {
   from_bool(normalize_any(v) != normalize_any (v'))
 }
 
