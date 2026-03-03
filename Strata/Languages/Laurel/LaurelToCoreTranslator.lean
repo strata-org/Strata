@@ -34,7 +34,7 @@ open Lambda (LMonoTy LTy LExpr)
 /-
 Translate Laurel HighType to Core Type
 -/
-def translateType (ty : HighTypeMd) : LMonoTy :=
+def translateType (ty : HighTypeMd) (types : List TypeDefinition := []) : LMonoTy :=
   match _h : ty.val with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
@@ -42,17 +42,21 @@ def translateType (ty : HighTypeMd) : LMonoTy :=
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
-  | .TSet elementType => Core.mapTy (translateType elementType) LMonoTy.bool
-  | .TMap keyType valueType => Core.mapTy (translateType keyType) (translateType valueType)
-  | .UserDefined _ => .tcons "Composite" []
+  | .TSet elementType => Core.mapTy (translateType elementType types) LMonoTy.bool
+  | .TMap keyType valueType => Core.mapTy (translateType keyType types) (translateType valueType types)
+  | .UserDefined name =>
+      -- Use the datatype name if it's a Laurel datatype; otherwise default to Composite
+      if types.any (fun td => match td with | .Datatype dt => dt.name == name | _ => false)
+      then .tcons name []
+      else .tcons "Composite" []
   | .TCore s => .tcons s []
   | _ => panic s!"unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
-def lookupType (env : TypeEnv) (name : Identifier) : LMonoTy :=
+def lookupType (env : TypeEnv) (name : Identifier) (types : List TypeDefinition := []) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
-  | some (_, ty) => translateType ty
+  | some (_, ty) => translateType ty types
   | none => panic s!"could not find variable {name} in environment '{Std.format env}'"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
@@ -82,6 +86,8 @@ structure TranslateState where
   fieldNames : List String := []
   /-- Names of procedures that are translated as Core functions -/
   funcNames : FunctionNames := []
+  /-- Laurel type definitions, used to distinguish composites from datatypes -/
+  laurelTypes : List TypeDefinition := []
 
 /-- The translation monad: state over Id -/
 abbrev TranslateM := StateT TranslateState Id
@@ -137,7 +143,7 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
           if isFieldName fieldNames name then
             return .op () ⟨name, ()⟩ none
           else
-            return .fvar () ⟨name, ()⟩ (some (lookupType env name))
+            return .fvar () ⟨name, ()⟩ (some (lookupType env name s.laurelTypes))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -195,11 +201,11 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
           return .app () acc re) fnOp
   | .Block [single] _ => translateExpr env single boundVars isPureContext
   | .Forall name ty body =>
-      let coreTy := translateType ty
+      let coreTy := translateType ty s.laurelTypes
       let coreBody ← translateExpr env body (name :: boundVars) isPureContext
       return LExpr.all () (some coreTy) coreBody
   | .Exists name ty body =>
-      let coreTy := translateType ty
+      let coreTy := translateType ty s.laurelTypes
       let coreBody ← translateExpr env body (name :: boundVars) isPureContext
       return LExpr.exist () (some coreTy) coreBody
   | .Hole => return dummy
@@ -244,7 +250,7 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
   s!"({fileRange.range.start})"
 
-def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
+def defaultExprForType (ty : HighTypeMd) (types : List TypeDefinition := []) : Core.Expression.Expr :=
   match ty.val with
   | .TInt => .const () (.intConst 0)
   | .TBool => .const () (.boolConst false)
@@ -253,7 +259,7 @@ def defaultExprForType (ty : HighTypeMd) : Core.Expression.Expr :=
     -- For types without a natural default (arrays, composites, etc.),
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
-    let coreTy := translateType ty
+    let coreTy := translateType ty types
     .fvar () (⟨"$default", ()⟩) (some coreTy)
 
 /--
@@ -280,7 +286,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       return (env', stmtsList)
   | .LocalVariable name ty initializer =>
       let env' := (name, ty) :: env
-      let boogieMonoType := translateType ty
+      let boogieMonoType := translateType ty s.laurelTypes
       let boogieType := LTy.forAll [] boogieMonoType
       let ident := ⟨name, ()⟩
       match initializer with
@@ -293,7 +299,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr env a)
-            let defaultExpr := defaultExprForType ty
+            let defaultExpr := defaultExprForType ty s.laurelTypes
             let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee coreArgs md
             return (env', [initStmt, callStmt])
@@ -301,7 +307,7 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
           let coreExpr ← translateExpr env initExpr
           return (env', [Core.Statement.init ident boogieType (some coreExpr) md])
       | none =>
-          let defaultExpr := defaultExprForType ty
+          let defaultExpr := defaultExprForType ty s.laurelTypes
           return (env', [Core.Statement.init ident boogieType (some defaultExpr) md])
   | .Assign targets value =>
       match targets with
@@ -390,9 +396,9 @@ private def translateChecks (env : TypeEnv) (checks : List StmtExprMd) (labelBas
 /--
 Translate Laurel Parameter to Core Signature entry
 -/
-def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
+def translateParameterToCore (param : Parameter) (types : List TypeDefinition := []) : (Core.CoreIdent × LMonoTy) :=
   let ident := ⟨param.name, ()⟩
-  let ty := translateType param.type
+  let ty := translateType param.type types
   (ident, ty)
 
 /--
@@ -401,9 +407,10 @@ Diagnostics from disallowed constructs in preconditions, postconditions, and bod
 are emitted into the monad state.
 -/
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
-  let inputPairs := proc.inputs.map translateParameterToCore
+  let s ← get
+  let inputPairs := proc.inputs.map (translateParameterToCore · s.laurelTypes)
   let inputs := inputPairs
-  let outputs := proc.outputs.map translateParameterToCore
+  let outputs := proc.outputs.map (translateParameterToCore · s.laurelTypes)
   let header : Core.Procedure.Header := {
     name := proc.name
     typeArgs := []
@@ -496,9 +503,10 @@ Translate a Laurel Procedure to a Core Function (when applicable) using `Transla
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
 def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
-  let inputs := proc.inputs.map translateParameterToCore
+  let s ← get
+  let inputs := proc.inputs.map (translateParameterToCore · s.laurelTypes)
   let outputTy := match proc.outputs.head? with
-    | some p => translateType p.type
+    | some p => translateType p.type s.laurelTypes
     | none => LMonoTy.int
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type))
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
@@ -525,7 +533,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
 Translate a Laurel DatatypeDefinition to a Core type declaration.
 Zero constructors produces an opaque (abstract) type; otherwise a Core datatype.
 -/
-def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
+def translateDatatypeDefinition (dt : DatatypeDefinition) (types : List TypeDefinition := []) : Core.Decl :=
   match h : dt.constructors with
   | [] =>
     -- Zero constructors: opaque type
@@ -533,7 +541,7 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
   | first :: rest =>
     let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
       { name := ⟨c.name, ()⟩
-        args := c.args.map fun (n, ty) => (⟨n, ()⟩, translateType ty) }
+        args := c.args.map fun (n, ty) => (⟨n, ()⟩, translateType ty types) }
     let ldt : Lambda.LDatatype Unit := {
       name := dt.name
       typeArgs := dt.typeArgs
@@ -562,9 +570,9 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let program := heapParameterization program
   let program := typeHierarchyTransform program
   let (program, modifiesDiags) := modifiesClausesTransform program
-  dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  dbg_trace "================================="
+  -- dbg_trace "===  Program after heapParameterization + modifiesClausesTransform ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   let program := liftImperativeExpressions program
   -- Collect field names from the Field datatype (generated by heapParameterization)
   let fieldNames : List Identifier := program.types.foldl (fun acc td =>
@@ -575,8 +583,17 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
   -- Build the shared initial state with constants and function names
-  let funcNames : FunctionNames := markedPure.map (·.name)
-  let initState : TranslateState := { fieldNames := fieldNames, funcNames }
+  -- Include datatype destructors (<typeName>..<fieldName>) and constructor tests (<typeName>..is<constructorName>)
+  let datatypeFuncNames : FunctionNames := program.types.foldl (fun acc td =>
+    match td with
+    | .Datatype dt =>
+        let testers := dt.constructors.map fun c => s!"{dt.name}..is{c.name}"
+        let destructors := dt.constructors.foldl (fun acc c =>
+          acc ++ c.args.map fun (fieldName, _) => s!"{dt.name}..{fieldName}") []
+        acc ++ testers ++ destructors
+    | _ => acc) []
+  let funcNames : FunctionNames := markedPure.map (·.name) ++ datatypeFuncNames
+  let initState : TranslateState := { fieldNames := fieldNames, funcNames, laurelTypes := program.types }
   -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
   let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
     match tryTranslatePureToFunction p initState with
@@ -589,7 +606,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   -- Translate Laurel constants to Core function declarations (0-ary functions)
   let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
-    let coreTy := translateType c.type
+    let coreTy := translateType c.type program.types
     let body ← c.initializer.mapM (translateExpr [] ·)
     return Core.Decl.func {
       name := ⟨c.name, ()⟩
@@ -611,14 +628,14 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   -- Translate Laurel datatype definitions to Core datatype declarations
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with
-    | .Datatype dt => some (translateDatatypeDefinition dt)
+    | .Datatype dt => some (translateDatatypeDefinition dt program.types)
     | _ => none
   let program := { decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls }
 
   -- Debug: Print the generated Strata Core program
-  dbg_trace "=== Generated Strata Core Program ==="
-  dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
-  dbg_trace "================================="
+  -- dbg_trace "=== Generated Strata Core Program ==="
+  -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
+  -- dbg_trace "================================="
   pure (program, modifiesDiags)
 
 /--

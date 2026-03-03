@@ -467,7 +467,7 @@ def pyAnalyzeLaurelCommand : Command where
 
           -- -- Add Core-only declarations (axioms, Except, regex, discriminator
           -- -- procedures) that cannot be expressed in Laurel grammar.
-          -- let coreOnlyDecls := Strata.Python.coreOnlyPreludeForLaurel
+          let coreOnlyDecls := Strata.Python.coreOnlyPreludeForLaurel
           -- let coreOnlyNames : Std.HashSet String :=
           --   coreOnlyDecls.foldl (init := {}) fun s d =>
           --     (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
@@ -489,7 +489,7 @@ def pyAnalyzeLaurelCommand : Command where
           --   let names := ", ".intercalate (collisions.map (·.name))
           --   exitFailure s!"Core name collision between program and prelude: {names}"
           -- let coreProgram := {decls := allPreludeDecls ++ programDecls }
-          let coreProgram := coreProgramDecls
+          let coreProgram := { decls := coreProgramDecls.decls ++ coreOnlyDecls }
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
