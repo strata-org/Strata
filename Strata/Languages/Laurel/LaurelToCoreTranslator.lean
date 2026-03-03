@@ -583,14 +583,15 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
   -- Build the shared initial state with constants and function names
-  -- Include datatype destructors (<typeName>..<fieldName>) and constructor tests (<typeName>..is<constructorName>)
+  -- Include datatype constructors, testers (is<constructorName>) and destructors (<typeName>..<fieldName>)
   let datatypeFuncNames : FunctionNames := program.types.foldl (fun acc td =>
     match td with
     | .Datatype dt =>
-        let testers := dt.constructors.map fun c => s!"{dt.name}..is{c.name}"
+        let constructors := dt.constructors.map fun c => c.name
+        let testers := dt.constructors.map fun c => s!"is{c.name}"
         let destructors := dt.constructors.foldl (fun acc c =>
           acc ++ c.args.map fun (fieldName, _) => s!"{dt.name}..{fieldName}") []
-        acc ++ testers ++ destructors
+        acc ++ constructors ++ testers ++ destructors
     | _ => acc) []
   let funcNames : FunctionNames := markedPure.map (·.name) ++ datatypeFuncNames
   let initState : TranslateState := { fieldNames := fieldNames, funcNames, laurelTypes := program.types }
