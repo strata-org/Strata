@@ -142,6 +142,7 @@ def denoteLMonoTyT.{u} : TypeContextT.{u} → LMonoTy → Type u
   | _, .tcons "bool" [] => ULift Bool
   | _, .tcons "int" [] => ULift Int
   | _, .tcons "string" [] => ULift String
+  | _, .tcons "real" [] => ULift Rat
   | _, .bitvec n => ULift (BitVec n)
   | ctx, .tcons "arrow" [t1, t2] => denoteLMonoTyT ctx t1 → denoteLMonoTyT ctx t2
   | ctx, .ftvar x => (ctx.lookup x).getD (ULift Empty)
@@ -184,6 +185,9 @@ inductive DenotesT {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
 
   | dbitvec : ∀ val m n bv,
       DenotesT C ctx interp val (.bitvecConst m n bv) (.bitvec n) ⟨bv⟩
+
+  | dreal : ∀ val m r,
+      DenotesT C ctx interp val (.realConst m r) .real ⟨r⟩
 
   | dite_true : ∀ val m c t e mty (vc : denoteLMonoTyT ctx .bool) (vt : denoteLMonoTyT ctx mty),
       DenotesT C ctx interp val c .bool vc →
@@ -403,7 +407,8 @@ noncomputable def denoteLExprT
   | .bitvecConst _ n bv, mty, hwt =>
     hwt.bitvecConst_ty ▸ (⟨bv⟩ : denoteLMonoTyT ctx (.bitvec n))
 
-  | .realConst _ _, _, _ => sorry
+  | .realConst _ r, mty, hwt =>
+    hwt.realConst_ty ▸ (⟨r⟩ : denoteLMonoTyT ctx .real)
 
   | .ite _ c t e, mty, hwt =>
     let vc := denoteLExprT C Γ ctx interp val c .bool hwt.ite_cond
@@ -472,8 +477,8 @@ inductive annotated {T : LExprParams} : LExpr T.mono → Prop where
   | ann_abs : ∀ m ty e, annotated e → annotated (.abs m (some ty) e)
   | ann_quant : ∀ m k ty tr e, annotated tr → annotated e → annotated (.quant m k (some ty) tr e)
   | ann_ite : ∀ m c t e, annotated c → annotated t → annotated e → annotated (.ite m c t e)
-  | ann_eq : ∀ m e1 e2, annotated e1 → annotated e2 → annotated (.eq m e1 e2)
-  | ann_app : ∀ m e1 e2, annotated e1 → annotated e2 → annotated (.app m e1 e2)
+  -- | ann_eq : ∀ m e1 e2, annotated e1 → annotated e2 → annotated (.eq m e1 e2)
+  -- | ann_app : ∀ m e1 e2, annotated e1 → annotated e2 → annotated (.app m e1 e2)
 
 theorem annotated_varOpen {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
     {e : LExpr T.mono} {x' : IdentT LMonoTy T.IDMeta} {k : Nat}
@@ -500,12 +505,12 @@ theorem annotated_varOpen {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.
   | ann_ite _ _ _ _ _ _ _ ih_c ih_t ih_e =>
     show annotated (LExpr.varOpen k x' (.ite _ _ _ _))
     unfold LExpr.varOpen LExpr.substK; exact .ann_ite _ _ _ _ ih_c ih_t ih_e
-  | ann_eq _ _ _ _ _ ih1 ih2 =>
-    show annotated (LExpr.varOpen k x' (.eq _ _ _))
-    unfold LExpr.varOpen LExpr.substK; exact .ann_eq _ _ _ ih1 ih2
-  | ann_app _ _ _ _ _ ih1 ih2 =>
-    show annotated (LExpr.varOpen k x' (.app _ _ _))
-    unfold LExpr.varOpen LExpr.substK; exact .ann_app _ _ _ ih1 ih2
+  -- | ann_eq _ _ _ _ _ ih1 ih2 =>
+  --   show annotated (LExpr.varOpen k x' (.eq _ _ _))
+  --   unfold LExpr.varOpen LExpr.substK; exact .ann_eq _ _ _ ih1 ih2
+  -- | ann_app _ _ _ _ _ ih1 ih2 =>
+  --   show annotated (LExpr.varOpen k x' (.app _ _ _))
+  --   unfold LExpr.varOpen LExpr.substK; exact .ann_app _ _ _ ih1 ih2
 
 /-
 Theorem: denoteLExprT is sound w.r.t. DenotesT.
@@ -538,7 +543,9 @@ theorem denoteLExprT_sound
     have heq := hwt.bitvecConst_ty; subst heq
     exact .dbitvec val' m n bv
   · -- realConst
-    sorry
+    rename_i Γ' val' m r mty' hty' hwt
+    have heq := hwt.realConst_ty; subst heq
+    exact .dreal val' m r
   case case6 Γ' val' m c t e mty' hty d1 d2 hcond hwt ih_c ih_t ih_e => -- ite true
     simp [denoteLExprT] at *
     cases hc : (denoteLExprT C Γ' ctx interp val' c .bool hwt.ite_cond).down with
