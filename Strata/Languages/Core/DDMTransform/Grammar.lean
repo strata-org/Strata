@@ -25,7 +25,8 @@ dialect Core;
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
-accessorTemplate : FunctionTemplate);
+accessorTemplate : FunctionTemplate,
+unsafeAccessorTemplate : FunctionTemplate);
 
 type bool;
 type int;
@@ -358,7 +359,8 @@ op constructorListPush (cl : ConstructorList, c : Constructor)
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor],
                    [.datatype], .builtin "bool"),
-    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType),
+    perField([.datatype, .literal "..", .field, .literal "!"], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList)

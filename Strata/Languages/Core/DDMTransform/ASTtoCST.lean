@@ -261,9 +261,14 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
         dt.constrs.flatMap (fun c => c.args.map
                               (fun (id, _) =>
                                 Lambda.destructorFuncName dt id))
+    let unsafeDestructorNames :=
+        dt.constrs.flatMap (fun c => c.args.map
+                              (fun (id, _) =>
+                                Lambda.unsafeDestructorFuncName dt id))
     modify (·.addGlobalFreeVars (constrNames.toArray ++
                            testerNames.toArray ++
-                           destructorNames.toArray))
+                           destructorNames.toArray ++
+                           unsafeDestructorNames.toArray))
 
   let processDatatype (dt : Lambda.LDatatype Visibility) :
       ToCSTM M (Command M) := do

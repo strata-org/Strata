@@ -6,11 +6,27 @@
 
 import Strata.DL.SMT.Encoder
 
-/-! ## Proofs for disambiguateName / breakDisambiguatedName roundtrip -/
+/-! ## Tests and proofs for disambiguateName / breakDisambiguatedName -/
 
 namespace Strata.SMT.Encoder
 
-/-! ### Helper: digitChar properties -/
+/-! ### Concrete roundtrip checks -/
+
+#guard breakDisambiguatedName (disambiguateName "x" 1) == ("x", 2)
+#guard breakDisambiguatedName (disambiguateName "x" 0) == ("x", 1)
+#guard breakDisambiguatedName (disambiguateName "foo" 42) == ("foo", 43)
+#guard breakDisambiguatedName (disambiguateName "$__bv0" 1) == ("$__bv0", 2)
+-- Non-disambiguated names
+#guard breakDisambiguatedName "x" == ("x", 1)
+#guard breakDisambiguatedName "hello" == ("hello", 1)
+-- Names with @ but no numeric suffix
+#guard breakDisambiguatedName "x@y" == ("x@y", 1)
+-- Names with existing disambiguation
+#guard breakDisambiguatedName "x@1" == ("x", 2)
+
+/-! ### Roundtrip proof -/
+
+/-! #### Helper: digitChar properties -/
 
 private theorem Nat.digitChar_val {n : Nat} (h : n < 10) :
     n.digitChar.toNat - '0'.toNat = n := by

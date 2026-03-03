@@ -115,19 +115,6 @@ def breakDisambiguatedName (name : String) : String × Nat :=
   | '@' :: _, _ :: _ => (String.ofList rest.dropLast, digitsToNat digitSuffix + 1)
   | _, _ => (name, 1)
 
--- Concrete roundtrip checks
-#guard breakDisambiguatedName (disambiguateName "x" 1) == ("x", 2)
-#guard breakDisambiguatedName (disambiguateName "x" 0) == ("x", 1)
-#guard breakDisambiguatedName (disambiguateName "foo" 42) == ("foo", 43)
-#guard breakDisambiguatedName (disambiguateName "$__bv0" 1) == ("$__bv0", 2)
--- Non-disambiguated names
-#guard breakDisambiguatedName "x" == ("x", 1)
-#guard breakDisambiguatedName "hello" == ("hello", 1)
--- Names with @ but no numeric suffix
-#guard breakDisambiguatedName "x@y" == ("x@y", 1)
--- Names with existing disambiguation
-#guard breakDisambiguatedName "x@1" == ("x", 2)
-
 /-- Find a unique name by trying candidates with increasing suffixes.
     The `isUsed` predicate checks if a candidate name is already taken. -/
 def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → Bool) (limit : Nat := 1000) : String :=
