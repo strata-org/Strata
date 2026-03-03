@@ -331,8 +331,143 @@ The proof is structured in three layers:
 -/
 
 /-!
-### Definitions and lemmas for the `resolveAux`-based proof strategy
+#### Substitution lemmas for `HasType_subst_fresh_all`
 -/
+
+/-- If no key of `S` appears in `freeVars(mty)`, then `subst S mty = mty`. -/
+theorem LMonoTy.subst_no_relevant_keys (S : Subst) (mty : LMonoTy)
+    (h : ∀ x, x ∈ LMonoTy.freeVars mty → x ∉ Maps.keys S) :
+    LMonoTy.subst S mty = mty := by
+  by_cases hS : Subst.hasEmptyScopes S
+  · exact LMonoTy.subst_emptyS hS
+  · induction mty with
+    | ftvar x =>
+      simp [LMonoTy.subst, hS]
+      rw [Maps.not_mem_keys_find?_none' S x (h x (by simp [LMonoTy.freeVars]))]
+    | bitvec n => simp [LMonoTy.subst]
+    | tcons name args ih =>
+      simp [LMonoTy.subst, LMonoTys.subst_eq_substLogic, hS]
+      induction args with
+      | nil => simp [LMonoTys.substLogic, hS]
+      | cons a rest ih_rest =>
+        simp [LMonoTys.substLogic, hS]
+        exact ⟨ih a (List.mem_cons.mpr (Or.inl rfl))
+                 (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; left; exact hx)),
+               ih_rest (fun b hb => ih b (List.mem_cons.mpr (Or.inr hb)))
+                 (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; right; exact hx))⟩
+
+/--
+If `t` is a value in a well-formed substitution `S` (i.e., `Maps.find? S a = some t`),
+then `subst S t = t`. This is because `SubstWF` guarantees no key of `S` appears
+in the free variables of any value in `S`.
+-/
+theorem LMonoTy.subst_idempotent_value (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
+    LMonoTy.subst S t = t := by
+  apply LMonoTy.subst_no_relevant_keys
+  intro x hx
+  have h_x_in_fvs : x ∈ Subst.freeVars S := Subst.freeVars_of_find_subset S h_find hx
+  simp [SubstWF] at h_wf
+  intro h_x_key
+  exact h_wf x h_x_key h_x_in_fvs
+
+/-- Substitution on a singleton map applied to a free type variable. -/
+theorem LMonoTy.subst_single_ftvar (a : TyIdentifier) (t : LMonoTy) (x : TyIdentifier) :
+    LMonoTy.subst [[(a, t)]] (.ftvar x) = if a = x then t else .ftvar x := by
+  unfold LMonoTy.subst
+  simp [Subst.hasEmptyScopes, Map.isEmpty]
+  rw [show Maps.find? [[(a, t)]] x = if a = x then some t else none from by
+    simp [Maps.find?, Map.find?]; split <;> simp_all]
+  split <;> simp_all
+
+/-- The number of keys in `S` that appear in `freeVars(mty)`. Used as the
+    termination measure for `HasType_subst_fresh_all`. -/
+noncomputable def relevantKeys (S : Subst) (mty : LMonoTy) : Nat :=
+  ((Maps.keys S).filter (· ∈ LMonoTy.freeVars mty)).length
+
+/-- `hasEmptyScopes S = false` when `S` contains a binding. -/
+theorem Subst.hasEmptyScopes_false_of_find
+    (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h : Maps.find? S a = some t) : Subst.hasEmptyScopes S = false := by
+  cases h_eq : Subst.hasEmptyScopes S with
+  | false => rfl
+  | true => exact absurd (Subst.isEmpty_implies_keys_empty h_eq ▸ Maps.find?_mem_keys S h)
+                         (by simp_all)
+
+/-- A key in a well-formed substitution does not appear in its own image. -/
+theorem SubstWF.not_mem_freeVars_of_find (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
+    a ∉ LMonoTy.freeVars t := by
+  simp [SubstWF] at h_wf
+  have h_key := Maps.find?_mem_keys S h_find
+  have h_fv_subset := Subst.freeVars_of_find_subset S h_find
+  intro h_abs
+  exact h_wf a h_key (h_fv_subset h_abs)
+
+/-- Absorption for type lists: the single substitution is absorbed element-wise. -/
+theorem LMonoTys.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (mtys : LMonoTys)
+    (hS : Subst.hasEmptyScopes S = false)
+    (hSingle : Subst.hasEmptyScopes [[(a, t)]] = false)
+    (ih : ∀ m, m ∈ mtys → LMonoTy.subst S (LMonoTy.subst [[(a, t)]] m) = LMonoTy.subst S m) :
+    LMonoTys.subst S (LMonoTys.subst [[(a, t)]] mtys) = LMonoTys.subst S mtys := by
+  rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+  induction mtys with
+  | nil => simp [LMonoTys.substLogic, hS, hSingle]
+  | cons m rest ih_rest =>
+    simp only [LMonoTys.substLogic, hS, hSingle, Bool.false_eq_true, ↓reduceIte]
+    have h1 := ih m List.mem_cons_self
+    have h2 := ih_rest (fun m' hm' => ih m' (List.mem_cons_of_mem m hm'))
+    rw [h1, h2]
+
+/--
+Absorption: `subst S (subst [(a,t)] mty) = subst S mty` when `Maps.find? S a = some t`
+and `SubstWF S`. The single-variable substitution `[(a,t)]` is "absorbed" by `S`
+because `S` already maps `a` to `t`.
+
+Proof: by induction on `mty`.
+- `ftvar x` with `x = a`: LHS becomes `subst S t = t` (by `subst_idempotent_value`),
+  RHS becomes `subst S (ftvar a) = t` (by `h_find`). Both equal `t`.
+- `ftvar x` with `x ≠ a`: `subst [(a,t)] (ftvar x) = ftvar x`, so both sides equal.
+- `tcons`: reduce to the list case via `LMonoTys.subst_absorbs_single`.
+-/
+theorem LMonoTy.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (mty : LMonoTy) (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
+    LMonoTy.subst S (LMonoTy.subst [[(a, t)]] mty) = LMonoTy.subst S mty := by
+  have hS : Subst.hasEmptyScopes S = false :=
+    Subst.hasEmptyScopes_false_of_find S a t h_find
+  have hSingle : Subst.hasEmptyScopes [[(a, t)]] = false := by
+    simp [Subst.hasEmptyScopes, Map.isEmpty]
+  induction mty with
+  | ftvar x =>
+    by_cases h_eq : a = x
+    · -- x = a: inner subst gives t, then subst S t = t = subst S (ftvar a)
+      subst h_eq
+      have h_inner : LMonoTy.subst [[(a, t)]] (.ftvar a) = t := by
+        simp [LMonoTy.subst, Subst.hasEmptyScopes, Map.isEmpty, Maps.find?, Map.find?]
+      rw [h_inner]
+      simp [LMonoTy.subst, hS, h_find]
+      exact LMonoTy.subst_idempotent_value S a t h_find h_wf
+    · -- x ≠ a: inner subst is identity
+      have h_inner : LMonoTy.subst [[(a, t)]] (.ftvar x) = .ftvar x := by
+        simp [LMonoTy.subst, Subst.hasEmptyScopes, Map.isEmpty, Maps.find?, Map.find?, h_eq]
+      rw [h_inner]
+  | bitvec n =>
+    simp [LMonoTy.subst]
+  | tcons name args ih =>
+    simp only [LMonoTy.subst, hSingle, hS, Bool.false_eq_true, ↓reduceIte]
+    congr 1
+    exact LMonoTys.subst_absorbs_single S a t args hS hSingle ih
+
+/--
+Applying a single substitution `[(a,t)]` strictly decreases `relevantKeys`
+when `a ∈ freeVars(mty)`, `Maps.find? S a = some t`, and `SubstWF S`.
+-/
+theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (mty : LMonoTy) (h_find : Maps.find? S a = some t) (h_wf : SubstWF S)
+    (ha_fv : a ∈ LMonoTy.freeVars mty) :
+    relevantKeys S (LMonoTy.subst [[(a, t)]] mty) < relevantKeys S mty := by
+  sorry
 
 /-- All keys in substitution `S` are fresh w.r.t. context `Γ`. -/
 def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
@@ -341,6 +476,10 @@ def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
 
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
   [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+
+/-!
+### Definitions and lemmas for the `resolveAux`-based proof strategy
+-/
 
 /--
 `HasType` is preserved under substitution of fresh type variables.
