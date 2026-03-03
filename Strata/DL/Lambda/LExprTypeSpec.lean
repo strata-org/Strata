@@ -569,12 +569,6 @@ theorem TEnv.updateSubst_context (Env : TEnv IDMeta) (S : SubstInfo) :
     (TEnv.updateSubst Env S).context = Env.context := by
   rfl
 
-private theorem Maps.find?_none_of_not_mem_keys [DecidableEq α]
-    (S : Maps α β) (x : α) (h : x ∉ S.keys) : S.find? x = none := by
-  match h_eq : S.find? x with
-  | none => rfl
-  | some v => exact absurd (Maps.find?_mem_keys S h_eq) h
-
 /--
 If no key of a substitution `S` appears free in `ty`, then applying `S` to
 `ty` leaves it unchanged. This is the key lemma for proving idempotence.
@@ -589,7 +583,7 @@ theorem LMonoTy.subst_no_key_free (S : Subst) (ty : LMonoTy)
       have : x ∉ Maps.keys S := by
         simp [List.all_eq_true] at h; intro h_mem
         exact h x h_mem (by simp [LMonoTy.freeVars])
-      unfold LMonoTy.subst; simp [hS, Maps.find?_none_of_not_mem_keys S x this]
+      unfold LMonoTy.subst; simp [hS, Maps.not_mem_keys_find?_none' S x this]
     | bitvec n =>
       unfold LMonoTy.subst; simp [hS]
     | tcons name args ih =>
@@ -655,32 +649,6 @@ private theorem unify_singleton_eq_unifyOne (ty1 ty2 : LMonoTy) (S S_new : Subst
     | .ok relS_one =>
       simp at h_core
       exact ⟨relS_one, rfl, congrArg ValidSubstRelation.newS h_core.symm⟩
-
-private theorem Map.find?_insert_self [DecidableEq α]
-    (m : Map α β) (x : α) (v : β) : Map.find? (Map.insert m x v) x = some v := by
-  induction m with
-  | nil => simp [Map.insert, Map.find?]
-  | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
-
-private theorem Maps.find?_update_self [DecidableEq α]
-    (ms : Maps α β) (x : α) (v : β) (h : ms.find? x ≠ none) :
-    (Maps.update ms x v).find? x = some v := by
-  induction ms with
-  | nil => simp [Maps.find?] at h
-  | cons m rest ih =>
-    simp only [Maps.update]; split
-    · rename_i h_none; simp only [Maps.find?, h_none]; apply ih
-      simp [Maps.find?, h_none] at h; exact h
-    · simp [Maps.find?, Map.find?_insert_self]
-
-private theorem Maps.find?_insert_self [DecidableEq α]
-    (ms : Maps α β) (x : α) (v : β) :
-    Maps.find? (Maps.insert ms x v) x = some v := by
-  simp only [Maps.insert]; split
-  · match ms with
-    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
-    | _ :: _ => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
-  · exact Maps.find?_update_self ms x v (by simp_all)
 
 /-- After inserting `(id, lty)` into the applied substitution, `subst _ (ftvar id) = lty`. -/
 private theorem subst_ftvar_new_binding

@@ -370,4 +370,33 @@ theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
       have h_not_in_m : i ∉ Map.keys m := Map.find?_of_not_mem_values m h_eq
       exact ih (by cases h with | inl h => exact absurd h h_not_in_m | inr h => exact h)
 
+/-- `Map.find?` returns `some v` after `Map.insert m x v`. -/
+theorem Map.find?_insert_self [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) : Map.find? (Map.insert m x v) x = some v := by
+  induction m with
+  | nil => simp [Map.insert, Map.find?]
+  | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
+
+/-- `Maps.update ms x v` maps `x` to `v`. -/
+theorem Maps.find?_update_self [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (h : ms.find? x ≠ none) :
+    (Maps.update ms x v).find? x = some v := by
+  induction ms with
+  | nil => simp [Maps.find?] at h
+  | cons m rest ih =>
+    simp only [Maps.update]; split
+    · rename_i h_none; simp only [Maps.find?, h_none]; apply ih
+      simp [Maps.find?, h_none] at h; exact h
+    · simp [Maps.find?, Map.find?_insert_self]
+
+/-- `Maps.insert ms x v` maps `x` to `v`. -/
+theorem Maps.find?_insert_self [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) :
+    Maps.find? (Maps.insert ms x v) x = some v := by
+  simp only [Maps.insert]; split
+  · match ms with
+    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
+    | _ :: _ => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
+  · exact Maps.find?_update_self ms x v (by simp_all)
+
 ---------------------------------------------------------------------
