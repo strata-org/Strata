@@ -13,7 +13,7 @@ assert_opt_name_none_or_bar: ✔️ pass if reachable (at byte 11278)
 
 ensures_maybe_except_none: ✔️ pass if reachable (at byte 10984)
 
-Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_23: ➖ can be false if reachable
+test_helper_procedure_assert_name_is_foo_23: ➖ can be false if reachable (at byte 11081)
 
 test_helper_procedure_assert_opt_name_none_or_str_24: ✔️ pass if reachable (at byte 11131)
 
@@ -31,13 +31,13 @@ test_helper_procedure_assert_opt_name_none_or_str_4: ✔️ pass if reachable (a
 
 test_helper_procedure_assert_opt_name_none_or_bar_5: ✔️ pass if reachable (at byte 11278)
 
-Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_13: ➖ can be false if reachable
+test_helper_procedure_assert_name_is_foo_13: ➖ can be false if reachable (at byte 11081)
 
 test_helper_procedure_assert_opt_name_none_or_str_14: ✔️ pass if reachable (at byte 11131)
 
 test_helper_procedure_assert_opt_name_none_or_bar_15: ✔️ pass if reachable (at byte 11278)
 
-Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_3: ➖ can be false if reachable
+test_helper_procedure_assert_name_is_foo_3: ➖ can be false if reachable (at byte 11081)
 
 test_helper_procedure_assert_opt_name_none_or_str_4: ✔️ pass if reachable (at byte 11131)
 
