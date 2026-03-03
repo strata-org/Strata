@@ -1,10 +1,10 @@
 
 ==== Verification Results ====
-ret_type: ✅ pass (at byte 20866)
-ret_type: ✅ pass (at byte 21299)
-ret_pos: ✅ pass (at byte 21797)
-assert_name_is_foo: ✅ pass (at byte 22497)
-assert_opt_name_none_or_bar: ✅ pass (at byte 22560)
-ensures_maybe_except_none: ✅ pass (at byte 22420)
+ret_type: ✅ pass (at byte 20590)
+ret_type: ✅ pass (at byte 21023)
+ret_pos: ✅ pass (at byte 21521)
+assert_name_is_foo: ✅ pass (at byte 22221)
+assert_opt_name_none_or_bar: ✅ pass (at byte 22284)
+ensures_maybe_except_none: ✅ pass (at byte 22144)
 assert(114): ✅ pass (at line 6, col 4)
 assert(264): ✅ pass (at line 11, col 4)
