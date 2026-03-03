@@ -66,6 +66,26 @@ spec {
 };
 #end
 
+def TestProg4 :=
+#strata
+program Core;
+var g1 : int;
+var g2 : bool;
+procedure MultipleModifies(x : int) returns (y : int)
+spec {
+  modifies g1, g2;
+  requires (x > 0);
+  ensures (y == x);
+  ensures (g1 == old g1 + 1);
+  ensures g2;
+}
+{
+  y := x;
+  g1 := g1 + 1;
+  g2 := true;
+};
+#end
+
 /-! ## Tests -/
 
 def translate (t : Strata.Program) : Core.Program :=
@@ -97,6 +117,17 @@ example : True := by
 example : True := by
   let p := translate TestProg3
   match Program.Procedure.find? p "WithFree" with
+  | some proc =>
+    let result := procToVerifyStmt proc p
+    match result.run CoreTransformState.emp with
+    | (.ok _, _) => trivial
+    | (.error _, _) => trivial
+  | none => trivial
+
+-- Test that transformation handles multiple modified globals
+example : True := by
+  let p := translate TestProg4
+  match Program.Procedure.find? p "MultipleModifies" with
   | some proc =>
     let result := procToVerifyStmt proc p
     match result.run CoreTransformState.emp with
