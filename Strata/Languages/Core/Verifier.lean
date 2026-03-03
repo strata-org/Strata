@@ -161,7 +161,23 @@ open Std (ToFormat Format format)
 open Strata
 
 /--
-Analysis outcome of a verification condition based on two SMT queries.
+Analysis outcome of a verification condition based on two SMT queries:
+  - satisfiabilityProperty: result of checking P ∧ Q  (is the property satisfiable given the path condition?)
+  - validityProperty:       result of checking P ∧ ¬Q (can the property be false given the path condition?)
+
+The 9 possible outcomes and their interpretations:
+
+  Emoji  Label                              P ∧ Q    P ∧ ¬Q   Reachable  Deductive  BugFinding  Meaning
+  -----  ---------------------------------  -------  -------  ---------  ---------  ----------  -------
+  ✅     pass and reachable                 sat      unsat    yes        pass       pass        Property always true, reachable from declaration entry
+  ❌     refuted and reachable              unsat    sat      yes        error      error       Property always false, reachable from declaration entry
+  🔶     indecisive and reachable           sat      sat      yes        error      note        Reachable from declaration entry, solver found models for both the property and its negation
+  ⛔     unreachable                        unsat    unsat    no         warning    warning     Dead code, path unreachable
+  ➕     satisfiable                        sat      unknown  yes        error      note        Property can be true and is reachable from declaration entry, validity unknown
+  ✖️     refuted if reachable               unsat    unknown  unknown    error      error       Property always false if reachable, reachability unknown
+  ➖     can be false and is reachable      unknown  sat      yes        error      note        Path is reachable from declaration entry and Q can be false, but satisfiability of Q is unknown
+  ✔️     pass if reachable                  unknown  unsat    unknown    pass       pass        Property always true if reachable, reachability unknown
+  ❓     unknown                            unknown  unknown  unknown    error      note        Both checks inconclusive
 -/
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
