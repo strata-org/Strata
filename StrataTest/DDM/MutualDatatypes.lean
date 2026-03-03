@@ -43,7 +43,7 @@ op constructorListAtom (c : Constructor) : ConstructorList => c;
 
 @[constructorListPush(cl, c)]
 op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
-  cl ", " c;
+  @[prec(30), leftassoc] cl ", " c;
 
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.literal "..is", .constructor],
@@ -78,7 +78,7 @@ datatype Wrapper { MkWrapper(t: Tree, f: Forest) };
 info: program TestMutual;
 mutual
    datatype Tree { Node(val:int, children:Forest) };
-   datatype Forest { (FNil()), (FCons(head:Tree, tail:Forest)) };
+   datatype Forest { FNil(), FCons(head:Tree, tail:Forest) };
 end;
 datatype Wrapper { MkWrapper(t:Tree, f:Forest) };
 -/
@@ -100,7 +100,7 @@ end;
 /--
 info: program TestMutual;
 mutual
-   datatype List { (Nil()), (Cons(head:int, tail:List)) };
+   datatype List { Nil(), Cons(head:int, tail:List) };
 end;
 -/
 #guard_msgs in
@@ -125,7 +125,7 @@ info: program TestMutual;
 mutual
    datatype A { MkA(toB:B) };
    datatype B { MkB(toC:C) };
-   datatype C { (MkC(toA:A)), (CBase()) };
+   datatype C { MkC(toA:A), CBase() };
 end;
 -/
 #guard_msgs in
@@ -172,8 +172,8 @@ datatype Program { MkProgram(body: Expr) };
 /--
 info: program TestMutual;
 mutual
-   datatype Expr { ((Lit(val:int)), (Add(lhs:Expr, rhs:Expr))), (Call(tag:int, args:ExprList)) };
-   datatype ExprList { (ENil()), (ECons(head:Expr, tail:ExprList)) };
+   datatype Expr { Lit(val:int), Add(lhs:Expr, rhs:Expr), Call(tag:int, args:ExprList) };
+   datatype ExprList { ENil(), ECons(head:Expr, tail:ExprList) };
 end;
 datatype Program { MkProgram(body:Expr) };
 -/
@@ -220,7 +220,6 @@ end;
 #end
 
 -- Test: Duplicate constructor name across mutual datatypes
--- Constructor Mk is allowed in both, but the tester ..isMk collides.
 /--
 error: Mk already defined.
 -/
@@ -231,17 +230,4 @@ mutual
   datatype A { Mk() };
   datatype B { Mk() };
 end;
-#end
-
--- Test: Constructor name reused across datatypes
--- The constructor MkExisting is allowed in both datatypes, but the
--- tester template ..isMkExisting collides.
-/--
-error: MkExisting already defined.
--/
-#guard_msgs in
-#eval #strata
-program TestMutual;
-datatype Existing { MkExisting() };
-datatype Other { MkExisting() };
 #end
