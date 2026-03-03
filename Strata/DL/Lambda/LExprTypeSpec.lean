@@ -624,6 +624,76 @@ theorem HasType_subst_upgrade
   exact h1
 
 /--
+Context preservation for `LTy.instantiateWithCheck`.
+`instantiateWithCheck` only modifies `genEnv.genState` and `stateSubstInfo`,
+never `genEnv.context`.
+-/
+theorem LTy_instantiateWithCheck_context
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    Env'.context = Env.context := by
+  sorry
+
+/--
+Context preservation for `LMonoTy.instantiateWithCheck`.
+-/
+theorem LMonoTy_instantiateWithCheck_context
+    (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty, Env')) :
+    Env'.context = Env.context := by
+  sorry
+
+/--
+Semantic property of `LTy.instantiateWithCheck` for typing (unannotated case):
+If `ty` is in the context for variable `x`, and `instantiateWithCheck ty C Env`
+produces `(mty, Env')`, then `(.fvar m x none)` has type
+`(.forAll [] (subst Env'.subst mty))`.
+
+This captures the fact that `instantiateWithCheck` produces an instantiation
+of the polymorphic type `ty`, and applying the output substitution yields a
+valid monomorphic instance.
+
+Proof sketch: `tvar` gives `HasType C Γ (.fvar m x none) ty`. Then
+`instantiate` replaces bound vars with fresh vars (justified by `tgen`/`tinst`),
+`resolveAliases` resolves type aliases (preserving typing via alias equivalence),
+and `subst Env'.subst` applies the accumulated substitution (justified by
+`HasType_subst_fresh_all` since all keys are fresh).
+-/
+theorem instantiateWithCheck_fvar_HasType
+    (C : LContext T) (Γ : TContext T.IDMeta) (x : Identifier T.IDMeta)
+    (ty : LTy) (mty : LMonoTy) (Env Env' : TEnv T.IDMeta)
+    (m : T.mono.base.Metadata)
+    (h_find : Γ.types.find? x = some ty)
+    (h_ctx : Env.context = Γ)
+    (h_inst : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    HasType C Γ (.fvar m x none)
+      (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty)) := by
+  sorry
+
+/--
+Semantic property for the annotated case: if `ty` is in the context for `x`,
+`instantiateWithCheck ty` produces `(mty, Env1)`, `instantiateWithCheck fty_val`
+produces `(fty_inst, Env2)`, and unification of `(fty_inst, mty)` produces `S`,
+then `(.fvar m x (some fty_val))` has type
+`(.forAll [] (subst S.subst mty))`.
+-/
+theorem instantiateWithCheck_fvar_annotated_HasType
+    (C : LContext T) (Γ : TContext T.IDMeta) (x : Identifier T.IDMeta)
+    (ty : LTy) (mty : LMonoTy) (fty_val fty_inst : LMonoTy)
+    (Env Env1 Env2 : TEnv T.IDMeta) (S : SubstInfo)
+    (m : T.mono.base.Metadata)
+    (h_find : Γ.types.find? x = some ty)
+    (h_ctx : Env.context = Γ)
+    (h_inst : LTy.instantiateWithCheck ty C Env = .ok (mty, Env1))
+    (h_inst2 : LMonoTy.instantiateWithCheck fty_val C Env1 = .ok (fty_inst, Env2))
+    (h_unify : Constraints.unify [(fty_inst, mty)] Env2.stateSubstInfo = .ok S) :
+    HasType C Γ (.fvar m x (some fty_val))
+      (.forAll [] (LMonoTy.subst S.subst mty)) := by
+  sorry
+
+/--
 Helper: `inferFVar` preserves the context and produces a well-typed result.
 
 For the unannotated case (`fty = none`):
@@ -644,7 +714,62 @@ theorem inferFVar_HasType
     Env'.context = Env.context ∧
     HasType C (Env.context) (.fvar m x fty)
       (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
-  sorry
+  simp only [inferFVar, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h  -- context lookup failed
+  · rename_i ty h_find
+    split at h
+    · simp at h  -- instantiateWithCheck failed
+    · rename_i v1 h_inst
+      obtain ⟨mty, Env1⟩ := v1
+      simp at h h_inst
+      split at h
+      · -- Case fty = none: return (mty, Env1)
+        simp at h
+        obtain ⟨h_ty, h_env⟩ := h
+        subst h_ty; subst h_env
+        constructor
+        · -- Context preservation
+          exact LTy_instantiateWithCheck_context ty C Env mty Env1 h_inst
+        · -- Typing: delegate to instantiateWithCheck_fvar_HasType
+          exact instantiateWithCheck_fvar_HasType C Env.context x ty mty Env Env1 m
+            h_find rfl h_inst
+      · -- Case fty = some fty_val
+        rename_i fty_val
+        split at h
+        · simp at h  -- LMonoTy.instantiateWithCheck failed
+        · rename_i v2 h_inst2
+          obtain ⟨fty_inst, Env2⟩ := v2
+          simp at h h_inst2
+          split at h
+          · simp at h  -- unify failed (via mapError)
+          · rename_i S h_unify_raw
+            simp at h
+            obtain ⟨h_ty, h_env⟩ := h
+            subst h_ty; subst h_env
+            -- Extract unify hypothesis from mapError wrapper
+            have h_unify : Constraints.unify [(fty_inst, mty)]
+                Env2.stateSubstInfo = .ok S := by
+              revert h_unify_raw
+              generalize Constraints.unify [(fty_inst, mty)]
+                Env2.stateSubstInfo = res
+              intro h_me
+              match res, h_me with
+              | .ok val, h_me => simp [Except.mapError] at h_me; rw [h_me]
+              | .error _, h_me => simp [Except.mapError] at h_me
+            constructor
+            · -- Context preservation
+              simp [TEnv.updateSubst, TEnv.context]
+              have h1 := LTy_instantiateWithCheck_context ty C Env mty Env1 h_inst
+              have h2 := LMonoTy_instantiateWithCheck_context fty_val C Env1
+                fty_inst Env2 h_inst2
+              simp [TEnv.context] at h1 h2
+              rw [h2, h1]
+            · -- Typing: delegate to instantiateWithCheck_fvar_annotated_HasType
+              simp [TEnv.updateSubst]
+              exact instantiateWithCheck_fvar_annotated_HasType C Env.context x ty
+                mty fty_val fty_inst Env Env1 Env2 S m h_find rfl h_inst h_inst2
+                h_unify
 
 /-!
 ### Core theorem: `resolveAux_HasType`
