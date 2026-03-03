@@ -24,6 +24,8 @@ import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelSemantics
+import Strata.Languages.Laurel.LaurelSemanticsProps
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
