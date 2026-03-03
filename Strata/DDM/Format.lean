@@ -21,13 +21,16 @@ Check if a character is valid for starting a regular identifier.
 Regular identifiers must start with a letter or underscore.
 -/
 private def isIdBegin (c : Char) : Bool :=
-  c.isAlpha || c == '_'
+  c.isAlpha || c == '_' || c == '$'
 
 /--
 Check if a character is valid for continuing a regular identifier.
+Includes @ and $ which are valid in SMT-LIB 2.6 simple symbols and
+used by the encoder for disambiguated names (e.g. x@1) and generated
+names (e.g. $__bv0).
 -/
 private def isIdContinue (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '@' || c == '$'
 
 /--
 Check if a string needs pipe delimiters when formatted as an identifier.
@@ -65,6 +68,10 @@ private def formatIdent (s : String) : Format :=
     Format.text ("|" ++ escapePipeIdent s ++ "|")
   else
     Format.text s
+
+/-- Quote an identifier string for SMT-LIB, adding pipe delimiters if needed. -/
+def quoteIdent (s : String) : String :=
+  if needsPipeDelimiters s then "|" ++ escapePipeIdent s ++ "|" else s
 
 structure PrecFormat where
   format : Format
