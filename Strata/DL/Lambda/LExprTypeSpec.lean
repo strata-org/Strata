@@ -623,6 +623,29 @@ theorem HasType_subst_upgrade
   rw [LMonoTy.subst_absorbs S_outer S_inner mty h_absorbs] at h1
   exact h1
 
+/--
+Helper: `inferFVar` preserves the context and produces a well-typed result.
+
+For the unannotated case (`fty = none`):
+  `inferFVar` looks up `x` in context to get `ty_poly`, instantiates bound
+  type variables with fresh ones via `LTy.instantiateWithCheck`, and returns
+  the instantiated monomorphic type `mty`. The typing follows from `tvar`
+  (giving `ty_poly`) composed with `tinst` (instantiating bound vars).
+
+For the annotated case (`fty = some fty_val`):
+  Additionally unifies the annotation with the instantiated type. The typing
+  follows from `tvar_annotated` or `tvar` + `tinst` + absorption/upgrade.
+-/
+theorem inferFVar_HasType
+    (C : LContext T) (Env : TEnv T.IDMeta) (x : Identifier T.IDMeta)
+    (fty : Option LMonoTy) (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
+    (m : T.mono.base.Metadata)
+    (h : inferFVar C Env x fty = .ok (ty_res, Env')) :
+    Env'.context = Env.context ∧
+    HasType C (Env.context) (.fvar m x fty)
+      (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
+  sorry
+
 /-!
 ### Core theorem: `resolveAux_HasType`
 
@@ -669,8 +692,19 @@ theorem resolveAux_HasType :
     intro et C Env Env' h
     simp [resolveAux, Bind.bind, Except.bind] at h
   | fvar m x fty =>
+    -- resolveAux calls inferFVar, which looks up x in context, instantiates
+    -- bound type variables, and optionally unifies with the annotation.
     intro et C Env Env' h
-    exact ⟨sorry, sorry⟩
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_infer
+      obtain ⟨ty_res, Env_res⟩ := v1
+      simp at h
+      obtain ⟨h_et, h_env'⟩ := h
+      rw [← h_et, ← h_env']
+      simp [toLMonoTy]
+      exact inferFVar_HasType C Env x fty ty_res Env_res m h_infer
   | op m o oty =>
     intro et C Env Env' h
     exact ⟨sorry, sorry⟩
