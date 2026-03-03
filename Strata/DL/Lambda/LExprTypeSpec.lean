@@ -546,30 +546,70 @@ some are used before the `variable` block that introduces `T`.
 /--
 `genTyVar` preserves the context.
 
-Note: `genTyVar` has a `panic` branch (when the generated variable collides
-with a known type variable) that returns `default`, which could in principle
-change the context. This branch is unreachable in practice (the generator
-prefix `$__ty` is reserved), but proving unreachability requires a freshness
-precondition we don't carry here. We therefore declare this as an axiom.
+Now that `genTyVar` returns `Except Format` (instead of using `panic`),
+we can prove this as a theorem: the error branch never produces an
+environment, and the success branch only updates `genState`.
 -/
-axiom TGenEnv.genTyVar_context {IDMeta : Type} [ToFormat IDMeta]
-    (Env : TGenEnv IDMeta) :
-    (TGenEnv.genTyVar Env).snd.context = Env.context
+theorem TGenEnv.genTyVar_context {IDMeta : Type} [ToFormat IDMeta]
+    (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
+    Env'.context = Env.context := by
+  simp [TGenEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
 /-- `genTyVars` preserves the context (by induction, using `genTyVar_context`). -/
 theorem TGenEnv.genTyVars_context {IDMeta : Type} [ToFormat IDMeta]
-    (n : Nat) (Env : TGenEnv IDMeta) :
-    (TGenEnv.genTyVars n Env).snd.context = Env.context := by
-  induction n generalizing Env with
-  | zero => simp [TGenEnv.genTyVars]
-  | succ n ih => simp [TGenEnv.genTyVars]; rw [ih, TGenEnv.genTyVar_context]
+    (n : Nat) (Env : TGenEnv IDMeta)
+    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    Env'.context = Env.context := by
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+  | succ n ih =>
+    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        rw [ih Env1 tvs' Env2 h_rest, TGenEnv.genTyVar_context Env tv Env1 h_gen]
+
+/-- `instantiate` (on `TGenEnv`) preserves the context. -/
+private theorem LMonoTys.instantiate_context {IDMeta : Type} [ToFormat IDMeta]
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TGenEnv IDMeta)
+    (mtys' : LMonoTys) (Env' : TGenEnv IDMeta)
+    (h : LMonoTys.instantiate ids mtys Env = .ok (mtys', Env')) :
+    Env'.context = Env.context := by
+  simp [LMonoTys.instantiate, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_gen
+    obtain ⟨tvs, Env1⟩ := v1; simp at h h_gen
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact TGenEnv.genTyVars_context ids.length Env tvs Env1 h_gen
 
 /-- `instantiateEnv` preserves the context. -/
 theorem LMonoTys.instantiateEnv_context {IDMeta : Type} [ToFormat IDMeta]
-    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv IDMeta) :
-    (LMonoTys.instantiateEnv ids mtys Env).snd.context = Env.context := by
-  simp [LMonoTys.instantiateEnv, liftGenEnv, LMonoTys.instantiate, TEnv.context]
-  exact TGenEnv.genTyVars_context ids.length Env.genEnv
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv IDMeta)
+    (mtys' : LMonoTys) (Env' : TEnv IDMeta)
+    (h : LMonoTys.instantiateEnv ids mtys Env = .ok (mtys', Env')) :
+    Env'.context = Env.context := by
+  unfold LMonoTys.instantiateEnv at h
+  generalize h_inst : LMonoTys.instantiate ids mtys Env.genEnv = result at h
+  match result, h_inst with
+  | .error _, _ => simp at h
+  | .ok (a, gE), h_inst =>
+    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+    simp [TEnv.context]
+    exact LMonoTys.instantiate_context ids mtys Env.genEnv a gE h_inst
 
 /-- `tconsAlias` preserves the context. -/
 theorem tconsAlias_context {IDMeta : Type} [ToFormat IDMeta]
@@ -584,17 +624,20 @@ theorem tconsAlias_context {IDMeta : Type} [ToFormat IDMeta]
     simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
   | some alias =>
     simp at h
-    generalize h_u : Constraints.unify _ _ = u at h
-    match u with
-    | .error e => simp at h
-    | .ok S =>
-      simp [Pure.pure, Except.pure] at h
-      obtain ⟨_, h2⟩ := h; rw [← h2]
-      simp [TEnv.updateSubst, TEnv.context]
-      exact LMonoTys.instantiateEnv_context _ _ Env
+    split at h
+    · simp at h
+    · rename_i instTypes updatedEnv h_inst
+      generalize h_u : Constraints.unify _ _ = u at h
+      match u with
+      | .error e => simp at h
+      | .ok S =>
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        simp [TEnv.updateSubst, TEnv.context]
+        exact LMonoTys.instantiateEnv_context _ _ Env _ updatedEnv h_inst
 
 mutual
-/-- `LMonoTys.resolveAliases` preserves the context. -/
+/-- `LMonoTy.resolveAliases` preserves the context. -/
 theorem LMonoTy.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
     (mty : LMonoTy) (Env : TEnv IDMeta) (mty' : LMonoTy) (Env' : TEnv IDMeta)
     (h : LMonoTy.resolveAliases mty Env = .ok (mty', Env')) :
@@ -644,20 +687,33 @@ end
 
 /-- `LTy.instantiate` preserves the context. -/
 theorem LTy.instantiate_context {IDMeta : Type} [ToFormat IDMeta]
-    (ty : LTy) (Env : TGenEnv IDMeta) :
-    (LTy.instantiate ty Env).snd.context = Env.context := by
-  simp [LTy.instantiate]; split <;> simp
-  exact TGenEnv.genTyVars_context _ Env
+    (ty : LTy) (Env : TGenEnv IDMeta)
+    (mty : LMonoTy) (Env' : TGenEnv IDMeta)
+    (h : LTy.instantiate ty Env = .ok (mty, Env')) :
+    Env'.context = Env.context := by
+  simp [LTy.instantiate, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+  · split at h
+    · simp at h
+    · rename_i v1 h_gen
+      obtain ⟨tvs, Env1⟩ := v1; simp at h h_gen
+      obtain ⟨_, h2⟩ := h; rw [← h2]
+      exact TGenEnv.genTyVars_context _ Env tvs Env1 h_gen
 
 /-- `LTy.resolveAliases` preserves the context. -/
 theorem LTy.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
     (ty : LTy) (Env : TEnv IDMeta) (mty : LMonoTy) (Env' : TEnv IDMeta)
     (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
     Env'.context = Env.context := by
-  simp [LTy.resolveAliases] at h
-  have h_inst := LTy.instantiate_context ty Env.genEnv
-  have h_ra := LMonoTy.resolveAliases_context _ _ mty Env' h
-  rw [h_ra]; simp [TEnv.context]; exact h_inst
+  simp [LTy.resolveAliases, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_inst
+    obtain ⟨mty0, genEnv'⟩ := v1; simp at h h_inst
+    have h_ra := LMonoTy.resolveAliases_context _ _ mty Env' h
+    rw [h_ra]; simp [TEnv.context]
+    exact LTy.instantiate_context ty Env.genEnv mty0 genEnv' h_inst
 
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
   [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
@@ -770,11 +826,9 @@ theorem LTy_instantiateWithCheck_context
     · simp [Pure.pure, Except.pure] at h
       obtain ⟨_, h2⟩ := h; rw [← h2]
       exact LTy.resolveAliases_context ty Env mty' Env1 h_ra
-    · simp [Pure.pure, Except.pure] at h
+    · simp at h
 
-/--
-Context preservation for `LMonoTy.instantiateWithCheck`.
--/
+/-- Context preservation for `LMonoTy.instantiateWithCheck`. -/
 theorem LMonoTy_instantiateWithCheck_context
     (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
     (mty : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -783,15 +837,17 @@ theorem LMonoTy_instantiateWithCheck_context
   simp [LMonoTy.instantiateWithCheck, Bind.bind, Except.bind] at h
   split at h
   · simp at h
-  · rename_i v1 h_ra
-    obtain ⟨mty', Env1⟩ := v1
+  · rename_i v1 h_inst
+    obtain ⟨instTypes, Env_mid⟩ := v1
     split at h
-    · simp [Pure.pure, Except.pure] at h
-      obtain ⟨_, h2⟩ := h; rw [← h2]
-      have h_ra' := LMonoTy.resolveAliases_context _ _ mty' Env1 h_ra
-      rw [h_ra']
-      exact LMonoTys.instantiateEnv_context mty_in.freeVars [mty_in] Env
     · simp at h
+    · rename_i v2 h_ra
+      obtain ⟨mty', Env2⟩ := v2; simp at h h_ra
+      split at h
+      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+        rw [LMonoTy.resolveAliases_context _ _ mty' Env2 h_ra]
+        exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
+      · simp at h
 
 /--
 Semantic property of `LTy.instantiateWithCheck` for typing (unannotated case):
