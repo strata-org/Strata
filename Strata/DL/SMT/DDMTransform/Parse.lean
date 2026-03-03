@@ -17,7 +17,8 @@ namespace Strata
 
 open Elab
 
-private def reservedKeywords := [
+-- TODO: reservedKeywords should be in the SMTDDM namespace, not Strata
+def reservedKeywords := [
     -- A list of (name in DDM (without "reserved_" prefix), the string)
     -- Category "General"
     ("bang", "!"),

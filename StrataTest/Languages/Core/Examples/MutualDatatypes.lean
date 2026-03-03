@@ -134,21 +134,41 @@ spec {
 
 /--
 info:
+Obligation: set_v_calls_RoseTree..val_0
+Property: assert
+Result: ✅ pass
+
 Obligation: valIs42
 Property: assert
 Result: ✔️ pass if reachable
+
+Obligation: set_c_calls_RoseTree..children_0
+Property: assert
+Result: ✅ pass
 
 Obligation: childrenIsNil
 Property: assert
 Result: ✔️ pass if reachable
 
+Obligation: set_t_calls_Forest..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIsNode
 Property: assert
 Result: ✔️ pass if reachable
 
+Obligation: assert_headVal_calls_RoseTree..val_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headVal
 Property: assert
 Result: ✔️ pass if reachable
+
+Obligation: set_f_calls_Forest..tail_0
+Property: assert
+Result: ✅ pass
 
 Obligation: tailIsNil
 Property: assert
@@ -268,13 +288,29 @@ spec {
 
 /--
 info:
+Obligation: assert_valIs42_calls_RoseTree..val_0
+Property: assert
+Result: ✅ pass
+
 Obligation: valIs42
 Property: assert
 Result: ✔️ pass if reachable
 
+Obligation: assert_headIsT_calls_Forest..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIsT
 Property: assert
 Result: ✔️ pass if reachable
+
+Obligation: assert_headVal_calls_RoseTree..val_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_headVal_calls_Forest..head_1
+Property: assert
+Result: ✅ pass
 
 Obligation: headVal
 Property: assert
@@ -342,13 +378,41 @@ Obligation: isBlock
 Property: assert
 Result: ✔️ pass if reachable
 
+Obligation: assert_bodyHd_calls_StmtList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_bodyHd_calls_Stmt..blockBody_1
+Property: assert
+Result: ✅ pass
+
 Obligation: bodyHd
 Property: assert
 Result: ✔️ pass if reachable
 
+Obligation: assert_cmdVal_calls_Stmt..cmd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_cmdVal_calls_StmtList..hd_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_cmdVal_calls_Stmt..blockBody_2
+Property: assert
+Result: ✅ pass
+
 Obligation: cmdVal
 Property: assert
 Result: ✔️ pass if reachable
+
+Obligation: assert_secondIsGoto_calls_StmtList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_secondIsGoto_calls_StmtList..tl_1
+Property: assert
+Result: ✅ pass
 
 Obligation: secondIsGoto
 Property: assert

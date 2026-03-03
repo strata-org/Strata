@@ -42,6 +42,10 @@ procedure testmap () returns ()
 
 /--
 info:
+Obligation: set_k_calls_Any..as_MapInt_0
+Property: assert
+Result: ✔️ pass if reachable
+
 Obligation: something
 Property: assert
 Result: ✔️ pass if reachable
