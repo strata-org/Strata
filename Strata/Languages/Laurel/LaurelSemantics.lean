@@ -22,6 +22,22 @@ document `docs/designs/design-formal-semantics-for-laurel-ir.md`).
 - **EvalLaurelStmt / EvalLaurelBlock**: mutually inductive big-step relations
 
 The judgment form is: `δ, π, heap, σ, stmt ⊢ heap', σ', outcome`
+
+## Intentionally Omitted Constructs
+
+The following `StmtExpr` constructors have no evaluation rules and will get stuck:
+- **`Abstract`**: Specification-level marker for abstract contracts. Not executable.
+- **`All`**: Specification-level reference to all heap objects (reads/modifies clauses).
+- **`Hole`**: Represents incomplete programs. Not executable by design.
+
+## Known Limitations
+
+- **Multi-target `Assign`**: Only single-target assignment (identifier or field) is
+  handled. Multi-target assignment (for procedures with multiple outputs) is not yet
+  supported. -- TODO: Add multi-target assign rules.
+- **Argument evaluation**: Call arguments are evaluated via the pure evaluator `δ`
+  rather than `EvalLaurelStmt`, so arguments with side effects will get stuck.
+  This is a workaround for Lean 4 mutual inductive limitations.
 -/
 
 namespace Strata.Laurel
@@ -126,15 +142,18 @@ def getBody : Procedure → Option StmtExprMd
   | { body := .Opaque _ (some b) _, .. } => some b
   | _ => none
 
-def bindParams (σ : LaurelStore) (params : List Parameter) (vals : List LaurelValue)
+/-- Bind parameters to values starting from an empty store (lexical scoping). -/
+def bindParams (params : List Parameter) (vals : List LaurelValue)
     : Option LaurelStore :=
-  match params, vals with
-  | [], [] => some σ
-  | p :: ps, v :: vs =>
-    if σ p.name = none then
-      bindParams (fun x => if x == p.name then some v else σ x) ps vs
-    else none
-  | _, _ => none
+  go (fun _ => none) params vals
+where
+  go (σ : LaurelStore) : List Parameter → List LaurelValue → Option LaurelStore
+    | [], [] => some σ
+    | p :: ps, v :: vs =>
+      if σ p.name = none then
+        go (fun x => if x == p.name then some v else σ x) ps vs
+      else none
+    | _, _ => none
 
 def HighType.typeName : HighType → Identifier
   | .UserDefined name => name
@@ -254,6 +273,10 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h σ ⟨.LocalVariable name ty none, md⟩ h σ' (.normal .vVoid)
 
   -- Verification Constructs
+  -- Note: assert_true and assume_true require the condition to be pure
+  -- (no side effects on heap or store). Conditions with side effects have
+  -- no derivation. This is intentional — assert/assume conditions should
+  -- be specification-level expressions, not effectful computations.
 
   | assert_true :
     EvalLaurelStmt δ π h σ c h σ (.normal (.vBool true)) →
@@ -264,11 +287,15 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h σ ⟨.Assume c, md⟩ h σ (.normal .vVoid)
 
   -- Static Calls (arguments evaluated via δ for simplicity)
+  -- Note: Arguments are evaluated via the pure evaluator δ rather than
+  -- EvalLaurelStmt due to Lean 4 mutual inductive limitations. This means
+  -- call arguments cannot have side effects (e.g., f(g(x)) where g modifies
+  -- the store will get stuck). See commit message for details.
 
   | static_call :
     π callee = some proc →
     EvalArgs δ σ args vals →
-    bindParams σ proc.inputs vals = some σBound →
+    bindParams proc.inputs vals = some σBound →
     getBody proc = some body →
     EvalLaurelStmt δ π h σBound body h' σ' (.normal v) →
     EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ (.normal v)
@@ -276,10 +303,18 @@ inductive EvalLaurelStmt :
   | static_call_return :
     π callee = some proc →
     EvalArgs δ σ args vals →
-    bindParams σ proc.inputs vals = some σBound →
+    bindParams proc.inputs vals = some σBound →
     getBody proc = some body →
     EvalLaurelStmt δ π h σBound body h' σ' (.ret (some v)) →
     EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ (.normal v)
+
+  | static_call_return_void :
+    π callee = some proc →
+    EvalArgs δ σ args vals →
+    bindParams proc.inputs vals = some σBound →
+    getBody proc = some body →
+    EvalLaurelStmt δ π h σBound body h' σ' (.ret none) →
+    EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ (.normal .vVoid)
 
   -- OO Features
 
@@ -308,10 +343,30 @@ inductive EvalLaurelStmt :
     h₁ addr = some (typeName, _) →
     π (typeName ++ "." ++ callee) = some proc →
     EvalArgs δ σ₁ args vals →
-    bindParams σ₁ proc.inputs ((.vRef addr) :: vals) = some σBound →
+    bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
     getBody proc = some body →
     EvalLaurelStmt δ π h₁ σBound body h₂ σ₂ (.normal v) →
     EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₂ σ₁ (.normal v)
+
+  | instance_call_return :
+    EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
+    h₁ addr = some (typeName, _) →
+    π (typeName ++ "." ++ callee) = some proc →
+    EvalArgs δ σ₁ args vals →
+    bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
+    getBody proc = some body →
+    EvalLaurelStmt δ π h₁ σBound body h₂ σ₂ (.ret (some v)) →
+    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₂ σ₁ (.normal v)
+
+  | instance_call_return_void :
+    EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
+    h₁ addr = some (typeName, _) →
+    π (typeName ++ "." ++ callee) = some proc →
+    EvalArgs δ σ₁ args vals →
+    bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
+    getBody proc = some body →
+    EvalLaurelStmt δ π h₁ σBound body h₂ σ₂ (.ret none) →
+    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₂ σ₁ (.normal .vVoid)
 
   | this_sem :
     σ "this" = some v →
@@ -377,14 +432,15 @@ inductive EvalLaurelBlock :
   | nil :
     EvalLaurelBlock δ π h σ [] h σ (.normal .vVoid)
 
-  | cons_normal :
-    EvalLaurelStmt δ π h σ s h₁ σ₁ (.normal v) →
-    EvalLaurelBlock δ π h₁ σ₁ rest h₂ σ₂ outcome →
-    EvalLaurelBlock δ π h σ (s :: rest) h₂ σ₂ outcome
-
   | last_normal :
     EvalLaurelStmt δ π h σ s h' σ' (.normal v) →
     EvalLaurelBlock δ π h σ [s] h' σ' (.normal v)
+
+  | cons_normal :
+    EvalLaurelStmt δ π h σ s h₁ σ₁ (.normal _v) →
+    rest ≠ [] →
+    EvalLaurelBlock δ π h₁ σ₁ rest h₂ σ₂ outcome →
+    EvalLaurelBlock δ π h σ (s :: rest) h₂ σ₂ outcome
 
   | cons_exit :
     EvalLaurelStmt δ π h σ s h' σ' (.exit label) →
