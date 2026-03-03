@@ -115,13 +115,13 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   `x_ty` or None and if `e` has type `e_ty` when `Γ` is extended with the
   binding `(x → x_ty)`.
   -/
-  | tabs : ∀ Γ m x x_ty e e_ty o,
+  | tabs : ∀ Γ m name x x_ty e e_ty o,
             LExpr.fresh x e →
             (hx : LTy.isMonoType x_ty) →
             (he : LTy.isMonoType e_ty) →
             HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
             o = none ∨ o = some (x_ty.toMonoType hx) →
-            HasType C Γ (.abs m o e)
+            HasType C Γ (.abs m name o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
 
@@ -177,13 +177,13 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   `x_ty` or None, and if, when `Γ` is extended with the binding `(x → x_ty)`,
   `e` has type `bool` and `tr` is well-typed.
   -/
-  | tquant: ∀ Γ m k tr tr_ty x x_ty e o,
+  | tquant: ∀ Γ m k name tr tr_ty x x_ty e o,
             LExpr.fresh x e →
             (hx : LTy.isMonoType x_ty) →
             HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) (.forAll [] .bool) →
             HasType C {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
             o = none ∨ o = some (x_ty.toMonoType hx) →
-            HasType C Γ (.quant m k o tr e) (.forAll [] .bool)
+            HasType C Γ (.quant m k name o tr e) (.forAll [] .bool)
 
   /--
   An un-annotated operator has the type recorded for it in `C.functions`, if any.
@@ -211,10 +211,10 @@ theorem HasType.regularity [DecidableEq T.IDMeta] (h : HasType (T := T) C Γ e t
   LExpr.WF e := by
   open LExpr in
   induction h <;> try (solve | simp_all[WF, lcAt])
-  case tabs m x x_ty e e_ty hx h_x_mono h_e_mono ht ih =>
+  case tabs m name x x_ty e e_ty hx h_x_mono h_e_mono ht ih =>
     simp_all [WF]
     exact lcAt_varOpen_abs ih (by simp)
-  case tquant m k tr tr_ty x x_ty e o h_x_mono hx htr ih ihtr =>
+  case tquant m k name tr tr_ty x x_ty e o h_x_mono hx htr ih ihtr =>
     simp_all [WF]
     exact lcAt_varOpen_quant ih (by omega) ihtr
   done
@@ -259,7 +259,7 @@ example : LExpr.HasType LContext.default { types := [[(⟨"m", ()⟩, t[∀a. %a
   · simp +ground
 
 example : LExpr.HasType {} {} esM[λ %0] t[∀a. %a → %a] := by
-  have h_tabs := @LExpr.HasType.tabs (T := ⟨Unit, Unit⟩) _ {} {} () ("a", none) t[%a] esM[%0] t[%a] none
+  have h_tabs := @LExpr.HasType.tabs (T := ⟨Unit, Unit⟩) _ {} {} () "" ("a", none) t[%a] esM[%0] t[%a] none
   simp at h_tabs
   have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, Unit⟩) _ {} { types := [[("a", t[%a])]] }
                  () "a" t[%a]
