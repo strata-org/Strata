@@ -444,52 +444,7 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Core Program ===="
             IO.print (coreProgramDecls, modifiesDiags)
 
-          -- -- Strip the Laurel corePrelude prefix (always emitted by
-          -- -- Laurel.translate); already present in pyPrelude.
-          -- let laurelPreludeSize := Strata.Laurel.corePrelude.decls.length
-          -- let droppedPrefix := coreProgramDecls.decls.take laurelPreludeSize
-          -- let programDecls := coreProgramDecls.decls.drop laurelPreludeSize
-
-          -- -- Collect all names produced by Laurel translation (prelude + program).
-          -- let laurelTranslatedNames : Std.HashSet String :=
-          --   programDecls.foldl (init := {}) fun s d =>
-          --     (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
-
-          -- -- Update pyPrelude declarations: replace with Laurel-translated
-          -- -- versions from the dropped prefix where names match, and filter
-          -- -- out declarations now provided by the Laurel-translated program.
-          -- let pyPreludeDecls := pyPrelude.decls
-          --   |>.map (fun d =>
-          --     match droppedPrefix.find? (fun pd => pd.name.name == d.name.name) with
-          --     | some replacement => replacement
-          --     | none => d)
-          --   |>.filter (fun d => !laurelTranslatedNames.contains d.name.name)
-
-          -- -- Add Core-only declarations (axioms, Except, regex, discriminator
-          -- -- procedures) that cannot be expressed in Laurel grammar.
-          let coreOnlyDecls := Strata.Python.coreOnlyPreludeForLaurel
-          -- let coreOnlyNames : Std.HashSet String :=
-          --   coreOnlyDecls.foldl (init := {}) fun s d =>
-          --     (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
-
-          -- -- Filter programDecls to remove declarations overridden by
-          -- -- Core-only versions (e.g., timedelta with discriminator body).
-          -- let programDecls := programDecls.filter fun d =>
-          --   !coreOnlyNames.contains d.name.name
-
-          -- let allPreludeDecls := pyPreludeDecls ++ coreOnlyDecls
-
-          -- -- Check for name collisions between program and prelude
-          -- let preludeNames : Std.HashSet String :=
-          --   allPreludeDecls.flatMap Core.Decl.names
-          --     |>.foldl (init := {}) fun s n => s.insert n.name
-          -- let collisions := programDecls.flatMap fun d =>
-          --   d.names.filter fun n => preludeNames.contains n.name
-          -- if !collisions.isEmpty then
-          --   let names := ", ".intercalate (collisions.map (·.name))
-          --   exitFailure s!"Core name collision between program and prelude: {names}"
-          -- let coreProgram := {decls := allPreludeDecls ++ programDecls }
-          let coreProgram := { decls := coreProgramDecls.decls ++ coreOnlyDecls }
+          let coreProgram := { decls := coreProgramDecls.decls ++ Strata.Python.coreOnlyPreludeForLaurel }
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
