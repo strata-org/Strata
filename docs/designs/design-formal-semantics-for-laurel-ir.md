@@ -114,7 +114,7 @@ This evaluator cannot serve as a formal semantics because it is partial, uses a 
 
 ## 3. Design Options
 
-### Option A: Direct Operational Semantics
+### Option A: Direct Operational Semantics (implemented)
 
 Define `EvalLaurelStmt` as a standalone inductive relation on `Laurel.StmtExpr`, independent of Core semantics.
 
@@ -493,34 +493,9 @@ Limitations:
 - Low: Core semantics and properties can be developed and tested independently
 - The modular structure means each piece can be verified in isolation
 
-## 4. Recommendation
+## 4. Decision
 
-**Option C (Hybrid)** is recommended.
+**Chosen approach: Option A (Direct Semantics)** — implemented in `LaurelSemantics.lean`.
 
-### Rationale
+Option A was chosen as the initial implementation to serve as a reference semantics covering all ~35 `StmtExpr` constructors, including OO features. This provides a complete formal specification against which future translations (Laurel → Core) can be validated. Option C (Hybrid) remains a viable path for translation correctness proofs, where the desugaring pipeline can be verified against the Option A reference semantics.
 
-1. **Matches the existing architecture.** The translation pipeline already performs Laurel→Laurel desugaring (heap parameterization, type hierarchy, expression lifting) before Laurel→Core translation. Option C formalizes this existing structure rather than fighting it.
-
-2. **Incremental development.** We can deliver value in phases:
-   - Phase 1: Imperative core semantics + determinism/progress proofs (~800 LOC). This is immediately useful for reasoning about control flow, assignments, and verification constructs.
-   - Phase 2: Translation correctness for the imperative core → Core (~600 LOC). This validates `translateStmt` for the most common constructs.
-   - Phase 3: Desugaring correctness for individual passes (can be done per-pass, in any order).
-
-3. **Right level of abstraction.** Option A tries to formalize everything at once (including OO features that are already desugared away before Core translation). Option B provides no independent semantics at all. Option C gives us a real semantics for the constructs that matter most (control flow, assignments, verification) while deferring the complexity of OO encoding.
-
-4. **Manageable proof obligations.** The imperative core has ~18 constructors (vs. ~35 for full StmtExpr). Determinism and progress proofs scale with constructor count. The `Outcome` type adds some complexity but is essential for modeling `Exit`/`Return` correctly.
-
-5. **Reuses existing infrastructure.** The `Outcome` type mirrors `EvalResult` from `LaurelEval.lean`. The store model follows Core's `SemanticStore` pattern. The modular correctness structure follows the existing `EvalStmtRefinesContract` pattern.
-
-### Suggested implementation order
-
-1. Define `LaurelValue`, `LaurelStore`, `Outcome` types
-2. Define `EvalLaurelStmt` / `EvalLaurelBlock` for imperative core
-3. Write concrete evaluation tests
-4. Prove determinism for the imperative core
-5. Prove store monotonicity
-6. Define store correspondence `LaurelStore ↔ CoreStore`
-7. Prove `translateStmt` correctness for simple constructs (Assign, LocalVariable, IfThenElse)
-8. Extend to While, Block/Exit, Return
-9. (Later) Prove desugaring correctness for heap parameterization
-10. (Later) Prove desugaring correctness for expression lifting

@@ -107,7 +107,7 @@ example : EvalLaurelStmt trivialEval emptyProc emptyHeap emptyStore
 example : EvalLaurelStmt trivialEval emptyProc emptyHeap emptyStore
     (mk (.Block [mk (.LiteralInt 1), mk (.LiteralInt 2)] none))
     emptyHeap emptyStore (.normal (.vInt 2)) :=
-  .block_sem (.cons_normal .literal_int (.last_normal .literal_int)) (by rfl)
+  .block_sem (.cons_normal .literal_int (by simp) (.last_normal .literal_int)) (by rfl)
 
 /-! ## IfThenElse Tests -/
 
