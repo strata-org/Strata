@@ -180,7 +180,7 @@ Result: ⛔ unreachable
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ❌ refuted and reachable from declaration entry
+Result: ✅ pass and reachable from declaration entry
 
 Obligation: reach_cover_pass
 Property: cover

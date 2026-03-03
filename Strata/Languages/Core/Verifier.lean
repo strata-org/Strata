@@ -44,7 +44,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
   for id in assumptionIds do
     Solver.assert id
-  -- Encode the obligation term (but don't assert it)
+  -- Encode the obligation term Q (not negated)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
   let ids := estate.ufs.values
@@ -53,31 +53,33 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let bothChecks := satisfiabilityCheck && validityCheck
 
   if bothChecks then
-    if satisfiabilityCheck then
-      Solver.comment "Satisfiability check (can property be true?)"
-      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-        (message := ("sat-message", s!"\"Property can be satisfied\""))
-      let obligationStr ← Solver.termToSMTString obligationId
-      let _ ← Solver.checkSatAssuming [obligationStr] ids
+    -- Satisfiability check: P ∧ Q satisfiable?
+    Solver.comment "Satisfiability check (P ∧ Q)"
+    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+      (message := ("sat-message", s!"\"Property can be satisfied\""))
+    let obligationStr ← Solver.termToSMTString obligationId
+    let _ ← Solver.checkSatAssuming [obligationStr] ids
 
-    if validityCheck then
-      Solver.comment "Validity check (can property be false?)"
-      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-        (message := ("unsat-message", s!"\"Property is always true\""))
-      let obligationStr ← Solver.termToSMTString obligationId
-      let negObligationId := s!"(not {obligationStr})"
-      let _ ← Solver.checkSatAssuming [negObligationId] ids
+    -- Validity check: P ∧ ¬Q satisfiable?
+    Solver.comment "Validity check (P ∧ ¬Q)"
+    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+      (message := ("unsat-message", s!"\"Property is always true\""))
+    let negObligationStr := s!"(not {obligationStr})"
+    let _ ← Solver.checkSatAssuming [negObligationStr] ids
   else
     if satisfiabilityCheck then
-      Solver.comment "Satisfiability check (can property be true?)"
+      -- P ∧ Q satisfiable?
+      Solver.comment "Satisfiability check (P ∧ Q)"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", s!"\"Property can be satisfied\""))
       Solver.assert obligationId
     else if validityCheck then
-      Solver.comment "Validity check (can property be false?)"
+      -- P ∧ ¬Q satisfiable?
+      Solver.comment "Validity check (P ∧ ¬Q)"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
-      Solver.assert obligationId
+      let obligationStr ← Solver.termToSMTString obligationId
+      Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
 
   return (ids, estate)
 

@@ -668,11 +668,7 @@ def ProofObligation.toSMTTerms (E : Env)
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
   let (obligation_pos_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
-  let obligation_term :=
-    if d.property == .cover then
-      obligation_pos_term
-    else
-      Factory.not obligation_pos_term
+  let obligation_term := obligation_pos_term
   .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
 
 ---------------------------------------------------------------------

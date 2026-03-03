@@ -88,17 +88,20 @@ procedure Q3(x : int) returns ()
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    if line.startsWith "($__x" && line.contains ", " then
-      -- Extract the value after the comma
-      match line.splitOn ", " with
-      | [var, rest] =>
-        match rest.dropEnd 1 |>.trimAscii.toInt? with  -- Remove trailing ")" and parse
-        | some val =>
-          if val == 2 then
-            s!"{var}, VALUE_WAS_2)"
-          else
-            s!"{var}, model_not_2)"
-        | none => line
+    -- Find "($__x" in the line (handles both old and new model formats)
+    let marker := "($__x"
+    if line.contains marker then
+      match line.splitOn marker with
+      | [linePrefix, rest] =>
+        let modelPart := marker ++ rest
+        match modelPart.splitOn ", " with
+        | [var, valRest] =>
+          match valRest.dropEnd 1 |>.trimAscii.toInt? with
+          | some val =>
+            let normalized := if val == 2 then s!"{var}, VALUE_WAS_2)" else s!"{var}, model_not_2)"
+            linePrefix ++ normalized
+          | none => line
+        | _ => line
       | _ => line
     else
       line
@@ -124,39 +127,49 @@ Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x0, model_not_2)
 
 Obligation: assert_5
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x0, model_not_2)
 
 Obligation: assert_6
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x1, model_not_2)
 
 Obligation: assert_7
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x1, model_not_2)
 
 Obligation: assert_8
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x2, model_not_2)
 
 Obligation: assert_9
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x2, model_not_2)
 
 Obligation: assert_10
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x3, model_not_2)
 
 Obligation: assert_11
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable
+Model (property false): ($__x3, model_not_2)
 -/
 #guard_msgs in
-#eval verify irrelevantAxiomsTestPgm
-        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := false})
+#eval do
+  let results ← verify irrelevantAxiomsTestPgm
+        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := true})
+  IO.println (normalizeModelValues (toString results))
 
 ---------------------------------------------------------------------
 
