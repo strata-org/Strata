@@ -78,7 +78,6 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.comment "Validity check (P ∧ ¬Q)"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
-      let obligationStr ← Solver.termToSMTString obligationId
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
 
   return (ids, estate)
