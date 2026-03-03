@@ -262,7 +262,7 @@ Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
-procedure |badDiv$$wf| (x : int) returns ()
+procedure badDiv$$wf (x : int) returns ()
 {
   assert [badDiv_body_calls_Int.SafeDiv_0]: false;
   };

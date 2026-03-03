@@ -21,7 +21,7 @@ info: Lean.Expr.app (Lean.Expr.app (Lean.Expr.const `Map []) (Lean.Expr.const `I
 
 def test1 : MetaM Lean.Expr :=
   LExpr.toExpr
-    (.quant () .all (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
+    (.quant () .all "" (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
 
 /--
 info: Lean.Expr.forallE
@@ -62,7 +62,7 @@ open LTy.Syntax LExpr.Syntax
 
 def test1' : MetaM Lean.Expr :=
   LExpr.toExpr
-    (.quant () .all (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
+    (.quant () .all "" (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
 
 elab "test1" : term => do
   let result ← liftM test1'
@@ -75,7 +75,7 @@ elab "test1" : term => do
 
 def test2 : MetaM Lean.Expr :=
   LExpr.toExpr
-    (LExpr.app () (.abs () (some mty[bool]) (.bvar () 0)) (.eq () (.const () (.intConst 4)) (.const () (.intConst 4))))
+    (LExpr.app () (.abs () "" (some mty[bool]) (.bvar () 0)) (.eq () (.const () (.intConst 4)) (.const () (.intConst 4))))
 
 
 elab "test2" : term => do
