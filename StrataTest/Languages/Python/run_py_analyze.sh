@@ -18,7 +18,7 @@ elif [ "$mode" = "incremental" ]; then
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
-    skip_tests=""
+    skip_tests="test_incremental_simple"
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)
