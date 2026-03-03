@@ -561,11 +561,13 @@ spec{
 procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
 spec {
   requires [req_name_is_foo]: req_name == from_string("foo");
-  requires [req_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar")) ;
+  requires [req_opt_name_none_or_str]: (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name));
+  requires [req_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar"));
   ensures [ensures_maybe_except_none]: (Error..isNoError(maybe_except));
 }
 {
   assert [assert_name_is_foo]: req_name == from_string("foo");
+  assert [assert_opt_name_none_or_str]: (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name));
   assert [assert_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar"));
   assume [assume_maybe_except_none]: (Error..isNoError(maybe_except));
 };
