@@ -29,7 +29,7 @@ function identity<a>(x : a) : a;
 
 /-- info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0; -/
 #guard_msgs in
-#eval Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamDeclPgm)).fst
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram singleTypeParamDeclPgm)).fst
 
 ---------------------------------------------------------------------
 -- Test 2: Single Type Parameter Function Concrete Instantiation
@@ -66,7 +66,7 @@ spec {
   };
 -/
 #guard_msgs in
-#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram singleTypeParamIntPgm)).fst)
+#eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram singleTypeParamIntPgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 3: Multiple Type Parameter Function Used in Expression
@@ -99,7 +99,7 @@ spec {
   };
 -/
 #guard_msgs in
-#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram multiTypeParamUsePgm)).fst)
+#eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram multiTypeParamUsePgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 4: Polymorphic Function with Arrow Types Used in Expression
@@ -134,7 +134,7 @@ spec {
   };
 -/
 #guard_msgs in
-#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram arrowTypeParamUsePgm)).fst)
+#eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram arrowTypeParamUsePgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 5: Different Instantiations in a Single Term
@@ -169,13 +169,13 @@ spec {
   };
 -/
 #guard_msgs in
-#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram differentInstantiationsPgm)).fst)
+#eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram differentInstantiationsPgm)).fst)
 
 ---------------------------------------------------------------------
 -- Test 6: Negative Test - Type Unification Failure (eq with different types)
 ---------------------------------------------------------------------
 
-def eqTypeMismatchPgm : Program :=
+def eqTypeMismatchPgm :=
 #strata
 program Core;
 
@@ -192,10 +192,10 @@ spec {
 #end
 
 /--
-info: error: (4714-4737) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4669-4692) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in
-#eval (Core.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eqTypeMismatchPgm)).fst)
+#eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram eqTypeMismatchPgm)).fst)
 
 end Strata.PolymorphicFunctionTest

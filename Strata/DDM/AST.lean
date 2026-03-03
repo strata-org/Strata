@@ -435,6 +435,7 @@ private def ArgF.beq {α} [BEq α] (a1 a2 : ArgF α) : Bool :=
   | .num a1 n1, .num a2 n2 => a1 == a2 && n1 == n2
   | .decimal a1 v1, .decimal a2 v2 => a1 == a2 && v1 == v2
   | .strlit a1 i1, .strlit a2 i2 => a1 == a2 && i1 == i2
+  | .bytes a1 b1, .bytes a2 b2 => a1 == a2 && b1 == b2
   | .option a1 o1, .option a2 o2 => a1 == a2 &&
     match o1,o2 with
     | .none, .none => true
@@ -643,8 +644,6 @@ inductive PreType where
   /-- A polymorphic type variable (universally quantified).
       Used for polymorphic function type parameters -/
 | tvar (ann : SourceRange) (name : String)
-  /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
-| fvar (ann : SourceRange) (fvar : FreeVarIndex) (args : Array PreType)
   /-- A function type. -/
 | arrow (ann : SourceRange) (arg : PreType) (res : PreType)
   /-- A function created from a reference to bindings and a result type. -/
@@ -658,17 +657,8 @@ def ann : PreType → SourceRange
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
 | .tvar ann _ => ann
-| .fvar ann _ _ => ann
 | .arrow ann _ _ => ann
 | .funMacro ann _ _ => ann
-
-def ofType : TypeExprF SourceRange → PreType
-| .ident loc name args => .ident loc name (args.map fun a => .ofType a)
-| .bvar loc idx => .bvar loc idx
-| .tvar loc name => .tvar loc name
-| .fvar loc idx args => .fvar loc idx (args.map fun a => .ofType a)
-| .arrow loc a r => .arrow loc (.ofType a) (.ofType r)
-termination_by tp => tp
 
 end PreType
 

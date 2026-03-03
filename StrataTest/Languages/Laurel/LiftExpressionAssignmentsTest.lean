@@ -47,14 +47,14 @@ def parseLaurelAndLift (input : String) : IO Program := do
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program => pure (liftExpressionAssignments program)
+  | .ok program => pure (liftImperativeExpressions program)
 
 /--
-info: procedure heapUpdateInBlockExpr(b: Box) returns 
+info: procedure heapUpdateInBlockExpr(b: Box) returns ⏎
 ()
 deterministic
 { b#value := b#value + 1; var x: int := b#value; assert x == b#value }
-procedure assertInBlockExpr() returns 
+procedure assertInBlockExpr() returns ⏎
 ()
 deterministic
 { var x: int := 0; assert x == 0; x := 1; var y: int := x; assert y == 1 }

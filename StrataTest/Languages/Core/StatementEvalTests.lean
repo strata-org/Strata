@@ -393,10 +393,10 @@ Test funcDecl: declare a helper function and use it
 -/
 def testFuncDecl : List Statement :=
   let doubleFunc : PureFunc Expression := {
-    name := CoreIdent.unres "double",
+    name := ⟨"double", ()⟩,
     typeArgs := [],
     isConstr := false,
-    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    inputs := [(⟨"x", ()⟩, .forAll [] .int)],
     output := .forAll [] .int,
     body := some eb[((~Int.Add x) x)],
     attr := #[],
@@ -450,10 +450,10 @@ not affected by subsequent mutations
 -/
 def testFuncDeclSymbolic : List Statement :=
   let addNFunc : PureFunc Expression := {
-    name := CoreIdent.unres "addN",
+    name := ⟨"addN", ()⟩,
     typeArgs := [],
     isConstr := false,
-    inputs := [(CoreIdent.unres "x", .forAll [] .int)],
+    inputs := [(⟨"x", ()⟩, .forAll [] .int)],
     output := .forAll [] .int,
     body := some eb[((~Int.Add x) n)],  -- Captures 'n' at declaration time
     attr := #[],
@@ -514,13 +514,13 @@ allowing us to verify that the function definition is actually being used.
 -/
 def testPolymorphicFuncDecl : List Statement :=
   let chooseFunc : PureFunc Expression := {
-    name := CoreIdent.unres "choose",
+    name := ⟨"choose", ()⟩,
     typeArgs := ["a"],  -- Polymorphic type parameter
     isConstr := false,
     inputs := [
-      (CoreIdent.unres "cond", .forAll [] .bool),
-      (CoreIdent.unres "x", .forAll [] (.ftvar "a")),
-      (CoreIdent.unres "y", .forAll [] (.ftvar "a"))
+      (⟨"cond", ()⟩, .forAll [] .bool),
+      (⟨"x", ()⟩, .forAll [] (.ftvar "a")),
+      (⟨"y", ()⟩, .forAll [] (.ftvar "a"))
     ],
     output := .forAll [] (.ftvar "a"),
     body := some eb[(if cond then x else y)],

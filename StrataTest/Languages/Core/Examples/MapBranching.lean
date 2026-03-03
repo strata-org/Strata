@@ -40,11 +40,15 @@ procedure testmap () returns ()
 };
 #end
 
-/-- info: Obligation: something
+/-- info: Obligation: set_k_calls_Any..as_MapInt_0
+Property: assert
+Result: ✅ pass
+
+Obligation: something
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify mapBranch (options := Options.quiet)
+#eval verify mapBranch (options := .quiet)
 
 
 end Strata

@@ -25,7 +25,8 @@ dialect Core;
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
-accessorTemplate : FunctionTemplate);
+accessorTemplate : FunctionTemplate,
+unsafeAccessorTemplate : FunctionTemplate);
 
 type bool;
 type int;
@@ -82,9 +83,9 @@ fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
-fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:50 " else " f:50;
+fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:0 " else " f:0;
 
-fn old (tp : Type, v : tp) : tp => "old" "(" v ")";
+fn old (tp : Type, v : tp) : tp => "old " v;
 
 fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
@@ -358,7 +359,8 @@ op constructorListPush (cl : ConstructorList, c : Constructor)
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor],
                    [.datatype], .builtin "bool"),
-    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType),
+    perField([.datatype, .literal "..", .field, .literal "!"], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
