@@ -111,6 +111,26 @@ deterministic
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
+/-! ## Unit test: division inside forall gets guarded with implication -/
+
+def forallDivProgram : String := r"
+procedure forallDiv(x: int) {
+  assert forall(y: int) => x / y == x / y;
+}
+"
+
+/--
+info: procedure forallDiv(x: int) returns ⏎
+()
+deterministic
+{ assert forall y: int => y != 0 && y != 0 ==> x / y == x / y }
+-/
+#guard_msgs in
+#eval! do
+  let program ← parseLaurelAndInsertDivChecks forallDivProgram
+  for proc in program.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+
 /-! ## End-to-end test: safe division (no errors) and unsafe division (error) -/
 
 def processLaurelWithDivChecks (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do

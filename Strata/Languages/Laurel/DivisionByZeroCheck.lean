@@ -21,60 +21,102 @@ private def isDivisionOp : Operation → Bool
   | .Div | .Mod | .DivT | .ModT => true
   | _ => false
 
+/-- Build `divisor != 0` condition for a given expression. -/
+private def mkDivByZeroCondition (divisor : StmtExprMd) : StmtExprMd :=
+  ⟨.PrimitiveOp .Neq [divisor, ⟨.LiteralInt 0, divisor.md⟩], divisor.md⟩
+
 /-- Build `assert arg != 0` for a given expression. -/
 private def mkDivByZeroAssert (divisor : StmtExprMd) : StmtExprMd :=
-  ⟨.Assert ⟨.PrimitiveOp .Neq [divisor, ⟨.LiteralInt 0, divisor.md⟩], divisor.md⟩, divisor.md⟩
+  ⟨.Assert (mkDivByZeroCondition divisor), divisor.md⟩
+
+/--
+Collect `divisor != 0` conditions from an expression (not wrapped in Assert).
+Does not recurse into IfThenElse branches, While bodies, or quantifiers.
+-/
+partial def collectDivConditions (expr : StmtExprMd) : List StmtExprMd :=
+  match expr.val with
+  | .PrimitiveOp op args =>
+    let childConds := args.flatMap collectDivConditions
+    if isDivisionOp op then
+      match args with
+      | [_, divisor] => childConds ++ [mkDivByZeroCondition divisor]
+      | _ => childConds
+    else childConds
+  | .IfThenElse cond _ _ => collectDivConditions cond
+  | .Block stmts _ => stmts.flatMap collectDivConditions
+  | .Assign _ value => collectDivConditions value
+  | .StaticCall _ args => args.flatMap collectDivConditions
+  | .InstanceCall target _ args =>
+    collectDivConditions target ++ args.flatMap collectDivConditions
+  | .FieldSelect target _ => collectDivConditions target
+  | .PureFieldUpdate target _ newVal =>
+    collectDivConditions target ++ collectDivConditions newVal
+  | .LocalVariable _ _ init => init.map collectDivConditions |>.getD []
+  | .While cond _ _ _ => collectDivConditions cond
+  | .Assert cond => collectDivConditions cond
+  | .Assume cond => collectDivConditions cond
+  | .Forall _ _ _ | .Exists _ _ _ => []
+  | .Old v => collectDivConditions v
+  | .Fresh v => collectDivConditions v
+  | .ProveBy v p => collectDivConditions v ++ collectDivConditions p
+  | .ReferenceEquals l r => collectDivConditions l ++ collectDivConditions r
+  | .AsType target _ => collectDivConditions target
+  | .IsType target _ => collectDivConditions target
+  | .Return (some v) => collectDivConditions v
+  | .Assigned name => collectDivConditions name
+  | _ => []
+
+/-- Conjoin a list of conditions with `&&`. -/
+private def conjoinConditions (conds : List StmtExprMd) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
+  match conds with
+  | [] => ⟨.LiteralBool true, md⟩
+  | [c] => c
+  | c :: cs => cs.foldl (fun acc x => ⟨.PrimitiveOp .And [acc, x], md⟩) c
+
+/--
+Rewrite an expression to insert division-by-zero guards inside quantifiers.
+For `∀x, body` with divisions, rewrites to `∀x, (divisor != 0) → body`.
+For `∃x, body` with divisions, rewrites to `∃x, (divisor != 0) ∧ body`.
+-/
+partial def insertDivChecksExpr (expr : StmtExprMd) : StmtExprMd :=
+  match expr.val with
+  | .Forall name ty body =>
+    let body' := insertDivChecksExpr body
+    let conds := collectDivConditions body'
+    let guardedBody := if conds.isEmpty then body'
+      else ⟨.PrimitiveOp .Implies [conjoinConditions conds body'.md, body'], body'.md⟩
+    ⟨.Forall name ty guardedBody, expr.md⟩
+  | .Exists name ty body =>
+    let body' := insertDivChecksExpr body
+    let conds := collectDivConditions body'
+    let guardedBody := if conds.isEmpty then body'
+      else ⟨.PrimitiveOp .And [conjoinConditions conds body'.md, body'], body'.md⟩
+    ⟨.Exists name ty guardedBody, expr.md⟩
+  | .Assert cond => ⟨.Assert (insertDivChecksExpr cond), expr.md⟩
+  | .Assume cond => ⟨.Assume (insertDivChecksExpr cond), expr.md⟩
+  | .PrimitiveOp op args =>
+    ⟨.PrimitiveOp op (args.map insertDivChecksExpr), expr.md⟩
+  | .IfThenElse cond thenBr elseBr =>
+    ⟨.IfThenElse (insertDivChecksExpr cond) (insertDivChecksExpr thenBr)
+      (elseBr.map insertDivChecksExpr), expr.md⟩
+  | .Block stmts label =>
+    ⟨.Block (stmts.map insertDivChecksExpr) label, expr.md⟩
+  | _ => expr
 
 /--
 Collect division-by-zero assertions needed for an expression.
 Returns the list of assertions that should be prepended before the expression
-is evaluated.
+is evaluated. Does not recurse into quantifiers (those are handled by
+`insertDivChecksExpr`).
 -/
 partial def collectDivChecks (expr : StmtExprMd) : List StmtExprMd :=
-  match expr.val with
-  | .PrimitiveOp op args =>
-    let childChecks := args.flatMap collectDivChecks
-    if isDivisionOp op then
-      match args with
-      | [_, divisor] => childChecks ++ [mkDivByZeroAssert divisor]
-      | _ => childChecks
-    else childChecks
-  | .IfThenElse cond _ _ =>
-    -- Only collect checks from the condition; branch checks are inserted
-    -- inside each branch by insertDivChecksStmt to avoid false positives
-    -- on non-taken branches.
-    collectDivChecks cond
-  | .Block stmts _ => stmts.flatMap collectDivChecks
-  | .Assign _ value => collectDivChecks value
-  | .StaticCall _ args => args.flatMap collectDivChecks
-  | .InstanceCall target _ args =>
-    collectDivChecks target ++ args.flatMap collectDivChecks
-  | .FieldSelect target _ => collectDivChecks target
-  | .PureFieldUpdate target _ newVal =>
-    collectDivChecks target ++ collectDivChecks newVal
-  | .LocalVariable _ _ init => init.map collectDivChecks |>.getD []
-  | .While cond _ _ _ =>
-    -- Only collect checks from the condition; body checks are inserted
-    -- inside the body by insertDivChecksStmt.
-    collectDivChecks cond
-  | .Assert cond => collectDivChecks cond
-  | .Assume cond => collectDivChecks cond
-  | .Forall _ _ body => collectDivChecks body
-  | .Exists _ _ body => collectDivChecks body
-  | .Old v => collectDivChecks v
-  | .Fresh v => collectDivChecks v
-  | .ProveBy v p => collectDivChecks v ++ collectDivChecks p
-  | .ReferenceEquals l r => collectDivChecks l ++ collectDivChecks r
-  | .AsType target _ => collectDivChecks target
-  | .IsType target _ => collectDivChecks target
-  | .Return (some v) => collectDivChecks v
-  | .Assigned name => collectDivChecks name
-  | _ => []
+  (collectDivConditions expr).map fun cond => ⟨.Assert cond, cond.md⟩
 
 /--
 Transform a statement by inserting division-by-zero assertions.
 For each statement that contains a division, the assertion is inserted
-immediately before the statement.
+immediately before the statement. Quantifier bodies are rewritten in-place
+by `insertDivChecksExpr`.
 -/
 partial def insertDivChecksStmt (stmt : StmtExprMd) : List StmtExprMd :=
   match stmt.val with
@@ -82,6 +124,7 @@ partial def insertDivChecksStmt (stmt : StmtExprMd) : List StmtExprMd :=
     let transformed := stmts.flatMap insertDivChecksStmt
     [⟨.Block transformed label, stmt.md⟩]
   | .IfThenElse cond thenBr elseBr =>
+    let cond := insertDivChecksExpr cond
     let condChecks := collectDivChecks cond
     let thenStmts := insertDivChecksStmt thenBr
     let thenBr' := match thenStmts with
@@ -94,6 +137,7 @@ partial def insertDivChecksStmt (stmt : StmtExprMd) : List StmtExprMd :=
       | multiple => ⟨.Block multiple none, e.md⟩
     condChecks ++ [⟨.IfThenElse cond thenBr' elseBr', stmt.md⟩]
   | .While cond invs dec body =>
+    let cond := insertDivChecksExpr cond
     let condChecks := collectDivChecks cond
     let bodyStmts := insertDivChecksStmt body
     let body' := match bodyStmts with
@@ -101,6 +145,8 @@ partial def insertDivChecksStmt (stmt : StmtExprMd) : List StmtExprMd :=
       | multiple => ⟨.Block multiple none, body.md⟩
     condChecks ++ [⟨.While cond invs dec body', stmt.md⟩]
   | _ =>
+    -- Rewrite quantifier bodies, then collect remaining div checks
+    let stmt := insertDivChecksExpr stmt
     let checks := collectDivChecks stmt
     checks ++ [stmt]
 
