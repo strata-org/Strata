@@ -154,20 +154,6 @@ axiom [Datetime_lt_ax]:
             (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2)));
 
 // Procedures with discriminator access or labeled specs
-procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta : int, maybe_except: ExceptOrNone)
-spec{
-}
-{
-  var days_i : int := 0;
-  if (IntOrNone..isIntOrNone_mk_int(days)) {
-        days_i := IntOrNone..int_val(days);
-  }
-  var hours_i : int := 0;
-  if (IntOrNone..isIntOrNone_mk_int(hours)) {
-        hours_i := IntOrNone..int_val(hours);
-  }
-  assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
-};
 
 procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
 spec{

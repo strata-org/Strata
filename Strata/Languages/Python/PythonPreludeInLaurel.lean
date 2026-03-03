@@ -199,6 +199,19 @@ procedure datetime_utcnow()
 
 procedure timedelta(days: IntOrNone, hours: IntOrNone)
   returns (delta: int, maybe_except: ExceptOrNone)
+// {
+
+//   var days_i : int := 0;
+//   if (IntOrNone..isIntOrNone_mk_int(days)) {
+//         days_i := IntOrNone..int_val(days);
+//   }
+//   var hours_i : int := 0;
+//   if (IntOrNone..isIntOrNone_mk_int(hours)) {
+//         hours_i := IntOrNone..int_val(hours);
+//   }
+//   // [assume_timedelta_sign_matches]:
+//   assume (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
+// }
 
 #end
 

@@ -223,7 +223,7 @@ def resolveQualifiedFieldName (env : TypeEnv) (types : List TypeDefinition) (tar
   | .UserDefined typeName =>
     let owner := findFieldOwner types typeName fieldName
     owner ++ "." ++ fieldName
-  | _ => panic "assigning to a target that's not a composite type"
+  | _ => panic s!"assigning to a target that's not a composite type. Fieldname '{fieldName}'. Target: {Std.format target}"
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -241,7 +241,7 @@ where
     | .FieldSelect selectTarget fieldName =>
         let qualifiedName := resolveQualifiedFieldName env types selectTarget fieldName
         let fieldType ← lookupFieldType qualifiedName
-        let valTy := fieldType.getD (panic s!"could not find field type for {qualifiedName}")
+        let valTy := fieldType.getD (panic s!"could not find field type for '{qualifiedName}'")
         addFieldConstant qualifiedName valTy
         let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.Identifier qualifiedName)], md ⟩
         -- Unwrap Box: apply the appropriate destructor
@@ -304,7 +304,7 @@ where
           | .FieldSelect target fieldName =>
             let qualifiedName := resolveQualifiedFieldName env types target fieldName
             let fieldType ← lookupFieldType qualifiedName
-            let valTy := fieldType.getD (panic s!"could not find field type for {qualifiedName}")
+            let valTy := fieldType.getD (panic s!"could not find field type for '{qualifiedName}'")
             addFieldConstant qualifiedName valTy
             let target' ← recurse env target
             let v' ← recurse env v
