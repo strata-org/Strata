@@ -11,7 +11,7 @@ import Strata.DL.Util.List
 /-!
 ## Axiom Generation for Recursive Functions
 
-Given a recursive function with a `decreases` parameter over an algebraic datatype,
+Given a recursive function with a `cases` parameter over an algebraic datatype,
 generates per-constructor axioms. Each axiom is a quantified equation:
 
   ∀ (other_params..., fields...). f(..., C(fields...), ...) = PE(f(..., C(fields...), ...))
@@ -28,8 +28,8 @@ open Strata.DL.Util (FuncAttr)
 
 /-- Check well-formedness of a recursive function and extract the components
     needed for axiom generation: recParam index and datatype.
-    The `inlineIfConstr` attribute must have been previously set by `addFactoryFunc`
-    (which resolves the `decreases` expression to a parameter index). -/
+    The `inlineIfConstr` attribute must have been previously set
+    to an index containing a datatype-valued argument. -/
 def checkRecursiveFunc [DecidableEq T.IDMeta]
     (func : LFunc T) (tf : @TypeFactory T.IDMeta)
     : Except Format (Nat × LDatatype T.IDMeta) := do
@@ -42,7 +42,7 @@ def checkRecursiveFunc [DecidableEq T.IDMeta]
     (.error f!"Recursive function {func.name}: recParam index {recIdx} out of bounds") .ok
   let dtName ← match recTy with
     | LMonoTy.tcons n _ => .ok n
-    | _ => .error f!"Recursive function {func.name}: decreases parameter type is not a datatype"
+    | _ => .error f!"Recursive function {func.name}: cases parameter type is not a datatype"
   let dt ← tf.getType dtName |>.elim
     (.error f!"Recursive function {func.name}: datatype {dtName} not found") .ok
   return (recIdx, dt)

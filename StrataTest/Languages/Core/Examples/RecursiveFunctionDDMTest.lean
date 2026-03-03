@@ -9,7 +9,7 @@ import Strata.Languages.Core.Verifier
 /-! ## DDM parsing tests for recursive functions
 
 These tests verify that the DDM parser correctly handles recursive function
-syntax, including the `decreases` clause and the function name being in scope
+syntax, including the `cases` clause and the function name being in scope
 within the body for recursive calls.
 -/
 
