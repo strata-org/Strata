@@ -98,15 +98,22 @@ match ss with
   -- block if `l` is `.none`.
   let bk :=
     match (l?, exitConts) with
-    | (.none, []) => k -- Just keep going if this is an invalid exit
+    -- Just keep going if this is an invalid exit. We assume a prior
+    -- check to avoid this.
+    | (.none, []) => k
     | (.none, (_, k) :: _) => k
     | (.some l, _) =>
       match exitConts.lookup l with
       | .some k => k
-      | .none => k -- Just keep going if this is an invalid exit
+      -- Just keep going if this is an invalid exit. We assume a prior
+      -- check to avoid this.
+      | .none => k
   -- Flush the accumulated commands, going to the continuation calculated above.
   -- Any statements after the `.exit` are skipped.
-  let exitName := match l? with | .some l => s!"block${l}$" | .none => "block$"
+  let exitName :=
+    match l? with
+    | .some l => s!"block${l}$"
+    | .none => "block$"
   flushCmds exitName accum .none bk
 
 def stmtsToCFGM
