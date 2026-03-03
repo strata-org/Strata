@@ -27,8 +27,7 @@ program Core;
 
 datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
-rec function len<a>(xs : MyList a) : int
-  decreases xs
+rec function len<a>(@[cases] xs : MyList a) : int
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
 }
@@ -50,10 +49,10 @@ rec function len<a>(xs : MyList a) : int
 #eval verify polyRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 2: recursive function without decreases clause is rejected
+-- Test 2: recursive function without @[cases] parameter is rejected
 ---------------------------------------------------------------------
 
-def noDecreasesPgm : Program :=
+def noCasesPgm : Program :=
 #strata
 program Core;
 
@@ -67,41 +66,13 @@ rec function listLen (xs : IntList) : int
 #end
 
 /-- error: 🚨 Error during evaluation!
-[ERROR] Recursive function 'listLen' requires a decreases clause
+[ERROR] Recursive function 'listLen' requires a @[cases] parameter
 
 [DEBUG] Evaluated program: datatype IntList {(
   (Nil())),
   (Cons(hd : int, tl : IntList))
 };-/
 #guard_msgs in
-#eval verify noDecreasesPgm (options := .quiet)
-
----------------------------------------------------------------------
--- Test 3: decreases on non-parameter expression is rejected
----------------------------------------------------------------------
-
-def nonParamDecreasesPgm : Program :=
-#strata
-program Core;
-
-datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
-
-rec function listLen (xs : IntList) : int
-  decreases IntList..tl(xs)
-{
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
-
-#end
-
-/-- error: 🚨 Error during evaluation!
-[ERROR] decreases must be a parameter name. General decreases expressions are not yet supported.
-
-[DEBUG] Evaluated program: datatype IntList {(
-  (Nil())),
-  (Cons(hd : int, tl : IntList))
-};-/
-#guard_msgs in
-#eval verify nonParamDecreasesPgm (options := .quiet)
+#eval verify noCasesPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest

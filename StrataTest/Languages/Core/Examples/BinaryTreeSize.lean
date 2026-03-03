@@ -45,28 +45,24 @@ inline function val(t : IntTree) : int
   requires IntTree..isNode(t);
 { IntTree..val(t) }
 
-rec function listLen (xs : IntList) : int
-  decreases xs
+rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(tail(xs))
 }
 
-rec function append (xs : IntList, ys : IntList) : IntList
-  decreases xs
+rec function append (@[cases] xs : IntList, ys : IntList) : IntList
 {
   if IntList..isNil(xs) then ys
   else Cons(head(xs), append(tail(xs), ys))
 }
 
-rec function size (t : IntTree) : int
-  decreases t
+rec function size (@[cases] t : IntTree) : int
 {
   if IntTree..isLeaf(t) then 0
   else 1 + size(left(t)) + size(right(t))
 }
 
-rec function toList (t : IntTree) : IntList
-  decreases t
+rec function toList (@[cases] t : IntTree) : IntList
 {
   if IntTree..isLeaf(t) then Nil()
   else append(toList(left(t)), Cons(val(t), toList(right(t))))

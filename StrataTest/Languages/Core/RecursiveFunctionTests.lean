@@ -26,8 +26,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-rec function listLen (xs : IntList) : int
-  decreases xs
+rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
@@ -104,8 +103,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-rec function listLen (xs : IntList) : int
-  decreases xs
+rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
@@ -196,8 +194,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-rec function contains (key : int, xs : IntList) : bool
-  decreases xs
+rec function contains (key : int, @[cases] xs : IntList) : bool
 {
   if IntList..isNil(xs) then false
   else if IntList..hd(xs) == key then true
@@ -252,8 +249,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-rec function listLen (xs : IntList) : int
-  decreases xs
+rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
@@ -369,17 +365,15 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-rec function listLen (xs : IntList) : int
-  decreases xs
+rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
 
-rec function nth (xs : IntList, n : int) : int
+rec function nth (@[cases] xs : IntList, n : int) : int
   requires IntList..isCons(xs);
   requires n >= 0;
   requires n < listLen(xs);
-  decreases xs
 {
   if n == 0 then IntList..hd(xs)
   else nth(IntList..tl(xs), n - 1)

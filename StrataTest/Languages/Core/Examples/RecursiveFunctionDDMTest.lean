@@ -22,8 +22,7 @@ program Core;
 
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-rec function listLen (xs : IntList) : int
-  decreases xs
+rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
@@ -36,8 +35,7 @@ datatype IntList {(
   (Nil())),
   (Cons(hd : int, tl : IntList))
 };
-rec function listLen (xs : IntList) : int
-  decreases xs
+rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
@@ -57,8 +55,7 @@ program Core;
 
 datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
-rec function len<a>(xs : MyList a) : int
-  decreases xs
+rec function len<a>(@[cases] xs : MyList a) : int
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
 }
@@ -70,8 +67,7 @@ datatype MyList (a : Type) {(
   (Nil())),
   (Cons(hd : a, tl : (MyList a)))
 };
-rec function len<a> (xs : (MyList a)) : int
-  decreases xs
+rec function len<a> (@[cases] xs : (MyList a)) : int
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
 }

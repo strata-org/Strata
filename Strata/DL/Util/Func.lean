@@ -67,7 +67,6 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   typeArgs : List TyIdentifier := []
   isConstr : Bool := false --whether function is datatype constructor
   isRecursive : Bool := false
-  decreases : Option ExprT := none
   inputs   : ListMap IdentT TyT
   output   : TyT
   body     : Option ExprT := .none
