@@ -26,4 +26,25 @@ procedure P () returns () {
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt1) |>.snd
 
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: reflexive
+Property: assert
+Assumptions:
+xy_eq: x == y
+Obligation:
+x == x
+
+---
+info:
+Obligation: reflexive
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify typeDeclStmt1
+
 end Strata

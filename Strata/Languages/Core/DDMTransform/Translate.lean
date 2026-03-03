@@ -1189,20 +1189,25 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.funcDecl decl md], updatedBindings)
   | q`Core.typeDecl_statement, #[namea, argsa] =>
     let name ← translateIdent String namea
-    let numargs ← match argsa with
+    let (numargs, typeParams) ← match argsa with
       | .option _ (.some binds) => do
         let args ← translateMonoDeclList bindings binds
-        pure args.length
-      | .option _ .none => pure 0
+        let params := args.map (·.1.name)  -- Extract parameter names
+        pure (args.length, params)
+      | .option _ .none => pure (0, [])
       | _ => TransM.error s!"Invalid type arguments {repr argsa}"
     let md ← getOpMetaData op
-    -- Add the type to the type context for subsequent statements
-    let typeArgs := List.replicate numargs "_ty"
-    let ids := typeArgs.mapIdx (fun i elem => (elem ++ toString i))
-    let typeBinding : LExpr Core.CoreLParams.mono := .op () name none
+    
+    -- Create a TypeConstructor and add it to freeVars (same as program-level types)
+    let tc : Core.TypeConstructor := { name := name, numargs := numargs }
+    let typeDecl : Core.Decl := .type (.con tc) md
+    
+    -- Add type parameters (not the type name itself) to boundTypeVars
+    -- This matches what the DDM parser does with declareType
     let updatedBindings := { bindings with 
-      boundVars := bindings.boundVars.push typeBinding,
-      boundTypeVars := bindings.boundTypeVars ++ ids.toArray }
+      freeVars := bindings.freeVars.push typeDecl,
+      boundTypeVars := bindings.boundTypeVars ++ typeParams.toArray }
+    
     return ([.typeDecl name numargs md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
