@@ -205,7 +205,9 @@ private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .lenLe subj bound => .lenLeExpr .none subj.toDDM ⟨.none, bound⟩
   | .valueGe subj bound => .valueGeExpr .none subj.toDDM (toDDMInt .none bound)
   | .valueLe subj bound => .valueLeExpr .none subj.toDDM (toDDMInt .none bound)
-  | .enumMember subj values => .enumMemberExpr .none subj.toDDM ⟨.none, values.map (⟨.none, ·⟩)⟩
+  | .enumMember subj values =>
+    .enumMemberExpr .none subj.toDDM
+      ⟨.none, values.map (⟨.none, ·⟩)⟩
 
 private def Assertion.toDDM (a : Assertion) : DDM.Assertion SourceRange :=
   .mkAssertion .none a.formula.toDDM ⟨.none, a.message⟩
@@ -338,11 +340,15 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDe
   }
 
 private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
-  let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩ ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ := d
+  let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩
+    ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ := d
   {
     loc := ann
     name := name
-    bases := bases.filterMap fun ⟨_, s⟩ => PythonIdent.ofString s
+    bases := bases.map fun ⟨_, s⟩ =>
+      match PythonIdent.ofString s with
+      | some id => id
+      | none => panic! s!"Bad base class identifier: '{s}'"
     fields := fields.map fun (.mkClassFieldDecl _ ⟨_, n⟩ tp) =>
       { name := n, type := tp.fromDDM : ClassField }
     classVars := classVars.map fun (.mkClassVarDecl _ ⟨_, n⟩ ⟨_, v⟩) =>

@@ -670,23 +670,36 @@ def extractKwargsField (e : expr SourceRange)
     | none => return none
   | _ => return none
 
+/-- Extract a `SpecExpr` subject from a Python expression.
+    Recognizes kwargs subscripts (`kw["field"]` → `.getIndex (.var kn) fn`)
+    and plain variable names (`.Name` → `.var name`).
+    Returns `none` for unsupported expression forms. -/
+def extractSubject (e : expr SourceRange)
+    : SpecAssertionM (Option SpecExpr) := do
+  match ← extractKwargsField e with
+  | some (kn, fn) => return some (.getIndex (.var kn) fn)
+  | none => pure ()
+  match e with
+  | .Name _ ⟨_, name⟩ (.Load _) => return some (.var name)
+  | _ => return none
+
 /-- Collect all `== "value"` arms from a chain of `or`-ed comparisons,
-    returning the set of string values or `none` if the expression doesn't
-    fit the pattern `kwargs["X"] == "A" or kwargs["X"] == "B" or ...`. -/
+    returning the subject and string values, or `none` if the expression
+    doesn't fit the pattern
+    `subj == "A" or subj == "B" or ...`. -/
 partial def collectEnumValues (e : expr SourceRange)
-    : SpecAssertionM (Option (String × String × Array String)) := do
+    : SpecAssertionM (Option (SpecExpr × Array String)) := do
   match e with
   | .BoolOp _ (.Or _) values =>
-    let mut result : Option (String × String × Array String) := none
+    let mut result : Option (SpecExpr × Array String) := none
     for val in values.val do
       match ← collectEnumValues val with
-      | some (kn, fn, vals) =>
+      | some (subj, vals) =>
         match result with
-        | none => result := some (kn, fn, vals)
-        | some (kn', fn', acc) =>
-          if kn == kn' && fn == fn' then
-            result := some (kn, fn, acc ++ vals)
-          else return none
+        | none => result := some (subj, vals)
+        | some (_prevSubj, acc) =>
+          -- TODO: check subject equality once SpecExpr has BEq
+          result := some (subj, acc ++ vals)
       | none => return none
     return result
   | .Compare _ lhs ops comparators =>
@@ -696,30 +709,32 @@ partial def collectEnumValues (e : expr SourceRange)
     | .Eq _ =>
       let .isTrue _ := decideProp (comparators.val.size = 1)
         | return none
-      match ← extractKwargsField lhs with
-      | some (kn, fn) =>
+      match ← extractSubject lhs with
+      | some subj =>
         match comparators.val[0] with
         | .Constant _ (.ConString _ strVal) _ =>
-          return some (kn, fn, #[strVal.val])
+          return some (subj, #[strVal.val])
         | _ => return none
       | none => return none
     | _ => return none
   | _ => return none
 
 /-- Translate a Python assert expression to a `SpecExpr`. Falls back to
-    `.placeholder` with a warning for unrecognized patterns. -/
+    `.placeholder` with a warning for unrecognized patterns.
+    Supports kwargs subscripts (`kw["field"]`) and plain variable names
+    as subjects. -/
 def transAssertExpr (e : expr SourceRange)
     : SpecAssertionM SpecExpr := do
-  -- isinstance(kwargs["X"], T)
+  -- isinstance(subject, T)
   match e with
   | .Call _ (.Name _ funcName (.Load _)) args _ =>
     if funcName.val == "isinstance" then
       if h : args.val.size = 2 then
-        match ← extractKwargsField args.val[0] with
-        | some (kn, fn) =>
+        match ← extractSubject args.val[0] with
+        | some subj =>
           match args.val[1] with
           | .Name _ typeName (.Load _) =>
-            return .isInstanceOf (.getIndex (.var kn) fn) typeName.val
+            return .isInstanceOf subj typeName.val
           | _ =>
             specWarning e.ann s!"isinstance: unsupported type argument"
             return .placeholder
@@ -728,58 +743,59 @@ def transAssertExpr (e : expr SourceRange)
       -- This is just len(x), not a comparison; fall through
       pure ()
   | _ => pure ()
-  -- len(kwargs["X"]) >= N / len(kwargs["X"]) <= N
+  -- len(subject) >= N / len(subject) <= N
   match e with
-  | .Compare _ (.Call _ (.Name _ funcName (.Load _)) callArgs _) ops comparators =>
+  | .Compare _ (.Call _ (.Name _ funcName (.Load _)) callArgs _)
+      ops comparators =>
     if funcName.val == "len" then
       if h₁ : callArgs.val.size = 1 then
         if h₂ : ops.val.size = 1 then
           if h₃ : comparators.val.size = 1 then
-            match ← extractKwargsField callArgs.val[0] with
-            | some (kn, fn) =>
+            match ← extractSubject callArgs.val[0] with
+            | some subj =>
               match ops.val[0] with
               | .GtE _ =>
                 match comparators.val[0] with
                 | .Constant _ (.ConPos _ n) _ =>
-                  return .lenGe (.getIndex (.var kn) fn) n.val
+                  return .lenGe subj n.val
                 | _ => pure ()
               | .LtE _ =>
                 match comparators.val[0] with
                 | .Constant _ (.ConPos _ n) _ =>
-                  return .lenLe (.getIndex (.var kn) fn) n.val
+                  return .lenLe subj n.val
                 | _ => pure ()
               | _ => pure ()
             | none => pure ()
   | _ => pure ()
-  -- kwargs["X"] >= N / kwargs["X"] <= N
+  -- subject >= N / subject <= N
   match e with
   | .Compare _ lhs ops comparators =>
     if h₁ : ops.val.size = 1 then
       if h₂ : comparators.val.size = 1 then
-        match ← extractKwargsField lhs with
-        | some (kn, fn) =>
+        match ← extractSubject lhs with
+        | some subj =>
           match ops.val[0] with
           | .GtE _ =>
             match comparators.val[0] with
             | .Constant _ (.ConPos _ n) _ =>
-              return .valueGe (.getIndex (.var kn) fn) (Int.ofNat n.val)
+              return .valueGe subj (Int.ofNat n.val)
             | .Constant _ (.ConNeg _ n) _ =>
-              return .valueGe (.getIndex (.var kn) fn) (Int.negOfNat n.val)
+              return .valueGe subj (Int.negOfNat n.val)
             | _ => pure ()
           | .LtE _ =>
             match comparators.val[0] with
             | .Constant _ (.ConPos _ n) _ =>
-              return .valueLe (.getIndex (.var kn) fn) (Int.ofNat n.val)
+              return .valueLe subj (Int.ofNat n.val)
             | .Constant _ (.ConNeg _ n) _ =>
-              return .valueLe (.getIndex (.var kn) fn) (Int.negOfNat n.val)
+              return .valueLe subj (Int.negOfNat n.val)
             | _ => pure ()
           | _ => pure ()
         | none => pure ()
   | _ => pure ()
-  -- kwargs["X"] == "A" or kwargs["X"] == "B" or ...
+  -- subject == "A" or subject == "B" or ...
   match ← collectEnumValues e with
-  | some (kn, fn, vals) =>
-    return .enumMember (.getIndex (.var kn) fn) vals
+  | some (subj, vals) =>
+    return .enumMember subj vals
   | none => pure ()
   -- Fallback: unrecognized pattern
   specWarning e.ann s!"unrecognized assert pattern: {eformat e.toAst}"
@@ -960,9 +976,30 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
         let fieldType ← pySpecType annotation
         fields := fields.push { name := fieldName, type := fieldType }
       | _ => specError stmt.ann s!"Unsupported field target"
-    | .ClassDef innerLoc ⟨_, innerClassName⟩ _bases _keywords innerStmts
+    | .ClassDef innerLoc ⟨_, innerClassName⟩ innerBases _keywords innerStmts
                 _decorators _typeParams =>
-      let innerDef ← pySpecClassBody innerLoc innerClassName #[] innerStmts.val
+      let mut innerBaseIdents : Array PythonIdent := #[]
+      for base in innerBases.val do
+        match base with
+        | .Name _ ⟨_, name⟩ _ =>
+          if name == "Exception" then
+            innerBaseIdents := innerBaseIdents.push .builtinsException
+          else
+            match ← getNameValue? name with
+            | some (.typeValue tp) =>
+              match tp.asSingleton with
+              | some (.ident pyIdent _) =>
+                innerBaseIdents := innerBaseIdents.push pyIdent
+              | some (.pyClass clsName _) =>
+                innerBaseIdents := innerBaseIdents.push
+                  { pythonModule := "", name := clsName }
+              | _ =>
+                specError base.ann s!"Unknown base class '{name}'"
+            | _ =>
+              specError base.ann s!"Unknown base class '{name}'"
+        | _ => specError base.ann s!"Unsupported base class expression"
+      let innerDef ← pySpecClassBody innerLoc innerClassName
+        innerBaseIdents innerStmts.val
       subclasses := subclasses.push innerDef
     | .Assign _ ⟨_, targets⟩ value _typeAnn =>
       if h : targets.size = 1 then

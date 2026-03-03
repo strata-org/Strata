@@ -117,7 +117,7 @@ function "kwargs_function"{
   kwonly: [
   ]
   kwargs: [
-    kwargs kw : ident("builtins.str")
+    kwargs kw : ident("builtins.int")
   ]
   return: ident("typing.Any")
   overload: false
