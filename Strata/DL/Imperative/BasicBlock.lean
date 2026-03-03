@@ -12,8 +12,8 @@ namespace Imperative
 /-! # Imperative dialect: unstructured control-flow graphs
 
 A control-flow graph consists of a list of labeled blocks paired with a
-distinguished entry label. Each basic block consists of a label, a list of
-commands, and a transfer command. The types of each of these components are
+distinguished entry label. Each basic block consists of a list of normal
+commands and a transfer command. The types of each of these components are
 parameters, and the type of control flow can be deterministic or
 non-deterministic based on the type of transfer command.
 
