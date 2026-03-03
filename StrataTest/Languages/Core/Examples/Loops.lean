@@ -43,23 +43,24 @@ def singleCFG (p : Program) (n : Nat) : Imperative.CFG String (Imperative.DetBlo
 /--
 info: Entry: before_loop$_3
 
-[before_loop$_3:
-   [init (i : int), i := #0, s := #0]
-   cgoto #true loop_entry$_1 loop_entry$_1,
- loop_entry$_1:
-   [assert [inv] ((~Int.Le : (arrow int (arrow int bool))) #0 (i : int)),
- assert [inv] ((~Int.Le : (arrow int (arrow int bool))) (i : int) (n : int)),
- assert [inv] ((s : int) == ((~Int.SafeDiv : (arrow int (arrow int int)))
-   ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
-   #2))]
-   cgoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l$_2 end$_0,
- l$_2:
-   [i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1),
- s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))]
-   cgoto #true loop_entry$_1 loop_entry$_1,
- end$_0:
-   []
-   finish]
+before_loop$_3:
+  init (i : int)
+  i := #0
+  s := #0
+  cgoto #true loop_entry$_1 loop_entry$_1
+loop_entry$_1:
+  assert [inv] ((~Int.Le : (arrow int (arrow int bool))) #0 (i : int))
+  assert [inv] ((~Int.Le : (arrow int (arrow int bool))) (i : int) (n : int))
+  assert [inv] ((s : int) == ((~Int.SafeDiv : (arrow int (arrow int int)))
+  ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
+  #2))
+  cgoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l$_2 end$_0
+l$_2:
+  i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1)
+  s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))
+  cgoto #true loop_entry$_1 loop_entry$_1
+end$_0:
+  finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG gaussPgm 0))
@@ -236,30 +237,31 @@ spec {
 /--
 info: Entry: before_loop$_6
 
-[before_loop$_6:
-   [init (x : int), init (y : int), x := #0]
-   cgoto #true loop_entry$_1 loop_entry$_1,
- loop_entry$_1:
-   [assert [inv] ((~Int.Ge : (arrow int (arrow int bool))) (x : int) #0),
- assert [inv] ((~Int.Le : (arrow int (arrow int bool))) (x : int) (n : int)),
- assert [inv] ((~Int.Lt : (arrow int (arrow int bool))) (n : int) (~top : int))]
-   cgoto ((~Int.Lt : (arrow int (arrow int bool))) (x : int) (n : int)) before_loop$_5 end$_0,
- before_loop$_5:
-   [y := #0]
-   cgoto #true loop_entry$_3 loop_entry$_3,
- loop_entry$_3:
-   [assert [inv] ((~Int.Ge : (arrow int (arrow int bool))) (y : int) #0),
- assert [inv] ((~Int.Le : (arrow int (arrow int bool))) (y : int) (x : int))]
-   cgoto ((~Int.Lt : (arrow int (arrow int bool))) (y : int) (x : int)) l$_4 l$_2,
- l$_4:
-   [y := ((~Int.Add : (arrow int (arrow int int))) (y : int) #1)]
-   cgoto #true loop_entry$_3 loop_entry$_3,
- l$_2:
-   [x := ((~Int.Add : (arrow int (arrow int int))) (x : int) #1)]
-   cgoto #true loop_entry$_1 loop_entry$_1,
- end$_0:
-   []
-   finish]
+before_loop$_6:
+  init (x : int)
+  init (y : int)
+  x := #0
+  cgoto #true loop_entry$_1 loop_entry$_1
+loop_entry$_1:
+  assert [inv] ((~Int.Ge : (arrow int (arrow int bool))) (x : int) #0)
+  assert [inv] ((~Int.Le : (arrow int (arrow int bool))) (x : int) (n : int))
+  assert [inv] ((~Int.Lt : (arrow int (arrow int bool))) (n : int) (~top : int))
+  cgoto ((~Int.Lt : (arrow int (arrow int bool))) (x : int) (n : int)) before_loop$_5 end$_0
+before_loop$_5:
+  y := #0
+  cgoto #true loop_entry$_3 loop_entry$_3
+loop_entry$_3:
+  assert [inv] ((~Int.Ge : (arrow int (arrow int bool))) (y : int) #0)
+  assert [inv] ((~Int.Le : (arrow int (arrow int bool))) (y : int) (x : int))
+  cgoto ((~Int.Lt : (arrow int (arrow int bool))) (y : int) (x : int)) l$_4 l$_2
+l$_4:
+  y := ((~Int.Add : (arrow int (arrow int int))) (y : int) #1)
+  cgoto #true loop_entry$_3 loop_entry$_3
+l$_2:
+  x := ((~Int.Add : (arrow int (arrow int int))) (x : int) #1)
+  cgoto #true loop_entry$_1 loop_entry$_1
+end$_0:
+  finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG nestedPgm 2))
