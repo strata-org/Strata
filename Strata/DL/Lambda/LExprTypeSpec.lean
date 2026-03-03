@@ -373,13 +373,242 @@ theorem TEnv.updateSubst_context (Env : TEnv IDMeta) (S : SubstInfo) :
     (TEnv.updateSubst Env S).context = Env.context := by
   rfl
 
+private theorem Maps.find?_none_of_not_mem_keys [DecidableEq α]
+    (S : Maps α β) (x : α) (h : x ∉ S.keys) : S.find? x = none := by
+  match h_eq : S.find? x with
+  | none => rfl
+  | some v => exact absurd (Maps.find?_mem_keys S h_eq) h
+
+/--
+If no key of a substitution `S` appears free in `ty`, then applying `S` to
+`ty` leaves it unchanged. This is the key lemma for proving idempotence.
+-/
+theorem LMonoTy.subst_no_key_free (S : Subst) (ty : LMonoTy)
+    (h : S.keys.all (fun k => k ∉ ty.freeVars)) :
+    LMonoTy.subst S ty = ty := by
+  by_cases hS : S.hasEmptyScopes
+  · exact LMonoTy.subst_emptyS hS
+  · induction ty with
+    | ftvar x =>
+      have : x ∉ Maps.keys S := by
+        simp [List.all_eq_true] at h; intro h_mem
+        exact h x h_mem (by simp [LMonoTy.freeVars])
+      unfold LMonoTy.subst; simp [hS, Maps.find?_none_of_not_mem_keys S x this]
+    | bitvec n =>
+      unfold LMonoTy.subst; simp [hS]
+    | tcons name args ih =>
+      unfold LMonoTy.subst; simp only [hS, ↓reduceIte]
+      suffices h_args : LMonoTys.subst S args = args by rw [h_args]; simp
+      rw [LMonoTys.subst_eq_substLogic]
+      have hp : ∀ k, k ∈ Maps.keys S → k ∉ (LMonoTy.tcons name args).freeVars := by
+        simp [List.all_eq_true] at h; exact h
+      induction args with
+      | nil => simp [LMonoTys.substLogic, hS]
+      | cons a rest ih_rest =>
+        simp only [LMonoTys.substLogic, hS, Bool.false_eq_true, ↓reduceIte]
+        have h1_b : S.keys.all (fun k => k ∉ a.freeVars) := by
+          simp [List.all_eq_true]; intro k hk
+          have := hp k hk; simp [LMonoTy.freeVars, LMonoTys.freeVars] at this; exact this.1
+        have h2_b : S.keys.all (fun k => k ∉ (LMonoTy.tcons name rest).freeVars) := by
+          simp [List.all_eq_true]; intro k hk
+          have := hp k hk; simp [LMonoTy.freeVars, LMonoTys.freeVars] at this; exact this.2
+        have h2_p : ∀ k, k ∈ Maps.keys S → k ∉ (LMonoTy.tcons name rest).freeVars := by
+          simp [List.all_eq_true] at h2_b; exact h2_b
+        rw [ih a (.head _) h1_b,
+            ih_rest (fun ty h_mem h_b => ih ty (.tail _ h_mem) h_b) h2_b h2_p]
+
+/--
+Well-formed substitutions are idempotent: applying the substitution twice
+gives the same result as applying it once. Follows from `subst_no_key_free`
+and `subst_keys_not_in_substituted_type`.
+-/
+theorem LMonoTy.subst_idempotent (S : Subst) (hWF : SubstWF S) (ty : LMonoTy) :
+    LMonoTy.subst S (LMonoTy.subst S ty) = LMonoTy.subst S ty := by
+  exact LMonoTy.subst_no_key_free S (LMonoTy.subst S ty)
+    (LMonoTy.subst_keys_not_in_substituted_type hWF)
+
+/--
+If `Constraints.unify [(ty1, ty2)] S = .ok S_new`, then there exists a
+result `relS` from `Constraint.unifyOne (ty1, ty2) S` such that
+`S_new = relS.newS`.
+-/
+private theorem unify_singleton_eq_unifyOne (ty1 ty2 : LMonoTy) (S S_new : SubstInfo)
+    (h : Constraints.unify [(ty1, ty2)] S = .ok S_new) :
+    ∃ relS : ValidSubstRelation [(ty1, ty2)] S,
+      Constraint.unifyOne (ty1, ty2) S = .ok relS ∧ S_new = relS.newS := by
+  simp only [Constraints.unify, Bind.bind, Except.bind] at h
+  -- Split on unifyCore result
+  split at h
+  · simp at h
+  · rename_i relS_core h_core
+    simp at h; subst h
+    -- Now decompose unifyCore [(ty1, ty2)] S
+    -- unifyCore for a single-element list calls unifyOne, then unifyCore []
+    -- unifyCore [] returns the substitution unchanged
+    -- So relS_core.newS = relS_one.newS
+    simp only [Constraints.unifyCore, Bind.bind, Except.bind, Except.mapError] at h_core
+    -- h_core involves: match (unifyOne ...) |> mapError with ... then match unifyCore [] with ...
+    -- The unifyOne result determines everything
+    -- Extract the unifyOne result
+    revert h_core
+    generalize h_one_gen : Constraint.unifyOne (ty1, ty2) S = res_one
+    intro h_core
+    match res_one with
+    | .error e =>
+      simp at h_core
+    | .ok relS_one =>
+      simp at h_core
+      exact ⟨relS_one, rfl, congrArg ValidSubstRelation.newS h_core.symm⟩
+
+private theorem Map.find?_insert_self [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) : Map.find? (Map.insert m x v) x = some v := by
+  induction m with
+  | nil => simp [Map.insert, Map.find?]
+  | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
+
+private theorem Maps.find?_update_self [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (h : ms.find? x ≠ none) :
+    (Maps.update ms x v).find? x = some v := by
+  induction ms with
+  | nil => simp [Maps.find?] at h
+  | cons m rest ih =>
+    simp only [Maps.update]; split
+    · rename_i h_none; simp only [Maps.find?, h_none]; apply ih
+      simp [Maps.find?, h_none] at h; exact h
+    · simp [Maps.find?, Map.find?_insert_self]
+
+private theorem Maps.find?_insert_self [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) :
+    Maps.find? (Maps.insert ms x v) x = some v := by
+  simp only [Maps.insert]; split
+  · match ms with
+    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
+    | _ :: _ => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
+  · exact Maps.find?_update_self ms x v (by simp_all)
+
+/-- After inserting `(id, lty)` into the applied substitution, `subst _ (ftvar id) = lty`. -/
+private theorem subst_ftvar_new_binding
+    (S : Subst) (id : TyIdentifier) (lty : LMonoTy)
+    (_h_none : Maps.find? S id = none) :
+    LMonoTy.subst (Maps.insert (Subst.apply [(id, lty)] S) id lty) (LMonoTy.ftvar id) = lty := by
+  have h_find := Maps.find?_insert_self (Subst.apply [(id, lty)] S) id lty
+  have h_not_empty : ¬Subst.hasEmptyScopes (Maps.insert (Subst.apply [(id, lty)] S) id lty) := by
+    intro h_empty
+    exact absurd ((Subst.isEmpty_implies_keys_empty h_empty) ▸ Maps.find?_mem_keys _ h_find) (by simp)
+  unfold LMonoTy.subst; simp [h_not_empty, h_find]
+
+/-- When `S.find? id = none`, the new substitution absorbs `S` and maps `orig_lty` to `lty`. -/
+private theorem subst_orig_new_binding
+    (S : Subst) (id : TyIdentifier) (lty orig_lty : LMonoTy)
+    (h_none : Maps.find? S id = none)
+    (h_lty : lty = LMonoTy.subst S orig_lty)
+    (h_occurs : ¬(id ∈ lty.freeVars)) :
+    LMonoTy.subst (Maps.insert (Subst.apply [(id, lty)] S) id lty) orig_lty = lty := by
+  sorry
+
+/--
+Unifying a single constraint produces a substitution that makes the
+two types equal. This is the core soundness property for `Constraint.unifyOne`.
+
+The proof requires mutual well-founded induction matching the recursive
+structure of `unifyOne`/`unifyCore`. Key cases:
+- `t1 == t2`: substitution is unchanged; types are definitionally equal.
+- `ftvar id` case with `id` not in `S`: the new substitution maps `id`
+  to `subst S orig_lty`, and the occurs check ensures idempotence.
+- `ftvar id` case with `id` already in `S`: recursive call on `(S[id], lty)`;
+  the IH + extension property give soundness.
+- `tcons` case: delegates to `unifyCore` on zipped arguments; each pair
+  is equalized by the IH.
+-/
+private theorem unifyOne_sound (c : Constraint) (S : SubstInfo)
+    (relS : ValidSubstRelation [c] S)
+    (h : Constraint.unifyOne c S = .ok relS) :
+    LMonoTy.subst relS.newS.subst c.1 = LMonoTy.subst relS.newS.subst c.2 := by
+  obtain ⟨t1, t2⟩ := c
+  simp only [] at *
+  -- Unfold unifyOne and case-split on the outer if t1 == t2
+  unfold Constraint.unifyOne at h
+  split at h
+  · -- Case: t1 == t2. Substitution unchanged; types definitionally equal.
+    rename_i h_beq
+    simp at h
+    have h_eq : t1 = t2 := eq_of_beq h_beq
+    subst h_eq; simp_all
+  · -- Case: t1 ≠ t2. Split on the type constructor match.
+    split at h
+    · -- Case: .ftvar id on left, orig_lty on right.
+      rename_i h_neq_beq id_val orig_val h_neq_match
+      -- Further decompose: the do-block starts with let lty := subst S orig, then if/match
+      simp [h_neq_match] at h
+      split at h
+      · -- Subcase: ftvar id = subst S orig_lty. S is unchanged.
+        rename_i h_id_eq_lty
+        simp at h; subst h
+        show LMonoTy.subst S.subst (LMonoTy.ftvar _) = LMonoTy.subst S.subst _
+        simp only [h_id_eq_lty, LMonoTy.subst_idempotent S.subst S.isWF _]
+      · -- ftvar id ≠ subst S orig_lty
+        split at h
+        · simp at h  -- Occurs check fails: error
+        · split at h
+          · -- S.find? id = some sty: recursive unifyOne call.
+            -- Requires well-founded mutual induction + extension property:
+            -- IH gives subst S' sty = subst S' lty, and extension gives
+            -- subst S' (ftvar id) = subst S' sty and subst S' lty = subst S' orig.
+            sorry
+          · -- S.find? id = none: new binding [id ↦ lty] added.
+            rename_i h_neq2 h_not_occurs h_find_none
+            simp at h; subst h
+            show LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
+                                 _ (LMonoTy.subst S.subst _)) (LMonoTy.ftvar _) =
+                 LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
+                                 _ (LMonoTy.subst S.subst _)) _
+            rw [subst_ftvar_new_binding S.subst _ _ h_find_none,
+                subst_orig_new_binding S.subst _ _ _ h_find_none rfl h_not_occurs]
+    · -- Case: orig_lty on left, .ftvar id on right. Symmetric to the left case.
+      rename_i h_neq_beq id_val orig_val h_neq_match
+      simp [h_neq_match] at h
+      split at h
+      · -- ftvar id = subst S orig_lty. S unchanged. By idempotence (symmetric).
+        rename_i h_id_eq_lty
+        simp at h; subst h
+        show LMonoTy.subst S.subst _ = LMonoTy.subst S.subst (LMonoTy.ftvar _)
+        simp only [h_id_eq_lty, LMonoTy.subst_idempotent S.subst S.isWF _]
+      · split at h
+        · simp at h
+        · split at h
+          · sorry  -- recursive case (symmetric)
+          · -- S.find? id = none (symmetric)
+            rename_i h_neq2 h_not_occurs h_find_none
+            simp at h; subst h
+            show LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
+                                 _ (LMonoTy.subst S.subst _)) _ =
+                 LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
+                                 _ (LMonoTy.subst S.subst _)) (LMonoTy.ftvar _)
+            rw [subst_ftvar_new_binding S.subst _ _ h_find_none,
+                subst_orig_new_binding S.subst _ _ _ h_find_none rfl h_not_occurs]
+    · -- Case: .bitvec n1, .bitvec n2. Since t1 ≠ t2, we have n1 ≠ n2.
+      -- The inner n1 == n2 check either contradicts t1 ≠ t2, or returns error.
+      split at h
+      · rename_i _t2 _n1 _n2 h_neq _h_match h_nat
+        exact absurd (by have := eq_of_beq h_nat; subst this; exact beq_self_eq_true _) h_neq
+      · simp at h
+    · -- Case: .tcons name1 args1, .tcons name2 args2.
+      -- Delegates to unifyCore on (args1.zip args2). Requires mutual induction:
+      -- unifyCore_sound gives that each argument pair is equalized,
+      -- which implies the full tcons types are equal (same name, equal args).
+      sorry
+    · simp at h -- Case: .bitvec _, .tcons _ _ — always error
+    · simp at h -- Case: .tcons _ _, .bitvec _ — always error
+
 /--
 Unification produces a substitution that makes the two types equal.
 -/
 theorem unify_makes_equal (ty1 ty2 : LMonoTy) (S_old S_new : SubstInfo)
     (h : Constraints.unify [(ty1, ty2)] S_old = .ok S_new) :
     LMonoTy.subst S_new.subst ty1 = LMonoTy.subst S_new.subst ty2 := by
-  sorry
+  obtain ⟨relS, h_one, h_eq⟩ := unify_singleton_eq_unifyOne ty1 ty2 S_old S_new h
+  subst h_eq
+  exact unifyOne_sound (ty1, ty2) S_old relS h_one
 
 /--
 All keys in the substitution produced by `resolveAux` are fresh in the input
