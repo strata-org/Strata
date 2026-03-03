@@ -433,11 +433,11 @@ spec {
 info:
 Obligation: set_second_calls_List..head_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: set_second_calls_List..tail_1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: secondIs2
 Property: assert
@@ -491,7 +491,7 @@ spec {
 info:
 Obligation: set_h_calls_List..head_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: headIs100
 Property: assert

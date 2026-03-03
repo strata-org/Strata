@@ -256,7 +256,7 @@ spec {
 info:
 Obligation: set_h_calls_List..head_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: headIs100
 Property: assert
@@ -362,7 +362,7 @@ Result: ✔️ pass if reachable
 
 Obligation: assert_leftVal_calls_Either..l_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftVal
 Property: assert

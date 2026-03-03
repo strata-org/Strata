@@ -377,7 +377,7 @@ spec {
 info:
 Obligation: set_v_calls_Tree..val_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: valIs42
 Property: assert
@@ -385,7 +385,7 @@ Result: ✔️ pass if reachable
 
 Obligation: set_l_calls_Tree..left_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftIsLeaf
 Property: assert
@@ -393,7 +393,7 @@ Result: ✔️ pass if reachable
 
 Obligation: assert_leftVal_calls_Tree..val_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftVal
 Property: assert
@@ -401,7 +401,7 @@ Result: ✔️ pass if reachable
 
 Obligation: set_r_calls_Tree..right_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: rightIsLeaf
 Property: assert
@@ -409,7 +409,7 @@ Result: ✔️ pass if reachable
 
 Obligation: assert_rightVal_calls_Tree..val_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: rightVal
 Property: assert
@@ -471,11 +471,11 @@ spec {
 info:
 Obligation: set_leftLeft_calls_Tree..left_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: set_leftLeft_calls_Tree..left_1
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftLeftIsLeaf
 Property: assert
@@ -483,7 +483,7 @@ Result: ✔️ pass if reachable
 
 Obligation: set_v_calls_Tree..val_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: leftLeftVal
 Property: assert
@@ -537,7 +537,7 @@ spec {
 info:
 Obligation: set_v_calls_Tree..val_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: valIs100
 Property: assert

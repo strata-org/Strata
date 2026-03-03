@@ -87,7 +87,7 @@ $__b0
 info:
 Obligation: assert_constr_destr_cancel_calls_Any..as_bool_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: constr_destr_cancel
 Property: assert

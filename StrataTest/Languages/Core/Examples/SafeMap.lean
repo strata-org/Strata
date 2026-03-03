@@ -99,7 +99,7 @@ Result: ✔️ pass if reachable
 
 Obligation: assert_value_of_101_calls_OptionInt..val_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: value_of_101
 Property: assert

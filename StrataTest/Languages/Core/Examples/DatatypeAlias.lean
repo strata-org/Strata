@@ -47,7 +47,7 @@ spec {
 info:
 Obligation: set_v_calls_Box..value_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: valueIs100
 Property: assert

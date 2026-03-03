@@ -58,11 +58,11 @@ Result: ✔️ pass if reachable
 
 Obligation: set_headOpt_calls_List..hd_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: set_value_calls_Option..OptionVal_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: valueIs42
 Property: assert
@@ -118,7 +118,7 @@ spec {
 info:
 Obligation: set_vp_calls_Container..visiblePart_0
 Property: assert
-Result: ✅ pass
+Result: ✔️ pass if reachable
 
 Obligation: isWithHidden
 Property: assert
