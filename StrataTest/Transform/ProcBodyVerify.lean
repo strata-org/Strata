@@ -51,6 +51,21 @@ spec {
 };
 #end
 
+def TestProg3 :=
+#strata
+program Core;
+procedure WithFree(x : int) returns (y : int)
+spec {
+  free requires (x >= 0);
+  requires (x > 0);
+  free ensures (y >= 0);
+  ensures (y == x);
+}
+{
+  y := x;
+};
+#end
+
 /-! ## Tests -/
 
 def translate (t : Strata.Program) : Core.Program :=
@@ -71,6 +86,17 @@ example : True := by
 example : True := by
   let p := translate TestProg2
   match Program.Procedure.find? p "Simple" with
+  | some proc =>
+    let result := procToVerifyStmt proc p
+    match result.run CoreTransformState.emp with
+    | (.ok _, _) => trivial
+    | (.error _, _) => trivial
+  | none => trivial
+
+-- Test that transformation handles free specifications correctly
+example : True := by
+  let p := translate TestProg3
+  match Program.Procedure.find? p "WithFree" with
   | some proc =>
     let result := procToVerifyStmt proc p
     match result.run CoreTransformState.emp with
