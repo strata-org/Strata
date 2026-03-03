@@ -205,7 +205,7 @@ def alwaysFalseReachabilityUnknown (o : VCOutcome) : Bool :=
   | .unsat, .unknown => true
   | _, _ => false
 
-def canBeFalseAndReachable (o : VCOutcome) : Bool :=
+def canBeFalseAndIsReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unknown, .sat _ => true
   | _, _ => false
@@ -248,7 +248,7 @@ def isIndecisiveAndReachable := indecisiveAndReachable
 def isUnreachable := unreachable
 def isSatisfiableValidityUnknown := satisfiableValidityUnknown
 def isAlwaysFalseReachabilityUnknown := alwaysFalseReachabilityUnknown
-def isCanBeFalseAndReachable := canBeFalseAndReachable
+def isCanBeFalseAndReachable := canBeFalseAndIsReachable
 def isPassReachabilityUnknown := passReachabilityUnknown
 def isUnknown := unknown
 def isRefuted := alwaysFalseAndReachable
@@ -257,7 +257,7 @@ def isIndecisive := indecisiveAndReachable
 def isAlwaysTrueIfReachable := passReachabilityUnknown
 def isPassIfReachable := passReachabilityUnknown
 def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
-def isReachableAndCanBeFalse := canBeFalseAndReachable
+def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) : String :=
   if o.passAndReachable then "pass and reachable from declaration entry"
@@ -266,7 +266,7 @@ def label (o : VCOutcome) : String :=
   else if o.unreachable then "unreachable"
   else if o.satisfiableValidityUnknown then "satisfiable"
   else if o.alwaysFalseReachabilityUnknown then "refuted if reachable"
-  else if o.canBeFalseAndReachable then "can be false if reachable"
+  else if o.canBeFalseAndIsReachable then "can be false and is reachable"
   else if o.passReachabilityUnknown then "pass if reachable"
   else "unknown"
 
@@ -277,7 +277,7 @@ def emoji (o : VCOutcome) : String :=
   else if o.unreachable then "⛔"
   else if o.satisfiableValidityUnknown then "➕"
   else if o.alwaysFalseReachabilityUnknown then "✖️"
-  else if o.canBeFalseAndReachable then "➖"
+  else if o.canBeFalseAndIsReachable then "➖"
   else if o.passReachabilityUnknown then "✔️"
   else "❓"
 

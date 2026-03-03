@@ -41,7 +41,7 @@ false
 
 Result: Obligation: bitvec64_test
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 
 
 [DEBUG] Evaluated program:
@@ -59,7 +59,7 @@ Result: ✔️ pass if reachable
 
 Obligation: bitvec64_test
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 -/
 #guard_msgs in
 #eval verify pgm

@@ -63,7 +63,7 @@ a[1]
 
 Result: Obligation: a_one_true
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 
 
 [DEBUG] Evaluated program:
@@ -83,7 +83,7 @@ Result: ✔️ pass if reachable
 
 Obligation: a_one_true
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 -/
 #guard_msgs in
 #eval verify mapPgm

@@ -25,7 +25,7 @@ test_helper_procedure_assert_opt_name_none_or_str_20: ✔️ pass if reachable (
 
 test_helper_procedure_assert_opt_name_none_or_bar_21: ✔️ pass if reachable (at byte 11278)
 
-test_helper_procedure_assert_name_is_foo_11: ➖ can be false if reachable (at byte 11081)
+test_helper_procedure_assert_name_is_foo_11: ➖ can be false and is reachable (at byte 11081)
 
 test_helper_procedure_assert_opt_name_none_or_str_12: ✔️ pass if reachable (at byte 11131)
 
@@ -35,4 +35,4 @@ test_helper_procedure_assert_name_is_foo_3: ✔️ pass if reachable (at byte 11
 
 test_helper_procedure_assert_opt_name_none_or_str_4: ✔️ pass if reachable (at byte 11131)
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: ➖ can be false if reachable (at byte 11278)
+test_helper_procedure_assert_opt_name_none_or_bar_5: ➖ can be false and is reachable (at byte 11278)

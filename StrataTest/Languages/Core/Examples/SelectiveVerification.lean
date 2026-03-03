@@ -60,11 +60,11 @@ spec {
 info:
 Obligation: callElimAssert_n_positive_6
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 
 Obligation: output_property
 Property: assert
@@ -85,11 +85,11 @@ Result: ✔️ pass if reachable
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ➖ can be false if reachable
+Result: ➖ can be false and is reachable
 
 Obligation: output_property
 Property: assert

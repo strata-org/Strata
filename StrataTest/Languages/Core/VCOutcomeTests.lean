@@ -28,7 +28,7 @@ inductive OutcomePredicate where
   | unreachable
   | satisfiableValidityUnknown
   | alwaysFalseReachabilityUnknown
-  | canBeFalseAndReachable
+  | canBeFalseAndIsReachable
   | passReachabilityUnknown
   | unknown
   deriving DecidableEq, Repr
@@ -41,13 +41,13 @@ def OutcomePredicate.eval (p : OutcomePredicate) (o : VCOutcome) : Bool :=
   | .unreachable => o.unreachable
   | .satisfiableValidityUnknown => o.satisfiableValidityUnknown
   | .alwaysFalseReachabilityUnknown => o.alwaysFalseReachabilityUnknown
-  | .canBeFalseAndReachable => o.canBeFalseAndReachable
+  | .canBeFalseAndIsReachable => o.canBeFalseAndIsReachable
   | .passReachabilityUnknown => o.passReachabilityUnknown
   | .unknown => o.unknown
 
 def allPredicates : List OutcomePredicate :=
   [.passAndReachable, .alwaysFalseAndReachable, .indecisiveAndReachable, .unreachable,
-   .satisfiableValidityUnknown, .alwaysFalseReachabilityUnknown, .canBeFalseAndReachable,
+   .satisfiableValidityUnknown, .alwaysFalseReachabilityUnknown, .canBeFalseAndIsReachable,
    .passReachabilityUnknown, .unknown]
 
 def testOutcome (o : VCOutcome) (expectedTrue : OutcomePredicate) : IO Unit := do
@@ -117,10 +117,10 @@ Sat:unsat|Val:unknown ✖️ refuted if reachable, Always false if reachable, re
 
 /--
 info:
-Sat:unknown|Val:sat ➖ can be false if reachable, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
+Sat:unknown|Val:sat ➖ can be false and is reachable, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)) .canBeFalseAndReachable
+#eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)) .canBeFalseAndIsReachable
 
 /--
 info:  isPass isAlwaysTrue
