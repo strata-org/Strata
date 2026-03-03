@@ -19,6 +19,8 @@ namespace Strata
 /--
 Check if a character is valid for starting a regular identifier.
 Regular identifiers must start with a letter or underscore.
+
+NOTE: When updating this function, you will want to consider updating Strata/DDM/Parser.lean as well.
 -/
 private def isIdBegin (c : Char) : Bool :=
   c.isAlpha || c == '_' || c == '$'
