@@ -546,16 +546,16 @@ spec{
   delta := from_int ((((days_i * 24) + hours_i) * 3600) * 1000000);
 };
 
-procedure test_helper_procedure(req_name : Any, opt_name : Any) returns ()
+procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
 spec {
   requires [req_name_is_foo]: req_name == from_string("foo");
   requires [req_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar")) ;
-  //ensures [ensures_maybe_except_none]: (Error..isNoError(maybe_except));
+  ensures [ensures_maybe_except_none]: (Error..isNoError(maybe_except));
 }
 {
   assert [assert_name_is_foo]: req_name == from_string("foo");
   assert [assert_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar"));
-  //assume [assume_maybe_except_none]: (Error..isNoError(maybe_except));
+  assume [assume_maybe_except_none]: (Error..isNoError(maybe_except));
 };
 
 procedure test_helper_create_client(name : Any) returns (result : Any);

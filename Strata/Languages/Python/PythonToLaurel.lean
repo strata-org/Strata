@@ -846,7 +846,20 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- Expression statement (e.g., function call)
   | .Expr _ value => do
     let expr ← translateExpr ctx value
-    return (ctx, [expr])
+    --return (ctx, [expr])
+
+    match expr.val with
+    | .StaticCall fnname _ =>
+        match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
+        | some funsig =>
+            let targets := if funsig.ret.isNone then [] else [nullcall_var]
+            let targets := if withException ctx fnname then targets++[maybe_except_var] else targets
+            if targets.length > 0 then
+              return (ctx, [mkStmtExprMd (StmtExpr.Assign targets expr)])
+            else
+              return (ctx, [expr])
+        | _ => return (ctx, [expr])
+    | _ => return (ctx, [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
 
@@ -992,9 +1005,11 @@ def translateFunction (ctx : TranslationContext) (funcdecl : PythonFunctionDecl)
     -- Translate parameters
     let mut inputs : List Parameter := []
 
-    inputs ← funcdecl.args.mapM (fun (name, _, _) => do
-        --let paramType ← translateType ctx type
-        return { name := name, type := AnyTy })
+    inputs := funcdecl.args.map (fun (name, ty, _) =>
+        if ctx.compositeTypes.any (fun ct => ct.name == ty) then
+          { name := name, type := mkHighTypeMd (.UserDefined ty) }
+        else
+          { name := name, type := AnyTy})
     if funcdecl.has_kwargs then
       let paramType ← translateType ctx "DictStrAny"
       inputs:= inputs ++ [{ name := "kwargs", type := paramType }]
@@ -1005,10 +1020,10 @@ def translateFunction (ctx : TranslationContext) (funcdecl : PythonFunctionDecl)
     -- Determine outputs based on return type
     let outputs : List Parameter :=
       match funcdecl.ret with
-      | none => []
-      | some ty =>
-        [{ name := "LaurelResult", type := AnyTy },
-        { name := "error", type := (mkCoreType "Error") }]
+      | none => [] --[{ name := "error", type := (mkCoreType "Error")}]
+      | some _ => [{ name := "LaurelResult", type := AnyTy }]
+      --  [{ name := "LaurelResult", type := AnyTy },
+      --  { name := "error", type := (mkCoreType "Error")}]
 
     -- Translate function body
     let inputtypes := funcdecl.args.map (λ (name, type, _) => (name, type))
