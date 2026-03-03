@@ -7,6 +7,7 @@ category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
 op stringType : LaurelType => "string";
+op arrayType (elemType: LaurelType): LaurelType => "Array" "<" elemType ">";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
@@ -31,6 +32,9 @@ op new(name: Ident): StmtExpr => "new " name;
 
 // Field access
 op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+
+// Array indexing
+op arrayIndex (arr: StmtExpr, idx: StmtExpr): StmtExpr => @[prec(90)] arr "[" idx "]";
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
@@ -110,11 +114,11 @@ op composite (name: Ident, extending: Option OptionalExtends, fields: Seq Field)
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
-category OptionalRequires;
-op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
+category RequiresClause;
+op requiresClause(cond: StmtExpr): RequiresClause => "requires " cond:0;
 
 category EnsuresClause;
-op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures" cond:0;
+op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures " cond:0;
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "modifies" refs;
@@ -129,7 +133,7 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: NewlineSepBy RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
@@ -138,14 +142,21 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: NewlineSepBy RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
 
+// Constrained types
+category ConstrainedType;
+op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
+                    constraint: StmtExpr, witness: StmtExpr): ConstrainedType
+  => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
+
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
 op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
+op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct;
 
 op program (items: Seq TopLevel): Command => items;

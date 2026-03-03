@@ -56,6 +56,14 @@ procedure blockWithTwoAssignmentsInExpression() {
   assert z == 2;
 }
 
+// Regression test: assignment lifting after a conditional should work
+procedure AssignmentAfterConditional(x: int) {
+  var y: int := 0;
+  if (x > 0) { y := 1; }
+  var z: int := y := y + 1;;
+  assert z == y;
+}
+
 procedure nestedImpureStatementsAndOpaque()
   ensures true
 {
@@ -100,7 +108,7 @@ procedure imperativeCallInConditionalExpression(b: bool) {
 "
 
 #guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
+#eval! testInputWithOffset "Variables" program 14 processLaurelFile
 
 
 end Laurel
