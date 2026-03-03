@@ -69,15 +69,15 @@ def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement
   let procName := proc.header.name.name
   let bodyLabel := s!"body_{procName}"
   let verifyLabel := s!"verify_{procName}"
-  
+
   -- Initialize input parameters
   let inputInits := proc.header.inputs.toList.map fun (id, ty) =>
     Statement.init id (Lambda.LTy.forAll [] ty) none #[]
-  
+
   -- Initialize output parameters
   let outputInits := proc.header.outputs.toList.map fun (id, ty) =>
     Statement.init id (Lambda.LTy.forAll [] ty) none #[]
-  
+
   -- Initialize modified globals: old_g (no RHS), then g := old_g
   let modifiesInits ← proc.spec.modifies.mapM fun g => do
     let oldG := CoreIdent.mkOld g.name
@@ -85,16 +85,16 @@ def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement
     return [ Statement.init oldG gTy none #[],
              Statement.init g gTy (some (.fvar () oldG none)) #[] ]
   let modifiesInits := modifiesInits.flatten
-  
+
   -- Convert preconditions to assumes
   let assumes := requiresToAssumes proc.spec.preconditions
-  
+
   -- Wrap body in labeled block
   let bodyBlock := Stmt.block bodyLabel proc.body #[]
-  
+
   -- Convert postconditions to asserts
   let asserts := ensuresToAsserts proc.spec.postconditions
-  
+
   -- Combine all parts
   let allStmts := inputInits ++ outputInits ++ modifiesInits ++ assumes ++ [bodyBlock] ++ asserts
   return Stmt.block verifyLabel allStmts #[]
