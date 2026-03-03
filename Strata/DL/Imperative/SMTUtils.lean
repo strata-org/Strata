@@ -149,7 +149,11 @@ private def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.T
         | .ok t2' =>
           return .some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
                   t2')
-        | .error msg => throw (IO.userError msg)
+        | .error _ =>
+          -- The model has an SMT expression (e.g., (lambda ...)) which cannot
+          -- be represented in Strata.SMT.Term. Filter out this variable from
+          -- the model.
+          return .none
     return pairs
   | .error _ => return []
 
