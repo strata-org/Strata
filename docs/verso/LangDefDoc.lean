@@ -223,9 +223,8 @@ the current core set of commands does not include calls). Statements are
 parameterized by a command type and describe the control flow surrounding those
 commands. Currently, `Imperative` has structured, deterministic statements, each
 of which can be: a command, a sequence of statements in a block, a deterministic
-conditional, a deterministic loop with a condition, or a forward `goto`
-statement. (Note: we plan to replace `goto` with a block exit statement, and
-have a separate unstructured CFG representation.)
+conditional, a deterministic loop with a condition, or an `exit`
+statement that exits the nearest enclosing block with a matching label.
 
 We plan to add non-deterministic statements, as in [Kleene Algebra with
 Tests](https://www.cs.cornell.edu/~kozen/Papers/kat.pdf), and support a

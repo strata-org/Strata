@@ -73,3 +73,82 @@ Result: ✅ pass
 #eval verify funcPgm
 
 ---------------------------------------------------------------------
+
+/-! ## Multi-argument function test
+
+Tests that multi-argument functions are correctly encoded in SMT.
+Before the fix, only the first argument type was captured.
+-/
+
+def multiArgFuncPgm : Program :=
+#strata
+program Core;
+
+function add(x : int, y : int) : int { x + y }
+
+procedure testMultiArg(a : int, b : int) returns () {
+  assert [addComm]: (add(a, b) == add(b, a));
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: addComm
+Property: assert
+Obligation:
+add($__a0, $__b1) == add($__b1, $__a0)
+
+---
+info:
+Obligation: addComm
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify multiArgFuncPgm
+
+---------------------------------------------------------------------
+
+/-! ## Function with body containing quantifier
+
+Tests that substFvarsLifting correctly lifts de Bruijn indices
+when substituting formals with bvars in function bodies that
+contain quantifiers.
+-/
+
+def quantBodyFuncPgm : Program :=
+#strata
+program Core;
+
+function allPositive(x : int) : bool { forall y : int :: y > 0 ==> y + x > 0 }
+
+procedure testQuantBody(n : int) returns () {
+  assert [quantOk]: (n > 0 ==> allPositive(n));
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: quantOk
+Property: assert
+Obligation:
+$__n0 > 0 ==> allPositive($__n0)
+
+---
+info:
+Obligation: quantOk
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify quantBodyFuncPgm
+
+---------------------------------------------------------------------

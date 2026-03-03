@@ -358,7 +358,7 @@ private def funcDeclStmtPgm : Program :=
 program Core;
 
 procedure testFuncDecl(c: int) returns () {
-  function double(x : int) : int { x + x + c}
+  function double(x : int) : int { x + x + c }
   var y : int := 5;
   var result : int := double(y);
   assert result == 12;
@@ -366,15 +366,80 @@ procedure testFuncDecl(c: int) returns () {
 
 #end
 
--- BROKEN!
-#guard_msgs (drop all) in
+/--
+info: procedure testFuncDecl (c : int) returns ()
+{
+  function double (x : int) : int { x + x + c }
+  var y : int := 5;
+  var result : int := double(y);
+  assert [assert_0]: result == 12;
+  };
+-/
+#guard_msgs in
 #eval ASTtoCST funcDeclStmtPgm
--- AST to CST Error:
--- Unsupported construct in funcDeclToStatement: funcDecl without body not supported in statements:
--- Context: Global scope:
--- Scope 1:
---   boundVars: [c]
--- Scope 2:
+
+-------------------------------------------------------------------------------
+
+private def findMaxPgm : Program :=
+#strata
+program Core;
+
+procedure find_max(nums: Map bv64 bv32, nums_len: bv64) returns (ret: bv32)
+spec {
+  requires ((nums_len > bv{64}(0)));
+  ensures (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) ==> (ret >=s (nums[x0]))));
+  ensures (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) && (ret == (nums[x0]))));
+}
+{
+  var max : bv32;
+  var i : bv64;
+  max := (nums[bv{64}(0)]);
+  i := bv{64}(1);
+  while ((i < nums_len))
+    invariant (nums_len > bv{64}(0))
+    invariant (bv{64}(0) <= i)
+    invariant (i <= nums_len)
+    invariant (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) ==> (max >=s (nums[x0]))))
+    invariant (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) && (max == (nums[x0]))))
+  {
+    if (((nums[i]) >s max)) {
+      max := (nums[i]);
+    } else {
+    }
+    i := (i + bv{64}(1));
+  }
+  ret := max;
+};
+#end
+
+/--
+info: procedure find_max (nums : (Map bv64 bv32), nums_len : bv64) returns (ret : bv32)
+spec {
+  requires [find_max_requires_0]: nums_len > bv{64}(0);
+  ensures [find_max_ensures_1]: forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < nums_len ==> ret >=s nums[__q0];
+  ensures [find_max_ensures_2]: exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < nums_len && ret == nums[__q0];
+  } {
+  var max : bv32;
+  var i : bv64;
+  max := nums[bv{64}(0)];
+  i := bv{64}(1);
+  while (i < nums_len)
+  invariant nums_len > bv{64}(0)
+  invariant bv{64}(0) <= i
+  invariant i <= nums_len
+  invariant forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i ==> max >=s nums[__q0]
+  invariant exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i && max == nums[__q0]
+  {
+    if (nums[i] >s max) {
+      max := nums[i];
+      }
+    i := i + bv{64}(1);
+    }
+  ret := max;
+  };
+-/
+#guard_msgs in
+#eval ASTtoCST findMaxPgm
 
 -------------------------------------------------------------------------------
 

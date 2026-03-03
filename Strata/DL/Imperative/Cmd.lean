@@ -36,23 +36,23 @@ to `Imperative.Stmt` or other similar types.
 inductive Cmd (P : PureExpr) : Type where
   /-- Define a variable called `name` with type `ty` and optional initial value `e`.
       When `e` is `none`, the variable is initialized with an arbitrary value. -/
-  | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P) := .empty)
+  | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P))
   /-- Assign `e` to a pre-existing variable `name`. -/
-  | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
+  | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P))
   /-- Assigns an arbitrary value to an existing variable `name`. -/
-  | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
+  | havoc    (name : P.Ident) (md : (MetaData P))
   /-- Checks if condition `b` is true on _all_ paths on which this command is
     encountered. Reports an error if `b` does not hold on _any_ of these paths.
   -/
-  | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  | assert   (label : String) (b : P.Expr) (md : (MetaData P))
   /-- Ignore any execution state in which `b` is not true. -/
-  | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  | assume   (label : String) (b : P.Expr) (md : (MetaData P))
   /--
   Checks if there _exists_ a path that reaches this command and condition `b` is
   true. Reports an error otherwise. This is the dual of `assert`, and can be
   used for coverage analysis.
   -/
-  | cover    (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  | cover    (label : String) (b : P.Expr) (md : (MetaData P))
 
 abbrev Cmds (P : PureExpr) := List (Cmd P)
 
@@ -78,10 +78,10 @@ instance : HasPassiveCmds P (Cmd P) where
   assert l e (md := MetaData.empty):= .assert l e md
 
 class HasHavoc (P : PureExpr) (CmdT : Type) where
-  havoc : P.Ident → CmdT
+  havoc : P.Ident → MetaData P → CmdT
 
 instance : HasHavoc P (Cmd P) where
-  havoc x := .havoc x
+  havoc x md := .havoc x md
 ---------------------------------------------------------------------
 
 mutual

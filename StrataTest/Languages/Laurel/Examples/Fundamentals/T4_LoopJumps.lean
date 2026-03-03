@@ -49,22 +49,20 @@ proof whileWithBreakAndContinue_body() {
 
   var counter = 0;
 
-  label loopStart;
-  assert counter >= 0;
-  if (steps > 0) {
-    if (steps == exitSteps) {
-      counter = -10;
-      goto breakLabel;
+  loopStart: {
+    assert counter >= 0;
+    if (steps > 0) {
+      if (steps == exitSteps) {
+        counter = -10;
+        exit loopStart;
+      }
+      if (steps == continueSteps) {
+        exit loopStart;
+      }
+      counter = counter + 1;
+      steps = steps - 1;
     }
-    if (steps == continueSteps) {
-      goto continueLabel;
-    }
-    counter = counter + 1;
-    label continueLabel;
-    steps = steps - 1;
-    goto loopStart;
   }
-  label breakLabel;
   counter;
 }
 -/

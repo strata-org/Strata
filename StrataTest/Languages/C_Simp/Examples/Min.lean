@@ -59,7 +59,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (MinPgm.commands))
+#eval TransM.run Inhabited.default ((translateProgram (MinPgm.commands)).map (·.stripMetaData))
 
 /--
 info: [Strata.Core] Type checking succeeded.

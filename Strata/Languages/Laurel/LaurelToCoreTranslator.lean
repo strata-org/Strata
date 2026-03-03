@@ -312,15 +312,15 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr env a)
             let defaultExpr := defaultExprForType ty
-            let initStmt := Core.Statement.init ident coreType (some defaultExpr)
-            let callStmt := Core.Statement.call [ident] callee coreArgs
+            let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
+            let callStmt := Core.Statement.call [ident] callee coreArgs md
             return (env', [initStmt, callStmt])
       | some initExpr =>
           let coreExpr ← translateExpr env initExpr
-          return (env', [Core.Statement.init ident coreType (some coreExpr)])
+          return (env', [Core.Statement.init ident coreType (some coreExpr) md])
       | none =>
           let defaultExpr := defaultExprForType ty
-          return (env', [Core.Statement.init ident coreType (some defaultExpr)])
+          return (env', [Core.Statement.init ident coreType (some defaultExpr) md])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -331,14 +331,14 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
               if isCoreFunction functionNames callee then
                 -- Functions are translated as expressions
                 let boogieExpr ← translateExpr env value
-                return (env, [Core.Statement.set ident boogieExpr])
+                return (env, [Core.Statement.set ident boogieExpr md])
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr env a)
-                return (env, [Core.Statement.call [ident] callee coreArgs])
+                return (env, [Core.Statement.call [ident] callee coreArgs md])
           | _ =>
               let boogieExpr ← translateExpr env value
-              return (env, [Core.Statement.set ident boogieExpr])
+              return (env, [Core.Statement.set ident boogieExpr md])
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
@@ -366,13 +366,13 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
         return (env, [])
       else
         let coreArgs ← args.mapM (fun a => translateExpr env a)
-        return (env, [Core.Statement.call [] name coreArgs])
+        return (env, [Core.Statement.call [] name coreArgs md])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           let ident := Core.CoreIdent.locl outParam.name
           let coreExpr ← translateExpr env value
-          let assignStmt := Core.Statement.set ident coreExpr
+          let assignStmt := Core.Statement.set ident coreExpr md
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           return (env, [assignStmt, noFallThrough])
       | none, _ =>
@@ -382,21 +382,28 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr env cond
-      -- Combine multiple invariants with && for Core (which expects single invariant)
-      let translatedInvariants ← invariants.mapM (fun inv => translateExpr env inv)
-      let invExpr := match translatedInvariants with
-        | [] => none
-        | [single] => some single
-        | first :: rest => some (rest.foldl (fun acc inv => LExpr.mkApp () boolAndOp [acc, inv]) first)
-      let decreasingExprCore ← decreasesExpr.mapM (fun d => translateExpr env d)
+      let invExprs ← invariants.mapM (translateExpr env)
+      let decreasingExprCore ← decreasesExpr.mapM (translateExpr env)
       let (_, bodyStmts) ← translateStmt env outputParams body
-      return (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExpr bodyStmts md])
+      return (env, [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md])
   | _ => return (env, [])
   termination_by sizeOf stmt
   decreasing_by
     all_goals
       have hlt := WithMetadata.sizeOf_val_lt stmt
       cases stmt; term_by_mem
+
+/--
+Translate a list of checks (preconditions or postconditions) to Core checks.
+Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
+-/
+private def translateChecks (env : TypeEnv) (checks : List StmtExprMd) (labelBase : String)
+    : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
+  checks.mapIdxM (fun i check => do
+    let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
+    let checkExpr ← translateExpr env check [] (isPureContext := true)
+    let c : Core.Procedure.Check := { expr := checkExpr, md := check.md }
+    return (label, c))
 
 /--
 Translate Laurel Parameter to Core Signature entry
@@ -423,23 +430,14 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   }
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type))
-  -- Translate precondition if it's not just LiteralBool true
-  let preconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
-    match proc.precondition with
-    | ⟨ .LiteralBool true, _ ⟩ => pure []
-    | precond =>
-        let e ← translateExpr initEnv precond [] (isPureContext := true)
-        let check : Core.Procedure.Check := { expr := e, md := precond.md }
-        pure [("requires", check)]
+  -- Translate preconditions
+  let preconditions ← translateChecks initEnv proc.preconditions "requires"
+
   -- Translate postconditions for Opaque bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ =>
-        postconds.mapIdxM (fun i postcond => do
-          let label := if postconds.length == 1 then "postcondition" else s!"postcondition_{i}"
-          let e ← translateExpr initEnv postcond [] (isPureContext := true)
-          let check : Core.Procedure.Check := { expr := e, md := postcond.md }
-          pure (label, check))
+        translateChecks initEnv postconds "postcondition"
     | _ => pure []
   let modifies : List Core.Expression.Ident := []
   let body : List Core.Statement ←
@@ -522,12 +520,10 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     | none => LMonoTy.int
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type))
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
-  let preconditions : List (Lambda.FuncPrecondition Core.Expression.Expr Core.ExpressionMetadata) ←
-    match proc.precondition with
-    | ⟨ .LiteralBool true, _ ⟩ => pure []
-    | precond =>
-        let e ← translateExpr initEnv precond [] (isPureContext := true)
-        pure [{ expr := e, md := () }]
+  let preconditions ← proc.preconditions.mapM (fun precondition => do
+    let checkExpr ← translateExpr initEnv precondition [] true
+    return { expr := checkExpr, md := () })
+
   let body ← match proc.body with
     | .Transparent bodyExpr => some <$> translateExpr initEnv bodyExpr [] (isPureContext := true)
     | .Opaque _ (some bodyExpr) _ =>

@@ -111,9 +111,9 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
           { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
             writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
             callees := r1.callees ++ r2.callees }
-    | .Abstract postcond => (collectExprMd postcond).run {} |>.2
-  -- Also analyze precondition
-  let precondResult := (collectExprMd proc.precondition).run {} |>.2
+    | .Abstract postconds => (postconds.forM collectExprMd).run {} |>.2
+  -- Also analyze preconditions
+  let precondResult := (proc.preconditions.forM collectExprMd).run {} |>.2
   { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
     writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
     callees := bodyResult.callees ++ precondResult.callees }
@@ -395,8 +395,8 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     let inputs' := heapInParam :: proc.inputs
     let outputs' := heapOutParam :: proc.outputs
 
-    -- Precondition uses $heap_in (the input state)
-    let precondition' ← heapTransformExpr heapInName initEnv proc.precondition
+    -- Preconditions use $heap_in (the input state)
+    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapInName initEnv)
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
@@ -416,14 +416,14 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapName initEnv ·)
           pure (.Opaque postconds' impl' modif')
-      | .Abstract postcond =>
-          let postcond' ← heapTransformExpr heapName initEnv postcond
-          pure (.Abstract postcond')
+      | .Abstract postconds =>
+          let postconds' ← postconds.mapM (heapTransformExpr heapName initEnv ·)
+          pure (.Abstract postconds')
 
     return { proc with
       inputs := inputs',
       outputs := outputs',
-      precondition := precondition',
+      preconditions := preconditions',
       body := body' }
 
   else if readsHeap then
@@ -431,7 +431,7 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
     let heapParam : Parameter := { name := heapName, type := ⟨.THeap, #[]⟩ }
     let inputs' := heapParam :: proc.inputs
 
-    let precondition' ← heapTransformExpr heapName initEnv proc.precondition
+    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName initEnv)
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
@@ -442,13 +442,13 @@ def heapTransformProcedure (proc : Procedure) : TransformM Procedure := do
           let impl' ← impl.mapM (heapTransformExpr heapName initEnv ·)
           let modif' ← modif.mapM (heapTransformExpr heapName initEnv ·)
           pure (.Opaque postconds' impl' modif')
-      | .Abstract postcond =>
-          let postcond' ← heapTransformExpr heapName initEnv postcond
-          pure (.Abstract postcond')
+      | .Abstract postconds =>
+          let postconds' ← postconds.mapM (heapTransformExpr heapName initEnv ·)
+          pure (.Abstract postconds')
 
     return { proc with
       inputs := inputs',
-      precondition := precondition',
+      preconditions := preconditions',
       body := body' }
 
   else

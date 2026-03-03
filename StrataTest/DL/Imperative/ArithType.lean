@@ -118,9 +118,9 @@ instance : ToFormat (Cmds PureExpr × TEnv) where
 ---------------------------------------------------------------------
 
 private def testProgram1 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (some (.Num 0)),
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)),
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
+  [.init "x" .Num (some (.Num 0)) .empty,
+   .set "x" (.Plus (.Var "x" .none) (.Num 100)) .empty,
+   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--
 info: ok: Commands:
@@ -136,7 +136,7 @@ TEnv:
           return format (cs, τ)
 
 private def testProgram2 : Cmds Arith.PureExpr :=
-  [.init "x" .Bool (some (.Num 0))]
+  [.init "x" .Bool (some (.Num 0)) .empty]
 
 /-- info: error: Types .Bool and Num cannot be unified! -/
 #guard_msgs in
@@ -144,7 +144,7 @@ private def testProgram2 : Cmds Arith.PureExpr :=
           return format (cs, τ)
 
 private def testProgram3 : Cmds Arith.PureExpr :=
-  [.init "x" .Bool (some (.Var "x" .none))]
+  [.init "x" .Bool (some (.Var "x" .none)) .empty]
 
 /-- info: error: Variable x cannot appear in its own initialization expression! -/
 #guard_msgs in
@@ -152,8 +152,8 @@ private def testProgram3 : Cmds Arith.PureExpr :=
           return format (cs, τ)
 
 private def testProgram4 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (some (.Num 5)),
-   .set "x" (.Var "x" .none)]
+  [.init "x" .Num (some (.Num 5)) .empty,
+   .set "x" (.Var "x" .none) .empty]
 
 /--
 info: ok: Commands:
@@ -169,8 +169,8 @@ TEnv:
 
 
 private def testProgram5 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (some (.Num 5)),
-   .init "x" .Bool (some (.Eq (.Num 1) (.Num 2)))]
+  [.init "x" .Num (some (.Num 5)) .empty,
+   .init "x" .Bool (some (.Eq (.Num 1) (.Num 2))) .empty]
 
 /-- info: error: Variable x of type Num already in context. -/
 #guard_msgs in
@@ -178,7 +178,7 @@ private def testProgram5 : Cmds Arith.PureExpr :=
           return format (cs, τ)
 
 private def testProgram6 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (some (.Var "y" .none))]
+  [.init "x" .Num (some (.Var "y" .none)) .empty]
 
 /--
 info: error: Cannot infer the types of free variables in the initialization expression!
@@ -189,7 +189,7 @@ y
           return format (cs, τ)
 
 private def testProgram7 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (some (.Plus (.Var "y" (some .Num)) (.Var "z" (some .Num))))]
+  [.init "x" .Num (some (.Plus (.Var "y" (some .Num)) (.Var "z" (some .Num)))) .empty]
 
 /--
 info: ok: Commands:
@@ -203,8 +203,8 @@ TEnv:
           return format (cs, τ)
 
 private def testProgram8 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (some (.Num 1)),
-   .set "x" (.Var "y" (some .Num))]
+  [.init "x" .Num (some (.Num 1)) .empty,
+   .set "x" (.Var "y" (some .Num)) .empty]
 
 /-- info: error: Variable y not found in type context! -/
 #guard_msgs in

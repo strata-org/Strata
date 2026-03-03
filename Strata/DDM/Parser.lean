@@ -899,7 +899,7 @@ partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metad
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     commaSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
-  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.Seq =>
+  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.NewlineSepBy | q`Init.Seq =>
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     (if isNonempty then many1Parser else manyParser) <$> catParser ctx cat.args[0]!

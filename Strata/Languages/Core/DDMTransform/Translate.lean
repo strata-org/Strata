@@ -978,12 +978,13 @@ end
 
 ---------------------------------------------------------------------
 
-def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (Option Core.Expression.Expr) := do
+def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (List Core.Expression.Expr) := do
   match arg with
   | .option _ (.some m) => do
     let args ← checkOpArg m q`Core.invariant 1
-    translateExpr p bindings args[0]!
-  | _ => pure none
+    let e ← translateExpr p bindings args[0]!
+    pure [e]
+  | _ => pure []
 
 partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List Core.Expression.Expr) := do
@@ -999,31 +1000,25 @@ partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) 
     pure (i::is)
   | _ => TransM.error s!"translateInvariants unimplemented for {repr op}"
 
-private def invariantsToOption (invs : List Core.Expression.Expr) : Option Core.Expression.Expr :=
-  match invs with
-  | [] => none
-  | i :: is =>
-    -- ((i ∧ i2) ∧ i3) ∧ ...
-    some <| is.foldl
-      (fun acc j => .app () (.app () Core.boolAndOp acc) j)
-      i
 
-def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings) :
+def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings)
+    (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Core.Statement.init id tp none
-    let (stmts, bindings) ← initVarStmts rest bindings
+    let s := Core.Statement.init id tp none md
+    let (stmts, bindings) ← initVarStmts rest bindings md
     return ((s :: stmts), bindings)
 
-def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
+def translateVarStatement (bindings : TransBindings) (decls : Array Arg)
+    (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
   if decls.size != 1 then
     TransM.error s!"translateVarStatement unexpected decls length {repr decls}"
   else
     let tpids ← translateDeclList bindings decls[0]!
-    let (stmts, bindings) ← initVarStmts tpids bindings
+    let (stmts, bindings) ← initVarStmts tpids bindings md
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
                       return ((LExpr.fvar () id (ty.toMonoType h)): LExpr Core.CoreLParams.mono)
@@ -1032,7 +1027,8 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let bbindings := bindings.boundVars ++ newVars
     return (stmts, { bindings with boundVars := bbindings })
 
-def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg) :
+def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg)
+    (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
   if args.size != 3 then
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
@@ -1043,7 +1039,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let ty := (.forAll [] mty)
     let newBinding: LExpr Core.CoreLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
-    return ([.init lhs ty val], { bindings with boundVars := bbindings })
+    return ([.init lhs ty val md], { bindings with boundVars := bbindings })
 
 def translateOptionReachCheck (arg : Arg) : TransM Bool := do
   let .option _ rc := arg
@@ -1078,9 +1074,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
 
   match op.name, op.args with
   | q`Core.varStatement, declsa =>
-    translateVarStatement bindings declsa
+    translateVarStatement bindings declsa (← getOpMetaData op)
   | q`Core.initStatement, args =>
-    translateInitStatement p bindings args
+    translateInitStatement p bindings args (← getOpMetaData op)
   | q`Core.assign, #[_tpa, lhsa, ea] =>
     let lhs ← translateLhs lhsa
     let val ← translateExpr p bindings ea
@@ -1124,10 +1120,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Core.while_statement, #[ca, ia, ba] =>
     let c ← translateExpr p bindings ca
     let invs ← translateInvariants p bindings ia
-    let inv? := invariantsToOption invs
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.loop c .none inv? bodyss md], bindings)
+    return ([.loop c .none invs bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent Core.CoreIdent) lsa
     let f   ← translateIdent String fa
@@ -1144,10 +1139,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let (ss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
     return ([.block l ss md], bindings)
-  | q`Core.goto_statement, #[la] =>
+  | q`Core.exit_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op
-    return ([.goto l md], bindings)
+    return ([.exit (some l) md], bindings)
+  | q`Core.exit_unlabeled_statement, #[] =>
+    let md ← getOpMetaData op
+    return ([.exit none md], bindings)
   | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, precondsa, bodya, _inlinea] =>
     let name ← translateIdent Core.CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa
