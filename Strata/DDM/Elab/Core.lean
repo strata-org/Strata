@@ -891,7 +891,26 @@ def evalBindingSpec
     assert! tctx.bindings.size = 0
     let gctx := tctx.globalContext
     let gctx := gctx.ensureDefined ident (.type params none)
-    pure <| .empty gctx
+
+    let dialects := (← read).dialects
+
+    let t := args[b.constructorsIndex.toLevel]
+    match extractConstructorInfo dialects t.arg with
+    | .ok info =>
+      let mut seen : Std.HashSet String := {}
+      for c in info do
+        let name := c.name
+        if name ∈ seen then
+          logError loc s!"Duplicate constructor name '{name}'."
+          continue
+        if name ∈ gctx then
+          logError loc s!"Constructor name '{name}' conflicts with an existing definition."
+          continue
+        seen := seen.insert name
+      pure <| .empty gctx
+    | .error e =>
+      logError loc e
+      pure <| .empty gctx
   | .tvar b =>
     let ident := evalBindingNameIndex args b.nameIndex
     pure <| tctx.push { ident, kind := .tvar loc ident }
@@ -1085,7 +1104,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     | some scopeArgLevel =>
       elaborateWithPreRegistration argDecls se tctx loc stxArgs scopeArgLevel
     | none => do
-      let args ← runSyntaxElaborator "elabOperation" (argc := argDecls.size) getKind se tctx stxArgs
+      let args ← runSyntaxElaborator (argc := argDecls.size) getKind se tctx stxArgs
       return (args, resultContext se tctx args)
 
   if !success then
@@ -1156,7 +1175,6 @@ elaboration. Returns the elaborated `Tree` vector and the result
 `TypingContext`. -/
 partial def runSyntaxElaborator
   {argc : Nat}
-  (callerInfo : String)
   (getKind : Fin argc → ElabArgKind)
   (se : SyntaxElaborator)
   (tctx0 : TypingContext)
@@ -1174,10 +1192,10 @@ partial def runSyntaxElaborator
     let astx := args[ae.syntaxLevel]
     let some aloc := mkSourceRange? astx
       | panic! "Arg syntax missing position information"
-    -- Handle datype declaration.
+    -- Handle datatype declaration.
     if let some (nameLevel, typeParamsLevel) := ae.datatypeScope then
       let some nameT := trees[nameLevel]
-        | logError aloc "Internal: missing name assignemnt"
+        | logError aloc "Internal: missing name assignment"
           return default
       let some typeParamsT := trees[typeParamsLevel]
         | logError aloc "Internal: missing type parameter"
@@ -1192,11 +1210,6 @@ partial def runSyntaxElaborator
       -- Extract type parameter names only from NEW bindings added by
       -- typeParams, not inherited bindings (which may include datatypes from
       -- previous commands)
-      -- FIXME: Remove this error message only when done.
-      if tctx0.bindings.size > 0 then
-        let names := " ".intercalate <| Array.toList <|
-              tctx0.bindings.toArray.map fun b => b.ident
-        logError tloc s!"Bindings {callerInfo}: {names}"
       let (typeParamNames, success) ← runChecked <|
         paramCtx.bindings.toArray.foldlM (init := #[]) fun a b => do
           match b.kind with
@@ -1290,7 +1303,7 @@ partial def elaborateWithPreRegistration
   -- Phase 2: Elaborate args with the scope tree pre-elaborated
   let getKind (i : Fin argDecls.size) := ElabArgKind.ofArgDeclKind argDecls[i].kind
   let preCtx := .empty preGCtx
-  let args ← runSyntaxElaborator (argc := argDecls.size) "elaborateWithPreRegistration" getKind se preCtx stxArgs
+  let args ← runSyntaxElaborator (argc := argDecls.size) getKind se preCtx stxArgs
   pure (args, resultContext se preCtx args)
 
 /--
@@ -1308,12 +1321,12 @@ partial def extractDatatypeInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM
     | return panic! s!"Unknown command {child.getKind}"
 
   let some childLoc := mkSourceRange? child
-    | panic! "extractChildTypeInfo: child missing source location"
+    | panic! "extractDatatypeInfo: child missing source location"
   let some childDecl := dialects.lookupOpDecl childIdent
-    | logInternalError childLoc s!"extractChildTypeInfo: unknown op declaration {childIdent}"
+    | logInternalError childLoc s!"extractDatatypeInfo: unknown op declaration {childIdent}"
       return default
   let some childSe := syntaxElabs[childIdent]?
-    | logInternalError childLoc s!"extractChildTypeInfo: no syntax elaborator for {childIdent}"
+    | logInternalError childLoc s!"extractDatatypeInfo: no syntax elaborator for {childIdent}"
       return default
   let childStxArgs := child.getArgs
   let childArgDecls := childDecl.argDecls.toArray
@@ -1327,17 +1340,17 @@ partial def extractDatatypeInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM
     -- Elaborate name arg
     let some nameSL := argSyntaxLevel? childSe nameArgLevel
       | logInternalError childLoc
-          "extractChildTypeInfo: argLevelToSyntaxLevel \
+          "extractDatatypeInfo: argLevelToSyntaxLevel \
            failed for name"
         continue
     if nameSL ≥ childStxArgs.size then
       logInternalError childLoc
-        s!"extractChildTypeInfo: nameSL {nameSL} \
+        s!"extractDatatypeInfo: nameSL {nameSL} \
            out of bounds ({childStxArgs.size})"
       continue
     let .isTrue _ := decideProp (nameArgLevel < childArgDecls.size)
       | logInternalError childLoc
-          s!"extractChildTypeInfo: nameArgLevel \
+          s!"extractDatatypeInfo: nameArgLevel \
              {nameArgLevel} out of bounds \
              ({childArgDecls.size})"
         continue
@@ -1351,7 +1364,7 @@ partial def extractDatatypeInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM
       | .ofIdentInfo info =>
         pure info.val
       | _ =>
-        logInternalError childLoc "extractChildTypeInfo: expected ident for type name"
+        logInternalError childLoc "extractDatatypeInfo: expected ident for type name"
         continue
 
     let .isFalse nameIsNew := decideProp (name ∈ gctx)
@@ -1365,17 +1378,17 @@ partial def extractDatatypeInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM
         continue
     let some tpSL := argSyntaxLevel? childSe tpArgLevel
       | logInternalError childLoc
-          "extractChildTypeInfo: argLevelToSyntaxLevel \
+          "extractDatatypeInfo: argLevelToSyntaxLevel \
            failed for typeParams"
         continue
     if tpSL ≥ childStxArgs.size then
       logInternalError childLoc
-        s!"extractChildTypeInfo: tpSL {tpSL} \
+        s!"extractDatatypeInfo: tpSL {tpSL} \
            out of bounds ({childStxArgs.size})"
       continue
     if tpArgLevel ≥ childArgDecls.size then
       logInternalError childLoc
-        s!"extractChildTypeInfo: tpArgLevel \
+        s!"extractDatatypeInfo: tpArgLevel \
            {tpArgLevel} out of bounds \
            ({childArgDecls.size})"
       continue
@@ -1590,7 +1603,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
               ⟨e, lvlp⟩
             resultScope := none
           }
-    let args ← runSyntaxElaborator "exprApp" getKind se tctx ⟨args, Eq.refl args.size⟩
+    let args ← runSyntaxElaborator getKind se tctx ⟨args, Eq.refl args.size⟩
     let e := args.toArray.foldl (init := fvar) fun e t =>
       .app { start := fnLoc.start, stop := t.info.loc.stop } e t.arg
     let info : ExprInfo := { toElabInfo := einfo, expr := e }
@@ -1614,7 +1627,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let getKind (i : Fin argDecls.size) :=
       ElabArgKind.ofArgDeclKind argDecls[i].kind
     let (args, success) ← runChecked <|
-      runSyntaxElaborator "default" getKind se tctx stxArgs
+      runSyntaxElaborator getKind se tctx stxArgs
     if !success then
       return default
     -- N.B. Every subterm gets the function location.

@@ -1005,7 +1005,8 @@ private def mkValueBindingSpec
   return { nameIndex, argsIndex, typeIndex, allowCat }
 
 /-- Parse and validate function templates from metadata arguments. -/
-private def parseFunctionTemplates (args : Array MetadataArg) : NewBindingM (Array FunctionTemplate) := do
+private def parseFunctionTemplates (args : Array MetadataArg)
+    : NewBindingM (Array FunctionTemplate) := do
   let mut result := #[]
   for arg in args do
     match arg with
@@ -1650,7 +1651,7 @@ partial def foldOverArgBindingSpecs {α β}
 /--
 Invoke a function `f` over each of the declaration specifications for an operator.
 -/
-private partial def OperationF.foldBindingSpecs {α β}
+partial def OperationF.foldBindingSpecs {α β}
     (m : DialectMap)
     (f : β → α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector (ArgF α) argDecls.size → β)
     (init : β)
@@ -1756,66 +1757,6 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
     -- tvar bindings are local only, not added to GlobalContext
     none
 
-/--
-Typing environment created from declarations in an environment.
--/
-structure GlobalContext where
-  nameMap : Std.HashMap Var FreeVarIndex
-  vars : Array (Var × GlobalKind)
-deriving Repr
-
-namespace GlobalContext
-
-instance : EmptyCollection GlobalContext where
-  emptyCollection := private { nameMap := {}, vars := {}}
-
---deriving instance BEq for GlobalContext
-
-instance : Inhabited GlobalContext where
-  default := {}
-
-instance : Membership Var GlobalContext where
-  mem ctx v := v ∈ ctx.nameMap
-
-@[instance]
-def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
-  inferInstanceAs (Decidable (v ∈ ctx.nameMap))
-
-/-- Define a symbol. Caller must prove `v ∉ ctx`. -/
-def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) (_ : v ∉ ctx) : GlobalContext :=
-  let idx := ctx.vars.size
-  { nameMap := ctx.nameMap.insert v idx,
-    vars := ctx.vars.push (v, k) }
-
-/-- Define a symbol if not already present. No-op if already defined. -/
-def ensureDefined (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
-  if h : v ∈ ctx then
-    ctx
-  else
-    ctx.define v k h
-
-/-- Define a symbol, with behavior controlled by `preRegistered`:
-- `preRegistered = true`: the name is expected to already exist (was
-  pre-registered). Returns the context unchanged, or an error if missing.
-- `preRegistered = false`: the name must be fresh. Defines it, or returns
-  an error if already present. -/
-def defineChecked (ctx : GlobalContext) (v : Var) (k : GlobalKind)
-    (preRegistered : Bool) : Except String GlobalContext :=
-  match instDecidableMem v ctx, preRegistered with
-  | .isTrue _, true => .ok ctx
-  | .isTrue _, false => .error s!"'{v}' already defined"
-  | .isFalse h, false => .ok (ctx.define v k h)
-  | .isFalse _, true => .error s!"pre-registered '{v}' not found"
-
-/-- Return the index of the variable with the given name. -/
-def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
-
-def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.vars[idx]? |>.map (·.fst)
-
-def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
-  assert! idx < ctx.vars.size
-  ctx.vars[idx]!.2
-
 /-!
 ## Annotation-based Constructor Info Extraction
 
@@ -1872,7 +1813,9 @@ private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg)
     | .value vb =>
       match args[vb.nameIndex.toLevel], args[vb.typeIndex.toLevel] with
       | .ident _ name, .type tp => return acc.push (name, tp)
-      | _, _ => throw s!"Expected (ident, type) for field binding, got ({repr args[vb.nameIndex.toLevel]}, {repr args[vb.typeIndex.toLevel]})"
+      | _, _ => throw s!"Expected (ident, type) for field binding, \
+           got ({repr args[vb.nameIndex.toLevel]}, \
+           {repr args[vb.typeIndex.toLevel]})"
     | _ => return acc
   foldOverArgBindingSpecs dialects addField (.ok #[]) arg
 
@@ -1889,7 +1832,9 @@ private def extractSingleConstructor (dialects : DialectMap) (arg : Arg)
     | throw s!"Operation '{op.name}' missing @[constructor] annotation"
   let argCount := opDecl.argDecls.size
   unless nameIdx < argCount && fieldsIdx < argCount do
-    throw s!"Annotation indices out of bounds: nameIdx={nameIdx}, fieldsIdx={fieldsIdx}, argCount={argCount}"
+    throw s!"Annotation indices out of bounds: \
+       nameIdx={nameIdx}, fieldsIdx={fieldsIdx}, \
+       argCount={argCount}"
   let nameLevel := argCount - nameIdx - 1
   let fieldsLevel := argCount - fieldsIdx - 1
   let .isTrue h1 := decideProp (nameLevel < op.args.size)
@@ -1938,7 +1883,9 @@ def extractConstructorInfo (dialects : DialectMap) (arg : Arg)
   if let some (listIdx, constrIdx) := getConstructorListPushAnnotation opDecl then
     let argCount := opDecl.argDecls.size
     unless listIdx < argCount && constrIdx < argCount do
-      throw s!"constructorListPush indices out of bounds: listIdx={listIdx}, constrIdx={constrIdx}, argCount={argCount}"
+      throw s!"constructorListPush indices out of bounds: \
+         listIdx={listIdx}, constrIdx={constrIdx}, \
+         argCount={argCount}"
     let listLevel := argCount - listIdx - 1
     let constrLevel := argCount - constrIdx - 1
     let .isTrue h1 := decideProp (listLevel < op.args.size)
@@ -1954,6 +1901,67 @@ def extractConstructorInfo (dialects : DialectMap) (arg : Arg)
   decreasing_by
     simp_wf; rw[OperationF.sizeOf_spec]
     have := Array.sizeOf_get op.args (opDecl.argDecls.size - listIdx - 1) (by omega); omega
+
+
+/--
+Typing environment created from declarations in an environment.
+-/
+structure GlobalContext where
+  nameMap : Std.HashMap Var FreeVarIndex
+  vars : Array (Var × GlobalKind)
+deriving Repr
+
+namespace GlobalContext
+
+instance : EmptyCollection GlobalContext where
+  emptyCollection := private { nameMap := {}, vars := {}}
+
+--deriving instance BEq for GlobalContext
+
+instance : Inhabited GlobalContext where
+  default := {}
+
+instance : Membership Var GlobalContext where
+  mem ctx v := v ∈ ctx.nameMap
+
+@[instance]
+def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
+  inferInstanceAs (Decidable (v ∈ ctx.nameMap))
+
+/-- Define a symbol. Caller must prove `v ∉ ctx`. -/
+def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) (_ : v ∉ ctx) : GlobalContext :=
+  let idx := ctx.vars.size
+  { nameMap := ctx.nameMap.insert v idx,
+    vars := ctx.vars.push (v, k) }
+
+/-- Define a symbol if not already present. No-op if already defined. -/
+def ensureDefined (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
+  if h : v ∈ ctx then
+    ctx
+  else
+    ctx.define v k h
+
+/-- Define a symbol, with behavior controlled by `preRegistered`:
+- `preRegistered = true`: the name is expected to already exist (was
+  pre-registered). Returns the context unchanged, or an error if missing.
+- `preRegistered = false`: the name must be fresh. Defines it, or returns
+  an error if already present. -/
+def defineChecked (ctx : GlobalContext) (v : Var) (k : GlobalKind) (preRegistered : Bool) :
+      Except String GlobalContext :=
+  match instDecidableMem v ctx, preRegistered with
+  | .isTrue _, true => .ok ctx
+  | .isTrue _, false => .error s!"'{v}' already defined"
+  | .isFalse h, false => .ok (ctx.define v k h)
+  | .isFalse _, true => .error s!"pre-registered '{v}' not found"
+
+/-- Return the index of the variable with the given name. -/
+def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
+
+def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.vars[idx]? |>.map (·.fst)
+
+def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
+  assert! idx < ctx.vars.size
+  ctx.vars[idx]!.2
 
 private structure TemplateExpandState where
   gctx : GlobalContext
@@ -1972,9 +1980,11 @@ private def TemplateExpandM.addError
     (msg : String) : TemplateExpandM Unit :=
   modify fun s => { s with errors := s.errors.push msg }
 
-/-- Build the function type from a template, then atomically check freshness
+/--
+Build the function type from a template, then atomically check freshness
 and define. Reports an error (via `dupMsg`) if the name already exists, or
-if the type cannot be built. Uses `define` with a proof — never panics. -/
+if the type cannot be built. Uses `define` with a proof — never panics.
+-/
 private def TemplateExpandM.buildAndDefine
     (template : FunctionTemplate)
     (datatypeType : TypeExpr)
@@ -2127,7 +2137,9 @@ private def addDatatypeBindings!
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
   -- Step 2: Add constructor signatures and expand function templates
-  let constructorInfo := match extractConstructorInfo dialects args[b.constructorsIndex.toLevel] with
+  let constrArg := args[b.constructorsIndex.toLevel]
+  let constructorInfo :=
+    match extractConstructorInfo dialects constrArg with
     | .ok info => info
     | .error e => panic! s!"Constructor extraction error: {e}"
   let (gctx, errors) := expandFunctionTemplates src datatypeName datatypeType
@@ -2161,6 +2173,24 @@ private def preRegisterType (dialects : DialectMap) (gctx : GlobalContext) (l : 
     | none => gctx
   | _ => gctx
 
+private def addBinding (dialects : DialectMap) (dialectName : DialectName) (preRegistered : Bool)
+                       (gctx : GlobalContext) (l : SourceRange) {argDecls} (b : BindingSpec argDecls)
+                       (args : Vector Arg argDecls.size) :=
+  match b with
+  | .datatype datatypeSpec =>
+    addDatatypeBindings! dialects gctx l dialectName preRegistered datatypeSpec args
+  | _ =>
+    let name : Var :=
+          match args[b.nameIndex.toLevel] with
+          | .ident _ e => e
+          | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+    match resolveBindingIndices dialects l b args with
+    | some kind =>
+      match gctx.defineChecked name kind preRegistered with
+      | .ok gctx => gctx
+      | .error e => panic! s!"addCommand: {e}"
+    | none => gctx
+
 def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) : GlobalContext :=
     let dialectName := op.name.dialect
     -- Pre-register types if op has @[preRegisterTypes] metadata
@@ -2171,53 +2201,14 @@ def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) :
         | return (panic! "Expected arguments to match", false)
       match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
       | some lvl =>
-        let gctx :=
-          foldOverArgAtLevel dialects (preRegisterType dialects) gctx decl.argDecls ⟨op.args, h⟩ lvl
+        let gctx := foldOverArgAtLevel dialects
+          (preRegisterType dialects) gctx
+          decl.argDecls ⟨op.args, h⟩ lvl
         (gctx, true)
       | none =>
         (gctx, false)
     -- Normal fold
-    op.foldBindingSpecs dialects (addBinding dialectName preRegistered) gctx
-  where addBinding (dialectName : DialectName) (preRegistered : Bool)
-          (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
-          match b with
-          | .datatype datatypeSpec =>
-            addDatatypeBindings! dialects gctx l dialectName preRegistered datatypeSpec args
-          | _ =>
-            let name : Var :=
-                  match args[b.nameIndex.toLevel] with
-                  | .ident _ e => e
-                  | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
-            match resolveBindingIndices dialects l b args with
-            | some kind =>
-              match gctx.defineChecked name kind preRegistered with
-              | .ok gctx => gctx
-              | .error e => panic! s!"addCommand: {e}"
-            | none => gctx
-
-/-- Collect all constructor names (with source locations)
-from an operation's datatype binding specs.  Recurses into
-mutual blocks via `foldBindingSpecs`. -/
-def collectConstructorNames
-    (dialects : DialectMap) (cmd : Operation)
-    : Array (String × SourceRange) :=
-  cmd.foldBindingSpecs dialects collect #[]
-where
-  collect (acc : Array (String × SourceRange))
-      (loc : SourceRange) {argDecls : ArgDecls}
-      (b : BindingSpec argDecls)
-      (args : Vector Arg argDecls.size)
-      : Array (String × SourceRange) :=
-    match b with
-    | .datatype ds =>
-      let lvl := ds.constructorsIndex.toLevel
-      let constrs :=
-        match extractConstructorInfo dialects args[lvl] with
-        | .ok info => info
-        | .error _ => #[]  -- errors caught during elaboration
-      constrs.foldl (init := acc) fun acc c =>
-        acc.push (c.name, loc)
-    | _ => acc
+    op.foldBindingSpecs dialects (addBinding dialects dialectName preRegistered) gctx
 
 end GlobalContext
 
