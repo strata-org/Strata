@@ -15,7 +15,7 @@ import Strata.DDM.Util.DecimalRat
 
 namespace Core
 open Std (ToFormat Format format)
-open Lambda Strata.SMT
+open Lambda Strata.SMT Strata.SMT.Encoder
 
 structure SMT.IF where
   uf : UF
@@ -72,10 +72,11 @@ def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
 def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx
   else
-    let (c, i, s) := d.genFunctionMaps
+    let (c, i, s, u) := d.genFunctionMaps
     let m := Map.union ctx.datatypeFuns (c.fmap (fun (_, x) => (.constructor, x)))
     let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
     let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
+    let m := Map.union m (u.fmap (fun (_, x) => (.selector, x)))
     { ctx with seenDatatypes := ctx.seenDatatypes.insert d.name, datatypeFuns := m }
 
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
@@ -240,14 +241,27 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     | none => .error f!"Cannot encode unannotated free variable {e}"
     | some ty =>
       let (tty, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
-      let uf := { id := (toString $ format f), args := [], out := tty }
+      let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
-  | .abs _ ty e => .error f!"Cannot encode lambda abstraction {e}"
+  | .abs _ _ ty e => .error f!"Cannot encode lambda abstraction {e}"
 
-  | .quant _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
-  | .quant _ qk (.some ty) tr e =>
-    let x := s!"$__bv{bvs.length}"
+  | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
+  | .quant _ qk name (.some ty) tr e =>
+    let fvarNames := (e.collectFvarNames.map (·.name)).toArray
+    -- Generate base name and extract any existing suffix
+    let (baseName, startSuffix) :=
+      if name.isEmpty then
+        (s!"$__bv{bvs.length}", 1)
+      else
+        Encoder.breakDisambiguatedName name
+    -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
+    let isUsed := fun candidate =>
+      bvs.any (fun (n, _) => n == candidate) ||
+      ctx.ufs.any (fun uf => uf.id == candidate) ||
+      fvarNames.contains candidate
+    let limit := bvs.length + ctx.ufs.size + fvarNames.size
+    let x := Encoder.findUniqueName baseName startSuffix isUsed limit
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
@@ -336,10 +350,11 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
         Note: testers use constructor, translated in `Op.mkName` to is-foo
-        Selectors use full function name (Datatype..fieldName) for uniqueness
+        Selectors use full function name (Datatype..fieldName) for uniqueness.
+        Unsafe selectors (e.g. List..head!) use the safe name (List..head).
         -/
         let name := match kind with
-          | .selector => fn.name
+          | .selector => stripUnsafeDestructorSuffix fn.name
           | _ => c.name.name
         Term.app (.datatype_op kind name) args retty
     .ok (adtApp, smt_outty, ctx)

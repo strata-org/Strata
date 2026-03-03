@@ -23,7 +23,7 @@ info: app () (absUntyped () (bvar () 0))
 #check esM[((λ %0) #5)]
 
 /--
-info: app () (abs () (some (LMonoTy.tcons "bool" [])) (bvar () 0))
+info: app () (abs () "" (some (LMonoTy.tcons "bool" [])) (bvar () 0))
   (const () (LConst.boolConst true)) : LExpr { Metadata := Unit, IDMeta := Unit }.mono
 -/
 #guard_msgs in
@@ -44,7 +44,7 @@ info: existUntyped ()
 #check esM[(∃ %0 == #5)]
 
 /--
-info: exist () (some (LMonoTy.tcons "int" []))
+info: exist () "" (some (LMonoTy.tcons "int" []))
   (eq () (bvar () 0) (const () (LConst.intConst (Int.ofNat 5)))) : LExpr { Metadata := Unit, IDMeta := Unit }.mono
 -/
 #guard_msgs in
@@ -59,9 +59,9 @@ info: fvar () { name := "x", metadata := () }
 
 -- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
 /--
-info: all () (some (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]))
-  (all () (some (LMonoTy.ftvar "k"))
-    (all () (some (LMonoTy.ftvar "v"))
+info: all () "" (some (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]))
+  (all () "" (some (LMonoTy.ftvar "k"))
+    (all () "" (some (LMonoTy.ftvar "v"))
       (eq ()
         (app ()
           (app ()
@@ -117,7 +117,7 @@ info: app () (absUntyped () (bvar () 0))
 #check es[((λ %0) #5)]
 
 /--
-info: app () (abs () (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) (bvar () 0))
+info: app () (abs () "" (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) (bvar () 0))
   (boolConst () true) : LExpr { base := { Metadata := Unit, IDMeta := Unit }, TypeType := LTy }
 -/
 #guard_msgs in
@@ -142,7 +142,7 @@ info: existUntyped ()
 #check es[(∃ %0 == #5)]
 
 /--
-info: exist () (some (LTy.forAll [] (LMonoTy.tcons "int" [])))
+info: exist () "" (some (LTy.forAll [] (LMonoTy.tcons "int" [])))
   (eq () (bvar () 0)
     (const ()
       (LConst.intConst (Int.ofNat 5)))) : LExpr { base := { Metadata := Unit, IDMeta := Unit }, TypeType := LTy }
@@ -160,9 +160,9 @@ info: fvar () { name := "x", metadata := () }
 
 -- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
 /--
-info: all () (some (LTy.forAll [] (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"])))
-  (all () (some (LTy.forAll [] (LMonoTy.ftvar "k")))
-    (all () (some (LTy.forAll [] (LMonoTy.ftvar "v")))
+info: all () "" (some (LTy.forAll [] (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"])))
+  (all () "" (some (LTy.forAll [] (LMonoTy.ftvar "k")))
+    (all () "" (some (LTy.forAll [] (LMonoTy.ftvar "v")))
       (eq ()
         (app ()
           (app ()

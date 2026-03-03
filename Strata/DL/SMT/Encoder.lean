@@ -84,6 +84,52 @@ abbrev EncoderM (α) := StateT EncoderState SolverM α
 
 namespace Encoder
 
+/-- SMT-LIB reserved keywords that should not be used as variable names.
+    Includes command names, logical connectives, sort names, and theory
+    function symbols that cvc5 disallows shadowing. -/
+def smtReservedKeywords : List String :=
+  -- SMT-LIB reserved words from the DDM parser
+  let parserKeywords := _root_.Strata.reservedKeywords.map (·.2)
+  -- Additional keywords not in the parser list
+  parserKeywords ++ ["select", "store", "and", "or", "not", "ite",
+   "true", "false", "Int", "Bool", "Real", "Array", "BitVec",
+   -- Theory function symbols that cvc5 disallows shadowing
+   "abs", "mod", "div", "to_real", "to_int", "is_int"]
+
+/-- Generate a disambiguated name by appending @suffix -/
+def disambiguateName (baseName : String) (suffix : Nat) : String :=
+  s!"{baseName}@{suffix}"
+
+/-- Parse a list of digit characters as a natural number. -/
+def digitsToNat (cs : List Char) : Nat :=
+  cs.foldl (fun n c => n * 10 + (c.toNat - '0'.toNat)) 0
+
+/-- Break a potentially disambiguated name into its base name and next suffix.
+    If the name has an `@N` suffix, returns `(base, N + 1)`.
+    Otherwise returns `(name, 1)`. -/
+def breakDisambiguatedName (name : String) : String × Nat :=
+  let cs := name.toList
+  let digitSuffix := cs.reverse.takeWhile Char.isDigit |>.reverse
+  let rest := cs.reverse.dropWhile Char.isDigit |>.reverse
+  match rest.reverse, digitSuffix with
+  | '@' :: _, _ :: _ => (String.ofList rest.dropLast, digitsToNat digitSuffix + 1)
+  | _, _ => (name, 1)
+
+/-- Find a unique name by trying candidates with increasing suffixes.
+    The `isUsed` predicate checks if a candidate name is already taken. -/
+def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → Bool) (limit : Nat := 1000) : String :=
+  let rec loop (candidate : String) (suffix : Nat) (remaining : Nat) : String :=
+    if h : remaining == 0 then candidate  -- Fallback after limit attempts
+    else if isUsed candidate then
+      loop (disambiguateName baseName suffix) (suffix + 1) (remaining - 1)
+    else
+      candidate
+  termination_by remaining
+  decreasing_by
+    have : remaining ≠ 0 := by intro h'; simp [h'] at h
+    omega
+  loop (if startSuffix == 1 then baseName else disambiguateName baseName (startSuffix - 1)) startSuffix limit
+
 def termId (n : Nat)                    : String := s!"t{n}"
 def ufId (n : Nat)                      : String := s!"f{n}"
 
@@ -120,7 +166,11 @@ def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
-  let id := ufId (← ufNum)
+  -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
+  let baseName := uf.id
+  let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
+  let isUsed := fun candidate => existingNames.contains candidate || smtReservedKeywords.contains candidate
+  let id := findUniqueName baseName 1 isUsed (existingNames.size + smtReservedKeywords.length)
   comment uf.id
   let argTys := uf.args.map (fun vt => vt.ty)
   Solver.declareFun id argTys uf.out
