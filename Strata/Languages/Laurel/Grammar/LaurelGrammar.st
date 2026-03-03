@@ -144,8 +144,31 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
 
+// Datatype definitions
+category DatatypeField;
+op datatypeField (name: Ident, fieldType: LaurelType): DatatypeField => name ":" fieldType;
+
+category DatatypeConstructor;
+op datatypeConstructor (name: Ident, fields: CommaSepBy DatatypeField): DatatypeConstructor
+  => name "(" fields ")";
+
+category DatatypeConstructorList;
+op datatypeConstructorListAtom (c: DatatypeConstructor): DatatypeConstructorList => c;
+op datatypeConstructorListPush (cl: DatatypeConstructorList, c: DatatypeConstructor): DatatypeConstructorList
+  => cl "," c;
+
+category Datatype;
+op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype
+  => "datatype " name "{" constructors "}";
+
+// Opaque type declarations
+category OpaqueType;
+op opaqueType (name: Ident): OpaqueType => "type " name ";";
+
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
 op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
+op topLevelDatatype(datatype: Datatype): TopLevel => datatype;
+op topLevelOpaqueType(opaqueType: OpaqueType): TopLevel => opaqueType;
 
 op program (items: Seq TopLevel): Command => items;

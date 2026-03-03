@@ -205,7 +205,9 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Datatype ty => formatDatatypeDefinition ty
 
 def formatProgram (prog : Program) : Format :=
-  Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
+  let typeParts := prog.types.map formatTypeDefinition
+  let procParts := prog.staticProcedures.map formatProcedure
+  Format.joinSep (typeParts ++ procParts) "\n\n"
 
 instance : Std.ToFormat Operation where
   format := formatOperation

@@ -16,6 +16,8 @@ import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.PythonPreludeInLaurel
+import Strata.Languages.Python.CorePreludeForLaurel
 
 import Strata.SimpleAPI
 
@@ -421,12 +423,20 @@ def pyAnalyzeLaurelCommand : Command where
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
       | .ok laurelProgram =>
+        -- Combine the Laurel prelude declarations with the translated program
+        let pythonRuntimeInLaurel := Strata.Python.pythonPreludeInLaurel
+        let combinedLaurelProgram : Strata.Laurel.Program := {
+          staticProcedures := pythonRuntimeInLaurel.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := pythonRuntimeInLaurel.staticFields ++ laurelProgram.staticFields
+          types := pythonRuntimeInLaurel.types ++ laurelProgram.types
+          constants := pythonRuntimeInLaurel.constants ++ laurelProgram.constants
+        }
         if verbose then
           IO.println "\n==== Laurel Program ===="
-          IO.println f!"{laurelProgram}"
+          IO.println f!"{combinedLaurelProgram}"
 
         -- Translate Laurel to Core
-        match Strata.Laurel.translate laurelProgram with
+        match Strata.Laurel.translate combinedLaurelProgram with
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok (coreProgramDecls, modifiesDiags) =>
@@ -434,27 +444,52 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Core Program ===="
             IO.print (coreProgramDecls, modifiesDiags)
 
-          -- Strip the Laurel corePrelude prefix (always emitted by
-          -- Laurel.translate); already present in pyPrelude.
-          -- We don't want to strip types defined by the user program
-          -- (e.g., Class declarations), so we add those back.
-          let laurelPreludeSize := Strata.Laurel.corePrelude.decls.length
-          let droppedPrefix := coreProgramDecls.decls.take laurelPreludeSize
-          let programDecls := coreProgramDecls.decls.drop laurelPreludeSize
-          let pyPreludeDecls := pyPrelude.decls.map fun d =>
-            match droppedPrefix.find? (fun pd => pd.name.name == d.name.name) with
-            | some replacement => replacement
-            | none => d
-          -- Check for name collisions between program and prelude
-          let preludeNames : Std.HashSet String :=
-            pyPreludeDecls.flatMap Core.Decl.names
-              |>.foldl (init := {}) fun s n => s.insert n.name
-          let collisions := programDecls.flatMap fun d =>
-            d.names.filter fun n => preludeNames.contains n.name
-          if !collisions.isEmpty then
-            let names := ", ".intercalate (collisions.map (·.name))
-            exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := pyPreludeDecls ++ programDecls }
+          -- -- Strip the Laurel corePrelude prefix (always emitted by
+          -- -- Laurel.translate); already present in pyPrelude.
+          -- let laurelPreludeSize := Strata.Laurel.corePrelude.decls.length
+          -- let droppedPrefix := coreProgramDecls.decls.take laurelPreludeSize
+          -- let programDecls := coreProgramDecls.decls.drop laurelPreludeSize
+
+          -- -- Collect all names produced by Laurel translation (prelude + program).
+          -- let laurelTranslatedNames : Std.HashSet String :=
+          --   programDecls.foldl (init := {}) fun s d =>
+          --     (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
+
+          -- -- Update pyPrelude declarations: replace with Laurel-translated
+          -- -- versions from the dropped prefix where names match, and filter
+          -- -- out declarations now provided by the Laurel-translated program.
+          -- let pyPreludeDecls := pyPrelude.decls
+          --   |>.map (fun d =>
+          --     match droppedPrefix.find? (fun pd => pd.name.name == d.name.name) with
+          --     | some replacement => replacement
+          --     | none => d)
+          --   |>.filter (fun d => !laurelTranslatedNames.contains d.name.name)
+
+          -- -- Add Core-only declarations (axioms, Except, regex, discriminator
+          -- -- procedures) that cannot be expressed in Laurel grammar.
+          -- let coreOnlyDecls := Strata.Python.coreOnlyPreludeForLaurel
+          -- let coreOnlyNames : Std.HashSet String :=
+          --   coreOnlyDecls.foldl (init := {}) fun s d =>
+          --     (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
+
+          -- -- Filter programDecls to remove declarations overridden by
+          -- -- Core-only versions (e.g., timedelta with discriminator body).
+          -- let programDecls := programDecls.filter fun d =>
+          --   !coreOnlyNames.contains d.name.name
+
+          -- let allPreludeDecls := pyPreludeDecls ++ coreOnlyDecls
+
+          -- -- Check for name collisions between program and prelude
+          -- let preludeNames : Std.HashSet String :=
+          --   allPreludeDecls.flatMap Core.Decl.names
+          --     |>.foldl (init := {}) fun s n => s.insert n.name
+          -- let collisions := programDecls.flatMap fun d =>
+          --   d.names.filter fun n => preludeNames.contains n.name
+          -- if !collisions.isEmpty then
+          --   let names := ", ".intercalate (collisions.map (·.name))
+          --   exitFailure s!"Core name collision between program and prelude: {names}"
+          -- let coreProgram := {decls := allPreludeDecls ++ programDecls }
+          let coreProgram := coreProgramDecls
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
