@@ -320,11 +320,12 @@ where
     formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))
   /-- Build a `Term.app` with a UF op for a named function/constructor.
       Since the SMTDDM's term does not have any type annotation, the return
-      type is always filled with a placeholder .bool. Also, its arguments are
-      simply assigned an empty list. -/
+      type is always filled with a placeholder type "_placeholder".
+      Also, its arguments are simply assigned an empty list. -/
   mkUFApp (name : String) (args : List Strata.SMT.Term) : Strata.SMT.Term :=
-    let uf : Strata.SMT.UF := { id := name, args := [], out := .bool }
-    .app (.core (.uf uf)) args .bool
+    let placeholderTy := Strata.SMT.TermType.constr "_placeholder" []
+    let uf : Strata.SMT.UF := { id := name, args := [], out := placeholderTy }
+    .app (.core (.uf uf)) args placeholderTy
 
 end SMTResponseDDM
 
