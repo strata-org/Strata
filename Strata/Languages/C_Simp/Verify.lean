@@ -30,8 +30,8 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.
   | .op m o ty => .op (csimpMetaToCore m) ⟨o.name, ()⟩ ty
   | .bvar m n => .bvar (csimpMetaToCore m) n
   | .fvar m n ty => .fvar (csimpMetaToCore m) ⟨n.name, ()⟩ ty
-  | .abs m ty e => .abs (csimpMetaToCore m) ty (translate_expr e)
-  | .quant m k ty tr e => .quant (csimpMetaToCore m) k ty (translate_expr tr) (translate_expr e)
+  | .abs m name ty e => .abs (csimpMetaToCore m) name ty (translate_expr e)
+  | .quant m k name ty tr e => .quant (csimpMetaToCore m) k name ty (translate_expr tr) (translate_expr e)
   | .app m fn e => .app (csimpMetaToCore m) (translate_expr fn) (translate_expr e)
   | .ite m c t e => .ite (csimpMetaToCore m) (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq m e1 e2 => .eq (csimpMetaToCore m) (translate_expr e1) (translate_expr e2)

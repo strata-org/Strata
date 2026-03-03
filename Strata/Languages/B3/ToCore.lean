@@ -167,7 +167,7 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
     let valTy := LMonoTy.tcons "int" []
     let valueResult := convertExpr ctx value
     let bodyResult := convertExpr (ctx.pushBound varName.val valTy) body
-    { value := .app sr (.abs sr (some valTy) bodyResult.value) valueResult.value,
+    { value := .app sr (.abs sr "" (some valTy) bodyResult.value) valueResult.value,
       errors := valueResult.errors ++ bodyResult.errors }
   | .quantifierExpr sr qk vars _patterns body =>
     let qkind : Lambda.QuantifierKind := match qk with
@@ -178,8 +178,8 @@ partial def convertExpr (ctx : ConvContext) : B3AST.Expression SourceRange → C
       | .quantVarDecl _ name ty => some (name.val, b3TypeToCoreTy ty.val)
     let ctx' := varList.foldl (fun c (name, ty) => c.pushBound name ty) ctx
     let bodyResult := convertExpr ctx' body
-    { value := varList.foldr (fun (_, ty) acc =>
-        .quant sr qkind (some ty) (.boolConst sr true) acc
+    { value := varList.foldr (fun (name, ty) acc =>
+        .quant sr qkind name (some ty) (.noTrigger sr) acc
       ) bodyResult.value,
       errors := bodyResult.errors }
   | .labeledExpr _ _label expr => convertExpr ctx expr

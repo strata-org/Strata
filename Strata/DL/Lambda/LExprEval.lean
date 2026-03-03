@@ -56,7 +56,7 @@ semantics only fires when `Int.Add 1` is a 'canonical value'. Therefore, without
 def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   match he: e with
   | .const _ _ => true
-  | .abs _ _ _ | .quant _ _ _ _ _ =>
+  | .abs _ _ _ _ | .quant _ _ _ _ _ _ =>
     -- We're using the locally nameless representation, which guarantees that
     -- `closed (.abs e) = closed e` (see theorem `closed_abs`).
     -- So we could simplify the following to `closed e`, but leave it as is for
@@ -115,7 +115,7 @@ def mkAbsOfArity (arity : Nat) (core : LExpr T) : (LExpr T) :=
   match arity with
   | 0 => core
   | n + 1 =>
-    go (bvarcount + 1) n (.abs core.metadata .none (.app core.metadata core (.bvar core.metadata bvarcount)))
+    go (bvarcount + 1) n (.abs core.metadata "" .none (.app core.metadata core (.bvar core.metadata bvarcount)))
 
 /--
 A metadata merger. It will be invoked 'subst s e' is invoked, to create a new
@@ -196,8 +196,8 @@ def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBas
   | .fvar _ x ty  => (σ.state.findD x (ty, e)).snd
    -- Note: closed .abs terms are canonical values; we'll be here if .abs
    -- contains free variables.
-  | .abs _ _ _   => LExpr.substFvarsFromState σ e
-  | .quant _ _ _ _ _ => LExpr.substFvarsFromState σ e
+  | .abs _ _ _ _   => LExpr.substFvarsFromState σ e
+  | .quant _ _ _ _ _ _ => LExpr.substFvarsFromState σ e
   | .app _ e1 e2 => evalApp n' σ e e1 e2
   | .eq m e1 e2 => evalEq n' σ m e1 e2
   | .ite m c t f => evalIte n' σ m c t f
@@ -237,7 +237,7 @@ def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr 
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
   match e1' with
-  | .abs mAbs _ e1' =>
+  | .abs mAbs _ _ e1' =>
     let e' := subst (fun metaReplacementVar =>
       let newMeta := mergeMetadataForSubst mAbs e2'.metadata metaReplacementVar
       replaceMetadata1 newMeta e2') e1'

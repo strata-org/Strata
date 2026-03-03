@@ -619,7 +619,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
     let set_ex_ty_matches := match ex_ty.val with
     | .some ex_ty =>
       let inherits_from : Core.CoreIdent := "inheritsFrom"
-      let get_ex_tag : Core.CoreIdent := "ExceptOrNone..code_val"
+let get_ex_tag : Core.CoreIdent := "ExceptOrNone..code_val!"
       let exception_ty : Core.Expression.Expr := .app Strata.SourceRange.none (.op Strata.SourceRange.none get_ex_tag none) (.fvar Strata.SourceRange.none "maybe_except" none)
       let rhs_curried : Core.Expression.Expr := .app Strata.SourceRange.none (.op Strata.SourceRange.none inherits_from none) exception_ty
       let res := PyExprToCore translation_ctx ex_ty

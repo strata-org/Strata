@@ -25,9 +25,9 @@ partial def collectExprVarNames : Core.Expression.Expr → List String
   | .fvar _ name _ => [name.name]
   | .eq _ e1 e2 => collectExprVarNames e1 ++ collectExprVarNames e2
   | .ite _ c t e => collectExprVarNames c ++ collectExprVarNames t ++ collectExprVarNames e
-  | .quant _ _ _ tr b => collectExprVarNames tr ++ collectExprVarNames b
+  | .quant _ _ _ _ tr b => collectExprVarNames tr ++ collectExprVarNames b
   | .app _ fn arg => collectExprVarNames fn ++ collectExprVarNames arg
-  | .abs _ _ body => collectExprVarNames body
+  | .abs _ _ _ body => collectExprVarNames body
   | _ => []
 
 /-- Collect all variable names referenced in a command (excluding the defined variable). -/

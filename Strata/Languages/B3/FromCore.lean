@@ -103,8 +103,8 @@ partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3
     | Lambda.LExpr.ite m _ _ _ => m
     | Lambda.LExpr.op m _ _ => m
     | Lambda.LExpr.fvar m _ _ => m
-    | Lambda.LExpr.abs m _ _ => m
-    | Lambda.LExpr.quant m _ _ _ _ => m
+    | Lambda.LExpr.abs m _ _ _ => m
+    | Lambda.LExpr.quant m _ _ _ _ _ => m
     | Lambda.LExpr.eq m _ _ => m
   match e with
   | Lambda.LExpr.const _ c => convertConst sr c
@@ -122,7 +122,7 @@ partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3
     (exprFromCore lhs).bind fun lhsB3 =>
     (exprFromCore rhs).bind fun rhsB3 =>
     Except.ok (.binaryOp sr (.eq sr) lhsB3 rhsB3)
-  | Lambda.LExpr.quant _ kind tyOpt trigger body =>
+  | Lambda.LExpr.quant _ kind name tyOpt trigger body =>
     let qk := match kind with
       | .all => B3AST.QuantifierKind.forall sr
       | .exist => B3AST.QuantifierKind.exists sr
@@ -130,19 +130,21 @@ partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3
     let rec collectVars (e : Core.Expression.Expr) (idx : Nat) (acc : List (B3AST.VarDecl SourceRange)) :
         List (B3AST.VarDecl SourceRange) × Core.Expression.Expr :=
       match e with
-      | Lambda.LExpr.quant _ k innerTyOpt _ innerBody =>
+      | Lambda.LExpr.quant _ k innerName innerTyOpt _ innerBody =>
         if k == kind then
           let tyStr := match innerTyOpt with
             | some ty => coreTypeToB3Type ty
             | none => "int"
-          let varDecl := B3AST.VarDecl.quantVarDecl sr ⟨sr, s!"x{idx}"⟩ ⟨sr, tyStr⟩
+          let varName := if innerName.isEmpty then s!"x{idx}" else innerName
+          let varDecl := B3AST.VarDecl.quantVarDecl sr ⟨sr, varName⟩ ⟨sr, tyStr⟩
           collectVars innerBody (idx + 1) (acc ++ [varDecl])
         else (acc, e)
       | _ => (acc, e)
     let tyStr := match tyOpt with
       | some ty => coreTypeToB3Type ty
       | none => "int"
-    let outerVar := B3AST.VarDecl.quantVarDecl sr ⟨sr, s!"x0"⟩ ⟨sr, tyStr⟩
+    let outerVarName := if name.isEmpty then "x0" else name
+    let outerVar := B3AST.VarDecl.quantVarDecl sr ⟨sr, outerVarName⟩ ⟨sr, tyStr⟩
     let (allVars, innerBody) := collectVars body 1 [outerVar]
     -- Convert trigger to patterns
     let patterns := match trigger with

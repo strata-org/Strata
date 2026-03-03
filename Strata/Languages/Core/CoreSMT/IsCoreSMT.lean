@@ -48,10 +48,10 @@ def checkCoreSMTExpr : Core.Expression.Expr → Except String Unit
   | .op _ _ _         => .ok ()
   | .eq _ e1 e2       => do checkCoreSMTExpr e1; checkCoreSMTExpr e2
   | .ite _ c t e      => do checkCoreSMTExpr c; checkCoreSMTExpr t; checkCoreSMTExpr e
-  | .quant _ _ _ tr b => do checkCoreSMTExpr tr; checkCoreSMTExpr b
-  | .app _ (.abs _ _ body) arg => do checkCoreSMTExpr body; checkCoreSMTExpr arg
+  | .quant _ _ _ _ tr b => do checkCoreSMTExpr tr; checkCoreSMTExpr b
+  | .app _ (.abs _ _ _ body) arg => do checkCoreSMTExpr body; checkCoreSMTExpr arg
   | .app _ fn arg     => do checkCoreSMTExpr fn; checkCoreSMTExpr arg
-  | .abs _ _ _        => .error "standalone abstraction is not supported in CoreSMT"
+  | .abs _ _ _ _        => .error "standalone abstraction is not supported in CoreSMT"
 
 /-- Boolean version for backward compatibility -/
 def isCoreSMTExpr (e : Core.Expression.Expr) : Bool :=

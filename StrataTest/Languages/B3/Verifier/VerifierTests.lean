@@ -238,20 +238,20 @@ info: test: ✗ counterexample found
 
 /--
 info: test_checks_are_not_learned: ✗ unknown
-  (0,113): check f(5) > 1
-  └─ (0,119): could not prove f(5) > 1
+  (0,110): check f(5) > 1
+  └─ (0,116): could not prove f(5) > 1
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
 test_checks_are_not_learned: ✗ unknown
-  (0,130): check f(5) > 1
-  └─ (0,136): could not prove f(5) > 1
+  (0,127): check f(5) > 1
+  └─ (0,133): could not prove f(5) > 1
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
-axiom forall x : int pattern f(x) f(x) > 0
+axiom forall x : int pattern x f(x) > 0
 procedure test_checks_are_not_learned() {
   check f(5) > 1
   check f(5) > 1
@@ -289,8 +289,8 @@ procedure test_fail() {
 
 /--
 info: test_all_expressions: ✗ counterexample found
-  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
-  └─ (0,133): could not prove (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
+  └─ (0,133): could not prove (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
   └─ (0,213): could not prove notalwaystrue(1, 2)
      under the assumptions
        (false || true) && (if true true else false) && f(5)
@@ -333,16 +333,16 @@ procedure test_all_expressions() {
 -- Assertions are assumed so further checks pass
 /--
 info: test_assert_helps: ✗ unknown
-  (0,103): assert f(5) > 1
-  └─ (0,110): could not prove f(5) > 1
+  (0,100): assert f(5) > 1
+  └─ (0,107): could not prove f(5) > 1
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
 test_assert_helps: ✓ verified
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
-axiom forall x : int pattern f(x) f(x) > 0
+axiom forall x : int pattern x f(x) > 0
 procedure test_assert_helps() {
   assert f(5) > 1
   check f(5) > 1
@@ -351,16 +351,16 @@ procedure test_assert_helps() {
 
 /--
 info: test_assert_with_trace: ✗ unknown
-  (0,138): assert f(5) > 10
-  └─ (0,145): could not prove f(5) > 10
+  (0,135): assert f(5) > 10
+  └─ (0,142): could not prove f(5) > 10
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
        f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
-axiom forall x : int pattern f(x) f(x) > 0
+axiom forall x : int pattern x f(x) > 0
 procedure test_assert_with_trace() {
   assume f(1) > 0 && f(4) > 0
   assert f(5) > 10
@@ -373,15 +373,15 @@ procedure test_assert_with_trace() {
 
 /--
 info: test_reach_bad: ✗ counterexample found
-  (0,100): reach f(5) < 0
-  └─ (0,106): it is impossible that f(5) < 0
+  (0,97): reach f(5) < 0
+  └─ (0,103): it is impossible that f(5) < 0
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
-axiom forall x : int pattern f(x) f(x) > 0
+axiom forall x : int pattern x f(x) > 0
 procedure test_reach_bad() {
   reach f(5) < 0
 }
@@ -389,15 +389,15 @@ procedure test_reach_bad() {
 
 /--
 info: test_reach_good: ✗ unknown
-  (0,101): reach f(5) > 5
-  └─ (0,107): it is impossible that f(5) > 5
+  (0,98): reach f(5) > 5
+  └─ (0,104): it is impossible that f(5) > 5
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
-axiom forall x : int pattern f(x) f(x) > 0
+axiom forall x : int pattern x f(x) > 0
 procedure test_reach_good() {
   reach f(5) > 5
 }
@@ -405,16 +405,16 @@ procedure test_reach_good() {
 
 /--
 info: test_reach_with_trace: ✗ counterexample found
-  (0,137): reach f(5) < 0
-  └─ (0,143): it is impossible that f(5) < 0
+  (0,134): reach f(5) < 0
+  └─ (0,140): it is impossible that f(5) < 0
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
        f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
-axiom forall x : int pattern f(x) f(x) > 0
+axiom forall x : int pattern x f(x) > 0
 procedure test_reach_with_trace() {
   assume f(1) > 0 && f(4) > 0
   reach f(5) < 0
@@ -427,19 +427,19 @@ procedure test_reach_with_trace() {
 
 /--
 info: test_reach_diagnosis: ✗ counterexample found
-  (0,106): reach f(5) > 5 && f(5) < 0
-  └─ (0,112): it is impossible that f(5) > 5 && f(5) < 0
+  (0,103): reach f(5) > 5 && f(5) < 0
+  └─ (0,109): it is impossible that f(5) > 5 && f(5) < 0
      under the assumptions
-       forall x0 : int f(x0) > 0
-  └─ (0,124): it is impossible that f(5) < 0
+       forall x : int pattern x f(x) > 0
+  └─ (0,121): it is impossible that f(5) < 0
      under the assumptions
-       forall x0 : int f(x0) > 0
+       forall x : int pattern x f(x) > 0
        f(5) > 5
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
-axiom forall x : int pattern f(x) f(x) > 0
+axiom forall x : int pattern x f(x) > 0
 procedure test_reach_diagnosis() {
   reach f(5) > 5 && f(5) < 0
 }
@@ -449,8 +449,8 @@ procedure test_reach_diagnosis() {
 
 /--
 info: test_all_expressions: ✗ counterexample found
-  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
-  └─ (0,133): it is impossible that (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall x0 : int f(x0) || !f(x0)) && (forall x0 : int x0 > 0 || x0 <= 0)
+  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
+  └─ (0,133): it is impossible that (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
   └─ (0,353): it is impossible that 1 + 2 == 4
      under the assumptions
        (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4
