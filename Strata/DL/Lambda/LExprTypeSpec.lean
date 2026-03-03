@@ -299,48 +299,244 @@ The proof is structured in three layers:
 1. **`resolveAux_HasType`**: The core theorem, proved by induction on `e`.
    States that if `resolveAux C Env e = .ok (et, Env')`, then:
    - `Env'.context = Env.context` (context is preserved), and
-   - For any substitution `S` whose keys are all fresh in `Env.context`,
-     `HasType C Env.context e (.forAll [] (LMonoTy.subst S et.toLMonoTy))`.
+   - `HasType C Env.context e (.forAll [] (subst Env'.subst et.toLMonoTy))`.
 
-   The `∀ S` quantification is crucial for recursive cases: when composing
-   IHs from subexpressions, we can instantiate each with the final
-   substitution produced by unification.
+   For recursive cases, each IH gives typing under its own output substitution.
+   We upgrade these to the final substitution via `HasType_subst_upgrade`,
+   justified by the absorption chain built from `resolveAux_absorbs`,
+   `unify_absorbs`, and `Subst.absorbs_trans`.
 
-2. **`resolveAux_keys_fresh`**: All keys in the substitution produced by
-   `resolveAux` are fresh in the input context. This ensures we can
-   instantiate `resolveAux_HasType` with `S = Env'.stateSubstInfo.subst`.
-
-3. **`annotate_HasType`**: The top-level theorem. Since `resolve` is just
+2. **`annotate_HasType`**: The top-level theorem. Since `resolve` is just
    `resolveAux` followed by `applySubstT`, we decompose the hypothesis,
-   apply `resolveAux_HasType` with the final substitution (justified by
-   `resolveAux_keys_fresh`), and use `applySubstT_toLMonoTy` to relate
-   the result types.
+   apply `resolveAux_HasType` directly, and use `applySubstT_toLMonoTy`.
 
 #### Key supporting lemmas:
 
-- **`HasType_subst_fresh_all`**: If `HasType C Γ e (.forAll [] mty)` and all
-  keys of `S` are fresh in `Γ`, then `HasType C Γ e (.forAll [] (subst S mty))`.
-  Generalizes `HasType_subst_fresh` from a single variable to a full substitution.
+- **`Subst.absorbs`**: `S_outer` absorbs `S_inner` when every binding in
+  `S_inner` is "already known" to `S_outer`.
 
-- **`unify_makes_equal`**: If `Constraints.unify [(ty1, ty2)] S_old = .ok S_new`,
-  then `LMonoTy.subst S_new.subst ty1 = LMonoTy.subst S_new.subst ty2`.
+- **`LMonoTy.subst_absorbs`**: Absorption implies `subst S_outer (subst S_inner mty) = subst S_outer mty`.
 
-- **`resolve_of_resolveAux`**: `resolve` decomposes as `resolveAux` + `applySubstT`.
+- **`HasType_subst_upgrade`**: Upgrade typing from `S_inner` to `S_outer` via
+  absorption + `HasType_subst_fresh_all`.
 
-- **`TEnv.updateSubst_context`**: `updateSubst` preserves the context.
+- **`resolveAux_absorbs`**: Each `resolveAux` call absorbs its input substitution.
+
+- **`unify_absorbs`**: Unification absorbs the pre-unification substitution.
+
+- **`unify_makes_equal`**: Unification makes constrained types equal.
+
+- **`resolveAux_keys_fresh`**: Keys produced by `resolveAux` are fresh in the context.
+
+- **`HasType_subst_fresh_all`**: Typing is preserved under substitution of fresh variables.
 -/
 
 /-!
-### Definitions and lemmas for the `resolveAux`-based proof strategy
+#### Substitution lemmas for `HasType_subst_fresh_all`
 -/
+
+/-- If no key of `S` appears in `freeVars(mty)`, then `subst S mty = mty`. -/
+theorem LMonoTy.subst_no_relevant_keys (S : Subst) (mty : LMonoTy)
+    (h : ∀ x, x ∈ LMonoTy.freeVars mty → x ∉ Maps.keys S) :
+    LMonoTy.subst S mty = mty := by
+  by_cases hS : Subst.hasEmptyScopes S
+  · exact LMonoTy.subst_emptyS hS
+  · induction mty with
+    | ftvar x =>
+      simp [LMonoTy.subst, hS]
+      rw [Maps.not_mem_keys_find?_none' S x (h x (by simp [LMonoTy.freeVars]))]
+    | bitvec n => simp [LMonoTy.subst]
+    | tcons name args ih =>
+      simp [LMonoTy.subst, LMonoTys.subst_eq_substLogic, hS]
+      induction args with
+      | nil => simp [LMonoTys.substLogic, hS]
+      | cons a rest ih_rest =>
+        simp [LMonoTys.substLogic, hS]
+        exact ⟨ih a (List.mem_cons.mpr (Or.inl rfl))
+                 (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; left; exact hx)),
+               ih_rest (fun b hb => ih b (List.mem_cons.mpr (Or.inr hb)))
+                 (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; right; exact hx))⟩
+
+/--
+If `t` is a value in a well-formed substitution `S` (i.e., `Maps.find? S a = some t`),
+then `subst S t = t`. This is because `SubstWF` guarantees no key of `S` appears
+in the free variables of any value in `S`.
+-/
+theorem LMonoTy.subst_idempotent_value (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
+    LMonoTy.subst S t = t := by
+  apply LMonoTy.subst_no_relevant_keys
+  intro x hx
+  have h_x_in_fvs : x ∈ Subst.freeVars S := Subst.freeVars_of_find_subset S h_find hx
+  simp [SubstWF] at h_wf
+  intro h_x_key
+  exact h_wf x h_x_key h_x_in_fvs
+
+/-- Substitution on a singleton map applied to a free type variable. -/
+theorem LMonoTy.subst_single_ftvar (a : TyIdentifier) (t : LMonoTy) (x : TyIdentifier) :
+    LMonoTy.subst [[(a, t)]] (.ftvar x) = if a = x then t else .ftvar x := by
+  unfold LMonoTy.subst
+  simp [Subst.hasEmptyScopes, Map.isEmpty]
+  rw [show Maps.find? [[(a, t)]] x = if a = x then some t else none from by
+    simp [Maps.find?, Map.find?]; split <;> simp_all]
+  split <;> simp_all
+
+/-- The number of keys in `S` that appear in `freeVars(mty)`. Used as the
+    termination measure for `HasType_subst_fresh_all`. -/
+noncomputable def relevantKeys (S : Subst) (mty : LMonoTy) : Nat :=
+  ((Maps.keys S).filter (· ∈ LMonoTy.freeVars mty)).length
+
+/-- `hasEmptyScopes S = false` when `S` contains a binding. -/
+theorem Subst.hasEmptyScopes_false_of_find
+    (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h : Maps.find? S a = some t) : Subst.hasEmptyScopes S = false := by
+  cases h_eq : Subst.hasEmptyScopes S with
+  | false => rfl
+  | true => exact absurd (Subst.isEmpty_implies_keys_empty h_eq ▸ Maps.find?_mem_keys S h)
+                         (by simp_all)
+
+/-- A key in a well-formed substitution does not appear in its own image. -/
+theorem SubstWF.not_mem_freeVars_of_find (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
+    a ∉ LMonoTy.freeVars t := by
+  simp [SubstWF] at h_wf
+  have h_key := Maps.find?_mem_keys S h_find
+  have h_fv_subset := Subst.freeVars_of_find_subset S h_find
+  intro h_abs
+  exact h_wf a h_key (h_fv_subset h_abs)
+
+/-- Absorption for type lists: the single substitution is absorbed element-wise. -/
+theorem LMonoTys.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (mtys : LMonoTys)
+    (hS : Subst.hasEmptyScopes S = false)
+    (hSingle : Subst.hasEmptyScopes [[(a, t)]] = false)
+    (ih : ∀ m, m ∈ mtys → LMonoTy.subst S (LMonoTy.subst [[(a, t)]] m) = LMonoTy.subst S m) :
+    LMonoTys.subst S (LMonoTys.subst [[(a, t)]] mtys) = LMonoTys.subst S mtys := by
+  rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+  induction mtys with
+  | nil => simp [LMonoTys.substLogic, hS, hSingle]
+  | cons m rest ih_rest =>
+    simp only [LMonoTys.substLogic, hS, hSingle, Bool.false_eq_true, ↓reduceIte]
+    have h1 := ih m List.mem_cons_self
+    have h2 := ih_rest (fun m' hm' => ih m' (List.mem_cons_of_mem m hm'))
+    rw [h1, h2]
+
+/--
+Absorption: `subst S (subst [(a,t)] mty) = subst S mty` when `Maps.find? S a = some t`
+and `SubstWF S`. The single-variable substitution `[(a,t)]` is "absorbed" by `S`
+because `S` already maps `a` to `t`.
+
+Proof: by induction on `mty`.
+- `ftvar x` with `x = a`: LHS becomes `subst S t = t` (by `subst_idempotent_value`),
+  RHS becomes `subst S (ftvar a) = t` (by `h_find`). Both equal `t`.
+- `ftvar x` with `x ≠ a`: `subst [(a,t)] (ftvar x) = ftvar x`, so both sides equal.
+- `tcons`: reduce to the list case via `LMonoTys.subst_absorbs_single`.
+-/
+theorem LMonoTy.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (mty : LMonoTy) (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
+    LMonoTy.subst S (LMonoTy.subst [[(a, t)]] mty) = LMonoTy.subst S mty := by
+  have hS : Subst.hasEmptyScopes S = false :=
+    Subst.hasEmptyScopes_false_of_find S a t h_find
+  have hSingle : Subst.hasEmptyScopes [[(a, t)]] = false := by
+    simp [Subst.hasEmptyScopes, Map.isEmpty]
+  induction mty with
+  | ftvar x =>
+    by_cases h_eq : a = x
+    · -- x = a: inner subst gives t, then subst S t = t = subst S (ftvar a)
+      subst h_eq
+      have h_inner : LMonoTy.subst [[(a, t)]] (.ftvar a) = t := by
+        simp [LMonoTy.subst, Subst.hasEmptyScopes, Map.isEmpty, Maps.find?, Map.find?]
+      rw [h_inner]
+      simp [LMonoTy.subst, hS, h_find]
+      exact LMonoTy.subst_idempotent_value S a t h_find h_wf
+    · -- x ≠ a: inner subst is identity
+      have h_inner : LMonoTy.subst [[(a, t)]] (.ftvar x) = .ftvar x := by
+        simp [LMonoTy.subst, Subst.hasEmptyScopes, Map.isEmpty, Maps.find?, Map.find?, h_eq]
+      rw [h_inner]
+  | bitvec n =>
+    simp [LMonoTy.subst]
+  | tcons name args ih =>
+    simp only [LMonoTy.subst, hSingle, hS, Bool.false_eq_true, ↓reduceIte]
+    congr 1
+    exact LMonoTys.subst_absorbs_single S a t args hS hSingle ih
+
+/--
+Applying a single substitution `[(a,t)]` strictly decreases `relevantKeys`
+when `a ∈ freeVars(mty)`, `Maps.find? S a = some t`, and `SubstWF S`.
+-/
+theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (mty : LMonoTy) (h_find : Maps.find? S a = some t) (h_wf : SubstWF S)
+    (ha_fv : a ∈ LMonoTy.freeVars mty) :
+    relevantKeys S (LMonoTy.subst [[(a, t)]] mty) < relevantKeys S mty := by
+  sorry
 
 /-- All keys in substitution `S` are fresh w.r.t. context `Γ`. -/
 def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
     (S : Subst) (Γ : TContext T.IDMeta) : Prop :=
   ∀ a, a ∈ Maps.keys S → TContext.isFresh (T := T) a Γ
 
+/-!
+#### Absorption: relating substitutions produced by successive resolveAux calls
+
+When `resolveAux` processes subexpressions, each call extends the substitution.
+The key property is that later substitutions "absorb" earlier ones: applying the
+outer substitution after the inner one is the same as applying the outer alone.
+
+This lets us upgrade typing judgments from an inner substitution to the final one.
+-/
+
+/--
+`S_outer` absorbs `S_inner` means: for every binding `a ↦ t` in `S_inner`,
+`subst S_outer t = subst S_outer (ftvar a)`. In other words, `S_outer` already
+"knows about" every binding in `S_inner`.
+-/
+def Subst.absorbs (S_outer S_inner : Subst) : Prop :=
+  ∀ a t, Maps.find? S_inner a = some t →
+    LMonoTy.subst S_outer t = LMonoTy.subst S_outer (.ftvar a)
+
+/--
+Absorption implies substitution composition collapses:
+`subst S_outer (subst S_inner mty) = subst S_outer mty`.
+-/
+theorem LMonoTy.subst_absorbs (S_outer S_inner : Subst) (mty : LMonoTy)
+    (h : Subst.absorbs S_outer S_inner) :
+    LMonoTy.subst S_outer (LMonoTy.subst S_inner mty) = LMonoTy.subst S_outer mty := by
+  sorry
+
+/-- Every well-formed substitution absorbs itself. -/
+theorem Subst.absorbs_refl (S : Subst) (h_wf : SubstWF S) :
+    Subst.absorbs S S := by
+  sorry
+
+/-- Absorption is transitive: if `S2` absorbs `S1` and `S3` absorbs `S2`,
+    then `S3` absorbs `S1`. -/
+theorem Subst.absorbs_trans (S1 S2 S3 : Subst)
+    (h12 : Subst.absorbs S2 S1) (h23 : Subst.absorbs S3 S2) :
+    Subst.absorbs S3 S1 := by
+  sorry
+
+/-- Unification produces a substitution that absorbs the input substitution. -/
+theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
+    (h : Constraints.unify constraints S_old = .ok S_new) :
+    Subst.absorbs S_new.subst S_old.subst := by
+  sorry
+
+/--
+Multi-constraint unification: if `Constraints.unify [(ty1, ty2), (ty3, ty4)] S_old = .ok S_new`,
+then both pairs are made equal under `S_new.subst`.
+-/
+theorem unify_makes_equal₂ (ty1 ty2 ty3 ty4 : LMonoTy) (S_old S_new : SubstInfo)
+    (h : Constraints.unify [(ty1, ty2), (ty3, ty4)] S_old = .ok S_new) :
+    LMonoTy.subst S_new.subst ty1 = LMonoTy.subst S_new.subst ty2 ∧
+    LMonoTy.subst S_new.subst ty3 = LMonoTy.subst S_new.subst ty4 := by
+  sorry
+
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
   [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+
+/-!
+### Definitions and lemmas for the `resolveAux`-based proof strategy
+-/
 
 /--
 `HasType` is preserved under substitution of fresh type variables.
@@ -622,27 +818,85 @@ theorem resolveAux_keys_fresh :
       Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   sorry
 
+/--
+`resolveAux` produces a substitution that absorbs the input substitution.
+This follows from the fact that each step of unification (adding `id ↦ lty`)
+builds `S_new = (Subst.apply [(id, lty)] S_old).insert id lty`, and the
+well-formedness invariant ensures old values don't contain keys of `S_old`.
+-/
+theorem resolveAux_absorbs :
+    ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+      (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  sorry
+
+/--
+Upgrade lemma: if `e` has type `subst S_inner mty` and `S_outer` absorbs
+`S_inner`, then `e` has type `subst S_outer mty` (provided `S_outer`'s keys
+are fresh in the context).
+
+This is the key mechanism for composing IHs in the new formulation: each
+recursive call gives typing under its own output substitution, and we upgrade
+to the final substitution via absorption.
+-/
+theorem HasType_subst_upgrade
+    (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty : LMonoTy)
+    (S_inner S_outer : Subst)
+    (h_ty : HasType C Γ e (.forAll [] (LMonoTy.subst S_inner mty)))
+    (h_absorbs : Subst.absorbs S_outer S_inner)
+    (h_fresh : Subst.allKeysFresh S_outer Γ)
+    (h_wf : SubstWF S_outer) :
+    HasType C Γ e (.forAll [] (LMonoTy.subst S_outer mty)) := by
+  have h1 := HasType_subst_fresh_all C Γ e (LMonoTy.subst S_inner mty) S_outer h_ty h_fresh h_wf
+  rw [LMonoTy.subst_absorbs S_outer S_inner mty h_absorbs] at h1
+  exact h1
+
+/--
+Helper: `inferFVar` preserves the context and produces a well-typed result.
+
+For the unannotated case (`fty = none`):
+  `inferFVar` looks up `x` in context to get `ty_poly`, instantiates bound
+  type variables with fresh ones via `LTy.instantiateWithCheck`, and returns
+  the instantiated monomorphic type `mty`. The typing follows from `tvar`
+  (giving `ty_poly`) composed with `tinst` (instantiating bound vars).
+
+For the annotated case (`fty = some fty_val`):
+  Additionally unifies the annotation with the instantiated type. The typing
+  follows from `tvar_annotated` or `tvar` + `tinst` + absorption/upgrade.
+-/
+theorem inferFVar_HasType
+    (C : LContext T) (Env : TEnv T.IDMeta) (x : Identifier T.IDMeta)
+    (fty : Option LMonoTy) (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
+    (m : T.mono.base.Metadata)
+    (h : inferFVar C Env x fty = .ok (ty_res, Env')) :
+    Env'.context = Env.context ∧
+    HasType C (Env.context) (.fvar m x fty)
+      (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
+  sorry
+
 /-!
 ### Core theorem: `resolveAux_HasType`
 
 This is the main workhorse. It states that `resolveAux` produces a typed
-expression `et` such that for any substitution `S` with fresh keys, the
-original expression `e` has type `subst S et.toLMonoTy` under the original
-context.
+expression `et` such that the original expression `e` has type
+`subst Env'.subst et.toLMonoTy` under the original context, where `Env'` is
+the output environment.
 
-The `∀ S` quantification is the key insight that makes recursive cases work:
-- Each recursive call to `resolveAux` gives an IH quantified over all fresh `S`.
-- After unification produces `S_unify`, we instantiate both IHs with `S_unify.subst`.
-- Context preservation (`Env'.context = Env.context`) lets us use both IHs
-  in the same context.
+For recursive cases (e.g., `eq`, `ite`, `app`), each IH gives typing under
+its own output substitution. We upgrade these to the final substitution using
+`HasType_subst_upgrade`, justified by the absorption chain:
+- `resolveAux_absorbs`: each `resolveAux` call absorbs its input substitution
+- `unify_absorbs`: unification absorbs the pre-unification substitution
+- `Subst.absorbs_trans`: absorption composes transitively
 -/
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
       Env'.context = Env.context ∧
-      (∀ S, Subst.allKeysFresh S Env.context →
-        HasType C (Env.context) e (.forAll [] (LMonoTy.subst S et.toLMonoTy))) := by
+      HasType C (Env.context) e
+        (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst et.toLMonoTy)) := by
   intro e
   induction e with
   | const m c =>
@@ -654,10 +908,8 @@ theorem resolveAux_HasType :
       obtain ⟨h_et, h_env⟩ := h
       constructor
       · rw [← h_env]
-      · intro S _hS
-        rw [← h_et]
-        simp [toLMonoTy]
-        rw [LConst.ty_subst]
+      · rw [← h_et]; simp [toLMonoTy]
+        rw [← h_env]; rw [LConst.ty_subst]
         cases c with
         | boolConst b => exact HasType.tbool_const _ _ _ h_known
         | intConst i => exact HasType.tint_const _ _ _ h_known
@@ -669,8 +921,19 @@ theorem resolveAux_HasType :
     intro et C Env Env' h
     simp [resolveAux, Bind.bind, Except.bind] at h
   | fvar m x fty =>
+    -- resolveAux calls inferFVar, which looks up x in context, instantiates
+    -- bound type variables, and optionally unifies with the annotation.
     intro et C Env Env' h
-    exact ⟨sorry, sorry⟩
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_infer
+      obtain ⟨ty_res, Env_res⟩ := v1
+      simp at h
+      obtain ⟨h_et, h_env'⟩ := h
+      rw [← h_et, ← h_env']
+      simp [toLMonoTy]
+      exact inferFVar_HasType C Env x fty ty_res Env_res m h_infer
   | op m o oty =>
     intro et C Env Env' h
     exact ⟨sorry, sorry⟩
@@ -684,31 +947,133 @@ theorem resolveAux_HasType :
     intro et C Env Env' h
     exact ⟨sorry, sorry⟩
   | ite m c t e ih_c ih_t ih_e =>
+    -- resolveAux recurses on c, t, e, then unifies [(cty, bool), (tty, ety)].
+    -- Result type is tty (the then-branch type), and the HasType rule is `tif`.
     intro et C Env Env' h
-    exact ⟨sorry, sorry⟩
+    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
+    -- Decompose: resolveAux C Env c
+    split at h
+    · simp at h
+    · rename_i v1 h_res_c
+      obtain ⟨ct, Env1⟩ := v1
+      dsimp at h h_res_c
+      -- Decompose: resolveAux C Env1 t
+      split at h
+      · simp at h
+      · rename_i v2 h_res_t
+        obtain ⟨tht, Env2⟩ := v2
+        dsimp at h h_res_t
+        -- Decompose: resolveAux C Env2 e
+        split at h
+        · simp at h
+        · rename_i v3 h_res_e
+          obtain ⟨elt, Env3⟩ := v3
+          dsimp at h h_res_e
+          -- Decompose: Constraints.unify (wrapped in mapError)
+          split at h
+          · simp at h
+          · rename_i v4 h_mapError
+            simp at h
+            obtain ⟨h_et, h_env'⟩ := h
+            -- Extract the underlying unify hypothesis from the mapError wrapper
+            have h_unify : Constraints.unify [(ct.toLMonoTy, LMonoTy.bool),
+                (tht.toLMonoTy, elt.toLMonoTy)]
+                Env3.stateSubstInfo = .ok v4 := by
+              revert h_mapError
+              generalize Constraints.unify [(toLMonoTy ct, LMonoTy.bool),
+                (toLMonoTy tht, toLMonoTy elt)]
+                Env3.stateSubstInfo = res
+              intro h_me
+              match res, h_me with
+              | .ok val, h_me => simp at h_me; rw [h_me]
+              | .error _, h_me => simp at h_me
+            -- IHs from recursive calls
+            have ⟨h_ctx1, h_ty_c⟩ := ih_c ct C Env Env1 h_res_c
+            have ⟨h_ctx2, h_ty_t⟩ := ih_t tht C Env1 Env2 h_res_t
+            have ⟨h_ctx3, h_ty_e⟩ := ih_e elt C Env2 Env3 h_res_e
+            -- Absorption chain: v4 absorbs Env3 absorbs Env2 absorbs Env1 absorbs Env
+            have h_abs_v4_Env3 := unify_absorbs
+              [(ct.toLMonoTy, LMonoTy.bool), (tht.toLMonoTy, elt.toLMonoTy)]
+              Env3.stateSubstInfo v4 h_unify
+            have h_abs_Env3_Env2 := resolveAux_absorbs e elt C Env2 Env3 h_res_e
+            have h_abs_Env2_Env1 := resolveAux_absorbs t tht C Env1 Env2 h_res_t
+            have h_abs_Env1_Env := resolveAux_absorbs c ct C Env Env1 h_res_c
+            have h_abs_v4_Env2 := Subst.absorbs_trans
+              Env2.stateSubstInfo.subst Env3.stateSubstInfo.subst v4.subst
+              h_abs_Env3_Env2 h_abs_v4_Env3
+            have h_abs_v4_Env1 := Subst.absorbs_trans
+              Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst v4.subst
+              h_abs_Env2_Env1 h_abs_v4_Env2
+            -- Freshness of v4.subst keys in Env.context
+            have h_fresh_v4 : Subst.allKeysFresh v4.subst Env.context := by
+              have := resolveAux_keys_fresh (.ite m c t e)
+                (.ite ⟨m, tht.toLMonoTy⟩ ct tht elt) C Env
+                (TEnv.updateSubst Env3 v4) (by
+                  simp [resolveAux, Bind.bind, Except.bind, Except.mapError,
+                    h_res_c, h_res_t, h_res_e]
+                  revert h_mapError
+                  generalize Constraints.unify [(toLMonoTy ct, LMonoTy.bool),
+                    (toLMonoTy tht, toLMonoTy elt)]
+                    Env3.stateSubstInfo = res
+                  intro h_me
+                  match res, h_me with
+                  | .ok val, h_me => simp at h_me ⊢; rw [h_me]
+                  | .error _, h_me => simp at h_me)
+              simp [TEnv.updateSubst] at this
+              exact this
+            constructor
+            · -- Context preservation
+              rw [← h_env']
+              simp [TEnv.updateSubst, TEnv.context]
+              change Env3.context = Env.context
+              rw [h_ctx3, h_ctx2, h_ctx1]
+            · -- Typing: result type is tht.toLMonoTy, rule is HasType.tif
+              rw [← h_et]; simp [toLMonoTy]
+              rw [← h_env']; simp [TEnv.updateSubst]
+              -- Unification makes: subst v4 cty = bool, subst v4 tty = subst v4 ety
+              have ⟨h_eq_bool, h_eq_te⟩ := unify_makes_equal₂
+                ct.toLMonoTy LMonoTy.bool tht.toLMonoTy elt.toLMonoTy
+                Env3.stateSubstInfo v4 h_unify
+              -- Upgrade IH_c: from Env1.subst to v4.subst
+              have h_ty_c_up := HasType_subst_upgrade C Env.context c
+                ct.toLMonoTy Env1.stateSubstInfo.subst v4.subst
+                h_ty_c h_abs_v4_Env1 h_fresh_v4 v4.isWF
+              -- Upgrade IH_t: from Env2.subst to v4.subst
+              rw [h_ctx1] at h_ty_t
+              have h_ty_t_up := HasType_subst_upgrade C Env.context t
+                tht.toLMonoTy Env2.stateSubstInfo.subst v4.subst
+                h_ty_t h_abs_v4_Env2 h_fresh_v4 v4.isWF
+              -- Upgrade IH_e: from Env3.subst to v4.subst
+              rw [h_ctx2, h_ctx1] at h_ty_e
+              have h_ty_e_up := HasType_subst_upgrade C Env.context e
+                elt.toLMonoTy Env3.stateSubstInfo.subst v4.subst
+                h_ty_e h_abs_v4_Env3 h_fresh_v4 v4.isWF
+              -- Condition has type bool
+              rw [h_eq_bool, LMonoTy.subst_bool] at h_ty_c_up
+              -- Then and else branches have the same type
+              rw [← h_eq_te] at h_ty_e_up
+              exact HasType.tif Env.context m c t e
+                (.forAll [] (LMonoTy.subst v4.subst tht.toLMonoTy))
+                h_ty_c_up h_ty_t_up h_ty_e_up
   | eq m e1 e2 ih1 ih2 =>
     -- resolveAux recurses on e1 and e2, then unifies their types.
     -- Result type is LMonoTy.bool (ground), so subst S bool = bool for any S.
-    -- We instantiate both IHs with the unification substitution, justified by
-    -- resolveAux_keys_fresh on the whole expression.
+    -- We upgrade both IHs to the final substitution via absorption.
     intro et C Env Env' h
-    -- Extract freshness before destructing h
-    have h_fresh_all := resolveAux_keys_fresh (.eq m e1 e2) et C Env Env' h
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
-    -- Decompose the nested match in h using split
-    -- First: resolveAux C Env e1
+    -- Decompose: resolveAux C Env e1
     split at h
     · simp at h
     · rename_i v1 h_res1
       obtain ⟨e1t, Env1⟩ := v1
       dsimp at h h_res1
-      -- Second: resolveAux C Env1 e2
+      -- Decompose: resolveAux C Env1 e2
       split at h
       · simp at h
       · rename_i v2 h_res2
         obtain ⟨e2t, Env2⟩ := v2
         dsimp at h h_res2
-        -- Third: Constraints.unify (wrapped in mapError)
+        -- Decompose: Constraints.unify (wrapped in mapError)
         split at h
         · simp at h
         · rename_i v3 h_mapError
@@ -724,28 +1089,57 @@ theorem resolveAux_HasType :
             match res, h_me with
             | .ok val, h_me => simp at h_me; rw [h_me]
             | .error _, h_me => simp at h_me
+          -- IHs from recursive calls
           have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1
           have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2
+          -- Absorption chain: v3 absorbs Env2 absorbs Env1 absorbs Env
+          have h_abs_v3_Env2 := unify_absorbs [(e1t.toLMonoTy, e2t.toLMonoTy)]
+            Env2.stateSubstInfo v3 h_unify
+          have h_abs_Env2_Env1 := resolveAux_absorbs e2 e2t C Env1 Env2 h_res2
+          have h_abs_Env1_Env := resolveAux_absorbs e1 e1t C Env Env1 h_res1
+          have h_abs_v3_Env1 := Subst.absorbs_trans
+            Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst v3.subst
+            h_abs_Env2_Env1 h_abs_v3_Env2
+          -- Freshness of v3.subst keys in Env.context
           have h_fresh_v3 : Subst.allKeysFresh v3.subst Env.context := by
-            rw [← h_env'] at h_fresh_all
-            simp [TEnv.updateSubst] at h_fresh_all
-            exact h_fresh_all
+            have := resolveAux_keys_fresh (.eq m e1 e2) (.eq ⟨m, LMonoTy.bool⟩ e1t e2t) C Env
+              (TEnv.updateSubst Env2 v3) (by
+                simp [resolveAux, Bind.bind, Except.bind, Except.mapError, h_res1, h_res2]
+                revert h_mapError
+                generalize Constraints.unify [(toLMonoTy e1t, toLMonoTy e2t)]
+                  Env2.stateSubstInfo = res
+                intro h_me
+                match res, h_me with
+                | .ok val, h_me => simp at h_me ⊢; rw [h_me]
+                | .error _, h_me => simp at h_me)
+            simp [TEnv.updateSubst] at this
+            exact this
           constructor
-          · rw [← h_env']
+          · -- Context preservation
+            rw [← h_env']
             simp [TEnv.updateSubst, TEnv.context]
             change Env2.context = Env.context
             rw [h_ctx2, h_ctx1]
-          · intro S hS
-            rw [← h_et]; simp [toLMonoTy]; rw [LMonoTy.subst_bool]
-            have h_unify_eq := unify_makes_equal e1t.toLMonoTy e2t.toLMonoTy
-              Env2.stateSubstInfo v3 h_unify
-            have h_e1_typed := h_ty1 v3.subst h_fresh_v3
+          · -- Typing: result type is bool (ground)
+            rw [← h_et]; simp [toLMonoTy]
+            rw [← h_env']; simp [TEnv.updateSubst]
+            rw [LMonoTy.subst_bool]
+            -- Upgrade IH1: from Env1.subst to v3.subst
+            have h_ty1_upgraded := HasType_subst_upgrade C Env.context e1
+              e1t.toLMonoTy Env1.stateSubstInfo.subst v3.subst
+              h_ty1 h_abs_v3_Env1 h_fresh_v3 v3.isWF
+            -- Upgrade IH2: from Env2.subst to v3.subst
             rw [h_ctx1] at h_ty2
-            have h_e2_typed := h_ty2 v3.subst h_fresh_v3
-            rw [h_unify_eq] at h_e1_typed
+            have h_ty2_upgraded := HasType_subst_upgrade C Env.context e2
+              e2t.toLMonoTy Env2.stateSubstInfo.subst v3.subst
+              h_ty2 h_abs_v3_Env2 h_fresh_v3 v3.isWF
+            -- Unification makes types equal under v3.subst
+            have h_eq := unify_makes_equal e1t.toLMonoTy e2t.toLMonoTy
+              Env2.stateSubstInfo v3 h_unify
+            rw [h_eq] at h_ty1_upgraded
             exact HasType.teq Env.context m e1 e2
               (.forAll [] (LMonoTy.subst v3.subst e2t.toLMonoTy))
-              h_e1_typed h_e2_typed
+              h_ty1_upgraded h_ty2_upgraded
 
 /--
 ### Main theorem: `annotate_HasType`
@@ -753,10 +1147,9 @@ theorem resolveAux_HasType :
 If `e.resolve C Env` succeeds with `e_typed`, then `e` has type
 `e_typed.toLMonoTy` under the original context.
 
-The proof decomposes `resolve` into `resolveAux` + `applySubstT`, then:
-1. Applies `resolveAux_HasType` to get typing under any fresh substitution.
-2. Uses `resolveAux_keys_fresh` to show the final substitution has fresh keys.
-3. Instantiates with the final substitution and uses `applySubstT_toLMonoTy`.
+The proof decomposes `resolve` into `resolveAux` + `applySubstT`, then
+applies `resolveAux_HasType` directly (the new formulation already gives
+typing under the output substitution) and uses `applySubstT_toLMonoTy`.
 -/
 theorem annotate_HasType :
     ∀ (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
@@ -773,10 +1166,8 @@ theorem annotate_HasType :
     simp at h
     obtain ⟨h_typed, h_env'⟩ := h
     have ⟨_h_ctx, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux
-    have h_fresh := resolveAux_keys_fresh e et C Env Env' h_aux
-    have h_ty := h_hastype Env'.stateSubstInfo.subst h_fresh
     rw [← h_typed, applySubstT_toLMonoTy]
-    exact h_ty
+    exact h_hastype
 
 ---------------------------------------------------------------------
 

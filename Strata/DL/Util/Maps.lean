@@ -338,4 +338,36 @@ theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
       · simp [@Map.mem_values_of_mem_keys_remove _ _ _ m k v (by assumption)]
       · simp_all
 
+/-- `Map.find?` returns `none` when the key is not in `Map.keys`. -/
+theorem Map.find?_none_of_not_mem_keys' [DecidableEq α] (m : Map α β) (i : α)
+    (h : i ∉ Map.keys m) : Map.find? m i = none := by
+  induction m with
+  | nil => simp [Map.find?]
+  | cons p rest ih =>
+    simp [Map.keys] at h; simp [Map.find?]
+    split; exact absurd ‹_› (Ne.symm h.1); exact ih h.2
+
+/-- `Maps.find?` returns `none` when the key is not in `Maps.keys`. -/
+theorem Maps.not_mem_keys_find?_none' [DecidableEq α] (S : Maps α β) (i : α)
+    (h : i ∉ Maps.keys S) : Maps.find? S i = none := by
+  induction S with
+  | nil => simp [Maps.find?]
+  | cons m rest ih =>
+    simp [Maps.keys] at h; simp [Maps.find?]
+    simp [Map.find?_none_of_not_mem_keys' m i h.1]; exact ih h.2
+
+/-- If a key is in `Maps.keys`, then `Maps.find?` returns `some`. -/
+theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
+    (h : i ∈ Maps.keys S) : ∃ v, Maps.find? S i = some v := by
+  induction S with
+  | nil => simp [Maps.keys] at h
+  | cons m rest ih =>
+    simp [Maps.keys] at h
+    simp [Maps.find?]
+    cases h_eq : Map.find? m i with
+    | some v => exact ⟨v, rfl⟩
+    | none =>
+      have h_not_in_m : i ∉ Map.keys m := Map.find?_of_not_mem_values m h_eq
+      exact ih (by cases h with | inl h => exact absurd h h_not_in_m | inr h => exact h)
+
 ---------------------------------------------------------------------
