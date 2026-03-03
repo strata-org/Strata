@@ -41,9 +41,14 @@ def freeVars (e : LExpr ⟨T, GenericTy⟩) : IdentTs GenericTy T.IDMeta :=
 
 /--
 Is `x` a fresh variable w.r.t. `e`?
+
+This checks that the identifier name `x.fst` does not appear among the names
+of free variables in `e`. This is stronger than just checking `x ∉ freeVars e`
+(which only checks the exact pair), and is needed for renaming lemmas where
+the context insert is keyed by `x.fst`.
 -/
 def fresh (x : IdentT GenericTy T.IDMeta) (e : LExpr ⟨T, GenericTy⟩) : Prop :=
-  x ∉ (freeVars e)
+  x.fst ∉ (freeVars e).map Prod.fst
 
 /-- An expression `e` is closed if has no free variables. -/
 def closed (e : LExpr ⟨T, GenericTy⟩) : Bool :=
@@ -183,15 +188,10 @@ def varClose {T} {GenericTy} [BEq (Identifier T.IDMeta)] [BEq GenericTy] (k : Na
 theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [BEq GenericTy] [ReflBEq GenericTy] [LawfulBEq GenericTy]  (h : fresh x e) :
   varClose (T := T) (GenericTy := GenericTy) i x (varOpen i x e) = e := by
   induction e generalizing i x
-  all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]
+  all_goals simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars, List.map_append]
   case bvar _ j =>
     by_cases hi : j = i <;>
     simp_all [varClose]
-  case fvar _ name ty =>
-    intro h1
-    have ⟨x1, x2⟩ := x
-    simp at h h1
-    exact fun a => h h1 (id (Eq.symm a))
   done
 
 ---------------------------------------------------------------------

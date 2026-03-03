@@ -155,6 +155,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   | tgen : ∀ Γ e a ty,
             HasType C Γ e ty →
             TContext.isFresh a Γ →
+            a ∈ ty.freeVars →
             HasType C Γ e (LTy.close a ty)
 
   /-- If `e1` and `e2` have the same type `ty`, and `c` has type `.bool`, then
@@ -264,13 +265,12 @@ example : LExpr.HasType {} {} esM[λ %0] t[∀a. %a → %a] := by
   have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, Unit⟩) _ {} { types := [[("a", t[%a])]] }
                  () "a" t[%a]
   simp [Maps.find?, Map.find?] at h_tvar
-  specialize (h_tabs (by unfold fresh; unfold LExpr.freeVars; simp only [List.not_mem_nil,
-    not_false_eq_true]) rfl rfl h_tvar)
+  specialize (h_tabs (by unfold fresh; unfold LExpr.freeVars; simp) rfl rfl h_tvar)
   simp [LTy.toMonoType] at h_tabs
   have h_tgen := @LExpr.HasType.tgen (T := ⟨Unit, Unit⟩) _ {} {} esM[λ %0] "a"
                  t[%a → %a]
                  h_tabs
-  simp[TContext.isFresh, Maps.find?] at h_tgen
+  simp[TContext.isFresh, Maps.find?, LTy.freeVars, LMonoTy.freeVars] at h_tgen
   assumption
   done
 
