@@ -310,6 +310,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Mult _ => .ok "PMul"
       | .FloorDiv _ => .ok "PDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
+      | .BitAnd _ => .ok "PBitAnd"
       -- Unsupported for now
       | _ => throw (.unsupportedConstruct s!"Binary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
@@ -324,11 +325,12 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let rightExpr ← translateExpr ctx comparators.val[0]!
     let preludeOpnames ← match ops.val[0]! with
       | .Eq _ => .ok "PEq"
-      | .NotEq _ => .ok "PNeq"
+      | .NotEq _ => .ok "PNEq"
       | .Lt _ => .ok "PLt"
       | .LtE _ => .ok "PLe"
       | .Gt _ => .ok "PGt"
       | .GtE _ => .ok "PGe"
+      | .In _ => return mkStmtExprMd .Hole  -- Abstract: arbitrary bool (sound)
       | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 
