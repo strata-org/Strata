@@ -74,6 +74,29 @@ private def conjoinConditions (conds : List StmtExprMd) (md : Imperative.MetaDat
   | c :: cs => cs.foldl (fun acc x => ⟨.PrimitiveOp .And [acc, x], md⟩) c
 
 /--
+Collect ALL `divisor != 0` conditions from an expression, recursing into
+all branches. Used for functional procedures where preconditions must cover
+every execution path. Does not recurse into quantifiers.
+-/
+partial def collectAllDivConditions (expr : StmtExprMd) : List StmtExprMd :=
+  match expr.val with
+  | .PrimitiveOp op args =>
+    let childConds := args.flatMap collectAllDivConditions
+    if isDivisionOp op then
+      match args with
+      | [_, divisor] => childConds ++ [mkDivByZeroCondition divisor]
+      | _ => childConds
+    else childConds
+  | .IfThenElse cond thenBr elseBr =>
+    collectAllDivConditions cond ++
+    collectAllDivConditions thenBr ++
+    (elseBr.map collectAllDivConditions |>.getD [])
+  | .Block stmts _ => stmts.flatMap collectAllDivConditions
+  | .StaticCall _ args => args.flatMap collectAllDivConditions
+  | .Forall _ _ _ | .Exists _ _ _ => []
+  | _ => []
+
+/--
 Rewrite an expression to insert division-by-zero guards inside quantifiers.
 For `∀x, body` with divisions, rewrites to `∀x, (divisor != 0) → body`.
 For `∃x, body` with divisions, rewrites to `∃x, (divisor != 0) ∧ body`.
@@ -150,22 +173,36 @@ partial def insertDivChecksStmt (stmt : StmtExprMd) : List StmtExprMd :=
     let checks := collectDivChecks stmt
     checks ++ [stmt]
 
-/-- Transform a procedure body by inserting division-by-zero checks. -/
+/-- Transform a procedure body by inserting division-by-zero checks.
+For functional (pure) procedures, adds `requires divisor != 0` preconditions
+instead of inserting assert statements (which would break purity). -/
 def insertDivChecksProcedure (proc : Procedure) : Procedure :=
-  match proc.body with
-  | .Transparent body =>
-    let stmts := insertDivChecksStmt body
-    let body' := match stmts with
-      | [single] => single
-      | multiple => ⟨.Block multiple none, body.md⟩
-    { proc with body := .Transparent body' }
-  | .Opaque postconds (some impl) modif =>
-    let stmts := insertDivChecksStmt impl
-    let impl' := match stmts with
-      | [single] => single
-      | multiple => ⟨.Block multiple none, impl.md⟩
-    { proc with body := .Opaque postconds (some impl') modif }
-  | _ => proc
+  if proc.isFunctional then
+    -- For functional procedures: add preconditions and rewrite quantifier bodies
+    let body' := match proc.body with
+      | .Transparent body => .Transparent (insertDivChecksExpr body)
+      | other => other
+    let newPreconds := match proc.body with
+      | .Transparent body => (collectAllDivConditions body).map fun cond => cond
+      | _ => []
+    { proc with
+      preconditions := proc.preconditions ++ newPreconds
+      body := body' }
+  else
+    match proc.body with
+    | .Transparent body =>
+      let stmts := insertDivChecksStmt body
+      let body' := match stmts with
+        | [single] => single
+        | multiple => ⟨.Block multiple none, body.md⟩
+      { proc with body := .Transparent body' }
+    | .Opaque postconds (some impl) modif =>
+      let stmts := insertDivChecksStmt impl
+      let impl' := match stmts with
+        | [single] => single
+        | multiple => ⟨.Block multiple none, impl.md⟩
+      { proc with body := .Opaque postconds (some impl') modif }
+    | _ => proc
 
 /-- Insert division-by-zero checks into all procedures of a Laurel program. -/
 def insertDivisionByZeroChecks (program : Program) : Program :=

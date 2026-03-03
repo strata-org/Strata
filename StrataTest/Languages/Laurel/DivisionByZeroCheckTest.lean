@@ -131,6 +131,27 @@ deterministic
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
+/-! ## Unit test: functional procedure gets precondition instead of assert -/
+
+def functionalDivProgram : String := r"
+function pureDiv(x: int, y: int): int {
+  x / y
+}
+"
+
+/--
+info: function pureDiv(x: int, y: int) returns ⏎
+(result: int)
+requires y != 0
+deterministic
+{ x / y }
+-/
+#guard_msgs in
+#eval! do
+  let program ← parseLaurelAndInsertDivChecks functionalDivProgram
+  for proc in program.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+
 /-! ## End-to-end test: safe division (no errors) and unsafe division (error) -/
 
 def processLaurelWithDivChecks (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
@@ -156,9 +177,23 @@ procedure unsafeDivision(x: int) {
   var z: int := 10 / x;
 //                   ^ error: assertion does not hold
 }
+
+function pureDiv(x: int, y: int): int {
+  x / y
+}
+
+procedure callPureDivSafe() {
+  var z: int := pureDiv(10, 2);
+  assert z == 5;
+}
+
+procedure callPureDivUnsafe(x: int) {
+  var z: int := pureDiv(10, x);
+//              ^^^^^^^^^^^^^^ error: assertion does not hold
+}
 "
 
 #guard_msgs(drop info, error) in
-#eval testInputWithOffset "DivByZeroE2E" e2eProgram 44 processLaurelWithDivChecks
+#eval testInputWithOffset "DivByZeroE2E" e2eProgram 168 processLaurelWithDivChecks
 
 end Laurel
