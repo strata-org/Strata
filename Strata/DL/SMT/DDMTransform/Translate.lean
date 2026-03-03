@@ -26,7 +26,6 @@ private def mkSimpleSymbol (s:String):SimpleSymbol SourceRange :=
     | "percent" => .simple_symbol_percent SourceRange.none
     | "questionmark" => .simple_symbol_questionmark SourceRange.none
     | "period" => .simple_symbol_period SourceRange.none
-    | "dollar" => .simple_symbol_dollar SourceRange.none
     | "tilde" => .simple_symbol_tilde SourceRange.none
     | "amp" => .simple_symbol_amp SourceRange.none
     | "caret" => .simple_symbol_caret SourceRange.none
