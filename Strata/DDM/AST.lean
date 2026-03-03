@@ -1968,24 +1968,38 @@ private structure TemplateExpandState where
   errors : Array String := #[]
   deriving Inhabited
 
+namespace TemplateExpandState
+
+private def addError (s : TemplateExpandState) (msg : String) : TemplateExpandState :=
+  { s with errors := s.errors.push msg }
+
+end TemplateExpandState
+
 private abbrev TemplateExpandM := StateM TemplateExpandState
 
-private def TemplateExpandM.addFunction
-    (name : String) (tp : TypeExpr) : TemplateExpandM Unit :=
-  modify fun s => { s with
-    gctx := s.gctx.ensureDefined name (.expr tp)
-  }
 
-private def TemplateExpandM.addError
-    (msg : String) : TemplateExpandM Unit :=
-  modify fun s => { s with errors := s.errors.push msg }
+namespace TemplateExpandM
+
+private def addError (msg : String) : TemplateExpandM Unit :=
+  modify (·.addError msg)
+
+private def addFunction
+    (name : String) (tp : TypeExpr)
+    (errorMsg : Thunk String := .mk fun _ => s!"{name} already defined." )
+    : TemplateExpandM Unit :=
+  modify fun s =>
+   if h : name ∈ s.gctx then
+    s.addError errorMsg.get
+  else
+    { s with gctx := s.gctx.define name (.expr tp) h }
+
 
 /--
 Build the function type from a template, then atomically check freshness
 and define. Reports an error (via `dupMsg`) if the name already exists, or
 if the type cannot be built. Uses `define` with a proof — never panics.
 -/
-private def TemplateExpandM.buildAndDefine
+private def buildAndDefine
     (template : FunctionTemplate)
     (datatypeType : TypeExpr)
     (fieldType : Option TypeExpr)
@@ -1994,13 +2008,11 @@ private def TemplateExpandM.buildAndDefine
     (dupMsg : String) : TemplateExpandM Unit := do
   match buildFunctionType template datatypeType fieldType dialectName with
   | .ok funcType =>
-    let fresh ← modifyGet fun s =>
-      if h : funcName ∈ s.gctx then
-        (false, s)
-      else
-        (true, { s with gctx := s.gctx.define funcName (.expr funcType) h })
-    unless fresh do TemplateExpandM.addError dupMsg
-  | .error e => TemplateExpandM.addError e
+    addFunction funcName funcType (errorMsg := .mk fun _ => dupMsg)
+  | .error e =>
+    TemplateExpandM.addError e
+
+end TemplateExpandM
 
 /--
 Expand a single function template based on its scope.
@@ -2037,11 +2049,11 @@ Applied to `Option<T>` with constructors `None` and `Some`, this generates:
 - `Option..isSome : Option<T> -> bool`
 -/
 private def expandSingleTemplate1
-    (datatypeName : String)
+    (dialectName datatypeName : String)
     (datatypeType : TypeExpr)
     (constr : ConstructorInfo)
     (template : FunctionTemplate)
-    (dialectName : String) : TemplateExpandM Unit := do
+    : TemplateExpandM Unit := do
   match template.scope with
   | .perConstructor =>
     let funcName := expandNamePattern template.namePattern datatypeName (some constr.name)
@@ -2055,13 +2067,21 @@ private def expandSingleTemplate1
         funcName s!"Duplicate field name '{fieldName}' across \
            constructors in datatype '{datatypeName}'"
 
-private def expandFunctionTemplates
+/--
+Register constructor signatures and expand function templates for a
+datatype, returning the updated `GlobalContext` and any error messages.
+
+`dialectName` is the dialect that owns the `@[declareDatatype]`-annotated
+operator. It is used to qualify builtin type references in templates
+(e.g., `.builtin "bool"` resolves to `⟨dialectName, "bool"⟩`).
+-/
+def expandFunctionTemplates
+    (dialectName : String)
     (src : SourceRange)
     (datatypeName : String)
     (datatypeType : TypeExpr)
     (constructorInfo : Array ConstructorInfo)
     (templates : Array FunctionTemplate)
-    (dialectName : String)
     (gctx : GlobalContext)
     : GlobalContext × Array String :=
   let initState : TemplateExpandState := { gctx }
@@ -2072,10 +2092,9 @@ private def expandFunctionTemplates
       let constrType := mkConstructorType src datatypeType constr.fields
       TemplateExpandM.addFunction constr.name constrType
     -- Pass 2: Expand all templates for all constructors.
-    for template in templates do
-      for constr in constructorInfo do
-        expandSingleTemplate1 datatypeName datatypeType
-          constr template dialectName
+    for constr in constructorInfo do
+      for template in templates do
+        expandSingleTemplate1 dialectName datatypeName datatypeType constr template
   ) initState
   (finalState.gctx, finalState.errors)
 
@@ -2142,12 +2161,12 @@ private def addDatatypeBindings!
     match extractConstructorInfo dialects constrArg with
     | .ok info => info
     | .error e => panic! s!"Constructor extraction error: {e}"
-  let (gctx, errors) := expandFunctionTemplates src datatypeName datatypeType
-    constructorInfo b.functionTemplates dialectName gctx
-  if !errors.isEmpty then
-    panic! s!"Datatype template expansion errors: {errors}"
-  else
-    gctx
+  -- Errors from template expansion are reported during elaboration
+  -- (evalBindingSpec); here we just take the updated context.
+  let (gctx, _) := expandFunctionTemplates dialectName src
+    datatypeName datatypeType constructorInfo
+    b.functionTemplates gctx
+  gctx
 
 /--
 Pre-register a type name in the `GlobalContext` before the main `addCommand`

@@ -17,7 +17,9 @@ pre-registration and mutual blocks.
 #dialect
 dialect TestMutual;
 
-metadata declareDatatype (name : Ident, typeParams : Ident, constructors : Ident);
+metadata declareDatatype (name : Ident, typeParams : Ident,
+  constructors : Ident, testerTemplate : FunctionTemplate,
+  accessorTemplate : FunctionTemplate);
 
 type int;
 
@@ -43,7 +45,10 @@ op constructorListAtom (c : Constructor) : ConstructorList => c;
 op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
   cl ", " c;
 
-@[declareDatatype(name, typeParams, constructors)]
+@[declareDatatype(name, typeParams, constructors,
+    perConstructor([.literal "..is", .constructor],
+                   [.datatype], .builtin "bool"),
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>
@@ -146,6 +151,36 @@ end;
 #eval IO.println mutualEmptyPgm
 
 ---------------------------------------------------------------------
+-- Test 5: Function templates expand for mutual types
+-- The perConstructor/perField templates on declareDatatype generate
+-- tester and accessor functions (e.g., Tree..isNode, Tree..val).
+-- This test verifies template expansion succeeds for mutual types
+-- with multiple constructors and fields.
+---------------------------------------------------------------------
+
+def mutualTemplatesPgm :=
+#strata
+program TestMutual;
+mutual
+  datatype Expr { Lit(val: int), Add(lhs: Expr, rhs: Expr),
+                  Call(tag: int, args: ExprList) };
+  datatype ExprList { ENil(), ECons(head: Expr, tail: ExprList) };
+end;
+datatype Program { MkProgram(body: Expr) };
+#end
+
+/--
+info: program TestMutual;
+mutual
+   datatype Expr { ((Lit(val:int)), (Add(lhs:Expr, rhs:Expr))), (Call(tag:int, args:ExprList)) };
+   datatype ExprList { (ENil()), (ECons(head:Expr, tail:ExprList)) };
+end;
+datatype Program { MkProgram(body:Expr) };
+-/
+#guard_msgs in
+#eval IO.println mutualTemplatesPgm
+
+---------------------------------------------------------------------
 -- Negative Tests
 ---------------------------------------------------------------------
 
@@ -185,10 +220,14 @@ end;
 #end
 
 -- Test: Duplicate constructor name across mutual datatypes
-/-- error: Duplicate constructor name 'Mk'. -/
+-- Constructor Mk is allowed in both, but the tester ..isMk collides.
+/--
+error: Mk already defined.
+---
+error: Duplicate function name: ..isMk
+-/
 #guard_msgs in
-def mutualDupConstrPgm :=
-#strata
+#eval #strata
 program TestMutual;
 mutual
   datatype A { Mk() };
@@ -196,12 +235,17 @@ mutual
 end;
 #end
 
--- Test: Constructor name clashes with existing definition
-/-- error: Constructor name 'MkExisting' conflicts with an existing definition. -/
+-- Test: Constructor name reused across datatypes
+-- The constructor MkExisting is allowed in both datatypes, but the
+-- tester template ..isMkExisting collides.
+/--
+error: MkExisting already defined.
+---
+error: Duplicate function name: ..isMkExisting
+-/
 #guard_msgs in
-def constrClashPgm :=
-#strata
+#eval #strata
 program TestMutual;
 datatype Existing { MkExisting() };
-datatype Bad { MkExisting() };
+datatype Other { MkExisting() };
 #end

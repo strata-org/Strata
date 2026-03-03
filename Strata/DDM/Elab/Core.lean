@@ -827,6 +827,7 @@ def evalBindingSpec
     (tctx : TypingContext)
     (loc : SourceRange)
     (initSize : Nat)
+    (dialectName : DialectName)
     (b : BindingSpec bindings)
     (args : Vector Tree bindings.size)
     : ElabM TypingContext := do
@@ -903,10 +904,15 @@ def evalBindingSpec
         if name ∈ seen then
           logError loc s!"Duplicate constructor name '{name}'."
           continue
-        if name ∈ gctx then
-          logError loc s!"Constructor name '{name}' conflicts with an existing definition."
-          continue
         seen := seen.insert name
+      -- Expand function templates to catch name collisions early
+      let datatypeIndex := gctx.findIndex? ident |>.getD (gctx.vars.size - 1)
+      let datatypeType :=
+        mkDatatypeTypeRef loc datatypeIndex params.toArray
+      let (gctx, errors) := gctx.expandFunctionTemplates
+        dialectName loc ident datatypeType info
+        b.functionTemplates
+      errors.forM (logError loc)
       pure <| .empty gctx
     | .error e =>
       logError loc e
@@ -1111,7 +1117,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     return default
 
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
-    evalBindingSpec ctx loc initSize spec args
+    evalBindingSpec ctx loc initSize i.dialect spec args
   let op : Operation := { ann := loc, name := i, args := args.toArray.map (·.arg) }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."
