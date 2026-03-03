@@ -87,8 +87,10 @@ match ss with
   -- Create loop entry block
   let lentry ← StringGenState.gen "loop_entry$"
   let (bl, bbs) ← stmtsToBlocks lentry bss exitConts []
-  let cmds : List CmdT :=
-    is.map (fun i => HasPassiveCmds.assert "inv" i MetaData.empty)
+  let cmds : List CmdT ←
+    is.mapM (fun i => do
+      let invLabel ← StringGenState.gen "inv$"
+      pure (HasPassiveCmds.assert invLabel i MetaData.empty))
   let b := (lentry, { cmds := cmds, transfer := .cgoto c bl kNext })
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
