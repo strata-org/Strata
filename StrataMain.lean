@@ -14,6 +14,7 @@ import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.DivisionByZeroCheck
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 
@@ -557,6 +558,29 @@ def laurelAnalyzeCommand : Command where
     for diag in diagnostics do
       IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
 
+def laurelDivCheckCommand : Command where
+  name := "laurelDivCheck"
+  args := [ "file" ]
+  flags := [includeFlag]
+  help := "Insert division-by-zero checks into a Laurel program and verify it."
+  callback := fun v pflags => do
+    let fm ← pflags.buildDialectFileMap
+    let (_, pd) ← Strata.readStrataFile fm v[0]
+    match pd with
+    | .program pgm =>
+      let uri := Strata.Uri.file v[0]
+      match Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram pgm) with
+      | .error e => exitFailure s!"Translation errors: {e}"
+      | .ok laurelProgram =>
+        let transformed := Strata.Laurel.insertDivisionByZeroChecks laurelProgram
+        IO.println "==== Transformed Laurel Program ===="
+        IO.println (toString (Std.Format.pretty (Std.ToFormat.format transformed)))
+        let diagnostics ← Strata.Laurel.verifyToDiagnosticModels transformed
+        IO.println "\n==== DIAGNOSTICS ===="
+        for diag in diagnostics do
+          IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
+    | .dialect _ => exitFailure "Expected a program file, not a dialect file."
+
 def pySpecToLaurelCommand : Command where
   name := "pySpecToLaurel"
   args := [ "python_path", "strata_path" ]
@@ -619,7 +643,7 @@ def commandGroups : List CommandGroup := [
     commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand, pyTranslateCommand,
                  pySpecsCommand, pySpecToLaurelCommand] },
   { name := "Laurel"
-    commands := [laurelAnalyzeCommand] },
+    commands := [laurelAnalyzeCommand, laurelDivCheckCommand] },
 ]
 
 def commandList : List Command :=
