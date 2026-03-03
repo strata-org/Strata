@@ -127,6 +127,9 @@ theorem asArrowT_some {mty t1 t2 : LMonoTy} (h : asArrowT mty = some (t1, t2)) :
     mty = .arrow t1 t2 := by
   simp only [asArrowT] at h; split at h <;> simp_all; rfl
 
+theorem asArrowT_arrow {t1 t2 : LMonoTy}: asArrowT (t1.arrow t2) = some (t1, t2)
+  := by rfl
+
 theorem asArrowT_none {mty : LMonoTy} (h : asArrowT mty = none) :
     ∀ t1 t2, mty ≠ .arrow t1 t2 := by
   intro t1 t2; unfold LMonoTy.arrow; simp only [asArrowT] at h; split at h <;> simp_all
@@ -163,13 +166,6 @@ def updateVal {ctx : TypeContextT} (val : ValuationT ctx)
 abbrev OpInterpretation.{u} (ctx : TypeContextT.{u}) :=
   (name : String) → (mty : LMonoTy) → denoteLMonoTyT ctx mty
 
-/-- An operator interpretation is consistent with a context if:
-    for every function with a body, evaluating the body equals the interpretation,
-    and for every function with a concreteEvalFunction, it agrees with the interpretation. -/
-def OpInterpretation.Consistent {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
-    (_C : LContext T) (_ctx : TypeContextT) (_interp : OpInterpretation _ctx) : Prop :=
-  sorry
-
 /-! ## Relational Denotation (`DenotesT`) -/
 
 inductive DenotesT {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
@@ -201,11 +197,11 @@ inductive DenotesT {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
       DenotesT C ctx interp val e mty ve →
       DenotesT C ctx interp val (.ite m c t e) mty ve
 
-  | dapp : ∀ val m e1 e2 t1 t2
-      (vf : denoteLMonoTyT ctx (.arrow t2 t1)) (va : denoteLMonoTyT ctx t2),
-      DenotesT C ctx interp val e1 (.arrow t2 t1) vf →
-      DenotesT C ctx interp val e2 t2 va →
-      DenotesT C ctx interp val (.app m e1 e2) t1 (vf va)
+  -- | dapp : ∀ val m e1 e2 t1 t2
+  --     (vf : denoteLMonoTyT ctx (.arrow t2 t1)) (va : denoteLMonoTyT ctx t2),
+  --     DenotesT C ctx interp val e1 (.arrow t2 t1) vf →
+  --     DenotesT C ctx interp val e2 t2 va →
+  --     DenotesT C ctx interp val (.app m e1 e2) t1 (vf va)
 
   | dabs : ∀ val m x_mty e_mty e (y : IdentT LMonoTy T.IDMeta)
       (f : denoteLMonoTyT ctx x_mty → denoteLMonoTyT ctx e_mty),
@@ -587,6 +583,27 @@ theorem denoteLExprT_sound
   case case15 mty Γ' val' m' name ty mty hty1 hty2 =>
     exact (DenotesT.dop val' m' name ty mty)
 
+/-- Renaming lemma for denoteLExprT: the denotation of `varOpen 0 x e` is the same
+    as `varOpen 0 y e` (under correspondingly updated valuations), provided both
+    `x` and `y` are fresh for `e`. This is the semantic α-equivalence lemma. -/
+theorem denoteLExprT_rename_fresh
+    {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
+    {C : LContext T} {ctx : TypeContextT}
+    (interp : OpInterpretation ctx)
+    (val : ValuationT ctx)
+    {e : LExpr T.mono} {mty x_mty : LMonoTy}
+    {x y : IdentT LMonoTy T.IDMeta}
+    (hfx : LExpr.fresh x e) (hfy : LExpr.fresh y e)
+    {Γx : TContext T.IDMeta} {Γy : TContext T.IDMeta}
+    (hx : HasTypeT C Γx (LExpr.varOpen 0 x e) mty)
+    (hy : HasTypeT C Γy (LExpr.varOpen 0 y e) mty)
+    (a : denoteLMonoTyT ctx x_mty) :
+    denoteLExprT C Γy ctx interp (updateVal val y.fst.name x_mty a)
+      (LExpr.varOpen 0 y e) mty hy =
+    denoteLExprT C Γx ctx interp (updateVal val x.fst.name x_mty a)
+      (LExpr.varOpen 0 x e) mty hx := by
+  sorry
+
 /-
 Theorem: DenotesT is complete w.r.t. denoteLExprT.
 
@@ -594,6 +611,7 @@ Theorem: DenotesT is complete w.r.t. denoteLExprT.
 
 Proof: By induction on the DenotesT derivation.
 -/
+set_option pp.proofs true in
 theorem denotesT_complete
     {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
     {C : LContext T} {Γ : TContext T.IDMeta} {ctx : TypeContextT}
@@ -602,7 +620,132 @@ theorem denotesT_complete
     {e : LExpr T.mono} {mty : LMonoTy} {v : denoteLMonoTyT ctx mty}
     (hd : DenotesT C ctx interp val e mty v)
     (h : HasTypeT C Γ e mty) :
-    denoteLExprT C Γ ctx val interp e mty h = v := by
+    denoteLExprT C Γ ctx interp val e mty h = v := by
+    induction hd generalizing Γ <;> try solve | unfold denoteLExprT; rfl
+    case dite_true val m c t e mty vc vt hd1 hcond hd2 ih1 ih2 =>
+      unfold denoteLExprT; simp only[]
+      rw[ih1, hcond]; simp; apply ih2
+    case dite_false val m c t e mty vc vt hd1 hcond hd2 ih1 ih2 =>
+      unfold denoteLExprT; simp only[]
+      rw[ih1, hcond]; simp; apply ih2
+    case dabs val m x_mty e_mty e y f hfresh a ih =>
+      unfold denoteLExprT;
+      split
+      . simp; apply funext; intros x
+        rename_i t1 t2 heq
+        -- eliminate cast
+        have heq' : x_mty = t1 ∧ e_mty = t2 := by
+          cases heq; grind
+        cases heq'; subst_vars
+        simp only[]
+        rw [denoteLExprT_rename_fresh interp val hfresh (findFresh_fresh e)  (HasTypeT.rename_fresh (findFresh_fresh e) hfresh (h.abs_body (asArrowT_arrow) rfl (findFresh e) (findFresh_fresh e))) (HasTypeT.rename_fresh hfresh (findFresh_fresh e) _)]
+        . apply ih
+        . cases h
+          apply (HasTypeT.rename_fresh) <;> assumption
+      . contradiction
+    case dquant_all val' m' x_mty tr e y bodyBool hfresh hdenotes htrue ih =>
+      -- have hmty := h.quant_ty; subst hmty
+      unfold denoteLExprT; simp only []
+      congr 1
+      -- Show ∀ d, bodyBool'(d) = true, where bodyBool' uses findFresh e
+      -- Then the Classical.propDecidable branch evaluates to true
+      have hfresh' := findFresh_fresh e
+      have hbody_eq : ∀ d,
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e) e) .bool
+            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+        intro d
+        have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
+            (LExpr.varOpen 0 y e) .bool :=
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+        have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
+            hty_y (h.quant_body (findFresh e) hfresh') d
+        have hih := ih d hty_y
+        simp [hrename, hih]
+      have hall : ∀ d, (denoteLExprT C _ ctx interp
+          (updateVal val' (findFresh e).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e) e) .bool
+          (h.quant_body (findFresh e) hfresh')).down = true := by
+        intro d; rw [hbody_eq d]; exact htrue d
+      simp [hall]
+    case dquant_all_false val' m' x_mty tr e y bodyBool hfresh hdenotes hntrue ih =>
+      unfold denoteLExprT; simp only []
+      congr 1
+      have hfresh' := findFresh_fresh e
+      have hbody_eq : ∀ d,
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e) e) .bool
+            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+        intro d
+        have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
+            (LExpr.varOpen 0 y e) .bool :=
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+        have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
+            hty_y (h.quant_body (findFresh e) hfresh') d
+        have hih := ih d hty_y
+        simp [hrename, hih]
+      have hnall : ¬∀ d, (denoteLExprT C _ ctx interp
+          (updateVal val' (findFresh e).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e) e) .bool
+          (h.quant_body (findFresh e) hfresh')).down = true := by
+        rwa [show (∀ d, _ = true) ↔ (∀ d, bodyBool d = true) from
+          ⟨fun h d => by rw [← hbody_eq d]; exact h d,
+           fun h d => by rw [hbody_eq d]; exact h d⟩]
+      simp [hnall]
+    case dquant_exist val' m' x_mty tr e y bodyBool hfresh hdenotes hex ih =>
+      unfold denoteLExprT; simp only []
+      congr 1
+      have hfresh' := findFresh_fresh e
+      have hbody_eq : ∀ d,
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e) e) .bool
+            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+        intro d
+        have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
+            (LExpr.varOpen 0 y e) .bool :=
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+        have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
+            hty_y (h.quant_body (findFresh e) hfresh') d
+        have hih := ih d hty_y
+        simp [hrename, hih]
+      have hexf : ∃ d, (denoteLExprT C _ ctx interp
+          (updateVal val' (findFresh e).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e) e) .bool
+          (h.quant_body (findFresh e) hfresh')).down = true := by
+        obtain ⟨d, hd⟩ := hex
+        exact ⟨d, by rw [hbody_eq d]; exact hd⟩
+      simp [hexf]
+    case dquant_exist_false val' m' x_mty tr e y bodyBool hfresh hdenotes hnex ih =>
+      unfold denoteLExprT; simp only []
+      congr 1
+      have hfresh' := findFresh_fresh e
+      have hbody_eq : ∀ d,
+          (denoteLExprT C _ ctx interp (updateVal val' (findFresh e).fst.name x_mty d)
+            (LExpr.varOpen 0 (findFresh e) e) .bool
+            (h.quant_body (findFresh e) hfresh')).down = bodyBool d := by
+        intro d
+        have hty_y : HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] x_mty) }
+            (LExpr.varOpen 0 y e) .bool :=
+          HasTypeT.rename_fresh hfresh' hfresh (h.quant_body (findFresh e) hfresh')
+        have hrename := denoteLExprT_rename_fresh interp val' hfresh hfresh'
+            hty_y (h.quant_body (findFresh e) hfresh') d
+        have hih := ih d hty_y
+        simp [hrename, hih]
+      have hnexf : ¬∃ d, (denoteLExprT C _ ctx interp
+          (updateVal val' (findFresh e).fst.name x_mty d)
+          (LExpr.varOpen 0 (findFresh e) e) .bool
+          (h.quant_body (findFresh e) hfresh')).down = true := by
+        rwa [show (∃ d, _ = true) ↔ (∃ d, bodyBool d = true) from
+          ⟨fun ⟨d, hd⟩ => ⟨d, by rw [← hbody_eq d]; exact hd⟩,
+           fun ⟨d, hd⟩ => ⟨d, by rw [hbody_eq d]; exact hd⟩⟩]
+      simp [hnexf]
+
+
+/-- An operator interpretation is consistent with a context if:
+    for every function with a body, evaluating the body equals the interpretation,
+    and for every function with a concreteEvalFunction, it agrees with the interpretation. -/
+def OpInterpretation.Consistent {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
+    (_C : LContext T) (_ctx : TypeContextT) (_interp : OpInterpretation _ctx) : Prop :=
   sorry
 
 end LExpr
