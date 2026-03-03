@@ -88,6 +88,8 @@ structure TranslateState where
   funcNames : FunctionNames := []
   /-- Laurel type definitions, used to distinguish composites from datatypes -/
   laurelTypes : List TypeDefinition := []
+  /-- Mapping from Laurel-level tester names (e.g. "isCons") to Core-level names (e.g. "IntList..isCons") -/
+  testerNameMap : Std.HashMap String String := {}
 
 /-- The translation monad: state over Id -/
 abbrev TranslateM := StateT TranslateState Id
@@ -195,7 +197,9 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       if isPureContext && !isCoreFunction funcNames name then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨name, ()⟩ none
+        -- Map Laurel-level tester names to Core-level names (e.g. "isCons" -> "IntList..isCons")
+        let coreName := s.testerNameMap.getD name name
+        let fnOp : Core.Expression.Expr := .op () ⟨coreName, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr env arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -541,7 +545,8 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) (types : List TypeDefi
   | first :: rest =>
     let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
       { name := ⟨c.name, ()⟩
-        args := c.args.map fun (n, ty) => (⟨n, ()⟩, translateType ty types) }
+        args := c.args.map fun (n, ty) => (⟨n, ()⟩, translateType ty types)
+        testerName := s!"{dt.name}..is{c.name}" }
     let ldt : Lambda.LDatatype Unit := {
       name := dt.name
       typeArgs := dt.typeArgs
@@ -583,18 +588,26 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   let (markedPure, procProcs) := program.staticProcedures.partition (·.isFunctional)
   -- Build the shared initial state with constants and function names
-  -- Include datatype constructors, testers (is<constructorName>) and destructors (<typeName>..<fieldName>)
+  -- Include datatype constructors, testers (<typeName>..is<constructorName>) and destructors (<typeName>..<fieldName>)
   let datatypeFuncNames : FunctionNames := program.types.foldl (fun acc td =>
     match td with
     | .Datatype dt =>
         let constructors := dt.constructors.map fun c => c.name
-        let testers := dt.constructors.map fun c => s!"is{c.name}"
+        let testers := dt.constructors.map fun c => s!"{dt.name}..is{c.name}"
         let destructors := dt.constructors.foldl (fun acc c =>
           acc ++ c.args.map fun (fieldName, _) => s!"{dt.name}..{fieldName}") []
         acc ++ constructors ++ testers ++ destructors
     | _ => acc) []
-  let funcNames : FunctionNames := markedPure.map (·.name) ++ datatypeFuncNames
-  let initState : TranslateState := { fieldNames := fieldNames, funcNames, laurelTypes := program.types }
+  -- Build mapping from Laurel-level tester names to Core-level tester names
+  -- e.g. "isCons" -> "IntList..isCons"
+  let testerNameMap : Std.HashMap String String := program.types.foldl (fun acc td =>
+    match td with
+    | .Datatype dt =>
+        dt.constructors.foldl (fun acc c =>
+          acc.insert s!"is{c.name}" s!"{dt.name}..is{c.name}") acc
+    | _ => acc) {}
+  let funcNames : FunctionNames := markedPure.map (·.name) ++ datatypeFuncNames ++ testerNameMap.toList.map (·.1)
+  let initState : TranslateState := { fieldNames := fieldNames, funcNames, laurelTypes := program.types, testerNameMap }
   -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
   let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
     match tryTranslatePureToFunction p initState with

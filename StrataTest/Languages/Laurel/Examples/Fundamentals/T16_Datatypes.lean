@@ -27,27 +27,27 @@ procedure testConstruction() {
 // Constructor testing
 procedure testConstructorTest() {
   var xs: IntList := Cons(1, Nil());
-  assert isCons(xs);
-  assert !isNil(xs);
+  assert IntList..isCons(xs);
+  assert !IntList..isNil(xs);
 
   var ys: IntList := Nil();
-  assert isNil(ys);
-  assert !isCons(ys);
+  assert IntList..isNil(ys);
+  assert !IntList..isCons(ys);
 }
 
 // Nested construction and deconstruction
 procedure testNested() {
   var xs: IntList := Cons(1, Cons(2, Nil()));
-  assert isCons(xs);
+  assert IntList..isCons(xs);
   assert IntList..head(xs) == 1;
-  assert isCons(IntList..tail(xs));
+  assert IntList..isCons(IntList..tail(xs));
   assert IntList..head(IntList..tail(xs)) == 2;
-  assert isNil(IntList..tail(IntList..tail(xs)));
+  assert IntList..isNil(IntList..tail(IntList..tail(xs)));
 }
 
 // Datatype in function
 function listHead(xs: IntList): int
-  requires isCons(xs)
+  requires IntList..isCons(xs)
 {
   IntList..head(xs)
 }
@@ -61,8 +61,8 @@ procedure testFunction() {
 // Failing assertion
 procedure testFailing() {
   var xs: IntList := Nil();
-  assert isCons(xs);
-//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert IntList..isCons(xs);
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
 "
 
