@@ -23,49 +23,27 @@ program Core;
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 datatype IntTree { Leaf(), Node(left: IntTree, val: int, right: IntTree) };
 
-// Safe accessors for IntList
-inline function head(xs : IntList) : int
-  requires IntList..isCons(xs);
-{ IntList..hd(xs) }
-
-inline function tail(xs : IntList) : IntList
-  requires IntList..isCons(xs);
-{ IntList..tl(xs) }
-
-// Safe accessors for IntTree
-inline function left(t : IntTree) : IntTree
-  requires IntTree..isNode(t);
-{ IntTree..left(t) }
-
-inline function right(t : IntTree) : IntTree
-  requires IntTree..isNode(t);
-{ IntTree..right(t) }
-
-inline function val(t : IntTree) : int
-  requires IntTree..isNode(t);
-{ IntTree..val(t) }
-
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(tail(xs))
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
 
 rec function append (@[cases] xs : IntList, ys : IntList) : IntList
 {
   if IntList..isNil(xs) then ys
-  else Cons(head(xs), append(tail(xs), ys))
+  else Cons(IntList..hd(xs), append(IntList..tl(xs), ys))
 }
 
 rec function size (@[cases] t : IntTree) : int
 {
   if IntTree..isLeaf(t) then 0
-  else 1 + size(left(t)) + size(right(t))
+  else 1 + size(IntTree..left(t)) + size(IntTree..right(t))
 }
 
 rec function toList (@[cases] t : IntTree) : IntList
 {
   if IntTree..isLeaf(t) then Nil()
-  else append(toList(left(t)), Cons(val(t), toList(right(t))))
+  else append(toList(IntTree..left(t)), Cons(IntTree..val(t), toList(IntTree..right(t))))
 }
 
 // listLen distributes over append.
@@ -76,7 +54,7 @@ spec {
 {
   if (IntList..isCons(xs))
   {
-    call LenAppend(tail(xs), ys);
+    call LenAppend(IntList..tl(xs), ys);
   }
 };
 
@@ -88,9 +66,9 @@ spec {
 {
   if (IntTree..isNode(t))
   {
-    call SizeIsLen(left(t));
-    call SizeIsLen(right(t));
-    call LenAppend(toList(left(t)), Cons(val(t), toList(right(t))));
+    call SizeIsLen(IntTree..left(t));
+    call SizeIsLen(IntTree..right(t));
+    call LenAppend(toList(IntTree..left(t)), Cons(IntTree..val(t), toList(IntTree..right(t))));
   }
 };
 #end
@@ -101,39 +79,39 @@ spec {
 
 /--
 info:
-Obligation: listLen_body_calls_tail_0
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: append_body_calls_head_0
+Obligation: append_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
 
-Obligation: append_body_calls_tail_1
+Obligation: append_body_calls_IntList..tl_1
 Property: assert
 Result: ✅ pass
 
-Obligation: size_body_calls_left_0
+Obligation: size_body_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
 
-Obligation: size_body_calls_right_1
+Obligation: size_body_calls_IntTree..right_1
 Property: assert
 Result: ✅ pass
 
-Obligation: toList_body_calls_left_0
+Obligation: toList_body_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
 
-Obligation: toList_body_calls_val_1
+Obligation: toList_body_calls_IntTree..val_1
 Property: assert
 Result: ✅ pass
 
-Obligation: toList_body_calls_right_2
+Obligation: toList_body_calls_IntTree..right_2
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_tail_0
+Obligation: call_LenAppend_arg_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -141,23 +119,23 @@ Obligation: len_append
 Property: assert
 Result: ✅ pass
 
-Obligation: call_SizeIsLen_arg_calls_left_0
+Obligation: call_SizeIsLen_arg_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_SizeIsLen_arg_calls_right_0
+Obligation: call_SizeIsLen_arg_calls_IntTree..right_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_left_0
+Obligation: call_LenAppend_arg_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_val_0
+Obligation: call_LenAppend_arg_calls_IntTree..val_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_right_1
+Obligation: call_LenAppend_arg_calls_IntTree..right_1
 Property: assert
 Result: ✅ pass
 

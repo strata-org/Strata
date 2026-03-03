@@ -53,6 +53,11 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0)
+
 Label: nilLen
 Property: assert
 Obligation:
@@ -74,7 +79,11 @@ Obligation:
 true
 
 ---
-info: Obligation: nilLen
+info: Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: nilLen
 Property: assert
 Result: ✅ pass
 
@@ -136,40 +145,60 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0)
+
 Label: nilCase
 Property: assert
 Assumptions:
-TestNilCase_requires_0: IntList..isNil($__xs0)
+TestNilCase_requires_0: IntList..isNil($__xs1)
 Obligation:
-listLen($__xs0) == 0
+listLen($__xs1) == 0
 
 Label: TestNilCase_ensures_1
 Property: assert
 Assumptions:
-TestNilCase_requires_0: IntList..isNil($__xs0)
+TestNilCase_requires_0: IntList..isNil($__xs1)
 Obligation:
 true
+
+Label: assert_consLen_calls_IntList..tl_0
+Property: assert
+Assumptions:
+TestConsCase_requires_0: IntList..isCons($__xs2)
+Obligation:
+IntList..isCons($__xs2)
 
 Label: consLen
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons($__xs1)
+TestConsCase_requires_0: IntList..isCons($__xs2)
 Obligation:
-listLen($__xs1) == 1 + listLen(IntList..tl($__xs1))
+listLen($__xs2) == 1 + listLen(IntList..tl($__xs2))
 
 Label: TestConsCase_ensures_1
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons($__xs1)
+TestConsCase_requires_0: IntList..isCons($__xs2)
 Obligation:
 true
 
 ---
-info: Obligation: nilCase
+info: Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: nilCase
 Property: assert
 Result: ✅ pass
 
 Obligation: TestNilCase_ensures_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_consLen_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -218,6 +247,14 @@ spec {
 
 /--
 info:
+Obligation: contains_body_calls_IntList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: contains_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
 Obligation: emptyList
 Property: assert
 Result: ✅ pass
@@ -283,60 +320,83 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0)
+
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs0))
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
 Obligation:
-0 + listLen($__xs0) == listLen($__xs0)
+0 + listLen($__xs1) == listLen($__xs1)
 
 Label: entry_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs0))
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
 Obligation:
 true
+
+Label: set_cur_calls_IntList..tl_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
+assume_guard_0: !(IntList..isNil($__cur6))
+assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
+assume_invariant_0_1: $__acc5 >= 0
+Obligation:
+IntList..isCons($__cur6)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs0))
-assume_guard_0: !(IntList..isNil($__cur5))
-assume_invariant_0_0: $__acc4 + listLen($__cur5) == listLen($__xs0)
-assume_invariant_0_1: $__acc4 >= 0
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
+assume_guard_0: !(IntList..isNil($__cur6))
+assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
+assume_invariant_0_1: $__acc5 >= 0
 Obligation:
-$__acc4 + 1 + listLen(IntList..tl($__cur5)) == listLen($__xs0)
+$__acc5 + 1 + listLen(IntList..tl($__cur6)) == listLen($__xs1)
 
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs0))
-assume_guard_0: !(IntList..isNil($__cur5))
-assume_invariant_0_0: $__acc4 + listLen($__cur5) == listLen($__xs0)
-assume_invariant_0_1: $__acc4 >= 0
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
+assume_guard_0: !(IntList..isNil($__cur6))
+assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
+assume_invariant_0_1: $__acc5 >= 0
 Obligation:
-$__acc4 + 1 >= 0
+$__acc5 + 1 >= 0
 
 Label: equiv
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: if !(IntList..isNil($__xs0)) then !(IntList..isNil($__xs0)) else true
-assume_guard_0: if !(IntList..isNil($__xs0)) then !(IntList..isNil($__cur5)) else true
-assume_invariant_0_0: if !(IntList..isNil($__xs0)) then $__acc4 + listLen($__cur5) == listLen($__xs0) else true
-assume_invariant_0_1: if !(IntList..isNil($__xs0)) then $__acc4 >= 0 else true
-not_guard_0: if !(IntList..isNil($__xs0)) then !(!(IntList..isNil($__cur7))) else true
-invariant_0_0: if !(IntList..isNil($__xs0)) then $__acc6 + listLen($__cur7) == listLen($__xs0) else true
-invariant_0_1: if !(IntList..isNil($__xs0)) then $__acc6 >= 0 else true
-<label_ite_cond_false: !(~Bool.Not (~IntList..isNil cur))>: if if !(IntList..isNil($__xs0)) then false else true then if !(IntList..isNil($__xs0)) then false else true else true
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__xs1)) else true
+assume_guard_0: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__cur6)) else true
+assume_invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc5 + listLen($__cur6) == listLen($__xs1) else true
+assume_invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
+not_guard_0: if !(IntList..isNil($__xs1)) then !(!(IntList..isNil($__cur8))) else true
+invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc7 + listLen($__cur8) == listLen($__xs1) else true
+invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc7 >= 0 else true
+<label_ite_cond_false: !(~Bool.Not (~IntList..isNil cur))>: if if !(IntList..isNil($__xs1)) then false else true then if !(IntList..isNil($__xs1)) then false else true else true
 Obligation:
-if !(IntList..isNil($__xs0)) then $__acc6 else 0 == listLen($__xs0)
+if !(IntList..isNil($__xs1)) then $__acc7 else 0 == listLen($__xs1)
 
 ---
-info: Obligation: entry_invariant_0_0
+info: Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
 Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: set_cur_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -394,8 +454,11 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram recPrecondPgm) |>.snd |>.isEmpty
 
 /--
-info:
-Obligation: nth_body_calls_nth_0
+info: Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: nth_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
 
@@ -404,6 +467,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: nth_body_calls_nth_2
+Property: assert
+Result: ✅ pass
+
+Obligation: nth_body_calls_nth_3
+Property: assert
+Result: ✅ pass
+
+Obligation: nth_body_calls_IntList..tl_4
 Property: assert
 Result: ✅ pass
 

@@ -44,7 +44,11 @@ rec function len<a>(@[cases] xs : MyList a) : int
 [DEBUG] Evaluated program: datatype MyList (a : Type) {(
   (Nil())),
   (Cons(hd : a, tl : (MyList a)))
-};-/
+};
+procedure |len$$wf| (xs : (MyList $__ty0)) returns ()
+{
+  assert [len_body_calls_MyList..tl_0]: !(MyList..isNil($__xs0)) ==> MyList..isCons($__xs0);
+  };-/
 #guard_msgs in
 #eval verify polyRecPgm (options := .quiet)
 
@@ -71,7 +75,11 @@ rec function listLen (xs : IntList) : int
 [DEBUG] Evaluated program: datatype IntList {(
   (Nil())),
   (Cons(hd : int, tl : IntList))
-};-/
+};
+procedure |listLen$$wf| (xs : IntList) returns ()
+{
+  assert [listLen_body_calls_IntList..tl_0]: !(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0);
+  };-/
 #guard_msgs in
 #eval verify noCasesPgm (options := .quiet)
 
