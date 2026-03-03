@@ -861,6 +861,18 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     | none =>
       pure (.exit_unlabeled_statement default)
   | .funcDecl decl _md => funcDeclToStatement decl
+  | .typeDecl name numargs _md =>
+    let nameAnn : Ann String M := ⟨default, name⟩
+    let args : Ann (Option (Bindings M)) M :=
+      if numargs == 0 then
+        ⟨default, none⟩
+      else
+        let bindings := List.range numargs |>.map fun i =>
+          let argName : Ann String M := ⟨default, s!"_ty{i}"⟩
+          let argType := TypeP.type default
+          Binding.mkBinding default argName argType
+        ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+    pure (.typeDecl_statement default nameAnn args)
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (CoreDDM.Block M) := do

@@ -176,6 +176,14 @@ where
           catch e =>
             .error (errorWithSourceLoc e md)
 
+        | .typeDecl name numargs md => do try
+          -- Add the type to the context
+          let C ← C.addKnownTypeWithError { name := name, metadata := numargs } 
+            (md.toDiagnosticF f!"Type '{name}' is already declared")
+          .ok (.typeDecl name numargs md, Env, C)
+          catch e =>
+            .error (errorWithSourceLoc e md)
+
       go C Env srest (s' :: acc) labels
   goBlock (C : LContext CoreLParams) (Env : TEnv Unit) (bss : Imperative.Block Core.Expression Core.Command) (acc : List Statement)
     (labels : List String) :
@@ -235,6 +243,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
       body := decl.body.map (·.applySubst S),
       axioms := decl.axioms.map (·.applySubst S) }
     .funcDecl decl' md
+  | .typeDecl _ _ _ => s  -- Type declarations don't contain type variables to substitute
   where
     go S ss acc : List Statement :=
     match ss with
