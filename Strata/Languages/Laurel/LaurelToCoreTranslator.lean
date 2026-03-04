@@ -230,6 +230,8 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable name ty none, md⟩ :: rest) label =>
     disallowed md "local variables in functions must have initializers"
+  | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
+    disallowed md "if-then-else only supported as the last statement in a block"
 
   | .IsType _ _ => panic "IsType should have been lowered"
   | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
@@ -237,7 +239,7 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
-  | .Block _ _ => panic "block expression not yet implemented (should be lowered in a separate pass)"
+  | .Block _ _ => panic! "block expression should have been lowered in a separate pass"
   | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
   | .Return _ => disallowed expr.md "return expression not yet implemented (should be lowered in a separate pass)"
 
