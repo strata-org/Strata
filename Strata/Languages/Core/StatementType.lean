@@ -178,7 +178,7 @@ where
 
         | .typeDecl name numargs md => do try
           -- Add the type to the context
-          let C ← C.addKnownTypeWithError { name := name, metadata := numargs } 
+          let C ← C.addKnownTypeWithError { name := name, metadata := numargs }
             (md.toDiagnosticF f!"Type '{name}' is already declared")
           .ok (.typeDecl name numargs md, Env, C)
           catch e =>

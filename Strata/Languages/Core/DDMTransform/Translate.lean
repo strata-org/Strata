@@ -1197,17 +1197,17 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
       | .option _ .none => pure (0, [])
       | _ => TransM.error s!"Invalid type arguments {repr argsa}"
     let md ← getOpMetaData op
-    
+
     -- Create a TypeConstructor and add it to freeVars (same as program-level types)
     let tc : Core.TypeConstructor := { name := name, numargs := numargs }
     let typeDecl : Core.Decl := .type (.con tc) md
-    
+
     -- Add type parameters (not the type name itself) to boundTypeVars
     -- This matches what the DDM parser does with declareType
-    let updatedBindings := { bindings with 
+    let updatedBindings := { bindings with
       freeVars := bindings.freeVars.push typeDecl,
       boundTypeVars := bindings.boundTypeVars ++ typeParams.toArray }
-    
+
     return ([.typeDecl name numargs md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
