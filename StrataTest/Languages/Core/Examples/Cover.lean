@@ -37,14 +37,6 @@ Obligation: unreachable_cover1
 Property: cover
 Result: ✖️ always false if reachable
 
-Obligation: unreachable_cover1
-Property: cover
-Result: ✖️ always false if reachable
-
-Obligation: unreachable_cover2
-Property: cover
-Result: ✖️ always false if reachable
-
 Obligation: unreachable_cover2
 Property: cover
 Result: ✖️ always false if reachable

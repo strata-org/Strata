@@ -525,12 +525,12 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
         let outcome := VCOutcome.mk peSat peVal
         let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose }
         results := results.push result
-        if result.isSuccess then continue
         if result.isFailure || result.isImplementationError then
           if options.verbose >= .normal then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
-          if options.stopOnFirstError then break else continue
+          if options.stopOnFirstError then break
+        continue
       -- Need the solver for at least one check
       let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
       let needValCheck := validityCheck && peValResult?.isNone
