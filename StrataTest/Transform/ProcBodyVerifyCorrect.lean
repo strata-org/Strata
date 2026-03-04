@@ -134,6 +134,18 @@ theorem procBodyVerify_soundness
       (∃ post, (Procedure.Spec.getCheckExprs proc.spec.postconditions).contains post ∧
         δ_body σ_body post ≠ .some HasBool.tt)) := by
   intro h_transform h_verify_fails
+  -- Proof strategy:
+  -- 1. Use procBodyVerify_produces_block_structure to get the structure of stmt
+  -- 2. Analyze the failure: either an assume fails or an assert fails
+  -- 3. If assume fails: contradicts precondition hypothesis
+  -- 4. If assert fails: extract the failing postcondition
+  -- 5. Show the body executed up to that point
+  -- 
+  -- This requires:
+  -- - Lemmas about how EvalStatement works for blocks
+  -- - Lemmas about how assumes/asserts interact with evaluation
+  -- - Frame reasoning to relate verification context to body execution
+  -- - Analysis of the initialization statements
   sorry
 
 /-- Completeness: Verification success implies contract satisfaction
@@ -162,7 +174,22 @@ theorem procBodyVerify_completeness
       -- Then all postconditions hold
       (∀ post, (Procedure.Spec.getCheckExprs proc.spec.postconditions).contains post →
         δ_body σ_body post = .some HasBool.tt)) := by
-  intro h_transform h_verify_succeeds
+  intro h_transform h_verify_succeeds σ_body δ_body h_pre h_body post h_post_in
+  -- Proof strategy:
+  -- 1. Use h_verify_succeeds to get that stmt evaluates successfully
+  -- 2. Decompose stmt into: inits; assumes; body_block; asserts
+  -- 3. Show that successful evaluation means:
+  --    a. All assumes passed (preconditions held)
+  --    b. Body executed
+  --    c. All asserts passed (postconditions held)
+  -- 4. Extract that the specific postcondition 'post' was checked and passed
+  -- 
+  -- This requires:
+  -- - Lemmas about block evaluation (EvalBlock)
+  -- - Lemmas about assert semantics
+  -- - Frame reasoning to show body execution in verification context
+  --   matches the hypothesized body execution
+  -- - Determinism or uniqueness of evaluation to relate the two executions
   sorry
 
 end ProcBodyVerifyCorrect
