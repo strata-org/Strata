@@ -229,16 +229,41 @@ theorem procBodyVerify_completeness_weak
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
       check.attr = Procedure.CheckAttr.Default →
-      ∃ σ_at δ_at, δ_at σ_at check.expr = some HasBool.tt) := by
+      ∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at check.expr = some HasBool.tt) := by
   intro h_transform h_eval label check h_in h_default
   -- The verification statement is a block containing the asserts
   rw [eval_block_iff] at h_eval
   -- The postcondition appears as an assert
   have h_assert_in := postcondition_in_asserts proc.spec.postconditions label check h_in h_default
-  -- The asserts are at the end of the statement list
-  -- We need to show the assert is in the full list that was evaluated
-  -- This requires knowing the structure of stmt from h_transform
-  sorry
+  -- Get the structure of stmt from the transformation
+  unfold procToVerifyStmt at h_transform
+  simp only [bind, pure, CoreTransformM, ExceptT.run] at h_transform
+  split at h_transform <;> rename_i h_split
+  · -- mapM succeeded
+    simp at h_transform
+    obtain ⟨h_stmt_eq, _⟩ := h_transform
+    -- Use procBodyVerify_produces_block to get exact structure
+    have h_struct := procBodyVerify_produces_block proc p st stmt st' h_split.choose h_split.choose_spec
+    rw [h_stmt_eq] at h_struct
+    -- Now we know stmt has the right structure
+    rw [h_struct] at h_eval
+    rw [eval_block_iff] at h_eval
+    -- The asserts are at the end of the statement list
+    have h_assert_in_full : Statement.assert label check.expr check.md ∈
+      (proc.header.inputs.toList.map (fun (id, ty) => Statement.init id (LTy.forAll [] ty) none #[]) ++
+       proc.header.outputs.toList.map (fun (id, ty) => Statement.init id (LTy.forAll [] ty) none #[]) ++
+       h_split.choose.flatten ++
+       requiresToAssumes proc.spec.preconditions ++
+       [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
+       ensuresToAsserts proc.spec.postconditions) := by
+      simp [List.mem_append]
+      right; right; right; right; right
+      exact h_assert_in
+    -- Apply eval_stmts_with_assert
+    have h_result := eval_stmts_with_assert π φ δ σ σ_verify δ_verify _ label check.expr check.md h_eval h_assert_in_full
+    exact h_result
+  · -- mapM failed
+    simp at h_transform
 
 /-
 Soundness: Verification failure implies contract violation
