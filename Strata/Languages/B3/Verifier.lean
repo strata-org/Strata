@@ -37,8 +37,6 @@ def programToB3AST (prog : Program) : Except String (B3AST.Program SourceRange) 
   else
     .ok ast
 
--- Minimal type stubs for B3 verifier API compatibility
-
 /-- Create an interactive solver with appropriate flags for the given solver path. -/
 def createInteractiveSolver (solverPath : String := "cvc5") : IO Solver :=
   let args := if solverPath.endsWith "cvc5" || solverPath == "cvc5"

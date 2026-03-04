@@ -13,12 +13,12 @@ if [ "$mode" = "laurel" ]; then
     skip_tests="test_datetime"
 elif [ "$mode" = "incremental" ]; then
     command="pyAnalyzeLaurel --incremental"
-    expected_dir="expected_interactive"
+    expected_dir="expected_incremental"
     skip_tests=""
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
-    skip_tests="test_incremental_simple"
+    skip_tests=""
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)

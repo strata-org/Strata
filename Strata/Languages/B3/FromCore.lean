@@ -51,6 +51,20 @@ def convertConst (sr : SourceRange) (c : Lambda.LConst) : Except ConversionError
       Except.ok (.unaryOp sr (.neg sr) (.literal sr (.intLit sr i.natAbs)))
   | _ => Except.error (.unsupportedCoreExpr "unsupported constant")
 
+private def binaryOpMap (sr : SourceRange) : Std.HashMap String (B3AST.BinaryOp SourceRange) :=
+  Std.HashMap.ofList [
+    ("Int.Add",      .add sr), ("Int.Sub",     .sub sr),
+    ("Int.Mul",      .mul sr), ("Int.Div",     .div sr),
+    ("Int.Mod",      .mod sr), ("Int.Lt",      .lt sr),
+    ("Int.Le",       .le sr),  ("Int.Gt",      .gt sr),
+    ("Int.Ge",       .ge sr),  ("Bool.And",    .and sr),
+    ("Bool.Or",      .or sr),  ("Bool.Implies",.implies sr),
+    ("Eq",           .eq sr),  ("Neq",         .neq sr)
+  ]
+
+private def unaryOpMap (sr : SourceRange) : Std.HashMap String (B3AST.UnaryOp SourceRange) :=
+  Std.HashMap.ofList [("Bool.Not", .not sr), ("Int.Neg", .neg sr)]
+
 mutual
 
 /-- Helper to convert application expressions -/
@@ -60,29 +74,15 @@ partial def convertApp (sr : SourceRange) (fn arg : Core.Expression.Expr) : Exce
     -- Binary operator
     (exprFromCore lhs).bind fun lhsB3 =>
     (exprFromCore arg).bind fun rhsB3 =>
-    let opName := name.name
-    if opName == "Int.Add" then Except.ok (.binaryOp sr (.add sr) lhsB3 rhsB3)
-    else if opName == "Int.Sub" then Except.ok (.binaryOp sr (.sub sr) lhsB3 rhsB3)
-    else if opName == "Int.Mul" then Except.ok (.binaryOp sr (.mul sr) lhsB3 rhsB3)
-    else if opName == "Int.Div" then Except.ok (.binaryOp sr (.div sr) lhsB3 rhsB3)
-    else if opName == "Int.Mod" then Except.ok (.binaryOp sr (.mod sr) lhsB3 rhsB3)
-    else if opName == "Int.Lt" then Except.ok (.binaryOp sr (.lt sr) lhsB3 rhsB3)
-    else if opName == "Int.Le" then Except.ok (.binaryOp sr (.le sr) lhsB3 rhsB3)
-    else if opName == "Int.Gt" then Except.ok (.binaryOp sr (.gt sr) lhsB3 rhsB3)
-    else if opName == "Int.Ge" then Except.ok (.binaryOp sr (.ge sr) lhsB3 rhsB3)
-    else if opName == "Bool.And" then Except.ok (.binaryOp sr (.and sr) lhsB3 rhsB3)
-    else if opName == "Bool.Or" then Except.ok (.binaryOp sr (.or sr) lhsB3 rhsB3)
-    else if opName == "Bool.Implies" then Except.ok (.binaryOp sr (.implies sr) lhsB3 rhsB3)
-    else if opName == "Eq" then Except.ok (.binaryOp sr (.eq sr) lhsB3 rhsB3)
-    else if opName == "Neq" then Except.ok (.binaryOp sr (.neq sr) lhsB3 rhsB3)
-    else Except.error (.unsupportedCoreExpr s!"binary operator {opName}")
+    match (binaryOpMap sr).get? name.name with
+    | some op => Except.ok (.binaryOp sr op lhsB3 rhsB3)
+    | none    => Except.error (.unsupportedCoreExpr s!"binary operator {name.name}")
   | Lambda.LExpr.op _ name _ =>
     -- Unary operator
     (exprFromCore arg).bind fun argB3 =>
-    let opName := name.name
-    if opName == "Bool.Not" then Except.ok (.unaryOp sr (.not sr) argB3)
-    else if opName == "Int.Neg" then Except.ok (.unaryOp sr (.neg sr) argB3)
-    else Except.error (.unsupportedCoreExpr s!"unary operator {opName}")
+    match (unaryOpMap sr).get? name.name with
+    | some op => Except.ok (.unaryOp sr op argB3)
+    | none    => Except.error (.unsupportedCoreExpr s!"unary operator {name.name}")
   | Lambda.LExpr.fvar _ name _ =>
     -- Function call: f(arg)
     (exprFromCore arg).bind fun argB3 =>
@@ -96,16 +96,7 @@ partial def convertApp (sr : SourceRange) (fn arg : Core.Expression.Expr) : Exce
 
 /-- Convert Core expression to B3 expression, preserving source locations from Core metadata -/
 partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3AST.Expression SourceRange) :=
-  let sr := match e with
-    | Lambda.LExpr.const m _ => m
-    | Lambda.LExpr.bvar m _ => m
-    | Lambda.LExpr.app m _ _ => m
-    | Lambda.LExpr.ite m _ _ _ => m
-    | Lambda.LExpr.op m _ _ => m
-    | Lambda.LExpr.fvar m _ _ => m
-    | Lambda.LExpr.abs m _ _ _ => m
-    | Lambda.LExpr.quant m _ _ _ _ _ => m
-    | Lambda.LExpr.eq m _ _ => m
+  let sr : SourceRange := e.metadata
   match e with
   | Lambda.LExpr.const _ c => convertConst sr c
   | Lambda.LExpr.bvar _ idx => Except.ok (.id sr idx)

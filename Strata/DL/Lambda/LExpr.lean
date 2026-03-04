@@ -500,17 +500,17 @@ def size (T : LExprParamsT) (e : LExpr T) : Nat :=
 Erase all type annotations from `e` except the bound variables of abstractions
 and quantified expressions.
 -/
-def eraseTypes {T : LExprParamsT} [Inhabited T.base.Metadata] (e : LExpr T) : LExpr T :=
+def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
   match e with
-  | .const _ c => .const default c
-  | .op _ o _ => .op default o none
-  | .fvar _ x _ => .fvar default x none
-  | .bvar _ i => .bvar default i
-  | .abs _ name ty e => .abs default name ty (eraseTypes e)
-  | .quant _ qk name _ tr e => .quant default qk name .none (eraseTypes tr) (eraseTypes e)
-  | .app _ e1 e2 => .app default (eraseTypes e1) (eraseTypes e2)
-  | .ite _ c t f => .ite default (eraseTypes c) (eraseTypes t) (eraseTypes f)
-  | .eq _ e1 e2 => .eq default (eraseTypes e1) (eraseTypes e2)
+  | .const m c => .const m c
+  | .op m o _ => .op m o none
+  | .fvar m x _ => .fvar m x none
+  | .bvar _ _ => e
+  | .abs m name ty e => .abs m name ty (eraseTypes e)
+  | .quant m qk name _ tr e => .quant m qk name .none (eraseTypes tr) (eraseTypes e)
+  | .app m e1 e2 => .app m (eraseTypes e1) (eraseTypes e2)
+  | .ite m c t f => .ite m (eraseTypes c) (eraseTypes t) (eraseTypes f)
+  | .eq m e1 e2 => .eq m (eraseTypes e1) (eraseTypes e2)
 
 ---------------------------------------------------------------------
 

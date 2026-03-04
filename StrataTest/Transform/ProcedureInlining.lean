@@ -64,12 +64,6 @@ private def IdMap.lblMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
 private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: Bool) :=
   map.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
-      -- old_id has visibility of temp because the new local variables were
-      -- created by CoreGenM.
-      -- new_expr has visibility of unres because that is the default setting
-      -- from DDM parsed program, and the substituted program is supposed to be
-      -- equivalent to the answer program translated from DDM
-      -- These must be reversed when checking e2 -> e1
       let old_id:Expression.Ident := { name := i1, metadata := () }
 
       let new_expr:Expression.Expr := .fvar Strata.SourceRange.none
@@ -77,10 +71,25 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
       e.substFvar old_id new_expr)
     e1
 
+/-- Normalize an expression for alpha-equivalence: erase types and metadata. -/
+private def normalizeExpr (e : Expression.Expr) : Expression.Expr :=
+  -- eraseTypes preserves metadata; we additionally reset all metadata to none for comparison
+  let rec go : Expression.Expr → Expression.Expr
+    | .const _ c => .const Strata.SourceRange.none c
+    | .op _ o _ => .op Strata.SourceRange.none o none
+    | .fvar _ x _ => .fvar Strata.SourceRange.none x none
+    | .bvar _ i => .bvar Strata.SourceRange.none i
+    | .abs _ name ty e => .abs Strata.SourceRange.none name ty (go e)
+    | .quant _ qk name _ tr e => .quant Strata.SourceRange.none qk name .none (go tr) (go e)
+    | .app _ e1 e2 => .app Strata.SourceRange.none (go e1) (go e2)
+    | .ite _ c t f => .ite Strata.SourceRange.none (go c) (go t) (go f)
+    | .eq _ e1 e2 => .eq Strata.SourceRange.none (go e1) (go e2)
+  go e
+
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 (map.vars.fst) false).eraseTypes == e2.eraseTypes &&
-  (substExpr e2 (map.vars.snd) true).eraseTypes == e1.eraseTypes
+  normalizeExpr (substExpr e1 (map.vars.fst) false) == normalizeExpr e2 &&
+  normalizeExpr (substExpr e2 (map.vars.snd) true) == normalizeExpr e1
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=
