@@ -624,6 +624,72 @@ theorem Subst.absorbs_trans (S1 S2 S3 : Subst)
   rw [← LMonoTy.subst_absorbs S3 S2 t h23, h1,
       LMonoTy.subst_absorbs S3 S2 (.ftvar a) h23]
 
+/--
+Composition lemma: applying a singleton substitution `[[(v, t)]]` followed by
+`[ys]` equals applying the merged substitution `[(v, t) :: ys]`, provided
+`subst [ys] t = t` (i.e., `t` is stable under `ys`).
+
+This is a key lemma for proving that sequential `tinst` applications
+(each substituting one bound variable) produce the same result as a
+single parallel substitution with all bindings.
+-/
+theorem LMonoTy.subst_cons_single
+    (v : TyIdentifier) (t : LMonoTy) (ys : SubstOne) (mty : LMonoTy)
+    (h_t : LMonoTy.subst [ys] t = t) :
+    LMonoTy.subst [ys] (LMonoTy.subst [[(v, t)]] mty) =
+    LMonoTy.subst [((v, t) :: ys)] mty := by
+  have hSingle : Subst.hasEmptyScopes [[(v, t)]] = false := by
+    simp [Subst.hasEmptyScopes, Map.isEmpty]
+  have hCons : Subst.hasEmptyScopes [((v, t) :: ys)] = false := by
+    simp [Subst.hasEmptyScopes, Map.isEmpty]
+  by_cases hYs : Subst.hasEmptyScopes [ys]
+  · -- ys is empty, so subst [ys] is identity
+    have h_ys_empty : ys = [] := by
+      simp [Subst.hasEmptyScopes, Map.isEmpty] at hYs
+      cases ys with
+      | nil => rfl
+      | cons _ _ => simp [Map.isEmpty] at hYs
+    subst h_ys_empty
+    simp only [LMonoTy.subst_emptyS hYs]
+  · have hYs_ne : Subst.hasEmptyScopes [ys] = false := by
+      revert hYs; cases Subst.hasEmptyScopes [ys] <;> simp
+    induction mty with
+    | ftvar x =>
+      by_cases h_eq : v = x
+      · -- v = x: inner subst gives t, then subst [ys] t = t by h_t
+        subst h_eq
+        have h_inner : LMonoTy.subst [[(v, t)]] (.ftvar v) = t := by
+          simp [LMonoTy.subst, Subst.hasEmptyScopes, Map.isEmpty, Maps.find?, Map.find?]
+        rw [h_inner, h_t]
+        -- RHS: subst [(v,t)::ys] (ftvar v) = t (first match in (v,t)::ys)
+        simp [LMonoTy.subst, hCons, Maps.find?, Map.find?]
+      · -- v ≠ x: inner subst is identity, lookup x in ys
+        have h_inner : LMonoTy.subst [[(v, t)]] (.ftvar x) = .ftvar x := by
+          simp [LMonoTy.subst, Subst.hasEmptyScopes, Map.isEmpty, Maps.find?, Map.find?, h_eq]
+        rw [h_inner]
+        -- Both sides look up x in ys (since v ≠ x, (v,t)::ys skips (v,t))
+        simp [LMonoTy.subst, hYs_ne, hCons, Maps.find?, Map.find?, h_eq]
+    | bitvec n =>
+      simp [LMonoTy.subst]
+    | tcons name args ih =>
+      simp only [LMonoTy.subst, hSingle, hYs_ne, hCons, Bool.false_eq_true, ↓reduceIte]
+      congr 1
+      rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic,
+          LMonoTys.subst_eq_substLogic]
+      suffices ∀ xs,
+          (∀ m, m ∈ xs → LMonoTy.subst [ys] (LMonoTy.subst [[(v, t)]] m) =
+            LMonoTy.subst [((v, t) :: ys)] m) →
+          LMonoTys.substLogic [ys] (LMonoTys.substLogic [[(v, t)]] xs) =
+            LMonoTys.substLogic [((v, t) :: ys)] xs by
+        exact this args ih
+      intro xs; induction xs with
+      | nil => intro _; simp [LMonoTys.substLogic, hSingle, hYs_ne, hCons]
+      | cons a rest ih_rest =>
+        intro ih_xs
+        simp only [LMonoTys.substLogic, hSingle, hYs_ne, hCons, Bool.false_eq_true, ↓reduceIte]
+        rw [ih_xs a List.mem_cons_self,
+            ih_rest (fun m hm => ih_xs m (List.mem_cons_of_mem a hm))]
+
 /-- Unification produces a substitution that absorbs the input substitution. -/
 theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
     (h : Constraints.unify constraints S_old = .ok S_new) :
@@ -690,6 +756,29 @@ theorem TGenEnv.genTyVars_context {IDMeta : Type} [ToFormat IDMeta]
         obtain ⟨tvs', Env2⟩ := v2; simp at h
         obtain ⟨_, h2⟩ := h; rw [← h2]
         rw [ih Env1 tvs' Env2 h_rest, TGenEnv.genTyVar_context Env tv Env1 h_gen]
+
+/-- `genTyVars n` produces exactly `n` fresh type variables. -/
+private theorem TGenEnv.genTyVars_length {IDMeta : Type} [ToFormat IDMeta]
+    (n : Nat) (Env : TGenEnv IDMeta)
+    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    tvs.length = n := by
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨h1, _⟩ := h; subst h1; simp
+  | succ n ih =>
+    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨h1, _⟩ := h; subst h1
+        simp [ih Env1 tvs' Env2 h_rest]
 
 /-- `instantiate` (on `TGenEnv`) preserves the context. -/
 private theorem LMonoTys.instantiate_context {IDMeta : Type} [ToFormat IDMeta]
@@ -1279,22 +1368,195 @@ theorem LMonoTy_instantiateWithCheck_context
         exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
       · simp at h
 
+/-- If `x ∉ xs`, then `xs.removeAll [x] = xs`. -/
+private theorem removeAll_not_mem {x : TyIdentifier} {xs : List TyIdentifier}
+    (h : x ∉ xs) : xs.removeAll [x] = xs := by
+  induction xs with
+  | nil => simp [List.removeAll]
+  | cons a rest ih =>
+    have h_ne : x ≠ a := fun heq => h (heq ▸ List.mem_cons_self)
+    have h_beq : (x == a) = false := beq_eq_false_iff_ne.mpr h_ne
+    rw [List.cons_removeAll]
+    -- [x].contains a = (x == a), and (x == a) = false since x ≠ a
+    have h_contains : [x].contains a = false := by
+      unfold List.contains List.elem
+      rw [BEq.comm]
+      simp [h_beq]
+    rw [h_contains]
+    simp
+    exact ih (fun h_mem => h (List.mem_cons_of_mem a h_mem))
+
+/-- Keys of a zipped map are a subset of the first list. -/
+private theorem Map.keys_zip_subset {α β : Type} [DecidableEq α]
+    (l1 : List α) (l2 : List β) {x : α} (h : x ∈ Map.keys (l1.zip l2)) : x ∈ l1 := by
+  induction l1 generalizing l2 with
+  | nil => simp [List.zip, Map.keys] at h
+  | cons a rest ih =>
+    cases l2 with
+    | nil => simp [List.zip, Map.keys] at h
+    | cons b rest2 =>
+      simp [List.zip, Map.keys] at h
+      cases h with
+      | inl h => subst h; exact List.mem_cons_self
+      | inr h => exact List.mem_cons_of_mem a (ih rest2 h)
+
 /--
-Semantic property of `LTy.instantiateWithCheck` for typing (unannotated case):
-If `ty` is in the context for variable `x`, and `instantiateWithCheck ty C Env`
-produces `(mty, Env')`, then `(.fvar m x none)` has type
-`(.forAll [] (subst Env'.subst mty))`.
+Helper: repeated `tinst` applications for each bound variable with the
+corresponding type yield the same result as a parallel substitution.
 
-This captures the fact that `instantiateWithCheck` produces an instantiation
-of the polymorphic type `ty`, and applying the output substitution yields a
-valid monomorphic instance.
-
-Proof sketch: `tvar` gives `HasType C Γ (.fvar m x none) ty`. Then
-`instantiate` replaces bound vars with fresh vars (justified by `tgen`/`tinst`),
-`resolveAliases` resolves type aliases (preserving typing via alias equivalence),
-and `subst Env'.subst` applies the accumulated substitution (justified by
-`HasType_subst_fresh_all` since all keys are fresh).
+If `e` has type `(.forAll vars body)`, then applying `tinst` for each
+`(var_i, ty_i)` pair produces `HasType C Γ e (.forAll [] (subst [zip vars tys] body))`,
+provided `vars` are distinct (Nodup) and the types `tys` have no free
+variables among `vars` (so substitutions don't interfere).
 -/
+private theorem HasType_tinst_all
+    (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono)
+    : ∀ (vars : List TyIdentifier) (body : LMonoTy) (tys : List LMonoTy),
+    tys.length = vars.length →
+    vars.Nodup →
+    (∀ v, v ∈ vars → ∀ t, t ∈ tys → v ∉ LMonoTy.freeVars t) →
+    HasType C Γ e (.forAll vars body) →
+    HasType C Γ e (.forAll [] (LMonoTy.subst [List.zip vars tys] body)) := by
+  intro vars
+  induction vars with
+  | nil =>
+    intro body tys h_len _ _ h_ty
+    have h_tys_nil : tys = [] := by
+      cases tys with
+      | nil => rfl
+      | cons _ _ => simp at h_len
+    subst h_tys_nil
+    -- [].zip [] = [], so subst [[].zip []] body = subst [[]] body = body
+    have h_empty : Subst.hasEmptyScopes [List.zip ([] : List TyIdentifier) ([] : List LMonoTy)] = true := by
+      simp [List.zip, Subst.hasEmptyScopes, Map.isEmpty]
+    rw [LMonoTy.subst_emptyS h_empty]
+    exact h_ty
+  | cons v rest ih =>
+    intro body tys h_len h_nodup h_no_clash h_ty
+    -- tys must be t :: rest_tys
+    cases tys with
+    | nil => simp at h_len
+    | cons t rest_tys =>
+      simp at h_len
+      -- Extract Nodup facts
+      have h_v_notin_rest : v ∉ rest := (List.nodup_cons.mp h_nodup).1
+      have h_rest_nodup : rest.Nodup := (List.nodup_cons.mp h_nodup).2
+      -- Step 1: Apply tinst with v, t to get HasType for (.forAll rest (subst [[(v,t)]] body))
+      -- LTy.open v t (.forAll (v :: rest) body) opens the first binder
+      have h_inst := HasType.tinst Γ e (.forAll (v :: rest) body)
+        (LTy.open v t (.forAll (v :: rest) body)) v t h_ty rfl
+      -- Simplify: LTy.open v t (.forAll (v :: rest) body) =
+      --   .forAll rest (subst [[(v,t)]] body)
+      -- because v ∈ v :: rest and (v :: rest).removeAll [v] = rest (v ∉ rest by Nodup)
+      have h_open_eq : LTy.open v t (.forAll (v :: rest) body) =
+          .forAll rest (LMonoTy.subst [[(v, t)]] body) := by
+        show (if v ∈ v :: rest then
+            have S := [(v, t)]; LTy.forAll ((v :: rest).removeAll [v]) (LMonoTy.subst [S] body)
+          else LTy.forAll (v :: rest) body) = _
+        simp only [List.mem_cons_self, ↓reduceIte]
+        congr 1
+        -- Need: (v :: rest).removeAll [v] = rest
+        rw [List.cons_removeAll]
+        -- [v].contains v is true, so else branch: rest.removeAll [v]
+        have h_contains_true : [v].contains v = true := by
+          unfold List.contains List.elem
+          simp [beq_self_eq_true]
+        simp [h_contains_true]
+        exact removeAll_not_mem h_v_notin_rest
+      rw [h_open_eq] at h_inst
+      -- h_inst : HasType C Γ e (.forAll rest (subst [[(v, t)]] body))
+      -- Step 2: Apply IH
+      have h_ih := ih (LMonoTy.subst [[(v, t)]] body) rest_tys h_len h_rest_nodup
+        (fun w hw s hs => h_no_clash w (List.mem_cons_of_mem v hw) s (List.mem_cons_of_mem t hs))
+        h_inst
+      -- h_ih : HasType C Γ e (.forAll [] (subst [zip rest rest_tys] (subst [[(v, t)]] body)))
+      -- Step 3: Use subst_cons_single to rewrite
+      have h_t_stable : LMonoTy.subst [List.zip rest rest_tys] t = t := by
+        apply LMonoTy.subst_no_relevant_keys
+        intro x hx h_x_key
+        have h_x_in_rest : x ∈ rest := by
+          simp [Maps.keys] at h_x_key
+          exact Map.keys_zip_subset rest rest_tys h_x_key
+        exact h_no_clash x (List.mem_cons_of_mem v h_x_in_rest) t
+          List.mem_cons_self hx
+      have h_compose := LMonoTy.subst_cons_single v t (List.zip rest rest_tys) body h_t_stable
+      rw [h_compose] at h_ih
+      -- Now just need zip (v :: rest) (t :: rest_tys) = (v, t) :: zip rest rest_tys
+      simp only [List.zip_cons_cons] at h_ih ⊢
+      exact h_ih
+
+/--
+Helper: `LTy.instantiate` preserves HasType by repeated tinst.
+If `e` has type `ty` and `instantiate ty` produces monotype `mty`,
+then `e` has type `(.forAll [] mty)`.
+For monomorphic types this is immediate; for polymorphic types this
+follows from applying `tinst` for each bound variable.
+-/
+private theorem HasType_LTy_instantiate
+    (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
+    (mty : LMonoTy) (genEnv genEnv' : TGenEnv T.IDMeta)
+    (h_ty : HasType C Γ e ty)
+    (h_inst : LTy.instantiate ty genEnv = .ok (mty, genEnv')) :
+    HasType C Γ e (.forAll [] mty) := by
+  -- Case analysis on ty
+  cases ty with
+  | forAll vars body =>
+  -- Unfold LTy.instantiate for (.forAll vars body)
+  cases vars with
+  | nil =>
+    -- Monomorphic: LTy.instantiate (.forAll [] body) = .ok (body, genEnv)
+    simp [LTy.instantiate] at h_inst
+    obtain ⟨h_eq, _⟩ := h_inst; rw [← h_eq]; exact h_ty
+  | cons x xs =>
+    -- Polymorphic: LTy.instantiate (.forAll (x :: xs) body) generates fresh vars
+    simp only [LTy.instantiate, Bind.bind, Except.bind] at h_inst
+    split at h_inst
+    · simp at h_inst
+    · rename_i v1 h_gen
+      obtain ⟨freshtvs, genEnv1⟩ := v1
+      simp at h_inst h_gen
+      obtain ⟨h_eq, _⟩ := h_inst; rw [← h_eq]
+      have h_len_gen := TGenEnv.genTyVars_length (x :: xs).length genEnv freshtvs genEnv1 h_gen
+      have h_map_len : (List.map LMonoTy.ftvar freshtvs).length = (x :: xs).length := by
+        simp [h_len_gen]
+      apply HasType_tinst_all C Γ e (x :: xs) body (List.map LMonoTy.ftvar freshtvs)
+        h_map_len
+      · -- Nodup: bound variables in a well-formed type scheme are distinct
+        sorry -- requires well-formedness of the type scheme
+      · -- No clash: bound variables don't appear in fresh type variables
+        intro v _ t ht
+        simp [List.mem_map] at ht
+        obtain ⟨tv, _, h_tv⟩ := ht
+        rw [← h_tv]; simp [LMonoTy.freeVars]
+        -- tv is a fresh variable, v is a bound variable; they are distinct
+        sorry -- requires freshness property of genTyVars
+      · exact h_ty
+
+/--
+Helper: `LMonoTy.resolveAliases` preserves HasType under the output substitution.
+If `e` has type `(.forAll [] mty_in)` and resolving aliases in `mty_in` produces
+`(mty_out, Env')`, then `e` has type `(.forAll [] (subst Env'.subst mty_out))`.
+
+The key insight is that alias resolution uses unification to expand type aliases,
+and the resulting substitution ensures that the original and resolved types are
+equal under `Env'.stateSubstInfo.subst`. For types without aliases (the common case
+for types from the context), this is trivially true since resolveAliases is the
+identity.
+-/
+private theorem HasType_resolveAliases
+    (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty_in : LMonoTy)
+    (mty_out : LMonoTy) (Env Env' : TEnv T.IDMeta)
+    (h_ty : HasType C Γ e (.forAll [] mty_in))
+    (h_ra : LMonoTy.resolveAliases mty_in Env = .ok (mty_out, Env'))
+    (h_fresh : Subst.allKeysFresh Env'.stateSubstInfo.subst Γ) :
+    HasType C Γ e (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty_out)) := by
+  -- Under the output substitution S = Env'.stateSubstInfo.subst,
+  -- the pre-alias type and post-alias type satisfy:
+  --   subst S mty_in = subst S mty_out
+  -- This follows from the unification soundness within resolveAliases.
+  -- Then HasType_subst_fresh_all applied to h_ty with S gives the result.
+  sorry
+
 theorem instantiateWithCheck_fvar_HasType
     (C : LContext T) (Γ : TContext T.IDMeta) (x : Identifier T.IDMeta)
     (ty : LTy) (mty : LMonoTy) (Env Env' : TEnv T.IDMeta)
@@ -1304,9 +1566,39 @@ theorem instantiateWithCheck_fvar_HasType
     (h_inst : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
     HasType C Γ (.fvar m x none)
       (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty)) := by
-  -- Depends on `HasType_subst_fresh_all` and the tgen/tinst bridge connecting
-  -- polymorphic type `ty` to monomorphic instance `mty`. See docstring above.
-  sorry
+  -- Decompose instantiateWithCheck into resolveAliases + known type check
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h_inst
+  split at h_inst
+  · simp at h_inst  -- resolveAliases failed
+  · rename_i v1 h_ra
+    obtain ⟨mty_ra, Env_ra⟩ := v1
+    split at h_inst
+    · -- Known type check passed; extract equalities
+      simp [Pure.pure, Except.pure] at h_inst
+      obtain ⟨h_mty, h_env⟩ := h_inst
+      subst h_mty; subst h_env
+      -- Decompose resolveAliases = instantiate + LMonoTy.resolveAliases
+      simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+      split at h_ra
+      · simp at h_ra
+      · rename_i v2 h_inst_inner
+        obtain ⟨mty_inst, genEnv'⟩ := v2
+        simp at h_ra h_inst_inner
+        -- h_inst_inner : ty.instantiate Env.genEnv = .ok (mty_inst, genEnv')
+        -- h_ra : LMonoTy.resolveAliases mty_inst {Env with genEnv := genEnv'}
+        --          = .ok (mty, Env')
+        -- Step 1: tvar gives HasType C Γ (.fvar m x none) ty
+        have h_tvar := HasType.tvar (C := C) Γ m x ty h_find
+        -- Step 2: tinst chain gives HasType for (.forAll [] mty_inst)
+        have h_mono := HasType_LTy_instantiate C Γ (.fvar m x none) ty mty_inst
+          Env.genEnv genEnv' h_tvar h_inst_inner
+        -- Step 3: All substitution keys are fresh in Γ (being proved elsewhere)
+        have h_fresh : Subst.allKeysFresh Env_ra.stateSubstInfo.subst Γ := by
+          sorry -- Needs: freshness property of genTyVar / resolveAliases
+        -- Step 4: resolveAliases preserves HasType under the output substitution
+        exact HasType_resolveAliases C Γ _ mty_inst mty_ra
+          {Env with genEnv := genEnv'} Env_ra h_mono h_ra h_fresh
+    · simp at h_inst  -- Known type check failed
 
 /--
 Semantic property for the annotated case: if `ty` is in the context for `x`,
