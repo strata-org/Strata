@@ -172,7 +172,7 @@ The 9 possible outcomes and their interpretations:
   ✅     pass and reachable                 sat      unsat    yes        pass       pass        Property always true, reachable from declaration entry
   ❌     refuted and reachable              unsat    sat      yes        error      error       Property always false, reachable from declaration entry
   🔶     indecisive and reachable           sat      sat      yes        error      note        Reachable from declaration entry, solver found models for both the property and its negation
-  ⛔     unreachable                        unsat    unsat    no         warning    warning     Dead code, path unreachable
+  ⛔/❌  unreachable                        unsat    unsat    no         warn/err   warn/err    Dead code (⛔ warning for assert, ❌ error for cover)
   ➕     satisfiable                        sat      unknown  yes        error      note        Property can be true and is reachable from declaration entry, validity unknown
   ✖️     refuted if reachable               unsat    unknown  unknown    error      error       Property always false if reachable, reachability unknown
   ➖     can be false and is reachable      unknown  sat      yes        error      note        Path is reachable from declaration entry and Q can be false, but satisfiability of Q is unknown
@@ -275,22 +275,25 @@ def isPassIfReachable := passReachabilityUnknown
 def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
-def label (o : VCOutcome) : String :=
+def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
   if o.passAndReachable then "pass and reachable from declaration entry"
   else if o.alwaysFalseAndReachable then "refuted and reachable from declaration entry"
   else if o.indecisiveAndReachable then "indecisive and reachable from declaration entry"
-  else if o.unreachable then "unreachable"
+  else if o.unreachable then
+    if property == .cover then "unreachable (error: cover can never be reached)"
+    else "unreachable"
   else if o.satisfiableValidityUnknown then "satisfiable"
   else if o.alwaysFalseReachabilityUnknown then "refuted if reachable"
   else if o.canBeFalseAndIsReachable then "can be false and is reachable"
   else if o.passReachabilityUnknown then "pass if reachable"
   else "unknown"
 
-def emoji (o : VCOutcome) : String :=
+def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
   if o.passAndReachable then "✅"
   else if o.alwaysFalseAndReachable then "❌"
   else if o.indecisiveAndReachable then "🔶"
-  else if o.unreachable then "⛔"
+  else if o.unreachable then
+    if property == .cover then "❌" else "⛔"
   else if o.satisfiableValidityUnknown then "➕"
   else if o.alwaysFalseReachabilityUnknown then "✖️"
   else if o.canBeFalseAndIsReachable then "➖"
@@ -361,7 +364,8 @@ instance : ToFormat VCResult where
             f!"\nModel (property false): {m}"
           else ""
         | _, _ => ""
-      f!"Obligation: {r.obligation.label}\nProperty: {r.obligation.property}\nResult: {outcome}{models}"
+      let prop := r.obligation.property
+      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop} {outcome.label prop}{models}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.outcome with

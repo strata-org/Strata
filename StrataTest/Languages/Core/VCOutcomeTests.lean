@@ -69,7 +69,7 @@ def testOutcome (o : VCOutcome) (expectedTrue : OutcomePredicate) : IO Unit := d
     if value then IO.print s!" {name}"
   let satStr := if let .sat _ := o.satisfiabilityProperty then "sat" else if let .unsat := o.satisfiabilityProperty then "unsat" else "unknown"
   let valStr := if let .sat _ := o.validityProperty then "sat" else if let .unsat := o.validityProperty then "unsat" else "unknown"
-  IO.println s!"\nSat:{satStr}|Val:{valStr} {o.emoji} {o.label}, {outcomeToMessage o}, SARIF: Deductive level: {outcomeToLevel .deductive o}, BugFinding level: {outcomeToLevel .bugFinding o}"
+  IO.println s!"\nSat:{satStr}|Val:{valStr} {o.emoji} {o.label}, {outcomeToMessage o}, SARIF: Deductive level: {outcomeToLevel .deductive .assert o}, BugFinding level: {outcomeToLevel .bugFinding .assert o}"
 
 /-! ### Outcome: (sat, unsat) - always true and reachable -/
 

@@ -20,26 +20,26 @@ open Strata.Sarif Strata.SMT
 /-! ## Core-Specific Conversion Functions -/
 
 /-- Convert VCOutcome to SARIF Level -/
-def outcomeToLevel (mode : VerificationMode) (outcome : VCOutcome) : Level :=
+def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType) (outcome : VCOutcome) : Level :=
   match mode with
   | .deductive =>
-    -- Deductive verification: prove correctness
     if outcome.passAndReachable || outcome.passReachabilityUnknown then
       .none
     else if outcome.unreachable then
-      .warning -- Dead code
+      if property == .cover then .error  -- cover can never be reached
+      else .warning                       -- dead code for assert
     else
-      .error -- alwaysFalseAndReachable, alwaysFalseReachabilityUnknown, indecisiveAndReachable, canBeFalseAndIsReachable, satisfiableValidityUnknown, unknown
+      .error
   | .bugFinding =>
-    -- Bug finding: find counterexamples
     if outcome.passAndReachable || outcome.passReachabilityUnknown then
       .none
     else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then
       .error
     else if outcome.unreachable then
-      .warning -- Proved something that could indicate an issue
+      if property == .cover then .error  -- cover can never be reached
+      else .warning                       -- dead code for assert
     else
-      .note -- indecisiveAndReachable, canBeFalseAndIsReachable, unknown, satisfiableValidityUnknown
+      .note
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=
@@ -96,7 +96,7 @@ def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean
       | none => #[]
     { ruleId, level, message, locations }
   | .ok outcome =>
-    let level := outcomeToLevel mode outcome
+    let level := outcomeToLevel mode vcr.obligation.property outcome
     let messageText := outcomeToMessage outcome
     let message : Strata.Sarif.Message := { text := messageText }
     let locations := match extractLocation files vcr.obligation.metadata with
