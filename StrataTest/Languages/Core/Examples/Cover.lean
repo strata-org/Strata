@@ -55,7 +55,7 @@ Result: ✔️ pass if reachable
 
 Obligation: reachable_cover
 Property: cover
-Result: ➕ satisfiable
+Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: unsatisfiable_cover
 Property: cover
@@ -95,7 +95,7 @@ Result: ✖️ refuted if reachable
 
 Obligation: ctest2
 Property: cover
-Result: ➕ satisfiable
+Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: atest2
 Property: assert
@@ -184,7 +184,7 @@ Result: ✅ pass and reachable from declaration entry
 
 Obligation: reach_cover_pass
 Property: cover
-Result: 🔶 indecisive and reachable from declaration entry
+Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: reach_cover_fail
 Property: cover

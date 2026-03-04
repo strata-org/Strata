@@ -24,7 +24,7 @@ def mkOutcome (satisfiabilityProperty : Result) (validityProperty : Result) : VC
 inductive OutcomePredicate where
   | passAndReachable
   | alwaysFalseAndReachable
-  | indecisiveAndReachable
+  | canBeTrueOrFalseAndIsReachable
   | unreachable
   | satisfiableValidityUnknown
   | alwaysFalseReachabilityUnknown
@@ -37,7 +37,7 @@ def OutcomePredicate.eval (p : OutcomePredicate) (o : VCOutcome) : Bool :=
   match p with
   | .passAndReachable => o.passAndReachable
   | .alwaysFalseAndReachable => o.alwaysFalseAndReachable
-  | .indecisiveAndReachable => o.indecisiveAndReachable
+  | .canBeTrueOrFalseAndIsReachable => o.canBeTrueOrFalseAndIsReachable
   | .unreachable => o.unreachable
   | .satisfiableValidityUnknown => o.satisfiableValidityUnknown
   | .alwaysFalseReachabilityUnknown => o.alwaysFalseReachabilityUnknown
@@ -46,7 +46,7 @@ def OutcomePredicate.eval (p : OutcomePredicate) (o : VCOutcome) : Bool :=
   | .unknown => o.unknown
 
 def allPredicates : List OutcomePredicate :=
-  [.passAndReachable, .alwaysFalseAndReachable, .indecisiveAndReachable, .unreachable,
+  [.passAndReachable, .alwaysFalseAndReachable, .canBeTrueOrFalseAndIsReachable, .unreachable,
    .satisfiableValidityUnknown, .alwaysFalseReachabilityUnknown, .canBeFalseAndIsReachable,
    .passReachabilityUnknown, .unknown]
 
@@ -89,10 +89,10 @@ Sat:unsat|Val:sat ❌ refuted and reachable from declaration entry, Always false
 
 /--
 info:  isSatisfiable isReachable
-Sat:sat|Val:sat 🔶 indecisive and reachable from declaration entry, True or false depending on inputs, SARIF: Deductive level: error, BugFinding level: note
+Sat:sat|Val:sat 🔶 can be both true and false and is reachable from declaration entry, True or false depending on inputs, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
-#eval testOutcome (mkOutcome (.sat default) (.sat default)) .indecisiveAndReachable
+#eval testOutcome (mkOutcome (.sat default) (.sat default)) .canBeTrueOrFalseAndIsReachable
 
 /--
 info:  isPass isAlwaysTrue

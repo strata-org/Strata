@@ -171,7 +171,7 @@ The 9 possible outcomes and their interpretations:
   -----  ---------------------------------  -------  -------  ---------  ---------  ----------  -------
   ✅     pass and reachable                 sat      unsat    yes        pass       pass        Property always true, reachable from declaration entry
   ❌     refuted and reachable              unsat    sat      yes        error      error       Property always false, reachable from declaration entry
-  🔶     indecisive and reachable           sat      sat      yes        error      note        Reachable from declaration entry, solver found models for both the property and its negation
+  🔶     can be both true and false, reachable           sat      sat      yes        error      note        Reachable from declaration entry, solver found models for both the property and its negation
   ⛔/❌  unreachable                        unsat    unsat    no         warn/err   warn/err    Dead code (⛔ warning for assert, ❌ error for cover)
   ➕     satisfiable                        sat      unknown  yes        error      note        Property can be true and is reachable from declaration entry, validity unknown
   ✖️     refuted if reachable               unsat    unknown  unknown    error      error       Property always false if reachable, reachability unknown
@@ -201,7 +201,7 @@ def alwaysFalseAndReachable (o : VCOutcome) : Bool :=
   | .unsat, .sat _ => true
   | _, _ => false
 
-def indecisiveAndReachable (o : VCOutcome) : Bool :=
+def canBeTrueOrFalseAndIsReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .sat _, .sat _ => true
   | _, _ => false
@@ -255,12 +255,12 @@ def isAlwaysTrue (o : VCOutcome) : Bool :=
   o.isPass
 
 def isReachable (o : VCOutcome) : Bool :=
-  o.passAndReachable || o.alwaysFalseAndReachable || o.indecisiveAndReachable
+  o.passAndReachable || o.alwaysFalseAndReachable || o.canBeTrueOrFalseAndIsReachable
 
 -- Backward compatibility aliases (old names with "is" prefix)
 def isPassAndReachable := passAndReachable
 def isRefutedAndReachable := alwaysFalseAndReachable
-def isIndecisiveAndReachable := indecisiveAndReachable
+def isCanBeTrueOrFalseAndIsReachable := canBeTrueOrFalseAndIsReachable
 def isUnreachable := unreachable
 def isSatisfiableValidityUnknown := satisfiableValidityUnknown
 def isAlwaysFalseReachabilityUnknown := alwaysFalseReachabilityUnknown
@@ -269,16 +269,18 @@ def isPassReachabilityUnknown := passReachabilityUnknown
 def isUnknown := unknown
 def isRefuted := alwaysFalseAndReachable
 def isRefutedIfReachable := alwaysFalseReachabilityUnknown
-def isIndecisive := indecisiveAndReachable
+def isCanBeTrueOrFalse := canBeTrueOrFalseAndIsReachable
 def isAlwaysTrueIfReachable := passReachabilityUnknown
 def isPassIfReachable := passReachabilityUnknown
 def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
-  if o.passAndReachable then "pass and reachable from declaration entry"
+  -- For cover: satisfiability sat means the cover is satisfied (pass)
+  if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
+  else if o.passAndReachable then "pass and reachable from declaration entry"
   else if o.alwaysFalseAndReachable then "refuted and reachable from declaration entry"
-  else if o.indecisiveAndReachable then "indecisive and reachable from declaration entry"
+  else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
   else if o.unreachable then "unreachable"
   else if o.satisfiableValidityUnknown then "satisfiable"
   else if o.alwaysFalseReachabilityUnknown then "refuted if reachable"
@@ -287,9 +289,11 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) : Stri
   else "unknown"
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
-  if o.passAndReachable then "✅"
+  -- For cover: satisfiability sat means the cover is satisfied (pass)
+  if property == .cover && o.isSatisfiable then "✅"
+  else if o.passAndReachable then "✅"
   else if o.alwaysFalseAndReachable then "❌"
-  else if o.indecisiveAndReachable then "🔶"
+  else if o.canBeTrueOrFalseAndIsReachable then "🔶"
   else if o.unreachable then
     if property == .cover then "❌" else "⛔"
   else if o.satisfiableValidityUnknown then "➕"
@@ -372,7 +376,7 @@ def VCResult.isSuccess (vr : VCResult) : Bool :=
 
 def VCResult.isFailure (vr : VCResult) : Bool :=
   match vr.outcome with
-  | .ok o => o.isRefuted || o.isIndecisive
+  | .ok o => o.isRefuted || o.isCanBeTrueOrFalse
   | .error _ => false
 
 def VCResult.isUnknown (vr : VCResult) : Bool :=
@@ -656,7 +660,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
       if vcr.obligation.property == .cover then
         if outcome.isPass then none
         else if outcome.isRefuted then some "cover property is not satisfiable"
-        else if outcome.isIndecisive then some "cover property is indecisive"
+        else if outcome.isCanBeTrueOrFalse then some "cover property can be both true and false"
         else if outcome.isUnreachable then some "cover property is unreachable"
         else if outcome.isSatisfiable then none
         else if outcome.isRefutedIfReachable then some "cover property is not satisfiable if reachable"
@@ -666,7 +670,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
       else
         if outcome.isPass then none
         else if outcome.isRefuted then some "assertion does not hold"
-        else if outcome.isIndecisive then some "assertion is indecisive (true or false depending on inputs)"
+        else if outcome.isCanBeTrueOrFalse then some "assertion can be both true and false"
         else if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
         else if outcome.isSatisfiable then none
         else if outcome.isRefutedIfReachable then some "assertion does not hold if reachable"

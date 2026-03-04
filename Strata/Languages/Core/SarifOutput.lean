@@ -21,13 +21,15 @@ open Strata.Sarif Strata.SMT
 
 /-- Convert VCOutcome to SARIF Level -/
 def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType) (outcome : VCOutcome) : Level :=
-  match mode with
+  -- For cover: satisfiability sat means the cover is satisfied (pass)
+  if property == .cover && outcome.isSatisfiable then .none
+  else match mode with
   | .deductive =>
     if outcome.passAndReachable || outcome.passReachabilityUnknown then
       .none
     else if outcome.unreachable then
-      if property == .cover then .error  -- cover can never be reached
-      else .warning                       -- dead code for assert
+      if property == .cover then .error
+      else .warning
     else
       .error
   | .bugFinding =>
@@ -36,8 +38,8 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
     else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then
       .error
     else if outcome.unreachable then
-      if property == .cover then .error  -- cover can never be reached
-      else .warning                       -- dead code for assert
+      if property == .cover then .error
+      else .warning
     else
       .note
 
