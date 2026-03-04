@@ -44,7 +44,21 @@ spec {
 
 -- Show the transformed output
 /--
-info: "verify_Test :\n{\n  init (x : int)\n  init (y : int)\n  init (old g : int)\n  init (g : int) := old g\n  assume [Test_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)\n  body_Test :\n  {\n    y := (x : int)\n    g := ((~Int.Add : (arrow int (arrow int int))) (g : int) #1)\n  }\n  assert [Test_ensures_2] ((~Int.Gt : (arrow int (arrow int bool))) (y : int) #0)\n  assert [Test_ensures_3] ((g : int) == ((~Int.Add : (arrow int (arrow int int))) (old g : int) #1))\n}"
+info: verify_Test :
+{
+  init (x : int)
+  init (y : int)
+  init (old g : int)
+  init (g : int) := old g
+  assume [Test_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)
+  body_Test :
+  {
+    y := (x : int)
+    g := ((~Int.Add : (arrow int (arrow int int))) (g : int) #1)
+  }
+  assert [Test_ensures_2] ((~Int.Gt : (arrow int (arrow int bool))) (y : int) #0)
+  assert [Test_ensures_3] ((g : int) == ((~Int.Add : (arrow int (arrow int int))) (old g : int) #1))
+}
 -/
 #guard_msgs in
 #eval
@@ -53,9 +67,9 @@ info: "verify_Test :\n{\n  init (x : int)\n  init (y : int)\n  init (old g : int
   | some proc =>
     let state := { CoreTransformState.emp with currentProgram := .some p }
     match (procToVerifyStmt proc p).run state with
-    | (.ok stmt, _) => toString (Std.format stmt)
-    | (.error e, _) => s!"Transformation failed: {e}"
-  | none => "Procedure not found"
+    | (.ok stmt, _) => Std.format stmt
+    | (.error e, _) => Std.format s!"Transformation failed: {e}"
+  | none => Std.format "Procedure not found"
 
 -- Verify transformation succeeds
 #guard_msgs in
@@ -89,7 +103,17 @@ spec {
 
 -- Show the transformed output
 /--
-info: "verify_Simple :\n{\n  init (x : bool)\n  init (y : bool)\n  assume [Simple_requires_0] (x : bool)\n  body_Simple :\n  {\n    y := (x : bool)\n  }\n  assert [Simple_ensures_1] (y : bool)\n}"
+info: verify_Simple :
+{
+  init (x : bool)
+  init (y : bool)
+  assume [Simple_requires_0] (x : bool)
+  body_Simple :
+  {
+    y := (x : bool)
+  }
+  assert [Simple_ensures_1] (y : bool)
+}
 -/
 #guard_msgs in
 #eval
@@ -98,9 +122,9 @@ info: "verify_Simple :\n{\n  init (x : bool)\n  init (y : bool)\n  assume [Simpl
   | some proc =>
     let state := { CoreTransformState.emp with currentProgram := .some p }
     match (procToVerifyStmt proc p).run state with
-    | (.ok stmt, _) => toString (Std.format stmt)
-    | (.error e, _) => s!"Transformation failed: {e}"
-  | none => "Procedure not found"
+    | (.ok stmt, _) => Std.format stmt
+    | (.error e, _) => Std.format s!"Transformation failed: {e}"
+  | none => Std.format "Procedure not found"
 
 #guard_msgs in
 example : True := by
@@ -135,7 +159,17 @@ spec {
 
 -- Show the transformed output
 /--
-info: "verify_WithFree :\n{\n  init (x : int)\n  init (y : int)\n  assume [WithFree_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)\n  body_WithFree :\n  {\n    y := (x : int)\n  }\n  assert [WithFree_ensures_3] ((y : int) == (x : int))\n}"
+info: verify_WithFree :
+{
+  init (x : int)
+  init (y : int)
+  assume [WithFree_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)
+  body_WithFree :
+  {
+    y := (x : int)
+  }
+  assert [WithFree_ensures_3] ((y : int) == (x : int))
+}
 -/
 #guard_msgs in
 #eval
@@ -144,9 +178,9 @@ info: "verify_WithFree :\n{\n  init (x : int)\n  init (y : int)\n  assume [WithF
   | some proc =>
     let state := { CoreTransformState.emp with currentProgram := .some p }
     match (procToVerifyStmt proc p).run state with
-    | (.ok stmt, _) => toString (Std.format stmt)
-    | (.error e, _) => s!"Transformation failed: {e}"
-  | none => "Procedure not found"
+    | (.ok stmt, _) => Std.format stmt
+    | (.error e, _) => Std.format s!"Transformation failed: {e}"
+  | none => Std.format "Procedure not found"
 
 #guard_msgs in
 example : True := by
@@ -186,7 +220,25 @@ spec {
 
 -- Show the transformed output
 /--
-info: "verify_MultipleModifies :\n{\n  init (x : int)\n  init (y : int)\n  init (old g1 : int)\n  init (g1 : int) := old g1\n  init (old g2 : bool)\n  init (g2 : bool) := old g2\n  assume [MultipleModifies_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)\n  body_MultipleModifies :\n  {\n    y := (x : int)\n    g1 := ((~Int.Add : (arrow int (arrow int int))) (g1 : int) #1)\n    g2 := #true\n  }\n  assert [MultipleModifies_ensures_2] ((y : int) == (x : int))\n  assert [MultipleModifies_ensures_3] ((g1 : int) == ((~Int.Add : (arrow int (arrow int int))) (old g1 : int) #1))\n  assert [MultipleModifies_ensures_4] (g2 : bool)\n}"
+info: verify_MultipleModifies :
+{
+  init (x : int)
+  init (y : int)
+  init (old g1 : int)
+  init (g1 : int) := old g1
+  init (old g2 : bool)
+  init (g2 : bool) := old g2
+  assume [MultipleModifies_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)
+  body_MultipleModifies :
+  {
+    y := (x : int)
+    g1 := ((~Int.Add : (arrow int (arrow int int))) (g1 : int) #1)
+    g2 := #true
+  }
+  assert [MultipleModifies_ensures_2] ((y : int) == (x : int))
+  assert [MultipleModifies_ensures_3] ((g1 : int) == ((~Int.Add : (arrow int (arrow int int))) (old g1 : int) #1))
+  assert [MultipleModifies_ensures_4] (g2 : bool)
+}
 -/
 #guard_msgs in
 #eval
@@ -195,9 +247,9 @@ info: "verify_MultipleModifies :\n{\n  init (x : int)\n  init (y : int)\n  init 
   | some proc =>
     let state := { CoreTransformState.emp with currentProgram := .some p }
     match (procToVerifyStmt proc p).run state with
-    | (.ok stmt, _) => toString (Std.format stmt)
-    | (.error e, _) => s!"Transformation failed: {e}"
-  | none => "Procedure not found"
+    | (.ok stmt, _) => Std.format stmt
+    | (.error e, _) => Std.format s!"Transformation failed: {e}"
+  | none => Std.format "Procedure not found"
 
 #guard_msgs in
 example : True := by
