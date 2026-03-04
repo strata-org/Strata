@@ -35,6 +35,28 @@ theorem ensuresToAsserts_length (postconditions : ListMap CoreLabel Procedure.Ch
   simp [ensuresToAsserts, List.filterMap_eq_filter_map]
   rw [List.length_filter_map]
 
+/-- requiresToAssumes preserves the expressions from preconditions -/
+theorem requiresToAssumes_preserves_exprs (preconditions : ListMap CoreLabel Procedure.Check) :
+    ∀ (label : CoreLabel) (check : Procedure.Check),
+      (label, check) ∈ preconditions.toList →
+      Statement.assume label check.expr check.md ∈ requiresToAssumes preconditions := by
+  intro label check h_in
+  simp [requiresToAssumes]
+  exists (label, check)
+
+/-- ensuresToAsserts preserves the expressions from non-free postconditions -/
+theorem ensuresToAsserts_preserves_exprs (postconditions : ListMap CoreLabel Procedure.Check) :
+    ∀ (label : CoreLabel) (check : Procedure.Check),
+      (label, check) ∈ postconditions.toList →
+      check.attr = Procedure.CheckAttr.Default →
+      Statement.assert label check.expr check.md ∈ ensuresToAsserts postconditions := by
+  intro label check h_in h_default
+  simp [ensuresToAsserts]
+  exists (label, check)
+  constructor
+  · exact h_in
+  · simp [h_default]
+
 /-! ## Main Correctness Theorem -/
 
 /-- Main soundness theorem: The transformation correctly sets up verification
