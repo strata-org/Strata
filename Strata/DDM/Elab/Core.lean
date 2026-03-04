@@ -864,7 +864,7 @@ def evalBindingSpec
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
     -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
     pure { ident, kind }
-  | .type b | .globalType b | .typeForward b =>
+  | .type b | .scopedType b | .typeForward b =>
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabTypeParams initSize args b.argsIndex
     let value : Option TypeExpr :=
@@ -1030,12 +1030,12 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
     let binding ← evalBindingSpec loc initSize spec args
     match spec with
-    | .globalType _ =>
-      -- For global types, add to GlobalContext instead of local bindings
+    | .scopedType _ =>
+      -- For scoped types, add to GlobalContext instead of local bindings
       let gctx := ctx.globalContext
       let kind := match binding.kind with
         | .type loc params value => GlobalKind.type params value
-        | _ => panic! "globalType binding must have type kind"
+        | _ => panic! "scopedType binding must have type kind"
       match gctx.define binding.ident kind with
       | .ok newGctx => pure (ctx.withGlobalContext newGctx)
       | .error msg => do

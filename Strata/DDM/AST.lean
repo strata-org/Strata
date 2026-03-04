@@ -1053,7 +1053,7 @@ A spec for introducing a new binding into a type context.
 inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
-| globalType (_ : TypeBindingSpec argDecls)  -- Type added to global context
+| scopedType (_ : TypeBindingSpec argDecls)  -- Type added to global context
 | typeForward (_ : TypeBindingSpec argDecls)  -- Forward declaration (no AST node)
 | datatype (_ : DatatypeBindingSpec argDecls)
 | tvar (_ : TvarBindingSpec argDecls)
@@ -1064,7 +1064,7 @@ namespace BindingSpec
 def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
-| .globalType v => v.nameIndex
+| .scopedType v => v.nameIndex
 | .typeForward v => v.nameIndex
 | .datatype v => v.nameIndex
 | .tvar v => v.nameIndex
@@ -1150,9 +1150,9 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := none }
-        | q`StrataDDL.declareGlobalType => do
+        | q`StrataDDL.declareScopedType => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
-            | newBindingErr s!"declareGlobalType has bad arguments {repr attr.args}."; return none
+            | newBindingErr s!"declareScopedType has bad arguments {repr attr.args}."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
@@ -1164,8 +1164,8 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                   let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
-                | _ => newBindingErr "declareGlobalType args invalid."; return none
-          some <$> .globalType <$> pure { nameIndex, argsIndex, defIndex := none }
+                | _ => newBindingErr "declareScopedType args invalid."; return none
+          some <$> .scopedType <$> pure { nameIndex, argsIndex, defIndex := none }
         | q`StrataDDL.declareTypeForward => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
             | newBindingErr s!"declareTypeForward has bad arguments {repr attr.args}."; return none
@@ -1847,7 +1847,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
         panic! s!"Expected new binding to be Type instead of {repr c}."
     | a =>
       panic! s!"Expected new binding to be bound to type instead of {repr a}."
-  | .type b | .globalType b | .typeForward b =>
+  | .type b | .scopedType b | .typeForward b =>
     let params : Array String :=
         match b.argsIndex with
         | none => #[]

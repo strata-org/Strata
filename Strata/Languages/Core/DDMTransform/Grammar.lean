@@ -322,7 +322,7 @@ op funcDecl_statement (name : Ident,
   inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }\n";
 
 // Type declaration statement
-@[declareGlobalType(name, some args)]
+@[declareScopedType(name, some args)]
 op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
   "type " name args ";\n";
 
