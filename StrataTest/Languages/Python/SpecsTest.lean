@@ -22,6 +22,10 @@ function "dict_function" {
   ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 function "list_function" {
   args: [
@@ -31,6 +35,10 @@ function "list_function" {
   ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 function "sequence_function" {
   args: [
@@ -40,6 +48,10 @@ function "sequence_function" {
   ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 function "base_function"{
   args: [
@@ -49,8 +61,16 @@ function "base_function"{
   ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
 }
 class "MainClass" {
+  bases: []
+  fields: []
+  classVars: []
+  subclasses: []
   function "main_method"{
     args: [
       self : class(MainClass) [hasDefault: false]
@@ -60,6 +80,10 @@ class "MainClass" {
     ]
     return: ident("typing.Any")
     overload: false
+    preconditions: [
+    ]
+    postconditions: [
+    ]
   }
 }
 function "main_function"{
@@ -70,6 +94,25 @@ function "main_function"{
   ]
   return: ident("typing.Any")
   overload: false
+  preconditions: [
+  ]
+  postconditions: [
+  ]
+}
+function "kwargs_function"{
+  args: [
+  ]
+  kwonly: [
+  ]
+  kwargs: kw : ident("builtins.int")
+  return: ident("typing.Any")
+  overload: false
+  preconditions: [
+    isinstance(kw[name], "str") "Expected name to be str"
+    value_ge(kw[count], 1) "Expected count >= 1"
+  ]
+  postconditions: [
+  ]
 }
 #end
 
