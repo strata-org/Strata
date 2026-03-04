@@ -20,7 +20,7 @@ procedure matrix_transpose (A: Matrix, m: int, n: int) returns (B: Matrix)
     while (j < n)
     {
       // Array assignment is parsed as regular assignment over recursive LHS
-      // indexing (`arr[i][j]... := v`), not a Boole-only 2D special case.
+      // indexing (`arr[i][j]... := v`).
       // Lowering recursively nests map `select`/`update`, so any index depth works.
       B[i][j] := A[j][i];
       // Previously would have been:
