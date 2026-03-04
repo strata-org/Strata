@@ -32,8 +32,14 @@ theorem requiresToAssumes_length (preconditions : ListMap CoreLabel Procedure.Ch
 theorem ensuresToAsserts_length (postconditions : ListMap CoreLabel Procedure.Check) :
     (ensuresToAsserts postconditions).length =
     (postconditions.toList.filter (fun (_, check) => check.attr = Procedure.CheckAttr.Default)).length := by
-  simp [ensuresToAsserts, List.filterMap_eq_filter_map]
-  rw [List.length_filter_map]
+  unfold ensuresToAsserts
+  induction postconditions.toList with
+  | nil => simp
+  | cons head tail ih =>
+    simp [List.filterMap]
+    cases head.2.attr
+    · simp [ih]
+    · simp [ih]
 
 /-- requiresToAssumes preserves the expressions from preconditions -/
 theorem requiresToAssumes_preserves_exprs (preconditions : ListMap CoreLabel Procedure.Check) :
@@ -41,7 +47,8 @@ theorem requiresToAssumes_preserves_exprs (preconditions : ListMap CoreLabel Pro
       (label, check) ∈ preconditions.toList →
       Statement.assume label check.expr check.md ∈ requiresToAssumes preconditions := by
   intro label check h_in
-  simp [requiresToAssumes]
+  unfold requiresToAssumes
+  simp [List.map_map]
   exists (label, check)
 
 /-- ensuresToAsserts preserves the expressions from non-free postconditions -/
@@ -51,7 +58,8 @@ theorem ensuresToAsserts_preserves_exprs (postconditions : ListMap CoreLabel Pro
       check.attr = Procedure.CheckAttr.Default →
       Statement.assert label check.expr check.md ∈ ensuresToAsserts postconditions := by
   intro label check h_in h_default
-  simp [ensuresToAsserts]
+  unfold ensuresToAsserts
+  simp [List.filterMap]
   exists (label, check)
   constructor
   · exact h_in
@@ -85,8 +93,8 @@ theorem procBodyVerify_produces_block (proc : Procedure) (p : Program) (st : Cor
   intro _
   rfl
 
-/-- Main soundness theorem: The transformation correctly sets up verification -/
-theorem procBodyVerify_soundness (proc : Procedure) (p : Program) (st : CoreTransformState) :
+/-- Main structural theorem: The transformation produces a block statement -/
+theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program) (st : CoreTransformState) :
     ∀ stmt st',
       (procToVerifyStmt proc p).run st = (.ok stmt, st') →
       ∃ label stmts md, stmt = Stmt.block label stmts md := by
@@ -95,6 +103,51 @@ theorem procBodyVerify_soundness (proc : Procedure) (p : Program) (st : CoreTran
   -- `Stmt.block verifyLabel allStmts #[]` on its last line
   -- The proof requires navigating through the ExceptT/StateM monad stack
   -- which is tedious but straightforward
+  sorry
+
+/-- Soundness: If a procedure call fails, the verification statement fails
+
+If executing a call to the procedure can fail (either precondition violation or
+postcondition violation), then executing the transformed verification statement
+on the same inputs will also fail.
+
+Equivalently (contrapositive): If the verification statement succeeds on all
+inputs satisfying the preconditions, then all calls to the procedure with
+those inputs will succeed.
+-/
+theorem procBodyVerify_soundness
+    (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (stmt : Statement) (st' : CoreTransformState)
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ : CoreStore) (lhs : List Expression.Ident) (args : List Expression.Expr) :
+    (procToVerifyStmt proc p).run st = (.ok stmt, st') →
+    -- If the call can fail (precondition or postcondition violation)
+    (∃ σ_call δ_call, ¬EvalStatement π φ δ σ 
+      (Stmt.cmd (CmdExt.call lhs proc.header.name.name args #[])) σ_call δ_call) →
+    -- Then the verification statement fails on corresponding inputs
+    (∃ σ_verify δ_verify, ¬EvalStatement π φ δ σ stmt σ_verify δ_verify) := by
+  sorry
+
+/-- Completeness: If the verification statement succeeds, procedure calls succeed
+
+If the transformed verification statement executes successfully for all inputs
+satisfying the preconditions, then all procedure calls with those inputs will
+execute successfully (no postcondition violations).
+
+This is the contrapositive of soundness, establishing that the transformation
+is both sound and complete.
+-/
+theorem procBodyVerify_completeness
+    (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (stmt : Statement) (st' : CoreTransformState)
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ : CoreStore) (lhs : List Expression.Ident) (args : List Expression.Expr) :
+    (procToVerifyStmt proc p).run st = (.ok stmt, st') →
+    -- If the verification statement succeeds
+    (∀ σ_verify δ_verify, EvalStatement π φ δ σ stmt σ_verify δ_verify) →
+    -- Then the procedure call succeeds
+    (∀ σ_call δ_call, EvalStatement π φ δ σ 
+      (Stmt.cmd (CmdExt.call lhs proc.header.name.name args #[])) σ_call δ_call) := by
   sorry
 
 end ProcBodyVerifyCorrect
