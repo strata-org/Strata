@@ -9,7 +9,7 @@ import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.CoreSMT.Diagnosis
+import Strata.Languages.Core.CoreSMT.DiagnosisTypes
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
@@ -159,7 +159,7 @@ structure DiagnosisInfo where
   isRefuted : Bool := false
   diagnosedFailures : List Strata.Core.CoreSMT.DiagnosedFailure := []
   statePathCondition : List Core.Expression.Expr := []
-  deriving Repr, Inhabited
+  deriving Inhabited
 
 /--
 A collection of all information relevant to a verification condition's

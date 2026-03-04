@@ -133,7 +133,7 @@ def testVerification (prog : Program) : IO Unit := do
   let solver ← Solver.spawn "cvc5" #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
   let reports ← B3.Verifier.programToSMT ast solver
   for report in reports do
-    for (result, _) in report.results do
+    for result in report.results do
       let marker := match result.outcome with
         | .pass => "✓"
         | .fail => "✗"

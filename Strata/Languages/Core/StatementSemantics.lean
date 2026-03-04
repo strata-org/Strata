@@ -16,7 +16,7 @@ namespace Core
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Core.Expression.Expr → Prop where
-| const :  Value (.const _ _)
+  | const :  Value (.const _ _)
   | bvar  :  Value (.bvar _ _)
   | op    :  Value (.op _ _ _)
   | abs   :  Value (.abs _ _ _ _)

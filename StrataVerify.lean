@@ -109,7 +109,7 @@ def main (args : List String) : IO UInt32 := do
             -- B3 uses a different result format, print directly and return empty array
             for report in reports do
               IO.println s!"\nProcedure: {report.procedureName}"
-              for (result, _) in report.results do
+              for result in report.results do
                 let marker := if result.outcome != .pass then "✗" else "✓"
                 let desc := match result.outcome with
                   | .fail => "counterexample found"

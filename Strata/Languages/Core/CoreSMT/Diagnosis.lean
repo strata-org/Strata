@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.ExprTranslator
+import Strata.Languages.Core.CoreSMT.DiagnosisTypes
 
 /-!
 # CoreSMT Diagnosis Engine
@@ -20,37 +21,6 @@ namespace Strata.Core.CoreSMT
 open Core
 open Strata.SMT
 open Lambda
-
-/-- Verification result for diagnosis -/
-inductive DiagnosisResultType
-  | refuted
-  | counterexample
-  | unknown
-  deriving Repr, Inhabited
-
-/-- Context for a diagnosed failure -/
-structure DiagnosisContext where
-  pathCondition : List Core.Expression.Expr := []
-  deriving Repr, Inhabited
-
-/-- Report for a diagnosed failure -/
-structure DiagnosisReport where
-  result : Except DiagnosisResultType Unit
-  context : DiagnosisContext
-  deriving Repr, Inhabited
-
-/-- Result of diagnosing a single sub-expression -/
-structure DiagnosedFailure where
-  expression : Core.Expression.Expr
-  isRefuted : Bool
-  report : DiagnosisReport
-  deriving Repr, Inhabited
-
-/-- Full diagnosis result -/
-structure DiagnosisResult where
-  diagnosedFailures : List DiagnosedFailure
-  statePathCondition : List Core.Expression.Expr := []
-  deriving Repr, Inhabited
 
 /-- Split a conjunction expression (And operator) into left and right.
     Matches the pattern: `app _ (app _ (op _ "Bool.And" _) lhs) rhs` -/

@@ -23,9 +23,6 @@ import Strata.Languages.Core.CoreSMT.Verifier
 import Strata.Languages.Core.CoreSMT.State
 import Strata.DL.SMT.SolverInterface
 import Strata.Languages.B3.Verifier
-import Strata.Languages.Core.CoreSMT.Verifier
-import Strata.Languages.Core.CoreSMT.State
-import Strata.DL.SMT.SolverInterface
 
 open Core (VerifyOptions VerboseMode)
 

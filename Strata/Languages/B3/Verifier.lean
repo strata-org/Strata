@@ -60,7 +60,7 @@ structure VerificationReport where
 
 structure ProcedureReport where
   procedureName : String
-  results : List (VerificationReport × Option Unit)
+  results : List VerificationReport
 
 /-- Convert Core VCResult to B3 VerificationReport -/
 private def vcResultToVerificationReport (vcResult : Core.VCResult) : VerificationReport :=
@@ -83,11 +83,11 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
   let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
   let reports := results.map vcResultToVerificationReport
-  return [{ procedureName := "main", results := reports.map (·, none) }]
+  return [{ procedureName := "main", results := reports }]
 
 def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
   let reports ← programToSMT prog solver
-  return reports.flatMap (fun r => r.results.map (fun (vr, _) => .ok vr))
+  return reports.flatMap (fun r => r.results.map (fun vr => .ok vr))
 
 end Strata.B3.Verifier
 

@@ -107,26 +107,4 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
       let _ ← (Solver.setLogic "ALL").run (← solverRef.get)
   : SolverInterface }
 
-/-- Initialize a solver with standard settings -/
-private def initializeSolver (solver : Solver) : IO Unit := do
-  let _ ← (Solver.setLogic "ALL").run solver
-
-/-- Create an SMTSolverInterface backed by cvc5 (default solver). -/
-def mkCvc5Solver : IO SolverInterface := do
-  let solver ← Solver.spawn Core.defaultSolver #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
-  initializeSolver solver
-  mkSolverInterfaceFromSolver solver
-
-/-- Create a SolverInterface from a specific solver path -/
-def mkSolverFromPath (path : String) : IO SolverInterface := do
-  let solver ← Solver.spawn path #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
-  initializeSolver solver
-  mkSolverInterfaceFromSolver solver
-
-/-- Create a SolverInterface from the SOLVER environment variable -/
-def mkSolverFromEnv : IO SolverInterface := do
-  match (← IO.getEnv "SOLVER") with
-  | .some path => mkSolverFromPath path
-  | .none => throw (IO.userError "SOLVER environment variable not defined.")
-
 end Strata.SMT
