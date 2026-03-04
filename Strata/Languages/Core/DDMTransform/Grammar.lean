@@ -131,6 +131,8 @@ fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " div "
 fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " mod " b;
 fn safediv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " / " b;
 fn safemod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " % " b;
+fn divt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " divt " b;
+fn modt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " modt " b;
 fn safedivt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " /t " b;
 fn safemodt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " %t " b;
 
