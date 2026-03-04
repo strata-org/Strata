@@ -22,7 +22,7 @@ def coreDefinitionsForLaurelDDM :=
 program Laurel;
 
 // The types for these Map functions are incorrect.
-// We'll fix them when Laurel supported polymorphism
+// We'll fix them when Laurel supports polymorphism
 function select(map: int, key: int) : int
   external
 

@@ -46,27 +46,23 @@ datatype Heap {
   MkHeap(data: Map Composite Map Field Box, nextReference: int)
 }
 
-// readField(heap, obj, field) = select(select(Heap..data(heap), obj), field)
+// Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]
 function readField(heap: Heap, obj: Composite, field: Field): Box {
-  select(select(Heap..data(heap), obj), field)
+  select(select(Heap..data!(heap), obj), field)
 }
 
-// updateField(heap, obj, field, val) =
-//   MkHeap(update(Heap..data(heap), obj, update(select(Heap..data(heap), obj), field, val)),
-//          Heap..nextReference(heap))
+// Update a field in the heap
 function updateField(heap: Heap, obj: Composite, field: Field, val: Box): Heap {
   MkHeap(
-    update(Heap..data(heap), obj,
-      update(select(Heap..data(heap), obj), field, val)),
-    Heap..nextReference(heap))
+    update(Heap..data!(heap), obj,
+      update(select(Heap..data!(heap), obj), field, val)),
+    Heap..nextReference!(heap))
 }
 
-// increment(heap) = MkHeap(Heap..data(heap), Heap..nextReference(heap) + 1)
+// Increment the heap allocation nextReference, returning a new heap
 function increment(heap: Heap): Heap {
-  MkHeap(Heap..data(heap), Heap..nextReference(heap) + 1)
+  MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
 }
-
-
 
 datatype Workaround  {}
 #end
