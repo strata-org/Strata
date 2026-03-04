@@ -191,6 +191,47 @@ CORPUS = [
     (".*^a",       "ab",     "match"),   # .* = "", ^ fires, a matches (trailing b ok)
     (".*^a",       "ba",     "match"),   # .* cannot be empty at start (b≠a) → no match
 
+    # .*^a in search: ^ only fires at position 0, so equivalent to ^a in search
+    (".*^a",       "a",      "search"),  # ^ fires at start, a matches → match
+    (".*^a",       "ba",     "search"),  # a≠b at position 0 → no match
+    (".*^a",       "xa",     "search"),  # a≠x at position 0 → no match
+
+    # | true, false => with multi-char r1: concat(a,b) is always-consuming, .* is not
+    ("ab$.*",      "ab",     "fullmatch"),  # $ fires, .* matches empty → match
+    ("ab$.*",      "abc",    "fullmatch"),  # c after $ → no match
+    ("ab$.*",      "ab",     "match"),
+    ("ab$.*",      "abc",    "match"),      # c blocks $ → no match
+    ("ab$.*",      "xab",    "search"),     # ab at end: $ fires → match
+    ("ab$.*",      "xabc",   "search"),     # c after ab: $ blocked → no match
+
+    # | true, false => with range r1
+    ("[a-z]$.*",   "a",      "fullmatch"),  # single lowercase: $ fires → match
+    ("[a-z]$.*",   "ab",     "fullmatch"),  # b after $ → no match
+    ("[a-z]$.*",   "xa",     "search"),     # a at end: $ fires → match
+    ("[a-z]$.*",   "xa1",    "search"),     # digit at end, not in [a-z] → no match
+
+    # | true, false => with grouped r1: (ab) wraps the consuming part
+    ("(ab)$.*",    "ab",     "fullmatch"),  # $ fires → match
+    ("(ab)$.*",    "abc",    "fullmatch"),  # c blocks $ → no match
+    ("(ab)$.*",    "ab",     "match"),
+
+    # | false, true =>: r1 non-consuming with content, r2 always-consuming with ^
+    # a?(^b): r1=optional(a) [non-consuming, has content], r2=group(concat(^,b)) [always-consuming]
+    ("a?(^b)",     "b",      "fullmatch"),  # a?="", ^ fires, b matches → match
+    ("a?(^b)",     "ab",     "fullmatch"),  # a?="a" → ^ at pos 1 fails; a?="" → b≠a → no match
+    ("a?(^b)",     "b",      "match"),
+    ("a?(^b)",     "ba",     "match"),      # a?="", ^ fires, b matches, trailing a ok → match
+    ("a?(^b)",     "ab",     "match"),      # no path works → no match
+
+    # | false, false =>: both non-consuming; a?^b parses as concat(concat(a?,^),b)
+    # inner concat(a?,^) is false,false; ^ fires only when a? matched empty
+    ("a?^b",       "b",      "fullmatch"),  # a?="", ^ fires, b matches → match
+    ("a?^b",       "a",      "fullmatch"),  # a?="" → b≠a; a?="a" → ^ at 1 fails → no match
+    ("a?^b",       "ab",     "fullmatch"),  # a?="" → b≠a at 0; a?="a" → ^ fails → no match
+    ("a?^b",       "b",      "match"),
+    ("a?^b",       "ba",     "match"),      # a?="", ^ fires, b matches, trailing a ok → match
+    ("a?^b",       "ab",     "match"),      # no path works → no match
+
     ("a$b",        "ab",     "match"),  # $ in middle: unmatchable
 
     # ^ in match mode: no-op at start (match already anchors there)
