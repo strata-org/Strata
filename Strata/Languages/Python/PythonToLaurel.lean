@@ -777,7 +777,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let result := if condStmts.isEmpty then
       ifStmt
     else
-      mkStmtExprMd (StmtExpr.Block (condStmts ++ [ifStmt]) none)
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [ifStmt]) none) md
 
     return (bodyCtx, [result])
 
@@ -804,7 +804,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let result := if condStmts.isEmpty then
       whileStmt
     else
-      mkStmtExprMd (StmtExpr.Block (condStmts ++ [whileStmt]) none)
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileStmt]) none) md
 
     return (loopCtx, [result])
 
@@ -838,7 +838,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let result := if condStmts.isEmpty then
       assertStmt
     else
-      mkStmtExprMd (StmtExpr.Block (condStmts ++ [assertStmt]) none)
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
 
     return (condCtx, [result])
 
@@ -918,7 +918,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- Create: { target = havoc; body_statements }
     -- This abstracts: execute body once with arbitrary target value
     let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName targetType (some (mkStmtExprMd .Hole)))
-    let loopBlock := mkStmtExprMd (StmtExpr.Block ([targetDecl] ++ bodyStmts) none)
+    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block ([targetDecl] ++ bodyStmts) none) md
 
     return (finalCtx, [loopBlock])
 
