@@ -397,6 +397,31 @@ theorem Subst.keys_of_apply_eq :
   case cons hd tl ih => simp_all [Maps.keys, apply]
   done
 
+/-- `Map.find?` after `SubstOne.applyLogic` maps the value through `subst`. -/
+theorem SubstOne.find?_applyLogic (new old : SubstOne) (x : TyIdentifier) :
+    Map.find? (SubstOne.applyLogic new old) x =
+    (Map.find? old x).map (LMonoTy.subst [new]) := by
+  induction old with
+  | nil => simp [SubstOne.applyLogic, Map.find?]
+  | cons hd rest ih =>
+    simp only [SubstOne.applyLogic, Map.find?]
+    split
+    · simp [Map.find?, *]
+    · exact ih
+
+/-- `Maps.find?` after `Subst.apply` maps the value through `subst`. -/
+theorem Subst.find?_apply (new : SubstOne) (S : Subst) (x : TyIdentifier) :
+    Maps.find? (Subst.apply new S) x =
+    (Maps.find? S x).map (LMonoTy.subst [new]) := by
+  induction S with
+  | nil => simp [Subst.apply, Maps.find?]
+  | cons hd tl ih =>
+    simp only [Subst.apply, Maps.find?]
+    rw [SubstOne.apply_eq_applyLogic, SubstOne.find?_applyLogic]
+    cases h : Map.find? hd x with
+    | some v => simp [h]
+    | none => simp [h]; exact ih
+
 /--
 No key in a well-formed substitution `newS` appears in the free variables of a
 composed substitution `(Subst.apply newS oldS)`. Note that there are no

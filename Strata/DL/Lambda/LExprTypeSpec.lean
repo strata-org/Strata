@@ -955,7 +955,98 @@ private theorem subst_orig_new_binding
     (h_lty : lty = LMonoTy.subst S orig_lty)
     (h_occurs : ¬(id ∈ lty.freeVars)) :
     LMonoTy.subst (Maps.insert (Subst.apply [(id, lty)] S) id lty) orig_lty = lty := by
-  sorry
+  subst h_lty
+  -- Abbreviate: let S' = the new substitution, lty = subst S orig_lty
+  -- S' is non-empty (has a binding for id)
+  have h_find_S'_id : Maps.find? (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+      id (LMonoTy.subst S orig_lty)) id = some (LMonoTy.subst S orig_lty) :=
+    Maps.find?_insert_self _ _ _
+  have hS' : Subst.hasEmptyScopes (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+      id (LMonoTy.subst S orig_lty)) = false :=
+    Subst.hasEmptyScopes_false_of_find _ id _ h_find_S'_id
+  -- The apply preserves keys, so find? (apply ...) id = none
+  have h_apply_none : Maps.find? (Subst.apply [(id, LMonoTy.subst S orig_lty)] S) id = none := by
+    rw [Subst.find?_apply]; simp [h_none]
+  -- For x ≠ id, find? S' x = (find? S x).map (subst [[(id, lty)]])
+  have h_find_ne : ∀ x, x ≠ id →
+      Maps.find? (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+        id (LMonoTy.subst S orig_lty)) x =
+      (Maps.find? S x).map (LMonoTy.subst [[(id, LMonoTy.subst S orig_lty)]]) := fun x hx =>
+    (Maps.find?_insert_ne_of_none _ _ _ _ hx h_apply_none).trans (Subst.find?_apply _ _ _)
+  -- subst [[(id, lty)]] t = t when id ∉ freeVars t
+  have h_single_noop : ∀ t : LMonoTy, ¬(id ∈ t.freeVars) →
+      LMonoTy.subst [[(id, LMonoTy.subst S orig_lty)]] t = t := fun t ht =>
+    LMonoTy.subst_no_relevant_keys _ _ (fun x hx => by
+      simp [Maps.keys, Map.keys]; intro heq; subst heq; exact ht hx)
+  by_cases hS : Subst.hasEmptyScopes S
+  · -- S has empty scopes: subst S is the identity
+    simp only [LMonoTy.subst_emptyS hS] at h_occurs h_find_ne ⊢
+    apply LMonoTy.subst_no_relevant_keys
+    intro x hx
+    have h_ne : x ≠ id := fun h => h_occurs (h ▸ hx)
+    exact Maps.find?_of_not_mem_values _ (by
+      rw [h_find_ne x h_ne, Maps.not_mem_keys_find?_none' S x
+        ((Subst.isEmpty_implies_keys_empty hS) ▸ (by simp))]; simp)
+  · -- S doesn't have empty scopes
+    have hS_ne : Subst.hasEmptyScopes S = false := by
+      revert hS; cases Subst.hasEmptyScopes S <;> simp
+    suffices ∀ mty, ¬(id ∈ (LMonoTy.subst S mty).freeVars) →
+        LMonoTy.subst (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+          id (LMonoTy.subst S orig_lty)) mty = LMonoTy.subst S mty from
+      this orig_lty h_occurs
+    intro mty h_nf
+    induction mty with
+    | ftvar x =>
+      by_cases h_id : x = id
+      · -- Vacuous: subst S (ftvar id) = ftvar id, so id ∈ freeVars
+        subst h_id; exfalso; apply h_nf
+        simp [LMonoTy.subst, hS_ne, h_none, LMonoTy.freeVars]
+      · -- x ≠ id
+        unfold LMonoTy.subst
+        simp only [hS', hS_ne, Bool.false_eq_true, ↓reduceIte, h_find_ne x h_id]
+        cases h_fx : Maps.find? S x with
+        | none => simp
+        | some t =>
+          simp only [Option.map]
+          exact h_single_noop t (by
+            have : LMonoTy.subst S (.ftvar x) = t := by
+              simp [LMonoTy.subst, hS_ne, h_fx]
+            rwa [this] at h_nf)
+    | bitvec n => simp [LMonoTy.subst]
+    | tcons name args ih =>
+      unfold LMonoTy.subst
+      simp only [hS', hS_ne, Bool.false_eq_true, ↓reduceIte]
+      congr 1
+      rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+      have h_nf' : ¬(id ∈ LMonoTys.freeVars (LMonoTys.substLogic S args)) := by
+        have h_eq : LMonoTy.subst S (.tcons name args) =
+            .tcons name (LMonoTys.subst S args) := by
+          unfold LMonoTy.subst; simp [hS_ne]
+        simp only [h_eq, LMonoTy.freeVars, LMonoTys.subst_eq_substLogic] at h_nf
+        exact h_nf
+      suffices ∀ xs,
+          (∀ m, m ∈ xs → ¬(id ∈ (LMonoTy.subst S m).freeVars) →
+            LMonoTy.subst (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+              id (LMonoTy.subst S orig_lty)) m = LMonoTy.subst S m) →
+          ¬(id ∈ LMonoTys.freeVars (LMonoTys.substLogic S xs)) →
+          LMonoTys.substLogic (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+            id (LMonoTy.subst S orig_lty)) xs = LMonoTys.substLogic S xs by
+        exact this args (fun m hm h_nfm => ih m hm h_nfm) h_nf'
+      intro xs; induction xs with
+      | nil => intros; simp [LMonoTys.substLogic, hS', hS_ne]
+      | cons a rest ih_rest =>
+        intro ih_xs h_nf_xs
+        simp only [LMonoTys.substLogic, hS', hS_ne, Bool.false_eq_true, ↓reduceIte]
+        have h_eq_cons : LMonoTys.substLogic S (a :: rest) =
+            LMonoTy.subst S a :: LMonoTys.substLogic S rest := by
+          simp [LMonoTys.substLogic, hS_ne]
+        rw [h_eq_cons, LMonoTys.freeVars_of_cons] at h_nf_xs
+        have h1 : ¬(id ∈ (LMonoTy.subst S a).freeVars) :=
+          fun h => h_nf_xs (List.mem_append_left _ h)
+        have h2 : ¬(id ∈ LMonoTys.freeVars (LMonoTys.substLogic S rest)) :=
+          fun h => h_nf_xs (List.mem_append_right _ h)
+        rw [ih_xs a (.head _) h1,
+            ih_rest (fun m hm => ih_xs m (.tail _ hm)) h2]
 
 /--
 Unifying a single constraint produces a substitution that makes the
