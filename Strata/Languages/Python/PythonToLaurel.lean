@@ -151,6 +151,11 @@ def pythonTypeToCoreType (typeStr : String) : Option String :=
   match typeStr with
   | "Dict[str, Any]" => some "DictStrAny"
   | "List[str]" => some "ListStr"
+  -- Optional[T] → TOrNone
+  | "Optional[str]" => some "StrOrNone"
+  | "Optional[int]" => some "IntOrNone"
+  | "Optional[bool]" => some "BoolOrNone"
+  | "Optional[Any]" => some "AnyOrNone"
   | _ => none
 
 /-- Translate Python type annotation to Laurel HighType -/
@@ -206,6 +211,24 @@ def resolveDispatch (ctx : TranslationContext)
     | _ => return none
 
 /-! ## Expression Translation -/
+
+/-- Get the Core type name of a translated expression, if it can be determined
+    from the translation context (variable types) or from the expression shape. -/
+def getExprTypeName (ctx : TranslationContext) (expr : StmtExprMd) : Option String :=
+  match expr.val with
+  | .Identifier name =>
+    match ctx.variableTypes.lookup name with
+    | some ty => match ty.val with
+      | .TCore s => some s
+      | .TInt => some "int"
+      | .TBool => some "bool"
+      | .TString => some "string"
+      | _ => none
+    | none => none
+  | .LiteralInt _ => some "int"
+  | .LiteralBool _ => some "bool"
+  | .LiteralString _ => some "string"
+  | _ => none
 
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
@@ -438,6 +461,23 @@ partial def translateCall (ctx : TranslationContext) (f : Python.expr SourceRang
         let paramType := sig.inputs[i]!
         translatedArgs := translatedArgs ++ [mkNoneForType paramType]
 
+    -- Coerce PyAnyType arguments to expected parameter types
+    let mut coercedArgs : List StmtExprMd := []
+    for i in [:translatedArgs.length] do
+      let arg := translatedArgs[i]!
+      if h : i < sig.inputs.length then
+        let expectedType := sig.inputs[i]
+        match getExprTypeName ctx arg with
+        | some "PyAnyType" =>
+          if expectedType != "PyAnyType" then
+            coercedArgs := coercedArgs ++ [mkStmtExprMd (.StaticCall s!"pyAny_to_{expectedType}" [arg])]
+          else
+            coercedArgs := coercedArgs ++ [arg]
+        | _ => coercedArgs := coercedArgs ++ [arg]
+      else
+        coercedArgs := coercedArgs ++ [arg]
+    translatedArgs := coercedArgs
+
     -- Check if function returns maybe_except (by convention, last output if present)
     if sig.outputs.length > 0 && sig.outputs.getLast! == "ExceptOrNone" then
       let call := mkStmtExprMd (StmtExpr.StaticCall funcName translatedArgs)
@@ -475,9 +515,17 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       -- Simple variable assignment: x = expr
       let target := name.val
       let valueExpr ← translateExpr ctx value
-      let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
-      let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
-      return (ctx, assignStmt)
+      -- Check if translateExpr returned a prelude procedure call (Assign with ExceptOrNone)
+      -- If so, replace the synthetic result0 target with the actual variable name
+      match valueExpr.val with
+      | .Assign targets call =>
+        let newTargets := [mkStmtExprMd (.Identifier target)] ++ targets.drop 1
+        let assignStmt := mkStmtExprMd (.Assign newTargets call)
+        return (ctx, assignStmt)
+      | _ =>
+        let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
+        let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
+        return (ctx, assignStmt)
     | .Attribute _ obj attr _ =>
       -- Field assignment: obj.field = expr or self.field = expr
       let valueExpr ← translateExpr ctx value
@@ -547,8 +595,28 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       else
         -- Regular call, not a constructor
         let initVal ← translateCall ctx f args.val.toList
-        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
-        return (newCtx, declStmt)
+        -- Check if translateCall returned a prelude procedure call (Assign with ExceptOrNone)
+        -- If so, emit Block [var declaration; (varName, maybe_except) := call] instead of
+        -- embedding the Assign as a LocalVariable initializer
+        match initVal.val with
+        | .Assign targets call =>
+          -- Use the procedure's actual first output type for the variable
+          let callFuncName := match call.val with
+            | .StaticCall name _ => some name
+            | _ => none
+          let actualType := match callFuncName.bind (fun n => List.lookup n ctx.preludeProcedures) with
+            | some (sig : CoreProcedureSignature) =>
+              if sig.outputs.length > 1 then mkCoreType sig.outputs[0]! else varType
+            | none => varType
+          let newCtx' := { ctx with variableTypes := ctx.variableTypes ++ [(varName, actualType)] }
+          let newTargets := [mkStmtExprMd (.Identifier varName)] ++ targets.drop 1
+          let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName actualType none)
+          let assignStmt := mkStmtExprMd (.Assign newTargets call)
+          let blockStmt := mkStmtExprMd (StmtExpr.Block [declStmt, assignStmt] none)
+          return (newCtx', blockStmt)
+        | _ =>
+          let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
+          return (newCtx, declStmt)
     | some initExpr => do
       -- Regular annotated assignment with initializer
       let initVal ← translateExpr newCtx initExpr

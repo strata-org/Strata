@@ -1,2 +1,3 @@
 *.python.st.ion
 *.sarif
+__pycache__

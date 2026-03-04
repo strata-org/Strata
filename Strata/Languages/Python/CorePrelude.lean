@@ -331,9 +331,37 @@ spec {
   assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 };
 
-datatype PyAnyType () {
-  PyAnyType_Inhabitant()
-};
+// PyAnyType: opaque type for Python's `Any` / unannotated values.
+// Coercion functions let the translator bridge PyAnyType and concrete sorts.
+type PyAnyType;
+
+// --- coercions: PyAnyType → concrete type ---
+function pyAny_to_int(x : PyAnyType) : int;
+function pyAny_to_bool(x : PyAnyType) : bool;
+function pyAny_to_string(x : PyAnyType) : string;
+function pyAny_to_ExceptOrNone(x : PyAnyType) : ExceptOrNone;
+function pyAny_to_StrOrNone(x : PyAnyType) : StrOrNone;
+function pyAny_to_IntOrNone(x : PyAnyType) : IntOrNone;
+function pyAny_to_BoolOrNone(x : PyAnyType) : BoolOrNone;
+function pyAny_to_AnyOrNone(x : PyAnyType) : AnyOrNone;
+function pyAny_to_DictStrAny(x : PyAnyType) : DictStrAny;
+function pyAny_to_ListStr(x : PyAnyType) : ListStr;
+function pyAny_to_Datetime(x : PyAnyType) : Datetime;
+function pyAny_to_None(x : PyAnyType) : None;
+function pyAny_to_Object(x : PyAnyType) : Object;
+
+// --- coercions: concrete type → PyAnyType ---
+function pyAny_from_int(x : int) : PyAnyType;
+function pyAny_from_bool(x : bool) : PyAnyType;
+function pyAny_from_string(x : string) : PyAnyType;
+function pyAny_from_ExceptOrNone(x : ExceptOrNone) : PyAnyType;
+function pyAny_from_StrOrNone(x : StrOrNone) : PyAnyType;
+function pyAny_from_IntOrNone(x : IntOrNone) : PyAnyType;
+function pyAny_from_DictStrAny(x : DictStrAny) : PyAnyType;
+function pyAny_from_ListStr(x : ListStr) : PyAnyType;
+function pyAny_from_Datetime(x : Datetime) : PyAnyType;
+function pyAny_from_None(x : None) : PyAnyType;
+function pyAny_from_Object(x : Object) : PyAnyType;
 
 #end
 
