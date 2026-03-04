@@ -99,13 +99,20 @@ theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program)
       (procToVerifyStmt proc p).run st = (.ok stmt, st') →
       ∃ label stmts md, stmt = Stmt.block label stmts md := by
   intro stmt st' h_run
-  -- The transformation always returns a block when successful
-  -- This is evident from the last line: return Stmt.block verifyLabel allStmts #[]
-  -- Proving this requires unwinding the monad, which is tedious but straightforward
-  -- For now, we assert this structural property
-  refine ⟨s!"verify_{proc.header.name.name}", _, #[], ?_⟩
-  -- The equality follows from the definition, but requires monad reasoning
-  sorry
+  -- Unfold and split on mapM result
+  unfold procToVerifyStmt at h_run
+  simp only [bind, pure, CoreTransformM, ExceptT.run] at h_run
+  split at h_run <;> rename_i h_split
+  · -- mapM succeeded
+    simp at h_run
+    obtain ⟨h_stmt_eq, _⟩ := h_run
+    -- Use the helper lemma
+    have h_struct := procBodyVerify_produces_block proc p st stmt st' h_split.choose h_split.choose_spec
+    rw [h_stmt_eq] at h_struct
+    rw [h_struct]
+    refine ⟨_, _, _, rfl⟩
+  · -- mapM failed
+    simp at h_run
 
 /-- Evaluation of a block statement -/
 theorem eval_block_iff
