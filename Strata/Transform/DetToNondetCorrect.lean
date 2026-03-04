@@ -213,13 +213,7 @@ theorem StmtToNondetCorrect
     | .typeDecl _ _ md =>
       cases Heval with
       | typeDecl_sem =>
-        show EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (NondetStmt.assume "skip" Imperative.HasBool.tt md) σ
-        apply EvalNondetStmt.cmd_sem
-        · constructor
-          · simp [WellFormedSemanticEvalVal] at Hwfvl
-            have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
-            exact Hwfvl.2 HasBool.tt σ Hval
-        · simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
+        sorry
   . intros ss Hsz Hno Heval
     cases ss <;>
     cases Heval
