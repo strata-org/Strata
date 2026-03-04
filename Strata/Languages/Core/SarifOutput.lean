@@ -50,8 +50,8 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
     pure { uri, startLine := startPos.line, startColumn := startPos.column }
   | _ => none
 
-/-- Convert PropertyType to a SARIF-friendly rule ID prefix -/
-def propertyTypeToRuleKind : Imperative.PropertyType → String
+/-- Convert PropertyType to a property classification string for SARIF output -/
+def propertyTypeToClassification : Imperative.PropertyType → String
   | .divisionByZero => "division-by-zero"
   | .cover => "cover"
   | .assert => "assert"
@@ -59,7 +59,7 @@ def propertyTypeToRuleKind : Imperative.PropertyType → String
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
-  let kind := propertyTypeToRuleKind vcr.obligation.property
+  let classification := propertyTypeToClassification vcr.obligation.property
   let level := outcomeToLevel vcr.result
   let messageText :=
     if vcr.isUnreachable then "Path is unreachable"
@@ -70,7 +70,7 @@ def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult)
     | some loc => #[locationToSarif loc]
     | none => #[]
 
-  { ruleId, kind, level, message, locations }
+  { ruleId, level, message, locations, properties := { propertyType := classification } }
 
 /-- Convert VCResults to a SARIF document -/
 def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
