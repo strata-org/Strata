@@ -16,7 +16,7 @@ namespace SMT
 
 /--
 A counterexample derived from an SMT solver is a map from an identifier
-to a string.
+to an `SMT.Term`.
 -/
 abbrev CounterEx (Ident : Type) := Map Ident String
 
@@ -72,6 +72,11 @@ def Result.formatModelIfSat {Ident} [ToFormat Ident]
 /--
 Find the Id for the SMT encoding of the variable `x` in the SMT encoder state `E`.
 -/
+
+def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
+  let cex ← Strata.SMT.CExParser.parseCEx m
+  return cex.pairs
+
 def getSMTId {Ident Ty} [ToFormat Ident]
     (typedVarToSMTFn : Ident → Ty → Except Format (String × Strata.SMT.TermType))
     (x : Ident) (ty : Option Ty) (E : Strata.SMT.EncoderState) :
@@ -83,27 +88,6 @@ def getSMTId {Ident Ty} [ToFormat Ident]
     let key : Strata.SMT.UF := { id := var', args := [], out := ty' }
     .ok (E.ufs[key]!)
 
-def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
-  let cex ← Strata.SMT.CExParser.parseCEx m
-  return cex.pairs
-
-def processModel {P : PureExpr} [ToFormat P.Ident]
-    (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
-    (vars : List P.TypedIdent) (cexs : List Strata.SMT.CExParser.KeyValue)
-    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
-  match vars with
-  | [] => return []
-  | (var, ty) :: vrest =>
-    let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
-    let value ← findCExValue id cexs
-    let pair := (var, value)
-    let rest ← processModel typedVarToSMTFn vrest cexs E
-    .ok (pair :: rest)
-  where findCExValue id cexs : Except Format String :=
-    match cexs.find? (fun p => p.key == id) with
-    | none => .error f!"Cannot find model for id: {id}"
-    | some p => .ok p.value
-
 def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
     cmd := solver
@@ -113,6 +97,81 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stderr: {repr output.stderr}\n\
   --                         stdout: {repr output.stdout}"
   return output
+
+---------------------------------------------------------------------
+-- SMTDDM-based parsing
+---------------------------------------------------------------------
+
+/--
+Parse a verdict line ("sat", "unsat", "unknown") via the SMTResponse DDM
+dialect. Returns `some .sat`, `some .unsat`, `some .unknown`, or `none`
+on parse/conversion failure.
+-/
+private def parseVerdict (line : String) : IO (Option (Result PUnit)) := do
+  let inputCtx := Strata.Parser.stringInputContext "solver" (line ++ "\n")
+  let prg ←
+    try Strata.Elab.parseStrataProgramFromDialect
+          Strata.SMTResponseDDM.smtResponseDialects "SMTResponse" inputCtx
+    catch _ => return none
+  if prg.commands.isEmpty then return none
+  let op := prg.commands[0]!
+  match Strata.SMTResponseDDM.Command.ofAst op with
+  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_sat _)))     => return some (.sat [])
+  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_unsat _)))   => return some .unsat
+  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_unknown _))) => return some .unknown
+  | _ => return none
+
+/--
+Parse a `(get-value ...)` model response using the SMTResponse DDM dialect.
+Uses `parseCategoryFromDialect` targeting `SMTResponse.GetValueResponse`
+directly, which avoids the ambiguity that arises when parsing at the
+`Command` level.
+
+Returns a list of (key-string, value-Term) pairs on success.
+-/
+private def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) := do
+  let inputCtx := Strata.Parser.stringInputContext "solver-model" modelStr
+  let op ←
+    try Strata.Elab.parseCategoryFromDialect
+          Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
+    catch _ => return []
+  match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
+  | .ok (.get_value_response _ vps) =>
+    let pairs ← vps.val.toList.filterMapM fun vp =>
+      match vp with
+      | .valuation_pair _ t1 t2 => do
+        match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 with
+        | .ok t2' =>
+          return .some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
+                  t2')
+        | .error _ =>
+          -- The model has an SMT expression (e.g., (lambda ...)) which cannot
+          -- be represented in Strata.SMT.Term. Filter out this variable from
+          -- the model.
+          return .none
+    return pairs
+  | .error _ => return []
+
+/--
+Process a parsed model (list of key-string / value-Term pairs) against the
+expected variables, matching each variable's SMT-encoded name to its
+value in the model.
+-/
+private def processModel {P : PureExpr} [ToFormat P.Ident]
+    (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
+    (vars : List P.TypedIdent) (pairs : List Strata.SMT.CExParser.KeyValue)
+    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
+  match vars with
+  | [] => return []
+  | (var, ty) :: vrest =>
+    let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
+    let value ← findValue id pairs
+    let rest ← processModel typedVarToSMTFn vrest pairs E
+    .ok ((var, value) :: rest)
+  where findValue id pairs : Except Format String :=
+    match pairs.find? (fun p => p.key == id) with
+    | none => .error f!"Cannot find model for id: {id}"
+    | some p => .ok p.value
 
 /--
 Interprets the output of SMT solver.
