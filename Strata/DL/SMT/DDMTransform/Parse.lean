@@ -89,7 +89,6 @@ def specialCharsInSimpleSymbol := [
     ("questionmark", "?"),
     -- ("bang", "!"),
     ("period", "."),
-    ("dollar", "$"),
     -- ("underbar", "_"),
     ("tilde", "~"),
     ("amp", "&"),

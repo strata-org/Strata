@@ -117,11 +117,12 @@ def stringInputContext (fileName : System.FilePath) (contents : String) : InputC
   fileName := fileName.toString
   fileMap  := FileMap.ofString contents
 
+-- When updating this, you will want to consider updating Strata.isIdBegin in Strata/DDM/Format.lean as well.
 private def strataIsIdFirst (c : Char) : Bool :=
-  c.isAlpha || c == '_'
+  c.isAlpha || c == '_' || c == '$'
 
 private def strataIsIdRest (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '$'
 
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
   strataIsIdFirst c || isIdBeginEscape c

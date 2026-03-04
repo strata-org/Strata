@@ -10,6 +10,7 @@ import Strata.Languages.Core.Core
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
+import Strata.DL.Imperative.SMTUtils
 
 ---------------------------------------------------------------------
 
@@ -685,5 +686,81 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   match smtctx with
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt
+
+/--
+Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
+
+Handles:
+- Primitives: bool, int, real, bitvec, string
+- UF applications (free variables, constructors, uninterpreted functions)
+- Datatype constructors/selectors/testers
+
+Falls back to rendering the term as a free variable with its string representation
+for any unsupported term shape.
+
+`constructorNames` is the set of known datatype constructor names.  When a
+bare `SMT.Term.var` matches a constructor name (zero-argument constructor
+such as `Nil`), the result uses `.op` instead of `.fvar` so that the
+counterexample formatter can distinguish constructors from plain variables
+and render them with the correct Core data structure.
+-/
+def smtTermToLExpr (t : Strata.SMT.Term)
+    (constructorNames : Std.HashSet String := {}) : LExpr CoreLParams.mono :=
+  match t with
+  | .prim (.bool b)       => .boolConst () b
+  | .prim (.int i)        => .intConst () i
+  | .prim (.real d)       => .realConst () d.toRat
+  | .prim (.bitvec b)     => .bitvecConst () _ b
+  | .prim (.string s)     => .strConst () s
+  | .var v                =>
+    -- Zero-arg constructors arrive as plain variables from the SMT solver.
+    -- Mark them with `.op` so the formatter can emit `Name()`.
+    if constructorNames.contains v.id then
+      .op () v.id none
+    else
+      .fvar () v.id none
+  | .app (.core (.uf uf)) args _retTy =>
+    -- Constructor names use `.op` so the formatter can distinguish them
+    -- from plain variables (e.g., `Nil` constructor must not be .fvar)
+    let fnExpr : LExpr CoreLParams.mono :=
+      if constructorNames.contains uf.id then
+        .op () uf.id none
+      else
+        .fvar () uf.id none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .app (.datatype_op _kind name) args _retTy =>
+    let fnExpr : LExpr CoreLParams.mono := .op () name none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .app op args _ =>
+    -- Generic fallback for other ops: render as op name applied to args
+    let opName := op.mkName
+    let fnExpr : LExpr CoreLParams.mono := .op () opName none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .none _ty             => .op () "none" none
+  | .some inner           => .app () (.op () "some" none) (smtTermToLExpr inner constructorNames)
+  | .quant _ _ _ _        =>
+    -- Quantifiers in model values are unusual; fall back to string repr
+    let s := match Strata.SMTDDM.termToString t with
+             | .ok s => s | .error _ => repr t |>.pretty
+    .fvar () s none
+
+/--
+Extract the set of datatype constructor names from an `SMT.Context`.
+-/
+def SMT.Context.getConstructorNames (ctx : SMT.Context) : Std.HashSet String :=
+  ctx.datatypeFuns.toList.foldl (init := {}) fun acc (name, (kind, _)) =>
+    if kind == .constructor then acc.insert name else acc
+
+/--
+Convert a counterexample map from `SMT.Term` values to `LExpr` values,
+so that model values can be displayed using Core's expression formatter.
+
+`constructorNames` allows zero-argument constructors (which the SMT solver
+returns as plain variables) to be distinguished from ordinary variables (.fvar)
+-/
+def convertCounterEx (cex : Imperative.SMT.CounterEx Expression.Ident)
+    (constructorNames : Std.HashSet String := {})
+    : List (Expression.Ident × LExpr CoreLParams.mono) :=
+  cex.map fun (id, t) => (id, smtTermToLExpr t constructorNames)
 
 end Core
