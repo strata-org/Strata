@@ -116,7 +116,8 @@ def strataDialectImpl: CommandElab := fun (stx : Syntax) => do
         | throwError s!"Expected input context"
   let inputCtx ← HasInputContext.getInputContext
   let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
-  let (_, d, s) ← Strata.Elab.elabDialect {} loaded inputCtx p e
+  let fm ← Strata.DialectFileMap.new loaded
+  let (d, s) ← Strata.Elab.elabDialect fm inputCtx p e
   if !s.errors.isEmpty then
     for e in s.errors do
       logMessage e
@@ -175,12 +176,12 @@ def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
     if ! (← absPath.pathExists) then
       throwErrorAt pathStx "Could not find file {dialectPath}"
     let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
-    let (_, r) ← Elab.loadDialectFromPath {} loaded #[]
-                        (path := dialectPath) (actualPath := absPath) (expected := .none)
+    let fm ← Strata.DialectFileMap.new loaded
+    let r ← Elab.loadDialectFromFile fm (path := dialectPath) (actualPath := absPath)
     -- Add dialect to command environment
     match r with
     | .ok d =>
-        declareDialect d
+      declareDialect d
     | .error errorMessages =>
       assert! errorMessages.size > 0
       throwError (← Elab.mkErrorReport errorMessages)
