@@ -31,27 +31,25 @@ def showTransformed (prog : Strata.Program) (procName : String) : Except String 
   let state := { CoreTransformState.emp with currentProgram := .some p }
   let (.ok stmt, _) := (procToVerifyStmt proc p).run state
     | throw "Transformation failed"
-  return Std.format stmt
+  return Core.formatStatement stmt
 
 /-! ## Test 1: Procedure with modifies clause -/
 
 -- Show the transformed output
 /--
-info: ok: verify_Test :
-{
-  init (x : int)
-  init (y : int)
-  init (old g : int)
-  init (g : int) := old g
-  assume [Test_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)
-  body_Test :
-  {
-    y := (x : int)
-    g := ((~Int.Add : (arrow int (arrow int int))) (g : int) #1)
+info: ok: verify_Test: {
+  var x : int;
+  var y : int;
+  var |old g| : int;
+  var g : int := old g;
+  assume [Test_requires_1]: x > 0;
+  body_Test: {
+    y := x;
+    g := g + 1;
+    }
+  assert [Test_ensures_2]: y > 0;
+  assert [Test_ensures_3]: g == old g + 1;
   }
-  assert [Test_ensures_2] ((~Int.Gt : (arrow int (arrow int bool))) (y : int) #0)
-  assert [Test_ensures_3] ((g : int) == ((~Int.Add : (arrow int (arrow int int))) (old g : int) #1))
-}
 -/
 #guard_msgs in
 #eval! showTransformed
@@ -76,17 +74,15 @@ info: ok: verify_Test :
 
 -- Show the transformed output
 /--
-info: ok: verify_Simple :
-{
-  init (x : bool)
-  init (y : bool)
-  assume [Simple_requires_0] (x : bool)
-  body_Simple :
-  {
-    y := (x : bool)
+info: ok: verify_Simple: {
+  var x : bool;
+  var y : bool;
+  assume [Simple_requires_0]: x;
+  body_Simple: {
+    y := x;
+    }
+  assert [Simple_ensures_1]: y;
   }
-  assert [Simple_ensures_1] (y : bool)
-}
 -/
 #guard_msgs in
 #eval! showTransformed
@@ -107,17 +103,15 @@ info: ok: verify_Simple :
 
 -- Show the transformed output
 /--
-info: ok: verify_WithFree :
-{
-  init (x : int)
-  init (y : int)
-  assume [WithFree_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)
-  body_WithFree :
-  {
-    y := (x : int)
+info: ok: verify_WithFree: {
+  var x : int;
+  var y : int;
+  assume [WithFree_requires_1]: x > 0;
+  body_WithFree: {
+    y := x;
+    }
+  assert [WithFree_ensures_3]: y == x;
   }
-  assert [WithFree_ensures_3] ((y : int) == (x : int))
-}
 -/
 #guard_msgs in
 #eval! showTransformed
@@ -140,25 +134,23 @@ info: ok: verify_WithFree :
 
 -- Show the transformed output
 /--
-info: ok: verify_MultipleModifies :
-{
-  init (x : int)
-  init (y : int)
-  init (old g1 : int)
-  init (g1 : int) := old g1
-  init (old g2 : bool)
-  init (g2 : bool) := old g2
-  assume [MultipleModifies_requires_1] ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0)
-  body_MultipleModifies :
-  {
-    y := (x : int)
-    g1 := ((~Int.Add : (arrow int (arrow int int))) (g1 : int) #1)
-    g2 := #true
+info: ok: verify_MultipleModifies: {
+  var x : int;
+  var y : int;
+  var |old g1| : int;
+  var g1 : int := old g1;
+  var |old g2| : bool;
+  var g2 : bool := old g2;
+  assume [MultipleModifies_requires_1]: x > 0;
+  body_MultipleModifies: {
+    y := x;
+    g1 := g1 + 1;
+    g2 := true;
+    }
+  assert [MultipleModifies_ensures_2]: y == x;
+  assert [MultipleModifies_ensures_3]: g1 == old g1 + 1;
+  assert [MultipleModifies_ensures_4]: g2;
   }
-  assert [MultipleModifies_ensures_2] ((y : int) == (x : int))
-  assert [MultipleModifies_ensures_3] ((g1 : int) == ((~Int.Add : (arrow int (arrow int int))) (old g1 : int) #1))
-  assert [MultipleModifies_ensures_4] (g2 : bool)
-}
 -/
 #guard_msgs in
 #eval! showTransformed
