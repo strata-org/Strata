@@ -12,6 +12,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
@@ -364,6 +365,47 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   let pyPrelude : Core.Program := { decls := preludeDecls.toList }
   return { corePrelude := pyPrelude, overloads := allOverloads }
 
+/-- Read dispatch Ion files and merge their overload tables. -/
+def readDispatchOverloads
+    (dispatchPaths : Array String)
+    : IO Strata.Python.Specs.ToLaurel.OverloadTable := do
+  let mut tbl :
+    Strata.Python.Specs.ToLaurel.OverloadTable := {}
+  for dispatchPath in dispatchPaths do
+    let ionFile : System.FilePath := dispatchPath
+    let sigs ←
+      match ← Strata.Python.Specs.readDDM ionFile
+              |>.toBaseIO with
+      | .ok t => pure t
+      | .error msg =>
+        exitFailure
+          s!"Could not read dispatch file \
+            {ionFile}: {msg}"
+    let (overloads, errors) :=
+      Strata.Python.Specs.ToLaurel.extractOverloads
+        dispatchPath sigs
+    if errors.size > 0 then
+      IO.eprintln
+        s!"{errors.size} dispatch warning(s) \
+          for {ionFile}:"
+      for err in errors do
+        IO.eprintln s!"  {err.file}: {err.message}"
+    for (funcName, fnOverloads) in overloads do
+      let existing := tbl.getD funcName {}
+      tbl := tbl.insert funcName
+        (fnOverloads.fold (init := existing)
+          fun acc k v => acc.insert k v)
+  return tbl
+
+/-- Extract top-level Python statements from a
+    Strata program. Calls `toPyCommands` and
+    `unwrapModule` on the single command. -/
+def extractStmtsFromProgram
+    (pgm : Strata.Program)
+    : Array (Strata.Python.stmt Strata.SourceRange) :=
+  let cmds := Strata.toPyCommands pgm.commands
+  Strata.unwrapModule cmds[0]!
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -389,28 +431,58 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print pgm
     assert! cmds.size == 1
 
-    let pySpecResult ← buildPySpecPrelude (pflags.getRepeated "pyspec")
+    -- Build dispatch overload table
+    let dispatchPaths := pflags.getRepeated "dispatch"
+    let dispatchOverloads ←
+      readDispatchOverloads dispatchPaths
+
+    -- Auto-resolve pyspec files used by the program
+    let stmts := Strata.unwrapModule cmds[0]!
+    let resolveState :=
+      Strata.Python.Specs.IdentifyOverloads.resolveOverloads
+        dispatchOverloads stmts
+    for w in resolveState.warnings do
+      IO.eprintln s!"warning: {w}"
+    let mut autoSpecPaths : Array String := #[]
+    if h : dispatchPaths.size > 0 then
+      let firstDispatch : System.FilePath :=
+        dispatchPaths[0]
+      let dispatchDir :=
+        firstDispatch.parent.getD "."
+      let resolvedMods :=
+        resolveState.modules.toArray.qsort (· < ·)
+      for modName in resolvedMods do
+        match Strata.Python.Specs.ModuleName.ofString
+            modName with
+        | .error _ =>
+          IO.eprintln
+            s!"warning: invalid module name \
+              '{modName}', skipping"
+        | .ok mod =>
+          let specPath : System.FilePath :=
+            dispatchDir / mod.strataFileName
+          if ← specPath.pathExists then
+            autoSpecPaths :=
+              autoSpecPaths.push specPath.toString
+          else
+            IO.eprintln
+              s!"warning: auto-resolved pyspec \
+                not found: {specPath}"
+    let allSpecPaths :=
+      autoSpecPaths ++ pflags.getRepeated "pyspec"
+
+    -- Build PySpec prelude from combined paths
+    let pySpecResult ← buildPySpecPrelude allSpecPaths
     let pyPrelude := pySpecResult.corePrelude
 
-    -- Extract overload dispatch tables from --dispatch files
+    -- Merge dispatch overloads into prelude table
     let mut allOverloads := pySpecResult.overloads
-    for dispatchPath in pflags.getRepeated "dispatch" do
-      let ionFile : System.FilePath := dispatchPath
-      let sigs ←
-        match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
-        | .ok t => pure t
-        | .error msg =>
-          exitFailure s!"Could not read dispatch file {ionFile}: {msg}"
-      let (overloads, errors) :=
-        Strata.Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
-      if errors.size > 0 then
-        IO.eprintln s!"{errors.size} dispatch warning(s) for {ionFile}:"
-        for err in errors do
-          IO.eprintln s!"  {err.file}: {err.message}"
-      for (funcName, fnOverloads) in overloads do
-        let existing := allOverloads.getD funcName {}
-        allOverloads := allOverloads.insert funcName
-          (fnOverloads.fold (init := existing) fun acc k v => acc.insert k v)
+    for (funcName, fnOverloads) in
+        dispatchOverloads do
+      let existing := allOverloads.getD funcName {}
+      allOverloads := allOverloads.insert funcName
+        (fnOverloads.fold (init := existing)
+          fun acc k v => acc.insert k v)
 
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
@@ -586,6 +658,37 @@ def pySpecToLaurelCommand : Command where
     for proc in pgm.staticProcedures do
       IO.println s!"  {Strata.Laurel.formatProcedure proc}"
 
+def pyResolveOverloadsCommand : Command where
+  name := "pyResolveOverloads"
+  args := [ "python_path", "dispatch_ion" ]
+  help := "Identify which overloaded service modules a \
+    Python program uses. Prints one module name per \
+    line to stdout."
+  callback := fun v _ => do
+    let pythonFile : System.FilePath := v[0]
+    let dispatchPath := v[1]
+    -- Read dispatch overload table
+    let overloads ←
+      readDispatchOverloads #[dispatchPath]
+    -- Convert .py to Python AST
+    let stmts ←
+      IO.FS.withTempFile fun _handle dialectFile => do
+        IO.FS.writeBinFile dialectFile
+          Strata.Python.Python.toIon
+        match ← Strata.Python.pythonToStrata
+            dialectFile pythonFile |>.toBaseIO with
+        | .ok s => pure s
+        | .error msg => exitFailure msg
+    -- Walk AST and collect modules
+    let state :=
+      Strata.Python.Specs.IdentifyOverloads.resolveOverloads
+        overloads stmts
+    for w in state.warnings do
+      IO.eprintln s!"warning: {w}"
+    let sorted := state.modules.toArray.qsort (· < ·)
+    for m in sorted do
+      IO.println m
+
 /-- Print a string word-wrapped to `width` columns with `indent` spaces of indentation. -/
 private def printIndented (indent : Nat) (s : String) (width : Nat := 80) : IO Unit := do
   let pad := "".pushn ' ' indent
@@ -617,6 +720,7 @@ def commandGroups : List CommandGroup := [
     commands := [javaGenCommand] },
   { name := "Python"
     commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand, pyTranslateCommand,
+                 pyResolveOverloadsCommand,
                  pySpecsCommand, pySpecToLaurelCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand] },
