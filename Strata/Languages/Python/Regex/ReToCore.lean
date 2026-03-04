@@ -86,8 +86,14 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     mkApp () (.op () reAllCharFunc.name none) []
   | .empty => Core.emptyRegex
   | .complement r =>
-    let rb := toCore r atStart atEnd
-    mkApp () (.op () reCompFunc.name none) [rb]
+    -- atStart/atEnd are passed as false: the inner expression is a character-set
+    -- description ([^...]) which never contains anchors, so position context is
+    -- irrelevant. re.comp(X) is complement over all strings, so we intersect with
+    -- re.allchar() to restrict to single characters, matching [^...] semantics.
+    let rb := toCore r false false
+    mkApp () (.op () reInterFunc.name none)
+      [mkApp () (.op () reAllCharFunc.name none) [],
+       mkApp () (.op () reCompFunc.name none) [rb]]
   | .anchor_start =>
     if atStart then Core.emptyRegex else Core.unmatchableRegex
   | .anchor_end =>
@@ -160,13 +166,33 @@ def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
   match parseTop pyRegex with
   | .error err => (mkApp () (.op () reAllFunc.name none) [], some err)
   | .ok ast =>
-    let dotStar := (RegexAST.star (.anychar))
-    -- Wrap with `.*` based on mode.
-    let ast := match mode with
-    | .fullmatch => ast
-    | .match => .concat ast dotStar
-    | .search => .concat dotStar (.concat ast dotStar)
-    let result := RegexAST.toCore ast true true
+    let mkConcat a b := mkApp () (.op () reConcatFunc.name none) [a, b]
+    let mkUnion  a b := mkApp () (.op () reUnionFunc.name none)  [a, b]
+    -- dotStar: passed with atStart=false, atEnd=false since anychar ignores both.
+    let dotStar := RegexAST.toCore (.star .anychar) false false
+    -- We compute toCore(ast, atStart, atEnd) for each combination of anchor
+    -- activation and union the results.  When ^ is present, the atStart=false
+    -- variants yield unmatchable (^ with atStart=false → re.none()), so those
+    -- union branches vanish.  Likewise for $ and atEnd=false.  This correctly
+    -- prevents anchors from being "swallowed" by a prepended/appended dotStar.
+    let result := match mode with
+    | .fullmatch => RegexAST.toCore ast true true
+    | .match =>
+        -- atStart always true (match anchors at string start).
+        -- union: (1) $ fires → no trailing content; (2) $ absent → trailing .* .
+        let core_tt := RegexAST.toCore ast true true
+        let core_tf := RegexAST.toCore ast true false
+        mkUnion core_tt (mkConcat core_tf dotStar)
+    | .search =>
+        -- Four combinations of (^ active, $ active).
+        let core_tt := RegexAST.toCore ast true  true
+        let core_tf := RegexAST.toCore ast true  false
+        let core_ft := RegexAST.toCore ast false true
+        let core_ff := RegexAST.toCore ast false false
+        mkUnion core_tt
+          (mkUnion (mkConcat core_tf dotStar)
+            (mkUnion (mkConcat dotStar core_ft)
+                     (mkConcat dotStar (mkConcat core_ff dotStar))))
     (result, none)
 
 -------------------------------------------------------------------------------
