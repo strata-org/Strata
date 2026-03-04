@@ -1,5 +1,5 @@
 Successfully parsed.
-SimpleProc.core.st(22, 2) [Test_ensures_0]: ✔️ pass if reachable
-SimpleProc.core.st(23, 2) [Test_ensures_1]: ✔️ pass if reachable
-SimpleProc.core.st(24, 2) [Test_ensures_2]: ✔️ pass if reachable
+SimpleProc.core.st(22, 2) [Test_ensures_0]: ✔️ always true if reachable
+SimpleProc.core.st(23, 2) [Test_ensures_1]: ✔️ always true if reachable
+SimpleProc.core.st(24, 2) [Test_ensures_2]: ✔️ always true if reachable
 All 3 goals passed.

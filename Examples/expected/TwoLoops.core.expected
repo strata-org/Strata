@@ -1,6 +1,6 @@
 Successfully parsed.
-TwoLoops.core.st(12, 2) [entry_invariant_0_0]: ✔️ pass if reachable
-TwoLoops.core.st(12, 2) [arbitrary_iter_maintain_invariant_0_0]: ✔️ pass if reachable
-TwoLoops.core.st(19, 2) [entry_invariant_1_0]: ✔️ pass if reachable
-TwoLoops.core.st(19, 2) [arbitrary_iter_maintain_invariant_1_0]: ✔️ pass if reachable
+TwoLoops.core.st(12, 2) [entry_invariant_0_0]: ✔️ always true if reachable
+TwoLoops.core.st(12, 2) [arbitrary_iter_maintain_invariant_0_0]: ✔️ always true if reachable
+TwoLoops.core.st(19, 2) [entry_invariant_1_0]: ✔️ always true if reachable
+TwoLoops.core.st(19, 2) [arbitrary_iter_maintain_invariant_1_0]: ✔️ always true if reachable
 All 4 goals passed.

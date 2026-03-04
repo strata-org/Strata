@@ -1,8 +1,8 @@
 Successfully parsed.
-LoopSimple.core.st(13, 2) [entry_invariant_0_0]: ✔️ pass if reachable
-LoopSimple.core.st(13, 2) [entry_invariant_0_1]: ✔️ pass if reachable
-LoopSimple.core.st(13, 2) [arbitrary_iter_maintain_invariant_0_0]: ✔️ pass if reachable
-LoopSimple.core.st(13, 2) [arbitrary_iter_maintain_invariant_0_1]: ✔️ pass if reachable
-LoopSimple.core.st(20, 2) [sum_assert]: ✔️ pass if reachable
-LoopSimple.core.st(21, 2) [neg_cond]: ✔️ pass if reachable
+LoopSimple.core.st(13, 2) [entry_invariant_0_0]: ✔️ always true if reachable
+LoopSimple.core.st(13, 2) [entry_invariant_0_1]: ✔️ always true if reachable
+LoopSimple.core.st(13, 2) [arbitrary_iter_maintain_invariant_0_0]: ✔️ always true if reachable
+LoopSimple.core.st(13, 2) [arbitrary_iter_maintain_invariant_0_1]: ✔️ always true if reachable
+LoopSimple.core.st(20, 2) [sum_assert]: ✔️ always true if reachable
+LoopSimple.core.st(21, 2) [neg_cond]: ✔️ always true if reachable
 All 6 goals passed.
