@@ -107,7 +107,7 @@ Result: ✔️ pass if reachable
 
 Obligation: unreachable_cover
 Property: cover
-Result: ✖️ refuted if reachable
+Result: ✖️ always false if reachable
 
 Obligation: unreachable_assert
 Property: assert

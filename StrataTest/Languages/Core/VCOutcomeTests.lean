@@ -110,7 +110,7 @@ Sat:sat|Val:unknown ➕ satisfiable, Can be true, unknown if always true, SARIF:
 
 /--
 info:  isAlwaysFalse
-Sat:unsat|Val:unknown ✖️ refuted if reachable, Always false if reachable, reachability unknown, SARIF: Deductive level: error, BugFinding level: error
+Sat:unsat|Val:unknown ✖️ always false if reachable, Always false if reachable, reachability unknown, SARIF: Deductive level: error, BugFinding level: error
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) .alwaysFalseReachabilityUnknown

@@ -165,9 +165,9 @@ Analysis outcome of a verification condition based on two SMT queries:
   - satisfiabilityProperty: result of checking P ∧ Q  (is the property satisfiable given the path condition?)
   - validityProperty:       result of checking P ∧ ¬Q (can the property be false given the path condition?)
 
-The 9 possible outcomes and their interpretations:
-
-  For assert statements:
+The 9 possible outcomes and their interpretations.
+For cover statements, any outcome where P ∧ Q is sat displays as ✅ (cover satisfied).
+Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 
   Emoji  Label                                          P ∧ Q    P ∧ ¬Q   Reachable  Deductive  BugFinding  Meaning
   -----  ---------------------------------------------  -------  -------  ---------  ---------  ----------  -------
@@ -176,20 +176,10 @@ The 9 possible outcomes and their interpretations:
   🔶     can be both true and false and is reachable    sat      sat      yes        error      note        Reachable, solver found models for both the property and its negation
   ⛔     unreachable                                    unsat    unsat    no         warning    warning     Dead code, path unreachable
   ➕     satisfiable                                    sat      unknown  yes        error      note        Property can be true and is reachable, validity unknown
-  ✖️     refuted if reachable                           unsat    unknown  unknown    error      error       Property always false if reachable, reachability unknown
+  ✖️     always false if reachable                      unsat    unknown  unknown    error      error       Property always false if reachable, reachability unknown
   ➖     can be false and is reachable                  unknown  sat      yes        error      note        Q can be false and path is reachable, satisfiability of Q unknown
   ✔️     pass if reachable                              unknown  unsat    unknown    pass       pass        Property always true if reachable, reachability unknown
   ❓     unknown                                        unknown  unknown  unknown    error      note        Both checks inconclusive
-
-  For cover statements: any outcome where P ∧ Q is sat means the cover is satisfied (✅ pass).
-  Unreachable covers (unsat, unsat) are errors (❌) rather than warnings.
-
-  Emoji  Label                                          P ∧ Q    P ∧ ¬Q   Reachable  Deductive  BugFinding  Meaning
-  -----  ---------------------------------------------  -------  -------  ---------  ---------  ----------  -------
-  ✅     satisfiable and reachable                      sat      *        yes        pass       pass        Cover is satisfied
-  ❌     unreachable                                    unsat    unsat    no         error      error       Cover can never be reached
-  ✖️     refuted if reachable                           unsat    *        unknown    error      error       Cover always false if reachable
-  ❓     unknown                                        unknown  *        unknown    error      note        Could not determine satisfiability
 -/
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
@@ -295,7 +285,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) : Stri
   else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
   else if o.unreachable then "unreachable"
   else if o.satisfiableValidityUnknown then "satisfiable"
-  else if o.alwaysFalseReachabilityUnknown then "refuted if reachable"
+  else if o.alwaysFalseReachabilityUnknown then "always false if reachable"
   else if o.canBeFalseAndIsReachable then "can be false and is reachable"
   else if o.passReachabilityUnknown then "pass if reachable"
   else "unknown"
