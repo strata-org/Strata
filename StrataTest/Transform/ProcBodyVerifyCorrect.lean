@@ -149,6 +149,34 @@ theorem eval_assume_implies_condition
     | eval_assume h_true h_wf =>
       exact ⟨h_true, rfl, rfl⟩
 
+/-- If a list of statements containing an assert evaluates successfully,
+    the assert's condition held at some point during execution -/
+theorem eval_stmts_with_assert
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval)
+    (stmts : List Statement)
+    (label : CoreLabel) (expr : Expression.Expr) (md : Metadata) :
+    EvalStatements π φ δ σ stmts σ' δ' →
+    Statement.assert label expr md ∈ stmts →
+    ∃ σ_at δ_at, δ_at σ_at expr = some HasBool.tt := by
+  intro h_eval h_in
+  -- Use strong induction on the list structure
+  match stmts, h_eval, h_in with
+  | [], h_eval, h_in =>
+    cases h_eval
+    simp at h_in
+  | stmt :: rest, h_eval, h_in =>
+    cases h_eval with
+    | stmts_some_sem h_stmt h_rest =>
+      cases h_in with
+      | head =>
+        -- The assert is the first statement
+        have ⟨h_cond, _, _⟩ := eval_assert_implies_condition π φ δ σ _ _ label expr md h_stmt
+        exact ⟨σ, δ, h_cond⟩
+      | tail _ h_in_rest =>
+        -- The assert is in the rest - recurse
+        exact eval_stmts_with_assert π φ _ _ _ _ rest label expr md h_rest h_in_rest
+
 /-
 Soundness: Verification failure implies contract violation
 
