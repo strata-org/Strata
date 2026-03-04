@@ -144,9 +144,10 @@ Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
 #eval do let ans ← t[int → bool].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
          return format ans.fst
 
-/-- info: (arrow $__ty0 b) -/
+/-- info: ok: (arrow $__ty0 b) -/
 #guard_msgs in
-#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)).fst
+#eval do let ans ← LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)
+         return format ans.fst
 
 /--
 info: ok: (x : $__ty0) (y : int) (z : $__ty0)

@@ -468,7 +468,48 @@ theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     (mty : LMonoTy) (h_find : Maps.find? S a = some t) (h_wf : SubstWF S)
     (ha_fv : a ∈ LMonoTy.freeVars mty) :
     relevantKeys S (LMonoTy.subst [[(a, t)]] mty) < relevantKeys S mty := by
-  sorry
+  unfold relevantKeys
+  -- Key fact 1: a ∉ freeVars t (from SubstWF)
+  have ha_not_in_t : a ∉ LMonoTy.freeVars t :=
+    SubstWF.not_mem_freeVars_of_find S a t h_find h_wf
+  -- Key fact 2: SubstWF for the singleton substitution
+  have h_wf_single : SubstWF [[(a, t)]] := SubstWF.single_subst a ha_not_in_t
+  -- Key fact 3: a ∉ freeVars (subst [[(a,t)]] mty)
+  have ha_not_in_subst : a ∉ LMonoTy.freeVars (LMonoTy.subst [[(a, t)]] mty) := by
+    have h_keys := LMonoTy.subst_keys_not_in_substituted_type (S := [[(a, t)]]) (ty := mty) h_wf_single
+    simp [Maps.keys, Map.keys] at h_keys
+    exact h_keys
+  -- Key fact 4: no key of S is in freeVars t
+  have h_keys_not_in_t : ∀ k, k ∈ Maps.keys S → k ∉ LMonoTy.freeVars t := by
+    intro k hk
+    simp [SubstWF] at h_wf
+    intro hkt
+    have h_t_sub : LMonoTy.freeVars t ⊆ Subst.freeVars S :=
+      Subst.freeVars_of_find_subset S h_find
+    exact h_wf k hk (h_t_sub hkt)
+  -- Key fact 5: freeVars after subst ⊆ freeVars mty ++ freeVars t
+  have h_fv_subset := LMonoTy.freeVars_of_subst_subset [[(a, t)]] mty
+  -- Now prove the filter length decreases
+  apply List.filter_length_lt_of_imp_witness
+    (a := a)
+  · -- Implication: k ∈ freeVars(subst) → k ∈ freeVars(mty) for k ∈ keys S
+    intro k hk hk_in_subst
+    rw [decide_eq_true_eq] at hk_in_subst ⊢
+    have hk_in_union := h_fv_subset hk_in_subst
+    rw [List.mem_append] at hk_in_union
+    cases hk_in_union with
+    | inl h => exact h
+    | inr h =>
+      have : Subst.freeVars [[(a, t)]] = LMonoTy.freeVars t := by
+        simp [Subst.freeVars, Maps.values, Map.values]
+      rw [this] at h
+      exact absurd h (h_keys_not_in_t k hk)
+  · -- a ∈ Maps.keys S
+    exact Maps.find?_mem_keys S h_find
+  · -- a ∈ freeVars mty
+    rw [decide_eq_true_eq]; exact ha_fv
+  · -- a ∉ freeVars (subst [[(a,t)]] mty)
+    rw [decide_eq_true_eq]; exact ha_not_in_subst
 
 /-- All keys in substitution `S` are fresh w.r.t. context `Γ`. -/
 def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
@@ -806,7 +847,40 @@ theorem HasType_subst_fresh_all
     (h_fresh : Subst.allKeysFresh S Γ)
     (h_wf : SubstWF S) :
     HasType C Γ e (.forAll [] (LMonoTy.subst S mty)) := by
-  sorry
+  -- Trivial case: S has empty scopes
+  by_cases hS : Subst.hasEmptyScopes S
+  · rw [LMonoTy.subst_emptyS hS]; exact h
+  · -- Strong induction on relevantKeys S mty
+    suffices ∀ (n : Nat) (mty : LMonoTy),
+        relevantKeys S mty = n →
+        HasType C Γ e (.forAll [] mty) →
+        HasType C Γ e (.forAll [] (LMonoTy.subst S mty)) from
+      this (relevantKeys S mty) mty rfl h
+    intro n
+    induction n using Nat.strongRecOn with
+    | _ n ih =>
+      intro mty h_rk h_ty
+      -- Check if any key of S is in freeVars mty
+      by_cases h_any : ∃ a, a ∈ Maps.keys S ∧ a ∈ LMonoTy.freeVars mty
+      · -- Inductive case: there's a relevant key
+        obtain ⟨a, ha_key, ha_fv⟩ := h_any
+        obtain ⟨t, h_find⟩ := Maps.find?_of_mem_keys' S a ha_key
+        -- Step 1: apply HasType_subst_fresh for the single binding (a, t)
+        have h_a_fresh : TContext.isFresh a Γ := h_fresh a ha_key
+        have h1 : HasType C Γ e (.forAll [] (LMonoTy.subst [[(a, t)]] mty)) :=
+          HasType_subst_fresh C Γ e mty a t h_ty h_a_fresh
+        -- Step 2: by induction, apply HasType_subst_fresh_all to the substituted type
+        have h_decrease := relevantKeys_decrease S a t mty h_find h_wf ha_fv
+        have h2 : HasType C Γ e
+            (.forAll [] (LMonoTy.subst S (LMonoTy.subst [[(a, t)]] mty))) :=
+          ih (relevantKeys S (LMonoTy.subst [[(a, t)]] mty))
+            (h_rk ▸ h_decrease) (LMonoTy.subst [[(a, t)]] mty) rfl h1
+        -- Step 3: rewrite using absorption
+        rwa [LMonoTy.subst_absorbs_single S a t mty h_find h_wf] at h2
+      · -- Base case: no relevant key, so subst S mty = mty
+        have h_no_key : ∀ x, x ∈ LMonoTy.freeVars mty → x ∉ Maps.keys S :=
+          fun x hx hxk => h_any ⟨x, hxk, hx⟩
+        rw [LMonoTy.subst_no_relevant_keys S mty h_no_key]; exact h_ty
 
 /-- `resolve` is `resolveAux` followed by applying the final substitution. -/
 theorem resolve_of_resolveAux
