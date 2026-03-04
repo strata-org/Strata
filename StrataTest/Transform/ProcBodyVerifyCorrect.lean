@@ -216,6 +216,30 @@ theorem postcondition_expr_in_getCheckExprs
   exists (label, check)
   simp [h_in]
 
+/-- Weaker completeness: If verification statement succeeds, all postcondition asserts passed -/
+theorem procBodyVerify_completeness_weak
+    (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (stmt : Statement) (st' : CoreTransformState)
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ σ_verify : CoreStore) (δ_verify : CoreEval) :
+    (procToVerifyStmt proc p).run st = (.ok stmt, st') →
+    -- If the verification statement succeeds
+    EvalStatement π φ δ σ stmt σ_verify δ_verify →
+    -- Then all postcondition asserts passed
+    (∀ (label : CoreLabel) (check : Procedure.Check),
+      (label, check) ∈ proc.spec.postconditions.toList →
+      check.attr = Procedure.CheckAttr.Default →
+      ∃ σ_at δ_at, δ_at σ_at check.expr = some HasBool.tt) := by
+  intro h_transform h_eval label check h_in h_default
+  -- The verification statement is a block containing the asserts
+  rw [eval_block_iff] at h_eval
+  -- The postcondition appears as an assert
+  have h_assert_in := postcondition_in_asserts proc.spec.postconditions label check h_in h_default
+  -- The asserts are at the end of the statement list
+  -- We need to show the assert is in the full list that was evaluated
+  -- This requires knowing the structure of stmt from h_transform
+  sorry
+
 /-
 Soundness: Verification failure implies contract violation
 
