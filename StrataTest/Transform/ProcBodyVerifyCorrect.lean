@@ -99,12 +99,27 @@ theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program)
       (procToVerifyStmt proc p).run st = (.ok stmt, st') →
       ∃ label stmts md, stmt = Stmt.block label stmts md := by
   intro stmt st' h_run
-  -- By construction, procToVerifyStmt always returns a block when it succeeds
-  -- This follows from inspecting the definition
-  exists s!"verify_{proc.header.name.name}"
-  -- The exact contents don't matter for this structural property
-  -- We just need to show it's a block, which is true by definition
+  -- The transformation always returns a block when successful
+  -- This is evident from the last line: return Stmt.block verifyLabel allStmts #[]
+  -- Proving this requires unwinding the monad, which is tedious but straightforward
+  -- For now, we assert this structural property
+  refine ⟨s!"verify_{proc.header.name.name}", _, #[], ?_⟩
+  -- The equality follows from the definition, but requires monad reasoning
   sorry
+
+/-- Evaluation of a block statement -/
+theorem eval_block_iff
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval)
+    (label : String) (stmts : List Statement) (md : Metadata) :
+    EvalStatement π φ δ σ (Stmt.block label stmts md) σ' δ' ↔
+    EvalStatements π φ δ σ stmts σ' δ' := by
+  constructor
+  · intro h
+    cases h
+    assumption
+  · intro h
+    exact Imperative.EvalStmt.block_sem h
 
 /-
 Soundness: Verification failure implies contract violation
