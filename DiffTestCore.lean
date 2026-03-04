@@ -7,6 +7,8 @@
 -- Differential testing tool: reads (regex, string, mode) triples from stdin,
 -- checks each against Strata's SMT backend, and prints results to stdout.
 --
+-- Usage: DiffTestCore [--log-dir <path>]
+--
 -- Input  (stdin):  one test per line, tab-separated: <regex>\t<string>\t<mode>
 -- Output (stdout): one result per line, tab-separated: <regex>\t<string>\t<mode>\t<result>
 --
@@ -16,6 +18,10 @@
 --   parseError:patternError
 --   parseError:unimplemented
 --   smtError:<detail>
+--
+-- When --log-dir <path> is given, each generated .core.st program is written to
+-- <path>/<n>_<mode>.core.st (1-indexed) with a header comment showing the
+-- original regex and string, for inspection and debugging.
 --
 -- Restriction: <regex> and <string> fields must not contain tab characters.
 
@@ -43,6 +49,11 @@ def parseMode (s : String) : Option MatchMode :=
   | "search"    => some .search
   | _           => none
 
+def modeToStr : MatchMode → String
+  | .match     => "match"
+  | .fullmatch => "fullmatch"
+  | .search    => "search"
+
 inductive StrataResult where
   | match
   | noMatch
@@ -62,8 +73,10 @@ def mkProgText (testStr : String) (regexStr : String) : String :=
   s!"  assert [match_check]: (str.in.re(\"{escapeForCore testStr}\", {regexStr}));\n" ++
   "};"
 
-/-- Check whether testStr matches pyRegex (in the given mode) via Strata's SMT backend. -/
-def checkMatch (pyRegex testStr : String) (mode : MatchMode) : IO StrataResult := do
+/-- Check whether testStr matches pyRegex (in the given mode) via Strata's SMT backend.
+    If logPath is some path, the generated Core program is written there before checking. -/
+def checkMatch (pyRegex testStr : String) (mode : MatchMode)
+    (logPath : Option String := none) : IO StrataResult := do
   let (regexExpr, parseErr) := pythonRegexToCore pyRegex mode
   match parseErr with
   | some (.patternError _ _ _)  => return .parseError "patternError"
@@ -71,6 +84,12 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode) : IO StrataResult :
   | none =>
     let regexStr := toString (Core.formatExprs [regexExpr])
     let progText := mkProgText testStr regexStr
+    if let some path := logPath then
+      try
+        let header := s!"// regex:  {pyRegex}\n// string: {testStr}\n// mode:   {modeToStr mode}\n\n"
+        IO.FS.writeFile path (header ++ progText ++ "\n")
+      catch e =>
+        IO.eprintln s!"[log] Failed to write {path}: {e}"
     let inputCtx := Lean.Parser.mkInputContext progText "<diff_test>"
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
@@ -90,23 +109,32 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode) : IO StrataResult :
         | .unknown                 => .smtError "unknown"
         | .implementationError msg => .smtError s!"impl: {msg}"
 
-def main : IO UInt32 := do
+def main (args : List String) : IO UInt32 := do
+  let logDir : Option String ← match args with
+    | ["--log-dir", path] => do
+        try IO.FS.createDir path catch _ => pure ()
+        pure (some path)
+    | _ => pure none
   let stdin  ← IO.getStdin
   let stdout ← IO.getStdout
+  let mut idx := 1
   let mut line ← stdin.getLine
   while !line.isEmpty do
-    let trimmed := line.dropRightWhile Char.isWhitespace
+    let trimmed := String.ofList (line.toList.reverse.dropWhile Char.isWhitespace).reverse
     if !trimmed.isEmpty then
       let parts := trimmed.splitOn "\t"
+      let modeStr := (parts[2]?).getD "unknown"
+      let logPath := logDir.map (fun dir => dir ++ s!"/{idx}_{modeStr}.core.st")
       let result ← match parts with
         | [regex, str, modeStr] => match parseMode modeStr with
           | none      => pure (StrataResult.smtError "unknown_mode")
-          | some mode => checkMatch regex str mode
+          | some mode => checkMatch regex str mode logPath
         | _ => pure (StrataResult.smtError "bad_input_format")
       match parts with
       | [regex, str, modeStr] =>
         stdout.putStrLn s!"{regex}\t{str}\t{modeStr}\t{result.toStr}"
       | _ =>
         stdout.putStrLn s!"<bad>\t<bad>\t<bad>\t{result.toStr}"
+      idx := idx + 1
     line ← stdin.getLine
   return 0

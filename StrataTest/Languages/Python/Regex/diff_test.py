@@ -182,14 +182,20 @@ _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", "..", ".."))
 
 
-def run_strata(cases: list[tuple[str, str, str]], lake_exe: str) -> dict:
+def run_strata(cases: list[tuple[str, str, str]], lake_exe: str,
+               log_dir: str | None = None) -> dict:
     """
     Pipes all test cases to DiffTestCore in one subprocess call.
     Returns a dict keyed by (regex, string, mode) → result string.
+    If log_dir is given, passes --log-dir to DiffTestCore so each generated
+    .core.st program is written to <log_dir>/<n>_<mode>.core.st.
     """
     stdin_data = "".join(f"{r}\t{s}\t{m}\n" for r, s, m in cases)
+    cmd = [lake_exe, "exe", "DiffTestCore"]
+    if log_dir:
+        cmd += ["--log-dir", log_dir]
     proc = subprocess.run(
-        [lake_exe, "exe", "DiffTestCore"],
+        cmd,
         input=stdin_data,
         capture_output=True,
         text=True,
@@ -252,11 +258,17 @@ def main() -> int:
         "--lake-exe", default="lake",
         help="Path to the lake executable (default: lake)"
     )
+    parser.add_argument(
+        "--log-dir", default=None, metavar="PATH",
+        help="Directory to write generated .core.st programs for debugging"
+    )
     args = parser.parse_args()
 
     print(f"Running {len(CORPUS)} test cases against Strata (project root: {_PROJECT_ROOT})...")
+    if args.log_dir:
+        print(f"Logging .core.st programs to: {args.log_dir}")
 
-    strata_results = run_strata(CORPUS, args.lake_exe)
+    strata_results = run_strata(CORPUS, args.lake_exe, log_dir=args.log_dir)
 
     counts: dict[str, int] = {"agree": 0, "bug": 0, "known_gap": 0, "investigate": 0}
     bugs, gaps, investigations = [], [], []
