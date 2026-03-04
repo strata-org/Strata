@@ -1,0 +1,41 @@
+{
+  "body": "Solid PR. The CoreSMT pipeline is well-structured with clean separation of concerns across State, IsCoreSMT, ExprTranslator, Diagnosis, StmtVerifier, and Verifier. The B3→Core→CoreSMT roundtrip with source location preservation is a meaningful improvement. A few issues to address before merging.",
+  "event": "COMMENT",
+  "comments": [
+    {
+      "path": "StrataMain.lean",
+      "line": 26,
+      "body": "Three imports are duplicated (lines 22-24 are repeated on lines 26-28). Remove the duplicate block."
+    },
+    {
+      "path": "Strata/Languages/Core/StatementSemantics.lean",
+      "line": 19,
+      "body": "Missing indentation on `| const` — inconsistent with the other cases:\n```suggestion\n  | const :  Value (.const _ _)\n```"
+    },
+    {
+      "path": "Strata/Languages/Core/Verifier.lean",
+      "line": 158,
+      "body": "`DiagnosisInfo` is correctly placed next to `Outcome` and `VCResult`, but it references `Strata.Core.CoreSMT.DiagnosedFailure`, which forces `Core.Verifier` to import `CoreSMT.Diagnosis`. Consider extracting `DiagnosedFailure` and its supporting types (`DiagnosisResultType`, `DiagnosisContext`, `DiagnosisReport`, `DiagnosisResult`) into a new `Core.DiagnosisTypes` file that both `Core.Verifier` and `CoreSMT.Diagnosis` import, removing the dependency of the general verifier on the CoreSMT subsystem."
+    },
+    {
+      "path": "Strata/DL/SMT/TermType.lean",
+      "line": 54,
+      "body": "`TermType.toSMTString` is never called anywhere in the codebase. `SMTDDM.termTypeToString` and `Solver.typeToSMTString` already cover this conversion. Either use it (replacing one of the existing converters) or remove it."
+    },
+    {
+      "path": "Strata/DL/SMT/SolverInterface.lean",
+      "line": 115,
+      "body": "`mkCvc5Solver`, `mkSolverFromPath`, and `mkSolverFromEnv` are defined but never called outside this file. If they are intended as a public API for future use, that's fine, but they could also be removed to keep the surface area minimal."
+    },
+    {
+      "path": "Strata/Languages/B3/Verifier.lean",
+      "line": 63,
+      "body": "The second element of the pair in `results : List (VerificationReport × Option Unit)` is always `none` (set in `programToSMT`) and always ignored by callers. Consider simplifying to `List VerificationReport`."
+    },
+    {
+      "path": "StrataTest/Languages/Python/expected_interactive/test_incremental_simple.expected",
+      "line": 1,
+      "body": "This file is identical to `expected_incremental/test_incremental_simple.expected` and `run_py_analyze.sh` uses `expected_interactive/` for the incremental mode. The `expected_incremental/` directory is the one that appears orphaned — consider removing it, or renaming `expected_interactive/` to `expected_incremental/` for consistency with the `--incremental` flag name."
+    }
+  ]
+}
