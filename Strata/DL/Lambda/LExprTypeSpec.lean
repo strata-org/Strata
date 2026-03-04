@@ -624,48 +624,6 @@ theorem Subst.absorbs_trans (S1 S2 S3 : Subst)
   rw [← LMonoTy.subst_absorbs S3 S2 t h23, h1,
       LMonoTy.subst_absorbs S3 S2 (.ftvar a) h23]
 
--- Helper: Map.find? is unchanged by inserting at a different key.
-private theorem Map.find?_insert_ne_h' {m : Map TyIdentifier LMonoTy} {a b : TyIdentifier} {v : LMonoTy}
-    (h_ne : a ≠ b) : Map.find? (Map.insert m b v) a = Map.find? m a := by
-  induction m with
-  | nil => simp [Map.insert, Map.find?, Ne.symm h_ne]
-  | cons hd rest ih =>
-    simp only [Map.insert]
-    split
-    · rename_i h_eq; subst h_eq; simp [Map.find?, Ne.symm h_ne]
-    · simp only [Map.find?]
-      split
-      · rfl
-      · exact ih
-
--- Helper: Maps.find? is unchanged by inserting at a different key.
-private theorem Maps.find?_insert_ne_h' {ms : Maps TyIdentifier LMonoTy} {a b : TyIdentifier} {v : LMonoTy}
-    (h_ne : a ≠ b) : Maps.find? (Maps.insert ms b v) a = Maps.find? ms a := by
-  simp only [Maps.insert]
-  cases h_fb : Maps.find? ms b with
-  | none =>
-    match ms with
-    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?, Map.insert, Ne.symm h_ne]
-    | _ :: _ =>
-      simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
-      rw [Map.find?_insert_ne_h' h_ne]
-  | some val =>
-    induction ms with
-    | nil => simp [Maps.find?] at h_fb
-    | cons m rest ih =>
-      simp only [Maps.update]
-      split
-      · rename_i h_none
-        simp only [Maps.find?]
-        cases Map.find? m a with
-        | none =>
-          have h_rest : Maps.find? rest b = some val := by
-            simp only [Maps.find?, h_none] at h_fb; exact h_fb
-          exact ih h_rest
-        | some _ => rfl
-      · simp only [Maps.find?]
-        rw [Map.find?_insert_ne_h' h_ne]
-
 -- Helper: applyLogic preserves some bindings.
 private theorem Map.find?_applyLogic_some_h' {new old : SubstOne} {a : TyIdentifier} {t : LMonoTy}
     (h : Map.find? old a = some t) :
@@ -730,7 +688,7 @@ private theorem absorbs_of_insert_apply_h' (S : SubstInfo) (id : TyIdentifier) (
   have h_apply_a := Maps.find?_apply_some_h' (new := [(id, lty)]) h_find
   have h_find_new : Maps.find? S_new a = some (LMonoTy.subst [[(id, lty)]] t) := by
     show Maps.find? (Maps.insert _ id lty) a = _
-    rw [Maps.find?_insert_ne_h' h_a_ne_id]
+    rw [Maps.find?_insert_ne _ _ _ _ h_a_ne_id]
     exact h_apply_a
   have h_find_id : Maps.find? S_new id = some lty := Maps.find?_insert_self _ id lty
   have h_not_empty := Subst.hasEmptyScopes_false_of_find S_new a _ h_find_new
