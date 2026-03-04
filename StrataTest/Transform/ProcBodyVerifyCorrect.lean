@@ -106,49 +106,63 @@ theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program)
   -- by inspection of the code.
   sorry
 
-/-- Soundness: If a procedure call fails, the verification statement fails
+/-
+Soundness: Verification failure implies contract violation
 
-If executing a call to the procedure can fail (either precondition violation or
-postcondition violation), then executing the transformed verification statement
-on the same inputs will also fail.
+If the verification statement can fail, then there exists an execution of the
+procedure body that violates either a precondition assumption or a postcondition.
 
-Equivalently (contrapositive): If the verification statement succeeds on all
-inputs satisfying the preconditions, then all calls to the procedure with
-those inputs will succeed.
+This establishes that the transformation correctly identifies contract violations.
 -/
 theorem procBodyVerify_soundness
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (δ : CoreEval) (σ : CoreStore) (lhs : List Expression.Ident) (args : List Expression.Expr) :
+    (δ : CoreEval) (σ : CoreStore) :
     (procToVerifyStmt proc p).run st = (.ok stmt, st') →
-    -- If the call can fail (precondition or postcondition violation)
-    (∃ σ_call δ_call, ¬EvalStatement π φ δ σ 
-      (Stmt.cmd (CmdExt.call lhs proc.header.name.name args #[])) σ_call δ_call) →
-    -- Then the verification statement fails on corresponding inputs
-    (∃ σ_verify δ_verify, ¬EvalStatement π φ δ σ stmt σ_verify δ_verify) := by
+    -- If the verification statement can fail
+    (∃ σ_verify δ_verify, ¬EvalStatement π φ δ σ stmt σ_verify δ_verify) →
+    -- Then the procedure body violates its contract
+    -- (either an assume fails = precondition violated, or assert fails = postcondition violated)
+    (∃ σ_body δ_body, 
+      -- Preconditions hold in initial state
+      (∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+        δ σ pre = .some HasBool.tt) ∧
+      -- Body executes
+      EvalStatements π φ δ σ proc.body σ_body δ_body ∧
+      -- But some postcondition fails
+      (∃ post, (Procedure.Spec.getCheckExprs proc.spec.postconditions).contains post ∧
+        δ_body σ_body post ≠ .some HasBool.tt)) := by
+  intro h_transform h_verify_fails
   sorry
 
-/-- Completeness: If the verification statement succeeds, procedure calls succeed
+/-- Completeness: Verification success implies contract satisfaction
 
-If the transformed verification statement executes successfully for all inputs
-satisfying the preconditions, then all procedure calls with those inputs will
-execute successfully (no postcondition violations).
+If the transformed verification statement executes successfully, then the
+procedure body satisfies its contract (all postconditions hold when
+preconditions are satisfied).
 
-This is the contrapositive of soundness, establishing that the transformation
-is both sound and complete.
+This is the contrapositive of soundness.
 -/
 theorem procBodyVerify_completeness
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (δ : CoreEval) (σ : CoreStore) (lhs : List Expression.Ident) (args : List Expression.Expr) :
+    (δ : CoreEval) (σ : CoreStore) :
     (procToVerifyStmt proc p).run st = (.ok stmt, st') →
     -- If the verification statement succeeds
     (∀ σ_verify δ_verify, EvalStatement π φ δ σ stmt σ_verify δ_verify) →
-    -- Then the procedure call succeeds
-    (∀ σ_call δ_call, EvalStatement π φ δ σ 
-      (Stmt.cmd (CmdExt.call lhs proc.header.name.name args #[])) σ_call δ_call) := by
+    -- Then the procedure body satisfies its contract
+    (∀ σ_body δ_body,
+      -- If preconditions hold
+      (∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+        δ σ pre = .some HasBool.tt) →
+      -- And body executes
+      EvalStatements π φ δ σ proc.body σ_body δ_body →
+      -- Then all postconditions hold
+      (∀ post, (Procedure.Spec.getCheckExprs proc.spec.postconditions).contains post →
+        δ_body σ_body post = .some HasBool.tt)) := by
+  intro h_transform h_verify_succeeds
   sorry
 
 end ProcBodyVerifyCorrect
