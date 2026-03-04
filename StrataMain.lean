@@ -289,7 +289,7 @@ def pyAnalyzeCommand : Command where
                 match fr.file with
                 | .file path =>
                   if path == pyPath then
-                    let pos := fileMap.toPosition fr.range.start
+                    let pos := fileMap.toPosition (fr.range).start
                     -- For failures, show at beginning; for passes, show at end
                     match vcResult.result with
                     | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
@@ -297,12 +297,12 @@ def pyAnalyzeCommand : Command where
                   else
                     -- From CorePrelude or other source, show byte offsets
                     match vcResult.result with
-                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                    | _ => ("", s!" (at byte {fr.range.start})")
+                    | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
+                    | _ => ("", s!" (at byte {(fr.range).start})")
               | none =>
                 match vcResult.result with
-                | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                | _ => ("", s!" (at byte {fr.range.start})")
+                | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
+                | _ => ("", s!" (at byte {(fr.range).start})")
           | none => ("", "")
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
       IO.println s
@@ -373,7 +373,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
     Prints per-procedure results with diagnosis details inline. -/
 private def verifyIncremental
     (programDecls : List Core.Decl)
-    (pySourceOpt : Option (String × FileMap)) : IO (Array Core.VCResult) := do
+    (pySourceOpt : Option (String × Lean.FileMap)) : IO (Array Core.VCResult) := do
   let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
   let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
   let state := Strata.Core.CoreSMT.CoreSMTState.init solverInterface { accumulateErrors := true }
@@ -406,10 +406,10 @@ private def verifyIncremental
               match fr.file with
               | .file path =>
                 if path == pyPath then
-                  let pos := fileMap.toPosition fr.range.start
+                  let pos := fileMap.toPosition (fr.range).start
                   s!" (line {pos.line}, col {pos.column})"
-                else s!" (byte {fr.range.start})"
-            | none => s!" (byte {fr.range.start})"
+                else s!" (byte {(fr.range).start})"
+            | none => s!" (byte {(fr.range).start})"
         | none => ""
       IO.println s!"  {r.obligation.label}: {marker}{suffix}"
       if let some diag := r.diagnosis then
@@ -429,7 +429,7 @@ private def verifyIncremental
     Prints results in the ==== Verification Results ==== format. -/
 private def verifyBatch
     (coreProgram : Core.Program)
-    (pySourceOpt : Option (String × FileMap)) : IO (Array Core.VCResult) := do
+    (pySourceOpt : Option (String × Lean.FileMap)) : IO (Array Core.VCResult) := do
   let vcResults ← IO.FS.withTempDir (fun tempDir =>
     EIO.toIO
       (fun f => IO.Error.userError (toString f))
@@ -447,18 +447,18 @@ private def verifyBatch
             match fr.file with
             | .file path =>
               if path == pyPath then
-                let pos := fileMap.toPosition fr.range.start
+                let pos := fileMap.toPosition (fr.range).start
                 match vcResult.result with
                 | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
                 | _ => ("", s!" (at line {pos.line}, col {pos.column})")
               else
                 match vcResult.result with
-                | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                | _ => ("", s!" (at byte {fr.range.start})")
+                | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
+                | _ => ("", s!" (at byte {(fr.range).start})")
           | none =>
             match vcResult.result with
-            | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-            | _ => ("", s!" (at byte {fr.range.start})")
+            | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
+            | _ => ("", s!" (at byte {(fr.range).start})")
       | none => ("", "")
     s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
   IO.println s
