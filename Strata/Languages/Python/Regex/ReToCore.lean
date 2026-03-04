@@ -63,8 +63,9 @@ def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
   | .empty => false
   | .complement _ => true
 
-/-- Returns true if `r` contains an `anchor_end` node anywhere. -/
-def RegexAST.containsAnchorEnd : RegexAST → Bool
+/-- Returns true if `r` contains an `anchor_end` (`$`) node anywhere. -/
+def RegexAST.containsAnchorEnd (r : RegexAST) : Bool :=
+  match r with
   | .anchor_end   => true
   | .concat r1 r2 => r1.containsAnchorEnd || r2.containsAnchorEnd
   | .union  r1 r2 => r1.containsAnchorEnd || r2.containsAnchorEnd
@@ -75,8 +76,9 @@ def RegexAST.containsAnchorEnd : RegexAST → Bool
   | .group  r     => r.containsAnchorEnd
   | _             => false
 
-/-- Returns true if `r` contains an `anchor_start` node anywhere. -/
-def RegexAST.containsAnchorStart : RegexAST → Bool
+/-- Returns true if `r` contains an `anchor_start` (`^`) node anywhere. -/
+def RegexAST.containsAnchorStart (r : RegexAST) : Bool :=
+  match r with
   | .anchor_start => true
   | .concat r1 r2 => r1.containsAnchorStart || r2.containsAnchorStart
   | .union  r1 r2 => r1.containsAnchorStart || r2.containsAnchorStart
@@ -88,11 +90,12 @@ def RegexAST.containsAnchorStart : RegexAST → Bool
   | _             => false
 
 /--
-Returns true if `r` contains any character-matching node (char, range, anychar, complement).
-Used to guard the anchor-interaction fix: when false, the regex can only produce "" or
-re.none() regardless of the anchor context, so the fix is unnecessary.
+Returns true if `r` contains any character-matching node (char, range, anychar,
+complement). Used to inform anchor interaction: when false, the regex can only
+produce empty or none, regardless of the anchor context.
 -/
-def RegexAST.hasNonAnchorContent : RegexAST → Bool
+def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
+  match r with
   | .char _        => true
   | .range _ _     => true
   | .anychar       => true
@@ -155,7 +158,20 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         mkApp () (.op () reConcatFunc.name none)
           [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
       | false =>
-        mkApp () (.op () reStarFunc.name none) [r1b]
+        -- When r1 contains anchors, re.*(toCore r1 atStart atEnd) is wrong:
+        -- it passes the start/end context to every iteration, letting ^ or $ fire
+        -- on all iterations instead of only the first or last (e.g. (^a?)* would
+        -- translate to re.*(""│"a") which matches "aa", but Python says no match).
+        -- Fix: apply the same first/middle/last split as | true =>.
+        if r1.containsAnchorStart || r1.containsAnchorEnd then
+          let r1b_start := toCore r1 atStart false
+          let r1b_mid   := toCore r1 false false
+          let r1b_end   := toCore r1 false atEnd
+          let r1b_mid_star := mkApp () (.op () reStarFunc.name none) [r1b_mid]
+          mkApp () (.op () reConcatFunc.name none)
+            [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_mid_star], r1b_end]
+        else
+          mkApp () (.op () reStarFunc.name none) [r1b]
     mkApp () (.op () reUnionFunc.name none)
       [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b], r2b]
   | .optional r1 =>
@@ -174,7 +190,15 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
                   let r2b := mkApp () (.op () reLoopFunc.name none) [r2b, intConst () 0, intConst () (m-2)]
                   mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
                 | false =>
-                  mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
+                  -- Same anchor fix as star | false =>.
+                  if r1.containsAnchorStart || r1.containsAnchorEnd then
+                    let r1b_start := toCore r1 atStart false
+                    let r1b_mid   := toCore r1 false false
+                    let r1b_end   := toCore r1 false atEnd
+                    let r1b_loop  := mkApp () (.op () reLoopFunc.name none) [r1b_mid, intConst () 0, intConst () (m-2)]
+                    mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_loop], r1b_end]
+                  else
+                    mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
       mkApp () (.op () reUnionFunc.name none)
             [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b],
             r2b]

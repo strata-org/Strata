@@ -372,6 +372,69 @@ CORPUS = [
     ("(a$){2}",        "aa",     "fullmatch"),  # $ after 1st a blocks 2nd iteration
     ("(a$){2}",        "a",      "fullmatch"),  # too few chars regardless
 
+    # ── alwaysConsume branches: star and loop with anchors in inner regex ─────────
+
+    # .star | alwaysConsume=true |: first/middle/last split
+    # (^a)*: ^ only fires for the first iteration (middle/last get atStart=false)
+    ("(^a)*",      "",      "fullmatch"),  # 0 iterations → match
+    ("(^a)*",      "a",     "fullmatch"),  # 1 iteration: ^ at 0, a → match
+    ("(^a)*",      "aa",    "fullmatch"),  # 2 iterations: ^ fails at pos 1 → no match
+    ("(^a)*",      "a",     "match"),      # 1 iteration (trailing content allowed)
+    ("(^a)*",      "aa",    "match"),      # only 1 iter needed, trailing "a" ok → match
+
+    # (a$)*: $ only fires for the last iteration (first/middle get atEnd=false)
+    # fullmatch cases already in corpus; add match mode
+    ("(a$)*",      "a",     "match"),      # $ fires → no trailing content allowed → match
+    ("(a$)*",      "ab",    "match"),      # $ blocks "b" → no match
+
+    # (^a$)*: both anchors — only 1 iteration possible
+    ("(^a$)*",     "",      "fullmatch"),  # 0 iterations → match
+    ("(^a$)*",     "a",     "fullmatch"),  # 1 iteration → match
+    ("(^a$)*",     "aa",    "fullmatch"),  # 2 iterations impossible → no match
+
+    # .loop(0,m) | alwaysConsume=true |: same first/middle/last split
+    ("(^a){0,2}",  "",      "fullmatch"),  # 0 reps → match
+    ("(^a){0,2}",  "a",     "fullmatch"),  # 1 rep: ^ at 0 → match
+    ("(^a){0,2}",  "aa",    "fullmatch"),  # 2 reps: ^ fails at pos 1 → no match
+    ("(a$){0,2}",  "",      "fullmatch"),  # 0 reps → match
+    ("(a$){0,2}",  "a",     "fullmatch"),  # 1 rep: a, $ at end → match
+    ("(a$){0,2}",  "aa",    "fullmatch"),  # 2 reps: $ blocked → no match
+
+    # .loop(n,m) n≥1: recurses via concat (anchor handling falls through to concat fix)
+    ("(^a){1,2}",  "a",     "fullmatch"),  # 1 rep: ^ at 0, a → match
+    ("(^a){1,2}",  "aa",    "fullmatch"),  # 2 reps: ^ fails at pos 1 → no match
+    ("(a$){1,2}",  "a",     "fullmatch"),  # 1 rep: a, $ at end → match
+    ("(a$){1,2}",  "aa",    "fullmatch"),  # 2 reps: $ after 1st a blocked → no match
+
+    # .star | alwaysConsume=false |: uses re.*(toCore r1 atStart atEnd) directly
+    # No-anchor inner — baseline to confirm branch is reached and works
+    ("(a?)*",      "",      "fullmatch"),
+    ("(a?)*",      "a",     "fullmatch"),
+    ("(a?)*",      "aaa",   "fullmatch"),
+
+    # Anchored non-consuming inner: ^ or $ inside a star that can iterate empty
+    ("(^a?)*",     "",      "fullmatch"),  # 0 iterations → match
+    ("(^a?)*",     "a",     "fullmatch"),  # 1 iter: ^ fires, a?="a" → match
+    ("(^a?)*",     "aa",    "fullmatch"),  # ^ fails at pos 1 → only 1 iter → no match
+    ("(a?$)*",     "",      "fullmatch"),  # 0 iterations → match
+    ("(a?$)*",     "a",     "fullmatch"),  # 1 iter: a?="a", $ at end → match
+    ("(a?$)*",     "aa",    "fullmatch"),  # $ after 1st a blocked by 2nd a → no match
+
+    # .loop(0,m) | alwaysConsume=false |: uses re.loop(r1b, 0, m) directly
+    # No-anchor inner — baseline
+    ("(a?){0,2}",  "",      "fullmatch"),
+    ("(a?){0,2}",  "a",     "fullmatch"),
+    ("(a?){0,2}",  "aa",    "fullmatch"),
+    ("(a?){0,2}",  "aaa",   "fullmatch"),  # exceeds max → no match
+
+    # Anchored non-consuming inner
+    ("(^a?){0,2}", "",      "fullmatch"),  # 0 reps → match
+    ("(^a?){0,2}", "a",     "fullmatch"),  # 1 rep: ^ fires, a?="a" → match
+    ("(^a?){0,2}", "aa",    "fullmatch"),  # ^ fails at pos 1 → only 1 rep → no match
+    ("(a?$){0,2}", "",      "fullmatch"),  # 0 reps → match
+    ("(a?$){0,2}", "a",     "fullmatch"),  # 1 rep: a?="a", $ at end → match
+    ("(a?$){0,2}", "aa",    "fullmatch"),  # $ after 1st a blocked → no match
+
     # Invalid regexes → Python raises re.error, Strata should give parseError
     ("x{100,2}",  "x",    "fullmatch"),  # invalid bounds
     ("(abc",      "abc",  "fullmatch"),  # unmatched paren
