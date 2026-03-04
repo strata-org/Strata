@@ -106,6 +106,7 @@ info: ok: verify_Simple: {
 info: ok: verify_WithFree: {
   var x : int;
   var y : int;
+  assume [WithFree_requires_0]: x >= 0;
   assume [WithFree_requires_1]: x > 0;
   body_WithFree: {
     y := x;

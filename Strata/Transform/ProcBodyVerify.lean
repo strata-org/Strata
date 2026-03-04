@@ -52,10 +52,8 @@ open Core Imperative Transform
 
 /-- Convert preconditions to assume statements -/
 def requiresToAssumes (preconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
-  preconditions.toList.filterMap fun (label, check) =>
-    match check.attr with
-    | .Free => none
-    | .Default => some (Statement.assume label check.expr check.md)
+  preconditions.toList.map fun (label, check) =>
+    Statement.assume label check.expr check.md
 
 /-- Convert postconditions to assert statements -/
 def ensuresToAsserts (postconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
