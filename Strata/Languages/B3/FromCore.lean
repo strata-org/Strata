@@ -98,22 +98,22 @@ partial def convertApp (sr : SourceRange) (fn arg : Core.Expression.Expr) : Exce
 partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3AST.Expression SourceRange) :=
   let sr : SourceRange := e.metadata
   match e with
-  | Lambda.LExpr.const _ c => convertConst sr c
-  | Lambda.LExpr.bvar _ idx => Except.ok (.id sr idx)
-  | Lambda.LExpr.app _ fn arg => convertApp sr fn arg
-  | Lambda.LExpr.ite _ cond thn els =>
+  | Lambda.LExpr.const m c => convertConst sr c
+  | Lambda.LExpr.bvar m idx => Except.ok (.id sr idx)
+  | Lambda.LExpr.app m fn arg => convertApp sr fn arg
+  | Lambda.LExpr.ite m cond thn els =>
     (exprFromCore cond).bind fun condB3 =>
     (exprFromCore thn).bind fun thnB3 =>
     (exprFromCore els).bind fun elsB3 =>
     Except.ok (.ite sr condB3 thnB3 elsB3)
-  | Lambda.LExpr.fvar _ name _ =>
+  | Lambda.LExpr.fvar m name _ =>
     -- Free variable reference - represent as 0-arg function call
     Except.ok (.functionCall sr ⟨sr, name.name⟩ ⟨sr, #[]⟩)
-  | Lambda.LExpr.eq _ lhs rhs =>
+  | Lambda.LExpr.eq m lhs rhs =>
     (exprFromCore lhs).bind fun lhsB3 =>
     (exprFromCore rhs).bind fun rhsB3 =>
     Except.ok (.binaryOp sr (.eq sr) lhsB3 rhsB3)
-  | Lambda.LExpr.quant _ kind name tyOpt trigger body =>
+  | Lambda.LExpr.quant m kind name tyOpt trigger body =>
     let qk := match kind with
       | .all => B3AST.QuantifierKind.forall sr
       | .exist => B3AST.QuantifierKind.exists sr

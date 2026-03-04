@@ -182,6 +182,25 @@ structure VCResult where
       smtObligationResult was .sat. -/
   lexprModel : LExprModel := []
 
+/-- Simplified verification report for display and API use -/
+structure VerificationReport where
+  label : String
+  outcome : Outcome
+  diagnosis : Option DiagnosisInfo := none
+  obligation : Option (Imperative.ProofObligation Expression) := none
+
+/-- Procedure-level verification report grouping multiple checks -/
+structure ProcedureReport where
+  procedureName : String
+  results : List VerificationReport
+
+/-- Convert VCResult to VerificationReport -/
+def vcResultToVerificationReport (vcResult : VCResult) : VerificationReport :=
+  { label := vcResult.obligation.label
+    outcome := vcResult.result
+    diagnosis := vcResult.diagnosis
+    obligation := some vcResult.obligation }
+
 /--
 Map the result from an SMT backend engine to an `Outcome`.
 -/

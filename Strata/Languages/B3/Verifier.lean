@@ -50,25 +50,8 @@ def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
   let solver ← Solver.bufferWriter buffer
   return (solver, buffer)
 
-structure VerificationReport where
-  label : String
-  outcome : Core.Outcome
-  diagnosis : Option Core.DiagnosisInfo := none
-  obligation : Option (Imperative.ProofObligation Core.Expression) := none
-
-structure ProcedureReport where
-  procedureName : String
-  results : List VerificationReport
-
-/-- Convert Core VCResult to B3 VerificationReport -/
-private def vcResultToVerificationReport (vcResult : Core.VCResult) : VerificationReport :=
-  { label := vcResult.obligation.label
-    outcome := vcResult.result
-    diagnosis := vcResult.diagnosis
-    obligation := some vcResult.obligation }
-
 /-- Convert B3 program to Core and verify via CoreSMT pipeline -/
-def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
+def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List Core.ProcedureReport) := do
   let convResult := B3.ToCore.convertProgram prog
   if !convResult.errors.isEmpty then
     let msg := convResult.errors.map toString |> String.intercalate "\n"
@@ -80,10 +63,10 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
   let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
-  let reports := results.map vcResultToVerificationReport
+  let reports := results.map Core.vcResultToVerificationReport
   return [{ procedureName := "main", results := reports }]
 
-def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
+def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String Core.VerificationReport)) := do
   let reports ← programToSMT prog solver
   return reports.flatMap (fun r => r.results.map (fun vr => .ok vr))
 
