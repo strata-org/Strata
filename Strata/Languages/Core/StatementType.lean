@@ -176,11 +176,11 @@ where
           catch e =>
             .error (errorWithSourceLoc e md)
 
-        | .typeDecl name numargs md => do try
+        | .typeDecl tc md => do try
           -- Add the type to the context
-          let C ← C.addKnownTypeWithError { name := name, metadata := numargs }
-            (md.toDiagnosticF f!"Type '{name}' is already declared")
-          .ok (.typeDecl name numargs md, Env, C)
+          let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs }
+            (md.toDiagnosticF f!"Type '{tc.name}' is already declared")
+          .ok (.typeDecl tc md, Env, C)
           catch e =>
             .error (errorWithSourceLoc e md)
 
@@ -243,7 +243,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
       body := decl.body.map (·.applySubst S),
       axioms := decl.axioms.map (·.applySubst S) }
     .funcDecl decl' md
-  | .typeDecl _ _ _ => s  -- Type declarations don't contain type variables to substitute
+  | .typeDecl _ _ => s  -- Type declarations don't contain type variables to substitute
   where
     go S ss acc : List Statement :=
     match ss with

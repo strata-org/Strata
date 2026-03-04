@@ -86,7 +86,7 @@ theorem EvalStmt_noFuncDecl_preserves_δ
   | funcDecl_case decl md =>
     intros Hno Heval
     simp [Stmt.noFuncDecl] at Hno
-  | typeDecl_case name numargs md =>
+  | typeDecl_case tc md =>
     intros Hno Heval
     cases Heval with
     | typeDecl_sem => rfl
@@ -210,7 +210,7 @@ theorem StmtToNondetCorrect
       cases Heval
     | .funcDecl _ _ =>
       simp [Stmt.noFuncDecl] at Hno
-    | .typeDecl _ _ md =>
+    | .typeDecl _ md =>
       cases Heval with
       | typeDecl_sem =>
         sorry

@@ -1208,7 +1208,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
       freeVars := bindings.freeVars.push typeDecl,
       boundTypeVars := bindings.boundTypeVars ++ typeParams.toArray }
 
-    return ([.typeDecl name numargs md], updatedBindings)
+    return ([.typeDecl tc md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :

@@ -186,7 +186,7 @@ theorem Statement.typeCheckAux_go_WF :
         grind
       rw [h_keys] at h_nodup
       exact h_nodup
-    | typeDecl name numargs md =>
+    | typeDecl tc md =>
       simp [Except.bind, tryCatch, tryCatchThe] at tcok
       split at tcok <;> try contradiction
       have tcok := Statement.typeCheckAux_elim_singleton tcok

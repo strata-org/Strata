@@ -861,13 +861,13 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     | none =>
       pure (.exit_unlabeled_statement default)
   | .funcDecl decl _md => funcDeclToStatement decl
-  | .typeDecl name numargs _md =>
-    let nameAnn : Ann String M := ⟨default, name⟩
+  | .typeDecl tc _md =>
+    let nameAnn : Ann String M := ⟨default, tc.name⟩
     let args : Ann (Option (Bindings M)) M :=
-      if numargs == 0 then
+      if tc.numargs == 0 then
         ⟨default, none⟩
       else
-        let bindings := List.range numargs |>.map fun i =>
+        let bindings := List.range tc.numargs |>.map fun i =>
           let argName : Ann String M := ⟨default, s!"_ty{i}"⟩
           let argType := TypeP.type default
           Binding.mkBinding default argName argType
