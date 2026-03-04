@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
@@ -666,6 +667,51 @@ def pySpecToLaurelCommand : Command where
     for proc in pgm.staticProcedures do
       IO.println s!"  {Strata.Laurel.formatProcedure proc}"
 
+def pyResolveOverloadsCommand : Command where
+  name := "pyResolveOverloads"
+  args := [ "python_path", "dispatch_ion" ]
+  help := "Identify which overloaded service modules a \
+    Python program uses. Prints one module name per \
+    line to stdout."
+  callback := fun v _ => do
+    let pythonFile : System.FilePath := v[0]
+    let dispatchPath := v[1]
+    -- Read dispatch overload table
+    let ionFile : System.FilePath := dispatchPath
+    let sigs ←
+      match ← Strata.Python.Specs.readDDM ionFile
+              |>.toBaseIO with
+      | .ok t => pure t
+      | .error msg =>
+        exitFailure
+          s!"Could not read dispatch file {ionFile}: {msg}"
+    let (overloads, errors) :=
+      Strata.Python.Specs.ToLaurel.extractOverloads
+        dispatchPath sigs
+    if errors.size > 0 then
+      IO.eprintln
+        s!"{errors.size} dispatch warning(s) for {ionFile}:"
+      for err in errors do
+        IO.eprintln s!"  {err.file}: {err.message}"
+    -- Convert .py to Python AST
+    let stmts ←
+      IO.FS.withTempFile fun _handle dialectFile => do
+        IO.FS.writeBinFile dialectFile
+          Strata.Python.Python.toIon
+        match ← Strata.Python.pythonToStrata
+            dialectFile pythonFile |>.toBaseIO with
+        | .ok s => pure s
+        | .error msg => exitFailure msg
+    -- Walk AST and collect modules
+    let state :=
+      Strata.Python.Specs.IdentifyOverloads.resolveOverloads
+        overloads stmts
+    for w in state.warnings do
+      IO.eprintln s!"warning: {w}"
+    let sorted := state.modules.toArray.qsort (· < ·)
+    for m in sorted do
+      IO.println m
+
 /-- Print a string word-wrapped to `width` columns with `indent` spaces of indentation. -/
 private def printIndented (indent : Nat) (s : String) (width : Nat := 80) : IO Unit := do
   let pad := "".pushn ' ' indent
@@ -697,6 +743,7 @@ def commandGroups : List CommandGroup := [
     commands := [javaGenCommand] },
   { name := "Python"
     commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand, pyTranslateCommand,
+                 pyResolveOverloadsCommand,
                  pySpecsCommand, pySpecToLaurelCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand] },
