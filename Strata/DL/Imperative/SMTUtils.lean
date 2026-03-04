@@ -256,7 +256,7 @@ Writes the proof obligation to file, discharge the obligation using SMT solver,
 and parse the output of the SMT solver.
 
 When two-sided checking is enabled, the generated SMT file will contain two
-`(check-sat-assuming)` commands (one for satisfiability, one for validity),
+`(check-sat-assuming)` commands, one for `P ∧ Q` and one for `P ∧ ¬Q`,
 and the return value includes both decisions.
 -/
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
