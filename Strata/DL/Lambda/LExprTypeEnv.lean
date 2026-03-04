@@ -916,4 +916,148 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
 
 ---------------------------------------------------------------------
 
+/-! ### Context preservation and freshness lemmas -/
+
+/--
+`genTyVar` preserves the context.
+
+Now that `genTyVar` returns `Except Format` (instead of using `panic`),
+we can prove this as a theorem: the error branch never produces an
+environment, and the success branch only updates `genState`.
+-/
+theorem TGenEnv.genTyVar_context {IDMeta : Type} [ToFormat IDMeta]
+    (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
+    Env'.context = Env.context := by
+  simp [TGenEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+
+/-- `genTyVars` preserves the context (by induction, using `genTyVar_context`). -/
+theorem TGenEnv.genTyVars_context {IDMeta : Type} [ToFormat IDMeta]
+    (n : Nat) (Env : TGenEnv IDMeta)
+    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    Env'.context = Env.context := by
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+  | succ n ih =>
+    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        rw [ih Env1 tvs' Env2 h_rest, TGenEnv.genTyVar_context Env tv Env1 h_gen]
+
+/-- If `Map.find?` returns `ty`, then `freeVars ty ⊆ go m` (the per-map free var collector). -/
+private theorem go_knownTypeVars_of_find {T : LExprParams} [DecidableEq T.IDMeta]
+    {m : Map (Identifier T.IDMeta) LTy} {x : T.Identifier} {ty : LTy} {tx : TyIdentifier}
+    (h_find : Map.find? m x = some ty) (h_mem : tx ∈ LTy.freeVars ty) :
+    tx ∈ TContext.types.knownTypeVars.go m := by
+  induction m with
+  | nil => simp [Map.find?] at h_find
+  | cons p ps ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [TContext.types.knownTypeVars.go, List.mem_append]
+    simp only [Map.find?] at h_find
+    split at h_find
+    · -- a = x, so b = ty
+      left; simp at h_find; rw [h_find]; exact h_mem
+    · -- a ≠ x, recurse
+      right; exact ih h_find
+
+/-- If `Maps.find?` returns `ty`, then `freeVars ty ⊆ types.knownTypeVars`. -/
+private theorem types_knownTypeVars_of_find {T : LExprParams} [DecidableEq T.IDMeta]
+    {types : Maps (Identifier T.IDMeta) LTy} {x : T.Identifier} {ty : LTy} {tx : TyIdentifier}
+    (h_find : Maps.find? types x = some ty) (h_mem : tx ∈ LTy.freeVars ty) :
+    tx ∈ TContext.types.knownTypeVars types := by
+  induction types with
+  | nil => simp [Maps.find?] at h_find
+  | cons m rest ih =>
+    simp only [TContext.types.knownTypeVars, List.mem_append]
+    cases h_map : Map.find? m x with
+    | some v =>
+      have h_eq : Maps.find? (m :: rest) x = some v := by
+        simp [Maps.find?, h_map]
+      rw [h_eq] at h_find
+      have := Option.some.inj h_find; subst this
+      left; exact go_knownTypeVars_of_find h_map h_mem
+    | none =>
+      have h_eq : Maps.find? (m :: rest) x = Maps.find? rest x := by
+        simp [Maps.find?, h_map]
+      rw [h_eq] at h_find
+      right; exact ih h_find
+
+/-- If `find?` returns a type `ty` from the context, then `freeVars ty ⊆ knownTypeVars`. -/
+theorem TContext.mem_knownTypeVars_of_find {T : LExprParams} [DecidableEq T.IDMeta]
+    {Γ : TContext T.IDMeta} {x : T.Identifier} {ty : LTy} {tx : TyIdentifier}
+    (h_find : Γ.types.find? x = some ty) (h_mem : tx ∈ LTy.freeVars ty) :
+    tx ∈ TContext.knownTypeVars Γ := by
+  exact types_knownTypeVars_of_find h_find h_mem
+
+/-- If `tx ∉ knownTypeVars Γ`, then `tx` is fresh w.r.t. `Γ`. -/
+theorem TContext.isFresh_of_not_mem_knownTypeVars {T : LExprParams} [DecidableEq T.IDMeta]
+    {tx : TyIdentifier} {Γ : TContext T.IDMeta}
+    (h : tx ∉ TContext.knownTypeVars Γ) :
+    TContext.isFresh tx Γ := by
+  intro x ty h_find h_mem
+  exact h (TContext.mem_knownTypeVars_of_find h_find h_mem)
+
+/-- `genTyVar` produces a type variable that is fresh in the context. -/
+theorem TGenEnv.genTyVar_isFresh {T : LExprParams} [DecidableEq T.IDMeta]
+    [ToFormat T.IDMeta]
+    (Env : TGenEnv T.IDMeta) (tv : TyIdentifier) (Env' : TGenEnv T.IDMeta)
+    (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
+    TContext.isFresh (T := T) tv Env.context := by
+  simp [TGenEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · rename_i h_not_in
+    simp at h
+    obtain ⟨h_tv, _⟩ := h; subst h_tv
+    exact TContext.isFresh_of_not_mem_knownTypeVars h_not_in
+
+/-- `TEnv.genTyVar` produces a type variable that is fresh in the context. -/
+theorem TEnv.genTyVar_isFresh {T : LExprParams} [DecidableEq T.IDMeta]
+    [ToFormat T.IDMeta]
+    (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)
+    (h : TEnv.genTyVar Env = .ok (tv, Env')) :
+    TContext.isFresh tv Env.context := by
+  simp [TEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · rename_i v h_gen; simp at h; obtain ⟨h_tv, _⟩ := h; subst h_tv
+    exact TGenEnv.genTyVar_isFresh Env.genEnv _ v h_gen
+
+/-- `TEnv.genTyVar` preserves the context. -/
+theorem TEnv.genTyVar_context {T : LExprParams} [DecidableEq T.IDMeta]
+    [ToFormat T.IDMeta]
+    (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)
+    (h : TEnv.genTyVar Env = .ok (tv, Env')) :
+    Env'.context = Env.context := by
+  simp [TEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · rename_i v h_gen; simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact TGenEnv.genTyVar_context Env.genEnv _ v h_gen
+
+/-- `TEnv.genTyVar` preserves the substitution. -/
+theorem TEnv.genTyVar_subst {T : LExprParams} [DecidableEq T.IDMeta]
+    [ToFormat T.IDMeta]
+    (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)
+    (h : TEnv.genTyVar Env = .ok (tv, Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  simp [TEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+
 end Lambda

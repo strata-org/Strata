@@ -652,45 +652,6 @@ They are parameterized over `IDMeta` directly (not `T : LExprParams`) because
 some are used before the `variable` block that introduces `T`.
 -/
 
-/--
-`genTyVar` preserves the context.
-
-Now that `genTyVar` returns `Except Format` (instead of using `panic`),
-we can prove this as a theorem: the error branch never produces an
-environment, and the success branch only updates `genState`.
--/
-theorem TGenEnv.genTyVar_context {IDMeta : Type} [ToFormat IDMeta]
-    (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
-    (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
-    Env'.context = Env.context := by
-  simp [TGenEnv.genTyVar] at h
-  split at h
-  · simp at h
-  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-
-/-- `genTyVars` preserves the context (by induction, using `genTyVar_context`). -/
-theorem TGenEnv.genTyVars_context {IDMeta : Type} [ToFormat IDMeta]
-    (n : Nat) (Env : TGenEnv IDMeta)
-    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
-    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
-    Env'.context = Env.context := by
-  induction n generalizing Env tvs Env' with
-  | zero =>
-    simp [TGenEnv.genTyVars] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]
-  | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
-    split at h
-    · simp at h
-    · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
-      split at h
-      · simp at h
-      · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
-        obtain ⟨_, h2⟩ := h; rw [← h2]
-        rw [ih Env1 tvs' Env2 h_rest, TGenEnv.genTyVar_context Env tv Env1 h_gen]
-
 /-- `instantiate` (on `TGenEnv`) preserves the context. -/
 private theorem LMonoTys.instantiate_context {IDMeta : Type} [ToFormat IDMeta]
     (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TGenEnv IDMeta)
@@ -1100,15 +1061,83 @@ theorem unify_makes_equal (ty1 ty2 : LMonoTy) (S_old S_new : SubstInfo)
   subst h_eq
   exact unifyOne_sound (ty1, ty2) S_old relS h_one
 
+/-- Removing a key from a substitution preserves freshness of all keys. -/
+theorem Subst.allKeysFresh_of_remove
+    {S : Subst} {Γ : TContext T.IDMeta} {k : TyIdentifier}
+    (h : Subst.allKeysFresh S Γ) :
+    Subst.allKeysFresh (Maps.remove S k) Γ := by
+  intro a ha
+  exact h a (Maps.mem_keys_of_mem_keys_remove S k a ha)
+
+/-- Every key of the output substitution from `unifyOne`/`unifyCore` is either
+    a key of the input substitution, a free variable of the constraints,
+    or a free variable of the input substitution's values. -/
+private theorem unifyOne_unifyCore_keys_incl :
+    (∀ (c : Constraint) (S : SubstInfo)
+      (relS : ValidSubstRelation [c] S),
+      Constraint.unifyOne c S = .ok relS →
+      ∀ k, k ∈ Maps.keys relS.newS.subst →
+        k ∈ Maps.keys S.subst ∨ k ∈ Constraint.freeVars c ∨ k ∈ Subst.freeVars S.subst)
+    ∧
+    (∀ (cs : Constraints) (S : SubstInfo)
+      (relS : ValidSubstRelation cs S),
+      Constraints.unifyCore cs S = .ok relS →
+      ∀ k, k ∈ Maps.keys relS.newS.subst →
+        k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst) := by
+  sorry
+
+/-- Key-inclusion for `Constraints.unify`: output keys come from input keys,
+    constraint free vars, or input value free vars. -/
+theorem Constraints.unify_keys_incl
+    {cs : Constraints} {S S' : SubstInfo}
+    (h_unify : Constraints.unify cs S = .ok S') :
+    ∀ k, k ∈ Maps.keys S'.subst →
+      k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst := by
+  simp only [Constraints.unify, Bind.bind, Except.bind] at h_unify
+  split at h_unify
+  · simp at h_unify
+  · rename_i relS h_core
+    simp at h_unify; subst h_unify
+    exact unifyOne_unifyCore_keys_incl.2 cs S relS h_core
+
+/-- Unification preserves freshness: if all keys of the input substitution and
+    all free variables in the constraints are fresh in `Γ`, then all keys
+    of the output substitution are also fresh in `Γ`.
+
+    This follows from the structure of `unifyOne`: the only way a new key `id`
+    enters the substitution is when `Maps.find? S.subst id = none` and `id`
+    is a free type variable from the constraint types. -/
+theorem Constraints.unify_allKeysFresh
+    {cs : Constraints} {S S' : SubstInfo} {Γ : TContext T.IDMeta}
+    (h_unify : Constraints.unify cs S = .ok S')
+    (h_keys_fresh : Subst.allKeysFresh S.subst Γ)
+    (h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars cs → TContext.isFresh (T := T) tv Γ)
+    (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars S.subst → TContext.isFresh (T := T) tv Γ) :
+    Subst.allKeysFresh S'.subst Γ := by
+  intro k hk
+  have h_incl := Constraints.unify_keys_incl h_unify k hk
+  cases h_incl with
+  | inl h => exact h_keys_fresh k h
+  | inr h =>
+    cases h with
+    | inl h => exact h_cs_fresh k h
+    | inr h => exact h_vals_fresh k h
+
 /--
 All keys in the substitution produced by `resolveAux` are fresh in the input
 context. This is because `resolveAux` only adds bindings for type variables
 generated by `genTyVar`, which are guaranteed fresh.
+
+Note: the precondition `Subst.allKeysFresh Env.stateSubstInfo.subst Env.context`
+is needed because `resolveAux` extends (not replaces) the input substitution.
+For the top-level call via `LExpr.resolve`, the input substitution is empty
+so the precondition is trivially satisfied.
 -/
 theorem resolveAux_keys_fresh :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
       Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   sorry
 
@@ -1463,6 +1492,7 @@ theorem resolveAux_HasType :
                   match res, h_me with
                   | .ok val, h_me => simp at h_me ⊢; rw [h_me]
                   | .error _, h_me => simp at h_me)
+                sorry -- precondition: input subst keys are fresh
               simp [TEnv.updateSubst] at this
               exact this
             constructor
@@ -1556,6 +1586,7 @@ theorem resolveAux_HasType :
                 match res, h_me with
                 | .ok val, h_me => simp at h_me ⊢; rw [h_me]
                 | .error _, h_me => simp at h_me)
+              sorry -- precondition: input subst keys are fresh
             simp [TEnv.updateSubst] at this
             exact this
           constructor
