@@ -194,8 +194,6 @@ theorem Statement.typeCheckAux_go_WF :
       apply ih tcok <;> try assumption
       simp [WFStatementsProp] at *
       simp [List.Forall_append, Forall, *]
-      constructor
-      trivial
 
 /--
 A list of Statement `ss` that passes type checking is well formed with respect

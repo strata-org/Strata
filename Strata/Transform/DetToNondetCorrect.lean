@@ -86,6 +86,10 @@ theorem EvalStmt_noFuncDecl_preserves_δ
   | funcDecl_case decl md =>
     intros Hno Heval
     simp [Stmt.noFuncDecl] at Hno
+  | typeDecl_case name numargs md =>
+    intros Hno Heval
+    cases Heval with
+    | typeDecl_sem => rfl
 
 /-- When a block has no function declarations, evaluating it preserves the evaluator. -/
 theorem EvalBlock_noFuncDecl_preserves_δ
@@ -206,6 +210,16 @@ theorem StmtToNondetCorrect
       cases Heval
     | .funcDecl _ _ =>
       simp [Stmt.noFuncDecl] at Hno
+    | .typeDecl _ _ md =>
+      cases Heval with
+      | typeDecl_sem =>
+        show EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (NondetStmt.assume "skip" Imperative.HasBool.tt md) σ
+        apply EvalNondetStmt.cmd_sem
+        · constructor
+          · simp [WellFormedSemanticEvalVal] at Hwfvl
+            have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
+            exact Hwfvl.2 HasBool.tt σ Hval
+        · simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
   . intros ss Hsz Hno Heval
     cases ss <;>
     cases Heval
