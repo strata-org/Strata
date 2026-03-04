@@ -466,8 +466,7 @@ def readDispatchOverloads
       | .ok t => pure t
       | .error msg =>
         exitFailure
-          s!"Could not read dispatch file \
-            {ionFile}: {msg}"
+          s!"Could not read dispatch file {ionFile}: {msg}"
     let (overloads, errors) :=
       Strata.Python.Specs.ToLaurel.extractOverloads
         dispatchPath sigs
@@ -492,6 +491,72 @@ def extractStmtsFromProgram
     : Array (Strata.Python.stmt Strata.SourceRange) :=
   let cmds := Strata.toPyCommands pgm.commands
   Strata.unwrapModule cmds[0]!
+
+/-- Build dispatch overload table, auto-resolve pyspec files
+    from the program AST, and merge everything into a single
+    `PySpecPrelude`.
+
+    Auto-resolved pyspec files that are missing on disk are
+    skipped with a warning.  Explicitly provided `--pyspec`
+    and `--dispatch` paths still produce a hard error when
+    unreadable. -/
+def resolveAndBuildPrelude
+    (dispatchPaths : Array String)
+    (pyspecPaths : Array String)
+    (stmts : Array (Strata.Python.stmt Strata.SourceRange))
+    : IO PySpecPrelude := do
+  -- Build dispatch overload table
+  let dispatchOverloads ←
+    readDispatchOverloads dispatchPaths
+
+  -- Auto-resolve pyspec files used by the program
+  let resolveState :=
+    Strata.Python.Specs.IdentifyOverloads.resolveOverloads
+      dispatchOverloads stmts
+  for w in resolveState.warnings do
+    IO.eprintln s!"warning: {w}"
+  let mut autoSpecPaths : Array String := #[]
+  if h : dispatchPaths.size > 0 then
+    let firstDispatch : System.FilePath :=
+      dispatchPaths[0]
+    let dispatchDir :=
+      firstDispatch.parent.getD "."
+    let resolvedMods :=
+      resolveState.modules.toArray.qsort (· < ·)
+    for modName in resolvedMods do
+      match Strata.Python.Specs.ModuleName.ofString
+          modName with
+      | .error _ =>
+        IO.eprintln
+          s!"warning: invalid module name \
+            '{modName}', skipping"
+      | .ok mod =>
+        let specPath : System.FilePath :=
+          dispatchDir / mod.strataFileName
+        if ← specPath.pathExists then
+          autoSpecPaths :=
+            autoSpecPaths.push specPath.toString
+        else
+          IO.eprintln
+            s!"warning: auto-resolved pyspec \
+              not found: {specPath}"
+  let allSpecPaths := autoSpecPaths ++ pyspecPaths
+
+  -- Build PySpec prelude from combined paths
+  let pySpecResult ← buildPySpecPrelude allSpecPaths
+
+  -- Merge dispatch overloads into prelude table
+  let mut allOverloads := pySpecResult.overloads
+  for (funcName, fnOverloads) in
+      dispatchOverloads do
+    let existing := allOverloads.getD funcName {}
+    allOverloads := allOverloads.insert funcName
+      (fnOverloads.fold (init := existing)
+        fun acc k v => acc.insert k v)
+  return {
+    corePrelude := pySpecResult.corePrelude
+    overloads := allOverloads
+  }
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -518,64 +583,19 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print pgm
     assert! cmds.size == 1
 
-    -- Build dispatch overload table
-    let dispatchPaths := pflags.getRepeated "dispatch"
-    let dispatchOverloads ←
-      readDispatchOverloads dispatchPaths
-
-    -- Auto-resolve pyspec files used by the program
     let stmts := Strata.unwrapModule cmds[0]!
-    let resolveState :=
-      Strata.Python.Specs.IdentifyOverloads.resolveOverloads
-        dispatchOverloads stmts
-    for w in resolveState.warnings do
-      IO.eprintln s!"warning: {w}"
-    let mut autoSpecPaths : Array String := #[]
-    if h : dispatchPaths.size > 0 then
-      let firstDispatch : System.FilePath :=
-        dispatchPaths[0]
-      let dispatchDir :=
-        firstDispatch.parent.getD "."
-      let resolvedMods :=
-        resolveState.modules.toArray.qsort (· < ·)
-      for modName in resolvedMods do
-        match Strata.Python.Specs.ModuleName.ofString
-            modName with
-        | .error _ =>
-          IO.eprintln
-            s!"warning: invalid module name \
-              '{modName}', skipping"
-        | .ok mod =>
-          let specPath : System.FilePath :=
-            dispatchDir / mod.strataFileName
-          if ← specPath.pathExists then
-            autoSpecPaths :=
-              autoSpecPaths.push specPath.toString
-          else
-            IO.eprintln
-              s!"warning: auto-resolved pyspec \
-                not found: {specPath}"
-    let allSpecPaths :=
-      autoSpecPaths ++ pflags.getRepeated "pyspec"
-
-    -- Build PySpec prelude from combined paths
-    let pySpecResult ← buildPySpecPrelude allSpecPaths
-    let pyPrelude := pySpecResult.corePrelude
-
-    -- Merge dispatch overloads into prelude table
-    let mut allOverloads := pySpecResult.overloads
-    for (funcName, fnOverloads) in
-        dispatchOverloads do
-      let existing := allOverloads.getD funcName {}
-      allOverloads := allOverloads.insert funcName
-        (fnOverloads.fold (init := existing)
-          fun acc k v => acc.insert k v)
+    let prelude ← resolveAndBuildPrelude
+      (pflags.getRepeated "dispatch")
+      (pflags.getRepeated "pyspec")
+      stmts
 
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let laurelPgm := Strata.Python.pythonToLaurel pyPrelude cmds[0]!
-      sourcePathForMetadata allOverloads
+    let laurelPgm :=
+      Strata.Python.pythonToLaurel
+        prelude.corePrelude cmds[0]!
+        sourcePathForMetadata prelude.overloads
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
@@ -599,14 +619,16 @@ def pyAnalyzeLaurelCommand : Command where
           let programDecls := coreProgramDecls.decls.drop laurelPreludeSize
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
-            pyPrelude.decls.flatMap Core.Decl.names
+            prelude.corePrelude.decls.flatMap Core.Decl.names
               |>.foldl (init := {}) fun s n => s.insert n.name
           let collisions := programDecls.flatMap fun d =>
             d.names.filter fun n => preludeNames.contains n.name
           if !collisions.isEmpty then
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := pyPrelude.decls ++ programDecls }
+          let coreProgram :=
+            { decls :=
+                prelude.corePrelude.decls ++ programDecls }
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
