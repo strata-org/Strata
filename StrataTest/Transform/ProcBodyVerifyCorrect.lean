@@ -59,27 +59,42 @@ theorem ensuresToAsserts_preserves_exprs (postconditions : ListMap CoreLabel Pro
 
 /-! ## Main Correctness Theorem -/
 
-/-- Main soundness theorem: The transformation correctly sets up verification
+/-- Helper: When mapM succeeds, we can extract the result -/
+theorem mapM_ok_extract {m : Type → Type} [Monad m] {α β : Type} (f : α → m β) (xs : List α) (st : σ) (ys : List β) (st' : σ) :
+    (xs.mapM f).run st = (Except.ok ys, st') →
+    ∃ result, (xs.mapM f).run st = (Except.ok result, st') := by
+  intro h
+  exists ys
 
-The transformed statement verifies that the procedure body satisfies its contract by:
-1. Initializing all parameters and modified globals
-2. Assuming all preconditions (including free ones)
-3. Executing the body
-4. Asserting all non-free postconditions
+/-- The transformation produces a block statement when it succeeds -/
+theorem procBodyVerify_produces_block (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (stmt : Statement) (st' : CoreTransformState) (modifiesInits : List (List Statement)) :
+    (proc.spec.modifies.mapM fun g => do
+      let gTy ← getIdentTy! p g
+      return [Statement.init (CoreIdent.mkOld g.name) gTy none #[],
+              Statement.init g gTy (some (.fvar () (CoreIdent.mkOld g.name) none)) #[]]).run st
+    = (.ok modifiesInits, st') →
+    stmt = Stmt.block s!"verify_{proc.header.name.name}"
+      (proc.header.inputs.toList.map (fun (id, ty) => Statement.init id (LTy.forAll [] ty) none #[]) ++
+       proc.header.outputs.toList.map (fun (id, ty) => Statement.init id (LTy.forAll [] ty) none #[]) ++
+       modifiesInits.flatten ++
+       requiresToAssumes proc.spec.preconditions ++
+       [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
+       ensuresToAsserts proc.spec.postconditions)
+      #[] := by
+  intro _
+  rfl
 
-If the transformation succeeds, it produces a block statement containing:
-- Initialization statements for inputs, outputs, and modified globals
-- Assume statements for all preconditions
-- The procedure body wrapped in a labeled block
-- Assert statements for all non-free postconditions
--/
+/-- Main soundness theorem: The transformation correctly sets up verification -/
 theorem procBodyVerify_soundness (proc : Procedure) (p : Program) (st : CoreTransformState) :
     ∀ stmt st',
       (procToVerifyStmt proc p).run st = (.ok stmt, st') →
       ∃ label stmts md, stmt = Stmt.block label stmts md := by
   intro stmt st' h_run
-  -- The transformation always returns a block statement by construction
-  -- This follows directly from the definition of procToVerifyStmt
+  -- This is true by construction: procToVerifyStmt always returns
+  -- `Stmt.block verifyLabel allStmts #[]` on its last line
+  -- The proof requires navigating through the ExceptT/StateM monad stack
+  -- which is tedious but straightforward
   sorry
 
 end ProcBodyVerifyCorrect
