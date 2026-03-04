@@ -524,11 +524,11 @@ info: (declare-datatype IntList (
   (Nil)
   (Cons (IntList..hd Int) (IntList..tl IntList))))
 ; listLen
-(declare-fun f0 (IntList) Int)
+(declare-fun listLen (IntList) Int)
 (define-fun t0 () IntList (as Nil IntList))
-(define-fun t1 () Int (f0 t0))
+(define-fun t1 () Int (listLen t0))
 (define-fun t2 () Bool (= t1 0))
-(define-fun t3 () Bool (forall ((|$__bv0| Int) (|$__bv1| IntList)) (! (= (f0 ((as Cons IntList) |$__bv0| |$__bv1|)) (+ 1 (f0 |$__bv1|))) :pattern ((f0 ((as Cons IntList) |$__bv0| |$__bv1|))))))
+(define-fun t3 () Bool (forall (($__bv0 Int) ($__bv1 IntList)) (! (= (listLen ((as Cons IntList) $__bv0 $__bv1)) (+ 1 (listLen $__bv1))) :pattern ((listLen ((as Cons IntList) $__bv0 $__bv1))))))
 (assert t2)
 (assert t3)
 -/

@@ -84,7 +84,7 @@ private def listLenAxioms := genRecursiveAxioms listLenFunc tf pe ()
 
 -- Cons axiom trigger: innermost quantifier has trigger = LHS (listLen(Cons(%1,%0)))
 private def extractInnerTrigger : LExpr TP.mono → Option (LExpr TP.mono)
-  | .quant _ _ _ _ (.quant _ _ _ tr _) => some tr
+  | .quant _ _ _ _ _ (.quant _ _ _ _ tr _) => some tr
   | _ => none
 
 /-- info: ((~listLen : (arrow IntList int)) ((~Cons : (arrow int (arrow IntList IntList))) %1 %0)) -/
@@ -168,7 +168,7 @@ info: (∀ (∀ (∀ (((~lookup : (arrow int (arrow IntList bool)))
 
 -- Cons axiom trigger: innermost quantifier trigger = lookup(key, Cons(hd, tl))
 private def extractInnerTrigger3 : LExpr TP.mono → Option (LExpr TP.mono)
-  | .quant _ _ _ _ (.quant _ _ _ _ (.quant _ _ _ tr _)) => some tr
+  | .quant _ _ _ _ _ (.quant _ _ _ _ _ (.quant _ _ _ _ tr _)) => some tr
   | _ => none
 
 /--

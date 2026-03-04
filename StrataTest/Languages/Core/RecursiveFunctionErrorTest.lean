@@ -45,7 +45,7 @@ rec function len<a>(@[cases] xs : MyList a) : int
   (Nil())),
   (Cons(hd : a, tl : (MyList a)))
 };
-procedure |len$$wf| (xs : (MyList $__ty0)) returns ()
+procedure len$$wf (xs : (MyList $__ty0)) returns ()
 {
   assert [len_body_calls_MyList..tl_0]: !(MyList..isNil($__xs0)) ==> MyList..isCons($__xs0);
   };-/
@@ -76,7 +76,7 @@ rec function listLen (xs : IntList) : int
   (Nil())),
   (Cons(hd : int, tl : IntList))
 };
-procedure |listLen$$wf| (xs : IntList) returns ()
+procedure listLen$$wf (xs : IntList) returns ()
 {
   assert [listLen_body_calls_IntList..tl_0]: !(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0);
   };-/

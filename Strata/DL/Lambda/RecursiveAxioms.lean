@@ -100,9 +100,9 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
     match allTys with
     | [] => .ok eq
     | ty :: rest =>
-      let inner := LExpr.quant m .all (.some ty) lhs eq
+      let inner := LExpr.quant m .all "" (.some ty) lhs eq
       .ok (rest.foldl (fun body ty =>
-        .quant m .all (.some ty) (LExpr.noTrigger m) body
+        .quant m .all "" (.some ty) (LExpr.noTrigger m) body
       ) inner)
 
 /-- Generate per-constructor axiom LExprs for a recursive function,
