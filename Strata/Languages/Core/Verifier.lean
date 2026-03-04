@@ -171,14 +171,14 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 
   Emoji  Label                                          P ∧ Q    P ∧ ¬Q   Reachable  Deductive  BugFinding  Meaning
   -----  ---------------------------------------------  -------  -------  ---------  ---------  ----------  -------
-  ✅     pass and reachable                             sat      unsat    yes        pass       pass        Property always true, reachable from declaration entry
-  ❌     refuted and reachable                          unsat    sat      yes        error      error       Property always false, reachable from declaration entry
+  ✅     always true and is reachable                   sat      unsat    yes        pass       pass        Property always true, reachable from declaration entry
+  ❌     always false and is reachable                  unsat    sat      yes        error      error       Property always false, reachable from declaration entry
   🔶     can be both true and false and is reachable    sat      sat      yes        error      note        Reachable, solver found models for both the property and its negation
   ⛔     unreachable                                    unsat    unsat    no         warning    warning     Dead code, path unreachable
-  ➕     satisfiable                                    sat      unknown  yes        error      note        Property can be true and is reachable, validity unknown
+  ➕     can be true and is reachable                   sat      unknown  yes        error      note        Property can be true and is reachable, validity unknown
   ✖️     always false if reachable                      unsat    unknown  unknown    error      error       Property always false if reachable, reachability unknown
   ➖     can be false and is reachable                  unknown  sat      yes        error      note        Q can be false and path is reachable, satisfiability of Q unknown
-  ✔️     pass if reachable                              unknown  unsat    unknown    pass       pass        Property always true if reachable, reachability unknown
+  ✔️     always true if reachable                       unknown  unsat    unknown    pass       pass        Property always true if reachable, reachability unknown
   ❓     unknown                                        unknown  unknown  unknown    error      note        Both checks inconclusive
 -/
 structure VCOutcome where
@@ -280,14 +280,14 @@ def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
   -- For cover: satisfiability sat means the cover is satisfied (pass)
   if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
-  else if o.passAndReachable then "pass and reachable from declaration entry"
-  else if o.alwaysFalseAndReachable then "refuted and reachable from declaration entry"
+  else if o.passAndReachable then "always true and is reachable from declaration entry"
+  else if o.alwaysFalseAndReachable then "always false and is reachable from declaration entry"
   else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
   else if o.unreachable then "unreachable"
-  else if o.satisfiableValidityUnknown then "satisfiable"
+  else if o.satisfiableValidityUnknown then "can be true and is reachable from declaration entry"
   else if o.alwaysFalseReachabilityUnknown then "always false if reachable"
-  else if o.canBeFalseAndIsReachable then "can be false and is reachable"
-  else if o.passReachabilityUnknown then "pass if reachable"
+  else if o.canBeFalseAndIsReachable then "can be false and is reachable from declaration entry"
+  else if o.passReachabilityUnknown then "always true if reachable"
   else "unknown"
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
@@ -330,8 +330,8 @@ def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool)
   else if validityCheck && !satisfiabilityCheck then
     -- Only validity requested: mask satisfiability
     -- Special case: if property is refuted (.unsat, .sat), keep it as (.unknown, .sat)
-    -- which will display as "reachable and can be false" instead of "refuted and reachable"
-    -- But for "pass if reachable" we want (.unknown, .unsat)
+    -- which will display as "can be false and is reachable" instead of "always false and is reachable"
+    -- But for "always true if reachable" we want (.unknown, .unsat)
     { satisfiabilityProperty := .unknown,
       validityProperty := outcome.validityProperty }
   else if satisfiabilityCheck && !validityCheck then

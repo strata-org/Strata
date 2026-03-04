@@ -135,35 +135,35 @@ true
 info:
 Obligation: new_g_value
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: old_g_property
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: (Origin_Inc_Requires)a_positive
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: (Origin_Inc_Requires)a_positive
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: return_value_lemma
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify globalCounterPgm

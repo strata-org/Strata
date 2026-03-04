@@ -90,23 +90,23 @@ $__x3 <= 0
 info:
 Obligation: a1
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: a3
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: a4
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: a6
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: a7
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify exitPgm

@@ -111,7 +111,7 @@ def normalizeModelValues (s : String) : String :=
 info:
 Obligation: assert_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_1
 Property: assert
@@ -119,7 +119,7 @@ Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_3
 Property: assert
@@ -127,42 +127,42 @@ Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x0, model_not_2)
 
 Obligation: assert_5
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x0, model_not_2)
 
 Obligation: assert_6
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x1, model_not_2)
 
 Obligation: assert_7
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x1, model_not_2)
 
 Obligation: assert_8
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x2, model_not_2)
 
 Obligation: assert_9
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x2, model_not_2)
 
 Obligation: assert_10
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x3, model_not_2)
 
 Obligation: assert_11
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__x3, model_not_2)
 -/
 #guard_msgs in
@@ -177,7 +177,7 @@ Model (property false): ($__x3, model_not_2)
 info:
 Obligation: assert_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_1
 Property: assert
@@ -185,7 +185,7 @@ Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_3
 Property: assert
@@ -231,7 +231,7 @@ Result: ❓ unknown
 info:
 Obligation: assert_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_1
 Property: assert
@@ -239,7 +239,7 @@ Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_3
 Property: assert

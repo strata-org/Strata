@@ -103,11 +103,11 @@ true
 info:
 Obligation: test_assert
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: post
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify SimpleTestEnv

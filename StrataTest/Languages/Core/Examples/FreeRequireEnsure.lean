@@ -65,7 +65,7 @@ $__g3 == 15
 
 Result: Obligation: g_eq_15_internal
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__g3, 0)
 
 
@@ -92,15 +92,15 @@ procedure ProcCaller () returns (x : int)
 info:
 Obligation: g_gt_10_internal
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: g_lt_10
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: g_eq_15_internal
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__g3, 0)
 -/
 #guard_msgs in

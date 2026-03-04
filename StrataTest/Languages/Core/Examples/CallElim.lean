@@ -82,11 +82,11 @@ spec {
 info:
 Obligation: double_correct
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: testProc_result
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval testCallElim callElimBugExample

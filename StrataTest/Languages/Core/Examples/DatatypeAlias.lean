@@ -47,15 +47,15 @@ spec {
 info:
 Obligation: set_v_calls_Box..value_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: valueIs100
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: TestBoxAlias_ensures_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify datatypeAliasPgm (options := .quiet)

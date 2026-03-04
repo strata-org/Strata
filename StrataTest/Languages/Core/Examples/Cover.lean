@@ -43,7 +43,7 @@ Result: ✖️ always false if reachable
 
 Obligation: unreachable_assert
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: reachable_cover
 Property: cover
@@ -55,7 +55,7 @@ Result: ✖️ always false if reachable
 
 Obligation: reachable_assert
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify coverPgm1 (options := .quiet)
@@ -91,7 +91,7 @@ Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: atest2
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify coverPgm2 (options := .quiet)
@@ -172,7 +172,7 @@ Result: ❌ unreachable
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✅ pass and reachable from declaration entry
+Result: ✅ always true and is reachable from declaration entry
 
 Obligation: reach_cover_pass
 Property: cover
@@ -180,7 +180,7 @@ Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ❌ refuted and reachable from declaration entry
+Result: ❌ always false and is reachable from declaration entry
 -/
 #guard_msgs in
 #eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkAmount := .full})
@@ -218,7 +218,7 @@ Result: ⛔ unreachable
 
 Obligation: no_rc_assert
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: rc_cover
 Property: cover

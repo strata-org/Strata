@@ -75,14 +75,14 @@ def testOutcome (o : VCOutcome) (expectedTrue : OutcomePredicate) : IO Unit := d
 
 /--
 info:  isPass isSatisfiable isAlwaysTrue isReachable
-Sat:sat|Val:unsat ✅ pass and reachable from declaration entry, Always true and reachable, SARIF: Deductive level: none, BugFinding level: none
+Sat:sat|Val:unsat ✅ always true and is reachable from declaration entry, Always true and reachable, SARIF: Deductive level: none, BugFinding level: none
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (.sat default) .unsat) .passAndReachable
 
 /--
 info:  isAlwaysFalse isReachable
-Sat:unsat|Val:sat ❌ refuted and reachable from declaration entry, Always false and reachable, SARIF: Deductive level: error, BugFinding level: error
+Sat:unsat|Val:sat ❌ always false and is reachable from declaration entry, Always false and reachable, SARIF: Deductive level: error, BugFinding level: error
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome .unsat (.sat default)) .alwaysFalseAndReachable
@@ -103,7 +103,7 @@ Sat:unsat|Val:unsat ⛔ unreachable, Unreachable: path condition is contradictor
 
 /--
 info:  isSatisfiable
-Sat:sat|Val:unknown ➕ satisfiable, Can be true, unknown if always true, SARIF: Deductive level: error, BugFinding level: note
+Sat:sat|Val:unknown ➕ can be true and is reachable from declaration entry, Can be true, unknown if always true, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (.sat default) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) .satisfiableValidityUnknown
@@ -117,14 +117,14 @@ Sat:unsat|Val:unknown ✖️ always false if reachable, Always false if reachabl
 
 /--
 info:
-Sat:unknown|Val:sat ➖ can be false and is reachable, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
+Sat:unknown|Val:sat ➖ can be false and is reachable from declaration entry, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)) .canBeFalseAndIsReachable
 
 /--
 info:  isPass isAlwaysTrue
-Sat:unknown|Val:unsat ✔️ pass if reachable, Always true if reachable, reachability unknown, SARIF: Deductive level: none, BugFinding level: none
+Sat:unknown|Val:unsat ✔️ always true if reachable, Always true if reachable, reachability unknown, SARIF: Deductive level: none, BugFinding level: none
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat) .passReachabilityUnknown

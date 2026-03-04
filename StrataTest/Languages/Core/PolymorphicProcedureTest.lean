@@ -54,7 +54,7 @@ true
 
 Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__xs3, (as Nil (List Int))
 
 
@@ -85,12 +85,12 @@ spec {
 info:
 Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 Model (property false): ($__xs3, (as Nil (List Int))
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify polyProcPgm
@@ -145,15 +145,15 @@ true
 info:
 Obligation: MkCons_ensures_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: assert_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify polyPostPgm

@@ -60,15 +60,15 @@ spec {
 info:
 Obligation: callElimAssert_n_positive_6
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 
 Obligation: output_property
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
@@ -81,27 +81,27 @@ Result: ✔️ pass if reachable
 info:
 Obligation: result_correct
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 
 Obligation: output_property
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: y_value
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: z_value
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm (options := .quiet)
@@ -112,7 +112,7 @@ Result: ✔️ pass if reachable
 info:
 Obligation: y_value
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
@@ -125,11 +125,11 @@ Result: ✔️ pass if reachable
 info:
 Obligation: y_value
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: z_value
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm

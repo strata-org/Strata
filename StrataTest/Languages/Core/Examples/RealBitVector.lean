@@ -70,7 +70,7 @@ x + y >= 4.0
 
 Result: Obligation: real_add_ge_bad
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 
 
 [DEBUG] Evaluated program:
@@ -88,11 +88,11 @@ procedure P () returns ()
 info:
 Obligation: real_add_ge_good
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: real_add_ge_bad
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 -/
 #guard_msgs in
 #eval verify realPgm
@@ -171,11 +171,11 @@ $__x0 + $__x0 == $__x0 - $__x0
 info:
 Obligation: bv_add_ge
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: Q_ensures_0
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 -/
 #guard_msgs in
 #eval verify bvPgm
@@ -202,31 +202,31 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 info:
 Obligation: add_comm
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: xor_cancel
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: div_shift
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: mul_shift
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: demorgan
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: mod_and
 Property: assert
-Result: ✔️ pass if reachable
+Result: ✔️ always true if reachable
 
 Obligation: bad_shift
 Property: assert
-Result: ➖ can be false and is reachable
+Result: ➖ can be false and is reachable from declaration entry
 -/
 #guard_msgs in
 #eval verify bvMoreOpsPgm (options := .quiet)
