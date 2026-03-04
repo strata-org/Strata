@@ -468,7 +468,48 @@ theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     (mty : LMonoTy) (h_find : Maps.find? S a = some t) (h_wf : SubstWF S)
     (ha_fv : a ∈ LMonoTy.freeVars mty) :
     relevantKeys S (LMonoTy.subst [[(a, t)]] mty) < relevantKeys S mty := by
-  sorry
+  unfold relevantKeys
+  -- Key fact 1: a ∉ freeVars t (from SubstWF)
+  have ha_not_in_t : a ∉ LMonoTy.freeVars t :=
+    SubstWF.not_mem_freeVars_of_find S a t h_find h_wf
+  -- Key fact 2: SubstWF for the singleton substitution
+  have h_wf_single : SubstWF [[(a, t)]] := SubstWF.single_subst a ha_not_in_t
+  -- Key fact 3: a ∉ freeVars (subst [[(a,t)]] mty)
+  have ha_not_in_subst : a ∉ LMonoTy.freeVars (LMonoTy.subst [[(a, t)]] mty) := by
+    have h_keys := LMonoTy.subst_keys_not_in_substituted_type (S := [[(a, t)]]) (ty := mty) h_wf_single
+    simp [Maps.keys, Map.keys] at h_keys
+    exact h_keys
+  -- Key fact 4: no key of S is in freeVars t
+  have h_keys_not_in_t : ∀ k, k ∈ Maps.keys S → k ∉ LMonoTy.freeVars t := by
+    intro k hk
+    simp [SubstWF] at h_wf
+    intro hkt
+    have h_t_sub : LMonoTy.freeVars t ⊆ Subst.freeVars S :=
+      Subst.freeVars_of_find_subset S h_find
+    exact h_wf k hk (h_t_sub hkt)
+  -- Key fact 5: freeVars after subst ⊆ freeVars mty ++ freeVars t
+  have h_fv_subset := LMonoTy.freeVars_of_subst_subset [[(a, t)]] mty
+  -- Now prove the filter length decreases
+  apply List.filter_length_lt_of_imp_witness
+    (a := a)
+  · -- Implication: k ∈ freeVars(subst) → k ∈ freeVars(mty) for k ∈ keys S
+    intro k hk hk_in_subst
+    rw [decide_eq_true_eq] at hk_in_subst ⊢
+    have hk_in_union := h_fv_subset hk_in_subst
+    rw [List.mem_append] at hk_in_union
+    cases hk_in_union with
+    | inl h => exact h
+    | inr h =>
+      have : Subst.freeVars [[(a, t)]] = LMonoTy.freeVars t := by
+        simp [Subst.freeVars, Maps.values, Map.values]
+      rw [this] at h
+      exact absurd h (h_keys_not_in_t k hk)
+  · -- a ∈ Maps.keys S
+    exact Maps.find?_mem_keys S h_find
+  · -- a ∈ freeVars mty
+    rw [decide_eq_true_eq]; exact ha_fv
+  · -- a ∉ freeVars (subst [[(a,t)]] mty)
+    rw [decide_eq_true_eq]; exact ha_not_in_subst
 
 /-- All keys in substitution `S` are fresh w.r.t. context `Γ`. -/
 def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
@@ -896,45 +937,6 @@ They are parameterized over `IDMeta` directly (not `T : LExprParams`) because
 some are used before the `variable` block that introduces `T`.
 -/
 
-/--
-`genTyVar` preserves the context.
-
-Now that `genTyVar` returns `Except Format` (instead of using `panic`),
-we can prove this as a theorem: the error branch never produces an
-environment, and the success branch only updates `genState`.
--/
-theorem TGenEnv.genTyVar_context {IDMeta : Type} [ToFormat IDMeta]
-    (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
-    (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
-    Env'.context = Env.context := by
-  simp [TGenEnv.genTyVar] at h
-  split at h
-  · simp at h
-  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-
-/-- `genTyVars` preserves the context (by induction, using `genTyVar_context`). -/
-theorem TGenEnv.genTyVars_context {IDMeta : Type} [ToFormat IDMeta]
-    (n : Nat) (Env : TGenEnv IDMeta)
-    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
-    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
-    Env'.context = Env.context := by
-  induction n generalizing Env tvs Env' with
-  | zero =>
-    simp [TGenEnv.genTyVars] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]
-  | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
-    split at h
-    · simp at h
-    · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
-      split at h
-      · simp at h
-      · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
-        obtain ⟨_, h2⟩ := h; rw [← h2]
-        rw [ih Env1 tvs' Env2 h_rest, TGenEnv.genTyVar_context Env tv Env1 h_gen]
-
 /-- `instantiate` (on `TGenEnv`) preserves the context. -/
 private theorem LMonoTys.instantiate_context {IDMeta : Type} [ToFormat IDMeta]
     (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TGenEnv IDMeta)
@@ -1091,7 +1093,40 @@ theorem HasType_subst_fresh_all
     (h_fresh : Subst.allKeysFresh S Γ)
     (h_wf : SubstWF S) :
     HasType C Γ e (.forAll [] (LMonoTy.subst S mty)) := by
-  sorry
+  -- Trivial case: S has empty scopes
+  by_cases hS : Subst.hasEmptyScopes S
+  · rw [LMonoTy.subst_emptyS hS]; exact h
+  · -- Strong induction on relevantKeys S mty
+    suffices ∀ (n : Nat) (mty : LMonoTy),
+        relevantKeys S mty = n →
+        HasType C Γ e (.forAll [] mty) →
+        HasType C Γ e (.forAll [] (LMonoTy.subst S mty)) from
+      this (relevantKeys S mty) mty rfl h
+    intro n
+    induction n using Nat.strongRecOn with
+    | _ n ih =>
+      intro mty h_rk h_ty
+      -- Check if any key of S is in freeVars mty
+      by_cases h_any : ∃ a, a ∈ Maps.keys S ∧ a ∈ LMonoTy.freeVars mty
+      · -- Inductive case: there's a relevant key
+        obtain ⟨a, ha_key, ha_fv⟩ := h_any
+        obtain ⟨t, h_find⟩ := Maps.find?_of_mem_keys' S a ha_key
+        -- Step 1: apply HasType_subst_fresh for the single binding (a, t)
+        have h_a_fresh : TContext.isFresh a Γ := h_fresh a ha_key
+        have h1 : HasType C Γ e (.forAll [] (LMonoTy.subst [[(a, t)]] mty)) :=
+          HasType_subst_fresh C Γ e mty a t h_ty h_a_fresh
+        -- Step 2: by induction, apply HasType_subst_fresh_all to the substituted type
+        have h_decrease := relevantKeys_decrease S a t mty h_find h_wf ha_fv
+        have h2 : HasType C Γ e
+            (.forAll [] (LMonoTy.subst S (LMonoTy.subst [[(a, t)]] mty))) :=
+          ih (relevantKeys S (LMonoTy.subst [[(a, t)]] mty))
+            (h_rk ▸ h_decrease) (LMonoTy.subst [[(a, t)]] mty) rfl h1
+        -- Step 3: rewrite using absorption
+        rwa [LMonoTy.subst_absorbs_single S a t mty h_find h_wf] at h2
+      · -- Base case: no relevant key, so subst S mty = mty
+        have h_no_key : ∀ x, x ∈ LMonoTy.freeVars mty → x ∉ Maps.keys S :=
+          fun x hx hxk => h_any ⟨x, hxk, hx⟩
+        rw [LMonoTy.subst_no_relevant_keys S mty h_no_key]; exact h_ty
 
 /-- `resolve` is `resolveAux` followed by applying the final substitution. -/
 theorem resolve_of_resolveAux
@@ -1205,7 +1240,98 @@ private theorem subst_orig_new_binding
     (h_lty : lty = LMonoTy.subst S orig_lty)
     (h_occurs : ¬(id ∈ lty.freeVars)) :
     LMonoTy.subst (Maps.insert (Subst.apply [(id, lty)] S) id lty) orig_lty = lty := by
-  sorry
+  subst h_lty
+  -- Abbreviate: let S' = the new substitution, lty = subst S orig_lty
+  -- S' is non-empty (has a binding for id)
+  have h_find_S'_id : Maps.find? (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+      id (LMonoTy.subst S orig_lty)) id = some (LMonoTy.subst S orig_lty) :=
+    Maps.find?_insert_self _ _ _
+  have hS' : Subst.hasEmptyScopes (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+      id (LMonoTy.subst S orig_lty)) = false :=
+    Subst.hasEmptyScopes_false_of_find _ id _ h_find_S'_id
+  -- The apply preserves keys, so find? (apply ...) id = none
+  have h_apply_none : Maps.find? (Subst.apply [(id, LMonoTy.subst S orig_lty)] S) id = none := by
+    rw [Subst.find?_apply]; simp [h_none]
+  -- For x ≠ id, find? S' x = (find? S x).map (subst [[(id, lty)]])
+  have h_find_ne : ∀ x, x ≠ id →
+      Maps.find? (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+        id (LMonoTy.subst S orig_lty)) x =
+      (Maps.find? S x).map (LMonoTy.subst [[(id, LMonoTy.subst S orig_lty)]]) := fun x hx =>
+    (Maps.find?_insert_ne_of_none _ _ _ _ hx h_apply_none).trans (Subst.find?_apply _ _ _)
+  -- subst [[(id, lty)]] t = t when id ∉ freeVars t
+  have h_single_noop : ∀ t : LMonoTy, ¬(id ∈ t.freeVars) →
+      LMonoTy.subst [[(id, LMonoTy.subst S orig_lty)]] t = t := fun t ht =>
+    LMonoTy.subst_no_relevant_keys _ _ (fun x hx => by
+      simp [Maps.keys, Map.keys]; intro heq; subst heq; exact ht hx)
+  by_cases hS : Subst.hasEmptyScopes S
+  · -- S has empty scopes: subst S is the identity
+    simp only [LMonoTy.subst_emptyS hS] at h_occurs h_find_ne ⊢
+    apply LMonoTy.subst_no_relevant_keys
+    intro x hx
+    have h_ne : x ≠ id := fun h => h_occurs (h ▸ hx)
+    exact Maps.find?_of_not_mem_values _ (by
+      rw [h_find_ne x h_ne, Maps.not_mem_keys_find?_none' S x
+        ((Subst.isEmpty_implies_keys_empty hS) ▸ (by simp))]; simp)
+  · -- S doesn't have empty scopes
+    have hS_ne : Subst.hasEmptyScopes S = false := by
+      revert hS; cases Subst.hasEmptyScopes S <;> simp
+    suffices ∀ mty, ¬(id ∈ (LMonoTy.subst S mty).freeVars) →
+        LMonoTy.subst (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+          id (LMonoTy.subst S orig_lty)) mty = LMonoTy.subst S mty from
+      this orig_lty h_occurs
+    intro mty h_nf
+    induction mty with
+    | ftvar x =>
+      by_cases h_id : x = id
+      · -- Vacuous: subst S (ftvar id) = ftvar id, so id ∈ freeVars
+        subst h_id; exfalso; apply h_nf
+        simp [LMonoTy.subst, hS_ne, h_none, LMonoTy.freeVars]
+      · -- x ≠ id
+        unfold LMonoTy.subst
+        simp only [hS', hS_ne, Bool.false_eq_true, ↓reduceIte, h_find_ne x h_id]
+        cases h_fx : Maps.find? S x with
+        | none => simp
+        | some t =>
+          simp only [Option.map]
+          exact h_single_noop t (by
+            have : LMonoTy.subst S (.ftvar x) = t := by
+              simp [LMonoTy.subst, hS_ne, h_fx]
+            rwa [this] at h_nf)
+    | bitvec n => simp [LMonoTy.subst]
+    | tcons name args ih =>
+      unfold LMonoTy.subst
+      simp only [hS', hS_ne, Bool.false_eq_true, ↓reduceIte]
+      congr 1
+      rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+      have h_nf' : ¬(id ∈ LMonoTys.freeVars (LMonoTys.substLogic S args)) := by
+        have h_eq : LMonoTy.subst S (.tcons name args) =
+            .tcons name (LMonoTys.subst S args) := by
+          unfold LMonoTy.subst; simp [hS_ne]
+        simp only [h_eq, LMonoTy.freeVars, LMonoTys.subst_eq_substLogic] at h_nf
+        exact h_nf
+      suffices ∀ xs,
+          (∀ m, m ∈ xs → ¬(id ∈ (LMonoTy.subst S m).freeVars) →
+            LMonoTy.subst (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+              id (LMonoTy.subst S orig_lty)) m = LMonoTy.subst S m) →
+          ¬(id ∈ LMonoTys.freeVars (LMonoTys.substLogic S xs)) →
+          LMonoTys.substLogic (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
+            id (LMonoTy.subst S orig_lty)) xs = LMonoTys.substLogic S xs by
+        exact this args (fun m hm h_nfm => ih m hm h_nfm) h_nf'
+      intro xs; induction xs with
+      | nil => intros; simp [LMonoTys.substLogic, hS', hS_ne]
+      | cons a rest ih_rest =>
+        intro ih_xs h_nf_xs
+        simp only [LMonoTys.substLogic, hS', hS_ne, Bool.false_eq_true, ↓reduceIte]
+        have h_eq_cons : LMonoTys.substLogic S (a :: rest) =
+            LMonoTy.subst S a :: LMonoTys.substLogic S rest := by
+          simp [LMonoTys.substLogic, hS_ne]
+        rw [h_eq_cons, LMonoTys.freeVars_of_cons] at h_nf_xs
+        have h1 : ¬(id ∈ (LMonoTy.subst S a).freeVars) :=
+          fun h => h_nf_xs (List.mem_append_left _ h)
+        have h2 : ¬(id ∈ LMonoTys.freeVars (LMonoTys.substLogic S rest)) :=
+          fun h => h_nf_xs (List.mem_append_right _ h)
+        rw [ih_xs a (.head _) h1,
+            ih_rest (fun m hm => ih_xs m (.tail _ hm)) h2]
 
 /--
 Unifying a single constraint produces a substitution that makes the
@@ -1311,15 +1437,83 @@ theorem unify_makes_equal (ty1 ty2 : LMonoTy) (S_old S_new : SubstInfo)
   subst h_eq
   exact unifyOne_sound (ty1, ty2) S_old relS h_one
 
+/-- Removing a key from a substitution preserves freshness of all keys. -/
+theorem Subst.allKeysFresh_of_remove
+    {S : Subst} {Γ : TContext T.IDMeta} {k : TyIdentifier}
+    (h : Subst.allKeysFresh S Γ) :
+    Subst.allKeysFresh (Maps.remove S k) Γ := by
+  intro a ha
+  exact h a (Maps.mem_keys_of_mem_keys_remove S k a ha)
+
+/-- Every key of the output substitution from `unifyOne`/`unifyCore` is either
+    a key of the input substitution, a free variable of the constraints,
+    or a free variable of the input substitution's values. -/
+private theorem unifyOne_unifyCore_keys_incl :
+    (∀ (c : Constraint) (S : SubstInfo)
+      (relS : ValidSubstRelation [c] S),
+      Constraint.unifyOne c S = .ok relS →
+      ∀ k, k ∈ Maps.keys relS.newS.subst →
+        k ∈ Maps.keys S.subst ∨ k ∈ Constraint.freeVars c ∨ k ∈ Subst.freeVars S.subst)
+    ∧
+    (∀ (cs : Constraints) (S : SubstInfo)
+      (relS : ValidSubstRelation cs S),
+      Constraints.unifyCore cs S = .ok relS →
+      ∀ k, k ∈ Maps.keys relS.newS.subst →
+        k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst) := by
+  sorry
+
+/-- Key-inclusion for `Constraints.unify`: output keys come from input keys,
+    constraint free vars, or input value free vars. -/
+theorem Constraints.unify_keys_incl
+    {cs : Constraints} {S S' : SubstInfo}
+    (h_unify : Constraints.unify cs S = .ok S') :
+    ∀ k, k ∈ Maps.keys S'.subst →
+      k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst := by
+  simp only [Constraints.unify, Bind.bind, Except.bind] at h_unify
+  split at h_unify
+  · simp at h_unify
+  · rename_i relS h_core
+    simp at h_unify; subst h_unify
+    exact unifyOne_unifyCore_keys_incl.2 cs S relS h_core
+
+/-- Unification preserves freshness: if all keys of the input substitution and
+    all free variables in the constraints are fresh in `Γ`, then all keys
+    of the output substitution are also fresh in `Γ`.
+
+    This follows from the structure of `unifyOne`: the only way a new key `id`
+    enters the substitution is when `Maps.find? S.subst id = none` and `id`
+    is a free type variable from the constraint types. -/
+theorem Constraints.unify_allKeysFresh
+    {cs : Constraints} {S S' : SubstInfo} {Γ : TContext T.IDMeta}
+    (h_unify : Constraints.unify cs S = .ok S')
+    (h_keys_fresh : Subst.allKeysFresh S.subst Γ)
+    (h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars cs → TContext.isFresh (T := T) tv Γ)
+    (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars S.subst → TContext.isFresh (T := T) tv Γ) :
+    Subst.allKeysFresh S'.subst Γ := by
+  intro k hk
+  have h_incl := Constraints.unify_keys_incl h_unify k hk
+  cases h_incl with
+  | inl h => exact h_keys_fresh k h
+  | inr h =>
+    cases h with
+    | inl h => exact h_cs_fresh k h
+    | inr h => exact h_vals_fresh k h
+
 /--
 All keys in the substitution produced by `resolveAux` are fresh in the input
 context. This is because `resolveAux` only adds bindings for type variables
 generated by `genTyVar`, which are guaranteed fresh.
+
+Note: the precondition `Subst.allKeysFresh Env.stateSubstInfo.subst Env.context`
+is needed because `resolveAux` extends (not replaces) the input substitution.
+For the top-level call via `LExpr.resolve`, the input substitution is empty
+so the precondition is trivially satisfied.
 -/
 theorem resolveAux_keys_fresh :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
       Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   sorry
 
@@ -1674,6 +1868,7 @@ theorem resolveAux_HasType :
                   match res, h_me with
                   | .ok val, h_me => simp at h_me ⊢; rw [h_me]
                   | .error _, h_me => simp at h_me)
+                sorry -- precondition: input subst keys are fresh
               simp [TEnv.updateSubst] at this
               exact this
             constructor
@@ -1767,6 +1962,7 @@ theorem resolveAux_HasType :
                 match res, h_me with
                 | .ok val, h_me => simp at h_me ⊢; rw [h_me]
                 | .error _, h_me => simp at h_me)
+              sorry -- precondition: input subst keys are fresh
             simp [TEnv.updateSubst] at this
             exact this
           constructor

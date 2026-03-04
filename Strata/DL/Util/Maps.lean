@@ -377,6 +377,41 @@ theorem Map.find?_insert_self [DecidableEq α]
   | nil => simp [Map.insert, Map.find?]
   | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
 
+/-- `Map.find?` is unchanged for a different key after `Map.insert`. -/
+theorem Map.find?_insert_ne [DecidableEq α]
+    (m : Map α β) (x y : α) (v : β) (h : x ≠ y) :
+    Map.find? (Map.insert m y v) x = Map.find? m x := by
+  induction m with
+  | nil => simp [Map.insert, Map.find?, Ne.symm h]
+  | cons hd rest ih =>
+    simp only [Map.insert]
+    split
+    · rename_i h_eq  -- hd.fst = y
+      -- Map.insert replaced hd with (y, v); hd.fst = y, so the if in find? checks y = x
+      simp only [Map.find?]
+      -- In the new list: first element is (y, v), check y = x
+      have h_ne : ¬(y = x) := Ne.symm h
+      simp [h_ne]
+      -- In the old list: first element is hd, check hd.fst = x
+      have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
+      simp [h_ne2]
+    · simp only [Map.find?]; split <;> simp_all
+
+/-- `Maps.find?` is unchanged for a different key after `Maps.insert`, when the
+    inserted key is fresh. -/
+theorem Maps.find?_insert_ne_of_none [DecidableEq α]
+    (ms : Maps α β) (x y : α) (v : β) (h_ne : x ≠ y) (h_none : Maps.find? ms y = none) :
+    Maps.find? (Maps.insert ms y v) x = Maps.find? ms x := by
+  simp only [Maps.insert, h_none]
+  match ms with
+  | [] =>
+    simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
+    rw [Map.find?_insert_ne _ _ _ _ h_ne]
+    simp [Map.find?]
+  | m :: rest =>
+    simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
+    rw [Map.find?_insert_ne _ _ _ _ h_ne]
+
 /-- `Maps.update ms x v` maps `x` to `v`. -/
 theorem Maps.find?_update_self [DecidableEq α]
     (ms : Maps α β) (x : α) (v : β) (h : ms.find? x ≠ none) :
