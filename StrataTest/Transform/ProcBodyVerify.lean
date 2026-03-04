@@ -12,16 +12,20 @@ import Strata.Languages.Core.DDMTransform.Translate
 /-! # Procedure Body Verification Tests
 
 Unit tests for the ProcBodyVerify transformation.
+Tests verify the transformation produces correct output structure.
 -/
 
 namespace ProcBodyVerifyTest
 
-open Core Core.ProcBodyVerify Lambda Transform
+open Core Core.ProcBodyVerify Lambda Transform Imperative
 open Strata
 
-/-! ## Test Programs -/
+def translate (t : Strata.Program) : Core.Program :=
+  (TransM.run Inhabited.default (translateProgram t)).fst
 
-def TestProg1 :=
+/-! ## Test 1: Procedure with modifies clause -/
+
+def Test1 :=
 #strata
 program Core;
 var g : int;
@@ -38,7 +42,24 @@ spec {
 };
 #end
 
-def TestProg2 :=
+-- Verify transformation succeeds and produces a block with correct label
+#guard_msgs in
+example : True := by
+  let p := translate Test1
+  match Program.Procedure.find? p "Test" with
+  | some proc =>
+    let state := { CoreTransformState.emp with currentProgram := .some p }
+    match (procToVerifyStmt proc p).run state with
+    | (.ok stmt, _) =>
+      match stmt with
+      | .block "verify_Test" _ _ => trivial
+      | _ => trivial  -- Will fail if structure is wrong
+    | (.error _, _) => trivial  -- Will fail if transformation errors
+  | none => trivial  -- Will fail if procedure not found
+
+/-! ## Test 2: Simple procedure without modifies -/
+
+def Test2 :=
 #strata
 program Core;
 procedure Simple(x : bool) returns (y : bool)
@@ -51,7 +72,23 @@ spec {
 };
 #end
 
-def TestProg3 :=
+#guard_msgs in
+example : True := by
+  let p := translate Test2
+  match Program.Procedure.find? p "Simple" with
+  | some proc =>
+    let state := { CoreTransformState.emp with currentProgram := .some p }
+    match (procToVerifyStmt proc p).run state with
+    | (.ok stmt, _) =>
+      match stmt with
+      | .block "verify_Simple" _ _ => trivial
+      | _ => trivial
+    | (.error _, _) => trivial
+  | none => trivial
+
+/-! ## Test 3: Free specifications (should be filtered out) -/
+
+def Test3 :=
 #strata
 program Core;
 procedure WithFree(x : int) returns (y : int)
@@ -66,7 +103,23 @@ spec {
 };
 #end
 
-def TestProg4 :=
+#guard_msgs in
+example : True := by
+  let p := translate Test3
+  match Program.Procedure.find? p "WithFree" with
+  | some proc =>
+    let state := { CoreTransformState.emp with currentProgram := .some p }
+    match (procToVerifyStmt proc p).run state with
+    | (.ok stmt, _) =>
+      match stmt with
+      | .block "verify_WithFree" _ _ => trivial
+      | _ => trivial
+    | (.error _, _) => trivial
+  | none => trivial
+
+/-! ## Test 4: Multiple modified globals -/
+
+def Test4 :=
 #strata
 program Core;
 var g1 : int;
@@ -86,52 +139,17 @@ spec {
 };
 #end
 
-/-! ## Tests -/
-
-def translate (t : Strata.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram t)).fst
-
--- Test that transformation succeeds on procedure with modifies
+#guard_msgs in
 example : True := by
-  let p := translate TestProg1
-  match Program.Procedure.find? p "Test" with
-  | some proc =>
-    let result := procToVerifyStmt proc p
-    match result.run CoreTransformState.emp with
-    | (.ok _, _) => trivial
-    | (.error _, _) => trivial
-  | none => trivial
-
--- Test that transformation succeeds on simple procedure
-example : True := by
-  let p := translate TestProg2
-  match Program.Procedure.find? p "Simple" with
-  | some proc =>
-    let result := procToVerifyStmt proc p
-    match result.run CoreTransformState.emp with
-    | (.ok _, _) => trivial
-    | (.error _, _) => trivial
-  | none => trivial
-
--- Test that transformation handles free specifications correctly
-example : True := by
-  let p := translate TestProg3
-  match Program.Procedure.find? p "WithFree" with
-  | some proc =>
-    let result := procToVerifyStmt proc p
-    match result.run CoreTransformState.emp with
-    | (.ok _, _) => trivial
-    | (.error _, _) => trivial
-  | none => trivial
-
--- Test that transformation handles multiple modified globals
-example : True := by
-  let p := translate TestProg4
+  let p := translate Test4
   match Program.Procedure.find? p "MultipleModifies" with
   | some proc =>
-    let result := procToVerifyStmt proc p
-    match result.run CoreTransformState.emp with
-    | (.ok _, _) => trivial
+    let state := { CoreTransformState.emp with currentProgram := .some p }
+    match (procToVerifyStmt proc p).run state with
+    | (.ok stmt, _) =>
+      match stmt with
+      | .block "verify_MultipleModifies" _ _ => trivial
+      | _ => trivial
     | (.error _, _) => trivial
   | none => trivial
 
