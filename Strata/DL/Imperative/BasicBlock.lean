@@ -28,17 +28,17 @@ where `n` is the total number of blocks in the graph.
 where execution should proceed next, if anywhere. -/
 inductive DetTransferCmd (Label : Type) (P : PureExpr) where
   /-- Transfer to `lt` if `p` is true, or `lf` is `p` is false. -/
-  | cgoto (p : P.Expr) (lt lf : Label) (md : MetaData P := .empty)
+  | condGoto (p : P.Expr) (lt lf : Label) (md : MetaData P := .empty)
   /-- Stop execution of the current unstructured program. If in a procedure
   body, this can be interpreted as returning to the caller. -/
   | finish (md : MetaData P := .empty)
 
 /-- For the moment, we don't have an unconditional jump in the language, and
-model it instead using `cgoto`. By defining this function, we can easily create
-unconditional jumps, and future proof against the possibility of adding it as a
-constructor in the future.  -/
+model it instead using `condGoto`. By defining this function, we can easily
+create unconditional jumps, and future proof against the possibility of adding
+it as a constructor in the future.  -/
 def DetTransferCmd.goto [HasBool P] (l : Label) : DetTransferCmd Label P :=
-  .cgoto HasBool.tt l l
+  condGoto HasBool.tt l l
 
 /-- A `NondetTransfer` command terminates a non-deterministic basic block,
 indicating the list of possible blocks where execution could proceed next, if
@@ -82,7 +82,7 @@ open Std (ToFormat Format format)
 def formatDetTransferCmd (P : PureExpr) (c : DetTransferCmd Label P)
   [ToFormat Label] [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=
   match c with
-  | .cgoto c lt lf md => f!"{md}cgoto {c} {lt} {lf}"
+  | .condGoto c lt lf md => f!"{md}condGoto {c} {lt} {lf}"
   | .finish md => f!"{md}finish"
 
 def formatNondetTransferCmd (P : PureExpr) (c : NondetTransferCmd Label P)

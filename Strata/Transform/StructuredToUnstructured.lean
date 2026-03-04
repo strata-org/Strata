@@ -79,7 +79,7 @@ match ss with
   let (tl, tbs) ← stmtsToBlocks kNext tss exitConts []
   let (fl, fbs) ← stmtsToBlocks kNext fss exitConts []
   -- Flush accumulated commands
-  let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.cgoto c tl fl)) l
+  let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.condGoto c tl fl)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
 | .loop c _m is bss _md :: rest => do
   -- Process rest first
@@ -91,7 +91,7 @@ match ss with
     is.mapM (fun i => do
       let invLabel ← StringGenState.gen "inv$"
       pure (HasPassiveCmds.assert invLabel i MetaData.empty))
-  let b := (lentry, { cmds := cmds, transfer := .cgoto c bl kNext })
+  let b := (lentry, { cmds := cmds, transfer := .condGoto c bl kNext })
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
   pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)

@@ -47,18 +47,18 @@ before_loop$_6:
   init (i : int)
   i := #0
   s := #0
-  cgoto #true loop_entry$_1 loop_entry$_1
+  condGoto #true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
   assert [inv$_3] ((~Int.Le : (arrow int (arrow int bool))) #0 (i : int))
   assert [inv$_4] ((~Int.Le : (arrow int (arrow int bool))) (i : int) (n : int))
   assert [inv$_5] ((s : int) == ((~Int.SafeDiv : (arrow int (arrow int int)))
   ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
   #2))
-  cgoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l$_2 end$_0
+  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l$_2 end$_0
 l$_2:
   i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1)
   s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))
-  cgoto #true loop_entry$_1 loop_entry$_1
+  condGoto #true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
 -/
@@ -241,25 +241,25 @@ before_loop$_11:
   init (x : int)
   init (y : int)
   x := #0
-  cgoto #true loop_entry$_1 loop_entry$_1
+  condGoto #true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
   assert [inv$_8] ((~Int.Ge : (arrow int (arrow int bool))) (x : int) #0)
   assert [inv$_9] ((~Int.Le : (arrow int (arrow int bool))) (x : int) (n : int))
   assert [inv$_10] ((~Int.Lt : (arrow int (arrow int bool))) (n : int) (~top : int))
-  cgoto ((~Int.Lt : (arrow int (arrow int bool))) (x : int) (n : int)) before_loop$_7 end$_0
+  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (x : int) (n : int)) before_loop$_7 end$_0
 before_loop$_7:
   y := #0
-  cgoto #true loop_entry$_3 loop_entry$_3
+  condGoto #true loop_entry$_3 loop_entry$_3
 loop_entry$_3:
   assert [inv$_5] ((~Int.Ge : (arrow int (arrow int bool))) (y : int) #0)
   assert [inv$_6] ((~Int.Le : (arrow int (arrow int bool))) (y : int) (x : int))
-  cgoto ((~Int.Lt : (arrow int (arrow int bool))) (y : int) (x : int)) l$_4 l$_2
+  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (y : int) (x : int)) l$_4 l$_2
 l$_4:
   y := ((~Int.Add : (arrow int (arrow int int))) (y : int) #1)
-  cgoto #true loop_entry$_3 loop_entry$_3
+  condGoto #true loop_entry$_3 loop_entry$_3
 l$_2:
   x := ((~Int.Add : (arrow int (arrow int int))) (x : int) #1)
-  cgoto #true loop_entry$_1 loop_entry$_1
+  condGoto #true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
 -/

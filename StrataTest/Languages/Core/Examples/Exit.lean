@@ -117,13 +117,13 @@ Result: ✅ pass
 info: Entry: l1
 
 l1:
-  cgoto #true block$l1$_2 block$l1$_2
+  condGoto #true block$l1$_2 block$l1$_2
 block$l1$_2:
   assert [a1] ((x : bool) == (x : bool))
-  cgoto #true l$_1 l$_1
+  condGoto #true l$_1 l$_1
 l$_1:
   assert [a3] ((x : bool) == (x : bool))
-  cgoto #true end$_0 end$_0
+  condGoto #true end$_0 end$_0
 end$_0:
   finish
 -/
@@ -134,31 +134,31 @@ end$_0:
 info: Entry: l5
 
 l5:
-  cgoto #true l4 l4
+  condGoto #true l4 l4
 l4:
-  cgoto #true l4_before l4_before
+  condGoto #true l4_before l4_before
 l4_before:
-  cgoto #true l3_before l3_before
+  condGoto #true l3_before l3_before
 l3_before:
-  cgoto #true l1 l1
+  condGoto #true l1 l1
 l1:
-  cgoto #true ite$_5 ite$_5
+  condGoto #true ite$_5 ite$_5
 ite$_5:
   assert [a4] ((x : int) == (x : int))
-  cgoto ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0) block$l5$_2 block$l5$_1
+  condGoto ((~Int.Gt : (arrow int (arrow int bool))) (x : int) #0) block$l5$_2 block$l5$_1
 l2:
-  cgoto #true l$_3 l$_3
+  condGoto #true l$_3 l$_3
 l$_3:
   assert [a5] ((~Bool.Not : (arrow bool bool)) ((x : int) == (x : int)))
-  cgoto #true block$l5$_2 block$l5$_2
+  condGoto #true block$l5$_2 block$l5$_2
 block$l5$_2:
   assert [a6] ((~Int.Gt : (arrow int (arrow int bool)))
  ((~Int.Mul : (arrow int (arrow int int))) (x : int) #2)
  (x : int))
-  cgoto #true end$_0 end$_0
+  condGoto #true end$_0 end$_0
 block$l5$_1:
   assert [a7] ((~Int.Le : (arrow int (arrow int bool))) (x : int) #0)
-  cgoto #true end$_0 end$_0
+  condGoto #true end$_0 end$_0
 end$_0:
   finish
 -/

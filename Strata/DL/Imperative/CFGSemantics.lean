@@ -43,13 +43,11 @@ inductive Config (l : Type) (P : PureExpr): Type where
   /-- A terminal configuration, indicating that execution has finished. -/
   | terminal : SemanticStore P → Config l P
 
-/--
-Small-step operational semantics for deterministic basic blocks. Each case first
-evaluates the commands in the block. A block ending in `.cgoto` results in a
-configuration pointing to the true or false label, depending on the evaluation
-of the condition. A block ending in `.finish` results in a terminal
-configuration.
--/
+/-- Small-step operational semantics for deterministic basic blocks. Each case
+first evaluates the commands in the block. A block ending in `.condGoto` results
+in a configuration pointing to the true or false label, depending on the
+evaluation of the condition. A block ending in `.finish` results in a terminal
+configuration. -/
 inductive EvalDetBlock
   {CmdT : Type}
   (P : PureExpr)
@@ -63,14 +61,14 @@ inductive EvalDetBlock
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .cgoto c t e _ ⟩ (.cont t σ')
+      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont t σ')
 
   | step_goto_false :
     EvalCmds P EvalCmd δ σ cs σ' →
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .cgoto c t e _ ⟩ (.cont e σ')
+      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont e σ')
 
   | step_terminal :
     EvalCmds P EvalCmd δ σ cs σ' →
