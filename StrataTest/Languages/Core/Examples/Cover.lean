@@ -135,7 +135,7 @@ Result: ⛔ unreachable
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ unreachable (error: cover can never be reached)
+Result: ❌ unreachable
 -/
 #guard_msgs in
 #eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkAmount := .full})
@@ -176,7 +176,7 @@ Result: ⛔ unreachable
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ unreachable (error: cover can never be reached)
+Result: ❌ unreachable
 
 Obligation: reach_assert_pass
 Property: assert
@@ -230,7 +230,7 @@ Result: ✔️ pass if reachable
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ unreachable (error: cover can never be reached)
+Result: ❌ unreachable
 
 Obligation: no_rc_cover
 Property: cover
@@ -310,7 +310,7 @@ Result: ⛔ unreachable
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ unreachable (error: cover can never be reached)
+Result: ❌ unreachable
 -/
 #guard_msgs in
 #eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkAmount := .full})
