@@ -7,7 +7,7 @@ Usage:
 
 For each test case in the corpus, runs the regex+string pair through both
 Python's re module and Strata's DiffTestCore tool, then reports discrepancies
-according to the agreed-upon agreement logic.
+according to the agreement logic.
 
 Agreement logic:
   agree        Python match   + Strata match
@@ -162,6 +162,35 @@ CORPUS = [
     ("a.*$",       "axyz",   "match"),  # .* before $: consumes to end
     ("a.*$",       "a",      "match"),  # .* matches empty, $ fires
     ("a.*$",       "b",      "match"),  # no match: doesn't start with a
+    # a$.* across modes / strings — $ fires, then .* must operate from the end
+    ("a$.*",       "a",      "fullmatch"),  # $ fires, .* matches empty → match
+    ("a$.*",       "ab",     "fullmatch"),  # $ blocked by b → no match
+    ("a$.*",       "a",      "match"),
+    ("a$.*",       "ab",     "match"),     # $ blocked → no match
+    ("a$.*",       "ba",     "search"),    # a at end: $ fires → match
+    ("a$.*",       "ab",     "search"),    # a not at end: $ blocked → no match
+
+    # $ followed by zero-or-more / optional (same root as above)
+    ("a$b*",       "a",      "fullmatch"),  # b* matches empty → match
+    ("a$b*",       "ab",     "fullmatch"),  # $ blocked by b → no match
+    ("a$b?",       "a",      "fullmatch"),  # b? matches empty → match
+    ("a$b?",       "ab",     "fullmatch"),  # $ blocked by b → no match
+
+    # $ followed by always-consuming suffix — forces | true,true branch → $ unmatchable
+    ("a$.+",       "a",      "match"),     # .+ needs ≥1 char: unmatchable
+    ("a$.+",       "ab",     "match"),     # $ blocked regardless
+    ("a$b+",       "a",      "fullmatch"), # b+ needs ≥1 b: unmatchable
+    ("a$b+",       "ab",     "fullmatch"), # $ blocked regardless
+
+    # double $: second is redundant
+    ("a$$",        "a",      "match"),
+    ("a$$",        "ab",     "match"),
+
+    # .*^a: .* can match empty → ^ fires at position 0 → 'a' can match
+    (".*^a",       "a",      "match"),   # .* = "", ^ fires, a matches
+    (".*^a",       "ab",     "match"),   # .* = "", ^ fires, a matches (trailing b ok)
+    (".*^a",       "ba",     "match"),   # .* cannot be empty at start (b≠a) → no match
+
     ("a$b",        "ab",     "match"),  # $ in middle: unmatchable
 
     # ^ in match mode: no-op at start (match already anchors there)

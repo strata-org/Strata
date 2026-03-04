@@ -361,20 +361,4 @@ info: ((~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)), none)
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "^a" .fullmatch
 
-instance : Std.ToFormat (Core.Expression.Expr × Option ParseError) where
-  format | (expr, err) => "(" ++ Core.formatExprs [expr] ++ ",\n "
-                            ++ Std.format (repr err) ++ ")"
-
-#eval Std.format $ pythonRegexToCore "a$" .fullmatch
-
-#eval Std.format $ pythonRegexToCore "a$" .match
-
-#eval Std.format $ pythonRegexToCore "a$.*" .fullmatch
-
-#eval Std.format $ pythonRegexToCore "x(a?^b)" .fullmatch
-
-#eval Std.format $ pythonRegexToCore "x*" .fullmatch
-
-#eval Std.format $ pythonRegexToCore "[^A-Z]+" .fullmatch
-
 end Strata.Python.Tests
