@@ -172,7 +172,7 @@ def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy) :
       | .error e => .error e
       | .ok (bty, Env) => .ok (bty, Env)
     | none =>
-      let (xtyid, Env) := TEnv.genTyVar Env
+      let (xtyid, Env) ← TEnv.genTyVar Env
       let xty := (LMonoTy.ftvar xtyid)
       .ok (xty, Env)
   let Env := Env.addInNewestContext [(xv, (.forAll [] xty))]
@@ -254,7 +254,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let ty2 := e2t.toLMonoTy
     -- `freshty` is the type variable whose identifier is `fresh_name`. It denotes
     -- the type of `(.app e1 e2)`.
-    let (fresh_name, Env) := TEnv.genTyVar Env
+    let (fresh_name, Env) ← TEnv.genTyVar Env
     let freshty := (.ftvar fresh_name)
     -- `ty1` must be of the form `ty2 → freshty`.
     let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
