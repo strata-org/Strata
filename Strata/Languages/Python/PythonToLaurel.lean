@@ -535,7 +535,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let translatedArgs ← args.val.toList.mapM (translateExpr ctx)
 
         let newExpr := mkStmtExprMd (StmtExpr.New funcName)
-        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some newExpr))
+        let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some newExpr)) md
 
         let initCall := mkStmtExprMd (StmtExpr.InstanceCall
           (mkStmtExprMd (StmtExpr.Identifier varName))
@@ -547,16 +547,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       else
         -- Regular call, not a constructor
         let initVal ← translateCall ctx f args.val.toList
-        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
+        let initVal := { initVal with md := md }
+        let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some initVal)) md
         return (newCtx, declStmt)
     | some initExpr => do
       -- Regular annotated assignment with initializer
       let initVal ← translateExpr newCtx initExpr
-      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
+      let initVal := { initVal with md := md }
+      let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some initVal)) md
       return (newCtx, declStmt)
     | none =>
       -- Declaration without initializer
-      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType none)
+      let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType none) md
       return (newCtx, declStmt)
 
   -- If statement
