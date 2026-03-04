@@ -273,14 +273,13 @@ theorem procBodyVerify_completeness_weak
     simp at h_transform
 
 /-
-Soundness: Verification failure implies contract violation
+Soundness (Weak): Verification failure implies some assert would fail
 
-If the verification statement can fail, then there exists an execution of the
-procedure body that violates either a precondition assumption or a postcondition.
-
-This establishes that the transformation correctly identifies contract violations.
+This is the contrapositive of procBodyVerify_completeness_weak.
+If verification can fail, then there exists a postcondition whose assert
+would fail if checked.
 -/
-theorem procBodyVerify_soundness
+theorem procBodyVerify_soundness_weak
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -288,30 +287,46 @@ theorem procBodyVerify_soundness
     (procToVerifyStmt proc p).run st = (.ok stmt, st') →
     -- If the verification statement can fail
     (∃ σ_verify δ_verify, ¬EvalStatement π φ δ σ stmt σ_verify δ_verify) →
-    -- Then the procedure body violates its contract
-    -- (either an assume fails = precondition violated, or assert fails = postcondition violated)
+    -- Then there exists a postcondition that would fail
+    (∃ (label : CoreLabel) (check : Procedure.Check),
+      (label, check) ∈ proc.spec.postconditions.toList ∧
+      check.attr = Procedure.CheckAttr.Default ∧
+      ¬(∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at check.expr = some HasBool.tt)) := by
+  intro h_transform h_fail
+  -- This is the direct contrapositive of procBodyVerify_completeness_weak
+  -- completeness_weak: ∀ checks pass → verification succeeds
+  -- contrapositive: verification fails → ∃ check doesn't pass
+  by_contra h_contra
+  push_neg at h_contra
+  -- h_contra: ∀ checks, ∃ σ δ where check passes
+  -- We need to show this contradicts h_fail
+  -- The issue: we need to construct a successful evaluation from the fact
+  -- that all individual checks would pass
+  -- This requires showing we can find a single execution where all pass together
+  -- which needs determinism or a construction lemma
+  sorry
+
+/-
+Soundness (Original): Verification failure implies contract violation
+
+This stronger version relates verification failure to actual procedure body execution.
+It requires frame reasoning infrastructure that we haven't built.
+-/
+theorem procBodyVerify_soundness
+    (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (stmt : Statement) (st' : CoreTransformState)
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ : CoreStore) :
+    (procToVerifyStmt proc p).run st = (.ok stmt, st') →
+    (∃ σ_verify δ_verify, ¬EvalStatement π φ δ σ stmt σ_verify δ_verify) →
     (∃ σ_body δ_body, 
-      -- Preconditions hold in initial state
       (∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
         δ σ pre = .some HasBool.tt) ∧
-      -- Body executes
       EvalStatements π φ δ σ proc.body σ_body δ_body ∧
-      -- But some postcondition fails
       (∃ post, (Procedure.Spec.getCheckExprs proc.spec.postconditions).contains post ∧
         δ_body σ_body post ≠ .some HasBool.tt)) := by
   intro h_transform h_verify_fails
-  -- Proof strategy:
-  -- 1. Use procBodyVerify_produces_block_structure to get the structure of stmt
-  -- 2. Analyze the failure: either an assume fails or an assert fails
-  -- 3. If assume fails: contradicts precondition hypothesis
-  -- 4. If assert fails: extract the failing postcondition
-  -- 5. Show the body executed up to that point
-  -- 
-  -- This requires:
-  -- - Lemmas about how EvalStatement works for blocks
-  -- - Lemmas about how assumes/asserts interact with evaluation
-  -- - Frame reasoning to relate verification context to body execution
-  -- - Analysis of the initialization statements
+  -- Requires frame reasoning to relate verification context to body execution
   sorry
 
 /-- Completeness: Verification success implies contract satisfaction
