@@ -87,6 +87,8 @@ instance : FromJson Level where
 structure Result where
   /-- Stable identifier of the rule that was evaluated to produce the result --/
   ruleId : String
+  /-- Classification of the property being checked (e.g., "division-by-zero", "assert") -/
+  kind : String := "assert"
   level : Level
   message : Message
   locations : Array SarifLocation := #[]

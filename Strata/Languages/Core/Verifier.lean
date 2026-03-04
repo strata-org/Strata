@@ -270,7 +270,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       return (obligation, some result)
     else
       return (obligation, none)
-  | .assert =>
+  | .assert | .divisionByZero =>
     if obligation.obligation.isTrue && !needsReachCheck then
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
       -- reduce the consequent to true. Skip the shortcut when reachCheck is

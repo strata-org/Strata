@@ -64,16 +64,22 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let e := EC.eval σ e
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
+      let propType := match md.find? (fun elem =>
+          match elem.fld, elem.value with
+          | .label "propertyType", .msg "divisionByZero" => true
+          | _, _ => false) with
+        | some _ => PropertyType.divisionByZero
+        | none => PropertyType.assert
       match EC.denoteBool e with
       | some true => -- Proved via evaluation.
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | some false =>
         if assumptions.isEmpty then
           (c', EC.updateError σ (.AssertFail label e))
         else
-          (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+          (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | none =>
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
 
     | .assume label e md =>
       let (e, σ) := EC.preprocess σ c e
