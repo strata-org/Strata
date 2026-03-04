@@ -188,6 +188,34 @@ theorem postcondition_in_asserts
   -- This follows directly from ensuresToAsserts_preserves_exprs
   exact ensuresToAsserts_preserves_exprs postconditions label check h_in h_default
 
+/-- If an assert is in a concatenated list and the list evaluates, the assert passed -/
+theorem eval_stmts_concat_with_assert
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval)
+    (stmts1 stmts2 : List Statement)
+    (label : CoreLabel) (expr : Expression.Expr) (md : Metadata) :
+    EvalStatements π φ δ σ (stmts1 ++ stmts2) σ' δ' →
+    Statement.assert label expr md ∈ stmts2 →
+    ∃ σ_at δ_at, δ_at σ_at expr = some HasBool.tt := by
+  intro h_eval h_in
+  have h_in_concat : Statement.assert label expr md ∈ stmts1 ++ stmts2 := by
+    simp [List.mem_append]
+    right
+    exact h_in
+  exact eval_stmts_with_assert π φ δ σ σ' δ' (stmts1 ++ stmts2) label expr md h_eval h_in_concat
+
+/-- Postcondition expressions are in getCheckExprs -/
+theorem postcondition_expr_in_getCheckExprs
+    (postconditions : ListMap CoreLabel Procedure.Check)
+    (label : CoreLabel) (check : Procedure.Check) :
+    (label, check) ∈ postconditions.toList →
+    check.expr ∈ Procedure.Spec.getCheckExprs postconditions := by
+  intro h_in
+  unfold Procedure.Spec.getCheckExprs
+  simp [ListMap.values]
+  exists (label, check)
+  simp [h_in]
+
 /-
 Soundness: Verification failure implies contract violation
 
