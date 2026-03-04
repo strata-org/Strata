@@ -31,3 +31,6 @@ name = "StrataToCBMC"
 
 [[lean_exe]]
 name = "StrataCoreToGoto"
+
+[[lean_exe]]
+name = "DiffTestCore"
