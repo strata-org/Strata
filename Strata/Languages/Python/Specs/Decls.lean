@@ -38,6 +38,7 @@ def builtinsBytearray := mk "builtins" "bytearray"
 def builtinsBytes := mk "builtins" "bytes"
 def builtinsComplex := mk "builtins" "complex"
 def builtinsDict := mk "builtins" "dict"
+def builtinsException := mk "builtins" "Exception"
 def builtinsFloat := mk "builtins" "float"
 def builtinsInt := mk "builtins" "int"
 def builtinsStr := mk "builtins" "str"
@@ -306,6 +307,7 @@ deriving Inhabited
 structure ArgDecls where
   args : Array Arg
   kwonly : Array Arg
+  kwargs : Option (String × SpecType) := none
 deriving Inhabited
 
 namespace ArgDecls
@@ -315,17 +317,27 @@ def count (ad : ArgDecls) := ad.args.size + ad.kwonly.size
 end ArgDecls
 
 /--
-A specification predicate with `free` free variables (arguments + return value
-for postconditions). Currently a placeholder; will be extended to support
-actual constraint expressions.
+A specification expression with `free` free variables (arguments + return value
+for postconditions). Supports value and predicate expressions for assert
+statements in function bodies.
 -/
-inductive SpecPred (free : Nat) where
+inductive SpecExpr where
+/-- Stands in for an assert pattern not yet supported by the translator.
+    The original Python expression is preserved in `Assertion.message`. -/
 | placeholder
+| var (name : String)
+| getIndex (subject : SpecExpr) (field : String)
+| isInstanceOf (subject : SpecExpr) (typeName : String)
+| lenGe (subject : SpecExpr) (bound : Nat) -- Nat: len() is non-negative
+| lenLe (subject : SpecExpr) (bound : Nat)
+| valueGe (subject : SpecExpr) (bound : Int) -- Int: values may be negative
+| valueLe (subject : SpecExpr) (bound : Int)
+| enumMember (subject : SpecExpr) (values : Array String)
 deriving Inhabited
 
-structure Assertion (free : Nat) where
+structure Assertion where
   message : String
-  formula : SpecPred free
+  formula : SpecExpr
 deriving Inhabited
 
 structure FunctionDecl where
@@ -335,14 +347,29 @@ structure FunctionDecl where
   args : ArgDecls
   returnType : SpecType
   isOverload : Bool
-  preconditions : Array (Assertion args.count)
-  postconditions : Array (SpecPred (args.count + 1))
+  preconditions : Array Assertion
+  postconditions : Array SpecExpr
+deriving Inhabited
+
+structure ClassField where
+  name : String
+  type : SpecType
+deriving Inhabited
+
+structure ClassVariable where
+  name : String
+  value : String
 deriving Inhabited
 
 structure ClassDef where
   loc : SourceRange
   name : String
+  bases : Array PythonIdent := #[]
+  fields : Array ClassField := #[]
+  classVars : Array ClassVariable := #[]
+  subclasses : Array ClassDef := #[]
   methods : Array FunctionDecl
+deriving Inhabited
 
 structure TypeDef where
   loc : SourceRange

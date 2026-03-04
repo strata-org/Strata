@@ -1235,7 +1235,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
   | q`Init.CommaSepBy =>
     elabSeqWith c .comma "commaSepBy" (·.getSepArgs)
   | q`Init.SpaceSepBy =>
-    elabSeqWith c .space "spaceSepBy" (·.getSepArgs)
+    elabSeqWith c .space "spaceSepBy" (·.getArgs)
   | q`Init.SpacePrefixSepBy =>
     elabSeqWith c .spacePrefix "spacePrefixSepBy" (·.getArgs)
   | q`Init.NewlineSepBy =>

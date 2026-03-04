@@ -86,7 +86,7 @@ def LExpr.toExprNoFVars (e : LExpr MonoString) : MetaM Lean.Expr := do
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot find free var in the local context: {e}"
     | some decl => return decl.toExpr
 
-  | .abs _ mty e' =>
+  | .abs _ _ mty e' =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped abstraction!"
     | some ty => do
@@ -96,7 +96,7 @@ def LExpr.toExprNoFVars (e : LExpr MonoString) : MetaM Lean.Expr := do
         let bodyExpr ← LExpr.toExprNoFVars e'
         mkLambdaFVars #[x] bodyExpr
 
-  | .quant _ qk mty _ e =>
+  | .quant _ qk _ mty _ e =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped quantifier!"
     | some ty =>
