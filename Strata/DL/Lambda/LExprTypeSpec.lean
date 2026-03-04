@@ -501,19 +501,87 @@ Absorption implies substitution composition collapses:
 theorem LMonoTy.subst_absorbs (S_outer S_inner : Subst) (mty : LMonoTy)
     (h : Subst.absorbs S_outer S_inner) :
     LMonoTy.subst S_outer (LMonoTy.subst S_inner mty) = LMonoTy.subst S_outer mty := by
-  sorry
+  by_cases h_emptyI : Subst.hasEmptyScopes S_inner
+  · rw [LMonoTy.subst_emptyS h_emptyI]
+  · have hInner : Subst.hasEmptyScopes S_inner = false := by
+      revert h_emptyI; cases Subst.hasEmptyScopes S_inner <;> simp
+    induction mty with
+    | ftvar x =>
+      cases h_find : Maps.find? S_inner x with
+      | none =>
+        have : LMonoTy.subst S_inner (.ftvar x) = .ftvar x := by
+          simp [LMonoTy.subst, hInner, h_find]
+        rw [this]
+      | some t =>
+        have : LMonoTy.subst S_inner (.ftvar x) = t := by
+          simp [LMonoTy.subst, hInner, h_find]
+        rw [this]; exact h x t h_find
+    | bitvec n => simp [LMonoTy.subst]
+    | tcons name args ih =>
+      have h_inner : LMonoTy.subst S_inner (.tcons name args) =
+          .tcons name (LMonoTys.subst S_inner args) := by
+        unfold LMonoTy.subst; simp only [hInner, Bool.false_eq_true, ↓reduceIte]
+      rw [h_inner]
+      by_cases h_emptyO : Subst.hasEmptyScopes S_outer
+      · rw [LMonoTy.subst_emptyS h_emptyO, LMonoTy.subst_emptyS h_emptyO]
+        congr 1
+        rw [LMonoTys.subst_eq_substLogic]
+        suffices ∀ xs, (∀ m, m ∈ xs → LMonoTy.subst S_inner m = m) →
+            LMonoTys.substLogic S_inner xs = xs by
+          exact this args (fun m hm => by
+            have := ih m hm
+            simp only [LMonoTy.subst_emptyS h_emptyO] at this; exact this)
+        intro xs; induction xs with
+        | nil => intro _; simp [LMonoTys.substLogic, hInner]
+        | cons a rest ih_rest =>
+          intro ih_cons
+          simp only [LMonoTys.substLogic, hInner, Bool.false_eq_true, ↓reduceIte]
+          rw [ih_cons a List.mem_cons_self,
+              ih_rest (fun m hm => ih_cons m (List.mem_cons_of_mem a hm))]
+      · have hOuter : Subst.hasEmptyScopes S_outer = false := by
+          revert h_emptyO; cases Subst.hasEmptyScopes S_outer <;> simp
+        have h_l : LMonoTy.subst S_outer (.tcons name (LMonoTys.subst S_inner args)) =
+            .tcons name (LMonoTys.subst S_outer (LMonoTys.subst S_inner args)) := by
+          unfold LMonoTy.subst; simp only [hOuter, Bool.false_eq_true, ↓reduceIte]
+        have h_r : LMonoTy.subst S_outer (.tcons name args) =
+            .tcons name (LMonoTys.subst S_outer args) := by
+          unfold LMonoTy.subst; simp only [hOuter, Bool.false_eq_true, ↓reduceIte]
+        rw [h_l, h_r]; congr 1
+        rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic,
+            LMonoTys.subst_eq_substLogic]
+        suffices ∀ xs,
+            (∀ m, m ∈ xs → LMonoTy.subst S_outer (LMonoTy.subst S_inner m) =
+              LMonoTy.subst S_outer m) →
+            LMonoTys.substLogic S_outer (LMonoTys.substLogic S_inner xs) =
+              LMonoTys.substLogic S_outer xs by
+          exact this args (fun m hm => ih m hm)
+        intro xs; induction xs with
+        | nil => intro _; simp [LMonoTys.substLogic, hOuter, hInner]
+        | cons a rest ih_rest =>
+          intro ih_cons
+          simp only [LMonoTys.substLogic, hOuter, hInner, Bool.false_eq_true, ↓reduceIte]
+          rw [ih_cons a List.mem_cons_self,
+              ih_rest (fun m hm => ih_cons m (List.mem_cons_of_mem a hm))]
 
 /-- Every well-formed substitution absorbs itself. -/
 theorem Subst.absorbs_refl (S : Subst) (h_wf : SubstWF S) :
     Subst.absorbs S S := by
-  sorry
+  intro a t h_find
+  have h_not_empty := Subst.hasEmptyScopes_false_of_find S a t h_find
+  have : LMonoTy.subst S (.ftvar a) = t := by
+    simp [LMonoTy.subst, h_not_empty, h_find]
+  rw [this]
+  exact LMonoTy.subst_idempotent_value S a t h_find h_wf
 
 /-- Absorption is transitive: if `S2` absorbs `S1` and `S3` absorbs `S2`,
     then `S3` absorbs `S1`. -/
 theorem Subst.absorbs_trans (S1 S2 S3 : Subst)
     (h12 : Subst.absorbs S2 S1) (h23 : Subst.absorbs S3 S2) :
     Subst.absorbs S3 S1 := by
-  sorry
+  intro a t h_find
+  have h1 := h12 a t h_find
+  rw [← LMonoTy.subst_absorbs S3 S2 t h23, h1,
+      LMonoTy.subst_absorbs S3 S2 (.ftvar a) h23]
 
 /-- Unification produces a substitution that absorbs the input substitution. -/
 theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
