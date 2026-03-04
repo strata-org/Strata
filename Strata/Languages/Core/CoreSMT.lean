@@ -5,7 +5,7 @@
 -/
 
 import Strata.DL.SMT.SolverInterface
-import Strata.Languages.Core.CoreSMT.DiagnosisTypes
+import Strata.Languages.Core.DiagnosisTypes
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.IsCoreSMT
 import Strata.Languages.Core.CoreSMT.ExprTranslator

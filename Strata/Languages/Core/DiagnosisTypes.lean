@@ -4,15 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.CoreSMT.State
+import Strata.Languages.Core.Expressions
 
 /-!
-# CoreSMT Diagnosis Types
+# Core Diagnosis Types
 
-Shared types for diagnosis results, used by both `CoreSMT.Diagnosis` and `Core.Verifier`.
+Types for verification diagnosis results, used by the CoreSMT pipeline
+and `Core.Verifier`.
 -/
 
-namespace Strata.Core.CoreSMT
+namespace Strata.Core
 
 /-- Verification result for diagnosis -/
 inductive DiagnosisResultType
@@ -45,4 +46,4 @@ structure DiagnosisResult where
   statePathCondition : List Core.Expression.Expr := []
   deriving Inhabited
 
-end Strata.Core.CoreSMT
+end Strata.Core

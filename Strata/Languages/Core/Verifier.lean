@@ -9,7 +9,7 @@ import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.CoreSMT.DiagnosisTypes
+import Strata.Languages.Core.DiagnosisTypes
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
@@ -24,7 +24,6 @@ namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
 open Strata
-open Strata.Core.CoreSMT
 
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
@@ -157,7 +156,7 @@ instance : ToFormat Outcome where
 /-- Diagnosis information for verification failures -/
 structure DiagnosisInfo where
   isRefuted : Bool := false
-  diagnosedFailures : List Strata.Core.CoreSMT.DiagnosedFailure := []
+  diagnosedFailures : List Core.DiagnosedFailure := []
   statePathCondition : List Core.Expression.Expr := []
   deriving Inhabited
 

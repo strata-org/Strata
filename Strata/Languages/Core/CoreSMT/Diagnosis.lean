@@ -6,7 +6,7 @@
 
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.ExprTranslator
-import Strata.Languages.Core.CoreSMT.DiagnosisTypes
+import Strata.Languages.Core.DiagnosisTypes
 
 /-!
 # CoreSMT Diagnosis Engine
