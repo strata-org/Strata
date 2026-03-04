@@ -260,7 +260,7 @@ procedure Test() returns ()
 #end
 
 /--
-info: #[]
+info: #["assertion holds vacuously (path unreachable)", "cover property is unreachable"]
 -/
 #guard_msgs in
 #eval do
@@ -298,11 +298,11 @@ procedure Test() returns ()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ✅ pass and reachable from declaration entry
+Result: ⛔ unreachable
 
 Obligation: pe_cover_fail
 Property: cover
-Result: ❌ refuted and reachable from declaration entry
+Result: ❌ unreachable
 
 Obligation: rc_assert
 Property: assert

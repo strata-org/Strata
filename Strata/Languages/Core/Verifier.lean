@@ -410,52 +410,44 @@ instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
 /--
-Preprocess a proof obligation before handing it off to a backend engine.
+Preprocess a proof obligation using partial evaluation (PE).
+Returns PE-determined results for satisfiability and validity independently.
+Each result is `some r` if PE can determine it, `none` if the solver is needed.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
-  match obligation.property with
-  | .cover =>
-    if obligation.obligation.isFalse then
-      -- If PE determines that the consequent is false, then we can immediately
-      -- report a failure.
-      let outcome := maskOutcome (VCOutcome.mk .unsat (.sat [])) satisfiabilityCheck validityCheck
-      let result := { obligation, outcome := .ok outcome, verbose := options.verbose }
-      return (obligation, some result)
-    else
-      return (obligation, none)
-  | .assert =>
-    if obligation.obligation.isTrue then
-      -- We don't need the SMT solver if PE (partial evaluation) is enough to
-      -- reduce the consequent to true.
-      let outcome := maskOutcome (VCOutcome.mk (.sat []) .unsat) satisfiabilityCheck validityCheck
-      let result := { obligation, outcome := .ok outcome, verbose := options.verbose }
-      return (obligation, some result)
-    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
-      -- If PE determines that the consequent is false and the path conditions
-      -- are empty, then we can immediately report a verification failure. Note
-      -- that we go to the SMT solver if the path conditions aren't empty --
-      -- after all, the path conditions could imply false, which the PE isn't
-      -- capable enough to infer.
+    (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
+    : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
+  -- PE can determine satisfiability if the obligation is literally false (unsat)
+  let peSatResult : Option SMT.Result :=
+    if !satisfiabilityCheck then some .unknown
+    else if obligation.obligation.isFalse then some .unsat
+    else none
+  -- PE can determine validity if the obligation is literally true (valid = unsat)
+  -- or literally false with empty assumptions (invalid = sat)
+  let peValResult : Option SMT.Result :=
+    if !validityCheck then some .unknown
+    else if obligation.obligation.isTrue then some .unsat
+    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
+    else none
+  -- If PE resolved both, log for the assert(false) case
+  if let (some _, some (.sat _)) := (peSatResult, peValResult) then
+    if obligation.property == .assert then
       let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
                    {if options.verbose >= .normal then prog else ""}"
-      let outcome := maskOutcome (VCOutcome.mk .unsat (.sat [])) satisfiabilityCheck validityCheck
-      let result := { obligation, outcome := .ok outcome, verbose := options.verbose }
-      return (obligation, some result)
-    else if options.removeIrrelevantAxioms then
-      -- We attempt to prune the path conditions by excluding all irrelevant
-      -- axioms w.r.t. the consequent to reduce the size of the proof
-      -- obligation.
+  -- Apply axiom pruning if needed
+  let obligation ← if options.removeIrrelevantAxioms
+      && (peSatResult.isNone || peValResult.isNone) then do
       let cg := Program.toFunctionCG p
       let fns := obligation.obligation.getOps.map CoreIdent.toPretty
       let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
       let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
       let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-      return ({ obligation with assumptions := new_assumptions }, none)
+      pure { obligation with assumptions := new_assumptions }
     else
-      return (obligation, none)
+      pure obligation
+  return (obligation, peSatResult, peValResult)
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -525,19 +517,21 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
           | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
-      let (obligation, maybeResult) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
-      if h : maybeResult.isSome then
-        let result := Option.get maybeResult h
+      let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
+      -- If PE resolved both checks, we're done
+      if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
+        let outcome := VCOutcome.mk peSat peVal
+        let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose }
         results := results.push result
-        if result.isSuccess then
-          -- No need to use the SMT solver.
-          continue
-        if (result.isFailure || result.isImplementationError) then
+        if result.isSuccess then continue
+        if result.isFailure || result.isImplementationError then
           if options.verbose >= .normal then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break else continue
-      -- For `unknown` results, we appeal to the SMT backend below.
+      -- Need the solver for at least one check
+      let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
+      let needValCheck := validityCheck && peValResult?.isNone
       let maybeTerms := ProofObligation.toSMTTerms E obligation SMT.Context.default options.useArrayTheory
       match maybeTerms with
       | .error err =>
@@ -551,9 +545,15 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx) =>
-        -- satisfiabilityCheck and validityCheck were already computed above
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      counter tempDir satisfiabilityCheck validityCheck
+                      counter tempDir needSatCheck needValCheck
+        -- Merge PE results with solver results
+        let result := match result.outcome with
+          | .ok solverOutcome =>
+            let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
+            let valResult := peValResult?.getD solverOutcome.validityProperty
+            { result with outcome := .ok (VCOutcome.mk satResult valResult) }
+          | .error _ => result
         results := results.push result
         if result.isNotSuccess then
           if options.verbose >= .normal then
@@ -658,20 +658,20 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
   | .ok outcome =>
     let message? : Option String :=
       if vcr.obligation.property == .cover then
-        if outcome.isPass then none
+        if outcome.isUnreachable then some "cover property is unreachable"
+        else if outcome.isSatisfiable then none  -- cover satisfied (pass)
+        else if outcome.isPass then none
         else if outcome.isRefuted then some "cover property is not satisfiable"
         else if outcome.isCanBeTrueOrFalse then some "cover property can be both true and false"
-        else if outcome.isUnreachable then some "cover property is unreachable"
-        else if outcome.isSatisfiable then none
         else if outcome.isRefutedIfReachable then some "cover property is not satisfiable if reachable"
         else if outcome.isReachableAndCanBeFalse then some "cover property can be false"
         else if outcome.isAlwaysTrueIfReachable then none
         else some "cover property could not be checked"
       else
-        if outcome.isPass then none
+        if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
+        else if outcome.isPass then none
         else if outcome.isRefuted then some "assertion does not hold"
         else if outcome.isCanBeTrueOrFalse then some "assertion can be both true and false"
-        else if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
         else if outcome.isSatisfiable then none
         else if outcome.isRefutedIfReachable then some "assertion does not hold if reachable"
         else if outcome.isReachableAndCanBeFalse then some "assertion can be false"
