@@ -23,7 +23,7 @@ structure Identifier where
   text : String
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
-  deriving Repr, DecidableEq
+  deriving Repr
 
 -- Temporary hack because the Python through Laurel pipeline doesn't resolve
 instance : BEq Identifier where

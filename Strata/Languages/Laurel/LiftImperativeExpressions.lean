@@ -109,12 +109,12 @@ private def takePrepends : LiftM (List StmtExprMd) := do
   return stmts
 
 private def getSubst (varName : Identifier) : LiftM Identifier := do
-  match (← get).subst.find? varName with
+  match (← get).subst.lookup varName with
   | some mapped => return mapped
   | none => return varName
 
 private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit :=
-  modify fun s => { s with subst := s.subst.insert varName value }
+  modify fun s => { s with subst := ⟨ varName, value ⟩ :: s.subst }
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
@@ -278,7 +278,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       -- If the substitution map has an entry for this variable, it was
       -- assigned to the right and we need to lift this declaration so it
       -- appears before the snapshot that references it.
-      let hasSubst := (← get).subst.find? name |>.isSome
+      let hasSubst := (← get).subst.lookup name |>.isSome
       if hasSubst then
         match initializer with
         | some initExpr =>
