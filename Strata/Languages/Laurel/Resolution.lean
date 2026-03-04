@@ -98,7 +98,7 @@ def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
     some ⟨ .UserDefined "dummyName", default ⟩
- | _ => softPanic s!"getType called on {repr node}"
+ | _ => panic! s!"getType called on {repr node}"
 
 /-! ## Resolution result -/
 
@@ -110,8 +110,8 @@ structure SemanticModel where
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD (softPanic s!"could not find key {key}")
-  | none => default -- softPanic s!"model.get called on identifier {iden.text} without number"
+  | some key => (model.refToDef.get? key).getD (panic! s!"could not find key {key}")
+  | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   if id.uniqueId == none then
@@ -127,7 +127,7 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
     | .parameter _ => true
     | .datatypeConstructor _ _ => true
     | .constant _ => true
-    | node => softPanic s!"id: {repr id}, is not a procedure, node {repr node}"
+    | node => panic! s!"id: {repr id}, is not a procedure, node {repr node}"
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where

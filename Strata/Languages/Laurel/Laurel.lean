@@ -455,7 +455,3 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
-
-@[noinline, never_extract]
-def softPanic { α : Type} [self: Inhabited α] (msg: String): α :=
-  dbg_trace ("PANIC:" ++ msg); default

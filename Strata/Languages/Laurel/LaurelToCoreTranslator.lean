@@ -136,7 +136,7 @@ def translateExpr (expr : StmtExprMd)
         | .field _ f =>
             return .op () ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (softPanic "LaurelToCore.translateExpr")))
+            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr")))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>

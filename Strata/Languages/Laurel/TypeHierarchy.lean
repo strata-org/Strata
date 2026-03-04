@@ -96,7 +96,7 @@ Returns true if the type or any of its ancestors declares the field.
 def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
   match model.get fieldName with
   | .field owner _ => ((computeAncestors model typeName).find? (fun t => t.name == owner)).isSome
-  | _ => softPanic s!"{fieldName} did not resolve to a field"
+  | _ => panic! s!"{fieldName} did not resolve to a field"
 
 /--
 Check if a field is inherited through multiple parent paths (diamond inheritance).
