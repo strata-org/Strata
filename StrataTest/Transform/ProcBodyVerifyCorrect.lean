@@ -121,6 +121,34 @@ theorem eval_block_iff
   · intro h
     exact Imperative.EvalStmt.block_sem h
 
+/-- If an assert statement evaluates successfully, the condition holds -/
+theorem eval_assert_implies_condition
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval)
+    (label : CoreLabel) (expr : Expression.Expr) (md : Metadata) :
+    EvalStatement π φ δ σ (Statement.assert label expr md) σ' δ' →
+    δ σ expr = Option.some HasBool.tt ∧ σ' = σ ∧ δ' = δ := by
+  intro h
+  cases h with
+  | cmd_sem h_cmd h_def =>
+    cases h_cmd with
+    | eval_assert h_true h_wf =>
+      exact ⟨h_true, rfl, rfl⟩
+
+/-- If an assume statement evaluates successfully, the condition holds -/
+theorem eval_assume_implies_condition
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval)
+    (label : CoreLabel) (expr : Expression.Expr) (md : Metadata) :
+    EvalStatement π φ δ σ (Statement.assume label expr md) σ' δ' →
+    δ σ expr = Option.some HasBool.tt ∧ σ' = σ ∧ δ' = δ := by
+  intro h
+  cases h with
+  | cmd_sem h_cmd h_def =>
+    cases h_cmd with
+    | eval_assume h_true h_wf =>
+      exact ⟨h_true, rfl, rfl⟩
+
 /-
 Soundness: Verification failure implies contract violation
 
