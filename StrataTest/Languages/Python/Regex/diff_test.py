@@ -152,16 +152,246 @@ CORPUS = [
     ("",       "",   "fullmatch"),
     ("",       "a",  "fullmatch"),
 
+    # ── Anchor stress tests ────────────────────────────────────────────────────
+
+    # $ in match mode: terminates the match, no trailing content allowed
+    ("a$",         "a",      "match"),  # match: a at start, then end
+    ("a$",         "ab",     "match"),  # no match: b follows $
+    ("a$",         "ba",     "match"),  # no match: match anchors start
+    ("a$",         "aab",    "match"),  # no match: b follows $
+    ("a.*$",       "axyz",   "match"),  # .* before $: consumes to end
+    ("a.*$",       "a",      "match"),  # .* matches empty, $ fires
+    ("a.*$",       "b",      "match"),  # no match: doesn't start with a
+    ("a$b",        "ab",     "match"),  # $ in middle: unmatchable
+
+    # ^ in match mode: no-op at start (match already anchors there)
+    ("^a",         "a",      "match"),  # match (same as "a" in match mode)
+    ("^a",         "ab",     "match"),  # match: trailing b allowed
+    ("^a",         "ba",     "match"),  # no match: starts with b
+
+    # ^ and $ in search mode: anchors prevent free prefix/suffix
+    ("^a",         "abc",    "search"),  # ^ anchors to start: match
+    ("^a",         "xabc",   "search"),  # ^ prevents prefix: no match
+    ("^a",         "a",      "search"),  # match
+    ("a$",         "ba",     "search"),  # $ anchors to end: match
+    ("a$",         "ab",     "search"),  # $ prevents suffix: no match
+    ("a$",         "xyzba",  "search"),  # ends with a: match
+    ("a$",         "xyzbax", "search"),  # a not at end: no match
+
+    # Alternation with anchors across all modes
+    ("^a|b$",      "a",      "fullmatch"),  # ^a covers "a"
+    ("^a|b$",      "b",      "fullmatch"),  # b$ covers "b"
+    ("^a|b$",      "ab",     "fullmatch"),  # neither: "ab" ≠ "a" and ≠ "b"
+    ("^a|b$",      "a",      "match"),  # ^a fires at start, trailing ok
+    ("^a|b$",      "b",      "match"),  # b$ fires: "b" ends at $
+    ("^a|b$",      "ab",     "match"),  # ^a fires, "b" is trailing
+    ("^a|b$",      "xb",     "match"),  # neither fires: x≠a and x≠b
+    ("^a|b$",      "axyz",   "search"),  # ^a fires
+    ("^a|b$",      "xyzb",   "search"),  # b$ fires
+    ("^a|b$",      "xyzc",   "search"),  # neither
+    ("^a|b$",      "axyzb",  "search"),  # both fire (^a at start)
+
+    # Group with both anchors
+    ("^(a|b)$",    "a",      "fullmatch"),
+    ("^(a|b)$",    "b",      "fullmatch"),
+    ("^(a|b)$",    "ab",     "fullmatch"),  # no match: length > 1
+    ("^(a|b)$",    "a",      "match"),
+    ("^(a|b)$",    "b",      "match"),
+    ("^(a|b)$",    "ab",     "match"),  # $ prevents trailing b
+    ("^(a|b)$",    "a",      "search"),
+    ("^(a|b)$",    "ab",     "search"),  # no match: can't be both ^...$ with two chars
+
+    # ^$ (empty-string anchor) in all modes
+    ("^$",         "",       "fullmatch"),
+    ("^$",         "a",      "fullmatch"),
+    ("^$",         "",       "match"),
+    ("^$",         "a",      "match"),
+    ("^$",         "",       "search"),
+    ("^$",         "a",      "search"),
+
+    # Anchors inside a repeated group
+    ("(a$)*",      "",       "fullmatch"),  # zero iterations: empty
+    ("(a$)*",      "a",      "fullmatch"),  # one iteration at end
+    ("(a$)*",      "aa",     "fullmatch"),  # can't iterate twice with $
+
+    # ── Anchors inside groups: unusual / bad-nomatch patterns ─────────────────
+
+    # ^ consumed out of start position → unmatchable branch
+    ("x(^a)",          "xa",     "fullmatch"),  # ^ after x: unmatchable
+    ("x(^a)",          "a",      "fullmatch"),  # doesn't even start with x
+    ("x(^a|b)",        "xb",     "fullmatch"),  # ^a branch fails, b branch saves it
+    ("x(^a|b)",        "xa",     "fullmatch"),  # ^a fails, b≠a: no match
+
+    # $ with content still following → unmatchable branch
+    ("(a$)b",          "ab",     "fullmatch"),  # looks like "ab" but $ blocks b
+    ("(a$)(b)",        "ab",     "fullmatch"),  # same with separate group
+    ("(a$)b",          "ab",     "match"),  # same in match mode
+
+    # Alternation: one branch has context-killed anchor
+    ("(a$|b)c",        "ac",     "fullmatch"),  # a$ then c: $ blocked; b≠a: no match
+    ("(a$|b)c",        "bc",     "fullmatch"),  # b branch works
+    ("(a$|b)c",        "abc",    "fullmatch"),  # neither branch matches
+    ("(a|b$)c",        "ac",     "fullmatch"),  # a branch works
+    ("(a|b$)c",        "bc",     "fullmatch"),  # b$c: $ then c → unmatchable; a≠b: no match
+
+    # Two anchors that cannot both fire
+    ("(^a)(^b)",       "ab",     "fullmatch"),  # 2nd ^ is past start: unmatchable
+    ("(^a)(^b)",       "a",      "fullmatch"),  # same
+    ("(a$)(b$)",       "ab",     "fullmatch"),  # 1st $ requires end but b follows
+    ("(a$)(b$)",       "a",      "fullmatch"),  # same
+
+    # ^ or $ at a position where neither fires cleanly
+    ("(^|$)c",         "c",      "fullmatch"),  # ^ fires → "c"; $c branch is unmatchable
+    ("(^|$)c",         "xc",     "fullmatch"),  # neither fires
+    ("a(^|$)b",        "ab",     "fullmatch"),  # after a: ^ past start, $ blocked by b
+
+    # Search mode: anchor inside group restricts positional freedom
+    ("(^a)(b)",        "ab",     "search"),  # ^a forces match at start
+    ("(^a)(b)",        "xab",    "search"),  # ^ blocks: no match
+    ("(a)(b$)",        "ab",     "search"),  # b$ forces match at end
+    ("(a)(b$)",        "abx",    "search"),  # $ blocked by x: no match
+    ("(^a)(b$)",       "ab",     "search"),  # both anchors: exactly "ab"
+    ("(^a)(b$)",       "xab",    "search"),  # ^ blocks
+    ("(^a)(b$)",       "abx",    "search"),  # $ blocks
+
+    # Match mode: $ inside group overrides the usual trailing-content allowance
+    ("(a$|b)c",        "bc",     "match"),  # b branch + trailing ok
+    ("(a$|b)c",        "bcd",    "match"),  # trailing d allowed
+
+    # ── Loop / quantifier edge cases ──────────────────────────────────────────
+
+    # Zero and exact counts
+    ("a{0}",           "",       "fullmatch"),  # 0 reps → empty
+    ("a{0}",           "a",      "fullmatch"),
+    ("a{1}",           "a",      "fullmatch"),
+    ("a{1}",           "aa",     "fullmatch"),
+    ("a{0,1}",         "",       "fullmatch"),  # same as a?
+    ("a{0,1}",         "a",      "fullmatch"),
+    ("a{0,1}",         "aa",     "fullmatch"),
+
+    # Group loops
+    ("(ab){2}",        "abab",   "fullmatch"),
+    ("(ab){2}",        "ab",     "fullmatch"),  # too few
+    ("(ab){2}",        "ababab", "fullmatch"),  # too many
+    ("(ab){2,3}",      "abab",   "fullmatch"),  # 2 reps: ok
+    ("(ab){2,3}",      "ababab", "fullmatch"),  # 3 reps: ok
+    ("(ab){2,3}",      "ab",     "fullmatch"),  # 1 rep: no match
+    ("(ab){2,3}",      "abababab","fullmatch"),  # 4 reps: no match
+
+    # Anchored loops
+    ("^a{3}$",         "aaa",    "fullmatch"),
+    ("^a{3}$",         "aa",     "fullmatch"),
+    ("^a{3}$",         "aaaa",   "fullmatch"),
+    ("^a{2,4}$",       "a",      "fullmatch"),
+    ("^a{2,4}$",       "aa",     "fullmatch"),
+    ("^a{2,4}$",       "aaaa",   "fullmatch"),
+    ("^a{2,4}$",       "aaaaa",  "fullmatch"),
+    ("^a{3}$",         "aaa",    "match"),  # $ blocks trailing
+    ("^a{3}$",         "aaab",   "match"),  # $ blocks trailing b
+    ("a{3}",           "aaab",   "match"),  # no $: trailing b ok
+
+    # Loops in search mode
+    ("a{2}",           "xaax",   "search"),  # found in middle
+    ("a{2}",           "xa",     "search"),  # only one a: no match
+    ("(ab){2}",        "xababx", "search"),
+    ("(ab){2}",        "xabx",   "search"),  # only one ab: no match
+
+    # Anchor inside loop: ^ or $ blocks repeated iteration
+    ("(^a){2}",        "aa",     "fullmatch"),  # 2nd ^ is past start: unmatchable
+    ("(^a){2}",        "a",      "fullmatch"),  # need 2 but ^ blocks 2nd
+    ("(a$){2}",        "aa",     "fullmatch"),  # $ after 1st a blocks 2nd iteration
+    ("(a$){2}",        "a",      "fullmatch"),  # too few chars regardless
+
     # Invalid regexes → Python raises re.error, Strata should give parseError
-    ("x{100,2}",  "x",    "fullmatch"),   # invalid bounds
-    ("(abc",      "abc",  "fullmatch"),   # unmatched paren
-    ("a**",       "a",    "fullmatch"),   # nothing to repeat
+    ("x{100,2}",  "x",    "fullmatch"),  # invalid bounds
+    ("(abc",      "abc",  "fullmatch"),  # unmatched paren
+    ("a**",       "a",    "fullmatch"),  # nothing to repeat
 
     # Unimplemented in Strata (lookahead / lookbehind)
     (r"a(?=b)",   "ab",  "match"),
     (r"a(?!b)",   "ac",  "match"),
     (r"(?<=a)b",  "ab",  "match"),
     (r"(?<!a)b",  "cb",  "match"),
+
+    # ── Unimplemented: non-greedy quantifiers ───────────────────────────────────
+
+    (r"a*?",      "aaa",    "fullmatch"),  # lazy *?: same language as a*
+    (r"a*?",      "",       "fullmatch"),
+    (r"a+?",      "a",      "fullmatch"),  # lazy +?: same language as a+
+    (r"a+?",      "aaa",    "fullmatch"),
+    (r"a??",      "",       "fullmatch"),  # lazy ??: same language as a?
+    (r"a??",      "a",      "fullmatch"),
+    (r"a*?b",     "aaab",   "search"),  # lazy in search mode
+    (r"a+?b",     "ab",     "search"),
+
+    # ── Unimplemented: \d \w \s shorthand classes ───────────────────────────────
+
+    (r"\d",       "5",      "fullmatch"),
+    (r"\d",       "a",      "fullmatch"),
+    (r"\d+",      "123",    "fullmatch"),
+    (r"\d+",      "12a",    "fullmatch"),  # partial: Python noMatch
+    (r"\D",       "a",      "fullmatch"),
+    (r"\D",       "5",      "fullmatch"),
+    (r"\w",       "a",      "fullmatch"),
+    (r"\w",       "!",      "fullmatch"),
+    (r"\w+",      "hello",  "fullmatch"),
+    (r"\W",       "!",      "fullmatch"),
+    (r"\W",       "a",      "fullmatch"),
+    (r"\s",       " ",      "fullmatch"),
+    (r"\s",       "a",      "fullmatch"),
+    (r"\S",       "a",      "fullmatch"),
+    (r"\S",       " ",      "fullmatch"),
+    (r"\d+\s\w+", "42 abc", "fullmatch"),  # combined shorthands
+
+    # ── Unimplemented: \b \B word-boundary assertions ───────────────────────────
+
+    (r"\bcat\b",      "cat",          "search"),  # exact word
+    (r"\bcat\b",      "cats",         "search"),  # trailing char: no boundary after t
+    (r"\bcat\b",      "the cat now",  "search"),  # word surrounded by spaces
+    (r"\bcat\b",      "concatenate",  "search"),  # no boundary: cat inside word
+    (r"\Bcat\B",      "concatenate",  "search"),  # \B: non-boundary on both sides
+
+    # ── Unimplemented: \A \Z absolute anchors ───────────────────────────────────
+
+    (r"\Aa",      "abc",    "search"),  # \A forces match at absolute start
+    (r"\Aa",      "xabc",   "search"),  # prefix not allowed
+    (r"a\Z",      "ba",     "search"),  # \Z forces match at absolute end
+    (r"a\Z",      "ab",     "search"),  # suffix not allowed
+    (r"\Aa\Z",    "a",      "fullmatch"),
+    (r"\Aa\Z",    "ab",     "fullmatch"),
+
+    # ── Unimplemented: non-capturing groups (?:...) ─────────────────────────────
+
+    (r"(?:ab)+",    "abab",  "fullmatch"),  # same language as (ab)+
+    (r"(?:ab)+",    "ab",    "fullmatch"),
+    (r"(?:a|b)+",   "abba",  "fullmatch"),
+    (r"x(?:a|b)y",  "xay",   "fullmatch"),
+    (r"x(?:a|b)y",  "xcy",   "fullmatch"),
+
+    # ── Unimplemented: named groups (?P<name>...) ───────────────────────────────
+
+    (r"(?P<x>a)",           "a",   "fullmatch"),
+    (r"(?P<x>a)",           "b",   "fullmatch"),
+    (r"(?P<x>a)(?P<y>b)",   "ab",  "fullmatch"),
+
+    # ── Unimplemented: inline flags (?i) (?m) (?s) ─────────────────────────────
+
+    (r"(?i)hello",   "HELLO",  "fullmatch"),  # case-insensitive
+    (r"(?i)hello",   "Hello",  "fullmatch"),
+    (r"(?i)hello",   "world",  "fullmatch"),
+    (r"(?i)[a-z]+",  "ABC",    "fullmatch"),
+    (r"(?s)a.b",     "axb",    "fullmatch"),  # (?s): . matches anything (no \n in test)
+    (r"(?m)^a",      "a",      "search"),  # (?m): ^ matches start of each line
+
+    # ── Unimplemented: backreferences ───────────────────────────────────────────
+
+    (r"(a)\1",    "aa",   "fullmatch"),  # group 1 repeated
+    (r"(a)\1",    "ab",   "fullmatch"),
+    (r"(a|b)\1",  "aa",   "fullmatch"),
+    (r"(a|b)\1",  "bb",   "fullmatch"),
+    (r"(a|b)\1",  "ab",   "fullmatch"),  # mismatch
+    (r"(.)\1",    "aa",   "fullmatch"),  # any char repeated
+    (r"(.)\1",    "ab",   "fullmatch"),
 ]
 
 # ── Python oracle ──────────────────────────────────────────────────────────────
@@ -273,12 +503,12 @@ def main() -> int:
     counts: dict[str, int] = {"agree": 0, "bug": 0, "known_gap": 0, "investigate": 0}
     bugs, gaps, investigations = [], [], []
 
-    for (regex, string, mode) in CORPUS:
+    for idx, (regex, string, mode) in enumerate(CORPUS, start=1):
         py  = run_python(regex, string, mode)
         st  = strata_results.get((regex, string, mode), "smtError:missing_output")
         verdict = classify(py, st)
         counts[verdict] += 1
-        entry = (regex, string, mode, py, st)
+        entry = (idx, regex, string, mode, py, st)
         if verdict == "bug":
             bugs.append(entry)
         elif verdict == "known_gap":
@@ -294,20 +524,20 @@ def main() -> int:
 
     if bugs:
         print(f"\n🐛  BUGS ({len(bugs)}) — Strata and Python disagree on a valid regex:")
-        for regex, string, mode, py, st in bugs:
-            print(f"  regex={regex!r}  string={string!r}  mode={mode!r}")
+        for idx, regex, string, mode, py, st in bugs:
+            print(f"  [#{idx}]  regex={regex!r}  string={string!r}  mode={mode!r}")
             print(f"    Python : {py}")
             print(f"    Strata : {st}")
 
     if gaps:
         print(f"\n⚠️   KNOWN GAPS ({len(gaps)}) — Strata says 'unimplemented':")
-        for regex, string, mode, py, st in gaps:
-            print(f"  regex={regex!r}  string={string!r}  mode={mode!r}  python={py}")
+        for idx, regex, string, mode, py, st in gaps:
+            print(f"  [#{idx}]  regex={regex!r}  string={string!r}  mode={mode!r}  python={py}")
 
     if investigations:
         print(f"\n🔍  INVESTIGATE ({len(investigations)}):")
-        for regex, string, mode, py, st in investigations:
-            print(f"  regex={regex!r}  string={string!r}  mode={mode!r}")
+        for idx, regex, string, mode, py, st in investigations:
+            print(f"  [#{idx}]  regex={regex!r}  string={string!r}  mode={mode!r}")
             print(f"    Python : {py}")
             print(f"    Strata : {st}")
 
