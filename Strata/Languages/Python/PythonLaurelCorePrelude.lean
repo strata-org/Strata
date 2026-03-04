@@ -369,16 +369,17 @@ inline function PMul (v1: Any, v2: Any) : Any
 }
 
 inline function PFloorDiv (v1: Any, v2: Any) : Any
+  requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0);
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) then
-    from_int(bool_to_int(Any..as_bool!(v1)) div bool_to_int(Any..as_bool!(v2)))
+    from_int( bool_to_int(Any..as_bool!(v1)) / bool_to_int(Any..as_bool!(v2)))
   else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) then
-    from_int(bool_to_int(Any..as_bool!(v1)) div Any..as_int!(v2))
+    from_int(bool_to_int(Any..as_bool!(v1)) / Any..as_int!(v2))
   else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
-    from_int(Any..as_int!(v1) div bool_to_int(Any..as_bool!(v2)))
+    from_int(Any..as_int!(v1) / bool_to_int(Any..as_bool!(v2)))
   else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) then
-    from_int(Any..as_int!(v1) div Any..as_int!(v2))
+    from_int(Any..as_int!(v1) / Any..as_int!(v2))
   else
     exception(UndefinedError ("Operand Type is not defined"))
 }

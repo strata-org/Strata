@@ -1,5 +1,9 @@
 
 ==== Verification Results ====
+PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
 datetime_now_ensures_0: ✅ pass (at byte 7134)
 datetime_utcnow_ensures_0: ✅ pass (at byte 7372)
 ensures_str_strp_reverse: ✅ pass (at byte 8766)

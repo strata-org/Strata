@@ -663,6 +663,7 @@ partial def translateAssign  (ctx : TranslationContext)
                              (lhs: Python.expr SourceRange)
                              (annotation: Option (Python.expr SourceRange) )
                              (rhs: Python.expr SourceRange)
+                             (md: Imperative.MetaData Core.Expression)
                     : Except TranslationError (TranslationContext × List StmtExprMd) := do
   let rhs_trans ←  translateExpr ctx rhs
   if let .Hole := rhs_trans.val then
@@ -712,11 +713,11 @@ partial def translateAssign  (ctx : TranslationContext)
           let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
             (mkStmtExprMd (StmtExpr.Identifier "self"))
             attr.val)
-          let assignStmt := mkStmtExprMd (StmtExpr.Assign [fieldAccess] rhs_trans)
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs_trans) md
           return (ctx, [assignStmt])
         else
           let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
-          let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md
           return (ctx, [assignStmt])
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
     | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
@@ -732,12 +733,12 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- For now, only support single target
     if targets.val.size != 1 then
       throw (.unsupportedConstruct "Multiple assignment targets not yet supported" (toString (repr s)))
-    translateAssign ctx targets.val[0]! none value
+    translateAssign ctx targets.val[0]! none value md
 
   -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args) or self.field: int = expr
   | .AnnAssign _ target annotation value _ => do
     match value.val with
-    | some value => translateAssign ctx target annotation value
+    | some value => translateAssign ctx target annotation value md
     | none =>
       -- Declaration without initializer (not allowed in pure context, but OK in procedures)
       let varType := pyExprToString annotation
@@ -771,7 +772,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else do
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
-    let ifStmt := mkStmtExprMd (StmtExpr.IfThenElse (Any_to_bool finalCondExpr) bodyBlock elseBlock)
+    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool finalCondExpr) bodyBlock elseBlock) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
@@ -798,7 +799,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     let (loopCtx, bodyStmts) ← translateStmtList condCtx body.val.toList
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
-    let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock)
+    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
@@ -845,7 +846,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- Expression statement (e.g., function call)
   | .Expr _ value => do
     let expr ← translateExpr ctx value
-    --return (ctx, [expr])
+    let expr := { expr with md := md }
 
     match expr.val with
     | .StaticCall fnname _ =>
@@ -854,7 +855,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             let targets := if funsig.ret.isNone then [] else [nullcall_var]
             let targets := if withException ctx fnname then targets++[maybe_except_var] else targets
             if targets.length > 0 then
-              return (ctx, [mkStmtExprMd (StmtExpr.Assign targets expr)])
+              return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assign targets expr) md])
             else
               return (ctx, [expr])
         | _ => return (ctx, [expr])
@@ -891,7 +892,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let handlerBlock := mkStmtExprMd (StmtExpr.Block handlerStmts (some handlerLabel))
 
     -- Wrap in try block
-    let tryBlock := mkStmtExprMd (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel))
+    let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel)) md
     return (bodyCtx, [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])

@@ -1,16 +1,20 @@
 
 ==== Verification Results ====
+PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
 PAnd_body_calls_Any_to_bool_0: ✅ pass
 PAnd_body_calls_Any_to_bool_1: ✅ pass
 POr_body_calls_Any_to_bool_0: ✅ pass
 POr_body_calls_Any_to_bool_1: ✅ pass
-ret_type: ✅ pass (at byte 25099)
-ret_type: ✅ pass (at byte 25532)
-ret_pos: ✅ pass (at byte 26030)
-assert_name_is_foo: ✅ pass (at byte 27034)
-assert_opt_name_none_or_str: ✅ pass (at byte 27097)
-assert_opt_name_none_or_bar: ✅ pass (at byte 27201)
-ensures_maybe_except_none: ✅ pass (at byte 26957)
+ret_type: ✅ pass (at byte 25194)
+ret_type: ✅ pass (at byte 25627)
+ret_pos: ✅ pass (at byte 26125)
+assert_name_is_foo: ✅ pass (at byte 27129)
+assert_opt_name_none_or_str: ✅ pass (at byte 27192)
+assert_opt_name_none_or_bar: ✅ pass (at byte 27296)
+ensures_maybe_except_none: ✅ pass (at byte 27052)
 assert_assert(102)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
 assert(102): ✅ pass (at line 7, col 4)
 assert_assert(226)_calls_Any_to_bool_0: ✅ pass (at line 12, col 4)
@@ -19,6 +23,6 @@ assert_assert(345)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
 assert(345): ✅ pass (at line 16, col 4)
 assert_assert(458)_calls_Any_to_bool_0: ✅ pass (at line 20, col 4)
 assert(458): ✅ pass (at line 20, col 4)
+set_quot_calls_PFloorDiv_0: ✅ pass
 assert_assert(567)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
-init_calls_Int.SafeDiv_0: ✅ pass (at line 23, col 4)
 assert(567): ✅ pass (at line 24, col 4)
