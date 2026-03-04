@@ -31,15 +31,6 @@ procedure guards(a: int) returns (r: int)
   return e;
 }
 
-// Lettish bindings in functions not yet supported
-// because Core expressions do not support let bindings
-// function letsInFunction() returns (r: int) {
-//  var x: int := 0;
-//  var y: int := x + 1;
-//  var z: int := y + 1;
-//  z
-// }
-
 function returnAtEnd(x: int) returns (r: int) {
   if (x > 0) {
     if (x == 1) {

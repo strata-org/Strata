@@ -221,11 +221,15 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
     _ ← disallowed md "assumes are not YET supported in functions or contracts"
     translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
   | .Block (⟨ .LocalVariable name ty (some initializer), md⟩ :: rest) label => do
-    let env' := (name, ty) :: env
-    let coreMonoType := translateType ty
-    let valueExpr ← translateExpr env initializer boundVars isPureContext
-    let bodyExpr ← translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
-    return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
+      let env' := (name, ty) :: env
+      let valueExpr ← translateExpr env initializer boundVars isPureContext
+      let bodyExpr ← translateExpr env' ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
+      disallowed md "local variables in functions are not YET supported"
+      -- This doesn't work because of a limitation in Core.
+      -- let coreMonoType := translateType ty
+      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
+  | .Block (⟨ .LocalVariable name ty none, md⟩ :: rest) label =>
+    disallowed md "local variables in functions must have initializers"
 
   | .IsType _ _ => panic "IsType should have been lowered"
   | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
@@ -443,67 +447,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
-
-/--
-Check if a Laurel expression is pure (contains no side effects).
-Used to determine if a procedure can be translated as a Core function.
--/
-private def isPureExpr(expr: StmtExprMd): Bool :=
-  match _h : expr.val with
-  | .LiteralBool _ => true
-  | .LiteralInt _ => true
-  | .LiteralString _ => true
-  | .Identifier _ => true
-  | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .IfThenElse c t none => isPureExpr c && isPureExpr t
-  | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
-  | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .New _ => false
-  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
-  | .Block [single] _ => isPureExpr single
-  | .Block _ _ => false
-  -- Statement-like
-  | .LocalVariable .. => true
-  | .While .. => false
-  | .Exit .. => false
-  | .Return .. => false
-  -- Expression-like
-  | .Assign .. => false
-  | .FieldSelect .. => true
-  | .PureFieldUpdate .. => true
-  -- Instance related
-  | .This => panic s!"isPureExpr not implemented for This"
-  | .AsType .. => panic s!"isPureExpr not supported for AsType"
-  | .IsType .. => panic s!"isPureExpr not supported for IsType"
-  | .InstanceCall .. => panic s!"isPureExpr not implemented for InstanceCall"
-  -- Verification specific
-  | .Forall .. => panic s!"isPureExpr not implemented for Forall"
-  | .Exists .. => panic s!"isPureExpr not implemented for Exists"
-  | .Assigned .. => panic s!"isPureExpr not supported for AsType"
-  | .Old .. => panic s!"isPureExpr not supported for AsType"
-  | .Fresh .. => panic s!"isPureExpr not supported for AsType"
-  | .Assert .. => panic s!"isPureExpr not implemented for Assert"
-  | .Assume .. => panic s!"isPureExpr not implemented for Assume"
-  | .ProveBy .. => panic s!"isPureExpr not implemented for ProveBy"
-  | .ContractOf .. => panic s!"isPureExpr not implemented for ContractOf"
-  | .Abstract => panic s!"isPureExpr not implemented for Abstract"
-  | .All => panic s!"isPureExpr not implemented for All"
-  -- Dynamic / closures
-  | .Hole => true
-  termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
-
-/-- Check if a pure-marked procedure can actually be represented as a Core function:
-    transparent body that is a pure expression and has exactly one output. -/
-private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
-  match proc.body with
-  | .Transparent bodyExpr =>
-    isPureExpr bodyExpr &&
-    proc.outputs.length == 1
-  | .Opaque _ bodyExprOption _ =>
-    (bodyExprOption.map isPureExpr).getD true &&
-    proc.outputs.length == 1
-  | _ => false
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
