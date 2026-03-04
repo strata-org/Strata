@@ -31,6 +31,127 @@ def applyTySubstT : TySubstT → LMonoTy → LMonoTy
   | _, .bitvec n => .bitvec n
   | σ, .tcons name args => .tcons name (args.map (applyTySubstT σ))
 
+theorem applyTySubstT_id (ty: LMonoTy):
+  applyTySubstT [] ty = ty := by
+  induction ty <;> simp[applyTySubstT]
+  rw [@List.map_congr_left _ _ _ _ id]
+  . apply List.map_id
+  . assumption
+
+/-- Composing two applyTySubstT applications into one. -/
+theorem applyTySubstT_comp (σ₁ σ₂ : TySubstT) (ty : LMonoTy) :
+    applyTySubstT σ₂ (applyTySubstT σ₁ ty) =
+    applyTySubstT (σ₁.map (fun (k, v) => (k, applyTySubstT σ₂ v)) ++ σ₂) ty := by
+  induction ty with
+  | ftvar x =>
+    simp [applyTySubstT]
+    induction σ₁ with
+    | nil => simp [List.lookup, applyTySubstT]
+    | cons hd tl ih =>
+      simp [List.lookup, List.map]
+      split <;> simp_all
+  | bitvec n => simp [applyTySubstT]
+  | tcons name args ih =>
+    simp only [applyTySubstT]
+    congr 1
+    rw[List.map_map]
+    apply List.map_congr_left
+    intros a ha
+    grind
+
+theorem List_lookup_map_find [DecidableEq α] (x: α) (l: List (α × β)):
+  List.lookup x l = Map.find? l x := by
+  induction l
+  case nil => simp[Map.find?]
+  case cons h t IH =>
+    simp[Map.find?, List.lookup]
+    grind
+
+theorem List_lookup_maps_find [DecidableEq α] (x: α) (l: List (α × β)):
+  List.lookup x l = Maps.find? [l] x := by
+  unfold Maps.find?
+  rw[List_lookup_map_find]
+  split <;> (try simp[Maps.find?]) <;> assumption
+
+theorem List_lookup_maps_find' [DecidableEq α] (x: α) (l: List (List (α × β))):
+  Maps.find? l x = List.lookup x (List.flatten l)  := by
+  induction l
+  case nil => simp[Maps.find?]
+  case cons h t IH =>
+    simp[Maps.find?, List.lookup_append]
+    rw[List_lookup_map_find]
+    split
+    . rename_i heq; rw[heq]
+      apply IH
+    . rename_i heq; rw[heq]
+      rfl
+
+theorem List_map_find [DecidableEq α] (x: α) (l: List (α × β)) y:
+  (List.lookup x l).getD y =
+  match Map.find? l x with
+  | some z => z
+  | none => y := by
+  rw[List_lookup_map_find]
+  rfl
+
+theorem List_maps_find [DecidableEq α] (x: α) (l: List (α × β)) y:
+  (List.lookup x l).getD y =
+  match Maps.find? [l] x with
+  | some z => z
+  | none => y := by
+  rw[List_lookup_maps_find]
+  rfl
+
+
+theorem applyTySubstT_subst σ ty:
+  applyTySubstT σ ty = LMonoTy.subst [σ] ty := by
+  have Hemp: Subst.hasEmptyScopes [σ] = (List.isEmpty σ) := by
+    cases σ<;> rfl
+  cases he: (List.isEmpty σ)
+  case true =>
+    unfold LMonoTy.subst
+    rw[Hemp, he]; simp
+    have : σ = [] := by grind
+    subst_vars
+    apply applyTySubstT_id
+  case false =>
+    rw[he] at Hemp
+    induction ty <;> simp[applyTySubstT, LMonoTy.subst, Hemp]
+    case ftvar f =>
+      rw [List_maps_find f σ (LMonoTy.ftvar f)]
+      grind
+    case tcons name args ih =>
+      rw[LMonoTys.subst_eq_substLogic ]
+      induction args
+      case nil =>
+        simp[LMonoTys.substLogic]
+      case cons h t IH =>
+        simp[LMonoTys.substLogic, Hemp]
+        constructor
+        . apply ih; grind
+        . apply IH
+          intros ty hty; apply ih; grind
+
+
+-- theorem applyTySubstT_openFull vars tys ty:
+--   tys.length = vars.length →
+--   openFull
+
+
+--  tys.length = ty_o.boundVars.length
+-- σ : TySubstT := ty_o.boundVars.zip tys
+-- ⊢ openFull ty_o tys = applyTySubstT σ ty_o.toMonoTypeUnsafe
+
+-- tys.length = ty_o.boundVars.length
+-- σ : TySubstT := ty_o.boundVars.zip tys
+-- ⊢ openFull ty_o tys = instantiateSchemeT ty_o σ
+
+
+theorem LMonoTy_subst_nil (mty : LMonoTy) : LMonoTy.subst [[]] mty = mty := by
+  unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+
+@[simp] theorem LTy_forAll_nil_toMonoTypeUnsafe (mty : LMonoTy) :
+    (LTy.forAll [] mty).toMonoTypeUnsafe = mty := by rfl
 def instantiateSchemeT (ty : LTy) (σ : TySubstT) : LMonoTy :=
   applyTySubstT σ ty.toMonoTypeUnsafe
 
@@ -64,14 +185,9 @@ inductive HasTypeT {T : LExprParams} [DecidableEq T.IDMeta] (C : LContext T) :
       C.knownTypes.containsName "bitvec" →
       HasTypeT C Γ (.bitvecConst m n b) (.bitvec n)
 
-  | tvar : ∀ Γ m x ty_scheme σ,
+  | tvar : ∀ Γ m x o ty_scheme σ,
       Γ.types.find? x = some ty_scheme →
-      HasTypeT C Γ (.fvar m x none) (instantiateSchemeT ty_scheme σ)
-
-  | tvar_annotated : ∀ Γ m x ty_scheme σ mty,
-      Γ.types.find? x = some ty_scheme →
-      mty = instantiateSchemeT ty_scheme σ →
-      HasTypeT C Γ (.fvar m x (some mty)) mty
+      HasTypeT C Γ (.fvar m x o) (instantiateSchemeT ty_scheme σ)
 
   | tabs : ∀ Γ m x x_mty e e_mty o,
       LExpr.fresh x e →
@@ -105,16 +221,403 @@ inductive HasTypeT {T : LExprParams} [DecidableEq T.IDMeta] (C : LContext T) :
       o = none ∨ o = some x_mty →
       HasTypeT C Γ (.quant m k o tr e) .bool
 
-  | top : ∀ Γ m f op ty_scheme σ,
+  | top : ∀ Γ m f op o ty_scheme σ,
       C.functions.find? (fun fn => fn.name == op) = some f →
       f.type = .ok ty_scheme →
-      HasTypeT C Γ (.op m op none) (instantiateSchemeT ty_scheme σ)
+      HasTypeT C Γ (.op m op o) (instantiateSchemeT ty_scheme σ)
 
-  | top_annotated : ∀ Γ m f op ty_scheme σ mty,
-      C.functions.find? (fun fn => fn.name == op) = some f →
-      f.type = .ok ty_scheme →
-      mty = instantiateSchemeT ty_scheme σ →
-      HasTypeT C Γ (.op m op (some mty)) mty
+/-!
+## `HasType` implies `HasTypeT`
+
+Because there is no let-polymorphism, every `HasType C Γ e ty` derivation
+can be translated to `HasTypeT C Γ e ty.toMonoTypeUnsafe`. The key idea is
+that a type substitution (from `tgen`/`tinst` chains) corresponds to the
+`σ` parameter in `instantiateSchemeT` used by `HasTypeT`.
+-/
+
+-- /-- HasTypeT is closed under monotype substitution: substituting a type variable
+--     in the result type can be absorbed by adjusting the σ in each tvar/top rule. -/
+-- theorem HasTypeT_mono_subst {C : LContext T} {Γ : TContext T.IDMeta}
+--     {e : LExpr T.mono} {mty : LMonoTy}
+--     (h : HasTypeT C Γ e mty) (x : TyIdentifier) (xty : LMonoTy) :
+--     HasTypeT C Γ e (LMonoTy.subst [[(x, xty)]] mty) := by
+--   induction h with
+--   | tbool_const Γ m b hk =>
+--     unfold LMonoTy.subst
+--     simp[Subst.hasEmptyScopes, Map.isEmpty]
+--     rw[LMonoTys.subst_eq_substLogic]
+--     simp[LMonoTys.substLogic]
+--     constructor
+--     assumption
+--   | tint_const Γ m n hk =>
+--     unfold LMonoTy.subst
+--     simp[Subst.hasEmptyScopes, Map.isEmpty]
+--     rw[LMonoTys.subst_eq_substLogic]
+--     simp[LMonoTys.substLogic]
+--     constructor
+--     assumption
+--   | treal_const Γ m r hk =>
+--     unfold LMonoTy.subst
+--     simp[Subst.hasEmptyScopes, Map.isEmpty]
+--     rw[LMonoTys.subst_eq_substLogic]
+--     simp[LMonoTys.substLogic]
+--     constructor
+--     assumption
+--   | tstr_const Γ m s hk =>
+--     unfold LMonoTy.subst
+--     simp[Subst.hasEmptyScopes, Map.isEmpty]
+--     rw[LMonoTys.subst_eq_substLogic]
+--     simp[LMonoTys.substLogic]
+--     constructor
+--     assumption
+--   | tbitvec_const Γ m n b hk =>
+--     unfold LMonoTy.subst
+--     simp[Subst.hasEmptyScopes, Map.isEmpty]
+--     constructor
+--     assumption
+--   | tvar Γ m x' ty_scheme σ hfind =>
+--     unfold instantiateSchemeT
+--     rw[←applyTySubstT_subst, applyTySubstT_comp]
+--     apply HasTypeT.tvar; assumption
+--   | tvar_annotated Γ m x' ty_scheme σ mty' hfind hmty =>
+--     subst hmty
+--     unfold instantiateSchemeT
+--     rw[←applyTySubstT_subst, applyTySubstT_comp]
+--     apply HasTypeT.tvar_annotated _ _ _ ty_scheme
+--     · exact hfind
+--     · rfl
+--   | tabs Γ m x' x_mty e e_mty o hfresh hbody ho ih =>
+--     sorry
+--   | tapp Γ m e1 e2 t1 t2 h1 h2 ih1 ih2 =>
+--     sorry
+--   | tif Γ m c e1 e2 mty' hc h1 h2 ihc ih1 ih2 =>
+--     simp [LMonoTy.subst, LMonoTy.bool, LMonoTys.subst] at ihc
+--     exact .tif _ _ _ _ _ _ ihc ih1 ih2
+--   | teq Γ m e1 e2 mty' h1 h2 ih1 ih2 =>
+--     simp [LMonoTy.subst, LMonoTy.bool, LMonoTys.subst]
+--     exact .teq _ _ _ _ _ ih1 ih2
+--   | tquant Γ m k tr tr_mty x' x_mty e o hfresh hbody htr ho ih_body ih_tr =>
+--     simp [LMonoTy.subst, LMonoTy.bool, LMonoTys.subst]
+--     exact .tquant _ _ _ _ _ _ _ _ hfresh ih_body ih_tr ho
+--   | top Γ m f op ty_scheme σ hfind htype =>
+--     exact .top _ _ f _ ty_scheme (σ.map (fun (k,v) => (k, LMonoTy.subst [[(x, xty)]] v)) ++ [(x, xty)]) hfind htype
+--   | top_annotated Γ m f op ty_scheme σ mty' hfind htype hmty =>
+--     exact .top_annotated _ _ f _ ty_scheme (σ.map (fun (k,v) => (k, LMonoTy.subst [[(x, xty)]] v)) ++ [(x, xty)]) _ hfind htype sorry
+
+-- /-- Opening a type variable in an LTy preserves HasTypeT. -/
+-- theorem HasTypeT_open_mono {C : LContext T} {Γ : TContext T.IDMeta}
+--     {e : LExpr T.mono} {ty : LTy} {x : TyIdentifier} {xty : LMonoTy}
+--     (h : HasTypeT C Γ e ty.toMonoTypeUnsafe) :
+--     HasTypeT C Γ e (LTy.open x xty ty).toMonoTypeUnsafe := by
+--   unfold LTy.open
+--   cases ty with
+--   | forAll vars lty =>
+--     simp [LTy.toMonoTypeUnsafe] at *
+--     split
+--     · exact HasTypeT_mono_subst h x xty
+--     · exact h
+
+-- @[simp] theorem applyTySubstT_tcons_nil (σ : TySubstT) (name : String) :
+--     applyTySubstT σ (.tcons name []) = .tcons name [] := by
+--   simp [applyTySubstT]
+
+-- theorem HasTypeT_mono_subst {C : LContext T} {Γ : TContext T.IDMeta}
+--     {e : LExpr T.mono} {mty : LMonoTy}
+--     (h : HasTypeT C Γ e mty) (x : TyIdentifier) (xty : LMonoTy) :
+--     HasTypeT C Γ e (LMonoTy.subst [[(x, xty)]] mty) := by
+--   induction h with
+--   | tbool_const Γ m b hk =>
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .tbool_const _ _ _ hk
+--   | tint_const Γ m n hk =>
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .tint_const _ _ _ hk
+--   | treal_const Γ m r hk =>
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .treal_const _ _ _ hk
+--   | tstr_const Γ m s hk =>
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .tstr_const _ _ _ hk
+--   | tbitvec_const Γ m n b hk =>
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     exact .tbitvec_const _ _ _ _ hk
+--   | tvar Γ m x' o ty_scheme σ hfind =>
+--     unfold instantiateSchemeT
+--     rw [← applyTySubstT_subst, applyTySubstT_comp]
+--     exact .tvar _ _ _ _ ty_scheme _ hfind
+--   | tabs Γ m x' x_mty e e_mty o hfresh hbody ho ih =>
+--     unfold LMonoTy.arrow LMonoTy.subst
+--     simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]
+--     simp [LMonoTys.substLogic]
+--     simp[Subst.hasEmptyScopes, Map.isEmpty]
+--     exact .tabs _ _ _ _ _ _ _ hfresh ih ho
+--   | tapp Γ m e1 e2 t1 t2 h1 h2 ih1 ih2 =>
+--     have : LMonoTy.subst [[(x, xty)]] (.arrow t2 t1) = .arrow (LMonoTy.subst [[(x, xty)]] t2) (LMonoTy.subst [[(x, xty)]] t1) := by
+--       unfold LMonoTy.arrow LMonoTy.subst
+--       simp [Subst.hasEmptyScopes, Map.isEmpty]
+--       rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .tapp _ _ _ _ _ _ (this ▸ ih1) ih2
+--   | tif Γ m c e1 e2 mty' hc h1 h2 ihc ih1 ih2 =>
+--     unfold LMonoTy.subst at ihc
+--     simp [Subst.hasEmptyScopes, Map.isEmpty] at ihc
+--     rw [LMonoTys.subst_eq_substLogic] at ihc; simp [LMonoTys.substLogic] at ihc
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .tif _ _ _ _ _ _ ihc ih1 ih2
+--   | teq Γ m e1 e2 mty' h1 h2 ih1 ih2 =>
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .teq _ _ _ _ _ ih1 ih2
+--   | tquant Γ m k tr tr_mty x' x_mty e o hfresh hbody htr ho ih_body ih_tr =>
+--     unfold LMonoTy.subst at ih_body
+--     simp [Subst.hasEmptyScopes, Map.isEmpty] at ih_body
+--     rw [LMonoTys.subst_eq_substLogic] at ih_body; simp [LMonoTys.substLogic] at ih_body
+--     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]
+--     rw [LMonoTys.subst_eq_substLogic]; simp [LMonoTys.substLogic]
+--     exact .tquant _ _ _ _ _ _ _ _ hfresh ih_body ih_tr ho
+--   | top Γ m f op o ty_scheme σ hfind htype =>
+--     unfold instantiateSchemeT
+--     rw [← applyTySubstT_subst, applyTySubstT_comp]
+--     exact .top _ _ f _ _ ty_scheme _ hfind htype
+
+-- theorem HasTypeT_open_mono {C : LContext T} {Γ : TContext T.IDMeta}
+--     {e : LExpr T.mono} {ty : LTy} {x : TyIdentifier} {xty : LMonoTy}
+--     (h : HasTypeT C Γ e ty.toMonoTypeUnsafe) :
+--     HasTypeT C Γ e (LTy.open x xty ty).toMonoTypeUnsafe := by
+--   unfold LTy.open
+--   cases ty with
+--   | forAll vars lty =>
+--     simp [LTy.toMonoTypeUnsafe] at *
+--     split
+--     · exact HasTypeT_mono_subst h x xty
+--     · exact h
+
+-- theorem HasType_implies_HasTypeT (C : LContext T) (Γ : TContext T.IDMeta)
+--     (e : LExpr T.mono) (ty : LTy)
+--     (h : LExpr.HasType C Γ e ty) :
+--     HasTypeT C Γ e ty.toMonoTypeUnsafe := by
+--     induction h <;> try solve | (constructor <;> assumption)
+--     case tvar Γ' m' x' ty' Hfind =>
+--       have Hty := (@HasTypeT.tvar _ _ C Γ' m' x' none ty' [] Hfind)
+--       unfold instantiateSchemeT at Hty
+--       rw[applyTySubstT_id] at Hty
+--       exact Hty
+--     case tvar_annotated Γ' m' x' ty_o ty_s tys Hfind Hlen Hopen =>
+--       simp[LTy.toMonoTypeUnsafe]
+--       let σ : TySubstT := List.zip ty_o.boundVars tys
+--       have Hty : ty_s = instantiateSchemeT ty_o σ := by
+--         subst_vars; unfold instantiateSchemeT LTy.openFull; rw [applyTySubstT_subst]
+--       rw [Hty]
+--       apply HasTypeT.tvar
+--       apply Hfind
+--     case tabs Γ m x x_ty e e_ty o Hfresh hx he Hty Ho IH =>
+--       simp[LTy.toMonoTypeUnsafe]
+--       apply HasTypeT.tabs <;> try assumption
+--       have he': e_ty.toMonoTypeUnsafe = e_ty.toMonoType he := by rfl
+--       rw[←he']
+--       have Hx : x_ty = (LTy.forAll [] (x_ty.toMonoType hx)) := by
+--         cases x_ty; simp[LTy.isMonoType, LTy.boundVars] at hx
+--         subst_vars; rfl
+--       rw[Hx] at IH
+--       exact IH
+--     case tinst Γ e ty e_ty x x_ty Hty Hopen IH =>
+--       subst_vars
+--       exact HasTypeT_open_mono IH
+--     case tgen Γ e a ty Hty Hinfv IH =>
+--       unfold LTy.close; cases a; simp[LTy.toMonoTypeUnsafe] at *; assumption
+--     case tquant Γ m k tr tr_ty x x_ty e o Hfresh hx Hbody Htr Ho IH_body IH_tr =>
+--       simp[LTy.toMonoTypeUnsafe]
+--       apply HasTypeT.tquant <;> try assumption
+--       . have Hx : x_ty = (LTy.forAll [] (x_ty.toMonoType hx)) := by
+--           cases x_ty; simp[LTy.isMonoType, LTy.boundVars] at hx
+--           subst_vars; rfl
+--         rw[Hx] at IH_body
+--         exact IH_body
+--       . have Hx : x_ty = (LTy.forAll [] (x_ty.toMonoType hx)) := by
+--           cases x_ty; simp[LTy.isMonoType, LTy.boundVars] at hx
+--           subst_vars; rfl
+--         rw[Hx] at IH_tr
+--         exact IH_tr
+--     case top Γ' m' f op ty' Hfind Htype =>
+--       have Hty := (@HasTypeT.top _ _ C Γ' m' f op none ty' [] Hfind Htype)
+--       unfold instantiateSchemeT at Hty
+--       rw[applyTySubstT_id] at Hty
+--       exact Hty
+--     case top_annotated Γ' m' f op ty_o ty_s tys Hfind Htype Hlen Hopen =>
+--       simp[LTy.toMonoTypeUnsafe]
+--       let σ : TySubstT := List.zip ty_o.boundVars tys
+--       have Hty : ty_s = instantiateSchemeT ty_o σ := by
+--         subst_vars; unfold instantiateSchemeT LTy.openFull; rw [applyTySubstT_subst]
+--       rw [Hty]
+--       apply HasTypeT.top
+--       apply Hfind
+--       apply Htype
+
+
+/-!
+## Generalized proof: carry σ, substitute only monotype context entries
+
+The key insight: `tabs`/`tquant` only add monotype schemes `forAll [] mty`,
+while polymorphic schemes come from the initial context. By substituting σ
+only into monotype entries, `tvar_annotated` sees the original polymorphic
+scheme (no commutation problem), while `tabs` gets the substituted monotype
+(context matches).
+-/
+
+/-- Apply a `TySubstT` to a single `LTy`, but only if it is a monotype scheme. -/
+def applyTySubstTLTy (σ : TySubstT) (ty : LTy) : LTy :=
+  match ty with
+  | .forAll [] mty => .forAll [] (applyTySubstT σ mty)
+  | other => other
+
+/-- Apply a `TySubstT` to every type in a `Maps`, only substituting monotype entries. -/
+def monoSubstMaps (σ : TySubstT) : Maps (Identifier T.IDMeta) LTy → Maps (Identifier T.IDMeta) LTy
+  | [] => []
+  | m :: rest => m.map (fun (k, ty) => (k, applyTySubstTLTy σ ty)) :: monoSubstMaps σ rest
+
+/-- Apply a `TySubstT` to a `TContext`, only substituting monotype entries. -/
+def monoSubstCtx (σ : TySubstT) (Γ : TContext T.IDMeta) : TContext T.IDMeta :=
+  { Γ with types := monoSubstMaps σ Γ.types }
+
+omit [DecidableEq T.IDMeta] in
+@[simp] theorem applyTySubstTLTy_nil (ty : LTy) : applyTySubstTLTy [] ty = ty := by
+  cases ty with | forAll vars mty =>
+  simp [applyTySubstTLTy]; split <;> simp_all [applyTySubstT_id]
+
+omit [DecidableEq T.IDMeta] in
+@[simp] theorem monoSubstMaps_nil :
+    monoSubstMaps (T := T) [] types = types := by
+  induction types with
+  | nil => simp [monoSubstMaps]
+  | cons m rest ih =>
+    simp only [monoSubstMaps, ih]; congr 1
+    rw [@List.map_congr_left _ _ _ _ id]
+    · simp
+    · intro nty _; rcases nty with ⟨n, ty⟩; simp [id, applyTySubstTLTy_nil]
+
+omit [DecidableEq T.IDMeta] in
+@[simp] theorem monoSubstCtx_nil :
+    monoSubstCtx (T := T) [] Γ = Γ := by
+  simp [monoSubstCtx]
+
+-- Mono entries are substituted
+theorem monoSubstMaps_find_mono (σ : TySubstT) (types : Maps (Identifier T.IDMeta) LTy)
+    (x : Identifier T.IDMeta) (mty : LMonoTy) :
+    types.find? x = some (.forAll [] mty) →
+    (monoSubstMaps σ types).find? x = some (.forAll [] (applyTySubstT σ mty)) := by
+  sorry
+
+-- Poly entries are unchanged
+theorem monoSubstMaps_find_poly (σ : TySubstT) (types : Maps (Identifier T.IDMeta) LTy)
+    (x : Identifier T.IDMeta) (ty : LTy) (h : ty.boundVars ≠ []) :
+    types.find? x = some ty →
+    (monoSubstMaps σ types).find? x = some ty := by
+  sorry
+
+-- Insert a mono entry into a monoSubst'd context
+theorem monoSubstMaps_insert (σ : TySubstT) (types : Maps (Identifier T.IDMeta) LTy)
+    (x : Identifier T.IDMeta) (mty : LMonoTy) :
+    monoSubstMaps σ (types.insert x (.forAll [] mty)) =
+    (monoSubstMaps σ types).insert x (.forAll [] (applyTySubstT σ mty)) := by
+  sorry
+
+theorem HasType_implies_HasTypeT' (C : LContext T) (Γ : TContext T.IDMeta)
+    (e : LExpr T.mono) (ty : LTy) (σ : TySubstT)
+    (h : LExpr.HasType C Γ e ty) :
+    HasTypeT C (monoSubstCtx σ Γ) e (applyTySubstT σ ty.toMonoTypeUnsafe) := by
+    induction h generalizing σ with
+    | tbool_const Γ' m b hk =>
+      simp [LTy.toMonoTypeUnsafe, LMonoTy.bool, applyTySubstT]
+      exact .tbool_const _ _ _ hk
+    | tint_const Γ' m n hk =>
+      simp [LTy.toMonoTypeUnsafe, LMonoTy.int, applyTySubstT]
+      exact .tint_const _ _ _ hk
+    | treal_const Γ' m r hk =>
+      simp [LTy.toMonoTypeUnsafe, LMonoTy.real, applyTySubstT]
+      exact .treal_const _ _ _ hk
+    | tstr_const Γ' m s hk =>
+      simp [LTy.toMonoTypeUnsafe, LMonoTy.string, applyTySubstT]
+      exact .tstr_const _ _ _ hk
+    | tbitvec_const Γ' m n b hk =>
+      simp [LTy.toMonoTypeUnsafe, LMonoTy.bitvec, applyTySubstT]
+      exact .tbitvec_const _ _ _ _ hk
+    | tvar Γ' m x' ty' Hfind =>
+      cases ty' with | forAll vars mty =>
+      simp [LTy.toMonoTypeUnsafe]
+      cases vars with
+      | nil =>
+        have Hfind' := monoSubstMaps_find_mono σ Γ'.types x' mty Hfind
+        have Hty := @HasTypeT.tvar _ _ C (monoSubstCtx σ Γ') m x' none (.forAll [] (applyTySubstT σ mty)) [] Hfind'
+        unfold instantiateSchemeT at Hty; rw [applyTySubstT_id] at Hty; exact Hty
+      | cons v vs =>
+        have Hfind' := monoSubstMaps_find_poly σ Γ'.types x' (.forAll (v :: vs) mty) (by simp [LTy.boundVars]) Hfind
+        have Hty := @HasTypeT.tvar _ _ C (monoSubstCtx σ Γ') m x' none (.forAll (v :: vs) mty) σ Hfind'
+        unfold instantiateSchemeT at Hty; exact Hty
+    | tvar_annotated Γ' m x' ty_o ty_s tys Hfind Hlen Hopen =>
+      simp [LTy.toMonoTypeUnsafe]
+      cases ty_o with | forAll vars mty =>
+      cases vars with
+      | nil =>
+        -- mono scheme: substituted in context
+        have Hfind' := monoSubstMaps_find_mono σ Γ'.types x' mty Hfind
+        -- tys = [] since boundVars = []
+        simp [LTy.boundVars] at Hlen; simp [Hlen] at Hopen
+        -- ty_s = openFull (forAll [] mty) [] = LMonoTy.subst [[]] mty = mty
+        have Hopen' : ty_s = mty := by
+          simp [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe] at Hopen
+          rw [←Hopen]; exact LMonoTy_subst_nil mty
+        subst Hopen'
+        have Hty := @HasTypeT.tvar _ _ C (monoSubstCtx σ Γ') m x' (some ty_s) (.forAll [] (applyTySubstT σ ty_s)) [] Hfind'
+        unfold instantiateSchemeT at Hty; rw [applyTySubstT_id] at Hty;
+        rw[LTy_forAll_nil_toMonoTypeUnsafe] at Hty
+        exact Hty
+      | cons v vs =>
+        -- poly scheme: unchanged in context
+        have Hfind' := monoSubstMaps_find_poly σ Γ'.types x' (.forAll (v :: vs) mty) (by simp [LTy.boundVars]) Hfind
+        let σ' : TySubstT := List.zip (v :: vs) tys
+        have Hgoal : applyTySubstT σ ty_s = instantiateSchemeT (.forAll (v :: vs) mty) (σ'.map (fun (k, t) => (k, applyTySubstT σ t)) ++ σ) := by
+          subst_vars
+          unfold instantiateSchemeT LTy.openFull LTy.toMonoTypeUnsafe LTy.boundVars
+          simp only [← applyTySubstT_subst]
+          rw [← applyTySubstT_comp]
+        rw [Hgoal]
+        exact .tvar _ _ _ _ _ _ Hfind'
+    | tabs Γ' m x x_ty e e_ty o Hfresh hx he Hty Ho IH =>
+      sorry
+    | tapp Γ' m e1 e2 t1 t2 h1 h2 Hty1 Hty2 IH1 IH2 =>
+      simp only [LTy.toMonoTypeUnsafe, LMonoTy.arrow, LTy.toMonoType, applyTySubstT] at IH1 ⊢
+      exact .tapp _ _ _ _ _ _ (IH1 σ) (IH2 σ)
+    | tinst Γ' e ty' e_ty x x_ty Hty Hopen IH =>
+      sorry
+    | tgen Γ' e a ty' Hty Hfresh Hinfv IH =>
+      unfold LTy.close; cases ty' with | forAll vars lty =>
+      simp [LTy.toMonoTypeUnsafe] at *; exact IH σ
+    | tif Γ' m c e1 e2 ty' Hc H1 H2 IHc IH1 IH2 =>
+      have IHc' := IHc σ
+      simp [LTy.toMonoTypeUnsafe, LMonoTy.bool, applyTySubstT] at IHc'
+      exact .tif _ _ _ _ _ _ IHc' (IH1 σ) (IH2 σ)
+    | teq Γ' m e1 e2 ty' H1 H2 IH1 IH2 =>
+      simp only [LTy.toMonoTypeUnsafe, LMonoTy.bool, applyTySubstT]
+      exact .teq _ _ _ _ _ (IH1 σ) (IH2 σ)
+    | tquant Γ' m k tr tr_ty x x_ty e o Hfresh hx Hbody Htr Ho IH_body IH_tr =>
+      sorry
+    | top Γ' m' f op ty' Hfind Htype =>
+      sorry
+    | top_annotated Γ' m' f op ty_o ty_s tys Hfind Htype Hlen Hopen =>
+      sorry
+
+/-- The original theorem as a corollary. -/
+theorem HasType_implies_HasTypeT₂ (C : LContext T) (Γ : TContext T.IDMeta)
+    (e : LExpr T.mono) (ty : LTy)
+    (h : LExpr.HasType C Γ e ty) :
+    HasTypeT C Γ e ty.toMonoTypeUnsafe := by
+  have H := HasType_implies_HasTypeT' C Γ e ty [] h
+  simp at H; rw [applyTySubstT_id] at H; exact H
 
 /-! ## Arrow decomposition -/
 
@@ -354,16 +857,13 @@ theorem HasTypeT.abs_body
     {t1 t2 : LMonoTy}
     (h : HasTypeT C Γ (.abs m (some x_mty) e) mty)
     (harr : asArrowT mty = some (t1, t2))
-    (hx : x_mty = t1)
     (y : IdentT LMonoTy T.IDMeta) (hfy : LExpr.fresh y e) :
     HasTypeT C { Γ with types := Γ.types.insert y.fst (.forAll [] t1) }
       (LExpr.varOpen 0 y e) t2 := by
-  subst hx
   cases h with
   | tabs _ _ x' _ _ e_mty' _ hfresh hbody ho =>
     have heq := asArrowT_some harr
     simp only [LMonoTy.arrow] at heq; cases heq
-    rcases ho with h | h <;> simp_all
     exact HasTypeT.rename_fresh hfresh hfy hbody
 
 theorem HasTypeT.abs_x_mty {C : LContext T} {Γ m} {e : LExpr T.mono}
@@ -385,10 +885,11 @@ theorem HasTypeT.quant_body
       (LExpr.varOpen 0 y e) .bool := by
   have := h.quant_ty; subst this
   cases h
-  case tquant tr_mty x x_mty Hopt Hty' Hfresh Hty =>
-    cases Hopt; grind
-    rename_i Hopt; cases Hopt;
-    exact (HasTypeT.rename_fresh Hfresh hfy Hty)
+  case tquant tr_mty x x_mty' Hopt Htr Hfresh  Hbody =>
+    cases Hopt
+    · grind
+    · rename_i Hopt; cases Hopt
+      exact (HasTypeT.rename_fresh Hfresh hfy Hbody)
 
 /-! ## Typed denotation function
 
@@ -485,14 +986,18 @@ noncomputable def denoteLExprT
     match harr : asArrowT mty with
     | some (t1, t2) =>
       let heq := asArrowT_some harr
-      let hx := hwt.abs_x_mty harr
+      -- have hx : x_mty = t1 := by
+      --   cases hwt
+      --   simp[asArrowT] at harr
+
+      -- let hx := hwt.abs_x_mty harr
       let y := findFresh e t1
       heq ▸
         let Γ' := { Γ with types := Γ.types.insert y.fst (.forAll [] t1) }
         (fun (a : denoteLMonoTyT ctx t1) =>
           let val' := updateVal val y.fst.name t1 a
           denoteLExprT C Γ' ctx interp val' (LExpr.varOpen 0 y e) t2
-            (hwt.abs_body harr hx y (findFresh_fresh e t1))
+            (hwt.abs_body harr y (findFresh_fresh e t1))
             (annotated_varOpen ha.abs_body (findFresh_isSome e t1))
         : denoteLMonoTyT ctx (.arrow t1 t2))
     | none => absurd harr hwt.abs_asArrow
@@ -576,8 +1081,9 @@ theorem denoteLExprT_sound
     cases hc : (denoteLExprT C Γ' ctx interp val' c .bool (HasTypeT.ite_cond hty) (annotated.ite_cond ha1)).down with
     | true => unfold d1 at hcond; rw[hcond] at hc; contradiction
     | false => exact .dite_false val' m c t e mty' _ _ ih_c hc ih_e
-  case case8 Γ' val' m' e' ty1 ty2 y harr ha1 ha2 hty1 hty2 ih => -- abs some, asArrow
-    exact .dabs val' m' ty1 ty2 e' y _ (findFresh_fresh e' _) (findFresh_isSome e' _) (fun a => ih a)
+  case case8 _ _ Γ' val' m' x_mty e' _ t1 t2 y ha2 hty1 hty2 _ ih => -- abs some, asArrow
+    have hx := hty1.abs_x_mty hty2; subst hx
+    exact .dabs val' m' _ t2 e' y _ (findFresh_fresh e' _) (findFresh_isSome e' _) (fun a => ih a)
   case case9 Γ' val' m k x_mty tr e' mty' hwt ha1 ha2 y ih_body => -- quant some
     have hmty := hwt.quant_ty; subst hmty
     have hfresh := findFresh_fresh e' x_mty
@@ -664,7 +1170,7 @@ theorem denotesT_complete
         have ha_vo_ff := annotated_varOpen (k := 0) ha_body (findFresh_isSome e t1)
         have ha_vo_y := annotated_varOpen (k := 0) ha_body hyann
         rw [denoteLExprT_rename_fresh interp val hfresh (findFresh_fresh e t1)
-            (HasTypeT.rename_fresh (findFresh_fresh e t1) hfresh (h.abs_body (asArrowT_arrow) rfl (findFresh e t1) (findFresh_fresh e t1)))
+            (HasTypeT.rename_fresh (findFresh_fresh e t1) hfresh (h.abs_body (asArrowT_arrow) (findFresh e t1) (findFresh_fresh e t1)))
             (HasTypeT.rename_fresh hfresh (findFresh_fresh e t1) _)
             ha_vo_y ha_vo_ff]
         . apply ih _ _ ha_vo_y
