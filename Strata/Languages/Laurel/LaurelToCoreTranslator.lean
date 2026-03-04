@@ -627,7 +627,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     }
 
   -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-  let allErrors := -- resolutionDiags.toList ++
+  let allErrors :=
+    -- Not including resolution diagnostics yet because the Python through Laurel pipeline
+    -- does not resolve yet.
+    -- resolutionDiags.toList ++
     pureErrors ++ procDiags ++ constantsState.diagnostics
   if !allErrors.isEmpty then
     .error allErrors.toArray
