@@ -188,7 +188,7 @@ def toCoreQuant
   let qBVars : Array Core.Expression.Expr := (decls.toArray.mapIdx fun i _ => .bvar () i)
   let q := if isForall then .all else .exist
   let body' ← withBVarExprs qBVars (toCoreExpr body)
-  return tys.foldr (fun ty acc => .quant () q "" (some ty) (.bvar () 0) acc) body'
+  return tys.foldr (fun ty acc => .quant () q (some ty) (.bvar () 0) acc) body'
 
 def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   match e with
