@@ -5,7 +5,7 @@ translation pipeline used for CBMC verification.
 
 ## Pipeline Overview
 
-### Laurel pipeline (with DFCC contracts)
+### Laurel pipeline (with DFCC — Dynamic Frame Condition Checking — contracts)
 
 ```
 strata laurelAnalyzeToGoto <file.lr.st>
