@@ -71,7 +71,8 @@ forall __q0 : int :: __q0 < $__x0
 Result: Obligation: bad
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x0, 0)
+Model:
+[($__x0, #0)]
 
 
 [DEBUG] Evaluated program:
@@ -99,7 +100,8 @@ Result: ✅ pass
 Obligation: bad
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x0, 0)
+Model:
+[($__x0, #0)]
 -/
 #guard_msgs in
 #eval verify quantPgm (options := .default)

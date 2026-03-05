@@ -55,7 +55,8 @@ true
 Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ❌ fail
-Model (property false): ($__xs3, (as Nil (List Int))
+Model:
+[($__xs3, ~Nil)]
 
 
 [DEBUG] Evaluated program:
@@ -86,7 +87,8 @@ info:
 Obligation: (Origin_Extract_Requires)Extract_requires_0
 Property: assert
 Result: ❌ fail
-Model (property false): ($__xs3, (as Nil (List Int))
+Model:
+[($__xs3, ~Nil)]
 
 Obligation: Test_ensures_0
 Property: assert

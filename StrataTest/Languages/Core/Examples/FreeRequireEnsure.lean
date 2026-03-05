@@ -66,7 +66,8 @@ $__g3 == 15
 Result: Obligation: g_eq_15_internal
 Property: assert
 Result: ❌ fail
-Model (property false): ($__g3, 0)
+Model:
+[($__g3, #0)]
 
 
 [DEBUG] Evaluated program:
@@ -101,7 +102,8 @@ Result: ✅ pass
 Obligation: g_eq_15_internal
 Property: assert
 Result: ❌ fail
-Model (property false): ($__g3, 0)
+Model:
+[($__g3, #0)]
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

@@ -128,42 +128,50 @@ Result: ❓ unknown
 Obligation: assert_4
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x0, model_not_2)
+Model:
+[($__x0, #0)]
 
 Obligation: assert_5
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x0, model_not_2)
+Model:
+[($__x0, #0)]
 
 Obligation: assert_6
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x1, model_not_2)
+Model:
+[($__x1, #0)]
 
 Obligation: assert_7
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x1, model_not_2)
+Model:
+[($__x1, #0)]
 
 Obligation: assert_8
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x2, model_not_2)
+Model:
+[($__x2, #0)]
 
 Obligation: assert_9
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x2, model_not_2)
+Model:
+[($__x2, #0)]
 
 Obligation: assert_10
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x3, model_not_2)
+Model:
+[($__x3, #0)]
 
 Obligation: assert_11
 Property: assert
 Result: ❌ fail
-Model (property false): ($__x3, model_not_2)
+Model:
+[($__x3, #0)]
 -/
 #guard_msgs in
 #eval do
