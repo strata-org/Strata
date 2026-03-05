@@ -2069,7 +2069,147 @@ private theorem typeBoundVar_absorbs
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
     Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
-  sorry
+  -- Case split on bty FIRST to simplify the match in typeBoundVar
+  cases bty with
+  | some bty_val =>
+    -- typeBoundVar with some bty_val: liftGenEnv, instantiateWithCheck, addInNewestContext
+    simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+    -- After unfolding, the redundant match ans is resolved.
+    -- h has: (match instantiateWithCheck ... with | .error => .error | .ok v => <continuation>) = ok ...
+    -- Split on the instantiateWithCheck result
+    split at h
+    · simp at h
+    · -- ok case: h is now `pure (xv, ..., addInNewestContext ...) = ok (...)`
+      rename_i v1 h_inst
+      -- v1 is the pair (mty', Env_mid) from instantiateWithCheck
+      -- h has no more match/if — it's a pure = ok equation
+      simp [Pure.pure, Except.pure] at h
+      obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+      simp only [TEnv.addInNewestContext, TEnv.updateContext]
+      exact LMonoTy_instantiateWithCheck_absorbs bty_val C
+        ⟨(HasGen.genVar Env.genEnv).snd, Env.stateSubstInfo⟩ _ _ h_inst
+  | none =>
+    -- typeBoundVar with none: liftGenEnv, genTyVar, addInNewestContext
+    simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+    -- Split on result of genTyVar
+    split at h
+    · simp at h
+    · rename_i v1 h_gen
+      obtain ⟨xtyid, Env1⟩ := v1
+      simp [Pure.pure, Except.pure] at h
+      obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+      simp only [TEnv.addInNewestContext, TEnv.updateContext]
+      -- genTyVar preserves stateSubstInfo
+      have h_subst := TEnv.genTyVar_subst _ xtyid Env1 h_gen
+      simp [TEnv.stateSubstInfo] at h_subst; rw [h_subst]
+      exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+
+/-- Removing a key `k` from a map doesn't affect lookups of other keys `a ≠ k`. -/
+private theorem Map.find?_remove_ne {α β : Type} [DecidableEq α]
+    (m : Map α β) (k a : α) (h_ne : a ≠ k) :
+    Map.find? (Map.remove m k) a = Map.find? m a := by
+  induction m with
+  | nil => rfl
+  | cons xv rest ih =>
+    obtain ⟨x, v⟩ := xv
+    simp only [Map.remove]
+    by_cases h_xk : x = k
+    · -- x = k: Map.remove skips this entry; result is `rest`
+      simp only [h_xk, ↓reduceIte]
+      simp only [Map.find?, h_xk, show k ≠ a from Ne.symm h_ne, ↓reduceIte]
+    · -- x ≠ k: entry preserved
+      simp only [h_xk, ↓reduceIte, Map.find?]
+      by_cases h_xa : x = a
+      · simp [h_xa]
+      · simp [h_xa, ih]
+
+/-- Removing a key `k` from maps doesn't affect lookups of other keys `a ≠ k`. -/
+private theorem Maps.find?_remove_ne
+    (ms : Subst) (k a : TyIdentifier) (h_ne : a ≠ k) :
+    Maps.find? (Maps.remove ms k) a = Maps.find? ms a := by
+  induction ms with
+  | nil => rfl
+  | cons m rest ih =>
+    simp only [Maps.remove]
+    -- Need to handle the `let m' := Map.remove m k; if m' == m then ...`
+    -- Use `show` to make the goal more explicit after the let-binding
+    show Maps.find? (if Map.remove m k == m then m :: Maps.remove rest k
+         else Map.remove m k :: Maps.remove rest k) a = _
+    split
+    · simp only [Maps.find?]; rw [ih]
+    · simp only [Maps.find?]; rw [Map.find?_remove_ne m k a h_ne, ih]
+
+/-- If all scopes are empty, no key exists. -/
+private theorem Maps.keys_eq_nil_of_hasEmptyScopes (S : Subst)
+    (h : Subst.hasEmptyScopes S) : Maps.keys S = [] := by
+  induction S with
+  | nil => rfl
+  | cons m rest ih =>
+    have h_all := h
+    simp [Subst.hasEmptyScopes, List.all] at h
+    simp [Maps.keys]
+    constructor
+    · cases m with
+      | nil => rfl
+      | cons _ _ => simp [Map.isEmpty] at h
+    · apply ih
+      -- Need: hasEmptyScopes rest
+      simp [Subst.hasEmptyScopes]
+      exact h.2
+
+/-- `subst (remove S k) mty = subst S mty` when `k ∉ freeVars mty`.
+    Since `LMonoTy.subst` is single-pass, removing a key that doesn't
+    appear in the type doesn't change the result. -/
+private theorem LMonoTy.subst_remove_not_fv (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
+    (h_nfv : k ∉ LMonoTy.freeVars mty) :
+    LMonoTy.subst (Maps.remove S k) mty = LMonoTy.subst S mty := by
+  -- Handle the hasEmptyScopes guard that both sides share
+  by_cases hS : Subst.hasEmptyScopes S
+  · -- S has all empty scopes → both subst produce mty
+    rw [LMonoTy.subst_emptyS hS]
+    exact LMonoTy.subst_no_relevant_keys (Maps.remove S k) mty (fun x hx h_key => by
+      have := Maps.mem_keys_of_mem_keys_remove S k x h_key
+      rw [Maps.keys_eq_nil_of_hasEmptyScopes S hS] at this; simp at this)
+  · by_cases hR : Subst.hasEmptyScopes (Maps.remove S k)
+    · -- Only key in S was k; since k ∉ freeVars, subst S is identity too
+      rw [LMonoTy.subst_emptyS hR]
+      exact (LMonoTy.subst_no_relevant_keys S mty (fun x hx h_key => by
+        by_cases h_xk : x = k
+        · subst h_xk; exact h_nfv hx
+        · exact absurd (Maps.mem_keys_remove_of_ne S k x h_key h_xk)
+            (by rw [Maps.keys_eq_nil_of_hasEmptyScopes _ hR]; simp))).symm
+    · -- Neither has empty scopes: prove by showing all lookups agree
+      have hS' : Subst.hasEmptyScopes S = false := by
+        revert hS; cases Subst.hasEmptyScopes S <;> simp
+      have hR' : Subst.hasEmptyScopes (Maps.remove S k) = false := by
+        revert hR; cases Subst.hasEmptyScopes (Maps.remove S k) <;> simp
+      -- Use subst_no_relevant_keys-style reasoning via strong induction
+      suffices ∀ (mty : LMonoTy), k ∉ LMonoTy.freeVars mty →
+          LMonoTy.subst (Maps.remove S k) mty = LMonoTy.subst S mty from this mty h_nfv
+      intro mty
+      induction mty with
+      | ftvar x =>
+        intro h; simp [LMonoTy.freeVars] at h
+        simp [LMonoTy.subst, hS', hR', Maps.find?_remove_ne S k x (Ne.symm h)]
+      | bitvec n => intro _; simp [LMonoTy.subst]
+      | tcons name args ih =>
+        intro h_nfv_tcons
+        simp only [LMonoTy.subst, hS', hR', Bool.false_eq_true, ↓reduceIte]
+        congr 1
+        rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+        simp [LMonoTy.freeVars] at h_nfv_tcons
+        -- Prove the list equality by induction on args
+        induction args with
+        | nil => simp [LMonoTys.substLogic, hS', hR']
+        | cons a rest ih_rest =>
+          simp only [LMonoTys.substLogic, hS', hR', Bool.false_eq_true, ↓reduceIte]
+          have h_a_nfv : k ∉ LMonoTy.freeVars a :=
+            fun h => h_nfv_tcons (List.mem_append_left _ h)
+          have h_rest_nfv : k ∉ LMonoTys.freeVars rest :=
+            fun h => h_nfv_tcons (List.mem_append_right _ h)
+          congr 1
+          · exact ih a (List.mem_cons.mpr (Or.inl rfl)) h_a_nfv
+          · exact ih_rest (fun m hm => ih m (List.mem_cons.mpr (Or.inr hm))) h_rest_nfv
 
 /-- Removing a fresh key from the outer substitution preserves absorption.
     This requires that the key is not in the inner substitution (neither as
@@ -2079,7 +2219,15 @@ private theorem Subst.absorbs_of_remove (S_outer S_inner : Subst) (k : TyIdentif
     (h_not_key : Maps.find? S_inner k = none)
     (h_not_fv : ∀ a t, Maps.find? S_inner a = some t → k ∉ LMonoTy.freeVars t) :
     Subst.absorbs (Maps.remove S_outer k) S_inner := by
-  sorry
+  intro a t h_find
+  have h_ne : a ≠ k := by
+    intro heq; subst heq; rw [h_find] at h_not_key; simp at h_not_key
+  have h_nfv_t : k ∉ LMonoTy.freeVars t := h_not_fv a t h_find
+  have h_nfv_a : k ∉ LMonoTy.freeVars (.ftvar a) := by
+    simp [LMonoTy.freeVars]; exact Ne.symm h_ne
+  rw [LMonoTy.subst_remove_not_fv S_outer k t h_nfv_t,
+      LMonoTy.subst_remove_not_fv S_outer k (.ftvar a) h_nfv_a]
+  exact h_abs a t h_find
 
 /--
 `resolveAux` produces a substitution that absorbs the input substitution.
