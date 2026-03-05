@@ -66,7 +66,16 @@ def insertRepeated (pf : ParsedFlags) (name : String) (value : String) : ParsedF
   { pf with repeated := pf.repeated.insert name (arr.push value) }
 
 def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
-  let mut sp : Strata.DialectFileMap := {}
+  let preloaded := Strata.Elab.LoadedDialects.builtin
+    |>.addDialect! Strata.Python.Python
+    |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
+    |>.addDialect! Strata.Core
+    |>.addDialect! Strata.Laurel.Laurel
+    |>.addDialect! Strata.smtReservedKeywordsDialect
+    |>.addDialect! Strata.SMTCore
+    |>.addDialect! Strata.SMT
+    |>.addDialect! Strata.SMTResponse
+  let mut sp ← Strata.DialectFileMap.new preloaded
   for path in pflags.getRepeated "include" do
     match ← sp.add path |>.toBaseIO with
     | .error msg => exitFailure msg
@@ -93,7 +102,6 @@ def checkCommand : Command where
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
     let _ ← Strata.readStrataFile fm v[0]
-    pure ()
 
 def toIonCommand : Command where
   name := "toIon"
@@ -102,7 +110,7 @@ def toIonCommand : Command where
   help := "Convert a Strata text file to Ion binary format."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
-    let (_, pd) ← Strata.readStrataFile searchPath v[0]
+    let pd ← Strata.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
       IO.FS.writeBinFile v[1] d.toIon
@@ -116,12 +124,12 @@ def printCommand : Command where
   help := "Pretty-print a Strata file (text or Ion) to stdout."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
-    let (ld, pd) ← Strata.readStrataFile searchPath v[0]
+    let pd ← Strata.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
+      let ld ← searchPath.getLoaded
       let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ ld.dialects))
-        | IO.eprintln s!"Internal error reading file."
-          return
+        | exitFailure "Internal error reading file."
       IO.print <| ld.dialects.format d.name mem
     | .program pgm =>
       IO.print <| toString pgm
@@ -133,8 +141,8 @@ def diffCommand : Command where
   help := "Compare two program files for syntactic equality. Reports the first difference found."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let ⟨_, p1⟩ ← Strata.readStrataFile fm v[0]
-    let ⟨_, p2⟩ ← Strata.readStrataFile fm v[1]
+    let p1 ← Strata.readStrataFile fm v[0]
+    let p2 ← Strata.readStrataFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
       if p1.dialect != p2.dialect then
@@ -505,7 +513,7 @@ def javaGenCommand : Command where
   help := "Generate Java source files from a DDM dialect definition. Writes .java files under output-dir."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let (ld, pd) ← Strata.readStrataFile fm v[0]
+    let pd ← Strata.readStrataFile fm v[0]
     match pd with
     | .dialect d =>
       match Strata.Java.generateDialect d v[1] with
