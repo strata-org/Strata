@@ -250,6 +250,8 @@ op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 category Binding;
 @[declare(name, tp)]
 op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp;
+@[declare(name, tp)]
+op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp;
 
 category Bindings;
 @[scope(bindings)]
@@ -309,6 +311,15 @@ op command_fndef (name : Ident,
                   // agree.
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
+
+@[declareFn(name, b, r)]
+op command_recfndef (name : Ident,
+                     typeArgs : Option TypeArgs,
+                     @[scope(typeArgs)] b : Bindings,
+                     @[scope(typeArgs)] r : Type,
+                     @[scope(b)] preconds : Seq SpecElt,
+                     @[scopeSelf(name, b, r)] c : r) : Command =>
+  "rec " "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]

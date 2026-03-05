@@ -143,9 +143,12 @@ theorem Statement.typeCheckAux_go_WF :
       any_goals constructor
     | funcDecl decl md =>
       simp [Except.bind] at tcok
+      -- The isRecursive check: if true, typeCheck returns error, contradicting tcok
+      split at tcok <;> try contradiction
+      rename_i tcok'
       -- Split through the tryCatch and PureFunc.typeCheck structure
-      simp only [tryCatch] at tcok
-      repeat (split at tcok <;> try contradiction)
+      simp only [tryCatch] at tcok'
+      repeat (split at tcok' <;> try contradiction)
       -- After splits, we need to extract the Function.typeCheck success
       simp only [Except.mapError, tryCatchThe] at *
       -- Now split on the PureFunc.typeCheck result
@@ -163,9 +166,7 @@ theorem Statement.typeCheckAux_go_WF :
           simp only [PureFunc.typeCheck, hofp_eq, bind, Except.bind] at heq_func_match
           split at heq_func_match <;> try contradiction
           rename_i v h
-          split at h <;> try contradiction
-          cases h; cases heq_func_match
-          assumption
+          cases heq_func_match; assumption
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
       apply ih tcok <;> try assumption
