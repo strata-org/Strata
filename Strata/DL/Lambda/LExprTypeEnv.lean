@@ -1000,6 +1000,38 @@ theorem TContext.mem_knownTypeVars_of_find {T : LExprParams} [DecidableEq T.IDMe
     tx ∈ TContext.knownTypeVars Γ := by
   exact types_knownTypeVars_of_find h_find h_mem
 
+/-- `go` is monotone under map append: appending entries to a map only grows `go`. -/
+theorem knownTypeVars_go_append_superset
+    {IDMeta : Type} (m extra : Map (Identifier IDMeta) LTy) :
+    ∀ v, v ∈ TContext.types.knownTypeVars.go m →
+      v ∈ TContext.types.knownTypeVars.go (m ++ extra) := by
+  induction m with
+  | nil => intro v h; simp [TContext.types.knownTypeVars.go] at h
+  | cons p m' ih =>
+    intro v h
+    obtain ⟨a, b⟩ := p
+    simp only [TContext.types.knownTypeVars.go, List.mem_append] at h
+    unfold Map at *
+    simp only [List.cons_append, TContext.types.knownTypeVars.go, List.mem_append]
+    rcases h with h_fv | h_rest
+    · left; exact h_fv
+    · right; exact ih v h_rest
+
+/-- `knownTypeVars` is monotone: adding types to the context only grows it. -/
+theorem TContext.knownTypeVars_addInNewest_superset
+    {IDMeta : Type} (types : Maps (Identifier IDMeta) LTy) (x : Identifier IDMeta) (ty : LTy) :
+    ∀ v, v ∈ TContext.types.knownTypeVars types →
+      v ∈ TContext.types.knownTypeVars (Maps.addInNewest types [(x, ty)]) := by
+  cases types with
+  | nil => intro v h; simp [TContext.types.knownTypeVars] at h
+  | cons m rest =>
+    intro v h
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+    simp only [TContext.types.knownTypeVars, List.mem_append] at h ⊢
+    rcases h with h_go | h_rest
+    · left; exact knownTypeVars_go_append_superset m [(x, ty)] v h_go
+    · right; exact h_rest
+
 /-- If `tx ∉ knownTypeVars Γ`, then `tx` is fresh w.r.t. `Γ`. -/
 theorem TContext.isFresh_of_not_mem_knownTypeVars {T : LExprParams} [DecidableEq T.IDMeta]
     {tx : TyIdentifier} {Γ : TContext T.IDMeta}
