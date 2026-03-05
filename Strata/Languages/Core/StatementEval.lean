@@ -403,14 +403,25 @@ def processExit : Statements → Option (Option String) → (Statements × Optio
 | _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
 /--
-Merge exactly two `EnvWithNext` results that share the same exit label after
-block exit consumption. Extracts the ite condition from the newest path
-condition scope (which is still intact since `Env.popScope` only pops
-expression state, not path conditions). The environment whose newest path
-condition is a positive condition (not negated) is treated as E1 (true branch).
+Merge `EnvWithNext` results that share the same exit label after block exit
+consumption.
 
-For 3+ paths converging to the same label, returns them unmerged to avoid
-corrupting the path-condition structure with repeated `Env.merge` calls.
+This function is safe to use even without enforced label uniqueness because it
+only merges paths that result from evaluating the same block's statements. All
+paths in the input list are siblings (they started from the same entry point),
+so if they converge to the same exit label, they represent different execution
+paths through the same code that should be merged.
+
+The function handles two cases:
+1. Exactly two paths with the same label: Merges them using the ite condition
+   extracted from their path conditions. The environment whose newest path
+   condition is positive (not negated) is treated as E1 (true branch).
+2. Other cases (1 path, or 3+ paths): Returns paths unmerged to avoid
+   corrupting the path-condition structure with repeated `Env.merge` calls.
+
+Note: This merging is essential to prevent path multiplication in the VCG.
+Without it, subsequent procedures would be verified once per path from the
+previous procedure, causing duplicate proof obligations (see issue #419).
 -/
 private def mergeByExitLabel (ewns : List EnvWithNext) : List EnvWithNext :=
   let labels := ewns.map (·.exitLabel) |>.eraseDups
@@ -478,6 +489,8 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                               orig_stk.appendToTop [s'] })
             -- After consuming exits, multiple paths may converge to the same
             -- exit label. Merge them to prevent path multiplication.
+            -- This is safe because all paths in Ewns are siblings (they all
+            -- result from evaluating the same block's statements).
             mergeByExitLabel Ewns
 
           | .ite cond then_ss else_ss md =>
