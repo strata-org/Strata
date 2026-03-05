@@ -2391,6 +2391,47 @@ theorem tconsAlias_vals_fresh
                 exact h_inst_fresh tv (this h_inst_fv))
           h_vals_fresh
 
+/-- `tconsAlias` preserves freshness of output type free vars.
+    If no alias matches, output = input (fresh by hypothesis).
+    If an alias matches, output = `subst S (instantiatedDefinition)` where
+    all free vars come from fresh generated vars or args (all fresh). -/
+theorem tconsAlias_fvs_fresh
+    (name : String) (args : LMonoTys) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (Γ : TContext T.IDMeta)
+    (h : LMonoTy.tconsAlias name args Env = .ok (mty, Env'))
+    (h_ctx : Env.context = Γ)
+    (h_args_fresh : ∀ tv, tv ∈ LMonoTys.freeVars args →
+      TContext.isFresh (T := T) tv Γ)
+    (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars Env.stateSubstInfo.subst →
+      TContext.isFresh (T := T) tv Γ)
+    (h_alias_wf : ∀ a, a ∈ Γ.aliases →
+      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs) :
+    ∀ tv, tv ∈ LMonoTy.freeVars mty →
+      TContext.isFresh (T := T) tv Γ := by
+  unfold LMonoTy.tconsAlias at h
+  generalize h_ma : List.find? _ _ = ma at h
+  match ma with
+  | none =>
+    simp [Pure.pure, Except.pure] at h; obtain ⟨h1, _⟩ := h; subst h1
+    -- output = .tcons name args, free vars = args free vars
+    intro tv htv; simp [LMonoTy.freeVars] at htv; exact h_args_fresh tv htv
+  | some alias =>
+    simp at h; split at h
+    · simp at h
+    · rename_i instTypes updatedEnv h_inst
+      generalize h_u : Constraints.unify _ _ = u at h
+      match u with
+      | .error e => simp at h
+      | .ok S =>
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨h1, _⟩ := h; subst h1
+        -- output = LMonoTy.subst S.subst instantiatedDefinition
+        -- Free vars of (subst S t) ⊆ freeVars(t) ∪ freeVars(S.values) (via freeVars_of_subst_subset)
+        -- All free vars of instantiatedDefinition are fresh (come from instantiateEnv)
+        -- All free vars of S.values are fresh (S extends Env.stateSubstInfo via unify)
+        sorry
+
 mutual
 /-- `LMonoTy.resolveAliases` preserves key freshness. -/
 theorem LMonoTy.resolveAliases_allKeysFresh
@@ -2400,7 +2441,9 @@ theorem LMonoTy.resolveAliases_allKeysFresh
     (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars Env.stateSubstInfo.subst →
       TContext.isFresh (T := T) tv Env.context)
     (h_alias_wf : ∀ a, a ∈ Env.context.aliases →
-      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs) :
+      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs)
+    (h_fvs : ∀ tv, tv ∈ LMonoTy.freeVars mty →
+      TContext.isFresh (T := T) tv Env.context) :
     Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   match mty with
   | .ftvar _ =>
@@ -2421,15 +2464,18 @@ theorem LMonoTy.resolveAliases_allKeysFresh
         obtain ⟨mty'', Env2⟩ := v2
         simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
         have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args
+        have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
+            TContext.isFresh (T := T) tv Env.context := by
+          intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
         have h_keys_fresh :=
           LMonoTys.resolveAliases_allKeysFresh args Env args' Env1 h_args
-            h_fresh h_vals_fresh h_alias_wf
+            h_fresh h_vals_fresh h_alias_wf h_args_fvs
         have h_vals_fresh' :=
           LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args
-            h_vals_fresh h_alias_wf
+            h_vals_fresh h_alias_wf h_args_fvs
         have h_args_fresh' : ∀ tv, tv ∈ LMonoTys.freeVars args' →
-            TContext.isFresh (T := T) tv Env.context := by
-          sorry -- TODO: needs resolveAliases output free vars freshness lemma
+            TContext.isFresh (T := T) tv Env.context :=
+          LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args h_vals_fresh h_alias_wf h_args_fvs
         exact tconsAlias_allKeysFresh name args' Env1 mty'' Env2 Env.context
           h_tcons h_ctx_eq h_keys_fresh h_args_fresh'
           h_vals_fresh' h_alias_wf
@@ -2441,7 +2487,8 @@ theorem LMonoTy.resolveAliases_vals_fresh
     (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars Env.stateSubstInfo.subst →
       TContext.isFresh (T := T) tv Env.context)
     (h_alias_wf : ∀ a, a ∈ Env.context.aliases →
-      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs) :
+      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs)
+    (h_fvs : ∀ tv, tv ∈ LMonoTy.freeVars mty → TContext.isFresh (T := T) tv Env.context) :
     ∀ tv, tv ∈ Subst.freeVars Env'.stateSubstInfo.subst →
       TContext.isFresh (T := T) tv Env.context := by
   match mty with
@@ -2463,12 +2510,15 @@ theorem LMonoTy.resolveAliases_vals_fresh
         obtain ⟨mty'', Env2⟩ := v2
         simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
         have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args
+        have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
+            TContext.isFresh (T := T) tv Env.context := by
+          intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
         have h_vals_fresh_mid :=
           LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args
-            h_vals_fresh h_alias_wf
+            h_vals_fresh h_alias_wf h_args_fvs
         have h_args_fresh' : ∀ tv, tv ∈ LMonoTys.freeVars args' →
-            TContext.isFresh (T := T) tv Env.context := by
-          sorry -- TODO: needs resolveAliases output free vars freshness lemma
+            TContext.isFresh (T := T) tv Env.context :=
+          LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args h_vals_fresh h_alias_wf h_args_fvs
         exact tconsAlias_vals_fresh name args' Env1 mty'' Env2 Env.context
           h_tcons h_ctx_eq h_args_fresh' h_vals_fresh_mid h_alias_wf
 
@@ -2480,7 +2530,9 @@ theorem LMonoTys.resolveAliases_allKeysFresh
     (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars Env.stateSubstInfo.subst →
       TContext.isFresh (T := T) tv Env.context)
     (h_alias_wf : ∀ a, a ∈ Env.context.aliases →
-      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs) :
+      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs)
+    (h_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mtys →
+      TContext.isFresh (T := T) tv Env.context) :
     Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   match mtys with
   | [] =>
@@ -2498,18 +2550,25 @@ theorem LMonoTys.resolveAliases_allKeysFresh
         obtain ⟨mrest', Env2⟩ := v2
         simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
         have h_ctx_eq := LMonoTy.resolveAliases_context mty Env mty' Env1 h_hd
+        have h_hd_fvs : ∀ tv, tv ∈ LMonoTy.freeVars mty →
+            TContext.isFresh (T := T) tv Env.context := by
+          intro tv htv; exact h_fvs tv (by simp [LMonoTys.freeVars]; left; exact htv)
         have h_hd_fresh :=
           LMonoTy.resolveAliases_allKeysFresh mty Env mty' Env1 h_hd
-            h_fresh h_vals_fresh h_alias_wf
+            h_fresh h_vals_fresh h_alias_wf h_hd_fvs
         have h_vals_fresh_mid :=
           LMonoTy.resolveAliases_vals_fresh mty Env mty' Env1 h_hd
-            h_vals_fresh h_alias_wf
+            h_vals_fresh h_alias_wf h_hd_fvs
         have h_alias_wf' : ∀ a, a ∈ Env1.context.aliases →
             ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := by
           rw [show Env1.context = Env.context from h_ctx_eq]; exact h_alias_wf
+        have h_tl_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mrest →
+            TContext.isFresh (T := T) tv Env1.context := by
+          intro tv htv; rw [h_ctx_eq]
+          exact h_fvs tv (by simp [LMonoTys.freeVars]; right; exact htv)
         rw [← h_ctx_eq]
         exact LMonoTys.resolveAliases_allKeysFresh mrest Env1 mrest' Env2 h_tl
-          (h_ctx_eq ▸ h_hd_fresh) (h_ctx_eq ▸ h_vals_fresh_mid) h_alias_wf'
+          (h_ctx_eq ▸ h_hd_fresh) (h_ctx_eq ▸ h_vals_fresh_mid) h_alias_wf' h_tl_fvs
 
 /-- `LMonoTys.resolveAliases` preserves substitution value freshness. -/
 theorem LMonoTys.resolveAliases_vals_fresh
@@ -2518,7 +2577,8 @@ theorem LMonoTys.resolveAliases_vals_fresh
     (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars Env.stateSubstInfo.subst →
       TContext.isFresh (T := T) tv Env.context)
     (h_alias_wf : ∀ a, a ∈ Env.context.aliases →
-      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs) :
+      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs)
+    (h_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mtys → TContext.isFresh (T := T) tv Env.context) :
     ∀ tv, tv ∈ Subst.freeVars Env'.stateSubstInfo.subst →
       TContext.isFresh (T := T) tv Env.context := by
   match mtys with
@@ -2537,15 +2597,117 @@ theorem LMonoTys.resolveAliases_vals_fresh
         obtain ⟨mrest', Env2⟩ := v2
         simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
         have h_ctx_eq := LMonoTy.resolveAliases_context mty Env mty' Env1 h_hd
+        have h_hd_fvs : ∀ tv, tv ∈ LMonoTy.freeVars mty →
+            TContext.isFresh (T := T) tv Env.context := by
+          intro tv htv; exact h_fvs tv (by simp [LMonoTys.freeVars]; left; exact htv)
         have h_vals_fresh_mid :=
           LMonoTy.resolveAliases_vals_fresh mty Env mty' Env1 h_hd
-            h_vals_fresh h_alias_wf
+            h_vals_fresh h_alias_wf h_hd_fvs
         have h_alias_wf' : ∀ a, a ∈ Env1.context.aliases →
             ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := by
           rw [show Env1.context = Env.context from h_ctx_eq]; exact h_alias_wf
+        have h_tl_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mrest →
+            TContext.isFresh (T := T) tv Env1.context := by
+          intro tv htv; rw [h_ctx_eq]
+          exact h_fvs tv (by simp [LMonoTys.freeVars]; right; exact htv)
         rw [← h_ctx_eq]
         exact LMonoTys.resolveAliases_vals_fresh mrest Env1 mrest' Env2 h_tl
-          (h_ctx_eq ▸ h_vals_fresh_mid) h_alias_wf'
+          (h_ctx_eq ▸ h_vals_fresh_mid) h_alias_wf' h_tl_fvs
+
+/-- `LMonoTy.resolveAliases` preserves freshness of type free vars. -/
+theorem LMonoTy.resolveAliases_fvs_fresh
+    (mty : LMonoTy) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (mty', Env'))
+    (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars Env.stateSubstInfo.subst →
+      TContext.isFresh (T := T) tv Env.context)
+    (h_alias_wf : ∀ a, a ∈ Env.context.aliases →
+      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs)
+    (h_fvs : ∀ tv, tv ∈ LMonoTy.freeVars mty →
+      TContext.isFresh (T := T) tv Env.context) :
+    ∀ tv, tv ∈ LMonoTy.freeVars mty' →
+      TContext.isFresh (T := T) tv Env.context := by
+  match mty with
+  | .ftvar _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨h1, _⟩ := h; subst h1; exact h_fvs
+  | .bitvec _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨h1, _⟩ := h; subst h1; intro tv htv; simp [LMonoTy.freeVars] at htv
+  | .tcons name args =>
+    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    · rename_i v1 h_args_ra
+      obtain ⟨args', Env1⟩ := v1; simp at h h_args_ra
+      split at h; · simp at h
+      · rename_i v2 h_tcons
+        obtain ⟨mty'', Env2⟩ := v2
+        simp [Pure.pure, Except.pure] at h; obtain ⟨h1, _⟩ := h; subst h1
+        have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
+            TContext.isFresh (T := T) tv Env.context := by
+          intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
+        have h_args'_fresh :=
+          LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args_ra
+            h_vals_fresh h_alias_wf h_args_fvs
+        have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args_ra
+        have h_vals_fresh_mid :=
+          LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args_ra
+            h_vals_fresh h_alias_wf h_args_fvs
+        -- tconsAlias: if no alias, output = tcons name args' (fresh by h_args'_fresh)
+        -- if alias, output = subst S (instantiatedDefinition) where S and instantiatedDefinition
+        -- only contain fresh generated vars and args' vars (all fresh)
+        exact tconsAlias_fvs_fresh name args' Env1 mty'' Env2 Env.context
+          h_tcons h_ctx_eq h_args'_fresh h_vals_fresh_mid h_alias_wf
+
+/-- `LMonoTys.resolveAliases` preserves freshness of type free vars. -/
+theorem LMonoTys.resolveAliases_fvs_fresh
+    (mtys : LMonoTys) (Env : TEnv T.IDMeta) (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env'))
+    (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars Env.stateSubstInfo.subst →
+      TContext.isFresh (T := T) tv Env.context)
+    (h_alias_wf : ∀ a, a ∈ Env.context.aliases →
+      ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs)
+    (h_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mtys →
+      TContext.isFresh (T := T) tv Env.context) :
+    ∀ tv, tv ∈ LMonoTys.freeVars mtys' →
+      TContext.isFresh (T := T) tv Env.context := by
+  match mtys with
+  | [] =>
+    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨h1, _⟩ := h; subst h1; exact h_fvs
+  | mty :: mrest =>
+    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    · rename_i v1 h_hd
+      obtain ⟨mty', Env1⟩ := v1; simp at h h_hd
+      split at h; · simp at h
+      · rename_i v2 h_tl
+        obtain ⟨mrest', Env2⟩ := v2
+        simp [Pure.pure, Except.pure] at h; obtain ⟨h1, _⟩ := h; subst h1
+        have h_ctx_eq := LMonoTy.resolveAliases_context mty Env mty' Env1 h_hd
+        have h_hd_fvs : ∀ tv, tv ∈ LMonoTy.freeVars mty →
+            TContext.isFresh (T := T) tv Env.context := by
+          intro tv htv; exact h_fvs tv (by simp [LMonoTys.freeVars]; left; exact htv)
+        have h_hd_fresh' :=
+          LMonoTy.resolveAliases_fvs_fresh mty Env mty' Env1 h_hd
+            h_vals_fresh h_alias_wf h_hd_fvs
+        have h_vals_fresh_mid :=
+          LMonoTy.resolveAliases_vals_fresh mty Env mty' Env1 h_hd
+            h_vals_fresh h_alias_wf h_hd_fvs
+        have h_alias_wf' : ∀ a, a ∈ Env1.context.aliases →
+            ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := by
+          rw [h_ctx_eq]; exact h_alias_wf
+        have h_tl_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mrest →
+            TContext.isFresh (T := T) tv Env1.context := by
+          intro tv htv; rw [h_ctx_eq]
+          exact h_fvs tv (by simp [LMonoTys.freeVars]; right; exact htv)
+        have h_tl_fresh' :=
+          LMonoTys.resolveAliases_fvs_fresh mrest Env1 mrest' Env2 h_tl
+            (h_ctx_eq ▸ h_vals_fresh_mid) h_alias_wf' h_tl_fvs
+        intro tv htv
+        simp [LMonoTys.freeVars] at htv
+        cases htv with
+        | inl h_in_hd => exact h_hd_fresh' tv h_in_hd
+        | inr h_in_tl => rw [h_ctx_eq] at h_tl_fresh'; exact h_tl_fresh' tv h_in_tl
 end
 
 
