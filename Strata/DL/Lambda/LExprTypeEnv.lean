@@ -1100,4 +1100,38 @@ theorem TGenEnv.genTyVars_not_mem_knownTypeVars [ToFormat IDMeta]
         | inl h_eq => subst h_eq; exact h_hd_not
         | inr h_rest_mem => rw [h_ctx] at h_tl_not; exact h_tl_not tv h_rest_mem
 
+/-- `genTyVars n` produces exactly `n` fresh type variables. -/
+theorem TGenEnv.genTyVars_length {IDMeta : Type} [ToFormat IDMeta]
+    (n : Nat) (Env : TGenEnv IDMeta)
+    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    tvs.length = n := by
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨h1, _⟩ := h; subst h1; simp
+  | succ n ih =>
+    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨h1, _⟩ := h; subst h1
+        simp [ih Env1 tvs' Env2 h_rest]
+
+/-- All type variables produced by `genTyVars` are fresh in the context. -/
+theorem TGenEnv.genTyVars_allFresh {T : LExprParams} [DecidableEq T.IDMeta]
+    [ToFormat T.IDMeta]
+    (n : Nat) (Env : TGenEnv T.IDMeta)
+    (tvs : List TyIdentifier) (Env' : TGenEnv T.IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    ∀ tv, tv ∈ tvs → TContext.isFresh (T := T) tv Env.context := by
+  intro tv h_mem
+  exact TContext.isFresh_of_not_mem_knownTypeVars
+    (TGenEnv.genTyVars_not_mem_knownTypeVars n Env tvs Env' h tv h_mem)
+
 end Lambda
