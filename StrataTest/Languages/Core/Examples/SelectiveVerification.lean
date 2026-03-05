@@ -68,7 +68,7 @@ Result: ➖ can be false and is reachable from declaration entry
 
 Obligation: output_property
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
@@ -81,7 +81,7 @@ Result: ✔️ always true if reachable
 info:
 Obligation: result_correct
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
@@ -93,15 +93,15 @@ Result: ➖ can be false and is reachable from declaration entry
 
 Obligation: output_property
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: y_value
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: z_value
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm (options := .quiet)
@@ -112,7 +112,7 @@ Result: ✔️ always true if reachable
 info:
 Obligation: y_value
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
@@ -125,11 +125,11 @@ Result: ✔️ always true if reachable
 info:
 Obligation: y_value
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: z_value
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm

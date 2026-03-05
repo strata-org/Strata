@@ -54,23 +54,23 @@ spec {
 info:
 Obligation: isCons
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: set_headOpt_calls_List..hd_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: set_value_calls_Option..OptionVal_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: valueIs42
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestNestedPolyDestructor_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify nestedPolyDestructorPgm (options := .quiet)
@@ -118,15 +118,15 @@ spec {
 info:
 Obligation: set_vp_calls_Container..visiblePart_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: isWithHidden
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestHiddenTypeRecursion_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify hiddenTypeRecursionPgm (options := .quiet)

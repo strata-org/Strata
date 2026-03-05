@@ -111,7 +111,7 @@ def normalizeModelValues (s : String) : String :=
 info:
 Obligation: assert_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_1
 Property: assert
@@ -119,7 +119,7 @@ Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_3
 Property: assert
@@ -177,7 +177,7 @@ Model (property false): ($__x3, model_not_2)
 info:
 Obligation: assert_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_1
 Property: assert
@@ -185,7 +185,7 @@ Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_3
 Property: assert
@@ -231,7 +231,7 @@ Result: ❓ unknown
 info:
 Obligation: assert_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_1
 Property: assert
@@ -239,7 +239,7 @@ Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_3
 Property: assert

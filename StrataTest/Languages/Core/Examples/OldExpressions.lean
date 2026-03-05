@@ -121,39 +121,39 @@ $__b10 == false
 info:
 Obligation: T1_z_eq_g2
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T1_g_unchanged
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T1_g2_eq_old_g
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T1_y_eq_old_g2
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T1_z_eq_y
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T2_g2_eq_g
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T2_g_true
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T2_a_eq_false
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: T2_b_eq_false
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify oldExprPgm

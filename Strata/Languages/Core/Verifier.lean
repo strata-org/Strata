@@ -176,9 +176,9 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
   🔶     can be both true and false and is reachable    sat      sat      yes        error      note        Reachable, solver found models for both the property and its negation
   ⛔     unreachable                                    unsat    unsat    no         warning    warning     Dead code, path unreachable
   ➕     can be true and is reachable                   sat      unknown  yes        error      note        Property can be true and is reachable, validity unknown
-  ✖️     always false if reachable                      unsat    unknown  unknown    error      error       Property always false if reachable, reachability unknown
+  ✖️     always false if reached                      unsat    unknown  unknown    error      error       Property always false if reached, reachability unknown
   ➖     can be false and is reachable                  unknown  sat      yes        error      note        Q can be false and path is reachable, satisfiability of Q unknown
-  ✔️     always true if reachable                       unknown  unsat    unknown    pass       pass        Property always true if reachable, reachability unknown
+  ✔️     always true if reached                       unknown  unsat    unknown    pass       pass        Property always true if reached, reachability unknown
   ❓     unknown                                        unknown  unknown  unknown    error      note        Both checks inconclusive
 -/
 structure VCOutcome where
@@ -285,9 +285,9 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) : Stri
   else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
   else if o.unreachable then "unreachable"
   else if o.satisfiableValidityUnknown then "can be true and is reachable from declaration entry"
-  else if o.alwaysFalseReachabilityUnknown then "always false if reachable"
+  else if o.alwaysFalseReachabilityUnknown then "always false if reached"
   else if o.canBeFalseAndIsReachable then "can be false and is reachable from declaration entry"
-  else if o.passReachabilityUnknown then "always true if reachable"
+  else if o.passReachabilityUnknown then "always true if reached"
   else "unknown"
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
@@ -331,7 +331,7 @@ def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool)
     -- Only validity requested: mask satisfiability
     -- Special case: if property is refuted (.unsat, .sat), keep it as (.unknown, .sat)
     -- which will display as "can be false and is reachable" instead of "always false and is reachable"
-    -- But for "always true if reachable" we want (.unknown, .unsat)
+    -- But for "always true if reached" we want (.unknown, .unsat)
     { satisfiabilityProperty := .unknown,
       validityProperty := outcome.validityProperty }
   else if satisfiabilityCheck && !validityCheck then
@@ -665,7 +665,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isPass then none
         else if outcome.isRefuted then some "cover property is not satisfiable"
         else if outcome.isCanBeTrueOrFalse then some "cover property can be both true and false"
-        else if outcome.isRefutedIfReachable then some "cover property is not satisfiable if reachable"
+        else if outcome.isRefutedIfReachable then some "cover property is not satisfiable if reached"
         else if outcome.isReachableAndCanBeFalse then some "cover property can be false"
         else if outcome.isAlwaysTrueIfReachable then none
         else some "cover property could not be checked"
@@ -675,7 +675,7 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isRefuted then some "assertion does not hold"
         else if outcome.isCanBeTrueOrFalse then some "assertion can be both true and false"
         else if outcome.isSatisfiable then none
-        else if outcome.isRefutedIfReachable then some "assertion does not hold if reachable"
+        else if outcome.isRefutedIfReachable then some "assertion does not hold if reached"
         else if outcome.isReachableAndCanBeFalse then some "assertion can be false"
         else if outcome.isAlwaysTrueIfReachable then none
         else some "assertion could not be proved"

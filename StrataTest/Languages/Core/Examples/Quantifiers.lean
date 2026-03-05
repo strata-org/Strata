@@ -90,11 +90,11 @@ spec {
 info:
 Obligation: good_assert
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: good
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: bad
 Property: assert
@@ -156,15 +156,15 @@ g(f($__x0), $__x0) < 0
 info:
 Obligation: trigger_assert
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: multi_trigger_assert
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: f_and_g
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify triggerPgm

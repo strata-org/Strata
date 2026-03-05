@@ -88,7 +88,7 @@ procedure P () returns ()
 info:
 Obligation: real_add_ge_good
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: real_add_ge_bad
 Property: assert
@@ -171,11 +171,11 @@ $__x0 + $__x0 == $__x0 - $__x0
 info:
 Obligation: bv_add_ge
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: Q_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify bvPgm
@@ -202,27 +202,27 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 info:
 Obligation: add_comm
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: xor_cancel
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: div_shift
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: mul_shift
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: demorgan
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: mod_and
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: bad_shift
 Property: assert

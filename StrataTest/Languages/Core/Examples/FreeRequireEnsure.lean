@@ -92,11 +92,11 @@ procedure ProcCaller () returns (x : int)
 info:
 Obligation: g_gt_10_internal
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: g_lt_10
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: g_eq_15_internal
 Property: assert

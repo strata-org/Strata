@@ -55,7 +55,7 @@ procedure bitVecParseTest () returns ()
 info:
 Obligation: bitvec32_test
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: bitvec64_test
 Property: assert

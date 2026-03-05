@@ -66,23 +66,23 @@ spec {
 info:
 Obligation: isLeaf
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: notNode
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: isNode
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: notLeaf
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeTesters_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeTesterPgm (options := .quiet)
@@ -124,11 +124,11 @@ spec {
 info:
 Obligation: notLeaf
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeHavoc_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeHavocPgm (options := .quiet)
@@ -167,11 +167,11 @@ spec {
 info:
 Obligation: exhaustive
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeExhaustive_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeExhaustivePgm (options := .quiet)
@@ -213,11 +213,11 @@ spec {
 info:
 Obligation: mutualExclusion
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeMutualExclusion_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeMutualExclusionPgm (options := .quiet)
@@ -264,15 +264,15 @@ spec {
 info:
 Obligation: leafEquality
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: nodeEquality
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeEquality_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeEqualityPgm (options := .quiet)
@@ -312,11 +312,11 @@ spec {
 info:
 Obligation: leafVsNode
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeInequality_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeInequalityPgm (options := .quiet)
@@ -377,47 +377,47 @@ spec {
 info:
 Obligation: set_v_calls_Tree..val_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: valIs42
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: set_l_calls_Tree..left_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: leftIsLeaf
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_leftVal_calls_Tree..val_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: leftVal
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: set_r_calls_Tree..right_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: rightIsLeaf
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_rightVal_calls_Tree..val_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: rightVal
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeDestructor_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeDestructorPgm (options := .quiet)
@@ -471,27 +471,27 @@ spec {
 info:
 Obligation: set_leftLeft_calls_Tree..left_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: set_leftLeft_calls_Tree..left_1
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: leftLeftIsLeaf
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: set_v_calls_Tree..val_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: leftLeftVal
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeNested_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeNestedPgm (options := .quiet)
@@ -537,15 +537,15 @@ spec {
 info:
 Obligation: set_v_calls_Tree..val_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: valIs100
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeDestructorHavoc_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeDestructorHavocPgm (options := .quiet)
@@ -592,15 +592,15 @@ spec {
 info:
 Obligation: different_vals
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: different_children
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: TestTreeDifferentValues_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify treeDifferentValuesPgm (options := .quiet)

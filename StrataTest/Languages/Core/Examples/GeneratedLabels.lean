@@ -70,7 +70,7 @@ Obligation:
 info:
 Obligation: assert_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify genLabelsPgm

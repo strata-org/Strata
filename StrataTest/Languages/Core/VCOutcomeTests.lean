@@ -110,7 +110,7 @@ Sat:sat|Val:unknown ➕ can be true and is reachable from declaration entry, Can
 
 /--
 info:  isAlwaysFalse
-Sat:unsat|Val:unknown ✖️ always false if reachable, Always false if reachable, reachability unknown, SARIF: Deductive level: error, BugFinding level: error
+Sat:unsat|Val:unknown ✖️ always false if reached, Always false if reached, reachability unknown, SARIF: Deductive level: error, BugFinding level: error
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) .alwaysFalseReachabilityUnknown
@@ -124,7 +124,7 @@ Sat:unknown|Val:sat ➖ can be false and is reachable from declaration entry, Ca
 
 /--
 info:  isPass isAlwaysTrue
-Sat:unknown|Val:unsat ✔️ always true if reachable, Always true if reachable, reachability unknown, SARIF: Deductive level: none, BugFinding level: none
+Sat:unknown|Val:unsat ✔️ always true if reached, Always true if reached, reachability unknown, SARIF: Deductive level: none, BugFinding level: none
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat) .passReachabilityUnknown

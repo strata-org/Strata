@@ -90,7 +90,7 @@ Model (property false): ($__xs3, (as Nil (List Int))
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify polyProcPgm
@@ -145,15 +145,15 @@ true
 info:
 Obligation: MkCons_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: assert_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify polyPostPgm

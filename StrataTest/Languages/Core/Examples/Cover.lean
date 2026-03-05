@@ -35,15 +35,15 @@ procedure Test() returns ()
 info:
 Obligation: unreachable_cover1
 Property: cover
-Result: ✖️ always false if reachable
+Result: ✖️ always false if reached
 
 Obligation: unreachable_cover2
 Property: cover
-Result: ✖️ always false if reachable
+Result: ✖️ always false if reached
 
 Obligation: unreachable_assert
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: reachable_cover
 Property: cover
@@ -51,11 +51,11 @@ Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: unsatisfiable_cover
 Property: cover
-Result: ✖️ always false if reachable
+Result: ✖️ always false if reached
 
 Obligation: reachable_assert
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify coverPgm1 (options := .quiet)
@@ -83,7 +83,7 @@ spec {
 info:
 Obligation: ctest1
 Property: cover
-Result: ✖️ always false if reachable
+Result: ✖️ always false if reached
 
 Obligation: ctest2
 Property: cover
@@ -91,7 +91,7 @@ Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: atest2
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify coverPgm2 (options := .quiet)
@@ -218,7 +218,7 @@ Result: ⛔ unreachable
 
 Obligation: no_rc_assert
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: rc_cover
 Property: cover
@@ -226,7 +226,7 @@ Result: ❌ unreachable
 
 Obligation: no_rc_cover
 Property: cover
-Result: ✖️ always false if reachable
+Result: ✖️ always false if reached
 -/
 #guard_msgs in
 #eval verify reachCheckPerStmtPgm (options := Core.VerifyOptions.quiet)

@@ -59,11 +59,11 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
     s!"True or false depending on inputs{models}"
   | .unsat, .unsat => "Unreachable: path condition is contradictory"
   | .sat _, .unknown => "Can be true, unknown if always true"
-  | .unsat, .unknown => "Always false if reachable, reachability unknown"
+  | .unsat, .unknown => "Always false if reached, reachability unknown"
   | .unknown, .sat m =>
     if m.isEmpty then "Can be false and reachable, unknown if always false"
     else s!"Can be false and reachable, unknown if always false with counterexample: {Std.format m}"
-  | .unknown, .unsat => "Always true if reachable, reachability unknown"
+  | .unknown, .unsat => "Always true if reached, reachability unknown"
   | .unknown, .unknown => "Unknown (solver timeout or incomplete)"
   | .sat _, .err msg => s!"Validity check error: {msg}"
   | .unsat, .err msg => s!"Validity check error: {msg}"

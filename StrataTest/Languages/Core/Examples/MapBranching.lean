@@ -44,11 +44,11 @@ procedure testmap () returns ()
 info:
 Obligation: set_k_calls_Any..as_MapInt_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: something
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify mapBranch (options := .quiet)

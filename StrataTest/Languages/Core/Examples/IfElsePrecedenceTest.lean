@@ -40,11 +40,11 @@ spec {
 info:
 Obligation: trueCase
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval verify ifElsePlusPgm (options := .quiet)

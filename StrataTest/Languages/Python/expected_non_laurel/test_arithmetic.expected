@@ -1,24 +1,24 @@
 
-datetime_now_ensures_0: ✔️ pass if reachable (at byte 7134)
+datetime_now_ensures_0: ✔️ always true if reached (at byte 7134)
 
-datetime_utcnow_ensures_0: ✔️ pass if reachable (at byte 7372)
+datetime_utcnow_ensures_0: ✔️ always true if reached (at byte 7372)
 
-ensures_str_strp_reverse: ✔️ pass if reachable (at byte 8766)
+ensures_str_strp_reverse: ✔️ always true if reached (at byte 8766)
 
-assert_name_is_foo: ✔️ pass if reachable (at byte 11081)
+assert_name_is_foo: ✔️ always true if reached (at byte 11081)
 
-assert_opt_name_none_or_str: ✔️ pass if reachable (at byte 11131)
+assert_opt_name_none_or_str: ✔️ always true if reached (at byte 11131)
 
-assert_opt_name_none_or_bar: ✔️ pass if reachable (at byte 11278)
+assert_opt_name_none_or_bar: ✔️ always true if reached (at byte 11278)
 
-ensures_maybe_except_none: ✔️ pass if reachable (at byte 10984)
+ensures_maybe_except_none: ✔️ always true if reached (at byte 10984)
 
-py_assertion: ✔️ pass if reachable (at line 7, col 4)
+py_assertion: ✔️ always true if reached (at line 7, col 4)
 
-py_assertion: ✔️ pass if reachable (at line 12, col 4)
+py_assertion: ✔️ always true if reached (at line 12, col 4)
 
-py_assertion: ✔️ pass if reachable (at line 16, col 4)
+py_assertion: ✔️ always true if reached (at line 16, col 4)
 
-py_assertion: ✔️ pass if reachable (at line 20, col 4)
+py_assertion: ✔️ always true if reached (at line 20, col 4)
 
-py_assertion: ✔️ pass if reachable (at line 24, col 4)
+py_assertion: ✔️ always true if reached (at line 24, col 4)

@@ -226,7 +226,7 @@ spec {
 info:
 Obligation: UpdateAndRead_ensures_1
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval! verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := false})
@@ -236,7 +236,7 @@ Result: ✔️ always true if reachable
 info:
 Obligation: UpdateAndRead_ensures_1
 Property: assert
-Result: ✔️ always true if reachable
+Result: ✔️ always true if reached
 -/
 #guard_msgs in
 #eval! verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := true})

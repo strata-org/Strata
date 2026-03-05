@@ -1,10 +1,10 @@
 Successfully parsed.
- [entry_invariant_0]: ✔️ always true if reachable
- [assert_measure_pos]: ✔️ always true if reachable
- [measure_decreases]: ✔️ always true if reachable
- [measure_imp_not_guard]: ✔️ always true if reachable
- [arbitrary_iter_maintain_invariant_0]: ✔️ always true if reachable
- [sum_assert]: ✔️ always true if reachable
- [neg_cond]: ✔️ always true if reachable
- [post]: ✔️ always true if reachable
+ [entry_invariant_0]: ✔️ always true if reached
+ [assert_measure_pos]: ✔️ always true if reached
+ [measure_decreases]: ✔️ always true if reached
+ [measure_imp_not_guard]: ✔️ always true if reached
+ [arbitrary_iter_maintain_invariant_0]: ✔️ always true if reached
+ [sum_assert]: ✔️ always true if reached
+ [neg_cond]: ✔️ always true if reached
+ [post]: ✔️ always true if reached
 All 8 goals passed.
