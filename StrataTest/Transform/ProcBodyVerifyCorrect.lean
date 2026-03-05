@@ -177,6 +177,32 @@ theorem eval_stmts_concat_with_assert
 These lemmas provide the foundation for proving soundness and completeness.
 -/
 
+/-- InitState is deterministic -/
+theorem init_state_deterministic {σ : CoreStore} {x : CoreIdent} {v : Expression.Expr} {σ1 σ2 : CoreStore} :
+    Imperative.InitState Expression σ x v σ1 →
+    Imperative.InitState Expression σ x v σ2 →
+    σ1 = σ2 := by
+  intro h1 h2
+  match h1, h2 with
+  | .init h_none1 h_some1 h_other1, .init h_none2 h_some2 h_other2 =>
+    funext y
+    by_cases h_eq : x = y
+    · subst h_eq; rw [h_some1, h_some2]
+    · rw [h_other1 y h_eq, h_other2 y h_eq]
+
+/-- UpdateState is deterministic -/
+theorem update_state_deterministic {σ : CoreStore} {x : CoreIdent} {v : Expression.Expr} {σ1 σ2 : CoreStore} :
+    Imperative.UpdateState Expression σ x v σ1 →
+    Imperative.UpdateState Expression σ x v σ2 →
+    σ1 = σ2 := by
+  intro h1 h2
+  match h1, h2 with
+  | .update h_old1 h_some1 h_other1, .update h_old2 h_some2 h_other2 =>
+    funext y
+    by_cases h_eq : x = y
+    · subst h_eq; rw [h_some1, h_some2]
+    · rw [h_other1 y h_eq, h_other2 y h_eq]
+
 /-- Command evaluation is deterministic -/
 theorem eval_cmd_deterministic
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -191,9 +217,11 @@ theorem eval_cmd_deterministic
   | .cmd_sem (.eval_assume _ _), .cmd_sem (.eval_assume _ _) => rfl
   | .cmd_sem (.eval_cover _), .cmd_sem (.eval_cover _) => rfl
   | .cmd_sem (.eval_init h_eval1 h_init1 _), .cmd_sem (.eval_init h_eval2 h_init2 _) =>
-    rw [h_eval1] at h_eval2; cases h_eval2; sorry
+    rw [h_eval1] at h_eval2; cases h_eval2
+    exact init_state_deterministic h_init1 h_init2
   | .cmd_sem (.eval_set h_eval1 h_update1 _), .cmd_sem (.eval_set h_eval2 h_update2 _) =>
-    rw [h_eval1] at h_eval2; cases h_eval2; sorry
+    rw [h_eval1] at h_eval2; cases h_eval2
+    exact update_state_deterministic h_update1 h_update2
   | .cmd_sem (.eval_havoc _ _), .cmd_sem (.eval_havoc _ _) => sorry
   | .cmd_sem (.eval_init_unconstrained _ _), .cmd_sem (.eval_init_unconstrained _ _) => sorry
   | .call_sem .., .call_sem .. => sorry
