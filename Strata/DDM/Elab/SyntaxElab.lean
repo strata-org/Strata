@@ -28,6 +28,9 @@ structure ArgElaborator where
   -- Datatype scope: (nameLevel, typeParamsLevel) for recursive datatype definitions
   -- When set, the datatype name is added to the typing context as a type
   datatypeScope : Option (Fin argLevel × Fin argLevel) := .none
+  -- Self scope: (nameLevel, argsLevel, typeLevel) for recursive function definitions
+  -- When set, the function name is added to the typing context as an expression
+  scopeSelf : Option (Fin argLevel × Fin argLevel × Fin argLevel) := .none
 deriving Inhabited, Repr
 
 abbrev ArgElaboratorArray (sc : Nat) :=
@@ -64,6 +67,7 @@ private def push (as : ArgElaborators)
     argLevel := argLevel.val
     contextLevel := argDecls.argScopeLevel argLevel
     datatypeScope := argDecls.argScopeDatatypeLevel argLevel
+    scopeSelf := argDecls.argScopeSelfLevel argLevel
   }
   have scp : sc < sc + 1 := by grind
   { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
@@ -91,7 +95,23 @@ structure SyntaxElaborator where
   syntaxCount : Nat
   argElaborators : ArgElaboratorArray syntaxCount
   resultScope : Option Nat
+  /-- Index into argElaborators for each argument
+  (indexed by argLevel), None if arg has no syntax. -/
+  argElabIndex : Array (Option Nat) := #[]
+  /-- If set, pre-register type names from children at this arg level before elaboration. -/
+  preRegisterTypesScope : Option Nat := none
 deriving Inhabited, Repr
+
+/-- Build an argElabIndex mapping each argLevel to its
+position in the given elaborator array. -/
+private def buildArgElabIndex (argDecls : ArgDecls)
+    {sc} (elabs : ArgElaboratorArray sc)
+    : Array (Option Nat) :=
+  let init := Array.replicate argDecls.size none
+  let (result, _) := elabs.foldl (init := (init, 0))
+    fun (arr, idx) ⟨ae, _⟩ =>
+      (arr.set! ae.argLevel (some idx), idx + 1)
+  result
 
 /-- Build the syntax elaborator that maps parsed syntax positions to
 argument positions.  For `.passthrough`, this is trivial: one syntax
@@ -109,11 +129,15 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       argLevel := 0
       contextLevel := argDecls.argScopeLevel ⟨0, h⟩
       datatypeScope := argDecls.argScopeDatatypeLevel ⟨0, h⟩
+      scopeSelf := argDecls.argScopeSelfLevel ⟨0, h⟩
     }
+    let elabs := #[⟨ae, Nat.zero_lt_one⟩]
     {
       syntaxCount := 1
-      argElaborators := #[⟨ae, Nat.zero_lt_one⟩]
+      argElaborators := elabs
       resultScope := opMd.resultLevel argDecls.size
+      argElabIndex := buildArgElabIndex argDecls elabs
+      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
     }
   | .std atoms _ =>
     let init : ArgElaborators := {
@@ -131,6 +155,8 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       syntaxCount := as.syntaxCount
       argElaborators := elabs
       resultScope := opMd.resultLevel argDecls.size
+      argElabIndex := buildArgElabIndex argDecls elabs
+      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
     }
 
 private def opDeclElaborator! (decl : OpDecl) : SyntaxElaborator :=
