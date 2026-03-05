@@ -424,7 +424,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => (·.2) <$> translateStmt initEnv proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => (·.2) <$> translateStmt initEnv proc.outputs impl
-<<<<<<< HEAD
     | _ => pure [Core.Statement.assume "no_body" (.const Strata.SourceRange.none (.boolConst false)) .empty]
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts .empty]
