@@ -51,10 +51,13 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
           let caretColStart := commentPrefix + caretStart.offset.byteIdx
           let caretColEnd := commentPrefix + currentCaret.offset.byteIdx
 
-          -- The diagnostic is on the previous line
+          -- The diagnostic is on the nearest previous non-comment line
           if i > 0 then
+            let mut targetLine := i
+            while targetLine > 0 && lines[targetLine - 1]!.trimAsciiStart.startsWith "//" do
+              targetLine := targetLine - 1
             expectations := expectations.append [{
-              line := i,  -- 1-indexed line number (the line before the comment)
+              line := targetLine,
               colStart := caretColStart,
               colEnd := caretColEnd,
               level := level,

@@ -23,7 +23,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
+open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
 
@@ -160,10 +160,10 @@ def translateExpr (expr : StmtExprMd)
     | .Add => return binOp intAddOp
     | .Sub => return binOp intSubOp
     | .Mul => return binOp intMulOp
-    | .Div => return binOp intDivOp
-    | .Mod => return binOp intModOp
-    | .DivT => return binOp intDivTOp
-    | .ModT => return binOp intModTOp
+    | .Div => return binOp intSafeDivOp
+    | .Mod => return binOp intSafeModOp
+    | .DivT => return binOp intSafeDivTOp
+    | .ModT => return binOp intSafeModTOp
     | .Lt => return binOp intLtOp
     | .Leq => return binOp intLeOp
     | .Gt => return binOp intGtOp
@@ -350,11 +350,9 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           let ident := ⟨outParam.name.text, ()⟩
           let coreExpr ← translateExpr value
           let assignStmt := Core.Statement.set ident coreExpr md
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          return [assignStmt, noFallThrough]
+          return [assignStmt, .exit (some "$body") md]
       | none, _ =>
-          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
-          return [noFallThrough]
+          return [.exit (some "$body") md]
       | some _, none =>
           panic! "Return statement with value but procedure has no output parameters"
   | .While cond invariants decreasesExpr body =>
@@ -415,11 +413,13 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
         translateChecks postconds "postcondition"
     | _ => pure []
   let modifies : List Core.Expression.Ident := []
-  let body : List Core.Statement ←
+  let bodyStmts : List Core.Statement ←
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
     | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+  -- Wrap body in a labeled block so early returns (exit) work correctly.
+  let body : List Core.Statement := [.block "$body" bodyStmts .empty]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
