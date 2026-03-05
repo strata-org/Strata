@@ -19,12 +19,12 @@ open Lean.Parser (InputContext)
 open Imperative (MetaData)
 
 structure TransState where
-  uri : Uri
+  uri : Option Uri
   errors : Array String
 
 abbrev TransM := StateT TransState (Except String)
 
-def TransM.run (uri : Uri) (m : TransM α) : Except String α :=
+def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
   match StateT.run m { uri := uri, errors := #[] } with
   | .ok (v, _) => .ok v
   | .error e => .error e
@@ -36,8 +36,10 @@ def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData 
   let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
   #[fileRangeElt]
 
-def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
-  return SourceRange.toMetaData (← get).uri arg.ann
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
+  return match (← get).uri with
+  | some uri => SourceRange.toMetaData uri arg.ann
+  | none => default
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do

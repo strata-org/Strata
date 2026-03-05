@@ -275,29 +275,29 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts _ => stmts.flatMapM (fun s => translateStmt outputParams s)
   | .LocalVariable id ty initializer =>
-      let boogieMonoType := translateType model ty
-      let boogieType := LTy.forAll [] boogieMonoType
+      let coreMonoType := translateType model ty
+      let coreType := LTy.forAll [] coreMonoType
       let ident := ⟨id.text, ()⟩
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
           if model.isFunction callee then
             -- Translate as expression (function application)
-            let boogieExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
-            return [Core.Statement.init ident boogieType (some boogieExpr) md]
+            let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
+            return [Core.Statement.init ident coreType (some coreExpr) md]
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr := defaultExprForType model ty
-            let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
+            let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
             return [initStmt, callStmt]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident boogieType (some coreExpr) md]
+          return [Core.Statement.init ident coreType (some coreExpr) md]
       | none =>
           let defaultExpr := defaultExprForType model ty
-          return [Core.Statement.init ident boogieType (some defaultExpr) md]
+          return [Core.Statement.init ident coreType (some defaultExpr) md]
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _ ⟩] =>
@@ -307,15 +307,15 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           | .StaticCall callee args =>
               if model.isFunction callee then
                 -- Functions are translated as expressions
-                let boogieExpr ← translateExpr value
-                return [Core.Statement.set ident boogieExpr md]
+                let coreExpr ← translateExpr value
+                return [Core.Statement.set ident coreExpr md]
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
                 return [Core.Statement.call [ident] callee.text coreArgs md]
           | _ =>
-              let boogieExpr ← translateExpr value
-              return [Core.Statement.set ident boogieExpr md]
+              let coreExpr ← translateExpr value
+              return [Core.Statement.set ident coreExpr md]
       | _ =>
           -- Parallel assignment: (var1, var2, ...) := expr
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)

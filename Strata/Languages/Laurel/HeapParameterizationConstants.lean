@@ -64,6 +64,10 @@ function increment(heap: Heap): Heap {
   MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
 }
 
+// The #strata macro does not identify the end macro correctly,
+// because Laurel's grammar also parses # signs
+// Having this datatype here brings the parser in a state where it won't consume the #
+// A fix would be to require ';' after the body of functions/procedures
 datatype Workaround  {}
 #end
 

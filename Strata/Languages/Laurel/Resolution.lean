@@ -506,11 +506,28 @@ private def register (map : Std.HashMap Nat AstNode) (iden : Identifier) (node :
   | some uuid => map.insert uuid node
   | none => map  -- shouldn't happen after Phase 1
 
-mutual
-
-private partial def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
+private def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
     : Std.HashMap Nat AstNode :=
-  match expr.val with
+  match ty with
+  | WithMetadata.mk val _ =>
+  match val with
+  | .TTypedField vt => collectHighType map vt
+  | .TSet et => collectHighType map et
+  | .TMap kt vt =>
+    let map := collectHighType map kt
+    collectHighType map vt
+  | .Applied base args =>
+    let map := collectHighType map base
+    args.foldl collectHighType map
+  | .Pure base => collectHighType map base
+  | .Intersection tys => tys.foldl collectHighType map
+  | _ => map
+
+private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
+    : Std.HashMap Nat AstNode :=
+  match expr with
+  | WithMetadata.mk val _ =>
+  match val with
   | .IfThenElse cond thenBr elseBr =>
     let map := collectStmtExpr map cond
     let map := collectStmtExpr map thenBr
@@ -571,23 +588,6 @@ private partial def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : Stmt
   | .ContractOf _ fn => collectStmtExpr map fn
   | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .Abstract | .All | .Hole => map
-
-private partial def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
-    : Std.HashMap Nat AstNode :=
-  match ty.val with
-  | .TTypedField vt => collectHighType map vt
-  | .TSet et => collectHighType map et
-  | .TMap kt vt =>
-    let map := collectHighType map kt
-    collectHighType map vt
-  | .Applied base args =>
-    let map := collectHighType map base
-    args.foldl collectHighType map
-  | .Pure base => collectHighType map base
-  | .Intersection tys => tys.foldl collectHighType map
-  | _ => map
-
-end
 
 private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
     : Std.HashMap Nat AstNode :=

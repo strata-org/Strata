@@ -437,6 +437,6 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     | other => other
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
-    types := [fieldDatatype] ++ heapConstants.types ++ types' }
+    types := fieldDatatype :: heapConstants.types ++ types' }
 
 end Strata.Laurel
