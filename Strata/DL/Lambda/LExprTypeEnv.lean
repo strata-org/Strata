@@ -272,9 +272,10 @@ def TEnv.updateContext {IDMeta} (T: TEnv IDMeta) (C: TContext IDMeta) : TEnv IDM
 /--
 Lift stateful computations over `TGenEnv` to stateful computations over `TEnv`
 -/
-def liftGenEnv {α : Type} (f: TGenEnv IDMeta → α × (TGenEnv IDMeta)) (T: TEnv IDMeta) : α × TEnv IDMeta :=
-  let (a, T') := f T.genEnv
-  (a, {T with genEnv := T'})
+def liftGenEnv {α : Type} (f: TGenEnv IDMeta → Except Format (α × TGenEnv IDMeta)) (T: TEnv IDMeta) : Except Format (α × TEnv IDMeta) :=
+  match f T.genEnv with
+  | .error e => .error e
+  | .ok (a, T') => .ok (a, {T with genEnv := T'})
 
 def KnownTypes.default : KnownTypes :=
   open LTy.Syntax in
@@ -442,7 +443,10 @@ instance [Inhabited T.IDMeta] : Inhabited (T.Identifier × TEnv T.IDMeta) where
 
 /-- Variable Generator -/
 class HasGen (IDMeta: Type) where
-  genVar : TGenEnv IDMeta → (Identifier IDMeta) × TGenEnv IDMeta
+  genVar : TGenEnv IDMeta → Except Format (Identifier IDMeta × TGenEnv IDMeta)
+  /-- `genVar` never decreases the type-variable generator counter. -/
+  genVar_tyGen_mono : ∀ (Env : TGenEnv IDMeta) (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
+    genVar Env = .ok (xv, Env') → Env'.genState.tyGen ≥ Env.genState.tyGen
 
 /--
 Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
@@ -457,18 +461,27 @@ checking. Also, we rely on the parser disallowing Lambda variables to begin with
 Together, these restrictions ensure that variables created using
 `TEnv.genExprVar` are fresh w.r.t. the Lambda expression.
 -/
-def TEnv.genExprVar (Env: TGenEnv Unit) : (Identifier Unit × TGenEnv Unit) :=
+def TEnv.genExprVar (Env: TGenEnv Unit) : Except Format (Identifier Unit × TGenEnv Unit) :=
   let (new_var, state) := Env.genState.genExprSym
   let Env :={ Env with genState := state }
   let known_vars := TContext.knownVars Env.context
   if ⟨new_var, ()⟩ ∈ known_vars then
-    panic s!"[TEnv.genExprVar] Generated variable {new_var} is not fresh!\n\
+    .error f!"[TEnv.genExprVar] Generated variable {new_var} is not fresh!\n\
               Context: {format Env.context}"
   else
-    (new_var, Env)
+    .ok (new_var, Env)
 
 instance : HasGen Unit where
   genVar := TEnv.genExprVar
+  genVar_tyGen_mono := by
+    intro Env xv Env' h
+    simp [TEnv.genExprVar] at h
+    split at h
+    · simp at h
+    · simp at h
+      obtain ⟨_, h_env⟩ := h
+      rw [← h_env]
+      simp [TState.genExprSym, TState.incExprGen]
 
 /--
 Generate a fresh type variable (`ftvar`).

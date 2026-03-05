@@ -2627,40 +2627,45 @@ private theorem typeBoundVar_absorbs
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
     Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
-  -- Case split on bty FIRST to simplify the match in typeBoundVar
-  cases bty with
-  | some bty_val =>
-    -- typeBoundVar with some bty_val: liftGenEnv, instantiateWithCheck, addInNewestContext
-    simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
-    -- After unfolding, the redundant match ans is resolved.
-    -- h has: (match instantiateWithCheck ... with | .error => .error | .ok v => <continuation>) = ok ...
-    -- Split on the instantiateWithCheck result
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  -- Split on the result of HasGen.genVar (now returns Except)
+  split at h
+  · contradiction
+  · -- HasGen.genVar succeeded
+    rename_i genResult h_gen
+    -- Extract: liftGenEnv preserves stateSubstInfo
+    have h_gen_subst : genResult.snd.stateSubstInfo = Env.stateSubstInfo := by
+      split at h_gen
+      · contradiction
+      · have := Except.ok.inj h_gen; rw [← this]
+    -- Now case split on bty
     split at h
-    · simp at h
-    · -- ok case: h is now `pure (xv, ..., addInNewestContext ...) = ok (...)`
-      rename_i v1 h_inst
-      -- v1 is the pair (mty', Env_mid) from instantiateWithCheck
-      -- h has no more match/if — it's a pure = ok equation
-      simp [Pure.pure, Except.pure] at h
-      obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
-      simp only [TEnv.addInNewestContext, TEnv.updateContext]
-      exact LMonoTy_instantiateWithCheck_absorbs bty_val C
-        ⟨(HasGen.genVar Env.genEnv).snd, Env.stateSubstInfo⟩ _ _ h_inst
-  | none =>
-    -- typeBoundVar with none: liftGenEnv, genTyVar, addInNewestContext
-    simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
-    -- Split on result of genTyVar
-    split at h
-    · simp at h
-    · rename_i v1 h_gen
-      obtain ⟨xtyid, Env1⟩ := v1
-      simp [Pure.pure, Except.pure] at h
-      obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
-      simp only [TEnv.addInNewestContext, TEnv.updateContext]
-      -- genTyVar preserves stateSubstInfo
-      have h_subst := TEnv.genTyVar_subst _ xtyid Env1 h_gen
-      simp [TEnv.stateSubstInfo] at h_subst; rw [h_subst]
-      exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+    · -- some bty_val
+      -- Split on the instantiateWithCheck result
+      split at h
+      · contradiction
+      · -- instantiateWithCheck succeeded
+        rename_i _ bty_mty _ _ Env_inst h_inst
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        have := LMonoTy_instantiateWithCheck_absorbs bty_mty C
+          genResult.snd _ _ h_inst
+        rw [h_gen_subst] at this
+        exact this
+    · -- none
+      -- Split on result of genTyVar
+      split at h
+      · contradiction
+      · rename_i v1 h_genTy
+        obtain ⟨xtyid, Env1⟩ := v1
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        -- genTyVar preserves stateSubstInfo
+        have h_subst := TEnv.genTyVar_subst _ xtyid Env1 h_genTy
+        rw [h_subst, h_gen_subst]
+        exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
 
 /-- Removing a key `k` from a map doesn't affect lookups of other keys `a ≠ k`. -/
 private theorem Map.find?_remove_ne {α β : Type} [DecidableEq α]
