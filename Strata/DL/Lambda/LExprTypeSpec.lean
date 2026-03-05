@@ -3280,14 +3280,29 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     | none =>
       simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
       -- instantiateWithCheck preserves the invariant
-      sorry -- LTy_instantiateWithCheck_preserves_SubstFreshForGen
+      exact LTy_instantiateWithCheck_preserves_SubstFreshForGen type_val C Env ty_inst Env1 h_inst h_fresh
     | some oty_val =>
       simp only [Except.mapError] at h
       split at h; · simp at h
       rename_i v2 h_inst2; obtain ⟨oty_inst, Env2⟩ := v2; dsimp at h h_inst2
       split at h; · simp at h
+      rename_i v3 h_mapError
       simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
-      sorry -- chain instantiateWithCheck + unify preservation
+      have h_fresh1 := LTy_instantiateWithCheck_preserves_SubstFreshForGen
+        type_val C Env ty_inst Env1 h_inst h_fresh
+      have h_fresh2 := LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
+        oty_val C Env1 oty_inst Env2 h_inst2 h_fresh1
+      have h_unify := unify_of_mapError h_mapError
+      exact unify_preserves_SubstFreshForGen h_unify h_fresh2 (fun v hv n hn => by
+        simp [Constraints.freeVars, Constraint.freeVars] at hv
+        cases hv with
+        | inl h_ty =>
+          exact LTy_instantiateWithCheck_freeVars_fresh type_val C Env ty_inst Env1
+            h_inst v h_ty n (Nat.le_trans
+            (LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2) hn)
+        | inr h_oty =>
+          exact LMonoTy_instantiateWithCheck_freeVars_fresh oty_val C Env1 oty_inst Env2
+            h_inst2 v h_oty n hn)
   | .app m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
@@ -3297,6 +3312,7 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     split at h; · simp at h
     rename_i v3 h_gen; obtain ⟨fresh_name, Env3⟩ := v3; dsimp at h h_gen
     split at h; · simp at h
+    rename_i v4 h_mapError
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
     -- Chain: Env → Env1 → Env2 → Env3 (genTyVar) → unify → remove
     have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
@@ -3308,8 +3324,16 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     have h_fresh3 : SubstFreshForGen Env3.stateSubstInfo Env3.genEnv.genState := by
       rw [h_gen_subst]; exact SubstFreshForGen.mono _ _ _  h_fresh2
         (by have := genTyVar_tyGen Env2 fresh_name Env3 h_gen; omega)
-    -- unify + remove: the output subst has fewer or equal vars
-    -- For now, sorry the unify preservation (needs constraint fvs analysis)
+    -- unify preserves SubstFreshForGen, then remove only removes vars
+    have h_unify := unify_of_mapError h_mapError
+    -- SubstFreshForGen for the unify result (before remove)
+    have h_fresh4 := unify_preserves_SubstFreshForGen h_unify h_fresh3 (fun v hv n_ hn => by
+      -- Constraint fvs: e1t.toLMonoTy, e2t.toLMonoTy, fresh_name
+      -- Need resolveAux output type fvs fresh + genTyVar freshness
+      sorry)
+    -- Remove only removes keys/values, so SubstFreshForGen is preserved
+    -- SubstFreshForGen for {subst := remove v4.subst fresh_name, ...}
+    -- remove ⊆ original, so all vars in removed subst are also in original → fresh
     sorry
   | .abs m bty body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
@@ -3347,13 +3371,23 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     split at h; · simp at h
     rename_i v2 h_res2; obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
     split at h; · simp at h
+    rename_i v3 h_mapError
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
     have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_fresh1 := ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_fresh
     have h_fresh2 := ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_fresh1
-    -- unify doesn't change genEnv, only stateSubstInfo
-    sorry -- unify_preserves_SubstFreshForGen
+    have h_unify := unify_of_mapError h_mapError
+    -- unify doesn't change genEnv, need constraint fvs freshness
+    exact unify_preserves_SubstFreshForGen h_unify h_fresh2 (fun v hv n_ hn => by
+      simp [Constraints.freeVars, Constraint.freeVars] at hv
+      cases hv with
+      | inl h_e1 =>
+        -- e1t.toLMonoTy fvs are fresh: need resolveAux output type fvs fresh lemma
+        sorry
+      | inr h_e2 =>
+        -- e2t.toLMonoTy fvs are fresh: same
+        sorry)
   | .ite m c t e =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
@@ -3363,6 +3397,7 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     split at h; · simp at h
     rename_i v3 h_res_e; obtain ⟨elt, Env3⟩ := v3; dsimp at h h_res_e
     split at h; · simp at h
+    rename_i v4 h_mapError
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
     have h_sz_c : c.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_sz_t : t.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
@@ -3370,8 +3405,12 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     have h_fresh1 := ih c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_fresh
     have h_fresh2 := ih t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t h_fresh1
     have h_fresh3 := ih e.sizeOf h_sz_e e rfl elt C Env2 Env3 h_res_e h_fresh2
-    -- unify doesn't change genEnv, only stateSubstInfo
-    sorry -- unify_preserves_SubstFreshForGen
+    have h_unify := unify_of_mapError h_mapError
+    exact unify_preserves_SubstFreshForGen h_unify h_fresh3 (fun v hv n_ hn => by
+      simp [Constraints.freeVars, Constraint.freeVars] at hv
+      -- Constraint fvs come from ct.toLMonoTy, LMonoTy.bool, tht.toLMonoTy, elt.toLMonoTy
+      -- Need resolveAux output type fvs fresh lemma
+      sorry)
 
 /-- A type variable produced by `genTyVar` does not appear (as key or in values)
     in any substitution satisfying `SubstFreshForGen` for an earlier gen state.
