@@ -1200,15 +1200,18 @@ end
 ---------------------------------------------------------------------
 
 def translateInitMkBinding (bindings : TransBindings) (op : Arg) :
-  TransM (Core.CoreIdent × LMonoTy) := do
-  -- (FIXME) Account for metadata.
-  let bargs ← checkOpArg op q`Core.mkBinding 2
+  TransM (Core.CoreIdent × LMonoTy × Bool) := do
+  let isCases := match op with
+    | .op o => o.name == q`Core.casesBinding
+    | _ => false
+  let opName := if isCases then q`Core.casesBinding else q`Core.mkBinding
+  let bargs ← checkOpArg op opName 2
   let id ← translateIdent Core.CoreIdent bargs[0]!
   let tp ← translateLMonoTy bindings bargs[1]!
-  return (id, tp)
+  return (id, tp, isCases)
 
 def translateInitMkBindings (bindings : TransBindings) (ops : Array Arg) :
-  TransM (Array (Core.CoreIdent × LMonoTy)) := do
+  TransM (Array (Core.CoreIdent × LMonoTy × Bool)) := do
   ops.mapM (fun op => translateInitMkBinding bindings op)
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
@@ -1217,9 +1220,25 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   match bargs[0]! with
   | .seq _ .comma args =>
     let arr ← translateInitMkBindings bindings args
-    return arr.toList
+    return arr.toList.map fun (id, ty, _) => (id, ty)
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
+
+/-- Like `translateBindings` but also returns the index of the `@[cases]` parameter, if any. -/
+def translateBindingsWithCases (bindings : TransBindings) (op : Arg) :
+  TransM (ListMap Core.CoreIdent LMonoTy × Option Nat) := do
+  let bargs ← checkOpArg op q`Core.mkBindings 1
+  match bargs[0]! with
+  | .seq _ .comma args =>
+    let arr ← translateInitMkBindings bindings args
+    let sig := arr.toList.map fun (id, ty, _) => (id, ty)
+    let casesCount := arr.toList.filter (·.2.2) |>.length
+    if casesCount > 1 then
+      TransM.error s!"Only one @[cases] parameter is allowed, but {casesCount} were found"
+    let casesIdx := arr.toList.findIdx? fun (_, _, c) => c
+    return (sig, casesIdx)
+  | _ =>
+    TransM.error s!"translateBindingsWithCases expects a comma separated list: {repr op}"
 
 def translateModifies (arg : Arg) : TransM (Array Core.CoreIdent) := do
   let args ← checkOpArg arg q`Core.modifies_spec 1
@@ -1385,6 +1404,7 @@ def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) 
 inductive FnInterp where
   | Definition
   | Declaration
+  | RecursiveDefinition
   deriving Repr
 
 def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
@@ -1400,32 +1420,57 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  7
-    | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
+    | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
+    | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
+    | .RecursiveDefinition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef  6
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
-  let sig ← translateBindings bindings op.args[2]!
+  let sigAndCases : ListMap Core.CoreIdent LMonoTy × Option Nat ← match status with
+    | .RecursiveDefinition => translateBindingsWithCases bindings op.args[2]!
+    | _ => do let sig ← translateBindings bindings op.args[2]!; pure (sig, none)
+  let sig := sigAndCases.1
+  let casesIdx := sigAndCases.2
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-  -- This bindings order -- original, then inputs, is
-  -- critical here. Is this right though?
   let orig_bbindings := bindings.boundVars
-  let bbindings := bindings.boundVars ++ in_bindings
+  -- INVARIANT: The binding order here must exactly match the DDM elaborator's
+  -- typing context in `Elab/Core.lean` (the `scopeSelf` branch), which pushes:
+  --   [inherited..., self, typeArgTVars..., params...]
+  -- The `@[scope(typeArgs)] b : Bindings` grammar argument causes the DDM to
+  -- re-push type arg tvar bindings before the value param bindings. We must
+  -- include placeholders for these type args so that de Bruijn indices in the
+  -- elaborated body expression resolve correctly during translation.
+  let bbindings ← match status with
+    | .RecursiveDefinition =>
+      let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
+      let selfBinding := LExpr.op () fname fnTy
+      let tyArgPlaceholders := typeArgs.map fun (ta: TyIdentifier) =>
+        LExpr.op () (ta : Core.CoreIdent) .none
+      pure (bindings.boundVars ++ #[selfBinding] ++ tyArgPlaceholders ++ in_bindings)
+    | _ => pure (bindings.boundVars ++ in_bindings)
   let bindings := { bindings with boundVars := bbindings }
+  let casesAttr := match casesIdx with
+    | some i => #[.inlineIfConstr i]
+    | none => #[]
   let (preconds, body, inline?) ← match status with
-             | .Definition =>
-                let preconds ← translateFnPreconds p fname bindings op.args[4]!
-                let e ← translateExpr p bindings op.args[5]!
-                let inline? ← translateOptionInline op.args[6]!
-                pure (preconds, some e, inline?)
-             | .Declaration => pure ([], none, #[])
+    | .Definition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let e ← translateExpr p bindings op.args[5]!
+      let inline? ← translateOptionInline op.args[6]!
+      pure (preconds, some e, inline?)
+    | .RecursiveDefinition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let e ← translateExpr p bindings op.args[5]!
+      pure (preconds, some e, #[])
+    | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
+                      isRecursive := status matches .RecursiveDefinition,
                       inputs := sig,
                       output := ret,
                       body := body,
-                      attr := inline?,
+                      attr := casesAttr ++ inline?,
                       preconditions := preconds } md
   return (decl,
           { bindings with
@@ -1747,6 +1792,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
+          | q`Core.command_recfndef =>
+            translateFunction .RecursiveDefinition p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
