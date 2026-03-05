@@ -76,6 +76,22 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
         -- Add source location to error messages if not already present.
         .error <| e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
 
+/-- Collect all block labels at the top level of a list of statements (non-recursive). -/
+def collectBlockLabels (ss : List Statement) : List String :=
+  ss.filterMap fun s =>
+    match s with
+    | .block label _ _ => some label
+    | _ => none
+
+/-- Find the first duplicate label in a list, if any. -/
+def findDuplicateLabel (labels : List String) : Option String :=
+  let rec findDup : List String → List String → Option String
+    | [], _ => none
+    | l :: rest, seen =>
+      if seen.contains l then some l
+      else findDup rest (l :: seen)
+  findDup labels []
+
 def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
   go C Env ss [] []
@@ -95,9 +111,15 @@ where
           .ok (Stmt.cmd c', Env, C)
 
         | .block label bss md => do
-          let (bss', Env, C) ← goBlock C Env bss [] (label :: labels)
-          let s' := Stmt.block label bss' md
-          .ok (s', Env, C)
+          -- Check that all labels within this block are distinct
+          let blockLabels := collectBlockLabels bss
+          match findDuplicateLabel blockLabels with
+          | some dupLabel =>
+            .error <| md.toDiagnosticF f!"[{s}]: Duplicate label '{dupLabel}' within block '{label}'. All labels within a single block must be distinct."
+          | none =>
+            let (bss', Env, C) ← goBlock C Env bss [] (label :: labels)
+            let s' := Stmt.block label bss' md
+            .ok (s', Env, C)
 
         | .ite cond tss ess md => do try
           let _ ← Env.freeVarCheck cond f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
