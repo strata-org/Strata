@@ -50,8 +50,6 @@ datatype Error () {
 // that the conversion from a string constant is handled by the translator.
 
 type DictStrAny;
-forward type Any;
-forward type ListAny;
 
 mutual
 datatype Any () {
