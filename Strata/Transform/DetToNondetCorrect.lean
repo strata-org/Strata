@@ -213,7 +213,13 @@ theorem StmtToNondetCorrect
     | .typeDecl _ md =>
       cases Heval with
       | typeDecl_sem =>
-        sorry
+        simp [StmtToNondetStmt]
+        apply EvalNondetStmt.cmd_sem
+        · apply EvalCmd.eval_assume
+          · have ⟨Htt, _⟩ := HasBoolVal.bool_is_val (P := P)
+            exact Hwfvl.2 HasBool.tt σ Htt
+          · exact Hwfb
+        · simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
   . intros ss Hsz Hno Heval
     cases ss <;>
     cases Heval

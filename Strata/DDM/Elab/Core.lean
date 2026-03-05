@@ -1120,14 +1120,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     return default
 
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
-    match spec with
-    | .scopedType _ =>
-      -- For scoped types, add to GlobalContext instead of local bindings
-      let binding ← evalBindingSpec ctx loc initSize i.dialect spec args
-      let gctx := binding.globalContext
-      pure binding
-    | _ =>
-      evalBindingSpec ctx loc initSize i.dialect spec args
+    evalBindingSpec ctx loc initSize i.dialect spec args
   let op : Operation := { ann := loc, name := i, args := args.toArray.map (·.arg) }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."
