@@ -1813,6 +1813,249 @@ theorem resolveAux_keys_fresh :
       Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   sorry
 
+/-! #### Absorption helper lemmas for `resolveAux`
+
+These lemmas establish that each sub-function used by `resolveAux` produces
+a substitution that absorbs its input.  The chain is:
+  `tconsAlias` → `resolveAliases` → `instantiateWithCheck` → `inferFVar` / `typeBoundVar`
+-/
+
+/-- `tconsAlias` produces a substitution that absorbs the input. -/
+private theorem tconsAlias_absorbs
+    (name : String) (args : LMonoTys) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.tconsAlias name args Env = .ok (mty, Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  unfold LMonoTy.tconsAlias at h
+  generalize h_ma : List.find? _ _ = ma at h
+  match ma with
+  | none =>
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+  | some alias =>
+    simp at h
+    split at h
+    · simp at h
+    · rename_i instTypes updatedEnv h_inst
+      generalize h_u : Constraints.unify _ _ = u at h
+      match u with
+      | .error e => simp [Except.mapError] at h
+      | .ok S =>
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, h2⟩ := h
+        rw [← h2]; simp [TEnv.updateSubst]
+        have h_subst_eq : updatedEnv.stateSubstInfo = Env.stateSubstInfo := by
+          simp [LMonoTys.instantiateEnv] at h_inst
+          split at h_inst
+          · simp at h_inst
+          · simp at h_inst; obtain ⟨_, h_env⟩ := h_inst; rw [← h_env]
+        rw [h_subst_eq] at h_u
+        exact unify_absorbs _ _ _ h_u
+
+mutual
+/-- `LMonoTy.resolveAliases` produces a substitution that absorbs the input. -/
+private theorem LMonoTy.resolveAliases_absorbs
+    (mty : LMonoTy) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (mty', Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  match mty with
+  | .ftvar _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+  | .bitvec _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+  | .tcons name args =>
+    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_args
+      obtain ⟨args', Env1⟩ := v1; simp at h h_args
+      split at h
+      · simp at h
+      · rename_i v2 h_tcons
+        obtain ⟨mty'', Env2⟩ := v2
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        exact Subst.absorbs_trans
+          Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+          (LMonoTys.resolveAliases_absorbs args Env args' Env1 h_args)
+          (tconsAlias_absorbs name args' Env1 mty'' Env2 h_tcons)
+
+/-- `LMonoTys.resolveAliases` produces a substitution that absorbs the input. -/
+private theorem LMonoTys.resolveAliases_absorbs
+    (mtys : LMonoTys) (Env : TEnv T.IDMeta) (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  match mtys with
+  | [] =>
+    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+  | mty :: mrest =>
+    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_hd
+      obtain ⟨mty', Env1⟩ := v1; simp at h h_hd
+      split at h
+      · simp at h
+      · rename_i v2 h_tl
+        obtain ⟨mrest', Env2⟩ := v2
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        exact Subst.absorbs_trans
+          Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+          (LMonoTy.resolveAliases_absorbs mty Env mty' Env1 h_hd)
+          (LMonoTys.resolveAliases_absorbs mrest Env1 mrest' Env2 h_tl)
+end
+
+/-- `LTy.resolveAliases` produces a substitution that absorbs the input. -/
+private theorem LTy_resolveAliases_absorbs
+    (ty : LTy) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_inst
+    obtain ⟨mty0, genEnv'⟩ := v1; simp at h h_inst
+    -- After ty.instantiate, only genEnv changes; stateSubstInfo is preserved.
+    have h_subst_eq : ({Env with genEnv := genEnv'} : TEnv T.IDMeta).stateSubstInfo =
+        Env.stateSubstInfo := rfl
+    exact h_subst_eq ▸ LMonoTy.resolveAliases_absorbs mty0 {Env with genEnv := genEnv'} mty Env' h
+
+/-- Helper: extract a `Constraints.unify` hypothesis from a `mapError` wrapper. -/
+private theorem unify_of_mapError {constraints : Constraints} {S : SubstInfo} {S' : SubstInfo}
+    (h : (Constraints.unify constraints S).mapError format = .ok S') :
+    Constraints.unify constraints S = .ok S' := by
+  revert h
+  generalize Constraints.unify constraints S = res
+  intro h_me; match res, h_me with
+  | .ok val, h_me => simp [Except.mapError] at h_me; rw [h_me]
+  | .error _, h_me => simp [Except.mapError] at h_me
+
+/-- `LTy.instantiateWithCheck` produces a substitution that absorbs the input. -/
+private theorem LTy_instantiateWithCheck_absorbs
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_res
+    obtain ⟨mty0, Env1⟩ := v1
+    dsimp at h h_res
+    -- h contains `if isInstanceOfKnownType mty0 C then ... else ...`
+    split at h
+    · -- true branch: return (mty0, Env1)
+      simp [Pure.pure, Except.pure] at h
+      obtain ⟨_, h2⟩ := h; rw [← h2]
+      exact LTy_resolveAliases_absorbs ty Env mty0 Env1 h_res
+    · -- false branch: error
+      simp at h
+
+/-- `LMonoTy.instantiateWithCheck` produces a substitution that absorbs the input. -/
+private theorem LMonoTy_instantiateWithCheck_absorbs
+    (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty, Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  simp only [LMonoTy.instantiateWithCheck] at h
+  split at h
+  · simp at h
+  · rename_i instTypes Env1 h_inst
+    simp [Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v2 h_res
+      obtain ⟨mtyi, Env2⟩ := v2
+      dsimp at h h_res
+      split at h
+      · -- true branch: return (mtyi, Env2)
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        -- instantiateEnv only changes genEnv
+        have h_subst_eq : Env1.stateSubstInfo = Env.stateSubstInfo := by
+          simp [LMonoTys.instantiateEnv] at h_inst
+          split at h_inst
+          · simp at h_inst
+          · simp at h_inst; obtain ⟨_, h_env⟩ := h_inst; rw [← h_env]
+        rw [← h_subst_eq]
+        exact LMonoTy.resolveAliases_absorbs _ Env1 mtyi Env2 h_res
+      · -- false branch: error
+        simp at h
+
+/-- `inferFVar` produces a substitution that absorbs the input. -/
+private theorem inferFVar_absorbs
+    (C : LContext T) (Env : TEnv T.IDMeta) (x : T.Identifier) (fty : Option LMonoTy)
+    (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : inferFVar C Env x fty = .ok (ty_res, Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  simp only [inferFVar, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i ty h_find
+    -- Split on result of LTy.instantiateWithCheck
+    split at h
+    · simp at h
+    · rename_i v1 h_inst
+      obtain ⟨mty, Env1⟩ := v1
+      dsimp at h h_inst
+      -- Now h has `match fty with | none => ... | some fty => ...`
+      -- Split on fty
+      cases fty with
+      | none =>
+        simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+        exact LTy_instantiateWithCheck_absorbs ty C Env mty Env1 h_inst
+      | some fty_val =>
+        simp only [Except.mapError] at h
+        -- Split on result of LMonoTy.instantiateWithCheck
+        split at h
+        · simp at h
+        · rename_i v2 h_inst2
+          obtain ⟨fty_inst, Env2⟩ := v2
+          dsimp at h h_inst2
+          -- Split on result of Constraints.unify (wrapped in mapError)
+          split at h
+          · simp at h
+          · rename_i v3 h_mapError
+            simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+            simp [TEnv.updateSubst]
+            have h_unify := unify_of_mapError h_mapError
+            exact Subst.absorbs_trans
+              Env.stateSubstInfo.subst Env2.stateSubstInfo.subst v3.subst
+              (Subst.absorbs_trans
+                Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+                (LTy_instantiateWithCheck_absorbs ty C Env mty Env1 h_inst)
+                (LMonoTy_instantiateWithCheck_absorbs fty_val C Env1 fty_inst Env2 h_inst2))
+              (unify_absorbs _ _ _ h_unify)
+
+/-- `typeBoundVar` produces a substitution that absorbs the input.
+    `typeBoundVar` calls `liftGenEnv` (genEnv only), then either
+    `LMonoTy.instantiateWithCheck` (when `bty = some _`) or `genTyVar`
+    (when `bty = none`), then `addInNewestContext`.
+    Only `instantiateWithCheck` (through `resolveAliases`) may change the
+    substitution; `liftGenEnv`, `genTyVar`, and `addInNewestContext` preserve it. -/
+private theorem typeBoundVar_absorbs
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  sorry
+
+/-- Removing a fresh key from the outer substitution preserves absorption.
+    This requires that the key is not in the inner substitution (neither as
+    a key nor in any value). -/
+private theorem Subst.absorbs_of_remove (S_outer S_inner : Subst) (k : TyIdentifier)
+    (h_abs : Subst.absorbs S_outer S_inner)
+    (h_not_key : Maps.find? S_inner k = none)
+    (h_not_fv : ∀ a t, Maps.find? S_inner a = some t → k ∉ LMonoTy.freeVars t) :
+    Subst.absorbs (Maps.remove S_outer k) S_inner := by
+  sorry
+
 /--
 `resolveAux` produces a substitution that absorbs the input substitution.
 This follows from the fact that each step of unification (adding `id ↦ lty`)
@@ -1824,7 +2067,147 @@ theorem resolveAux_absorbs :
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
       Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
-  sorry
+  intro e
+  induction e with
+  | const m c =>
+    intro et C Env Env' h
+    simp [resolveAux, inferConst] at h
+    split at h
+    · simp [Bind.bind, Except.bind] at h
+      obtain ⟨_, h_env⟩ := h; rw [← h_env]
+      exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+    · exact absurd h (by simp [Bind.bind, Except.bind])
+  | bvar m i =>
+    intro et C Env Env' h
+    simp [resolveAux, Bind.bind, Except.bind] at h
+  | fvar m x fty =>
+    intro et C Env Env' h
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_infer
+      obtain ⟨ty_res, Env_res⟩ := v1; simp at h
+      obtain ⟨_, h_env⟩ := h; rw [← h_env]
+      exact inferFVar_absorbs C Env x fty ty_res Env_res h_infer
+  | op m o oty =>
+    -- The op case looks up a function, calls LTy.instantiateWithCheck on its type,
+    -- and optionally LMonoTy.instantiateWithCheck + Constraints.unify for the annotation.
+    -- Absorption follows from chaining LTy_instantiateWithCheck_absorbs,
+    -- LMonoTy_instantiateWithCheck_absorbs, and unify_absorbs.
+    intro et C Env Env' h
+    sorry
+  | app m e1 e2 ih1 ih2 =>
+    intro et C Env Env' h
+    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
+    -- resolveAux C Env e1
+    split at h
+    · simp at h
+    · rename_i v1 h_res1
+      obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
+      -- resolveAux C Env1 e2
+      split at h
+      · simp at h
+      · rename_i v2 h_res2
+        obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
+        -- TEnv.genTyVar Env2
+        split at h
+        · simp at h
+        · rename_i v3 h_gen
+          obtain ⟨fresh_name, Env3⟩ := v3; dsimp at h h_gen
+          -- Constraints.unify (via mapError)
+          split at h
+          · simp at h
+          · rename_i v4 h_mapError
+            simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
+            simp [TEnv.updateSubst]
+            have h_unify := unify_of_mapError h_mapError
+            -- genTyVar preserves stateSubstInfo
+            have h_gen_subst : Env3.stateSubstInfo = Env2.stateSubstInfo :=
+              TEnv.genTyVar_subst Env2 fresh_name Env3 h_gen
+            rw [h_gen_subst] at h_unify
+            -- S.subst absorbs Env.subst (by transitivity)
+            have h_abs_chain := Subst.absorbs_trans
+              Env.stateSubstInfo.subst Env2.stateSubstInfo.subst v4.subst
+              (Subst.absorbs_trans
+                Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+                (ih1 e1t C Env Env1 h_res1)
+                (ih2 e2t C Env1 Env2 h_res2))
+              (unify_absorbs _ _ _ h_unify)
+            -- Need: (v4.subst.remove fresh_name) absorbs Env.subst
+            exact Subst.absorbs_of_remove v4.subst Env.stateSubstInfo.subst fresh_name
+              h_abs_chain sorry sorry
+  | abs m bty e ih =>
+    -- resolveAux recurses on `varOpen 0 (xv, some xty) e`, not on `e` directly.
+    -- Structural induction gives IH for `e`, not for `varOpen ... e`.
+    -- This case requires well-founded induction on sizeOf.
+    intro et C Env Env' h
+    sorry
+  | quant m qk bty tr e ih_tr ih_e =>
+    -- Same as abs: resolveAux recurses on `varOpen` applied to `e` and `tr`.
+    intro et C Env Env' h
+    sorry
+  | eq m e1 e2 ih1 ih2 =>
+    intro et C Env Env' h
+    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
+    -- resolveAux C Env e1
+    split at h
+    · simp at h
+    · rename_i v1 h_res1
+      obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
+      -- resolveAux C Env1 e2
+      split at h
+      · simp at h
+      · rename_i v2 h_res2
+        obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
+        -- Constraints.unify (via mapError)
+        split at h
+        · simp at h
+        · rename_i v3 h_mapError
+          simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
+          simp [TEnv.updateSubst]
+          have h_unify := unify_of_mapError h_mapError
+          exact Subst.absorbs_trans
+            Env.stateSubstInfo.subst Env2.stateSubstInfo.subst v3.subst
+            (Subst.absorbs_trans
+              Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+              (ih1 e1t C Env Env1 h_res1)
+              (ih2 e2t C Env1 Env2 h_res2))
+            (unify_absorbs _ _ _ h_unify)
+  | ite m c t e ih_c ih_t ih_e =>
+    intro et C Env Env' h
+    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
+    -- resolveAux C Env c
+    split at h
+    · simp at h
+    · rename_i v1 h_res_c
+      obtain ⟨ct, Env1⟩ := v1; dsimp at h h_res_c
+      -- resolveAux C Env1 t
+      split at h
+      · simp at h
+      · rename_i v2 h_res_t
+        obtain ⟨tht, Env2⟩ := v2; dsimp at h h_res_t
+        -- resolveAux C Env2 e
+        split at h
+        · simp at h
+        · rename_i v3 h_res_e
+          obtain ⟨elt, Env3⟩ := v3; dsimp at h h_res_e
+          -- Constraints.unify (via mapError)
+          split at h
+          · simp at h
+          · rename_i v4 h_mapError
+            simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
+            simp [TEnv.updateSubst]
+            have h_unify := unify_of_mapError h_mapError
+            exact Subst.absorbs_trans
+              Env.stateSubstInfo.subst Env3.stateSubstInfo.subst v4.subst
+              (Subst.absorbs_trans
+                Env.stateSubstInfo.subst Env2.stateSubstInfo.subst Env3.stateSubstInfo.subst
+                (Subst.absorbs_trans
+                  Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+                  (ih_c ct C Env Env1 h_res_c)
+                  (ih_t tht C Env1 Env2 h_res_t))
+                (ih_e elt C Env2 Env3 h_res_e))
+              (unify_absorbs _ _ _ h_unify)
 
 /--
 Upgrade lemma: if `e` has type `subst S_inner mty` and `S_outer` absorbs
