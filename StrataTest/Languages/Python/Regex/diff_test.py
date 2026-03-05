@@ -232,6 +232,16 @@ CORPUS = [
     ("a?^b",       "ba",     "match"),      # a?="", ^ fires, b matches, trailing a ok → match
     ("a?^b",       "ab",     "match"),      # no path works → no match
 
+    # | false, false => split path: both sides non-consuming, r2 contains ^, r1 has content
+    # a?^b? parses as concat(a?, concat(^, b?)); outer concat is false,false with ^ in r2
+    ("a?^b?",      "",       "fullmatch"),  # a?="", ^ fires, b?="" → match
+    ("a?^b?",      "b",      "fullmatch"),  # a?="", ^ fires, b?="b" → match
+    ("a?^b?",      "a",      "fullmatch"),  # a?="a" → ^ at 1 fails; a?="" → b?≠a → no match
+    ("a?^b?",      "ab",     "fullmatch"),  # no path → no match
+    ("a?^b?",      "",       "match"),      # a?="", ^ fires, b?="" → match
+    ("a?^b?",      "b",      "match"),      # a?="", ^ fires, b?="b" → match (trailing ok)
+    ("a?^b?",      "a",      "match"),      # a?="", ^ fires, b?="" → match (trailing a ok)
+
     ("a$b",        "ab",     "match"),  # $ in middle: unmatchable
 
     # ^ in match mode: no-op at start (match already anchors there)
@@ -440,7 +450,7 @@ CORPUS = [
     ("(abc",      "abc",  "fullmatch"),  # unmatched paren
     ("a**",       "a",    "fullmatch"),  # nothing to repeat
 
-    # Unimplemented in Strata (lookahead / lookbehind)
+    # ── Unimplemented: (lookahead / lookbehind) ───────────────────────────────---
     (r"a(?=b)",   "ab",  "match"),
     (r"a(?!b)",   "ac",  "match"),
     (r"(?<=a)b",  "ab",  "match"),
