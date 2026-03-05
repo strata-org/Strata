@@ -1060,4 +1060,44 @@ theorem TEnv.genTyVar_subst {T : LExprParams} [DecidableEq T.IDMeta]
   · simp at h
   · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
+/-- `genTyVar` produces a variable not in `knownTypeVars`. -/
+theorem TGenEnv.genTyVar_not_mem_knownTypeVars [ToFormat IDMeta]
+    (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
+    tv ∉ TContext.knownTypeVars Env.context := by
+  simp [TGenEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · rename_i h_not_in; simp at h; obtain ⟨h_tv, _⟩ := h; subst h_tv; exact h_not_in
+
+/-- `genTyVars` produces variables each not in `knownTypeVars` of the initial environment. -/
+theorem TGenEnv.genTyVars_not_mem_knownTypeVars [ToFormat IDMeta]
+    (n : Nat) (Env : TGenEnv IDMeta)
+    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    ∀ tv, tv ∈ tvs → tv ∉ TContext.knownTypeVars Env.context := by
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨h1, _⟩ := h; subst h1
+    intro tv hm; exact absurd hm List.not_mem_nil
+  | succ n ih =>
+    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_gen1
+      obtain ⟨hd, Env1⟩ := v1; simp at h h_gen1
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨tl, Env2⟩ := v2; simp at h
+        obtain ⟨h_tvs, _⟩ := h; subst h_tvs
+        have h_ctx := TGenEnv.genTyVar_context Env hd Env1 h_gen1
+        have h_hd_not := TGenEnv.genTyVar_not_mem_knownTypeVars Env hd Env1 h_gen1
+        have h_tl_not := ih Env1 tl Env2 h_rest
+        intro tv h_mem
+        cases List.mem_cons.mp h_mem with
+        | inl h_eq => subst h_eq; exact h_hd_not
+        | inr h_rest_mem => rw [h_ctx] at h_tl_not; exact h_tl_not tv h_rest_mem
+
 end Lambda
