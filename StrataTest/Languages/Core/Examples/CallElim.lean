@@ -82,11 +82,11 @@ spec {
 info:
 Obligation: double_correct
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: testProc_result
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval testCallElim callElimBugExample

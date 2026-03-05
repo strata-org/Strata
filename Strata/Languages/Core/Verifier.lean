@@ -277,32 +277,90 @@ def isPassIfReachable := passReachabilityUnknown
 def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
-def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
-  -- For cover: satisfiability sat means the cover is satisfied (pass)
-  if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
-  else if o.passAndReachable then "always true and is reachable from declaration entry"
-  else if o.alwaysFalseAndReachable then "always false and is reachable from declaration entry"
-  else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
-  else if o.unreachable then "unreachable"
-  else if o.satisfiableValidityUnknown then "can be true and is reachable from declaration entry"
-  else if o.alwaysFalseReachabilityUnknown then "always false if reached"
-  else if o.canBeFalseAndIsReachable then "can be false and is reachable from declaration entry"
-  else if o.passReachabilityUnknown then "always true if reached"
-  else "unknown"
+def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) 
+    (checkAmount : CheckAmount := .full) (checkMode : VerificationMode := .deductive) : String :=
+  -- Simplified labels for minimal check amount
+  if checkAmount == .minimal then
+    match property, checkMode with
+    | .assert, .deductive =>
+      -- Validity check only: unsat=pass, sat=fail, unknown=unknown
+      match o.validityProperty with
+      | .unsat => "pass"
+      | .sat _ => "fail"
+      | .unknown => "unknown"
+      | .err _ => "unknown"
+    | .assert, .bugFinding =>
+      -- Satisfiability check only: sat=satisfiable, unsat=fail, unknown=unknown
+      match o.satisfiabilityProperty with
+      | .sat _ => "satisfiable"
+      | .unsat => "fail"
+      | .unknown => "unknown"
+      | .err _ => "unknown"
+    | .cover, _ =>
+      -- Satisfiability check only: sat=pass, unsat=fail, unknown=unknown
+      match o.satisfiabilityProperty with
+      | .sat _ => "pass"
+      | .unsat => "fail"
+      | .unknown => "unknown"
+      | .err _ => "unknown"
+  else
+    -- Full check amount: detailed labels
+    -- Special case: unreachable assert in full mode
+    if property == .assert && o.unreachable then "pass (path not reachable)"
+    -- For cover: satisfiability sat means the cover is satisfied (pass)
+    else if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
+    else if o.passAndReachable then "always true and is reachable from declaration entry"
+    else if o.alwaysFalseAndReachable then "always false and is reachable from declaration entry"
+    else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
+    else if o.unreachable then "unreachable"
+    else if o.satisfiableValidityUnknown then "can be true and is reachable from declaration entry"
+    else if o.alwaysFalseReachabilityUnknown then "always false if reached"
+    else if o.canBeFalseAndIsReachable then "can be false and is reachable from declaration entry"
+    else if o.passReachabilityUnknown then "always true if reached"
+    else "unknown"
 
-def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert) : String :=
-  -- For cover: satisfiability sat means the cover is satisfied (pass)
-  if property == .cover && o.isSatisfiable then "✅"
-  else if o.passAndReachable then "✅"
-  else if o.alwaysFalseAndReachable then "❌"
-  else if o.canBeTrueOrFalseAndIsReachable then "🔶"
-  else if o.unreachable then
-    if property == .cover then "❌" else "⛔"
-  else if o.satisfiableValidityUnknown then "➕"
-  else if o.alwaysFalseReachabilityUnknown then "✖️"
-  else if o.canBeFalseAndIsReachable then "➖"
-  else if o.passReachabilityUnknown then "✔️"
-  else "❓"
+def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
+    (checkAmount : CheckAmount := .full) (checkMode : VerificationMode := .deductive) : String :=
+  -- Simplified emojis for minimal check amount
+  if checkAmount == .minimal then
+    match property, checkMode with
+    | .assert, .deductive =>
+      -- Validity check only: unsat=✅, sat=❌, unknown=❓
+      match o.validityProperty with
+      | .unsat => "✅"
+      | .sat _ => "❌"
+      | .unknown => "❓"
+      | .err _ => "❓"
+    | .assert, .bugFinding =>
+      -- Satisfiability check only: sat=❓ (satisfiable), unsat=❌, unknown=❓
+      match o.satisfiabilityProperty with
+      | .sat _ => "❓"  -- Different meaning: satisfiable but don't know if always true
+      | .unsat => "❌"
+      | .unknown => "❓"
+      | .err _ => "❓"
+    | .cover, _ =>
+      -- Satisfiability check only: sat=✅, unsat=❌, unknown=❓
+      match o.satisfiabilityProperty with
+      | .sat _ => "✅"
+      | .unsat => "❌"
+      | .unknown => "❓"
+      | .err _ => "❓"
+  else
+    -- Full check amount: detailed emojis
+    -- Special case: unreachable assert in full mode shows as pass
+    if property == .assert && o.unreachable then "✅"
+    -- For cover: satisfiability sat means the cover is satisfied (pass)
+    else if property == .cover && o.isSatisfiable then "✅"
+    else if o.passAndReachable then "✅"
+    else if o.alwaysFalseAndReachable then "❌"
+    else if o.canBeTrueOrFalseAndIsReachable then "🔶"
+    else if o.unreachable then
+      if property == .cover then "❌" else "⛔"
+    else if o.satisfiableValidityUnknown then "➕"
+    else if o.alwaysFalseReachabilityUnknown then "✖️"
+    else if o.canBeFalseAndIsReachable then "➖"
+    else if o.passReachabilityUnknown then "✔️"
+    else "❓"
 
 end VCOutcome
 
@@ -318,6 +376,8 @@ structure VCResult where
   outcome : Except String VCOutcome := .error "not yet computed"
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
+  checkAmount : CheckAmount := .full
+  checkMode : VerificationMode := .deductive
 
 /-- Mask outcome properties based on requested checks.
     This ensures that PE-optimized results only show the checks that were requested.
@@ -369,7 +429,7 @@ instance : ToFormat VCResult where
           else ""
         | _, _ => ""
       let prop := r.obligation.property
-      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop} {outcome.label prop}{models}"
+      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop r.checkAmount r.checkMode} {outcome.label prop r.checkAmount r.checkMode}{models}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.outcome with
@@ -492,7 +552,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
-                    verbose := options.verbose }
+                    verbose := options.verbose,
+                    checkAmount := options.checkAmount,
+                    checkMode := options.checkMode }
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
@@ -523,7 +585,8 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- If PE resolved both checks, we're done
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
         let outcome := VCOutcome.mk peSat peVal
-        let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose }
+        let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
+                                    checkAmount := options.checkAmount, checkMode := options.checkMode }
         results := results.push result
         if result.isFailure || result.isImplementationError then
           if options.verbose >= .normal then
@@ -540,7 +603,9 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
         let err := f!"SMT Encoding Error! " ++ err
         let result := { obligation,
                         outcome := .error (toString err),
-                        verbose := options.verbose }
+                        verbose := options.verbose,
+                        checkAmount := options.checkAmount,
+                        checkMode := options.checkMode }
         if options.verbose >= .normal then
           let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"

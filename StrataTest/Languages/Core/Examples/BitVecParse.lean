@@ -41,7 +41,7 @@ false
 
 Result: Obligation: bitvec64_test
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
@@ -55,11 +55,11 @@ procedure bitVecParseTest () returns ()
 info:
 Obligation: bitvec32_test
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: bitvec64_test
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify pgm

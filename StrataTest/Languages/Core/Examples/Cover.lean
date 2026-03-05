@@ -35,27 +35,27 @@ procedure Test() returns ()
 info:
 Obligation: unreachable_cover1
 Property: cover
-Result: ✖️ always false if reached
+Result: ❌ fail
 
 Obligation: unreachable_cover2
 Property: cover
-Result: ✖️ always false if reached
+Result: ❌ fail
 
 Obligation: unreachable_assert
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: reachable_cover
 Property: cover
-Result: ✅ satisfiable and reachable from declaration entry
+Result: ✅ pass
 
 Obligation: unsatisfiable_cover
 Property: cover
-Result: ✖️ always false if reached
+Result: ❌ fail
 
 Obligation: reachable_assert
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify coverPgm1 (options := .quiet)
@@ -83,15 +83,15 @@ spec {
 info:
 Obligation: ctest1
 Property: cover
-Result: ✖️ always false if reached
+Result: ❌ fail
 
 Obligation: ctest2
 Property: cover
-Result: ✅ satisfiable and reachable from declaration entry
+Result: ✅ pass
 
 Obligation: atest2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify coverPgm2 (options := .quiet)
@@ -123,7 +123,7 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ⛔ unreachable
+Result: ✅ pass (path not reachable)
 
 Obligation: unreach_cover
 Property: cover
@@ -164,7 +164,7 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ⛔ unreachable
+Result: ✅ pass (path not reachable)
 
 Obligation: unreach_cover
 Property: cover
@@ -214,19 +214,19 @@ procedure Test() returns ()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ⛔ unreachable
+Result: ✅ pass
 
 Obligation: no_rc_assert
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ unreachable
+Result: ❌ fail
 
 Obligation: no_rc_cover
 Property: cover
-Result: ✖️ always false if reached
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify reachCheckPerStmtPgm (options := Core.VerifyOptions.quiet)
@@ -290,7 +290,7 @@ procedure Test() returns ()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ⛔ unreachable
+Result: ✅ pass (path not reachable)
 
 Obligation: pe_cover_fail
 Property: cover
@@ -298,7 +298,7 @@ Result: ❌ unreachable
 
 Obligation: rc_assert
 Property: assert
-Result: ⛔ unreachable
+Result: ✅ pass (path not reachable)
 
 Obligation: rc_cover
 Property: cover

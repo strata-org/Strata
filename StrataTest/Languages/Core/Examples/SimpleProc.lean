@@ -69,15 +69,15 @@ true
 info:
 Obligation: Test_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: Test_ensures_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: Test_ensures_2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify simpleProcPgm

@@ -47,11 +47,11 @@ $__mArg0[$__kArg1] == 0
 info:
 Obligation: a
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: Update_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify advQuantPgm

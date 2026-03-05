@@ -79,39 +79,39 @@ spec {
 info:
 Obligation: registry_id_eq_val
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: count_incremented
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: value_for_id
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: (Origin_Register_Requires)id_not_in_registry
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: (Origin_GetValue_Requires)id_ge_zero
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: assert_value_of_101_calls_OptionInt..val_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: value_of_101
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: unreachable_cover
 Property: cover
-Result: ✖️ always false if reached
+Result: ❌ fail
 
 Obligation: unreachable_assert
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify safeMapPgm (options := .quiet)

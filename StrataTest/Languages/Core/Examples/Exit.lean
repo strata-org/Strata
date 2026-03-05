@@ -90,23 +90,23 @@ $__x3 <= 0
 info:
 Obligation: a1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a3
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a4
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a6
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a7
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify exitPgm

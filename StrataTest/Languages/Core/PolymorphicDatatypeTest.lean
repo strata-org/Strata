@@ -256,15 +256,15 @@ spec {
 info:
 Obligation: set_h_calls_List..head_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: headIs100
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestPolyListHavoc_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify polyListHavocPgm (options := .quiet)
@@ -308,11 +308,11 @@ spec {
 info:
 Obligation: bothCons
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestMultiInstSMT_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify multiInstSMTPgm (options := .quiet)
@@ -354,23 +354,23 @@ spec {
 info:
 Obligation: isLeft
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: notRight
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: assert_leftVal_calls_Either..l_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: leftVal
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestEitherHavoc_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify eitherHavocPgm (options := .quiet)
@@ -407,11 +407,11 @@ spec {
 info:
 Obligation: set_v_calls_Option..value_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionHavoc_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionHavocPgm (options := .quiet)

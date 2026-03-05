@@ -60,15 +60,15 @@ spec {
 info:
 Obligation: callElimAssert_n_positive_6
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 
 Obligation: output_property
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
@@ -81,27 +81,27 @@ Result: ✔️ always true if reached
 info:
 Obligation: result_correct
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 
 Obligation: output_property
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: y_value
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: z_value
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm (options := .quiet)
@@ -112,7 +112,7 @@ Result: ✔️ always true if reached
 info:
 Obligation: y_value
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
@@ -125,11 +125,11 @@ Result: ✔️ always true if reached
 info:
 Obligation: y_value
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: z_value
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm

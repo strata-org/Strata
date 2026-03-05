@@ -70,7 +70,7 @@ forall __q0 : int :: __q0 < $__x0
 
 Result: Obligation: bad
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 Model (property false): ($__x0, 0)
 
 
@@ -90,15 +90,15 @@ spec {
 info:
 Obligation: good_assert
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: good
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: bad
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 Model (property false): ($__x0, 0)
 -/
 #guard_msgs in
@@ -156,15 +156,15 @@ g(f($__x0), $__x0) < 0
 info:
 Obligation: trigger_assert
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: multi_trigger_assert
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: f_and_g
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify triggerPgm

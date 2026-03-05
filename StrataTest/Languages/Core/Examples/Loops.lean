@@ -133,39 +133,39 @@ if 0 < $__n2 then $__s8 else 0 == $__n2 * ($__n2 + 1) / 2
 info:
 Obligation: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: loop_invariant_calls_Int.SafeDiv_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: entry_invariant_0_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: entry_invariant_0_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: entry_invariant_0_2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: sum_ensures_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify gaussPgm
@@ -206,43 +206,43 @@ spec {
 info:
 Obligation: entry_invariant_0_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: entry_invariant_0_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: entry_invariant_0_2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: entry_invariant_1_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: entry_invariant_1_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_1_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_1_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify nestedPgm (options := .quiet)

@@ -135,35 +135,35 @@ true
 info:
 Obligation: new_g_value
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: old_g_property
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: (Origin_Inc_Requires)a_positive
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: (Origin_Inc_Requires)a_positive
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: return_value_lemma
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: assert_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify globalCounterPgm

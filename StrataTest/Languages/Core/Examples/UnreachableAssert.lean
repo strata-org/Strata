@@ -61,15 +61,15 @@ $__x0 == if $__z2 == false then $__x0 else $__y1
 info:
 Obligation: x_eq_y_internal
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: unreachable
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: x_eq_y
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify unreachableAssertPgm

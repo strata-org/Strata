@@ -153,35 +153,35 @@ Obligation:
 info:
 Obligation: c_0_eq_a
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: c_1_eq_a
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a0eq0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a1eq1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a0eq1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a0neq2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: bTrueEqTrue
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: mix
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify mapPgm
@@ -259,35 +259,35 @@ Obligation:
 info:
 Obligation: c_0_eq_a
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: c_1_eq_a
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a0eq0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a1eq1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a0eq1
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: a0neq2
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: bTrueEqTrue
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: mix
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify mapPgm (options := { Core.VerifyOptions.default with useArrayTheory := true })

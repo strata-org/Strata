@@ -65,7 +65,7 @@ $__g3 == 15
 
 Result: Obligation: g_eq_15_internal
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 Model (property false): ($__g3, 0)
 
 
@@ -92,15 +92,15 @@ procedure ProcCaller () returns (x : int)
 info:
 Obligation: g_gt_10_internal
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: g_lt_10
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: g_eq_15_internal
 Property: assert
-Result: ➖ can be false and is reachable from declaration entry
+Result: ❌ fail
 Model (property false): ($__g3, 0)
 -/
 #guard_msgs in

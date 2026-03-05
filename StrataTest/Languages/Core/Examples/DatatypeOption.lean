@@ -66,23 +66,23 @@ spec {
 info:
 Obligation: isNone
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: notSome
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: isSome
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: notNone
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionTesters_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionTesterPgm (options := .quiet)
@@ -124,11 +124,11 @@ spec {
 info:
 Obligation: notNone
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionHavoc_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionHavocPgm (options := .quiet)
@@ -167,11 +167,11 @@ spec {
 info:
 Obligation: exhaustive
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionExhaustive_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionExhaustivePgm (options := .quiet)
@@ -213,11 +213,11 @@ spec {
 info:
 Obligation: mutualExclusion
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionMutualExclusion_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionMutualExclusionPgm (options := .quiet)
@@ -264,15 +264,15 @@ spec {
 info:
 Obligation: noneEquality
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: someEquality
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionEquality_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionEqualityPgm (options := .quiet)
@@ -312,11 +312,11 @@ spec {
 info:
 Obligation: noneVsSome
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionInequality_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionInequalityPgm (options := .quiet)
@@ -363,15 +363,15 @@ spec {
 info:
 Obligation: valIs42
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: valIs100
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 
 Obligation: TestOptionDestructor_ensures_0
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify optionDestructorPgm (options := .quiet)
