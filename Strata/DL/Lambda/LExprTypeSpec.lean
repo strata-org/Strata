@@ -3231,6 +3231,44 @@ private theorem LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
       (h_subst_eq ▸ SubstFreshForGen.mono _ _ _ h_fresh h_mono)
   · simp at h
 
+/-- Context preservation for `LTy.instantiateWithCheck`. -/
+theorem LTy_instantiateWithCheck_context'
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    Env'.context = Env.context := by
+  simp [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_ra
+    obtain ⟨mty', Env1⟩ := v1
+    split at h
+    · simp [Pure.pure, Except.pure] at h
+      obtain ⟨_, h2⟩ := h; rw [← h2]
+      exact LTy.resolveAliases_context ty Env mty' Env1 h_ra
+    · simp at h
+
+/-- Context preservation for `LMonoTy.instantiateWithCheck`. -/
+theorem LMonoTy_instantiateWithCheck_context'
+    (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty, Env')) :
+    Env'.context = Env.context := by
+  simp [LMonoTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_inst
+    obtain ⟨instTypes, Env_mid⟩ := v1
+    split at h
+    · simp at h
+    · rename_i v2 h_ra
+      obtain ⟨mty', Env2⟩ := v2; simp at h h_ra
+      split at h
+      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+        rw [LMonoTy.resolveAliases_context _ _ mty' Env2 h_ra]
+        exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
+      · simp at h
+
 /-- Free vars of `instantiateWithCheck` output satisfy freshness for the output
     gen state, given that context type vars are fresh for the input gen state.
     Output type fvs come from: (1) context type vars — fresh by `h_ctx`, and
@@ -3263,9 +3301,9 @@ private theorem inferFVar_preserves_SubstFreshForGen
   split at h; · simp at h
   split at h; · simp at h
   rename_i v1 h_inst; obtain ⟨mty, Env1⟩ := v1; dsimp at h h_inst
-  -- ContextFreshForGen transfers to Env1: context preserved + counter increases.
-  -- (LTy_instantiateWithCheck_context is defined later in the file; sorry the derivation.)
-  have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by sorry
+  have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by
+    rw [LTy_instantiateWithCheck_context' _ C Env mty Env1 h_inst]
+    exact ContextFreshForGen.mono _ _ _ h_ctx (LTy_instantiateWithCheck_tyGen_mono _ C Env mty Env1 h_inst)
   cases fty with
   | none =>
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
@@ -3368,7 +3406,9 @@ private theorem resolveAux_preserves_SubstFreshForGen :
             h_inst h_ctx v h_ty n (Nat.le_trans
             (LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2) hn)
         | inr h_oty =>
-          have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by sorry
+          have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by
+            rw [LTy_instantiateWithCheck_context' _ C Env _ Env1 h_inst]
+            exact ContextFreshForGen.mono _ _ _ h_ctx (LTy_instantiateWithCheck_tyGen_mono _ C Env _ Env1 h_inst)
           exact LMonoTy_instantiateWithCheck_freeVars_fresh oty_val C Env1 oty_inst Env2
             h_inst2 h_ctx1 v h_oty n hn)
   | .app m e1 e2 =>
