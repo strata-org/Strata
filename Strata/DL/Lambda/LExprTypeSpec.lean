@@ -3909,9 +3909,107 @@ private theorem typeBoundVar_erase_context
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env1))
     (Env2 : TEnv T.IDMeta)
-    (h_ctx : Env2.context = Env1.context) :
+    (h_ctx : Env2.context = Env1.context)
+    (h_fresh_xv : ∀ m, m ∈ Env.context.types → Map.find? m xv = none)
+    (h_nonempty : Env.context.types ≠ []) :
     (Env2.eraseFromContext xv).context = Env.context := by
-  sorry
+  -- Step 1: eraseFromContext only touches .types
+  -- Step 2: Env2.context = Env1.context (by h_ctx)
+  -- Step 3: Env1.context from typeBoundVar = addInNewestContext on preserved context
+  -- Step 4: erase_addInNewest_fresh cancels the add
+  -- First, extract what Env1.context looks like from typeBoundVar
+  have h_types : Env1.context.types =
+      Env.context.types.addInNewest [(xv, LTy.forAll [] xty)] ∧
+      Env1.context.aliases = Env.context.aliases := by
+    -- Decompose typeBoundVar to extract what it does to context
+    revert h_fresh_xv h_nonempty h_ctx
+    -- We generalize to avoid issues with simp/subst
+    suffices ∀ Env1, typeBoundVar C Env bty = .ok (xv, xty, Env1) →
+        Env1.context.types = Env.context.types.addInNewest [(xv, .forAll [] xty)] ∧
+        Env1.context.aliases = Env.context.aliases by
+      intro h_ctx h_nonempty h_fresh_xv; exact this Env1 h
+    -- Decompose typeBoundVar to extract that Env1.context = addInNewest on Env.context
+    -- typeBoundVar does: liftGenEnv genVar >> (instantiateWithCheck|genTyVar) >> addInNewestContext
+    -- Each intermediate step preserves context, then addInNewestContext modifies types
+    intro Env1 h_tbv
+    -- typeBoundVar C Env bty =
+    --   do let (xv, Env_g) ← liftGenEnv genVar Env
+    --      let (xty, Env_mid) ← (instantiateWithCheck | genTyVar)
+    --      return (xv, xty, Env_mid.addInNewestContext [(xv, .forAll [] xty)])
+    -- We need: Env1.context.types = Env.context.types.addInNewest [...]
+    --      and: Env1.context.aliases = Env.context.aliases
+    -- liftGenEnv preserves context, instantiateWithCheck/genTyVar preserve context,
+    -- addInNewestContext modifies types.
+    --
+    -- Strategy: extract Env_mid such that Env1 = Env_mid.addInNewestContext [...] and
+    -- Env_mid.context = Env.context, then the result follows.
+    have ⟨Env_mid, h_mid_ctx, h_env1_eq⟩ : ∃ Env_mid : TEnv T.IDMeta,
+        Env_mid.context = Env.context ∧
+        Env1 = Env_mid.addInNewestContext [(xv, .forAll [] xty)] := by
+      simp only [typeBoundVar, Bind.bind, Except.bind] at h_tbv
+      -- Split on liftGenEnv result
+      generalize h_lift : liftGenEnv HasGen.genVar Env = res_lift at h_tbv
+      match res_lift with
+      | .error _ => simp at h_tbv
+      | .ok (xv_raw, Env_g) =>
+        have h_g_ctx : Env_g.context = Env.context := liftGenEnv_context Env xv_raw Env_g h_lift
+        -- Split on bty
+        -- Split on bty
+        revert h_tbv; cases bty with
+        | some bty_val =>
+          simp only []; intro h_tbv
+          generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h_tbv
+          match res_ic with
+          | .error _ => simp at h_tbv
+          | .ok (mty_ic, Env_mid) =>
+            simp [Pure.pure, Except.pure] at h_tbv
+            obtain ⟨h_xv_eq, h_xty_eq, h_env1⟩ := h_tbv
+            subst h_xv_eq; subst h_xty_eq
+            exact ⟨Env_mid,
+              (LMonoTy_instantiateWithCheck_context bty_val C Env_g mty_ic Env_mid h_ic).trans h_g_ctx,
+              h_env1.symm⟩
+        | none =>
+          simp only [Bind.bind, Except.bind]; intro h_tbv
+          generalize h_tg : TEnv.genTyVar Env_g = res_tg at h_tbv
+          match res_tg with
+          | .error _ => simp at h_tbv
+          | .ok (xtyid, Env_mid) =>
+            simp [Pure.pure, Except.pure] at h_tbv
+            obtain ⟨h_xv_eq, h_xty_eq, h_env1⟩ := h_tbv
+            subst h_xv_eq; subst h_xty_eq
+            exact ⟨Env_mid,
+              (TEnv.genTyVar_context Env_g xtyid Env_mid h_tg).trans h_g_ctx,
+              h_env1.symm⟩
+    subst h_env1_eq
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_mid_ctx ⊢
+    constructor
+    · -- types: addInNewest on equal types gives equal result
+      rw [show Env_mid.genEnv.context.types = Env.genEnv.context.types from
+        congrArg TContext.types h_mid_ctx]
+    · -- aliases
+      exact congrArg TContext.aliases h_mid_ctx
+  -- Now compute (eraseFromContext Env2 xv).context
+  have h_erase_types : (Env2.eraseFromContext xv).context.types = Env1.context.types.erase xv := by
+    show (TEnv.eraseFromContext Env2 xv).context.types = _
+    unfold TEnv.eraseFromContext TEnv.updateContext TEnv.context
+    simp; exact congrArg (Maps.erase · xv) (congrArg TContext.types h_ctx)
+  have h_erase_aliases : (Env2.eraseFromContext xv).context.aliases = Env1.context.aliases := by
+    show (TEnv.eraseFromContext Env2 xv).context.aliases = _
+    unfold TEnv.eraseFromContext TEnv.updateContext TEnv.context
+    simp; exact congrArg TContext.aliases h_ctx
+  -- Combine
+  obtain ⟨h_ty, h_al⟩ := h_types
+  have h_cancel : Env1.context.types.erase xv = Env.context.types := by
+    rw [h_ty]
+    cases h_types_ne : Env.context.types with
+    | nil => exact absurd h_types_ne h_nonempty
+    | cons m rest =>
+      exact Maps.erase_addInNewest_fresh xv _ (fun s hs => h_fresh_xv s (h_types_ne ▸ hs))
+  have h1 : (Env2.eraseFromContext xv).context.types = Env.context.types := by
+    rw [h_erase_types, h_cancel]
+  have h2 : (Env2.eraseFromContext xv).context.aliases = Env.context.aliases := by
+    rw [h_erase_aliases, h_al]
+  exact TContext.mk.injEq .. ▸ ⟨h1, h2⟩
 
 /-- `resolveAux` preserves the context. -/
 theorem resolveAux_context :
@@ -3971,6 +4069,8 @@ theorem resolveAux_context :
                 rw [varOpen_sizeOf]; simp [LExpr.sizeOf])
             et_ C Env1 Env2 h_ra
         exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env2 h_ctx_ra
+          (by sorry) -- xv is fresh in Env.context
+          (by sorry) -- Env.context.types is non-empty
   | .quant m qk bty triggers body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3994,7 +4094,7 @@ theorem resolveAux_context :
                     rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega)
                 triggersT C Env2 Env3 h_ra2
             exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env3
-              (h_ctx3.trans h_ctx2)
+              (h_ctx3.trans h_ctx2) (by sorry) (by sorry)
           · -- ety != bool is false → contradicts the if
             simp at h
   | .eq m e1 e2 =>
