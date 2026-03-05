@@ -27,17 +27,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ "$incremental" = true ]; then
-    command="pyAnalyzeLaurel --incremental"
-    expected_dir="expected_incremental"
-    skip_tests=""
-elif [ "$mode" = "laurel" ]; then
+if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
     skip_tests="test_datetime"
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
+    skip_tests=""
+fi
+
+if [ "$incremental" = true ]; then
+    command="$command --incremental"
+    expected_dir="expected_incremental"
     skip_tests=""
 fi
 
