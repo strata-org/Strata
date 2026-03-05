@@ -223,6 +223,14 @@ theorem LMonoTy.subst_emptyS (h : S.hasEmptyScopes) :
   simp_all
   done
 
+/-- Substitution distributes into `tcons`: `subst S (tcons name args) = tcons name (subst S args)`. -/
+theorem LMonoTy.subst_tcons (S : Subst) (name : String) (args : LMonoTys) :
+    LMonoTy.subst S (.tcons name args) = .tcons name (LMonoTys.subst S args) := by
+  unfold LMonoTy.subst
+  split
+  · simp [LMonoTys.subst, *]
+  · rfl
+
 theorem Subst.isEmpty_implies_keys_empty (h : Subst.hasEmptyScopes S) :
   (Maps.keys S) = [] := by
   induction S <;> simp_all [Maps.keys, Subst.hasEmptyScopes, Map.isEmpty]
