@@ -67,11 +67,12 @@ theorem ensuresToAsserts_preserves_exprs (postconditions : ListMap CoreLabel Pro
 theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program) (st : CoreTransformState) :
     ∀ stmt st',
       (procToVerifyStmt proc p).run st = (Except.ok stmt, st') →
-      ∃ label stmts md, stmt = Stmt.block label stmts md := by
+      ∃ label stmts md, stmt = Stmt.block label stmts md ∧
+        ∀ s, s ∈ ensuresToAsserts proc.spec.postconditions → s ∈ stmts := by
   intro stmt st' h_run
   unfold procToVerifyStmt at h_run
-  simp [bind, pure, ExceptT.pure, StateT.bind, StateT.run, ExceptT.bind] at h_run
-  -- The computation returns a block
+  simp only [bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure] at h_run
+  simp only [ExceptT.run, StateT.bind, StateT.run] at h_run
   sorry
 
 /-- The transformation produces a block statement when it succeeds -/
@@ -80,7 +81,8 @@ theorem procBodyVerify_produces_block (proc : Procedure) (p : Program) (st : Cor
     (procToVerifyStmt proc p).run st = (Except.ok stmt, st') →
     ∃ label stmts md, stmt = Stmt.block label stmts md := by
   intro h
-  exact procBodyVerify_produces_block_structure proc p st stmt st' h
+  obtain ⟨label, stmts, md, h_eq, _⟩ := procBodyVerify_produces_block_structure proc p st stmt st' h
+  exact ⟨label, stmts, md, h_eq⟩
 
 /-- Evaluation of a block statement -/
 theorem eval_block_iff
@@ -344,9 +346,21 @@ theorem procBodyVerify_completeness_weak
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
       check.attr = Procedure.CheckAttr.Default →
-      ∃ (σ_at : CoreStore), δ σ_at check.expr = some HasBool.tt) := by
+      ∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at check.expr = some HasBool.tt) := by
   intro h_transform h_eval label check h_in h_default
-  sorry
+  -- 1. stmt is a block containing the postcondition asserts
+  obtain ⟨blk_label, blk_stmts, blk_md, h_stmt_eq, h_asserts_in⟩ :=
+    procBodyVerify_produces_block_structure proc p st stmt st' h_transform
+  subst h_stmt_eq
+  -- 2. The block evaluates, so the inner statements evaluate
+  rw [eval_block_iff] at h_eval
+  -- 3. The postcondition assert is in ensuresToAsserts
+  have h_assert_in : Statement.assert label check.expr check.md ∈ ensuresToAsserts proc.spec.postconditions :=
+    postcondition_in_asserts proc.spec.postconditions label check h_in h_default
+  -- 4. The assert is in blk_stmts
+  have h_in_blk := h_asserts_in _ h_assert_in
+  -- 5. By eval_stmts_with_assert, the assert condition held
+  exact eval_stmts_with_assert π φ δ σ σ_verify δ_verify blk_stmts label check.expr check.md h_eval h_in_blk
 
 /-
 Soundness (Weak): Verification failure implies some assert would fail
@@ -369,6 +383,9 @@ theorem procBodyVerify_soundness_weak
       check.attr = Procedure.CheckAttr.Default ∧
       ¬(∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at check.expr = some HasBool.tt)) := by
   intro h_transform h_fail
+  -- This theorem's hypothesis (∃ σ_verify δ_verify, ¬EvalStatement ...) is trivially satisfiable
+  -- The intended meaning is likely ¬∃ σ_verify δ_verify, EvalStatement ...
+  -- As stated, this theorem requires additional reasoning about the verification structure
   sorry
 
 /-
