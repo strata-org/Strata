@@ -78,7 +78,7 @@ true
 info:
 Obligation: post
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify MinPgm

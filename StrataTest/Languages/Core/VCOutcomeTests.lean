@@ -96,7 +96,7 @@ Sat:sat|Val:sat 🔶 can be both true and false and is reachable from declaratio
 
 /--
 info:  isPass isAlwaysTrue
-Sat:unsat|Val:unsat ⛔ unreachable, Unreachable: path condition is contradictory, SARIF: Deductive level: warning, BugFinding level: warning
+Sat:unsat|Val:unsat ✅ pass (path not reachable), Unreachable: path condition is contradictory, SARIF: Deductive level: warning, BugFinding level: warning
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome .unsat .unsat) .unreachable
