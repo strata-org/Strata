@@ -237,22 +237,17 @@ theorem eval_stmt_deterministic
   | ite_true_sem h_true1 _ h_then1 =>
     cases h2 with
     | ite_true_sem h_true2 _ h_then2 =>
-      -- Both branches took the true path
-      -- Use determinism of block evaluation
-      sorry
+      exact eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_then1 h_then2
     | ite_false_sem h_false _ _ =>
-      -- Contradiction: δ σ c can't be both some tt and some ff
       rw [h_true1] at h_false
       contradiction
   | ite_false_sem h_false1 _ h_else1 =>
     cases h2 with
     | ite_true_sem h_true _ _ =>
-      -- Contradiction
       rw [h_false1] at h_true
       contradiction
     | ite_false_sem h_false2 _ h_else2 =>
-      -- Both took false path
-      sorry
+      exact eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_else1 h_else2
   | funcDecl_sem =>
     cases h2 with
     | funcDecl_sem =>
@@ -267,10 +262,8 @@ theorem eval_stmts_deterministic
     (σ1 δ1 σ2 δ2 : _) :
     EvalStatements π φ δ σ stmts σ1 δ1 →
     EvalStatements π φ δ σ stmts σ2 δ2 →
-    σ1 = σ2 ∧ δ1 = δ2 := by
-  intro h1 h2
-  -- Follows from eval_stmt_deterministic by induction on the list
-  sorry
+    σ1 = σ2 ∧ δ1 = δ2 :=
+  eval_block_deterministic π φ δ σ stmts σ1 δ1 σ2 δ2
 
 /-
 === Main Correctness Theorems ===
