@@ -3339,7 +3339,50 @@ private theorem typeBoundVar_preserves_SubstFreshForGen
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
     (h_fresh : SubstFreshForGen Env.stateSubstInfo Env.genEnv.genState) :
     SubstFreshForGen Env'.stateSubstInfo Env'.genEnv.genState := by
-  sorry
+  -- Decompose typeBoundVar: liftGenEnv genVar → match bty → addInNewestContext
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  split at h
+  · contradiction
+  · rename_i genResult h_gen
+    -- liftGenEnv preserves stateSubstInfo
+    have h_gen_subst : genResult.snd.stateSubstInfo = Env.stateSubstInfo := by
+      split at h_gen
+      · contradiction
+      · have := Except.ok.inj h_gen; rw [← this]
+    -- liftGenEnv genVar: tyGen is monotone
+    have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+      split at h_gen
+      · contradiction
+      · rename_i _ _ h_genVar
+        have := Except.ok.inj h_gen; rw [← this]; simp
+        exact _root_.Lambda.HasGen.genVar_tyGen_mono Env.genEnv _ _ h_genVar
+    split at h
+    · -- bty = some bty_val
+      split at h
+      · contradiction
+      · rename_i _ bty_mty _ _ Env_inst h_inst
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        -- addInNewestContext only changes context, not subst or genState
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        -- LMonoTy.instantiateWithCheck preserves SubstFreshForGen
+        exact LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
+          bty_mty C genResult.snd _ _ h_inst
+          (h_gen_subst ▸ SubstFreshForGen.mono _ _ _ h_fresh h_gen_tyGen)
+    · -- bty = none
+      split at h
+      · contradiction
+      · rename_i v1 h_genTy
+        obtain ⟨xtyid, Env1⟩ := v1
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        -- addInNewestContext only changes context, not subst or genState
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        -- genTyVar preserves stateSubstInfo and increments counter
+        have h_subst := TEnv.genTyVar_subst _ xtyid Env1 h_genTy
+        rw [h_subst, h_gen_subst]
+        exact SubstFreshForGen.mono _ _ _ h_fresh
+          (by have := genTyVar_tyGen _ xtyid Env1 h_genTy; omega)
 
 /-- `resolveAux` preserves the `SubstFreshForGen` invariant. -/
 private theorem resolveAux_preserves_SubstFreshForGen :
