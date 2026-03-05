@@ -560,43 +560,28 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   let result := resolve program
   let (program, model) := (result.program, result.model)
   let mut _resolutionDiags := result.errors
-  -- dbg_trace "=== Before validateDiamondFieldAccesses ==="
-  -- dbg_trace "model: {repr model}"
   let diamondErrors := validateDiamondFieldAccesses model program
 
-  -- dbg_trace "=== Model before heapParameterization ==="
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  -- dbg_trace "===  Program after heapParameterization ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   _resolutionDiags := _resolutionDiags ++ result.errors
 
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   _resolutionDiags := _resolutionDiags ++ result.errors
-  -- dbg_trace "===  Program after typeHierarchyTransform ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
-  -- dbg_trace "================================="
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   _resolutionDiags := _resolutionDiags ++ result.errors
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
   -- dbg_trace "================================="
   let program := liftExpressionAssignments model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   _resolutionDiags := _resolutionDiags ++ result.errors
-  -- dbg_trace "===  Program after liftExpressionAssignments ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace s!"resolutionDiags {repr resolutionDiags}"
-  -- dbg_trace "================================="
 
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   -- External procedures are completely ignored (not translated to Core).
@@ -635,16 +620,13 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
     .error allErrors.toArray
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
-  -- Filter out the Field and TypeTag opaque types. These are only in the prelude to satisfy resolution.
-  -- The prelude is now prepended during HeapParameterization, so no separate preludeDecls needed.
-  let preludeDecls : List Core.Decl := []
-
   -- Translate Laurel datatype definitions to Core datatype declarations
   let laurelDatatypeDecls := program.types.filterMap fun td => match td with
     | .Datatype dt => some (translateDatatypeDefinition model dt)
     | _ => none
   let program := {
-    decls := laurelDatatypeDecls ++ preludeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls }
+    decls := laurelDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
+  }
 
   -- dbg_trace "=== Generated Strata Core Program ==="
   -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
