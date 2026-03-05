@@ -281,23 +281,24 @@ def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
   | .ok ast =>
     let mkConcat a b := mkApp () (.op () reConcatFunc.name none) [a, b]
     let mkUnion  a b := mkApp () (.op () reUnionFunc.name none)  [a, b]
-    -- dotStar: passed with atStart=false, atEnd=false since anychar ignores both.
+    -- dotStar: passed with `atStart=false`, `atEnd=false` since `anychar`
+    -- ignores both.
     let dotStar := RegexAST.toCore (.star .anychar) false false
-    -- We compute toCore(ast, atStart, atEnd) for each combination of anchor
-    -- activation and union the results.  When ^ is present, the atStart=false
-    -- variants yield unmatchable (^ with atStart=false → re.none()), so those
-    -- union branches vanish.  Likewise for $ and atEnd=false.  This correctly
+    -- We compute `toCore(ast, atStart, atEnd)` for each combination of anchor
+    -- activation and union the results.  When `^` is present, the `atStart=false`
+    -- variants yield unmatchable (`^` with `atStart=false` → `re.none()`), so
+    -- those union branches vanish.  Likewise for `$` and `atEnd=false`.  This
     -- prevents anchors from being "swallowed" by a prepended/appended dotStar.
     let result := match mode with
     | .fullmatch => RegexAST.toCore ast true true
     | .match =>
-        -- atStart always true (match anchors at string start).
-        -- union: (1) $ fires → no trailing content; (2) $ absent → trailing .* .
+        -- `atStart` always true (match anchors at string start).
+        -- union: (1) `$` fires → no trailing content; (2) `$` absent → trailing .* .
         let core_tt := RegexAST.toCore ast true true
         let core_tf := RegexAST.toCore ast true false
         mkUnion core_tt (mkConcat core_tf dotStar)
     | .search =>
-        -- Four combinations of (^ active, $ active).
+        -- Four combinations of (`^` active, `$` active).
         let core_tt := RegexAST.toCore ast true  true
         let core_tf := RegexAST.toCore ast true  false
         let core_ft := RegexAST.toCore ast false true
