@@ -261,7 +261,8 @@ def resolveDispatch (ctx : TranslationContext)
 
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
-  ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName || ctx.preludeFunctions.contains funcName
+  ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName || ctx.preludeFunctions.contains funcName ||
+  ctx.compositeTypes.any (fun ct => ct.name == funcName)
 
 mutual
 
