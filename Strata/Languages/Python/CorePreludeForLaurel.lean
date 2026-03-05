@@ -76,7 +76,7 @@ type Datetime;
 type Datetime_base;
 type DictStrAny;
 type ListDictStrAny;
-//add bytes so we dont need to update expect files. the real fix is to turn off verification of this file...........................................
+
 function Timedelta_mk(days : int, seconds : int, microseconds : int): int;
 function Timedelta_get_days(timedelta : int) : int;
 function Timedelta_get_seconds(timedelta : int) : int;
@@ -117,7 +117,7 @@ axiom (forall s1:StrOrNone, s2: StrOrNone :: {strOrNone_toObject(s1), strOrNone_
         strOrNone_toObject(s1) != strOrNone_toObject(s2));
 axiom (forall s : StrOrNone :: {StrOrNone..isStrOrNone_mk_str(s)}
         StrOrNone..isStrOrNone_mk_str(s) ==>
-        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone..str_val(s)));
+        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone..str_val!(s)));
 
 // Timedelta axioms
 axiom [Timedelta_deconstructors]:
@@ -161,13 +161,13 @@ procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns
 spec {
   requires [req_name_is_foo]: req_name == "foo";
   requires [req_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
+  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val!(opt_name) == "bar") else true);
   ensures [ensures_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 }
 {
   assert [assert_name_is_foo]: req_name == "foo";
   assert [assert_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val(opt_name) == "bar") else true);
+  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val!(opt_name) == "bar") else true);
   assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
 };
 

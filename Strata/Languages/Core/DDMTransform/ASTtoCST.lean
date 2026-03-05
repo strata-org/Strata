@@ -261,9 +261,14 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
         dt.constrs.flatMap (fun c => c.args.map
                               (fun (id, _) =>
                                 Lambda.destructorFuncName dt id))
+    let unsafeDestructorNames :=
+        dt.constrs.flatMap (fun c => c.args.map
+                              (fun (id, _) =>
+                                Lambda.unsafeDestructorFuncName dt id))
     modify (·.addGlobalFreeVars (constrNames.toArray ++
                            testerNames.toArray ++
-                           destructorNames.toArray))
+                           destructorNames.toArray ++
+                           unsafeDestructorNames.toArray))
 
   let processDatatype (dt : Lambda.LDatatype Visibility) :
       ToCSTM M (Command M) := do
@@ -523,6 +528,10 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | "Int.SafeDiv" => pure (.safediv_expr default ty arg1 arg2)
   | "Int.Mod" => pure (.mod_expr default ty arg1 arg2)
   | "Int.SafeMod" => pure (.safemod_expr default ty arg1 arg2)
+  | "Int.DivT" => pure (.divt_expr default ty arg1 arg2)
+  | "Int.SafeDivT" => pure (.safedivt_expr default ty arg1 arg2)
+  | "Int.ModT" => pure (.modt_expr default ty arg1 arg2)
+  | "Int.SafeModT" => pure (.safemodt_expr default ty arg1 arg2)
   | "Int.Le" | "Real.Le" => pure (.le default ty arg1 arg2)
   | "Int.Lt" | "Real.Lt" => pure (.lt default ty arg1 arg2)
   | "Int.Ge" | "Real.Ge" => pure (.ge default ty arg1 arg2)
@@ -617,10 +626,10 @@ partial def lexprToExpr {M} [Inhabited M]
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
-  | .abs _ _ _ => do
+  | .abs _ _ _ _ => do
     ToCSTM.logError "lexprToExpr" "lambda not supported in CoreDDM" ""
     pure (.btrue default)  -- Default to true literal
-  | .quant _ qkind ty trigger body =>
+  | .quant _ qkind _ ty trigger body =>
     lquantToExpr qkind ty trigger body (qLevel + 1)
 
 /-- Extract trigger patterns from Lambda's trigger expression representation -/
@@ -1099,7 +1108,7 @@ private def extractNames (exprs : List Core.Expression.Expr) :
     | .app _ f arg => extractFromExpr f ++ extractFromExpr arg
     | .ite _ c t f => extractFromExpr c ++ extractFromExpr t ++ extractFromExpr f
     | .eq _ e1 e2 => extractFromExpr e1 ++ extractFromExpr e2
-    | .quant _ _ _ trigger body => extractFromExpr trigger ++ extractFromExpr body
+    | .quant _ _ _ _ trigger body => extractFromExpr trigger ++ extractFromExpr body
     | _ => #[]
   exprs.foldl (fun acc expr => acc ++ extractFromExpr expr) #[]
 
