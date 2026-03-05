@@ -235,10 +235,11 @@ def withScope (action : ResolveM α) : ResolveM α := do
 
 /-! ## AST traversal (Phase 1) -/
 
-mutual
 
-partial def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
-  let val' ← match ty.val with
+def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
+  match ty with
+  | WithMetadata.mk val _ =>
+  let val' ← match val with
   | .UserDefined ref =>
     let ref' ← resolveRef ref ty.md
     pure (.UserDefined ref')
@@ -265,12 +266,14 @@ partial def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | other => pure other
   return ⟨val', ty.md⟩
 
-partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
-  let val' ← match expr.val with
+def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
+  match _: exprMd with
+  | WithMetadata.mk expr md =>
+  let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
     let cond' ← resolveStmtExpr cond
     let thenBr' ← resolveStmtExpr thenBr
-    let elseBr' ← elseBr.mapM resolveStmtExpr
+    let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     pure (.IfThenElse cond' thenBr' elseBr')
   | .Block stmts label =>
     withScope do
@@ -278,24 +281,24 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
       pure (.Block stmts' label)
   | .LocalVariable name ty init =>
     let ty' ← resolveHighType ty
-    let init' ← init.mapM resolveStmtExpr
+    let init' ← init.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     let name' ← defineName name (.var name ty')
     pure (.LocalVariable name' ty' init')
   | .While cond invs dec body =>
     let cond' ← resolveStmtExpr cond
-    let invs' ← invs.mapM resolveStmtExpr
-    let dec' ← dec.mapM resolveStmtExpr
+    let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
+    let dec' ← dec.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     let body' ← resolveStmtExpr body
     pure (.While cond' invs' dec' body')
   | .Exit target => pure (.Exit target)
   | .Return val => do
-    let val' ← val.mapM resolveStmtExpr
+    let val' ← val.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     pure (.Return val')
   | .LiteralInt v => pure (.LiteralInt v)
   | .LiteralBool v => pure (.LiteralBool v)
   | .LiteralString v => pure (.LiteralString v)
   | .Identifier ref =>
-    let ref' ← resolveRef ref expr.md
+    let ref' ← resolveRef ref md
     pure (.Identifier ref')
   | .Assign targets value =>
     let targets' ← targets.mapM resolveStmtExpr
@@ -303,22 +306,22 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.Assign targets' value')
   | .FieldSelect target fieldName =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName expr.md
+    let fieldName' ← resolveFieldRef target' fieldName md
     pure (.FieldSelect target' fieldName')
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName expr.md
+    let fieldName' ← resolveFieldRef target' fieldName md
     let newVal' ← resolveStmtExpr newVal
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
-    let callee' ← resolveRef callee expr.md
+    let callee' ← resolveRef callee md
     let args' ← args.mapM resolveStmtExpr
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
     let args' ← args.mapM resolveStmtExpr
     pure (.PrimitiveOp op args')
   | .New ref =>
-    let ref' ← resolveRef ref expr.md
+    let ref' ← resolveRef ref md
     pure (.New ref')
   | .This => pure .This
   | .ReferenceEquals lhs rhs =>
@@ -335,7 +338,7 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.IsType target' ty')
   | .InstanceCall target callee args =>
     let target' ← resolveStmtExpr target
-    let callee' ← resolveRef callee expr.md
+    let callee' ← resolveRef callee md
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
   | .Forall param body =>
@@ -375,9 +378,9 @@ partial def resolveStmtExpr (expr : StmtExprMd) : ResolveM StmtExprMd := do
   | .Abstract => pure .Abstract
   | .All => pure .All
   | .Hole => pure .Hole
-  return ⟨val', expr.md⟩
-
-end
+  return ⟨val', md⟩
+  termination_by exprMd
+  decreasing_by all_goals term_by_mem
 
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
