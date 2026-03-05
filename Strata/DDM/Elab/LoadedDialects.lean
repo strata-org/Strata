@@ -93,7 +93,7 @@ def ofDialects! (ds : Array Dialect) : LoadedDialects :=
 
 end LoadedDialects
 
-abbrev LoadDialectCallback := LoadedDialects → DialectName → BaseIO (LoadedDialects × Except String Dialect)
+abbrev LoadDialectCallback := DialectName → BaseIO (Except String Dialect)
 
 end Elab
 
@@ -106,14 +106,31 @@ The dialect file mapping maintains a mapping from dialect names to the
 file to read for loading this dialect.
 
 It is used to identify where to find dialects that have not yet been
-loaded into `LoadedDialects`.
+loaded into `LoadedDialects`. It also holds a mutable reference to
+the `LoadedDialects` that is updated as dialects are loaded.
 
-The general principal of the map is
+This structure is not safe for concurrent use by multiple threads,
+as concurrent dialect loading could produce conflicting updates to
+the shared `LoadedDialects` reference.
 -/
 structure DialectFileMap where
   map : Std.HashMap DialectName (IO.FS.SystemTime × DialectFileMap.Encoding × System.FilePath) := {}
+  /-- Mutable reference to loaded dialects. -/
+  loaded : IO.Ref Elab.LoadedDialects
 
 namespace DialectFileMap
+
+def new (preloaded : Elab.LoadedDialects) : BaseIO DialectFileMap := do
+  let ref ← IO.mkRef preloaded
+  return { loaded := ref }
+
+def getLoaded (fm : DialectFileMap) : BaseIO Elab.LoadedDialects :=
+  fm.loaded.get
+
+def modifyLoaded (fm : DialectFileMap)
+    (f : Elab.LoadedDialects → Elab.LoadedDialects)
+    : BaseIO Unit :=
+  fm.loaded.modify f
 
 def strata_dialect_ext : String := ".dialect.st"
 
@@ -130,7 +147,7 @@ def addEntry (m : DialectFileMap) (stem : DialectName) (enc : Encoding) (path : 
     match ← path.metadata |>.toBaseIO with
     | .error _ => return m
     | .ok md => pure md.modified
-  pure <| {
+  pure <| { m with
     map := m.map.alter stem fun o =>
       let isNewer :=
             match o with
@@ -157,8 +174,8 @@ def add (m : DialectFileMap) (dir : System.FilePath) : EIO String DialectFileMap
         let _ ← IO.eprintln s!"Skipping {dir / entry.fileName}" |>.toBaseIO
       pure m
 
-def ofDirs (dirs : Array System.FilePath) : EIO String DialectFileMap :=
-  dirs.foldlM (init := {}) fun m dir => m.add dir
+def ofDirs (dirs : Array System.FilePath) (init : DialectFileMap) : EIO String DialectFileMap :=
+  dirs.foldlM (init := init) fun m dir => m.add dir
 
 def findPath (m : DialectFileMap) (name : DialectName) : Option System.FilePath :=
   match m.map[name]? with
