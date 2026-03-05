@@ -325,6 +325,24 @@ theorem Maps.mem_keys_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
       · simp [@Map.mem_keys_of_mem_keys_remove _ _ _ m k1 k2 (by assumption)]
       · simp_all
 
+theorem Maps.mem_keys_remove_of_ne [DecidableEq α] [BEq (Map α β)]
+    (ms : Maps α β) (k a : α)
+    (h_mem : a ∈ Maps.keys ms) (h_ne : a ≠ k) :
+    a ∈ Maps.keys (Maps.remove ms k) := by
+  induction ms with
+  | nil => simp [Maps.keys] at h_mem
+  | cons m mrest ih =>
+    simp [Maps.keys] at h_mem
+    simp [Maps.remove]
+    split <;> simp [Maps.keys]
+    · cases h_mem with
+      | inl h => left; exact h
+      | inr h => right; exact ih h
+    · cases h_mem with
+      | inl h =>
+        left; exact Map.mem_keys_remove_of_ne m k a h h_ne
+      | inr h => right; exact ih h
+
 theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
   (ms : Maps α β) (k : α) (v : β) (h : v ∈ (Maps.remove ms k).values) :
   v ∈ ms.values := by
