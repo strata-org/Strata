@@ -939,16 +939,6 @@ theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
     simp only [Except.ok.injEq] at h; subst h
     exact unifyCore_absorbs constraints S_old relS h_core
 
-/--
-Multi-constraint unification: if `Constraints.unify [(ty1, ty2), (ty3, ty4)] S_old = .ok S_new`,
-then both pairs are made equal under `S_new.subst`.
--/
-theorem unify_makes_equal₂ (ty1 ty2 ty3 ty4 : LMonoTy) (S_old S_new : SubstInfo)
-    (h : Constraints.unify [(ty1, ty2), (ty3, ty4)] S_old = .ok S_new) :
-    LMonoTy.subst S_new.subst ty1 = LMonoTy.subst S_new.subst ty2 ∧
-    LMonoTy.subst S_new.subst ty3 = LMonoTy.subst S_new.subst ty4 := by
-  sorry
-
 /-!
 ### Context preservation helpers
 
@@ -1483,6 +1473,61 @@ theorem unify_makes_equal (ty1 ty2 : LMonoTy) (S_old S_new : SubstInfo)
   obtain ⟨relS, h_one, h_eq⟩ := unify_singleton_eq_unifyOne ty1 ty2 S_old S_new h
   subst h_eq
   exact unifyOne_sound (ty1, ty2) S_old relS h_one
+
+/--
+Multi-constraint unification: if `Constraints.unify [(ty1, ty2), (ty3, ty4)] S_old = .ok S_new`,
+then both pairs are made equal under `S_new.subst`.
+-/
+theorem unify_makes_equal₂ (ty1 ty2 ty3 ty4 : LMonoTy) (S_old S_new : SubstInfo)
+    (h : Constraints.unify [(ty1, ty2), (ty3, ty4)] S_old = .ok S_new) :
+    LMonoTy.subst S_new.subst ty1 = LMonoTy.subst S_new.subst ty2 ∧
+    LMonoTy.subst S_new.subst ty3 = LMonoTy.subst S_new.subst ty4 := by
+  -- Decompose Constraints.unify into unifyCore
+  simp only [Constraints.unify, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i relS_final h_core
+    simp only [Except.ok.injEq] at h; subst h
+    -- Decompose unifyCore [(ty1,ty2), (ty3,ty4)] S_old
+    simp only [Constraints.unifyCore, Bind.bind, Except.bind, Except.mapError] at h_core
+    revert h_core
+    generalize h_one1 : Constraint.unifyOne (ty1, ty2) S_old = res1
+    intro h_core
+    match res1 with
+    | .error e => simp at h_core
+    | .ok relS1 =>
+      simp at h_core
+      -- Decompose unifyCore [(ty3,ty4)] relS1.newS
+      revert h_core
+      generalize h_one2 : Constraint.unifyOne (ty3, ty4) relS1.newS = res2
+      intro h_core
+      match res2 with
+      | .error e => simp at h_core
+      | .ok relS2 =>
+        simp at h_core
+        -- After unifyCore [] on relS2.newS, the result is unchanged
+        have h_final_eq : relS_final.newS = relS2.newS :=
+          congrArg ValidSubstRelation.newS h_core.symm
+        -- unifyOne_sound on each pair
+        have h_eq1 : LMonoTy.subst relS1.newS.subst ty1 =
+            LMonoTy.subst relS1.newS.subst ty2 :=
+          unifyOne_sound (ty1, ty2) S_old relS1 h_one1
+        have h_eq2 : LMonoTy.subst relS2.newS.subst ty3 =
+            LMonoTy.subst relS2.newS.subst ty4 :=
+          unifyOne_sound (ty3, ty4) relS1.newS relS2 h_one2
+        -- Lift h_eq1 to the final substitution via absorption
+        have h_abs : Subst.absorbs relS2.newS.subst relS1.newS.subst :=
+          unifyOne_absorbs' (ty3, ty4) relS1.newS relS2 h_one2
+        constructor
+        · rw [h_final_eq]
+          calc LMonoTy.subst relS2.newS.subst ty1
+              = LMonoTy.subst relS2.newS.subst (LMonoTy.subst relS1.newS.subst ty1) :=
+                (LMonoTy.subst_absorbs relS2.newS.subst relS1.newS.subst ty1 h_abs).symm
+            _ = LMonoTy.subst relS2.newS.subst (LMonoTy.subst relS1.newS.subst ty2) := by
+                rw [h_eq1]
+            _ = LMonoTy.subst relS2.newS.subst ty2 :=
+                LMonoTy.subst_absorbs relS2.newS.subst relS1.newS.subst ty2 h_abs
+        · rw [h_final_eq]; exact h_eq2
 
 /-- Removing a key from a substitution preserves freshness of all keys. -/
 theorem Subst.allKeysFresh_of_remove
