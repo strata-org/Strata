@@ -76,15 +76,8 @@ type Datetime;
 type Datetime_base;
 type DictStrAny;
 type ListDictStrAny;
-
-datatype ListStr () {
-  ListStr_nil(),
-  ListStr_cons(head: string, tail: ListStr)
-};
-
-function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
-  ((days * 3600 * 24) + seconds) * 1000000 + microseconds
-}
+//..................................................................................................................................................
+function Timedelta_mk(days : int, seconds : int, microseconds : int): int;
 function Timedelta_get_days(timedelta : int) : int;
 function Timedelta_get_seconds(timedelta : int) : int;
 function Timedelta_get_microseconds(timedelta : int) : int;
@@ -200,7 +193,7 @@ def coreOnlyPreludeForLaurel : List Core.Decl :=
     "None", "Object", "Object_len", "inheritsFrom",
     "Error", "ExceptOrNone", "IntOrNone", "StrOrNone",
     "strOrNone_toObject",
-    "Datetime", "Datetime_base", "DictStrAny", "ListDictStrAny", "ListStr",
+    "Datetime", "Datetime_base", "DictStrAny", "ListDictStrAny",
     "Timedelta_mk", "Timedelta_get_days", "Timedelta_get_seconds", "Timedelta_get_microseconds",
     "Datetime_get_base", "Datetime_get_timedelta", "Datetime_add", "Datetime_lt",
     "datetime_to_str"

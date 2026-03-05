@@ -440,11 +440,10 @@ def pyAnalyzeLaurelCommand : Command where
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok (coreProgramDecls, modifiesDiags) =>
+          let coreProgram := { decls := coreProgramDecls.decls ++ Strata.Python.coreOnlyPreludeForLaurel }
           if verbose then
             IO.println "\n==== Core Program ===="
             IO.print (coreProgramDecls, modifiesDiags)
-
-          let coreProgram := { decls := coreProgramDecls.decls ++ Strata.Python.coreOnlyPreludeForLaurel }
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>
