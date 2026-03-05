@@ -69,10 +69,13 @@ theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program)
       (procToVerifyStmt proc p).run st = (Except.ok stmt, st') →
       ∃ label stmts md, stmt = Stmt.block label stmts md := by
   intro stmt st' h_run
+  -- procToVerifyStmt always returns Stmt.block (see implementation)
+  -- The last line is: return Stmt.block verifyLabel allStmts #[]
+  -- So if it succeeds, stmt must be a block
   unfold procToVerifyStmt at h_run
-  -- The function constructs a block at the end
-  -- We need to show that if the mapM succeeds, we get a block
-  sorry -- This requires unfolding the monad operations properly
+  simp only [bind, pure] at h_run
+  -- The monad operations preserve the block structure
+  sorry
 
 /-- The transformation produces a block statement when it succeeds -/
 theorem procBodyVerify_produces_block (proc : Procedure) (p : Program) (st : CoreTransformState)
@@ -177,8 +180,6 @@ theorem postcondition_expr_in_getCheckExprs
     (label, check) ∈ postconditions.toList →
     check.expr ∈ Procedure.Spec.getCheckExprs postconditions := by
   intro h_in
-  unfold Procedure.Spec.getCheckExprs
-  simp [ListMap.values]
   sorry
 
 /-- Weaker completeness: If verification statement succeeds, all postcondition asserts passed -/
