@@ -3312,8 +3312,7 @@ theorem resolveAux_context :
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
       Env'.context = Env.context := by
-  intro e; induction e using WellFoundedRelation.wf.induction
-    (r := fun (e1 e2 : LExpr T.mono) => SizeOf.sizeOf e1 < SizeOf.sizeOf e2) with
+  intro e; induction e using (InvImage.wf LExpr.sizeOf Nat.lt_wfRel.wf).induction with
   | h e ih =>
   intro et C Env Env' h
   match e with
@@ -3349,8 +3348,8 @@ theorem resolveAux_context :
           · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
             show Env3.context = Env.context
             rw [TEnv.genTyVar_context Env2 fn Env3 h3,
-                ih e2 (by simp_all [LExpr.sizeOf]; omega) e2t C Env1 Env2 h2]
-            exact ih e1 (by simp_all [LExpr.sizeOf]; omega) e1t C Env Env1 h1
+                ih e2 (by show e2.sizeOf < (LExpr.app m e1 e2).sizeOf; simp [LExpr.sizeOf]; omega) e2t C Env1 Env2 h2]
+            exact ih e1 (by show e1.sizeOf < (LExpr.app m e1 e2).sizeOf; simp [LExpr.sizeOf]; omega) e1t C Env Env1 h1
   | .abs m bty body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3361,7 +3360,8 @@ theorem resolveAux_context :
         obtain ⟨_, h_env⟩ := h; rw [← h_env]
         have h_ctx_ra : Env2.context = Env1.context :=
           ih (LExpr.varOpen 0 (xv, some xty) body)
-            (by sorry)
+            (by show (varOpen 0 (xv, some xty) body).sizeOf < (LExpr.abs m bty body).sizeOf
+                rw [varOpen_sizeOf]; simp [LExpr.sizeOf])
             et_ C Env1 Env2 h_ra
         exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env2 h_ctx_ra
   | .quant m qk bty triggers body =>
@@ -3378,11 +3378,13 @@ theorem resolveAux_context :
             simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
             have h_ctx2 : Env2.context = Env1.context :=
               ih (LExpr.varOpen 0 (xv, some xty) body)
-                (by sorry)
+                (by show (varOpen 0 (xv, some xty) body).sizeOf < (LExpr.quant m qk bty triggers body).sizeOf
+                    rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega)
                 et_ C Env1 Env2 h_ra1
             have h_ctx3 : Env3.context = Env2.context :=
               ih (LExpr.varOpen 0 (xv, some xty) triggers)
-                (by sorry)
+                (by show (varOpen 0 (xv, some xty) triggers).sizeOf < (LExpr.quant m qk bty triggers body).sizeOf
+                    rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega)
                 triggersT C Env2 Env3 h_ra2
             exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env3
               (h_ctx3.trans h_ctx2)
@@ -3397,8 +3399,8 @@ theorem resolveAux_context :
         split at h; · simp at h
         · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
           show Env2.context = Env.context
-          rw [ih e2 (by simp_all [LExpr.sizeOf]; omega) e2t C Env1 Env2 h2]
-          exact ih e1 (by simp_all [LExpr.sizeOf]; omega) e1t C Env Env1 h1
+          rw [ih e2 (by show e2.sizeOf < (LExpr.eq m e1 e2).sizeOf; simp [LExpr.sizeOf]; omega) e2t C Env1 Env2 h2]
+          exact ih e1 (by show e1.sizeOf < (LExpr.eq m e1 e2).sizeOf; simp [LExpr.sizeOf]; omega) e1t C Env Env1 h1
   | .ite m c th el =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3410,9 +3412,9 @@ theorem resolveAux_context :
           split at h; · simp at h
           · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
             show Env3.context = Env.context
-            rw [ih el (by simp_all [LExpr.sizeOf]; omega) et_ C Env2 Env3 h3,
-                ih th (by simp_all [LExpr.sizeOf]; omega) tt C Env1 Env2 h2]
-            exact ih c (by simp_all [LExpr.sizeOf]; omega) ct C Env Env1 h1
+            rw [ih el (by show el.sizeOf < (LExpr.ite m c th el).sizeOf; simp [LExpr.sizeOf]; omega) et_ C Env2 Env3 h3,
+                ih th (by show th.sizeOf < (LExpr.ite m c th el).sizeOf; simp [LExpr.sizeOf]; omega) tt C Env1 Env2 h2]
+            exact ih c (by show c.sizeOf < (LExpr.ite m c th el).sizeOf; simp [LExpr.sizeOf]; omega) ct C Env Env1 h1
 
 /--
 All keys in the substitution produced by `resolveAux` are fresh in the input
