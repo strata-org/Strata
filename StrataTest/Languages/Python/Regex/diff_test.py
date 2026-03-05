@@ -33,508 +33,542 @@ import os
 import argparse
 
 # ── Test corpus ────────────────────────────────────────────────────────────────
-# Each entry is (python_regex, test_string, mode)
-# mode is one of: "match", "fullmatch", "search"
+# Each entry is (python_regex, test_string, mode).
+# mode is one of: "match", "fullmatch", "search".
+# Every comment ends with the Python ground-truth answer: # match / # noMatch / # error.
 
 CORPUS = [
-    # Simple literals
-    ("a",    "a",   "fullmatch"),
-    ("a",    "b",   "fullmatch"),
-    ("ab",   "ab",  "fullmatch"),
-    ("ab",   "a",   "fullmatch"),
-    ("ab",   "abc", "fullmatch"),
 
-    # match mode: anchored at start, allows trailing content
-    ("a",    "abc", "match"),
-    ("a",    "bcd", "match"),
-    ("ab",   "abc", "match"),
-    ("ab",   "bcd", "match"),
+    # ── Literals ────────────────────────────────────────────────────────────────
 
-    # Anchors: ^, $, both, neither
-    ("^a",   "a",   "fullmatch"),
-    ("^a",   "ba",  "fullmatch"),
-    ("a$",   "a",   "fullmatch"),
-    ("a$",   "ab",  "fullmatch"),
-    ("^a$",  "a",   "fullmatch"),
-    ("^a$",  "ab",  "fullmatch"),
-    ("^a$",  "ba",  "fullmatch"),
-    # ^ is a no-op at the start in match mode; $ triggers trailing anchor
-    ("^a$",  "a",   "match"),
-    ("^a$",  "ab",  "match"),
+    ("a",    "a",   "fullmatch"),  # match
+    ("a",    "b",   "fullmatch"),  # noMatch
+    ("ab",   "ab",  "fullmatch"),  # match
+    ("ab",   "a",   "fullmatch"),  # noMatch — too short
+    ("ab",   "abc", "fullmatch"),  # noMatch — too long
 
-    # Quantifiers
-    ("a*",      "",       "fullmatch"),
-    ("a*",      "aaa",    "fullmatch"),
-    ("a*",      "b",      "fullmatch"),
-    ("a+",      "",       "fullmatch"),
-    ("a+",      "a",      "fullmatch"),
-    ("a+",      "aaa",    "fullmatch"),
-    ("a?",      "",       "fullmatch"),
-    ("a?",      "a",      "fullmatch"),
-    ("a?",      "aa",     "fullmatch"),
-    ("a{2,4}",  "a",      "fullmatch"),
-    ("a{2,4}",  "aa",     "fullmatch"),
-    ("a{2,4}",  "aaaa",   "fullmatch"),
-    ("a{2,4}",  "aaaaa",  "fullmatch"),
-    ("a{3}",    "aaa",    "fullmatch"),
-    ("a{3}",    "aa",     "fullmatch"),
+    # match mode: anchored at start, trailing content allowed
+    ("a",    "abc", "match"),      # match
+    ("a",    "bcd", "match"),      # noMatch — doesn't start with a
+    ("ab",   "abc", "match"),      # match
+    ("ab",   "bcd", "match"),      # noMatch
 
-    # Any character
-    (".",    "a",  "fullmatch"),
-    (".",    "",   "fullmatch"),
-    (".",    "ab", "fullmatch"),
-    (".+",   "abc", "fullmatch"),
+    # ── Character atoms ─────────────────────────────────────────────────────────
 
-    # Character classes
-    ("[a-z]",   "a",  "fullmatch"),
-    ("[a-z]",   "z",  "fullmatch"),
-    ("[a-z]",   "A",  "fullmatch"),
-    ("[^a-z]",  "A",  "fullmatch"),
-    ("[^a-z]",  "a",  "fullmatch"),
-    ("[abc]",   "b",  "fullmatch"),
-    ("[abc]",   "d",  "fullmatch"),
-    ("[a-z]+",  "hello", "fullmatch"),
-    ("[a-z]+",  "Hello", "fullmatch"),
+    # Dot (anychar): matches exactly one character
+    (".",    "a",   "fullmatch"),  # match
+    (".",    "",    "fullmatch"),  # noMatch — needs exactly one char
+    (".",    "ab",  "fullmatch"),  # noMatch — two chars
+    (".+",   "abc", "fullmatch"),  # match
 
-    # Alternation
-    ("a|b",   "a",  "fullmatch"),
-    ("a|b",   "b",  "fullmatch"),
-    ("a|b",   "c",  "fullmatch"),
-    ("a|b|c", "c",  "fullmatch"),
-    ("a|b|c", "d",  "fullmatch"),
+    # Character ranges
+    ("[a-z]",  "a",     "fullmatch"),  # match
+    ("[a-z]",  "z",     "fullmatch"),  # match
+    ("[a-z]",  "A",     "fullmatch"),  # noMatch — uppercase
+    ("[abc]",  "b",     "fullmatch"),  # match
+    ("[abc]",  "d",     "fullmatch"),  # noMatch
+    ("[a-z]+", "hello", "fullmatch"),  # match
+    ("[a-z]+", "Hello", "fullmatch"),  # noMatch — H is uppercase
 
-    # Groups and repetition
-    ("(ab)+",   "ab",    "fullmatch"),
-    ("(ab)+",   "abab",  "fullmatch"),
-    ("(ab)+",   "aba",   "fullmatch"),
-    ("(a|b)+",  "abba",  "fullmatch"),
-    ("(a|b)+",  "abbc",  "fullmatch"),
+    # Negated classes [^...]: complement intersected with allchar
+    ("[^a-z]",  "A",     "fullmatch"),  # match
+    ("[^a-z]",  "a",     "fullmatch"),  # noMatch
+    (r"[^b]",   "a",     "fullmatch"),  # match
+    (r"[^b]",   "b",     "fullmatch"),  # noMatch
+    (r"[^A-Z]+","hello",  "fullmatch"),  # match
+    (r"[^A-Z]+","Hello",  "fullmatch"),  # noMatch — H is uppercase
 
-    # Anchors inside groups / alternation
-    ("(^a$)|(^b$)",  "a",    "fullmatch"),
-    ("(^a$)|(^b$)",  "b",    "fullmatch"),
-    ("(^a$)|(^b$)",  "c",    "fullmatch"),
-    ("^a$|^$b",      "a",    "fullmatch"),
-    ("^a$|^$b",      "",     "fullmatch"),
-    ("c(^a|b$)d",    "cad",  "fullmatch"),
-    ("c(^a|b$)d",    "cbd",  "fullmatch"),
-    ("c(^a|b$)d",    "ccd",  "fullmatch"),
-    ("(^a|b$)(^c|d$)", "ac", "fullmatch"),
-    ("(^a|b$)(^c|d$)", "bd", "fullmatch"),
-    ("(^a|b$)(^c|d$)", "bc", "fullmatch"),
+    # ── Quantifiers ─────────────────────────────────────────────────────────────
 
-    # Dot-star patterns in match mode
-    ("a.*b",  "axyzb", "match"),
-    ("a.*b",  "ab",    "match"),
-    ("a.*b",  "axyz",  "match"),
-    ("a.*b",  "baxyzb","match"),
+    # * (star): zero or more
+    ("a*",     "",      "fullmatch"),  # match
+    ("a*",     "aaa",   "fullmatch"),  # match
+    ("a*",     "b",     "fullmatch"),  # noMatch
 
-    # search mode
-    ("a",    "xax",  "search"),
-    ("a",    "xyz",  "search"),
-    ("^a$",  "a",    "search"),
-    ("^a$",  "xa",   "search"),
-    ("^a$",  "ax",   "search"),
+    # + (plus = concat r (star r)): one or more
+    ("a+",     "",      "fullmatch"),  # noMatch
+    ("a+",     "a",     "fullmatch"),  # match
+    ("a+",     "aaa",   "fullmatch"),  # match
 
-    # ok_chars-style pattern
-    (r"[a-z0-9.\-]{1,10}",  "test-str-1", "fullmatch"),
-    (r"[a-z0-9.\-]{1,10}",  "test-str!",  "fullmatch"),
-    (r"[a-z0-9.\-]{1,10}",  "",           "fullmatch"),
-    (r"[a-z0-9.\-]{1,10}",  "0123456789a","fullmatch"),
+    # ? (optional = union empty r): zero or one
+    ("a?",     "",      "fullmatch"),  # match
+    ("a?",     "a",     "fullmatch"),  # match
+    ("a?",     "aa",    "fullmatch"),  # noMatch
 
-    # Complement / negated char class
-    (r"[^b]",    "a",  "fullmatch"),
-    (r"[^b]",    "b",  "fullmatch"),
-    (r"[^A-Z]+", "hello", "fullmatch"),
-    (r"[^A-Z]+", "Hello", "fullmatch"),
-
-    # Empty alternatives / edge cases
-    ("",       "",   "fullmatch"),
-    ("",       "a",  "fullmatch"),
-
-    # ── Anchor stress tests ────────────────────────────────────────────────────
-
-    # $ in match mode: terminates the match, no trailing content allowed
-    ("a$",         "a",      "match"),  # match: a at start, then end
-    ("a$",         "ab",     "match"),  # no match: b follows $
-    ("a$",         "ba",     "match"),  # no match: match anchors start
-    ("a$",         "aab",    "match"),  # no match: b follows $
-    ("a.*$",       "axyz",   "match"),  # .* before $: consumes to end
-    ("a.*$",       "a",      "match"),  # .* matches empty, $ fires
-    ("a.*$",       "b",      "match"),  # no match: doesn't start with a
-    # a$.* across modes / strings — $ fires, then .* must operate from the end
-    ("a$.*",       "a",      "fullmatch"),  # $ fires, .* matches empty → match
-    ("a$.*",       "ab",     "fullmatch"),  # $ blocked by b → no match
-    ("a$.*",       "a",      "match"),
-    ("a$.*",       "ab",     "match"),     # $ blocked → no match
-    ("a$.*",       "ba",     "search"),    # a at end: $ fires → match
-    ("a$.*",       "ab",     "search"),    # a not at end: $ blocked → no match
-
-    # $ followed by zero-or-more / optional (same root as above)
-    ("a$b*",       "a",      "fullmatch"),  # b* matches empty → match
-    ("a$b*",       "ab",     "fullmatch"),  # $ blocked by b → no match
-    ("a$b?",       "a",      "fullmatch"),  # b? matches empty → match
-    ("a$b?",       "ab",     "fullmatch"),  # $ blocked by b → no match
-
-    # $ followed by always-consuming suffix — forces | true,true branch → $ unmatchable
-    ("a$.+",       "a",      "match"),     # .+ needs ≥1 char: unmatchable
-    ("a$.+",       "ab",     "match"),     # $ blocked regardless
-    ("a$b+",       "a",      "fullmatch"), # b+ needs ≥1 b: unmatchable
-    ("a$b+",       "ab",     "fullmatch"), # $ blocked regardless
-
-    # double $: second is redundant
-    ("a$$",        "a",      "match"),
-    ("a$$",        "ab",     "match"),
-
-    # .*^a: .* can match empty → ^ fires at position 0 → 'a' can match
-    (".*^a",       "a",      "match"),   # .* = "", ^ fires, a matches
-    (".*^a",       "ab",     "match"),   # .* = "", ^ fires, a matches (trailing b ok)
-    (".*^a",       "ba",     "match"),   # .* cannot be empty at start (b≠a) → no match
-
-    # .*^a in search: ^ only fires at position 0, so equivalent to ^a in search
-    (".*^a",       "a",      "search"),  # ^ fires at start, a matches → match
-    (".*^a",       "ba",     "search"),  # a≠b at position 0 → no match
-    (".*^a",       "xa",     "search"),  # a≠x at position 0 → no match
-
-    # | true, false => with multi-char r1: concat(a,b) is always-consuming, .* is not
-    ("ab$.*",      "ab",     "fullmatch"),  # $ fires, .* matches empty → match
-    ("ab$.*",      "abc",    "fullmatch"),  # c after $ → no match
-    ("ab$.*",      "ab",     "match"),
-    ("ab$.*",      "abc",    "match"),      # c blocks $ → no match
-    ("ab$.*",      "xab",    "search"),     # ab at end: $ fires → match
-    ("ab$.*",      "xabc",   "search"),     # c after ab: $ blocked → no match
-
-    # | true, false => with range r1
-    ("[a-z]$.*",   "a",      "fullmatch"),  # single lowercase: $ fires → match
-    ("[a-z]$.*",   "ab",     "fullmatch"),  # b after $ → no match
-    ("[a-z]$.*",   "xa",     "search"),     # a at end: $ fires → match
-    ("[a-z]$.*",   "xa1",    "search"),     # digit at end, not in [a-z] → no match
-
-    # | true, false => with grouped r1: (ab) wraps the consuming part
-    ("(ab)$.*",    "ab",     "fullmatch"),  # $ fires → match
-    ("(ab)$.*",    "abc",    "fullmatch"),  # c blocks $ → no match
-    ("(ab)$.*",    "ab",     "match"),
-
-    # | false, true =>: r1 non-consuming with content, r2 always-consuming with ^
-    # a?(^b): r1=optional(a) [non-consuming, has content], r2=group(concat(^,b)) [always-consuming]
-    ("a?(^b)",     "b",      "fullmatch"),  # a?="", ^ fires, b matches → match
-    ("a?(^b)",     "ab",     "fullmatch"),  # a?="a" → ^ at pos 1 fails; a?="" → b≠a → no match
-    ("a?(^b)",     "b",      "match"),
-    ("a?(^b)",     "ba",     "match"),      # a?="", ^ fires, b matches, trailing a ok → match
-    ("a?(^b)",     "ab",     "match"),      # no path works → no match
-
-    # | false, false =>: both non-consuming; a?^b parses as concat(concat(a?,^),b)
-    # inner concat(a?,^) is false,false; ^ fires only when a? matched empty
-    ("a?^b",       "b",      "fullmatch"),  # a?="", ^ fires, b matches → match
-    ("a?^b",       "a",      "fullmatch"),  # a?="" → b≠a; a?="a" → ^ at 1 fails → no match
-    ("a?^b",       "ab",     "fullmatch"),  # a?="" → b≠a at 0; a?="a" → ^ fails → no match
-    ("a?^b",       "b",      "match"),
-    ("a?^b",       "ba",     "match"),      # a?="", ^ fires, b matches, trailing a ok → match
-    ("a?^b",       "ab",     "match"),      # no path works → no match
-
-    # | false, false => split path: both sides non-consuming, r2 contains ^, r1 has content
-    # a?^b? parses as concat(a?, concat(^, b?)); outer concat is false,false with ^ in r2
-    ("a?^b?",      "",       "fullmatch"),  # a?="", ^ fires, b?="" → match
-    ("a?^b?",      "b",      "fullmatch"),  # a?="", ^ fires, b?="b" → match
-    ("a?^b?",      "a",      "fullmatch"),  # a?="a" → ^ at 1 fails; a?="" → b?≠a → no match
-    ("a?^b?",      "ab",     "fullmatch"),  # no path → no match
-    ("a?^b?",      "",       "match"),      # a?="", ^ fires, b?="" → match
-    ("a?^b?",      "b",      "match"),      # a?="", ^ fires, b?="b" → match (trailing ok)
-    ("a?^b?",      "a",      "match"),      # a?="", ^ fires, b?="" → match (trailing a ok)
-
-    ("a$b",        "ab",     "match"),  # $ in middle: unmatchable
-
-    # ^ in match mode: no-op at start (match already anchors there)
-    ("^a",         "a",      "match"),  # match (same as "a" in match mode)
-    ("^a",         "ab",     "match"),  # match: trailing b allowed
-    ("^a",         "ba",     "match"),  # no match: starts with b
-
-    # ^ and $ in search mode: anchors prevent free prefix/suffix
-    ("^a",         "abc",    "search"),  # ^ anchors to start: match
-    ("^a",         "xabc",   "search"),  # ^ prevents prefix: no match
-    ("^a",         "a",      "search"),  # match
-    ("a$",         "ba",     "search"),  # $ anchors to end: match
-    ("a$",         "ab",     "search"),  # $ prevents suffix: no match
-    ("a$",         "xyzba",  "search"),  # ends with a: match
-    ("a$",         "xyzbax", "search"),  # a not at end: no match
-
-    # Alternation with anchors across all modes
-    ("^a|b$",      "a",      "fullmatch"),  # ^a covers "a"
-    ("^a|b$",      "b",      "fullmatch"),  # b$ covers "b"
-    ("^a|b$",      "ab",     "fullmatch"),  # neither: "ab" ≠ "a" and ≠ "b"
-    ("^a|b$",      "a",      "match"),  # ^a fires at start, trailing ok
-    ("^a|b$",      "b",      "match"),  # b$ fires: "b" ends at $
-    ("^a|b$",      "ab",     "match"),  # ^a fires, "b" is trailing
-    ("^a|b$",      "xb",     "match"),  # neither fires: x≠a and x≠b
-    ("^a|b$",      "axyz",   "search"),  # ^a fires
-    ("^a|b$",      "xyzb",   "search"),  # b$ fires
-    ("^a|b$",      "xyzc",   "search"),  # neither
-    ("^a|b$",      "axyzb",  "search"),  # both fire (^a at start)
-
-    # Group with both anchors
-    ("^(a|b)$",    "a",      "fullmatch"),
-    ("^(a|b)$",    "b",      "fullmatch"),
-    ("^(a|b)$",    "ab",     "fullmatch"),  # no match: length > 1
-    ("^(a|b)$",    "a",      "match"),
-    ("^(a|b)$",    "b",      "match"),
-    ("^(a|b)$",    "ab",     "match"),  # $ prevents trailing b
-    ("^(a|b)$",    "a",      "search"),
-    ("^(a|b)$",    "ab",     "search"),  # no match: can't be both ^...$ with two chars
-
-    # ^$ (empty-string anchor) in all modes
-    ("^$",         "",       "fullmatch"),
-    ("^$",         "a",      "fullmatch"),
-    ("^$",         "",       "match"),
-    ("^$",         "a",      "match"),
-    ("^$",         "",       "search"),
-    ("^$",         "a",      "search"),
-
-    # Anchors inside a repeated group
-    ("(a$)*",      "",       "fullmatch"),  # zero iterations: empty
-    ("(a$)*",      "a",      "fullmatch"),  # one iteration at end
-    ("(a$)*",      "aa",     "fullmatch"),  # can't iterate twice with $
-
-    # ── Anchors inside groups: unusual / bad-nomatch patterns ─────────────────
-
-    # ^ consumed out of start position → unmatchable branch
-    ("x(^a)",          "xa",     "fullmatch"),  # ^ after x: unmatchable
-    ("x(^a)",          "a",      "fullmatch"),  # doesn't even start with x
-    ("x(^a|b)",        "xb",     "fullmatch"),  # ^a branch fails, b branch saves it
-    ("x(^a|b)",        "xa",     "fullmatch"),  # ^a fails, b≠a: no match
-
-    # $ with content still following → unmatchable branch
-    ("(a$)b",          "ab",     "fullmatch"),  # looks like "ab" but $ blocks b
-    ("(a$)(b)",        "ab",     "fullmatch"),  # same with separate group
-    ("(a$)b",          "ab",     "match"),  # same in match mode
-
-    # Alternation: one branch has context-killed anchor
-    ("(a$|b)c",        "ac",     "fullmatch"),  # a$ then c: $ blocked; b≠a: no match
-    ("(a$|b)c",        "bc",     "fullmatch"),  # b branch works
-    ("(a$|b)c",        "abc",    "fullmatch"),  # neither branch matches
-    ("(a|b$)c",        "ac",     "fullmatch"),  # a branch works
-    ("(a|b$)c",        "bc",     "fullmatch"),  # b$c: $ then c → unmatchable; a≠b: no match
-
-    # Two anchors that cannot both fire
-    ("(^a)(^b)",       "ab",     "fullmatch"),  # 2nd ^ is past start: unmatchable
-    ("(^a)(^b)",       "a",      "fullmatch"),  # same
-    ("(a$)(b$)",       "ab",     "fullmatch"),  # 1st $ requires end but b follows
-    ("(a$)(b$)",       "a",      "fullmatch"),  # same
-
-    # ^ or $ at a position where neither fires cleanly
-    ("(^|$)c",         "c",      "fullmatch"),  # ^ fires → "c"; $c branch is unmatchable
-    ("(^|$)c",         "xc",     "fullmatch"),  # neither fires
-    ("a(^|$)b",        "ab",     "fullmatch"),  # after a: ^ past start, $ blocked by b
-
-    # Search mode: anchor inside group restricts positional freedom
-    ("(^a)(b)",        "ab",     "search"),  # ^a forces match at start
-    ("(^a)(b)",        "xab",    "search"),  # ^ blocks: no match
-    ("(a)(b$)",        "ab",     "search"),  # b$ forces match at end
-    ("(a)(b$)",        "abx",    "search"),  # $ blocked by x: no match
-    ("(^a)(b$)",       "ab",     "search"),  # both anchors: exactly "ab"
-    ("(^a)(b$)",       "xab",    "search"),  # ^ blocks
-    ("(^a)(b$)",       "abx",    "search"),  # $ blocks
-
-    # Match mode: $ inside group overrides the usual trailing-content allowance
-    ("(a$|b)c",        "bc",     "match"),  # b branch + trailing ok
-    ("(a$|b)c",        "bcd",    "match"),  # trailing d allowed
-
-    # ── Loop / quantifier edge cases ──────────────────────────────────────────
+    # {n,m} and exact {n}
+    ("a{2,4}", "a",     "fullmatch"),  # noMatch — too few
+    ("a{2,4}", "aa",    "fullmatch"),  # match
+    ("a{2,4}", "aaaa",  "fullmatch"),  # match
+    ("a{2,4}", "aaaaa", "fullmatch"),  # noMatch — too many
+    ("a{3}",   "aaa",   "fullmatch"),  # match
+    ("a{3}",   "aa",    "fullmatch"),  # noMatch
 
     # Zero and exact counts
-    ("a{0}",           "",       "fullmatch"),  # 0 reps → empty
-    ("a{0}",           "a",      "fullmatch"),
-    ("a{1}",           "a",      "fullmatch"),
-    ("a{1}",           "aa",     "fullmatch"),
-    ("a{0,1}",         "",       "fullmatch"),  # same as a?
-    ("a{0,1}",         "a",      "fullmatch"),
-    ("a{0,1}",         "aa",     "fullmatch"),
+    ("a{0}",   "",      "fullmatch"),  # match — 0 reps = empty string
+    ("a{0}",   "a",     "fullmatch"),  # noMatch
+    ("a{1}",   "a",     "fullmatch"),  # match
+    ("a{1}",   "aa",    "fullmatch"),  # noMatch
+    ("a{0,1}", "",      "fullmatch"),  # match — same language as a?
+    ("a{0,1}", "a",     "fullmatch"),  # match
+    ("a{0,1}", "aa",    "fullmatch"),  # noMatch
 
     # Group loops
-    ("(ab){2}",        "abab",   "fullmatch"),
-    ("(ab){2}",        "ab",     "fullmatch"),  # too few
-    ("(ab){2}",        "ababab", "fullmatch"),  # too many
-    ("(ab){2,3}",      "abab",   "fullmatch"),  # 2 reps: ok
-    ("(ab){2,3}",      "ababab", "fullmatch"),  # 3 reps: ok
-    ("(ab){2,3}",      "ab",     "fullmatch"),  # 1 rep: no match
-    ("(ab){2,3}",      "abababab","fullmatch"),  # 4 reps: no match
+    ("(ab){2}",   "abab",    "fullmatch"),  # match
+    ("(ab){2}",   "ab",      "fullmatch"),  # noMatch — too few
+    ("(ab){2}",   "ababab",  "fullmatch"),  # noMatch — too many
+    ("(ab){2,3}", "abab",    "fullmatch"),  # match — 2 reps
+    ("(ab){2,3}", "ababab",  "fullmatch"),  # match — 3 reps
+    ("(ab){2,3}", "ab",      "fullmatch"),  # noMatch — 1 rep
+    ("(ab){2,3}", "abababab","fullmatch"),  # noMatch — 4 reps
 
-    # Anchored loops
-    ("^a{3}$",         "aaa",    "fullmatch"),
-    ("^a{3}$",         "aa",     "fullmatch"),
-    ("^a{3}$",         "aaaa",   "fullmatch"),
-    ("^a{2,4}$",       "a",      "fullmatch"),
-    ("^a{2,4}$",       "aa",     "fullmatch"),
-    ("^a{2,4}$",       "aaaa",   "fullmatch"),
-    ("^a{2,4}$",       "aaaaa",  "fullmatch"),
-    ("^a{3}$",         "aaa",    "match"),  # $ blocks trailing
-    ("^a{3}$",         "aaab",   "match"),  # $ blocks trailing b
-    ("a{3}",           "aaab",   "match"),  # no $: trailing b ok
+    # Multi-char class with loop: ok_chars-style identifier check
+    (r"[a-z0-9.\-]{1,10}", "test-str-1",  "fullmatch"),  # match
+    (r"[a-z0-9.\-]{1,10}", "test-str!",   "fullmatch"),  # noMatch — ! not in class
+    (r"[a-z0-9.\-]{1,10}", "",            "fullmatch"),  # noMatch — below min
+    (r"[a-z0-9.\-]{1,10}", "0123456789a", "fullmatch"),  # noMatch — 11 chars, over limit
 
     # Loops in search mode
-    ("a{2}",           "xaax",   "search"),  # found in middle
-    ("a{2}",           "xa",     "search"),  # only one a: no match
-    ("(ab){2}",        "xababx", "search"),
-    ("(ab){2}",        "xabx",   "search"),  # only one ab: no match
+    ("a{2}",    "xaax",   "search"),  # match — aa found in middle
+    ("a{2}",    "xa",     "search"),  # noMatch — only one a
+    ("(ab){2}", "xababx", "search"),  # match
+    ("(ab){2}", "xabx",   "search"),  # noMatch — only one ab
 
-    # Anchor inside loop: ^ or $ blocks repeated iteration
-    ("(^a){2}",        "aa",     "fullmatch"),  # 2nd ^ is past start: unmatchable
-    ("(^a){2}",        "a",      "fullmatch"),  # need 2 but ^ blocks 2nd
-    ("(a$){2}",        "aa",     "fullmatch"),  # $ after 1st a blocks 2nd iteration
-    ("(a$){2}",        "a",      "fullmatch"),  # too few chars regardless
+    # Anchored loops: ^ and $ alongside {n,m}
+    ("^a{3}$",   "aaa",    "fullmatch"),  # match
+    ("^a{3}$",   "aa",     "fullmatch"),  # noMatch
+    ("^a{3}$",   "aaaa",   "fullmatch"),  # noMatch
+    ("^a{2,4}$", "a",      "fullmatch"),  # noMatch
+    ("^a{2,4}$", "aa",     "fullmatch"),  # match
+    ("^a{2,4}$", "aaaa",   "fullmatch"),  # match
+    ("^a{2,4}$", "aaaaa",  "fullmatch"),  # noMatch
+    ("^a{3}$",   "aaa",    "match"),      # match — $ blocks trailing content
+    ("^a{3}$",   "aaab",   "match"),      # noMatch — $ blocks trailing b
+    ("a{3}",     "aaab",   "match"),      # match — no $, trailing b allowed
 
-    # ── alwaysConsume branches: star and loop with anchors in inner regex ─────────
+    # ── Alternation ─────────────────────────────────────────────────────────────
 
-    # .star | alwaysConsume=true |: first/middle/last split
-    # (^a)*: ^ only fires for the first iteration (middle/last get atStart=false)
-    ("(^a)*",      "",      "fullmatch"),  # 0 iterations → match
-    ("(^a)*",      "a",     "fullmatch"),  # 1 iteration: ^ at 0, a → match
-    ("(^a)*",      "aa",    "fullmatch"),  # 2 iterations: ^ fails at pos 1 → no match
-    ("(^a)*",      "a",     "match"),      # 1 iteration (trailing content allowed)
-    ("(^a)*",      "aa",    "match"),      # only 1 iter needed, trailing "a" ok → match
+    ("a|b",   "a",  "fullmatch"),  # match
+    ("a|b",   "b",  "fullmatch"),  # match
+    ("a|b",   "c",  "fullmatch"),  # noMatch
+    ("a|b|c", "c",  "fullmatch"),  # match
+    ("a|b|c", "d",  "fullmatch"),  # noMatch
 
-    # (a$)*: $ only fires for the last iteration (first/middle get atEnd=false)
-    # fullmatch cases already in corpus; add match mode
-    ("(a$)*",      "a",     "match"),      # $ fires → no trailing content allowed → match
-    ("(a$)*",      "ab",    "match"),      # $ blocks "b" → no match
+    # ── Groups ──────────────────────────────────────────────────────────────────
+
+    ("(ab)+",  "ab",    "fullmatch"),  # match
+    ("(ab)+",  "abab",  "fullmatch"),  # match
+    ("(ab)+",  "aba",   "fullmatch"),  # noMatch
+    ("(a|b)+", "abba",  "fullmatch"),  # match
+    ("(a|b)+", "abbc",  "fullmatch"),  # noMatch — c not in [ab]
+
+    # ── Anchors: basic behavior ──────────────────────────────────────────────────
+
+    # fullmatch: ^ and $ are effectively redundant (whole string must match anyway)
+    ("^a",   "a",   "fullmatch"),  # match
+    ("^a",   "ba",  "fullmatch"),  # noMatch
+    ("a$",   "a",   "fullmatch"),  # match
+    ("a$",   "ab",  "fullmatch"),  # noMatch
+    ("^a$",  "a",   "fullmatch"),  # match
+    ("^a$",  "ab",  "fullmatch"),  # noMatch
+    ("^a$",  "ba",  "fullmatch"),  # noMatch
+
+    # match mode: ^ is a no-op (match already anchors at start); $ cuts off trailing content
+    ("^a",   "a",   "match"),      # match
+    ("^a",   "ab",  "match"),      # match — trailing b allowed
+    ("^a",   "ba",  "match"),      # noMatch
+    ("^a$",  "a",   "match"),      # match
+    ("^a$",  "ab",  "match"),      # noMatch — $ blocks trailing b
+
+    # ^$ matches only the empty string, across all modes
+    ("^$",   "",    "fullmatch"),  # match
+    ("^$",   "a",   "fullmatch"),  # noMatch
+    ("^$",   "",    "match"),      # match
+    ("^$",   "a",   "match"),      # noMatch
+    ("^$",   "",    "search"),     # match
+    ("^$",   "a",   "search"),     # noMatch
+
+    # Empty pattern: same language as ^$
+    ("",     "",    "fullmatch"),  # match
+    ("",     "a",   "fullmatch"),  # noMatch
+
+    # search mode basics
+    ("a",    "xax",  "search"),    # match
+    ("a",    "xyz",  "search"),    # noMatch
+    ("^a$",  "a",    "search"),    # match
+    ("^a$",  "xa",   "search"),    # noMatch
+    ("^a$",  "ax",   "search"),    # noMatch
+
+    # ^ in search: prevents a free prefix
+    ("^a",   "abc",  "search"),    # match
+    ("^a",   "xabc", "search"),    # noMatch
+    ("^a",   "a",    "search"),    # match
+
+    # $ in search: prevents a free suffix
+    ("a$",   "ba",    "search"),   # match
+    ("a$",   "ab",    "search"),   # noMatch
+    ("a$",   "xyzba", "search"),   # match
+    ("a$",   "xyzbax","search"),   # noMatch — a is not at end
+
+    # Alternation with anchors across all modes
+    ("^a|b$", "a",     "fullmatch"),  # match — ^a covers "a"
+    ("^a|b$", "b",     "fullmatch"),  # match — b$ covers "b"
+    ("^a|b$", "ab",    "fullmatch"),  # noMatch — neither "a" nor "b" alone
+    ("^a|b$", "a",     "match"),      # match
+    ("^a|b$", "b",     "match"),      # match
+    ("^a|b$", "ab",    "match"),      # match — ^a fires, b is trailing
+    ("^a|b$", "xb",    "match"),      # noMatch
+    ("^a|b$", "axyz",  "search"),     # match — ^a fires
+    ("^a|b$", "xyzb",  "search"),     # match — b$ fires
+    ("^a|b$", "xyzc",  "search"),     # noMatch
+    ("^a|b$", "axyzb", "search"),     # match — ^a fires at start
+
+    # Group with both anchors, across all modes
+    ("^(a|b)$", "a",  "fullmatch"),  # match
+    ("^(a|b)$", "b",  "fullmatch"),  # match
+    ("^(a|b)$", "ab", "fullmatch"),  # noMatch
+    ("^(a|b)$", "a",  "match"),      # match
+    ("^(a|b)$", "b",  "match"),      # match
+    ("^(a|b)$", "ab", "match"),      # noMatch — $ prevents trailing b
+    ("^(a|b)$", "a",  "search"),     # match
+    ("^(a|b)$", "ab", "search"),     # noMatch
+
+    # Anchors inside groups / alternation
+    ("(^a$)|(^b$)",    "a",  "fullmatch"),  # match
+    ("(^a$)|(^b$)",    "b",  "fullmatch"),  # match
+    ("(^a$)|(^b$)",    "c",  "fullmatch"),  # noMatch
+    ("^a$|^$b",        "a",  "fullmatch"),  # match — first branch covers "a"
+    ("^a$|^$b",        "",   "fullmatch"),  # noMatch — ^$b: ^, $, then b — unmatchable
+
+    # ── Anchors: $ followed by non-consuming suffix (concat | true, false => branch) ──
+    #
+    # When r1 always consumes and r2 may be empty, $ in r1 can still fire if
+    # r2 = "".  Strata splits into: Case 1 (r2 = "", $ fires) | Case 2 (r2 ≠ "").
+
+    # a$.*: a (always-consuming) followed by .* (non-consuming)
+    ("a$.*",  "a",    "fullmatch"),  # match — $ fires, .* = ""
+    ("a$.*",  "ab",   "fullmatch"),  # noMatch — b after a blocks $
+    ("a$.*",  "a",    "match"),      # match
+    ("a$.*",  "ab",   "match"),      # noMatch
+    ("a$.*",  "ba",   "search"),     # match — a at end, $ fires
+    ("a$.*",  "ab",   "search"),     # noMatch
+
+    # $ followed by b* or b?: b*/b? can match "", so $ can still fire
+    ("a$b*",  "a",    "fullmatch"),  # match
+    ("a$b*",  "ab",   "fullmatch"),  # noMatch
+    ("a$b?",  "a",    "fullmatch"),  # match
+    ("a$b?",  "ab",   "fullmatch"),  # noMatch
+
+    # $ followed by always-consuming suffix: $ is forced unmatchable (concat | true,true =>)
+    ("a$.+",  "a",    "match"),      # noMatch — .+ needs ≥1 char after $
+    ("a$.+",  "ab",   "match"),      # noMatch
+    ("a$b+",  "a",    "fullmatch"),  # noMatch
+    ("a$b+",  "ab",   "fullmatch"),  # noMatch
+
+    # Double $: second is redundant
+    ("a$$",   "a",    "match"),      # match
+    ("a$$",   "ab",   "match"),      # noMatch
+
+    # $ in match mode: terminates the match, no trailing content allowed
+    ("a$",    "a",    "match"),      # match
+    ("a$",    "ab",   "match"),      # noMatch — b follows $
+    ("a$",    "ba",   "match"),      # noMatch — match anchors at start
+    ("a$",    "aab",  "match"),      # noMatch
+
+    # a.*$ in match mode: .* followed by $
+    ("a.*$",  "axyz", "match"),      # match
+    ("a.*$",  "a",    "match"),      # match — .* = "", $ fires
+    ("a.*$",  "b",    "match"),      # noMatch
+
+    # a.*b in match mode: must start with a and reach b; trailing content allowed
+    ("a.*b",  "axyzb","match"),      # match
+    ("a.*b",  "ab",   "match"),      # match
+    ("a.*b",  "axyz", "match"),      # noMatch — never reaches b
+    ("a.*b",  "baxyzb","match"),     # noMatch — doesn't start with a
+
+    # Multi-char consuming prefix before $
+    ("ab$.*",    "ab",   "fullmatch"),  # match
+    ("ab$.*",    "abc",  "fullmatch"),  # noMatch — c after $ blocked
+    ("ab$.*",    "ab",   "match"),      # match
+    ("ab$.*",    "abc",  "match"),      # noMatch
+    ("ab$.*",    "xab",  "search"),     # match — ab at end
+    ("ab$.*",    "xabc", "search"),     # noMatch
+
+    # Range prefix before $
+    ("[a-z]$.*", "a",    "fullmatch"),  # match
+    ("[a-z]$.*", "ab",   "fullmatch"),  # noMatch
+    ("[a-z]$.*", "xa",   "search"),     # match — lowercase at end
+    ("[a-z]$.*", "xa1",  "search"),     # noMatch — digit at end, not in [a-z]
+
+    # Group prefix before $
+    ("(ab)$.*",  "ab",   "fullmatch"),  # match
+    ("(ab)$.*",  "abc",  "fullmatch"),  # noMatch
+    ("(ab)$.*",  "ab",   "match"),      # match
+
+    # ── Anchors: ^ preceded by non-consuming content (concat | false, true => branch) ─
+    #
+    # When r1 may be empty and r2 always consumes with ^, Strata splits into:
+    # Case 1 (r1 = "", ^ fires at original position) | Case 2 (r1 ≠ "", ^ blocked).
+
+    # .*^a: .* may be empty, so ^ can still fire at position 0
+    (".*^a",  "a",    "match"),      # match — .* = "", ^ fires, a matches
+    (".*^a",  "ab",   "match"),      # match — .* = "", ^ fires, trailing b ok
+    (".*^a",  "ba",   "match"),      # noMatch — no way to make .* empty AND ^ fire at a
+
+    # .*^a in search: dotStar wrapper means ^ must still fire at position 0
+    (".*^a",  "a",    "search"),     # match
+    (".*^a",  "ba",   "search"),     # noMatch
+    (".*^a",  "xa",   "search"),     # noMatch
+
+    # a?(^b): a? non-consuming with content, (^b) always-consuming with ^
+    ("a?(^b)", "b",   "fullmatch"),  # match — a? = "", ^ fires, b matches
+    ("a?(^b)", "ab",  "fullmatch"),  # noMatch — a? = "a" → ^ past start; a? = "" → b ≠ a
+    ("a?(^b)", "b",   "match"),      # match
+    ("a?(^b)", "ba",  "match"),      # match — a? = "", ^ fires, b matches, trailing a ok
+    ("a?(^b)", "ab",  "match"),      # noMatch
+
+    # ── Anchors: concat(false, false) — both sides may be empty ─────────────────
+    #
+    # When both sides may be empty and r2 contains ^, Strata splits into:
+    # Case 1 (r1 = "", ^ fires) | Case 2 (r1 ≠ "", ^ blocked).
+
+    # a?^b: parses as concat(concat(a?,^),b); inner false,false; ^ fires only when a? = ""
+    ("a?^b",  "b",   "fullmatch"),  # match — a? = "", ^ fires, b matches
+    ("a?^b",  "a",   "fullmatch"),  # noMatch — a? = "" → b ≠ a; a? = "a" → ^ past start
+    ("a?^b",  "ab",  "fullmatch"),  # noMatch
+    ("a?^b",  "b",   "match"),      # match
+    ("a?^b",  "ba",  "match"),      # match — a? = "", ^ fires, trailing a ok
+    ("a?^b",  "ab",  "match"),      # noMatch
+
+    # a?^b?: outer concat(a?, concat(^,b?)) — false,false with ^ in r2 and content in r1
+    ("a?^b?", "",    "fullmatch"),  # match — a? = "", ^ fires, b? = ""
+    ("a?^b?", "b",   "fullmatch"),  # match — a? = "", ^ fires, b? = "b"
+    ("a?^b?", "a",   "fullmatch"),  # noMatch — a? = "a" → ^ past start; a? = "" → b? ≠ a
+    ("a?^b?", "ab",  "fullmatch"),  # noMatch
+    ("a?^b?", "",    "match"),      # match
+    ("a?^b?", "b",   "match"),      # match
+    ("a?^b?", "a",   "match"),      # match — a? = "", ^ fires, b? = "", trailing a ok
+
+    # $ in the middle with always-consuming suffix: unmatchable
+    ("a$b",   "ab",  "match"),      # noMatch
+
+    # ── Anchors: inside quantified expressions ───────────────────────────────────
+    #
+    # For star/loop, Strata splits the iterations into first (atStart), middle
+    # (false,false), and last (atEnd) when the inner regex is always-consuming
+    # or contains an anchor.
+
+    # (^a)*: ^ only fires for the first iteration; subsequent iterations get atStart=false
+    ("(^a)*",     "",    "fullmatch"),  # match — 0 iterations
+    ("(^a)*",     "a",   "fullmatch"),  # match — 1 iteration: ^ at 0
+    ("(^a)*",     "aa",  "fullmatch"),  # noMatch — 2nd ^ fails at pos 1
+    ("(^a)*",     "a",   "match"),      # match — 1 iteration, trailing content allowed
+    ("(^a)*",     "aa",  "match"),      # match — 1 iteration enough, trailing a allowed
+
+    # (a$)*: $ only fires for the last iteration; earlier iterations get atEnd=false
+    ("(a$)*",     "",    "fullmatch"),  # match — 0 iterations
+    ("(a$)*",     "a",   "fullmatch"),  # match — 1 iteration: $ at end
+    ("(a$)*",     "aa",  "fullmatch"),  # noMatch — $ after 1st a blocked by 2nd a
+    ("(a$)*",     "a",   "match"),      # match
+    ("(a$)*",     "ab",  "match"),      # match — 0 iterations match "" at position 0
 
     # (^a$)*: both anchors — only 1 iteration possible
-    ("(^a$)*",     "",      "fullmatch"),  # 0 iterations → match
-    ("(^a$)*",     "a",     "fullmatch"),  # 1 iteration → match
-    ("(^a$)*",     "aa",    "fullmatch"),  # 2 iterations impossible → no match
+    ("(^a$)*",    "",    "fullmatch"),  # match — 0 iterations
+    ("(^a$)*",    "a",   "fullmatch"),  # match — 1 iteration
+    ("(^a$)*",    "aa",  "fullmatch"),  # noMatch — 2 iterations impossible
 
-    # .loop(0,m) | alwaysConsume=true |: same first/middle/last split
-    ("(^a){0,2}",  "",      "fullmatch"),  # 0 reps → match
-    ("(^a){0,2}",  "a",     "fullmatch"),  # 1 rep: ^ at 0 → match
-    ("(^a){0,2}",  "aa",    "fullmatch"),  # 2 reps: ^ fails at pos 1 → no match
-    ("(a$){0,2}",  "",      "fullmatch"),  # 0 reps → match
-    ("(a$){0,2}",  "a",     "fullmatch"),  # 1 rep: a, $ at end → match
-    ("(a$){0,2}",  "aa",    "fullmatch"),  # 2 reps: $ blocked → no match
+    # Anchor inside loop: repeated iteration blocked
+    ("(^a){2}",   "aa",  "fullmatch"),  # noMatch — 2nd ^ is past start
+    ("(^a){2}",   "a",   "fullmatch"),  # noMatch
+    ("(a$){2}",   "aa",  "fullmatch"),  # noMatch — $ after 1st a blocks 2nd iteration
+    ("(a$){2}",   "a",   "fullmatch"),  # noMatch
 
-    # .loop(n,m) n≥1: recurses via concat (anchor handling falls through to concat fix)
-    ("(^a){1,2}",  "a",     "fullmatch"),  # 1 rep: ^ at 0, a → match
-    ("(^a){1,2}",  "aa",    "fullmatch"),  # 2 reps: ^ fails at pos 1 → no match
-    ("(a$){1,2}",  "a",     "fullmatch"),  # 1 rep: a, $ at end → match
-    ("(a$){1,2}",  "aa",    "fullmatch"),  # 2 reps: $ after 1st a blocked → no match
+    # (^a){0,2}: loop(0,m) with always-consuming anchored inner — first/middle/last split
+    ("(^a){0,2}", "",    "fullmatch"),  # match — 0 reps
+    ("(^a){0,2}", "a",   "fullmatch"),  # match — 1 rep: ^ at 0
+    ("(^a){0,2}", "aa",  "fullmatch"),  # noMatch — 2nd ^ fails at pos 1
 
-    # .star | alwaysConsume=false |: uses re.*(toCore r1 atStart atEnd) directly
-    # No-anchor inner — baseline to confirm branch is reached and works
-    ("(a?)*",      "",      "fullmatch"),
-    ("(a?)*",      "a",     "fullmatch"),
-    ("(a?)*",      "aaa",   "fullmatch"),
+    # (a$){0,2}: loop(0,m) with always-consuming anchored inner
+    ("(a$){0,2}", "",    "fullmatch"),  # match — 0 reps
+    ("(a$){0,2}", "a",   "fullmatch"),  # match — 1 rep: $ at end
+    ("(a$){0,2}", "aa",  "fullmatch"),  # noMatch — $ blocked
 
-    # Anchored non-consuming inner: ^ or $ inside a star that can iterate empty
-    ("(^a?)*",     "",      "fullmatch"),  # 0 iterations → match
-    ("(^a?)*",     "a",     "fullmatch"),  # 1 iter: ^ fires, a?="a" → match
-    ("(^a?)*",     "aa",    "fullmatch"),  # ^ fails at pos 1 → only 1 iter → no match
-    ("(a?$)*",     "",      "fullmatch"),  # 0 iterations → match
-    ("(a?$)*",     "a",     "fullmatch"),  # 1 iter: a?="a", $ at end → match
-    ("(a?$)*",     "aa",    "fullmatch"),  # $ after 1st a blocked by 2nd a → no match
+    # {n,m} with n≥1: recursed via concat; anchor handling falls to concat cases
+    ("(^a){1,2}", "a",   "fullmatch"),  # match — 1 rep: ^ at 0
+    ("(^a){1,2}", "aa",  "fullmatch"),  # noMatch — 2nd ^ fails at pos 1
+    ("(a$){1,2}", "a",   "fullmatch"),  # match — 1 rep: $ at end
+    ("(a$){1,2}", "aa",  "fullmatch"),  # noMatch — $ blocked
 
-    # .loop(0,m) | alwaysConsume=false |: uses re.loop(r1b, 0, m) directly
-    # No-anchor inner — baseline
-    ("(a?){0,2}",  "",      "fullmatch"),
-    ("(a?){0,2}",  "a",     "fullmatch"),
-    ("(a?){0,2}",  "aa",    "fullmatch"),
-    ("(a?){0,2}",  "aaa",   "fullmatch"),  # exceeds max → no match
+    # star with non-consuming inner — simple path (no anchor split needed)
+    ("(a?)*",     "",    "fullmatch"),  # match
+    ("(a?)*",     "a",   "fullmatch"),  # match
+    ("(a?)*",     "aaa", "fullmatch"),  # match
 
-    # Anchored non-consuming inner
-    ("(^a?){0,2}", "",      "fullmatch"),  # 0 reps → match
-    ("(^a?){0,2}", "a",     "fullmatch"),  # 1 rep: ^ fires, a?="a" → match
-    ("(^a?){0,2}", "aa",    "fullmatch"),  # ^ fails at pos 1 → only 1 rep → no match
-    ("(a?$){0,2}", "",      "fullmatch"),  # 0 reps → match
-    ("(a?$){0,2}", "a",     "fullmatch"),  # 1 rep: a?="a", $ at end → match
-    ("(a?$){0,2}", "aa",    "fullmatch"),  # $ after 1st a blocked → no match
+    # star with anchored non-consuming inner — split still required
+    ("(^a?)*",    "",    "fullmatch"),  # match — 0 iterations
+    ("(^a?)*",    "a",   "fullmatch"),  # match — 1 iter: ^ fires, a? = "a"
+    ("(^a?)*",    "aa",  "fullmatch"),  # noMatch — ^ fails at pos 1
+    ("(a?$)*",    "",    "fullmatch"),  # match — 0 iterations
+    ("(a?$)*",    "a",   "fullmatch"),  # match — 1 iter: a? = "a", $ at end
+    ("(a?$)*",    "aa",  "fullmatch"),  # noMatch — $ after 1st a blocked
 
-    # Invalid regexes → Python raises re.error, Strata should give parseError
-    ("x{100,2}",  "x",    "fullmatch"),  # invalid bounds
-    ("(abc",      "abc",  "fullmatch"),  # unmatched paren
-    ("a**",       "a",    "fullmatch"),  # nothing to repeat
+    # loop(0,m) with non-consuming inner — simple path
+    ("(a?){0,2}", "",    "fullmatch"),  # match
+    ("(a?){0,2}", "a",   "fullmatch"),  # match
+    ("(a?){0,2}", "aa",  "fullmatch"),  # match
+    ("(a?){0,2}", "aaa", "fullmatch"),  # noMatch — exceeds max
 
-    # ── Unimplemented: (lookahead / lookbehind) ───────────────────────────────---
-    (r"a(?=b)",   "ab",  "match"),
-    (r"a(?!b)",   "ac",  "match"),
-    (r"(?<=a)b",  "ab",  "match"),
-    (r"(?<!a)b",  "cb",  "match"),
+    # loop(0,m) with anchored non-consuming inner — split required
+    ("(^a?){0,2}", "",   "fullmatch"),  # match — 0 reps
+    ("(^a?){0,2}", "a",  "fullmatch"),  # match — 1 rep: ^ fires, a? = "a"
+    ("(^a?){0,2}", "aa", "fullmatch"),  # noMatch — ^ fails at pos 1
+    ("(a?$){0,2}", "",   "fullmatch"),  # match — 0 reps
+    ("(a?$){0,2}", "a",  "fullmatch"),  # match — 1 rep: a? = "a", $ at end
+    ("(a?$){0,2}", "aa", "fullmatch"),  # noMatch — $ blocked
 
-    # ── Unimplemented: non-greedy quantifiers ───────────────────────────────────
+    # ── Anchors: unusual / unmatchable positions ─────────────────────────────────
 
-    (r"a*?",      "aaa",    "fullmatch"),  # lazy *?: same language as a*
-    (r"a*?",      "",       "fullmatch"),
-    (r"a+?",      "a",      "fullmatch"),  # lazy +?: same language as a+
-    (r"a+?",      "aaa",    "fullmatch"),
-    (r"a??",      "",       "fullmatch"),  # lazy ??: same language as a?
-    (r"a??",      "a",      "fullmatch"),
-    (r"a*?b",     "aaab",   "search"),  # lazy in search mode
-    (r"a+?b",     "ab",     "search"),
+    # ^ after an always-consuming prefix: ^ is past the start
+    ("x(^a)",    "xa",  "fullmatch"),  # noMatch — ^ after x: past start
+    ("x(^a)",    "a",   "fullmatch"),  # noMatch
+    ("x(^a|b)",  "xb",  "fullmatch"),  # match — ^a fails, b branch works
+    ("x(^a|b)",  "xa",  "fullmatch"),  # noMatch — ^a fails, b ≠ a
 
-    # ── Unimplemented: \d \w \s shorthand classes ───────────────────────────────
+    # $ blocked by following content
+    ("(a$)b",    "ab",  "fullmatch"),  # noMatch — $ before b is unmatchable
+    ("(a$)(b)",  "ab",  "fullmatch"),  # noMatch
+    ("(a$)b",    "ab",  "match"),      # noMatch
 
-    (r"\d",       "5",      "fullmatch"),
-    (r"\d",       "a",      "fullmatch"),
-    (r"\d+",      "123",    "fullmatch"),
-    (r"\d+",      "12a",    "fullmatch"),  # partial: Python noMatch
-    (r"\D",       "a",      "fullmatch"),
-    (r"\D",       "5",      "fullmatch"),
-    (r"\w",       "a",      "fullmatch"),
-    (r"\w",       "!",      "fullmatch"),
-    (r"\w+",      "hello",  "fullmatch"),
-    (r"\W",       "!",      "fullmatch"),
-    (r"\W",       "a",      "fullmatch"),
-    (r"\s",       " ",      "fullmatch"),
-    (r"\s",       "a",      "fullmatch"),
-    (r"\S",       "a",      "fullmatch"),
-    (r"\S",       " ",      "fullmatch"),
-    (r"\d+\s\w+", "42 abc", "fullmatch"),  # combined shorthands
+    # Alternation where one branch has a context-killed anchor
+    ("(a$|b)c",  "ac",  "fullmatch"),  # noMatch — a$ then c: $ blocked; b ≠ a
+    ("(a$|b)c",  "bc",  "fullmatch"),  # match — b branch works
+    ("(a$|b)c",  "abc", "fullmatch"),  # noMatch
+    ("(a|b$)c",  "ac",  "fullmatch"),  # match — a branch works
+    ("(a|b$)c",  "bc",  "fullmatch"),  # noMatch — b$c: $ before c → unmatchable
 
-    # ── Unimplemented: \b \B word-boundary assertions ───────────────────────────
+    # Two anchors that cannot both fire
+    ("(^a)(^b)", "ab",  "fullmatch"),  # noMatch — 2nd ^ is past start
+    ("(^a)(^b)", "a",   "fullmatch"),  # noMatch
+    ("(a$)(b$)", "ab",  "fullmatch"),  # noMatch — 1st $ requires end but b follows
+    ("(a$)(b$)", "a",   "fullmatch"),  # noMatch
 
-    (r"\bcat\b",      "cat",          "search"),  # exact word
-    (r"\bcat\b",      "cats",         "search"),  # trailing char: no boundary after t
-    (r"\bcat\b",      "the cat now",  "search"),  # word surrounded by spaces
-    (r"\bcat\b",      "concatenate",  "search"),  # no boundary: cat inside word
-    (r"\Bcat\B",      "concatenate",  "search"),  # \B: non-boundary on both sides
+    # ^ or $ at a position where it can't fire cleanly
+    ("(^|$)c",   "c",   "fullmatch"),  # match — ^ fires → "c" matches
+    ("(^|$)c",   "xc",  "fullmatch"),  # noMatch — neither fires
+    ("a(^|$)b",  "ab",  "fullmatch"),  # noMatch — after a: ^ past start, $ blocked by b
 
-    # ── Unimplemented: \A \Z absolute anchors ───────────────────────────────────
+    # Anchors blocked by surrounding always-consuming chars
+    ("c(^a|b$)d", "cad", "fullmatch"),  # noMatch
+    ("c(^a|b$)d", "cbd", "fullmatch"),  # noMatch
+    ("c(^a|b$)d", "ccd", "fullmatch"),  # noMatch
+    ("(^a|b$)(^c|d$)", "ac", "fullmatch"),  # noMatch
+    ("(^a|b$)(^c|d$)", "bd", "fullmatch"),  # noMatch
+    ("(^a|b$)(^c|d$)", "bc", "fullmatch"),  # noMatch
 
-    (r"\Aa",      "abc",    "search"),  # \A forces match at absolute start
-    (r"\Aa",      "xabc",   "search"),  # prefix not allowed
-    (r"a\Z",      "ba",     "search"),  # \Z forces match at absolute end
-    (r"a\Z",      "ab",     "search"),  # suffix not allowed
-    (r"\Aa\Z",    "a",      "fullmatch"),
-    (r"\Aa\Z",    "ab",     "fullmatch"),
+    # Search mode: anchor inside group restricts positional freedom
+    ("(^a)(b)",  "ab",  "search"),     # match — ^a forces start
+    ("(^a)(b)",  "xab", "search"),     # noMatch — ^ blocks
+    ("(a)(b$)",  "ab",  "search"),     # match — b$ forces end
+    ("(a)(b$)",  "abx", "search"),     # noMatch — $ blocked by x
+    ("(^a)(b$)", "ab",  "search"),     # match — both anchors: exactly "ab"
+    ("(^a)(b$)", "xab", "search"),     # noMatch — ^ blocks
+    ("(^a)(b$)", "abx", "search"),     # noMatch — $ blocks
 
-    # ── Unimplemented: non-capturing groups (?:...) ─────────────────────────────
+    # Match mode: $ inside group cuts off trailing content
+    ("(a$|b)c",  "bc",  "match"),      # match
+    ("(a$|b)c",  "bcd", "match"),      # match — trailing d allowed
 
-    (r"(?:ab)+",    "abab",  "fullmatch"),  # same language as (ab)+
-    (r"(?:ab)+",    "ab",    "fullmatch"),
-    (r"(?:a|b)+",   "abba",  "fullmatch"),
-    (r"x(?:a|b)y",  "xay",   "fullmatch"),
-    (r"x(?:a|b)y",  "xcy",   "fullmatch"),
+    # ── Error cases ──────────────────────────────────────────────────────────────
 
-    # ── Unimplemented: named groups (?P<name>...) ───────────────────────────────
+    ("x{100,2}", "x",   "fullmatch"),  # error — invalid bounds: lo > hi
+    ("(abc",     "abc", "fullmatch"),  # error — unmatched parenthesis
+    ("a**",      "a",   "fullmatch"),  # error — nothing to repeat
 
-    (r"(?P<x>a)",           "a",   "fullmatch"),
-    (r"(?P<x>a)",           "b",   "fullmatch"),
-    (r"(?P<x>a)(?P<y>b)",   "ab",  "fullmatch"),
+    # ── Unimplemented: lookahead / lookbehind ────────────────────────────────────
 
-    # ── Unimplemented: inline flags (?i) (?m) (?s) ─────────────────────────────
+    (r"a(?=b)",  "ab",  "match"),      # match
+    (r"a(?!b)",  "ac",  "match"),      # match
+    (r"(?<=a)b", "ab",  "match"),      # noMatch — re.match at pos 0: nothing precedes b
+    (r"(?<!a)b", "cb",  "match"),      # noMatch — re.match at pos 0: char is c, not b
 
-    (r"(?i)hello",   "HELLO",  "fullmatch"),  # case-insensitive
-    (r"(?i)hello",   "Hello",  "fullmatch"),
-    (r"(?i)hello",   "world",  "fullmatch"),
-    (r"(?i)[a-z]+",  "ABC",    "fullmatch"),
-    (r"(?s)a.b",     "axb",    "fullmatch"),  # (?s): . matches anything (no \n in test)
-    (r"(?m)^a",      "a",      "search"),  # (?m): ^ matches start of each line
+    # ── Unimplemented: non-greedy (lazy) quantifiers ─────────────────────────────
 
-    # ── Unimplemented: backreferences ───────────────────────────────────────────
+    (r"a*?",  "aaa",   "fullmatch"),  # match — same language as a*
+    (r"a*?",  "",      "fullmatch"),  # match
+    (r"a+?",  "a",     "fullmatch"),  # match — same language as a+
+    (r"a+?",  "aaa",   "fullmatch"),  # match
+    (r"a??",  "",      "fullmatch"),  # match — same language as a?
+    (r"a??",  "a",     "fullmatch"),  # match
+    (r"a*?b", "aaab",  "search"),    # match
+    (r"a+?b", "ab",    "search"),    # match
 
-    (r"(a)\1",    "aa",   "fullmatch"),  # group 1 repeated
-    (r"(a)\1",    "ab",   "fullmatch"),
-    (r"(a|b)\1",  "aa",   "fullmatch"),
-    (r"(a|b)\1",  "bb",   "fullmatch"),
-    (r"(a|b)\1",  "ab",   "fullmatch"),  # mismatch
-    (r"(.)\1",    "aa",   "fullmatch"),  # any char repeated
-    (r"(.)\1",    "ab",   "fullmatch"),
+    # ── Unimplemented: \d \w \s shorthand classes ────────────────────────────────
+
+    (r"\d",        "5",      "fullmatch"),  # match
+    (r"\d",        "a",      "fullmatch"),  # noMatch
+    (r"\d+",       "123",    "fullmatch"),  # match
+    (r"\d+",       "12a",    "fullmatch"),  # noMatch
+    (r"\D",        "a",      "fullmatch"),  # match
+    (r"\D",        "5",      "fullmatch"),  # noMatch
+    (r"\w",        "a",      "fullmatch"),  # match
+    (r"\w",        "!",      "fullmatch"),  # noMatch
+    (r"\w+",       "hello",  "fullmatch"),  # match
+    (r"\W",        "!",      "fullmatch"),  # match
+    (r"\W",        "a",      "fullmatch"),  # noMatch
+    (r"\s",        " ",      "fullmatch"),  # match
+    (r"\s",        "a",      "fullmatch"),  # noMatch
+    (r"\S",        "a",      "fullmatch"),  # match
+    (r"\S",        " ",      "fullmatch"),  # noMatch
+    (r"\d+\s\w+",  "42 abc", "fullmatch"),  # match
+
+    # ── Unimplemented: \b \B word-boundary assertions ────────────────────────────
+
+    (r"\bcat\b",  "cat",         "search"),  # match — exact word
+    (r"\bcat\b",  "cats",        "search"),  # noMatch — no boundary after t
+    (r"\bcat\b",  "the cat now", "search"),  # match — surrounded by spaces
+    (r"\bcat\b",  "concatenate", "search"),  # noMatch — cat inside word
+    (r"\Bcat\B",  "concatenate", "search"),  # match — non-boundary on both sides
+
+    # ── Unimplemented: \A \Z absolute anchors ────────────────────────────────────
+
+    (r"\Aa",   "abc",  "search"),     # match — \A forces absolute start
+    (r"\Aa",   "xabc", "search"),     # noMatch
+    (r"a\Z",   "ba",   "search"),     # match — \Z forces absolute end
+    (r"a\Z",   "ab",   "search"),     # noMatch
+    (r"\Aa\Z", "a",    "fullmatch"),  # match
+    (r"\Aa\Z", "ab",   "fullmatch"),  # noMatch
+
+    # ── Unimplemented: non-capturing groups (?:...) ──────────────────────────────
+
+    (r"(?:ab)+",   "abab", "fullmatch"),  # match — same language as (ab)+
+    (r"(?:ab)+",   "ab",   "fullmatch"),  # match
+    (r"(?:a|b)+",  "abba", "fullmatch"),  # match
+    (r"x(?:a|b)y", "xay",  "fullmatch"),  # match
+    (r"x(?:a|b)y", "xcy",  "fullmatch"),  # noMatch
+
+    # ── Unimplemented: named groups (?P<name>...) ────────────────────────────────
+
+    (r"(?P<x>a)",         "a",  "fullmatch"),  # match
+    (r"(?P<x>a)",         "b",  "fullmatch"),  # noMatch
+    (r"(?P<x>a)(?P<y>b)", "ab", "fullmatch"),  # match
+
+    # ── Unimplemented: inline flags (?i) (?m) (?s) ──────────────────────────────
+
+    (r"(?i)hello",  "HELLO", "fullmatch"),  # match — case-insensitive
+    (r"(?i)hello",  "Hello", "fullmatch"),  # match
+    (r"(?i)hello",  "world", "fullmatch"),  # noMatch
+    (r"(?i)[a-z]+", "ABC",   "fullmatch"),  # match
+    (r"(?s)a.b",    "axb",   "fullmatch"),  # match — (?s): . also matches \n
+    (r"(?m)^a",     "a",     "search"),     # match — (?m): ^ matches per-line
+
+    # ── Unimplemented: backreferences ────────────────────────────────────────────
+
+    (r"(a)\1",   "aa",  "fullmatch"),  # match — group 1 repeated
+    (r"(a)\1",   "ab",  "fullmatch"),  # noMatch
+    (r"(a|b)\1", "aa",  "fullmatch"),  # match
+    (r"(a|b)\1", "bb",  "fullmatch"),  # match
+    (r"(a|b)\1", "ab",  "fullmatch"),  # noMatch — mismatch
+    (r"(.)\1",   "aa",  "fullmatch"),  # match — any char repeated
+    (r"(.)\1",   "ab",  "fullmatch"),  # noMatch
 ]
 
 # ── Python oracle ──────────────────────────────────────────────────────────────

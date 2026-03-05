@@ -9,6 +9,8 @@
 --
 -- Usage: DiffTestCore [--log-dir <path>]
 --
+-- Example: printf "a\ta\tfullmatch\n" | DiffTestCore
+--
 -- Input  (stdin):  one test per line, tab-separated: <regex>\t<string>\t<mode>
 -- Output (stdout): one result per line, tab-separated: <regex>\t<string>\t<mode>\t<result>
 --

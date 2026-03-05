@@ -110,6 +110,9 @@ jobs:
           ./run_py_analyze.sh laurel
           python run_py_analyze_sarif.py
           python run_py_analyze_sarif.py --laurel
+      - name: Run regex differential tests
+        working-directory: StrataTest/Languages/Python/Regex
+        run: python diff_test.py
 
   lint_checks:
     name: Run lint checks
