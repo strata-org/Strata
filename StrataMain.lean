@@ -268,7 +268,7 @@ def pyAnalyzeCommand : Command where
               { VerifyOptions.default with
                 stopOnFirstError := false,
                 verbose := verboseMode,
-                removeIrrelevantAxioms := true,
+                removeIrrelevantAxioms := .Precise,
                 solver := solverName }
       let runVerification tempDir :=
           EIO.toIO

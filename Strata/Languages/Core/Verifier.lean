@@ -14,6 +14,7 @@ import Strata.DL.Imperative.SMTUtils
 import Strata.DDM.AST
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
+import Strata.Transform.IrrelevantAxioms
 import Strata.Transform.PrecondElim
 
 ---------------------------------------------------------------------
@@ -256,17 +257,27 @@ instance : ToString VCResults where
 
 /--
 Preprocess a proof obligation before handing it off to a backend engine.
+
+`axiomCache` should be built once per program with `IrrelevantAxioms.Cache.build`
+and reused across all goals. It is only consulted when
+`options.removeIrrelevantAxioms ≠ .Off`.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : VerifyOptions) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
+    (options : VerifyOptions)
+    (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
   let needsReachCheck := options.reachCheck || Imperative.MetaData.hasReachCheck obligation.metadata
   match obligation.property with
   | .cover =>
+    -- Note: axiom removal is unsound for cover obligations (see
+    -- IrrelevantAxiomsMode). Removing axioms weakens the path conditions,
+    -- potentially making unreachable paths appear satisfiable and producing
+    -- spurious "covered" results. We never prune axioms here.
     if obligation.obligation.isFalse && !needsReachCheck then
       -- If PE determines that the consequent is false, then we can immediately
       -- report a failure. Skip the shortcut when reachCheck is active so that
       -- the SMT solver can determine whether the path is reachable.
-      let result := { obligation, result := .fail, verbose :=  options.verbose }
+      let result := { obligation, result := .fail, verbose := options.verbose }
       return (obligation, some result)
     else
       return (obligation, none)
@@ -289,18 +300,32 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
                    {if options.verbose >= .normal then prog else ""}"
       let result := { obligation, result := .fail, verbose := options.verbose }
       return (obligation, some result)
-    else if options.removeIrrelevantAxioms then
-      -- We attempt to prune the path conditions by excluding all irrelevant
-      -- axioms w.r.t. the consequent to reduce the size of the proof
-      -- obligation.
-      let cg := Program.toFunctionCG p
-      let fns := obligation.obligation.getOps.map CoreIdent.toPretty
-      let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
-      let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
-      let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-      return ({ obligation with assumptions := new_assumptions }, none)
     else
-      return (obligation, none)
+      -- Axiom removal: prune path conditions to reduce the size of the proof
+      -- obligation and reduce brittleness due to quantifiers.
+      match options.removeIrrelevantAxioms, axiomCache with
+      | .Off, _ | _, .none => return (obligation, none)
+      | mode, .some cache =>
+        let consequentFns := obligation.obligation.getOps.map CoreIdent.toPretty
+        let relevantFns :=
+          match mode with
+          | .Aggressive =>
+            -- Only the functions in the consequent Q of the goal P ==> Q are
+            -- used. Axioms relevant only to P may be removed.
+            consequentFns
+          | .Precise =>
+            -- Functions from both P and Q are used. The antecedent functions
+            -- are extracted from the flattened path conditions.
+            let antecedentFns :=
+              obligation.assumptions.flatten.flatMap
+                (fun (_, e) => e.getOps.map CoreIdent.toPretty)
+            (consequentFns ++ antecedentFns).dedup
+          | .Off => consequentFns  -- unreachable; handled above
+        let irrelevantAxioms :=
+          IrrelevantAxioms.getIrrelevantAxioms p cache relevantFns
+        let newAssumptions :=
+          Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
+        return ({ obligation with assumptions := newAssumptions }, none)
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -352,7 +377,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
-    (counter : IO.Ref Nat) (tempDir : System.FilePath) :
+    (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (axiomCache : Option IrrelevantAxioms.Cache := .none) :
     EIO DiagnosticModel VCResults := do
   let (p, E) := pE
   match E.error with
@@ -363,7 +389,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
-      let (obligation, maybeResult) ← preprocessObligation obligation p options
+      let (obligation, maybeResult) ← preprocessObligation obligation p options axiomCache
       if h : maybeResult.isSome then
         let result := Option.get maybeResult h
         results := results.push result
@@ -434,6 +460,12 @@ def verify (program : Program)
       match res with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+  -- Build the axiom-relevance cache once from the final (post-transform) program
+  -- and share it across all environments and goals. Axiom declarations are
+  -- unaffected by partial evaluation, so the cache remains valid for all pEs.
+  let axiomCache? : Option IrrelevantAxioms.Cache :=
+    if options.removeIrrelevantAxioms == .Off then .none
+    else .some (IrrelevantAxioms.Cache.build finalProgram)
   match Core.typeCheckAndPartialEval options finalProgram moreFns with
   | .error err =>
     .error { err with message := s!"❌ Type checking error.\n{err.message}" }
@@ -442,7 +474,8 @@ def verify (program : Program)
     let VCss ← if options.checkOnly then
                  pure []
                else
-                 (List.mapM (fun pE => verifySingleEnv pE options counter tempDir) pEs)
+                 (List.mapM (fun pE =>
+                   verifySingleEnv pE options counter tempDir axiomCache?) pEs)
     .ok VCss.toArray.flatten
 
 end Core

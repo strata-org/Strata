@@ -81,7 +81,8 @@ def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
 /-- Cached results of program analyses that are helpful for program
     transformation. -/
 structure CachedAnalyses where
-  callGraph: Option CallGraph := .none
+  callGraph : Option CallGraph := .none
+  axiomMap  : Option FuncAxMap := .none
 
 @[simp]
 def CachedAnalyses.emp : CachedAnalyses := {}

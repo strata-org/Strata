@@ -626,7 +626,7 @@ def verifyToVcResults (program : Program)
     | .ok result => pure result
 
   -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-  let options := { options with removeIrrelevantAxioms := true }
+  let options := { options with removeIrrelevantAxioms := .Precise }
   -- Debug: Print the generated Strata Core program
   dbg_trace "=== Generated Strata Core Program ==="
   dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram strataCoreProgram) 100))
