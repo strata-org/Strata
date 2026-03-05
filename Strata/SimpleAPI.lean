@@ -70,7 +70,7 @@ def readStrataText :
   Strata.DialectFileMap →
   System.FilePath →
   ByteArray →
-  IO (Strata.Elab.LoadedDialects × Strata.Util.DialectOrProgram) :=
+  IO Strata.Util.DialectOrProgram :=
   Strata.Util.readStrataText
 
 /--
@@ -84,7 +84,7 @@ def readStrataIon :
   Strata.DialectFileMap →
   System.FilePath →
   ByteArray →
-  IO (Strata.Elab.LoadedDialects × Strata.Util.DialectOrProgram) :=
+  IO Strata.Util.DialectOrProgram :=
   Strata.Util.readStrataIon
 
 /--
@@ -96,7 +96,7 @@ name of the file to be loaded.
 def readStrataFile :
   Strata.DialectFileMap →
   System.FilePath →
-  IO (Strata.Elab.LoadedDialects × Strata.Util.DialectOrProgram) :=
+  IO Strata.Util.DialectOrProgram :=
   Strata.Util.readFile
 
 /--
