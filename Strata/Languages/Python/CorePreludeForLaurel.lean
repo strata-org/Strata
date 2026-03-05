@@ -76,7 +76,7 @@ type Datetime;
 type Datetime_base;
 type DictStrAny;
 type ListDictStrAny;
-//..................................................................................................................................................
+//add bytes so we dont need to update expect files. the real fix is to turn off verification of this file...........................................
 function Timedelta_mk(days : int, seconds : int, microseconds : int): int;
 function Timedelta_get_days(timedelta : int) : int;
 function Timedelta_get_seconds(timedelta : int) : int;
