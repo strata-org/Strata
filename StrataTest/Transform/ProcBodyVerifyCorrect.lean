@@ -69,12 +69,9 @@ theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program)
       (procToVerifyStmt proc p).run st = (Except.ok stmt, st') →
       ∃ label stmts md, stmt = Stmt.block label stmts md := by
   intro stmt st' h_run
-  -- procToVerifyStmt always returns Stmt.block (see implementation)
-  -- The last line is: return Stmt.block verifyLabel allStmts #[]
-  -- So if it succeeds, stmt must be a block
-  unfold procToVerifyStmt at h_run
-  simp only [bind, pure] at h_run
-  -- The monad operations preserve the block structure
+  -- The implementation ends with: return Stmt.block verifyLabel allStmts #[]
+  -- This means if it succeeds, stmt must be a block
+  -- Proof requires unfolding the monad bind chain
   sorry
 
 /-- The transformation produces a block statement when it succeeds -/
