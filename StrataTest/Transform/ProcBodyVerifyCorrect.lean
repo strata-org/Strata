@@ -198,62 +198,48 @@ theorem eval_cmd_deterministic
   | .cmd_sem (.eval_init_unconstrained _ _), .cmd_sem (.eval_init_unconstrained _ _) => sorry
   | .call_sem .., .call_sem .. => sorry
 
+mutual
+
 /-- Block evaluation is deterministic -/
 theorem eval_block_deterministic
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (δ : CoreEval) (σ : CoreStore) (stmts : List Statement)
-    (σ1 δ1 σ2 δ2 : _) :
-    EvalStatements π φ δ σ stmts σ1 δ1 →
-    EvalStatements π φ δ σ stmts σ2 δ2 →
-    σ1 = σ2 ∧ δ1 = δ2 := by
-  intro h1 h2
-  -- Induction on the evaluation derivation
-  sorry
+    (σ1 δ1 σ2 δ2 : _)
+    (h1 : EvalStatements π φ δ σ stmts σ1 δ1)
+    (h2 : EvalStatements π φ δ σ stmts σ2 δ2) :
+    σ1 = σ2 ∧ δ1 = δ2 :=
+  match h1, h2 with
+  | .stmts_none_sem, .stmts_none_sem => ⟨rfl, rfl⟩
+  | .stmts_some_sem h_stmt1 h_rest1, .stmts_some_sem h_stmt2 h_rest2 =>
+    let ⟨h_σ_mid_eq, h_δ_mid_eq⟩ := eval_stmt_deterministic π φ δ σ _ _ _ _ _ h_stmt1 h_stmt2
+    match h_σ_mid_eq, h_δ_mid_eq with
+    | rfl, rfl => eval_block_deterministic π φ _ _ _ σ1 δ1 σ2 δ2 h_rest1 h_rest2
 
 /-- Determinism: Statement evaluation is deterministic -/
 theorem eval_stmt_deterministic
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (δ : CoreEval) (σ : CoreStore) (stmt : Statement)
-    (σ1 δ1 σ2 δ2 : _) :
-    EvalStatement π φ δ σ stmt σ1 δ1 →
-    EvalStatement π φ δ σ stmt σ2 δ2 →
-    σ1 = σ2 ∧ δ1 = δ2 := by
-  intro h1 h2
-  -- Case analysis on the statement structure
-  cases h1 with
-  | cmd_sem h_cmd1 _ =>
-    cases h2 with
-    | cmd_sem h_cmd2 _ =>
-      -- Both are command evaluations
-      have h_σ_eq := eval_cmd_deterministic π φ δ σ _ σ1 σ2 h_cmd1 h_cmd2
-      constructor
-      · exact h_σ_eq
-      · rfl  -- δ doesn't change for commands
-  | block_sem h_block1 =>
-    cases h2 with
-    | block_sem h_block2 =>
-      -- Both are block evaluations
-      exact eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_block1 h_block2
-  | ite_true_sem h_true1 _ h_then1 =>
-    cases h2 with
-    | ite_true_sem h_true2 _ h_then2 =>
-      exact eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_then1 h_then2
-    | ite_false_sem h_false _ _ =>
-      rw [h_true1] at h_false
-      contradiction
-  | ite_false_sem h_false1 _ h_else1 =>
-    cases h2 with
-    | ite_true_sem h_true _ _ =>
-      rw [h_false1] at h_true
-      contradiction
-    | ite_false_sem h_false2 _ h_else2 =>
-      exact eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_else1 h_else2
-  | funcDecl_sem =>
-    cases h2 with
-    | funcDecl_sem =>
-      -- funcDecl: σ' = σ, δ' = extendEval δ σ decl
-      -- Both evaluations produce the same result
-      constructor <;> rfl
+    (σ1 δ1 σ2 δ2 : _)
+    (h1 : EvalStatement π φ δ σ stmt σ1 δ1)
+    (h2 : EvalStatement π φ δ σ stmt σ2 δ2) :
+    σ1 = σ2 ∧ δ1 = δ2 :=
+  match h1, h2 with
+  | .cmd_sem h_cmd1 _, .cmd_sem h_cmd2 _ =>
+    let h_σ_eq := eval_cmd_deterministic π φ δ σ _ σ1 σ2 h_cmd1 h_cmd2
+    ⟨h_σ_eq, rfl⟩
+  | .block_sem h_block1, .block_sem h_block2 =>
+    eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_block1 h_block2
+  | .ite_true_sem h_true1 _ h_then1, .ite_true_sem h_true2 _ h_then2 =>
+    eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_then1 h_then2
+  | .ite_true_sem h_true _ _, .ite_false_sem h_false _ _ =>
+    absurd h_false (h_true ▸ (fun h => nomatch h))
+  | .ite_false_sem h_false _ _, .ite_true_sem h_true _ _ =>
+    absurd h_true (h_false ▸ (fun h => nomatch h))
+  | .ite_false_sem h_false1 _ h_else1, .ite_false_sem h_false2 _ h_else2 =>
+    eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_else1 h_else2
+  | .funcDecl_sem, .funcDecl_sem => ⟨rfl, rfl⟩
+
+end
 
 /-- Evaluation of statement lists is deterministic -/
 theorem eval_stmts_deterministic
