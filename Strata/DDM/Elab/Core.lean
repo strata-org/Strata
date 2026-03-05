@@ -866,7 +866,7 @@ def evalBindingSpec
             panic! s!"Cannot bind {ident}: Type at {b.typeIndex.val} has unexpected arg {repr arg}"
     -- TODO: Decide if new bindings for Type and Expr (or other categories) and should not be allowed?
     pure <| tctx.push { ident, kind }
-  | .type b | .scopedType b =>
+  | .type b =>
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabTypeParams initSize args b.argsIndex
     let value : Option TypeExpr :=
@@ -879,6 +879,23 @@ def evalBindingSpec
             | _ =>
               panic! "Bad arg"
     pure <| tctx.push { ident, kind := .type loc params value }
+  | .scopedType b =>
+    let ident := evalBindingNameIndex args b.nameIndex
+    let params ← elabTypeParams initSize args b.argsIndex
+    let value : Option TypeExpr :=
+          match b.defIndex with
+          | none => none
+          | some idx =>
+            match args[idx.toLevel].info with
+            | .ofTypeInfo info =>
+              some info.typeExpr
+            | _ =>
+              panic! "Bad arg"
+    -- For scoped types, add to global context instead of local bindings
+    let gctx := tctx.globalContext
+    let gkind := GlobalKind.type params value
+    let newGctx := gctx.ensureDefined ident gkind
+    pure (tctx.withGlobalContext newGctx)
   | .datatype b =>
     let nameInfo := args[b.nameIndex.toLevel].info
     let (nameLoc, ident) ←

@@ -529,7 +529,7 @@ def translateDatatypeDefinition (dt : DatatypeDefinition) : Core.Decl :=
   match h : dt.constructors with
   | [] =>
     -- Zero constructors: opaque type
-    Core.Decl.type (.con { name := dt.name, numargs := dt.typeArgs.length })
+    Core.Decl.type (.con { name := dt.name, params := dt.typeArgs })
   | first :: rest =>
     let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
       { name := ⟨c.name, ()⟩

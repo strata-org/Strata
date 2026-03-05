@@ -230,13 +230,13 @@ def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
   let name : Ann String M := ⟨default, tcons.name⟩
   modify (·.addGlobalFreeVars #[name.val])
   let args : Ann (Option (Bindings M)) M :=
-    if tcons.numargs = 0 then
+    if tcons.params.isEmpty then
       ⟨default, none⟩
     else
-      let bindings := List.range tcons.numargs |>.map fun i =>
-        let paramName : Ann String M := ⟨default, mkParamName i⟩
+      let bindings := tcons.params.map fun paramName =>
+        let paramNameAnn : Ann String M := ⟨default, paramName⟩
         let paramType := TypeP.type default
-        Binding.mkBinding default paramName paramType
+        Binding.mkBinding default paramNameAnn paramType
       ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
   pure (.command_typedecl default name args)
 
@@ -858,8 +858,8 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
       if tc.numargs == 0 then
         ⟨default, none⟩
       else
-        let bindings := List.range tc.numargs |>.map fun i =>
-          let argName : Ann String M := ⟨default, s!"_ty{i}"⟩
+        let bindings := tc.params.map fun paramName =>
+          let argName : Ann String M := ⟨default, paramName⟩
           let argType := TypeP.type default
           Binding.mkBinding default argName argType
         ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩

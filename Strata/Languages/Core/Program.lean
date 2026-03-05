@@ -20,7 +20,7 @@ open Imperative
 
 -- Type class instances needed for deriving and formatting
 instance : Inhabited TypeDecl where
-  default := .con { name := "DefaultType", numargs := 0 }
+  default := .con { name := "DefaultType", params := [] }
 
 -- ToFormat instance for Function (which is LFunc CoreLParams)
 -- Note: ToFormat CoreLParams.Identifier is now defined in Identifiers.lean
