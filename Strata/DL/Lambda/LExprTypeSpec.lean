@@ -2426,11 +2426,69 @@ theorem tconsAlias_fvs_fresh
       | .ok S =>
         simp [Pure.pure, Except.pure] at h
         obtain ⟨h1, _⟩ := h; subst h1
-        -- output = LMonoTy.subst S.subst instantiatedDefinition
-        -- Free vars of (subst S t) ⊆ freeVars(t) ∪ freeVars(S.values) (via freeVars_of_subst_subset)
-        -- All free vars of instantiatedDefinition are fresh (come from instantiateEnv)
-        -- All free vars of S.values are fresh (S extends Env.stateSubstInfo via unify)
-        sorry
+        -- output = LMonoTy.subst S.subst (instantiatedTypes[1])
+        have h_len : 1 < instTypes.length := by
+          have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_inst; simp at this; omega
+        let instDef := instTypes[1]'(by omega)
+        -- By freeVars_of_subst_subset: freeVars(output) ⊆ freeVars(instDef) ++ Subst.freeVars S.subst
+        intro tv h_tv
+        have h_subset := LMonoTy.freeVars_of_subst_subset S.subst instDef h_tv
+        rw [List.mem_append] at h_subset
+        -- alias found: h_ma gives us the alias
+        have h_alias_mem : alias ∈ Γ.aliases := by
+          rw [← h_ctx]; exact List.mem_of_find?_eq_some h_ma
+        -- h_alias_wf for this specific alias
+        have h_this_alias_wf : ∀ tv, tv ∈ LMonoTy.freeVars alias.type → tv ∈ alias.typeArgs :=
+          h_alias_wf alias h_alias_mem
+        -- typesToInstantiate = [aliasPattern, alias.type]
+        -- All free vars of alias.type are in alias.typeArgs (by h_alias_wf)
+        -- instantiateEnv replaces alias.typeArgs with fresh vars
+        -- So all output free vars are fresh
+        have h_inst_fvs : ∀ tv, tv ∈ LMonoTys.freeVars instTypes →
+            TContext.isFresh (T := T) tv Γ := by
+          rw [← h_ctx]
+          exact LMonoTys.instantiateEnv_freeVars_fresh_closed alias.typeArgs
+            [.tcons name (alias.typeArgs.map .ftvar), alias.type] Env instTypes updatedEnv h_inst
+            (by intro tv htv
+                simp [LMonoTys.freeVars, LMonoTy.freeVars] at htv
+                rcases htv with h_pat | h_body
+                · -- tv ∈ freeVars(aliasPattern) = alias.typeArgs (via map ftvar)
+                  simp [LMonoTys.freeVars_map_ftvar] at h_pat; exact h_pat
+                · exact h_this_alias_wf tv h_body)
+        have h_instDef_fresh : ∀ tv, tv ∈ LMonoTy.freeVars instDef →
+            TContext.isFresh (T := T) tv Γ := by
+          intro tv htv
+          apply h_inst_fvs
+          -- instDef = instTypes[1], so freeVars instDef ⊆ freeVars instTypes
+          show tv ∈ LMonoTys.freeVars instTypes
+          -- instDef = instTypes[1]
+          have : instDef = instTypes[1]'(by omega) := rfl
+          rw [this] at htv
+          match instTypes, h_len with
+          | _ :: b :: _, _ =>
+            simp [LMonoTys.freeVars, List.mem_append]
+            right; left; exact htv
+        -- updatedEnv.stateSubstInfo = Env.stateSubstInfo (instantiateEnv preserves subst)
+        have h_subst_eq : updatedEnv.stateSubstInfo = Env.stateSubstInfo := by
+          simp [LMonoTys.instantiateEnv] at h_inst
+          split at h_inst; · simp at h_inst
+          · simp at h_inst; exact h_inst.2 ▸ rfl
+        -- constraint free vars freshness
+        have h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars [(.tcons name args, instTypes[0]'(by omega))] →
+            TContext.isFresh (T := T) tv Γ := by
+          intro tv htv
+          simp [Constraints.freeVars, Constraint.freeVars] at htv
+          rcases htv with h_args | h_pat
+          · simp [LMonoTy.freeVars] at h_args; exact h_args_fresh tv h_args
+          · exact h_inst_fvs tv (by
+              cases instTypes with
+              | nil => simp at h_len
+              | cons hd tl => simp [LMonoTys.freeVars]; left; exact h_pat)
+        cases h_subset with
+        | inl h_in_def => exact h_instDef_fresh tv h_in_def
+        | inr h_in_subst =>
+          exact Constraints.unify_vals_fresh h_u h_cs_fresh
+            (by rw [h_subst_eq]; exact h_vals_fresh) tv h_in_subst
 
 mutual
 /-- `LMonoTy.resolveAliases` preserves key freshness. -/
