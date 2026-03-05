@@ -202,6 +202,12 @@ def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBas
   | .eq m e1 e2 => evalEq n' σ m e1 e2
   | .ite m c t f => evalIte n' σ m c t f
 
+-- Note: this evaluation is eager -- both branches are fully evaluated even when
+-- the condition is not resolved to true/false. This was originally lazy (only
+-- substituting free variables via `substFvarsFromState`), but we switched to
+-- eager evaluation to support recursive functions, where the branches may
+-- contain recursive calls that need to be unfolded. If we ever need a lazy mode
+-- again, we should add a flag.
 def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TBase.mono) : LExpr TBase.mono :=
   let c' := eval n' σ c
   match c' with

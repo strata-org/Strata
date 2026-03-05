@@ -1447,7 +1447,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
     match status with
     | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
     | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
-    | .RecursiveDefinition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef  7
+    | .RecursiveDefinition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef  6
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sigAndCases : ListMap Core.CoreIdent LMonoTy × Option Nat ← match status with
@@ -1478,12 +1478,15 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
     | some i => #[.inlineIfConstr i]
     | none => #[]
   let (preconds, body, inline?) ← match status with
-    | .Definition | .RecursiveDefinition =>
+    | .Definition =>
       let preconds ← translateFnPreconds p fname bindings op.args[4]!
-      let bodyIdx := 5
-      let e ← translateExpr p bindings op.args[bodyIdx]!
-      let inline? ← translateOptionInline op.args[bodyIdx + 1]!
+      let e ← translateExpr p bindings op.args[5]!
+      let inline? ← translateOptionInline op.args[6]!
       pure (preconds, some e, inline?)
+    | .RecursiveDefinition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let e ← translateExpr p bindings op.args[5]!
+      pure (preconds, some e, #[])
     | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
   let decl := .func { name := fname,
