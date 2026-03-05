@@ -34,7 +34,7 @@ open Lambda (LMonoTy LTy LExpr)
 /-
 Translate Laurel HighType to Core Type
 -/
-def translateType (ty : HighTypeMd) (types : List TypeDefinition := []) : LMonoTy :=
+def translateType (ty : HighTypeMd) (types : List TypeDefinition) : LMonoTy :=
   match _h : ty.val with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
