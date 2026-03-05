@@ -322,20 +322,11 @@ theorem procBodyVerify_completeness
         δ_body σ_body post = .some HasBool.tt)) := by
   intro h_transform h_verify_succeeds σ_body δ_body h_pre h_body post h_post_in
   -- Proof strategy:
-  -- 1. Use h_verify_succeeds to get that stmt evaluates successfully
-  -- 2. Decompose stmt into: inits; assumes; body_block; asserts
-  -- 3. Show that successful evaluation means:
-  --    a. All assumes passed (preconditions held)
-  --    b. Body executed
-  --    c. All asserts passed (postconditions held)
-  -- 4. Extract that the specific postcondition 'post' was checked and passed
-  -- 
-  -- This requires:
-  -- - Lemmas about block evaluation (EvalBlock)
-  -- - Lemmas about assert semantics
-  -- - Frame reasoning to show body execution in verification context
-  --   matches the hypothesized body execution
-  -- - Determinism or uniqueness of evaluation to relate the two executions
+  -- 1. stmt is a block containing asserts for postconditions
+  -- 2. If stmt evaluates successfully, all asserts passed
+  -- 3. Use eval_stmts_with_assert to extract that post held
+  -- 4. But we need to relate the verification context to the body execution context
+  --    This requires frame reasoning about how init/body affect the store
   sorry
 
 end ProcBodyVerifyCorrect
