@@ -170,6 +170,41 @@ theorem eval_stmts_concat_with_assert
     exact h_in
   exact eval_stmts_with_assert π φ δ σ σ' δ' (stmts1 ++ stmts2) label expr md h_eval h_in_concat
 
+/-
+=== Infrastructure Lemmas ===
+
+These lemmas provide the foundation for proving soundness and completeness.
+-/
+
+/-- Determinism: Statement evaluation is deterministic -/
+theorem eval_stmt_deterministic
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ : CoreStore) (stmt : Statement)
+    (σ1 δ1 σ2 δ2 : _) :
+    EvalStatement π φ δ σ stmt σ1 δ1 →
+    EvalStatement π φ δ σ stmt σ2 δ2 →
+    σ1 = σ2 ∧ δ1 = δ2 := by
+  intro h1 h2
+  -- Proof by induction on the evaluation derivation
+  -- This requires showing all evaluation rules are deterministic
+  sorry
+
+/-- Evaluation of statement lists is deterministic -/
+theorem eval_stmts_deterministic
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ : CoreStore) (stmts : List Statement)
+    (σ1 δ1 σ2 δ2 : _) :
+    EvalStatements π φ δ σ stmts σ1 δ1 →
+    EvalStatements π φ δ σ stmts σ2 δ2 →
+    σ1 = σ2 ∧ δ1 = δ2 := by
+  intro h1 h2
+  -- Follows from eval_stmt_deterministic by induction on the list
+  sorry
+
+/-
+=== Main Correctness Theorems ===
+-/
+
 /-- Postcondition expressions are in getCheckExprs -/
 theorem postcondition_expr_in_getCheckExprs
     (postconditions : ListMap CoreLabel Procedure.Check)
