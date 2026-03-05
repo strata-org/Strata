@@ -92,6 +92,8 @@ function datetime_to_str(dt : Datetime) : string;
 // Core-only declarations (not expressible in Laurel)
 // =====================================================================
 
+type CoreOnlyDelimiter;
+
 // Axioms
 axiom [Object_len_ge_zero]: (forall x : Object :: Object_len(x) >= 0);
 axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFrom(s, s));
@@ -183,27 +185,16 @@ def corePreludeForLaurel : Core.Program :=
   Core.getProgram corePreludeForLaurelDDM |>.fst
 
 /--
-Get only the Core-only declarations (filtering out forward declarations
-of types/functions that are already defined in the Laurel prelude).
+Get only the Core-only declarations, dropping the forward declarations
+that precede the `type CoreOnlyDelimiter;` sentinel (and the sentinel itself).
+Everything after the delimiter is a genuine Core-only declaration.
 -/
 def coreOnlyPreludeForLaurel : List Core.Decl :=
-  -- Names that are forward-declared here but actually defined in PythonPreludeInLaurel.
-  -- These will be provided by the Laurel-translated program, so we filter them out.
-  let laurelDefinedNames : Std.HashSet String := Std.HashSet.ofList [
-    "None", "Object", "Object_len", "inheritsFrom",
-    "Error", "ExceptOrNone", "IntOrNone", "StrOrNone",
-    "strOrNone_toObject",
-    "Datetime", "Datetime_base", "DictStrAny", "ListDictStrAny",
-    "Timedelta_mk", "Timedelta_get_days", "Timedelta_get_seconds", "Timedelta_get_microseconds",
-    "Datetime_get_base", "Datetime_get_timedelta", "Datetime_add", "Datetime_lt",
-    "datetime_to_str"
-  ]
-  corePreludeForLaurel.decls.filter fun d =>
-    -- Keep declarations whose name is NOT in the Laurel-defined set.
-    -- Axioms always pass (they have unique names not in the set).
-    -- The Except datatype, ExceptErrorRegex, PyReMatch*, datetime_strptime,
-    -- test_helper_procedure, and the timedelta-with-body all pass.
-    !laurelDefinedNames.contains d.name.name
+  let decls := corePreludeForLaurel.decls
+  -- Drop everything up to and including the CoreOnlyDelimiter sentinel
+  match decls.dropWhile (fun d => d.name.name != "CoreOnlyDelimiter") with
+  | _ :: rest => rest   -- drop the delimiter itself
+  | [] => panic! "CoreOnlyDelimiter sentinel not found in corePreludeForLaurel"
 
 end Python
 end Strata
