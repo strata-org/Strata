@@ -169,6 +169,25 @@ theorem Map.mem_keys_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k1 k2 
       simp_all [Map.remove, Map.keys]
       cases h <;> try simp_all
 
+theorem Map.mem_keys_remove_of_ne [DecidableEq α] (m : Map α β) (k a : α)
+    (h_mem : a ∈ Map.keys m) (h_ne : a ≠ k) :
+    a ∈ Map.keys (Map.remove m k) := by
+  induction m with
+  | nil => simp [Map.keys] at h_mem
+  | cons hd tl ih =>
+    obtain ⟨fst, snd⟩ := hd
+    simp [Map.remove]
+    split
+    · rename_i h_eq
+      simp [Map.keys] at h_mem
+      cases h_mem with
+      | inl h => exact absurd (h ▸ h_eq) h_ne
+      | inr h => exact h
+    · simp [Map.keys] at h_mem ⊢
+      cases h_mem with
+      | inl h => left; exact h
+      | inr h => right; exact ih h
+
 theorem Map.mem_values_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k : α) (v : β)
   (h : v ∈ (Map.remove m k).values) : v ∈ m.values := by
   induction m

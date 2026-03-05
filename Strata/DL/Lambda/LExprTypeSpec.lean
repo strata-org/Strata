@@ -1711,6 +1711,31 @@ theorem Subst.allKeysFresh_of_remove
   intro a ha
   exact h a (Maps.mem_keys_of_mem_keys_remove S k a ha)
 
+/-- If all keys of `Maps.remove S k` are fresh in `Γ` and `k` itself is fresh
+    in `Γ`, then all keys of `S` are fresh in `Γ`. This is the converse
+    direction of `allKeysFresh_of_remove`, extended with freshness of `k`. -/
+theorem Subst.allKeysFresh_of_allKeysFresh_remove
+    {S : Subst} {Γ : TContext T.IDMeta} {k : TyIdentifier}
+    (h_remove : Subst.allKeysFresh (Maps.remove S k) Γ)
+    (h_k : TContext.isFresh (T := T) k Γ) :
+    Subst.allKeysFresh S Γ := by
+  intro a ha
+  by_cases h_eq : a = k
+  · subst h_eq; exact h_k
+  · exact h_remove a (Maps.mem_keys_remove_of_ne S k a ha h_eq)
+
+/-- Substitution on a type whose free variables don't include any key of `S`
+    is the identity. Variant: if no key of `S_big` is in `freeVars(mty)` and
+    `keys(S_small) ⊆ keys(S_big)`, then `subst S_small mty = mty`. Here we
+    use the special case where `S_small = Maps.remove S_big k`. -/
+theorem LMonoTy.subst_remove_eq_self (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
+    (h : S.keys.all (fun x => x ∉ mty.freeVars)) :
+    LMonoTy.subst (Maps.remove S k) mty = mty := by
+  apply LMonoTy.subst_no_key_free
+  simp [List.all_eq_true] at h ⊢
+  intro x hx
+  exact h x (Maps.mem_keys_of_mem_keys_remove S k x hx)
+
 /-- Key inclusion for `unifyOne`: output keys come from input keys,
     single-constraint free vars, or input value free vars.
 
@@ -2460,8 +2485,194 @@ theorem resolveAux_HasType :
     intro et C Env Env' h
     exact ⟨sorry, sorry⟩
   | app m e1 e2 ih1 ih2 =>
+    /-
+    Theorem: The .app case of resolveAux_HasType.
+
+    Given: resolveAux C Env (.app m e1 e2) = .ok (et, Env')
+
+    Proof:
+      1. Decompose the hypothesis into:
+         - resolveAux C Env e1 = .ok (e1t, Env1)
+         - resolveAux C Env1 e2 = .ok (e2t, Env2)
+         - genTyVar Env2 = .ok (fresh_name, Env3)
+         - unify [(ty1, arrow [ty2, freshty])] Env3.subst = .ok S
+         - et = .app ⟨m, mty⟩ e1t e2t, mty = subst S.subst (ftvar fresh_name)
+         - Env' = updateSubst Env3 S' where S'.subst = remove S.subst fresh_name
+
+      2. genTyVar preserves subst and context:
+         Env3.subst = Env2.subst, Env3.context = Env2.context
+
+      3. IHs give typing under Env1.subst and Env2.subst respectively.
+
+      4. Context preservation: chain Env' → Env3 → Env2 → Env1 → Env.
+
+      5. Absorption chain: S absorbs Env3.subst = Env2.subst (unify_absorbs),
+         Env2 absorbs Env1 (resolveAux_absorbs), Env1 absorbs Env (resolveAux_absorbs).
+         By transitivity, S absorbs Env1.subst.
+
+      6. Freshness: allKeysFresh S.subst Env.context, obtained by extending
+         allKeysFresh S'.subst Env.context (from resolveAux_keys_fresh) with
+         the fact that fresh_name is fresh in Env.context.
+
+      7. Upgrade IHs to S via HasType_subst_upgrade.
+
+      8. From unification: subst S ty1 = tcons "arrow" [subst S ty2, mty].
+
+      9. Apply HasType.tapp.
+
+      10. Show subst S'.subst mty = mty: no key of S appears in freeVars(mty)
+          (by subst_keys_not_in_substituted_type), and keys of S' ⊆ keys of S,
+          so subst S' mty = mty (by subst_remove_eq_self).
+    -/
     intro et C Env Env' h
-    exact ⟨sorry, sorry⟩
+    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
+    -- Decompose: resolveAux C Env e1
+    split at h
+    · simp at h
+    · rename_i v1 h_res1
+      obtain ⟨e1t, Env1⟩ := v1
+      dsimp at h h_res1
+      -- Decompose: resolveAux C Env1 e2
+      split at h
+      · simp at h
+      · rename_i v2 h_res2
+        obtain ⟨e2t, Env2⟩ := v2
+        dsimp at h h_res2
+        -- Decompose: TEnv.genTyVar Env2
+        split at h
+        · simp at h
+        · rename_i v3 h_genTyVar
+          obtain ⟨fresh_name, Env3⟩ := v3
+          dsimp at h h_genTyVar
+          -- Decompose: Constraints.unify (wrapped in mapError)
+          split at h
+          · simp at h
+          · rename_i v4 h_mapError
+            simp at h
+            obtain ⟨h_et, h_env'⟩ := h
+            -- Extract the underlying unify hypothesis from the mapError wrapper
+            have h_unify : Constraints.unify
+                [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
+                Env3.stateSubstInfo = .ok v4 := by
+              revert h_mapError
+              generalize Constraints.unify
+                [(toLMonoTy e1t, LMonoTy.tcons "arrow" [toLMonoTy e2t, LMonoTy.ftvar fresh_name])]
+                Env3.stateSubstInfo = res
+              intro h_me
+              match res, h_me with
+              | .ok val, h_me => simp at h_me; rw [h_me]
+              | .error _, h_me => simp at h_me
+            -- genTyVar preserves subst and context
+            have h_gen_subst := TEnv.genTyVar_subst Env2 fresh_name Env3 h_genTyVar
+            have h_gen_ctx := TEnv.genTyVar_context Env2 fresh_name Env3 h_genTyVar
+            have h_gen_fresh := TEnv.genTyVar_isFresh Env2 fresh_name Env3 h_genTyVar
+            -- IHs from recursive calls
+            have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1
+            have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2
+            -- Absorption chain: v4 absorbs Env3.subst = Env2.subst
+            have h_abs_v4_Env3 := unify_absorbs
+              [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
+              Env3.stateSubstInfo v4 h_unify
+            rw [h_gen_subst] at h_abs_v4_Env3
+            -- Now h_abs_v4_Env3 : absorbs v4.subst Env2.subst
+            have h_abs_Env2_Env1 := resolveAux_absorbs e2 e2t C Env1 Env2 h_res2
+            have h_abs_Env1_Env := resolveAux_absorbs e1 e1t C Env Env1 h_res1
+            have h_abs_v4_Env1 := Subst.absorbs_trans
+              Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst v4.subst
+              h_abs_Env2_Env1 h_abs_v4_Env3
+            -- Freshness of v4.subst keys in Env.context
+            -- First get allKeysFresh for S' (the remove'd version) via resolveAux_keys_fresh
+            have h_fresh_S' : Subst.allKeysFresh
+                (Maps.remove v4.subst fresh_name) Env.context := by
+              have h_wf_remove : SubstWF (Maps.remove v4.subst fresh_name) :=
+                SubstWF_of_remove fresh_name v4.isWF
+              have := resolveAux_keys_fresh (.app m e1 e2)
+                (.app ⟨m, LMonoTy.subst v4.subst (.ftvar fresh_name)⟩ e1t e2t) C Env
+                (TEnv.updateSubst Env3
+                  ⟨Maps.remove v4.subst fresh_name, h_wf_remove⟩) (by
+                  simp [resolveAux, Bind.bind, Except.bind, Except.mapError,
+                    h_res1, h_res2, h_genTyVar]
+                  revert h_mapError
+                  generalize Constraints.unify
+                    [(toLMonoTy e1t,
+                      LMonoTy.tcons "arrow" [toLMonoTy e2t, LMonoTy.ftvar fresh_name])]
+                    Env3.stateSubstInfo = res
+                  intro h_me
+                  match res, h_me with
+                  | .ok val, h_me =>
+                    simp at h_me ⊢
+                    subst h_me
+                    exact ⟨rfl, rfl⟩
+                  | .error _, h_me => simp at h_me)
+                sorry -- precondition: input subst keys are fresh
+              simp [TEnv.updateSubst] at this
+              exact this
+            -- Extend to allKeysFresh v4.subst Env.context
+            have h_fresh_v4 : Subst.allKeysFresh v4.subst Env.context := by
+              apply Subst.allKeysFresh_of_allKeysFresh_remove h_fresh_S'
+              -- fresh_name is fresh in Env.context
+              have : TContext.isFresh fresh_name Env2.context := h_gen_fresh
+              rw [h_ctx2, h_ctx1] at this
+              exact this
+            constructor
+            · -- Context preservation
+              rw [← h_env']
+              simp [TEnv.updateSubst, TEnv.context]
+              change Env3.context = Env.context
+              rw [h_gen_ctx, h_ctx2, h_ctx1]
+            · -- Typing: apply HasType.tapp
+              rw [← h_et]; simp [toLMonoTy]
+              rw [← h_env']; simp [TEnv.updateSubst]
+              -- The result type is mty = subst v4.subst (ftvar fresh_name).
+              -- We need: subst (remove v4.subst fresh_name) mty = mty.
+              -- This follows because no key of v4.subst is in freeVars(mty)
+              -- (by subst_keys_not_in_substituted_type), and keys of remove ⊆ keys of v4.
+              have h_no_keys_in_mty :=
+                LMonoTy.subst_keys_not_in_substituted_type (S := v4.subst)
+                  (ty := LMonoTy.ftvar fresh_name) v4.isWF
+              rw [LMonoTy.subst_remove_eq_self v4.subst fresh_name
+                (LMonoTy.subst v4.subst (LMonoTy.ftvar fresh_name)) h_no_keys_in_mty]
+              -- Now goal: HasType C Env.context (.app m e1 e2)
+              --   (.forAll [] (LMonoTy.subst v4.subst (.ftvar fresh_name)))
+              -- Unification makes: subst v4 ty1 = tcons "arrow" [subst v4 ty2, subst v4 freshty]
+              have h_eq := unify_makes_equal
+                e1t.toLMonoTy
+                (LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])
+                Env3.stateSubstInfo v4 h_unify
+              -- Upgrade IH1: from Env1.subst to v4.subst
+              have h_ty1_up := HasType_subst_upgrade C Env.context e1
+                e1t.toLMonoTy Env1.stateSubstInfo.subst v4.subst
+                h_ty1 h_abs_v4_Env1 h_fresh_v4 v4.isWF
+              -- Upgrade IH2: from Env2.subst to v4.subst
+              rw [h_ctx1] at h_ty2
+              have h_ty2_up := HasType_subst_upgrade C Env.context e2
+                e2t.toLMonoTy Env2.stateSubstInfo.subst v4.subst
+                h_ty2 h_abs_v4_Env3 h_fresh_v4 v4.isWF
+              -- Rewrite h_ty1_up using unification equality
+              -- First, distribute subst over tcons on the RHS of h_eq
+              have h_eq_dist : LMonoTy.subst v4.subst e1t.toLMonoTy =
+                  LMonoTy.tcons "arrow"
+                    [LMonoTy.subst v4.subst e2t.toLMonoTy,
+                     LMonoTy.subst v4.subst (.ftvar fresh_name)] := by
+                rw [h_eq, LMonoTy.subst_tcons]
+                congr 1
+                rw [LMonoTys.subst_eq_substLogic]
+                by_cases hS : Subst.hasEmptyScopes v4.subst
+                · simp [LMonoTys.substLogic, hS, LMonoTy.subst_emptyS hS]
+                · have hS' : v4.subst.hasEmptyScopes = false := by
+                    cases h_dec : v4.subst.hasEmptyScopes <;> simp_all
+                  simp only [LMonoTys.substLogic, hS', Bool.false_eq_true, ↓reduceIte]
+              rw [h_eq_dist] at h_ty1_up
+              -- Now h_ty1_up : HasType C Γ e1
+              --   (.forAll [] (.tcons "arrow" [subst v4 ty2, subst v4 (ftvar fresh_name)]))
+              -- Apply HasType.tapp
+              exact HasType.tapp Env.context m e1 e2
+                (.forAll [] (LMonoTy.subst v4.subst (.ftvar fresh_name)))
+                (.forAll [] (LMonoTy.subst v4.subst e2t.toLMonoTy))
+                (by simp [LTy.isMonoType, LTy.boundVars])
+                (by simp [LTy.isMonoType, LTy.boundVars])
+                (by simp [LTy.toMonoType]; exact h_ty1_up)
+                h_ty2_up
   | abs m bty e ih =>
     intro et C Env Env' h
     exact ⟨sorry, sorry⟩
