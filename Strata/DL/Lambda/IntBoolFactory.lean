@@ -293,6 +293,14 @@ def intSafeModFunc : WFLFunc T :=
   binaryOp (InValTy := Int) "Int.SafeMod" (· % ·) (· != 0)
     (preconditions := [yNeZeroPrecond])
 
+def intSafeDivTFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.SafeDivT" Int.tdiv (· != 0)
+    (preconditions := [yNeZeroPrecond])
+
+def intSafeModTFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.SafeModT" Int.tmod (· != 0)
+    (preconditions := [yNeZeroPrecond])
+
 end
 
 def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
@@ -304,7 +312,9 @@ def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
     intModFunc,
     intSafeModFunc,
     intDivTFunc,
+    intSafeDivTFunc,
     intModTFunc,
+    intSafeModTFunc,
     intNegFunc,
     intLtFunc,
     intLeFunc,

@@ -111,7 +111,11 @@ info: ok: [(type Foo (a0 : Type, a1 : Type);
   func Int.SafeMod :  ((x : int) (y : int)) → int
     requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.DivT :  ((x : int) (y : int)) → int;
+  func Int.SafeDivT :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.ModT :  ((x : int) (y : int)) → int;
+  func Int.SafeModT :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.Neg :  ((x : int)) → int;
   func Int.Lt :  ((x : int) (y : int)) → bool;
   func Int.Le :  ((x : int) (y : int)) → bool;
