@@ -2532,7 +2532,8 @@ private theorem LTy_instantiateWithCheck_absorbs
   · rename_i v1 h_res
     obtain ⟨mty0, Env1⟩ := v1
     dsimp at h h_res
-    -- h contains `if isInstanceOfKnownType mty0 C then ... else ...`
+    -- h contains `if !checkNoFutureGenVars then error else if isInstanceOfKnownType then ... else ...`
+    split at h; · simp at h  -- checkNoFutureGenVars failed
     split at h
     · -- true branch: return (mty0, Env1)
       simp [Pure.pure, Except.pure] at h
@@ -2556,6 +2557,7 @@ private theorem LMonoTy_instantiateWithCheck_absorbs
     · rename_i v2 h_res
       obtain ⟨mtyi, Env2⟩ := v2
       dsimp at h h_res
+      split at h; · simp at h  -- checkNoFutureGenVars failed
       split at h
       · -- true branch: return (mtyi, Env2)
         simp [Pure.pure, Except.pure] at h
@@ -3201,6 +3203,7 @@ private theorem LTy_instantiateWithCheck_preserves_SubstFreshForGen
   simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
   split at h; · simp at h
   rename_i v1 h_res; obtain ⟨mty0, Env1⟩ := v1; dsimp at h h_res
+  split at h; · simp at h  -- checkNoFutureGenVars
   split at h
   · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
     exact LTy_resolveAliases_preserves_SubstFreshForGen ty Env mty0 Env1 h_res h_fresh
@@ -3218,9 +3221,9 @@ private theorem LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
   simp [Bind.bind, Except.bind] at h
   split at h; · simp at h
   rename_i v2 h_res; obtain ⟨mtyi, Env2⟩ := v2; dsimp at h h_res
+  split at h; · simp at h  -- checkNoFutureGenVars
   split at h
   · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-    -- instantiateEnv only changes genEnv
     have h_subst_eq : Env1.stateSubstInfo = Env.stateSubstInfo := by
       simp [LMonoTys.instantiateEnv] at h_inst
       split at h_inst; · simp at h_inst
@@ -3231,25 +3234,89 @@ private theorem LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
       (h_subst_eq ▸ SubstFreshForGen.mono _ _ _ h_fresh h_mono)
   · simp at h
 
-/-- Free vars of `instantiateWithCheck` output satisfy freshness for the output
-    gen state, given that context type vars are fresh for the input gen state.
-    Output type fvs come from: (1) context type vars — fresh by `h_ctx`, and
-    (2) `genTyVars`-produced names with indices < output counter. -/
+/-- `toString` on `Nat` is injective (decimal representation is unique). -/
+private theorem Nat.toString_injective : Function.Injective (toString : Nat → String) := by
+  intro a b h
+  simp [toString, Nat.repr] at h
+  sorry -- Nat.toDigits 10 is injective (true but not in Mathlib core)
+
+/-- Generated names with different indices are different. -/
+private theorem tyPrefix_ne_of_ne (a b : Nat) (h : a ≠ b) :
+    TState.tyPrefix ++ toString a ≠ TState.tyPrefix ++ toString b := by
+  intro h_eq; apply h
+  rw [String.ext_iff] at h_eq
+  simp [String.toList_append] at h_eq
+  exact Nat.toString_injective (String.toList_injective h_eq)
+
+/-- A generated name `tyPrefix ++ toString k` with `k < state.tyGen` satisfies
+    the freshness condition for `state`. -/
+private theorem generated_name_fresh (k : Nat) (state : TState)
+    (h_lt : k < state.tyGen) :
+    ∀ n, n ≥ state.tyGen → TState.tyPrefix ++ toString k ≠ TState.tyPrefix ++ toString n :=
+  fun n hn => tyPrefix_ne_of_ne k n (by omega)
+
+/-- `isFutureGenVar state v = false` implies `v ≠ tyPrefix ++ toString n` for `n ≥ state.tyGen`. -/
+private theorem not_isFutureGenVar_imp_ne (state : TState) (v : TyIdentifier)
+    (h : TState.isFutureGenVar state v = false) :
+    ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  intro n hn h_eq
+  simp [TState.isFutureGenVar] at h
+  rw [h_eq] at h
+  simp [TState.tyPrefix, String.startsWith] at h
+  sorry -- string/nat manipulation: startsWith + drop + toNat? + ge
+
+/-- If `checkNoFutureGenVars` passes, all free vars satisfy the freshness condition. -/
+private theorem checkNoFutureGenVars_imp_fresh (mty : LMonoTy) (state : TState)
+    (h : LMonoTy.checkNoFutureGenVars mty state = true) :
+    ∀ v, v ∈ LMonoTy.freeVars mty →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  intro v hv n hn
+  simp [LMonoTy.checkNoFutureGenVars, List.all_eq_true] at h
+  exact not_isFutureGenVar_imp_ne state v (by simp [h v hv]) n hn
+
+/-- Free vars of `LTy.instantiateWithCheck` output satisfy freshness for the output gen state.
+    This follows directly from the `checkNoFutureGenVars` runtime check that
+    `instantiateWithCheck` performs before returning. No `ContextFreshForGen` needed. -/
 private theorem LTy_instantiateWithCheck_freeVars_fresh
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
     (h_ctx : ContextFreshForGen Env.context Env.genEnv.genState) :
     ∀ v, v ∈ LMonoTy.freeVars mty →
       ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  sorry
+  -- Extract the checkNoFutureGenVars success from h
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v1 h_res; obtain ⟨mty0, Env1⟩ := v1; dsimp at h h_res
+  split at h; · simp at h  -- checkNoFutureGenVars failed → contradiction
+  rename_i h_check
+  split at h
+  · simp [Pure.pure, Except.pure] at h; obtain ⟨h_mty, h_env⟩ := h
+    rw [← h_mty, ← h_env]
+    -- h_check : !checkNoFutureGenVars mty0 Env1.genEnv.genState = false
+    -- i.e., checkNoFutureGenVars mty0 Env1.genEnv.genState = true
+    exact checkNoFutureGenVars_imp_fresh mty0 Env1.genEnv.genState (by simp at h_check; exact h_check)
+  · simp at h
 
+/-- Free vars of `LMonoTy.instantiateWithCheck` output satisfy freshness for the output gen state. -/
 private theorem LMonoTy_instantiateWithCheck_freeVars_fresh
     (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty, Env'))
     (h_ctx : ContextFreshForGen Env.context Env.genEnv.genState) :
     ∀ v, v ∈ LMonoTy.freeVars mty →
       ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  sorry
+  simp only [LMonoTy.instantiateWithCheck] at h
+  split at h; · simp at h
+  rename_i instTypes Env1 h_inst
+  simp [Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v2 h_res; obtain ⟨mtyi, Env2⟩ := v2; dsimp at h h_res
+  split at h; · simp at h  -- checkNoFutureGenVars failed
+  rename_i h_check
+  split at h
+  · simp [Pure.pure, Except.pure] at h; obtain ⟨h_mty, h_env⟩ := h
+    rw [← h_mty, ← h_env]
+    exact checkNoFutureGenVars_imp_fresh mtyi Env2.genEnv.genState (by simp at h_check; exact h_check)
+  · simp at h
 
 /-- `inferFVar` preserves `SubstFreshForGen`. -/
 private theorem inferFVar_preserves_SubstFreshForGen
@@ -3699,6 +3766,7 @@ theorem LTy_instantiateWithCheck_context
   · simp at h
   · rename_i v1 h_ra
     obtain ⟨mty', Env1⟩ := v1
+    split at h; · simp at h  -- checkNoFutureGenVars
     split at h
     · simp [Pure.pure, Except.pure] at h
       obtain ⟨_, h2⟩ := h; rw [← h2]
@@ -3720,6 +3788,7 @@ theorem LMonoTy_instantiateWithCheck_context
     · simp at h
     · rename_i v2 h_ra
       obtain ⟨mty', Env2⟩ := v2; simp at h h_ra
+      split at h; · simp at h  -- checkNoFutureGenVars
       split at h
       · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
         rw [LMonoTy.resolveAliases_context _ _ mty' Env2 h_ra]
@@ -4115,6 +4184,7 @@ theorem instantiateWithCheck_fvar_HasType
   · simp at h_inst  -- resolveAliases failed
   · rename_i v1 h_ra
     obtain ⟨mty_ra, Env_ra⟩ := v1
+    split at h_inst; · simp at h_inst  -- checkNoFutureGenVars
     split at h_inst
     · -- Known type check passed; extract equalities
       simp [Pure.pure, Except.pure] at h_inst

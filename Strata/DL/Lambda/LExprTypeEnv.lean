@@ -752,6 +752,20 @@ end
 def isInstanceOfKnownType (ty : LMonoTy) (C : LContext IDMeta) : Bool :=
   LMonoTy.knownInstance ty C.knownTypes
 
+/-- Check whether a type variable name looks like a generated name (`tyPrefix ++ toString n`)
+    with `n ≥ tyGen`. Returns `true` if the name is a "future" generated name that should
+    not appear in a type at this point. -/
+def TState.isFutureGenVar (state : TState) (v : TyIdentifier) : Bool :=
+  if v.startsWith TState.tyPrefix then
+    match (v.drop TState.tyPrefix.length).toNat? with
+    | some n => n >= state.tyGen
+    | none => false
+  else false
+
+/-- Check that no free variable in `mty` is a future generated name. -/
+def LMonoTy.checkNoFutureGenVars (mty : LMonoTy) (state : TState) : Bool :=
+  mty.freeVars.all (fun v => !state.isFutureGenVar v)
+
 /--
 Instantiate `mty` by replacing all free type variables with fresh ones, and then
 perform resolution of type aliases and subsequent checks for registered types.
@@ -766,7 +780,10 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
     have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_inst; simp at this; omega
   let mtyi := instTypes[0]'(by omega)
   let (mtyi, Env) ← mtyi.resolveAliases Env
-  if isInstanceOfKnownType mtyi C
+  if !LMonoTy.checkNoFutureGenVars mtyi Env.genEnv.genState then
+    .error f!"Type {mtyi} contains a type variable that collides with the \
+              generator namespace ({TState.tyPrefix}*). This is not allowed."
+  else if isInstanceOfKnownType mtyi C
   then return (mtyi, Env)
   else .error f!"Type {mty} is not an instance of a previously registered type!\n\
                  Known Types: {C.knownTypes}"
@@ -778,7 +795,10 @@ for registered types.
 def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) :
     Except Format (LMonoTy × TEnv T.IDMeta) := do
   let (mty, Env) ← ty.resolveAliases Env
-  if isInstanceOfKnownType mty C
+  if !LMonoTy.checkNoFutureGenVars mty Env.genEnv.genState then
+    .error f!"Type {mty} contains a type variable that collides with the \
+              generator namespace ({TState.tyPrefix}*). This is not allowed."
+  else if isInstanceOfKnownType mty C
   then return (mty, Env)
   else .error f!"Type {ty} is not an instance of a previously registered type!\n\
                  Known Types: {C.knownTypes}"
@@ -1428,16 +1448,18 @@ theorem LTy_instantiateWithCheck_tyGen_mono
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  -- LTy.instantiateWithCheck = resolveAliases then check isInstanceOfKnownType
+  -- LTy.instantiateWithCheck = resolveAliases then checkNoFutureGenVars then isInstanceOfKnownType
   simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
   split at h
   · simp at h
   · rename_i v1 h_resolve
     obtain ⟨mty_res, Env1⟩ := v1; simp at h h_resolve
-    split at h
-    · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
-      exact LTy_resolveAliases_tyGen_mono ty Env mty_res Env1 h_resolve
+    split at h  -- checkNoFutureGenVars
     · simp at h
+    · split at h  -- isInstanceOfKnownType
+      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+        exact LTy_resolveAliases_tyGen_mono ty Env mty_res Env1 h_resolve
+      · simp at h
 
 theorem LMonoTy_instantiateWithCheck_tyGen_mono
     (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -1453,12 +1475,14 @@ theorem LMonoTy_instantiateWithCheck_tyGen_mono
     · simp at h
     · rename_i v2 h_resolve
       obtain ⟨mty_res, Env2⟩ := v2; simp at h h_resolve
-      split at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
-        exact Nat.le_trans
-          (LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst)
-          (LMonoTy_resolveAliases_tyGen_mono _ Env1 mty_res Env2 h_resolve)
+      split at h  -- checkNoFutureGenVars
       · simp at h
+      · split at h  -- isInstanceOfKnownType
+        · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+          exact Nat.le_trans
+            (LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst)
+            (LMonoTy_resolveAliases_tyGen_mono _ Env1 mty_res Env2 h_resolve)
+        · simp at h
 
 end TyGenMono
 
