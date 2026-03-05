@@ -1403,22 +1403,226 @@ theorem Subst.allKeysFresh_of_remove
   intro a ha
   exact h a (Maps.mem_keys_of_mem_keys_remove S k a ha)
 
-/-- Every key of the output substitution from `unifyOne`/`unifyCore` is either
-    a key of the input substitution, a free variable of the constraints,
-    or a free variable of the input substitution's values. -/
-private theorem unifyOne_unifyCore_keys_incl :
-    (∀ (c : Constraint) (S : SubstInfo)
-      (relS : ValidSubstRelation [c] S),
-      Constraint.unifyOne c S = .ok relS →
+/-- Key inclusion for `unifyOne`: output keys come from input keys,
+    single-constraint free vars, or input value free vars.
+
+    Proof by well-founded recursion matching `unifyOne`'s termination measure.
+    The only branch that adds a new key is the `none` case (ftvar id with
+    `Maps.find? S.subst id = none`), which inserts `id` — a free variable
+    of the constraint. The `some sty` branch recurses with the same S. -/
+theorem Constraint.unifyOne_keys_incl (c : Constraint) (S : SubstInfo)
+    (relS : ValidSubstRelation [c] S)
+    (h : Constraint.unifyOne c S = .ok relS) :
+    ∀ k, k ∈ Maps.keys relS.newS.subst →
+      k ∈ Maps.keys S.subst ∨ k ∈ Constraint.freeVars c ∨ k ∈ Subst.freeVars S.subst := by
+  suffices ∀ relS, Constraint.unifyOne c S = .ok relS →
+      ∀ k, k ∈ Maps.keys relS.newS.subst →
+        k ∈ Maps.keys S.subst ∨ k ∈ Constraint.freeVars c ∨ k ∈ Subst.freeVars S.subst
+    from this relS h
+  apply Constraint.unifyOne.induct
+    (motive1 := fun c S => ∀ relS, Constraint.unifyOne c S = .ok relS →
       ∀ k, k ∈ Maps.keys relS.newS.subst →
         k ∈ Maps.keys S.subst ∨ k ∈ Constraint.freeVars c ∨ k ∈ Subst.freeVars S.subst)
-    ∧
-    (∀ (cs : Constraints) (S : SubstInfo)
+    (motive2 := fun cs S => ∀ relS, Constraints.unifyCore cs S = .ok relS →
+      ∀ k, k ∈ Maps.keys relS.newS.subst →
+        k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst)
+  -- Case 1: t1 == t2
+  · intro S t1 t2 h_eq _ relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · simp only [Except.ok.injEq] at h; subst h; left; exact hk
+    · exact absurd h_eq ‹_›
+  -- Case 2: ftvar id, orig_lty; ftvar id == lty
+  · intro S id orig_lty h_neq _lty _ _ h_eq_lty relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h; left; exact hk
+  -- Case 3: ftvar id, orig_lty; occurs check
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_occurs relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 4: ftvar id, orig_lty; some sty — recursive
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
+        split at h
+        · simp at h
+        · rename_i relS' h_call
+          simp only [Except.ok.injEq] at h; rw [← h] at hk
+          -- ih_rec gives: k ∈ keys(S) ∨ k ∈ freeVars(sty, lty) ∨ k ∈ freeVars(S.values)
+          rcases ih_rec relS' h_call k hk with h1 | h2 | h3
+          · left; exact h1
+          · -- k ∈ freeVars(sty, subst S orig_lty). Show it's in freeVars(c) ∨ freeVars(S.values)
+            simp only [Constraint.freeVars, List.mem_append] at h2
+            rcases h2 with h_sty | h_lty
+            · -- k ∈ freeVars(sty): sty is a value of S
+              right; right; exact Subst.freeVars_of_find_subset S.subst h_some h_sty
+            · -- k ∈ freeVars(subst S orig_lty): by freeVars_of_subst_subset
+              rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst orig_lty h_lty) with
+                h_orig | h_vals
+              · right; left; simp [Constraint.freeVars]; right; exact h_orig
+              · right; right; exact h_vals
+          · right; right; exact h3
+      · rename_i h_none; rw [h_some] at h_none; simp at h_none
+  -- Case 5: ftvar id, orig_lty; none — insert+apply
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs h_none _ _ _ns h' _nS _ _ relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; subst h
+        have hk' := Maps.insert_keys_subset (ms := Subst.apply [(_,_)] S.subst) (key := _) (val := _) hk
+        rw [Subst.keys_of_apply_eq] at hk'
+        rcases List.mem_cons.mp hk' with rfl | h_old
+        · right; left; simp [Constraint.freeVars, LMonoTy.freeVars]
+        · left; exact h_old
+  -- Case 6: orig_lty, ftvar id; ftvar id == lty
+  · intro S orig_lty id h_neq _ _lty _ _ h_eq_lty relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h; left; exact hk
+  -- Case 7: orig_lty, ftvar id; occurs check
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_occurs relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 8: orig_lty, ftvar id; some sty — recursive
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
+        split at h
+        · simp at h
+        · rename_i relS' h_call
+          simp only [Except.ok.injEq] at h; rw [← h] at hk
+          rcases ih_rec relS' h_call k hk with h1 | h2 | h3
+          · left; exact h1
+          · simp only [Constraint.freeVars, List.mem_append] at h2
+            rcases h2 with h_sty | h_lty
+            · right; right; exact Subst.freeVars_of_find_subset S.subst h_some h_sty
+            · rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst orig_lty h_lty) with
+                h_orig | h_vals
+              · right; left; simp [Constraint.freeVars]; left; exact h_orig
+              · right; right; exact h_vals
+          · right; right; exact h3
+      · rename_i h_none; rw [h_some] at h_none; simp at h_none
+  -- Case 9: orig_lty, ftvar id; none — insert+apply
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_not_occurs h_none _ _ _ns h' _nS _ _ relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; subst h
+        have hk' := Maps.insert_keys_subset (ms := Subst.apply [(_,_)] S.subst) (key := _) (val := _) hk
+        rw [Subst.keys_of_apply_eq] at hk'
+        rcases List.mem_cons.mp hk' with rfl | h_old
+        · right; left; simp [Constraint.freeVars, LMonoTy.freeVars]
+        · left; exact h_old
+  -- Case 10: bitvec n1 == n2 contradiction
+  · intro S n1 n2 h_neq h_eq_n relS h
+    exfalso; simp [beq_iff_eq] at h_eq_n; subst h_eq_n
+    exact h_neq (beq_self_eq_true (LMonoTy.bitvec n1))
+  -- Case 11: bitvec n1 ≠ n2 — error
+  · intro S n1 n2 h_neq h_neq_n relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 12: tcons match — recursive unifyCore
+  · intro S name1 args1 name2 args2 h_neq h_match _nc ih_core relS h k hk
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [bind, Except.bind] at h
+      split at h
+      · simp at h
+      · rename_i relS' h_call
+        simp only [Except.ok.injEq] at h; rw [← h] at hk
+        rcases ih_core relS' h_call k hk with h1 | h2 | h3
+        · left; exact h1
+        · right; left; simp only [Constraint.freeVars, LMonoTy.freeVars, List.mem_append]
+          exact List.mem_append.mp (Constraints.freeVars_of_zip_subset h2)
+        · right; right; exact h3
+  -- Case 13: tcons name/length mismatch — error
+  · intro S name1 args1 name2 args2 h_neq h_mismatch relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 14: bitvec, tcons — error
+  · intro S size name args h_neq relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 15: tcons, bitvec — error
+  · intro S name args size h_neq relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 16: unifyCore []
+  · intro S relS h k hk
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Except.ok.injEq] at h; subst h; left; exact hk
+  -- Case 17: unifyCore c :: rest
+  · intro S c c_rest ih1 ih2 relS h k hk
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Bind.bind, Except.bind, Except.mapError] at h
+    split at h
+    · simp at h
+    · rename_i relS_one h_one_raw
+      have h_one := Except.mapError_ok_h' h_one_raw
+      split at h
+      · simp at h
+      · rename_i relS_rest h_rest
+        simp only [Except.ok.injEq] at h
+        have h_eq : relS_rest.newS = relS.newS := by cases h; rfl
+        rw [← h_eq] at hk
+        rcases ih2 relS_one relS_rest h_rest k hk with hk1 | hk2 | hk3
+        · rcases ih1 relS_one h_one k hk1 with h1a | h1b | h1c
+          · left; exact h1a
+          · right; left; simp [Constraints.freeVars]; left; exact h1b
+          · right; right; exact h1c
+        · right; left; simp [Constraints.freeVars]; right; exact hk2
+        · rcases List.mem_append.mp (relS_one.goodSubset hk3) with h_c | h_s
+          · right; left; simp [Constraints.freeVars]; left
+            simp [Subst.freeVars_subset_prop, Constraints.freeVars] at h_c; exact h_c
+          · right; right; exact h_s
+
+/-- Key inclusion for `unifyCore`: output keys come from input keys,
+    constraint free vars, or input value free vars. -/
+theorem Constraints.unifyCore_keys_incl :
+    ∀ (cs : Constraints) (S : SubstInfo)
       (relS : ValidSubstRelation cs S),
       Constraints.unifyCore cs S = .ok relS →
       ∀ k, k ∈ Maps.keys relS.newS.subst →
-        k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst) := by
-  sorry
+        k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst := by
+  intro cs; induction cs with
+  | nil =>
+    intro S relS h k hk
+    unfold Constraints.unifyCore at h; simp at h; subst h; left; exact hk
+  | cons c rest ih =>
+    intro S relS h k hk
+    rw [Constraints.unifyCore.eq_2] at h
+    simp only [Bind.bind, Except.bind, Except.mapError] at h
+    split at h; · simp at h
+    rename_i relS1 h_one; split at h; · simp at h
+    rename_i relS2 h_core; simp at h; subst h
+    have h_one' : Constraint.unifyOne c S = .ok relS1 := by
+      revert h_one; cases Constraint.unifyOne c S <;> simp [Except.mapError]
+    rcases ih relS1.newS relS2 h_core k hk with hk1 | hk2 | hk3
+    · rcases Constraint.unifyOne_keys_incl c S relS1 h_one' k hk1 with h1a | h1b | h1c
+      · left; exact h1a
+      · right; left; simp [Constraints.freeVars]; left; exact h1b
+      · right; right; exact h1c
+    · right; left; simp [Constraints.freeVars]; right; exact hk2
+    · rcases List.mem_append.mp (relS1.goodSubset hk3) with h_c | h_s
+      · right; left; simp [Constraints.freeVars]; left
+        simp [Subst.freeVars_subset_prop, Constraints.freeVars] at h_c; exact h_c
+      · right; right; exact h_s
 
 /-- Key-inclusion for `Constraints.unify`: output keys come from input keys,
     constraint free vars, or input value free vars. -/
@@ -1432,7 +1636,7 @@ theorem Constraints.unify_keys_incl
   · simp at h_unify
   · rename_i relS h_core
     simp at h_unify; subst h_unify
-    exact unifyOne_unifyCore_keys_incl.2 cs S relS h_core
+    exact unifyCore_keys_incl cs S relS h_core
 
 /-- Unification preserves freshness: if all keys of the input substitution and
     all free variables in the constraints are fresh in `Γ`, then all keys
