@@ -1,10 +1,19 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel]
+# Usage: ./run_py_analyze.sh [laurel] [--update]
 # Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel
+# With --update, overwrite existing expected files with actual output
 
 failed=0
-mode="${1:-core}"
+update=0
+mode="core"
+
+for arg in "$@"; do
+    case "$arg" in
+        --update) update=1 ;;
+        *) mode="$arg" ;;
+    esac
+done
 
 if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
@@ -41,7 +50,10 @@ for test_file in tests/test_*.py; do
 
             output=$(cd ../../.. && ./.lake/build/bin/strata $command "StrataTest/Languages/Python/${ion_file}")
 
-            if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
+            if [ $update -eq 1 ]; then
+                echo "$output" > "$expected_file"
+                echo "Updated: $expected_file"
+            elif ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
                 echo "ERROR: Analysis output for $base_name does not match expected result"
                 echo "$output" | diff "$expected_file" -
                 failed=1
