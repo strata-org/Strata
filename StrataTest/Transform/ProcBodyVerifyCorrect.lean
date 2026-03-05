@@ -69,9 +69,9 @@ theorem procBodyVerify_produces_block_structure (proc : Procedure) (p : Program)
       (procToVerifyStmt proc p).run st = (Except.ok stmt, st') →
       ∃ label stmts md, stmt = Stmt.block label stmts md := by
   intro stmt st' h_run
-  -- The implementation ends with: return Stmt.block verifyLabel allStmts #[]
-  -- This means if it succeeds, stmt must be a block
-  -- Proof requires unfolding the monad bind chain
+  -- procToVerifyStmt always returns: Stmt.block verifyLabel allStmts #[]
+  unfold procToVerifyStmt at h_run
+  simp [StateT.run, bind, StateT.bind, pure] at h_run
   sorry
 
 /-- The transformation produces a block statement when it succeeds -/
@@ -185,9 +185,17 @@ theorem eval_cmd_deterministic
     EvalCommand π φ δ σ cmd σ2 →
     σ1 = σ2 := by
   intro h1 h2
-  -- Commands like assert/assume don't change the store
-  -- Other commands (init, set, havoc, call) need case analysis
-  sorry
+  match h1, h2 with
+  | .cmd_sem (.eval_assert _ _), .cmd_sem (.eval_assert _ _) => rfl
+  | .cmd_sem (.eval_assume _ _), .cmd_sem (.eval_assume _ _) => rfl
+  | .cmd_sem (.eval_cover _), .cmd_sem (.eval_cover _) => rfl
+  | .cmd_sem (.eval_init h_eval1 h_init1 _), .cmd_sem (.eval_init h_eval2 h_init2 _) =>
+    rw [h_eval1] at h_eval2; cases h_eval2; sorry
+  | .cmd_sem (.eval_set h_eval1 h_update1 _), .cmd_sem (.eval_set h_eval2 h_update2 _) =>
+    rw [h_eval1] at h_eval2; cases h_eval2; sorry
+  | .cmd_sem (.eval_havoc _ _), .cmd_sem (.eval_havoc _ _) => sorry
+  | .cmd_sem (.eval_init_unconstrained _ _), .cmd_sem (.eval_init_unconstrained _ _) => sorry
+  | .call_sem .., .call_sem .. => sorry
 
 /-- Block evaluation is deterministic -/
 theorem eval_block_deterministic
@@ -278,20 +286,25 @@ theorem postcondition_expr_in_getCheckExprs
   induction postconditions with
   | nil => cases h_in
   | cons head tail ih =>
-    simp [ListMap.toList] at h_in ⊢
+    simp [ListMap.toList] at h_in
     cases h_in with
     | inl h_eq =>
+      simp
       left
       cases h_eq
       rfl
     | inr h_tail =>
-      -- Goal after simp: ∃ a, a ∈ ListMap.values tail ∧ a.expr = check.expr
-      -- ih h_tail gives: check.expr ∈ (ListMap.values tail).map (·.expr)
-      -- Need to extract the witness
-      have h_mem := ih h_tail
-      -- h_mem : check.expr ∈ List.map (fun c => c.expr) (ListMap.values tail)
-      -- This means ∃ c ∈ values tail, c.expr = check.expr
-      sorry
+      simp [List.map]
+      right
+      cases tail with
+      | nil => cases h_tail
+      | cons t_head t_tail =>
+        have h_mem := ih h_tail
+        rw [List.mem_map] at h_mem
+        simp at h_mem
+        obtain h_eq | ⟨a, h_a_in, h_a_expr⟩ := h_mem
+        · refine ⟨t_head.snd, by simp [ListMap.values], h_eq⟩
+        · refine ⟨a, by simp [ListMap.values]; right; exact h_a_in, h_a_expr⟩
 
 /-- Weaker completeness: If verification statement succeeds, all postcondition asserts passed -/
 theorem procBodyVerify_completeness_weak
