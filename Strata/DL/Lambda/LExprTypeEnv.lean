@@ -447,6 +447,12 @@ class HasGen (IDMeta: Type) where
   /-- `genVar` never decreases the type-variable generator counter. -/
   genVar_tyGen_mono : ∀ (Env : TGenEnv IDMeta) (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
     genVar Env = .ok (xv, Env') → Env'.genState.tyGen ≥ Env.genState.tyGen
+  /-- `genVar` preserves the context. -/
+  genVar_context : ∀ (Env : TGenEnv IDMeta) (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
+    genVar Env = .ok (xv, Env') → Env'.context = Env.context
+  /-- `genVar` produces a variable not in knownVars. -/
+  genVar_fresh : ∀ (Env : TGenEnv IDMeta) (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
+    genVar Env = .ok (xv, Env') → xv ∉ TContext.knownVars Env.context
 
 /--
 Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
@@ -482,6 +488,44 @@ instance : HasGen Unit where
       obtain ⟨_, h_env⟩ := h
       rw [← h_env]
       simp [TState.genExprSym, TState.incExprGen]
+  genVar_context := by
+    intro Env xv Env' h
+    simp [TEnv.genExprVar] at h
+    split at h
+    · simp at h
+    · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
+  genVar_fresh := by
+    intro Env xv Env' h
+    simp [TEnv.genExprVar] at h
+    split at h
+    · simp at h
+    · rename_i h_not_in; simp at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]; exact h_not_in
+
+/-- `liftGenEnv` preserves the context. -/
+theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta]
+    (Env : TEnv IDMeta) (xv : Identifier IDMeta) (Env' : TEnv IDMeta)
+    (h : liftGenEnv HasGen.genVar Env = .ok (xv, Env')) :
+    Env'.context = Env.context := by
+  simp only [liftGenEnv] at h
+  generalize h_gen : HasGen.genVar Env.genEnv = res at h
+  match res with
+  | .error _ => simp at h
+  | .ok (xv_inner, Env_g) =>
+    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.context]
+    exact HasGen.genVar_context Env.genEnv xv_inner Env_g h_gen
+
+/-- `liftGenEnv HasGen.genVar` produces a fresh variable. -/
+theorem liftGenEnv_genVar_fresh [HasGen IDMeta] [ToFormat IDMeta]
+    (Env : TEnv IDMeta) (xv : Identifier IDMeta) (Env' : TEnv IDMeta)
+    (h : liftGenEnv HasGen.genVar Env = .ok (xv, Env')) :
+    xv ∉ TContext.knownVars Env.context := by
+  simp only [liftGenEnv] at h
+  generalize h_gen : HasGen.genVar Env.genEnv = res at h
+  match res with
+  | .error _ => simp at h
+  | .ok (xv_inner, Env_g) =>
+    simp at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]
+    exact HasGen.genVar_fresh Env.genEnv xv_inner Env_g h_gen
 
 /--
 Generate a fresh type variable (`ftvar`).
