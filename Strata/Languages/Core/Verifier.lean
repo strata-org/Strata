@@ -577,12 +577,11 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           -- Derive checks from check mode and amount
           match options.checkMode, options.checkLevel, obligation.property with
           | _, .full, _ => (true, true)  -- Full: both checks
+          | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
           | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
           | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
           | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
-          | .bugFindingAssumingCompleteSpec, .minimal, .assert => (true, false) -- Same as bugFinding for minimal
-          | .bugFindingAssumingCompleteSpec, .minimal, .cover => (true, false)  -- Cover uses satisfiability
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
       -- If PE resolved both checks, we're done
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
