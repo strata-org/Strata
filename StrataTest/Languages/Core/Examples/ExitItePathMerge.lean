@@ -132,4 +132,79 @@ Result: ❌ fail
 #guard_msgs in
 #eval verify exitIteSameLabelPgm (options := .quiet)
 
+/-- Verify that merged environment correctly reflects both branches' effects.
+    After the exit-ite, `r` should be 1 (true branch) or 0 (false branch). -/
+def exitIteValueCheckPgm :=
+#strata
+program Core;
+
+procedure exit_ite(a : int) returns (r : int)
+spec { }
+{
+  done: {
+    if (a > 0) {
+      r := 1;
+      exit done;
+    }
+    r := 0;
+  }
+  assert [val_check]: r == 1 || r == 0;
+};
+#end
+
+/--
+info:
+Obligation: val_check
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify exitIteValueCheckPgm (options := .quiet)
+
+/-- Three paths converging to the same exit label via nested ite. -/
+def exitIteThreePathsPgm :=
+#strata
+program Core;
+
+procedure three_paths(a : int) returns (r : int)
+spec { }
+{
+  done: {
+    if (a > 0) {
+      r := 1;
+      exit done;
+    } else {
+      if (a == 0) {
+        r := 2;
+        exit done;
+      } else {
+        r := 3;
+        exit done;
+      }
+    }
+  }
+  assert [three_check]: r == 1 || r == 2 || r == 3;
+};
+
+procedure after_three(a : int) returns (r : int)
+spec { }
+{
+  assert [after_three_0]: a > 0;
+  r := a;
+};
+#end
+
+/--
+info:
+Obligation: three_check
+Property: assert
+Result: ✅ pass
+
+Obligation: after_three_0
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval verify exitIteThreePathsPgm (options := .quiet)
+
 end Strata
