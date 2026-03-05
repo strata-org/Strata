@@ -49,6 +49,7 @@ procedure dag(a: int) returns (r: int)
 }
 "
 
+/-- error: Test failed -/
 #guard_msgs (error, drop all) in
 #eval! testInputWithOffset "ControlFlow" program 14 processLaurelFile
 
