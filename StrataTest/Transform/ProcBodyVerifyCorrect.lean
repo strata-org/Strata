@@ -176,6 +176,31 @@ theorem eval_stmts_concat_with_assert
 These lemmas provide the foundation for proving soundness and completeness.
 -/
 
+/-- Command evaluation is deterministic -/
+theorem eval_cmd_deterministic
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ : CoreStore) (cmd : Command)
+    (σ1 σ2 : CoreStore) :
+    EvalCommand π φ δ σ cmd σ1 →
+    EvalCommand π φ δ σ cmd σ2 →
+    σ1 = σ2 := by
+  intro h1 h2
+  -- Commands like assert/assume don't change the store
+  -- Other commands (init, set, havoc, call) need case analysis
+  sorry
+
+/-- Block evaluation is deterministic -/
+theorem eval_block_deterministic
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ : CoreStore) (stmts : List Statement)
+    (σ1 δ1 σ2 δ2 : _) :
+    EvalStatements π φ δ σ stmts σ1 δ1 →
+    EvalStatements π φ δ σ stmts σ2 δ2 →
+    σ1 = σ2 ∧ δ1 = δ2 := by
+  intro h1 h2
+  -- Induction on the evaluation derivation
+  sorry
+
 /-- Determinism: Statement evaluation is deterministic -/
 theorem eval_stmt_deterministic
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -190,11 +215,16 @@ theorem eval_stmt_deterministic
   | cmd_sem h_cmd1 _ =>
     cases h2 with
     | cmd_sem h_cmd2 _ =>
-      -- Both are command evaluations - need command determinism
-      sorry
+      -- Both are command evaluations
+      have h_σ_eq := eval_cmd_deterministic π φ δ σ _ σ1 σ2 h_cmd1 h_cmd2
+      constructor
+      · exact h_σ_eq
+      · rfl  -- δ doesn't change for commands
   | block_sem h_block1 =>
     cases h2 with
-    | block_sem h_block2 => sorry
+    | block_sem h_block2 =>
+      -- Both are block evaluations
+      exact eval_block_deterministic π φ δ σ _ σ1 δ1 σ2 δ2 h_block1 h_block2
   | ite_true_sem h_true1 _ h_then1 =>
     cases h2 with
     | ite_true_sem h_true2 _ h_then2 =>
