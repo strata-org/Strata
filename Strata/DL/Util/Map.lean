@@ -230,4 +230,34 @@ theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ 
   split <;> simp_all
   split at H <;> simp_all
   rw [Eq.comm]; assumption
+/-- `Map.erase` on a key not in the map is identity. -/
+theorem Map.erase_of_find?_none [DecidableEq α]
+    (m : Map α β) (x : α) (h : Map.find? m x = none) :
+    Map.erase m x = m := by
+  induction m with
+  | nil => simp [Map.erase]
+  | cons p ps ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?] at h; split at h
+    · simp at h
+    · rename_i h_ne
+      simp only [Map.erase, h_ne, ↓reduceIte]
+      exact congrArg ((a, b) :: ·) (ih h)
+
+/-- `Map.erase` on a singleton appended at the end removes exactly that entry. -/
+theorem Map.erase_append_singleton [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) (h : Map.find? m x = none) :
+    Map.erase (List.append m [(x, v)]) x = m := by
+  induction m with
+  | nil => simp [Map.erase]
+  | cons p ps ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?] at h; split at h
+    · simp at h
+    · rename_i h_ne
+      show Map.erase ((a, b) :: (List.append ps [(x, v)])) x = (a, b) :: ps
+      unfold Map.erase; split
+      · exact absurd ‹_› h_ne
+      · exact congrArg ((a, b) :: ·) (ih h)
+
 -------------------------------------------------------------------------------

@@ -481,4 +481,27 @@ theorem Maps.find?_insert_ne [DecidableEq α]
       · simp only [Maps.find?]
         rw [Map.find?_insert_ne _ _ _ _ h_ne]
 
+/-- `Maps.erase` on a key not in any scope is identity. -/
+theorem Maps.erase_of_fresh [DecidableEq α]
+    (ms : Maps α β) (x : α) (h : ∀ m, m ∈ ms → Map.find? m x = none) :
+    Maps.erase ms x = ms := by
+  induction ms with
+  | nil => simp [Maps.erase]
+  | cons m rest ih =>
+    simp only [Maps.erase]; congr 1
+    · exact Map.erase_of_find?_none m x (h m List.mem_cons_self)
+    · exact ih (fun r hr => h r (List.mem_cons_of_mem m hr))
+
+/-- Erasing a key that was just added to the newest scope restores the original types,
+    provided the key didn't exist in the original and the maps are non-empty. -/
+theorem Maps.erase_addInNewest_fresh [DecidableEq α]
+    {m : Map α β} {rest : Maps α β} (x : α) (v : β)
+    (h_fresh : ∀ s, s ∈ (m :: rest) → Map.find? s x = none) :
+    Maps.erase (Maps.addInNewest (m :: rest) [(x, v)]) x = m :: rest := by
+  -- addInNewest (m :: rest) [(x, v)] = (m ++ [(x, v)]) :: rest
+  show Map.erase (List.append m [(x, v)]) x :: Maps.erase rest x = m :: rest
+  congr 1
+  · exact Map.erase_append_singleton m x v (h_fresh m List.mem_cons_self)
+  · exact Maps.erase_of_fresh rest x (fun r hr => h_fresh r (List.mem_cons_of_mem m hr))
+
 ---------------------------------------------------------------------
