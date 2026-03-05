@@ -3274,9 +3274,39 @@ private theorem checkNoFutureGenVars_imp_fresh (mty : LMonoTy) (state : TState)
   simp [LMonoTy.checkNoFutureGenVars, List.all_eq_true] at h
   exact not_isFutureGenVar_imp_ne state v (by simp [h v hv]) n hn
 
-/-- Free vars of `LTy.instantiateWithCheck` output satisfy freshness for the output gen state.
-    This follows directly from the `checkNoFutureGenVars` runtime check that
-    `instantiateWithCheck` performs before returning. No `ContextFreshForGen` needed. -/
+/-- Context preservation for `LTy.instantiateWithCheck`. -/
+theorem LTy_instantiateWithCheck_context'
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    Env'.context = Env.context := by
+  simp [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v1 h_ra; obtain ⟨mty', Env1⟩ := v1
+  split at h; · simp at h  -- checkNoFutureGenVars
+  split at h
+  · simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact LTy.resolveAliases_context ty Env mty' Env1 h_ra
+  · simp at h
+
+/-- Context preservation for `LMonoTy.instantiateWithCheck`. -/
+theorem LMonoTy_instantiateWithCheck_context'
+    (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty, Env')) :
+    Env'.context = Env.context := by
+  simp [LMonoTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v1 h_inst; obtain ⟨instTypes, Env_mid⟩ := v1
+  split at h; · simp at h
+  rename_i v2 h_ra; obtain ⟨mty', Env2⟩ := v2; simp at h h_ra
+  split at h; · simp at h  -- checkNoFutureGenVars
+  split at h
+  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+    rw [LMonoTy.resolveAliases_context _ _ mty' Env2 h_ra]
+    exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
+  · simp at h
 private theorem LTy_instantiateWithCheck_freeVars_fresh
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
@@ -3330,9 +3360,9 @@ private theorem inferFVar_preserves_SubstFreshForGen
   split at h; · simp at h
   split at h; · simp at h
   rename_i v1 h_inst; obtain ⟨mty, Env1⟩ := v1; dsimp at h h_inst
-  -- ContextFreshForGen transfers to Env1: context preserved + counter increases.
-  -- (LTy_instantiateWithCheck_context is defined later in the file; sorry the derivation.)
-  have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by sorry
+  have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by
+    rw [LTy_instantiateWithCheck_context' _ C Env mty Env1 h_inst]
+    exact ContextFreshForGen.mono _ _ _ h_ctx (LTy_instantiateWithCheck_tyGen_mono _ C Env mty Env1 h_inst)
   cases fty with
   | none =>
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
@@ -3368,7 +3398,50 @@ private theorem typeBoundVar_preserves_SubstFreshForGen
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
     (h_fresh : SubstFreshForGen Env.stateSubstInfo Env.genEnv.genState) :
     SubstFreshForGen Env'.stateSubstInfo Env'.genEnv.genState := by
-  sorry
+  -- Decompose typeBoundVar: liftGenEnv genVar → match bty → addInNewestContext
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  split at h
+  · contradiction
+  · rename_i genResult h_gen
+    -- liftGenEnv preserves stateSubstInfo
+    have h_gen_subst : genResult.snd.stateSubstInfo = Env.stateSubstInfo := by
+      split at h_gen
+      · contradiction
+      · have := Except.ok.inj h_gen; rw [← this]
+    -- liftGenEnv genVar: tyGen is monotone
+    have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+      split at h_gen
+      · contradiction
+      · rename_i _ _ h_genVar
+        have := Except.ok.inj h_gen; rw [← this]; simp
+        exact _root_.Lambda.HasGen.genVar_tyGen_mono Env.genEnv _ _ h_genVar
+    split at h
+    · -- bty = some bty_val
+      split at h
+      · contradiction
+      · rename_i _ bty_mty _ _ Env_inst h_inst
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        -- addInNewestContext only changes context, not subst or genState
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        -- LMonoTy.instantiateWithCheck preserves SubstFreshForGen
+        exact LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
+          bty_mty C genResult.snd _ _ h_inst
+          (h_gen_subst ▸ SubstFreshForGen.mono _ _ _ h_fresh h_gen_tyGen)
+    · -- bty = none
+      split at h
+      · contradiction
+      · rename_i v1 h_genTy
+        obtain ⟨xtyid, Env1⟩ := v1
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        -- addInNewestContext only changes context, not subst or genState
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        -- genTyVar preserves stateSubstInfo and increments counter
+        have h_subst := TEnv.genTyVar_subst _ xtyid Env1 h_genTy
+        rw [h_subst, h_gen_subst]
+        exact SubstFreshForGen.mono _ _ _ h_fresh
+          (by have := genTyVar_tyGen _ xtyid Env1 h_genTy; omega)
 
 /-- `resolveAux` preserves the `SubstFreshForGen` invariant. -/
 private theorem resolveAux_preserves_SubstFreshForGen :
@@ -3435,7 +3508,9 @@ private theorem resolveAux_preserves_SubstFreshForGen :
             h_inst h_ctx v h_ty n (Nat.le_trans
             (LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2) hn)
         | inr h_oty =>
-          have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by sorry
+          have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by
+            rw [LTy_instantiateWithCheck_context' _ C Env _ Env1 h_inst]
+            exact ContextFreshForGen.mono _ _ _ h_ctx (LTy_instantiateWithCheck_tyGen_mono _ C Env _ Env1 h_inst)
           exact LMonoTy_instantiateWithCheck_freeVars_fresh oty_val C Env1 oty_inst Env2
             h_inst2 h_ctx1 v h_oty n hn)
   | .app m e1 e2 =>
