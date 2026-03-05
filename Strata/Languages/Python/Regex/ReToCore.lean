@@ -157,6 +157,7 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
   | .anychar =>
     mkApp () (.op () reAllCharFunc.name none) []
   | .empty => Core.emptyRegex
+  | .group r1 => toCore r1 atStart atEnd
   | .complement r =>
     -- atStart/atEnd are passed as false: the inner expression is a character-set
     -- description ([^...]) which never contains anchors, so position context is
@@ -171,6 +172,12 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
        mkApp () (.op () reCompFunc.name none) [rb]]
   | .plus r1 =>
     toCore (.concat r1 (.star r1)) atStart atEnd
+  | .optional r1 =>
+    toCore (.union .empty r1) atStart atEnd
+  | .union r1 r2 =>
+      let r1b := toCore r1 atStart atEnd
+      let r2b := toCore r2 atStart atEnd
+      mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
   | .star r1 =>
     let r1b := toCore r1 atStart atEnd
     let r2b :=
@@ -185,8 +192,6 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         mkApp () (.op () reStarFunc.name none) [r1b]
     mkApp () (.op () reUnionFunc.name none)
       [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b], r2b]
-  | .optional r1 =>
-    toCore (.union .empty r1) atStart atEnd
   | .loop r1 n m =>
     match n, m with
     | 0, 0 => Core.emptyRegex
@@ -207,7 +212,6 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
             r2b]
     | _, _ =>
       toCore (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
-  | .group r1 => toCore r1 atStart atEnd
   | .concat r1 r2 =>
     match (alwaysConsume r1), (alwaysConsume r2) with
     | true, true =>
@@ -215,16 +219,19 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
       let r2b := toCore r2 false atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | true, false =>
-      -- r1 always consumes; r2 may be empty.
-      -- When atEnd=true and r1 contains $, passing atEnd to r2 would let r2 expand
-      -- beyond the end marker (e.g. a$.* matching "ab").  Fix: split into
-      -- Case A (r2="", so $ in r1 fires at the true string end) and
-      -- Case B (r2 non-empty, so r2 is the last consumer and r1 must not see atEnd).
+      -- `r1` always consumes; `r2` may be empty. `r1` might be last.
+      -- When `atEnd=true` and `r1` contains `$`, passing `atEnd` to `r2` would
+      -- let `r2` expand beyond the end marker (e.g. `a$.*` matching `"ab"`).
+      -- So we split into two cases:
+      -- Case 1: (`r2=""`, so `$` in `r1` fires at the true string end)
+      -- Case 2: (`r2` non-empty, so `r2` is the last consumer and `r1` must not
+      -- see `atEnd`).
       if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
         let r1b_end := toCore r1 atStart true
         let r1b_mid := toCore r1 atStart false
         let r2b     := toCore r2 false true
-        -- Restrict r2 to "" for Case A (r2 is non-consuming, so inter with "" works).
+        -- Restrict `r2` to `""` for Case 1 (`r2` is non-consuming, so
+        -- intersection with `""` checks that `r2` can indeed match `""` here).
         let r2b_eps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
         mkApp () (.op () reUnionFunc.name none)
           [mkApp () (.op () reConcatFunc.name none) [r1b_end, r2b_eps],
@@ -234,14 +241,12 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         let r2b := toCore r2 false atEnd
         mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | false, true =>
-      -- r2 always consumes; r1 may be empty.
-      -- The hardcoded atStart=true for r2 is wrong when r1 consumed non-empty content
-      -- and r2 contains ^ (e.g. .*^a incorrectly matching "ba").  Fix: split into
-      -- Case A (r1="", r2 starts at original position, atStart propagates) and
-      -- Case B (r1 non-empty, r2 starts after r1, atStart must not propagate).
+      -- `r2` always consumes; `r1` may be empty. `r2` might be first.
+      -- Case 1: (`r1=""`, `r2` starts at original position, `atStart` propagates) and
+      -- Case 2: (`r1` non-empty, `r2` starts after `r1`, `atStart` must not propagate).
       if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
         let r1b       := toCore r1 atStart false
-        -- Restrict r1 to "" for Case A (r1 is non-consuming, so inter with "" works).
+        -- Restrict `r1` to "" for Case 1, as before.
         let r1b_eps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
         let r2b_start := toCore r2 atStart atEnd
         let r2b_mid   := toCore r2 false atEnd
@@ -253,11 +258,9 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         let r2b := toCore r2 true atEnd
         mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | false, false =>
-      -- Both sides may be empty.  When atStart=true and r2 contains ^, passing
-      -- atStart directly to r2 lets ^ fire even when r1 consumed non-empty content
-      -- (e.g. .*^a, parsed as concat(concat(.*,^),a), hitting this case for concat(.*,^)).
-      -- Fix: split into Case A (r1="", ^ fires correctly) and
-      --      Case B (r1 non-empty, ^ must not fire, so atStart=false for r2).
+      -- Both sides may be empty.
+      -- Case 1: (`r1=""`, `^` fires correctly) and
+      -- Case 2: (`r1` non-empty, `^` must not fire, so `atStart=false` for `r2`).
       if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
         let r1b       := toCore r1 atStart atEnd
         let r1b_eps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
@@ -270,10 +273,6 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         let r1b := toCore r1 atStart atEnd
         let r2b := toCore r2 atStart atEnd
         mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
-  | .union r1 r2 =>
-      let r1b := toCore r1 atStart atEnd
-      let r2b := toCore r2 atStart atEnd
-      mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
 
 def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
