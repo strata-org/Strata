@@ -23,7 +23,7 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
-open Core (intAddOp intSubOp intMulOp intDivOp intModOp intDivTOp intModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
+open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 
 namespace Strata.Laurel
 
@@ -161,10 +161,10 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
     | .Add => return binOp intAddOp
     | .Sub => return binOp intSubOp
     | .Mul => return binOp intMulOp
-    | .Div => return binOp intDivOp
-    | .Mod => return binOp intModOp
-    | .DivT => return binOp intDivTOp
-    | .ModT => return binOp intModTOp
+    | .Div => return binOp intSafeDivOp
+    | .Mod => return binOp intSafeModOp
+    | .DivT => return binOp intSafeDivTOp
+    | .ModT => return binOp intSafeModTOp
     | .Lt => return binOp intLtOp
     | .Leq => return binOp intLeOp
     | .Gt => return binOp intGtOp
