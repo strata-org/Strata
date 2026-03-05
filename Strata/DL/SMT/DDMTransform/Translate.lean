@@ -26,7 +26,6 @@ private def mkSimpleSymbol (s:String):SimpleSymbol SourceRange :=
     | "percent" => .simple_symbol_percent SourceRange.none
     | "questionmark" => .simple_symbol_questionmark SourceRange.none
     | "period" => .simple_symbol_period SourceRange.none
-    | "dollar" => .simple_symbol_dollar SourceRange.none
     | "tilde" => .simple_symbol_tilde SourceRange.none
     | "amp" => .simple_symbol_amp SourceRange.none
     | "caret" => .simple_symbol_caret SourceRange.none
@@ -245,5 +244,88 @@ def termTypeToString (t:SMT.TermType): Except String String := do
   return ddm_ast.render ctx s |>.fst
 
 end SMTDDM
+
+namespace SMTResponseDDM
+
+/-- The loaded dialects needed to parse SMTResponse commands. -/
+def smtResponseDialects : Strata.Elab.LoadedDialects :=
+  .ofDialects! #[Strata.initDialect, Strata.smtReservedKeywordsDialect,
+                 Strata.SMTCore, Strata.SMTResponse]
+
+/-- Format context for rendering SMTResponse `Arg` values back to strings. -/
+private def smtFormatContext : Strata.FormatContext :=
+  .ofDialects smtResponseDialects.dialects
+
+/-- Format state for rendering SMTResponse `Arg` values back to strings. -/
+private def smtFormatState : Strata.FormatState where
+  openDialects := smtResponseDialects.dialects.toList.foldl (init := {}) fun s d => s.insert d.name
+
+/-- Render a DDM `Arg` to a string using the SMTResponse dialect formatting. -/
+def formatArg (arg : Strata.Arg) : String :=
+  (Strata.mformat arg smtFormatContext smtFormatState).format.pretty
+
+/--
+Convert an `SMTResponseDDM.Term` (parsed from solver output) into a
+`Strata.SMT.Term`. Handles the common model-value cases:
+
+- Spec constants (numerals, decimals, strings, hex/binary literals)
+- Qualified identifiers (symbols like `true`, `false`, constructor names)
+- Function applications (constructor applications, `(as Nil (List Int))`)
+
+Note that the returned SMT.Term might not have the right type information, as
+the type information does not exist in the Term itself. It is the caller's
+responsibility to correctly fill in the types in .app/.uf, or faithfully
+ignore these.
+-/
+partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata.SourceRange)
+    : Except String Strata.SMT.Term := do
+  match t with
+  | .spec_constant_term _ sc =>
+    match sc with
+    | .sc_numeral _ n     => return .prim (.int n)
+    | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
+    | .sc_decimal _ d     => return .prim (.real d)
+    | .sc_str _ s         => return .prim (.string s)
+    | _  => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
+  | .qual_identifier _ qi =>
+    match resolveQI qi with
+    | some ("true", _)  => return .prim (.bool true)
+    | some ("false", _) => return .prim (.bool false)
+    | some (name, _)    => return mkUFApp name []
+    | none              => throw s!"translateFromDDMTermUnsafe: don't know how to convert {repr t}"
+  | .qual_identifier_args _ qi args =>
+    match resolveQI qi with
+    | some (name, _) =>
+      let argTerms ← args.val.toList.mapM translateFromDDMTermToUntyped
+      return mkUFApp name argTerms
+    | none => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
+  | _ => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
+
+where
+  /-- Extract the name string from a QualIdentifier. -/
+  resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier Strata.SourceRange)
+      : Option (String × Option (Strata.SMTResponseDDM.SMTSort Strata.SourceRange)) :=
+    match qi with
+    | .qi_ident _ iden =>
+      match iden with
+      | .iden_simple _ sym | .iden_indexed _ sym _
+      => some (symbolToString sym, none)
+    | .qi_isort _ iden sort =>
+      match iden with
+      | .iden_simple _ sym | .iden_indexed _ sym _
+      => some (symbolToString sym, some sort)
+  /-- Extract the raw string from a Symbol. -/
+  symbolToString (sym : Strata.SMTResponseDDM.Symbol Strata.SourceRange) : String :=
+    formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))
+  /-- Build a `Term.app` with a UF op for a named function/constructor.
+      Since the SMTDDM's term does not have any type annotation, the return
+      type is always filled with a placeholder type "_placeholder".
+      Also, its arguments are simply assigned an empty list. -/
+  mkUFApp (name : String) (args : List Strata.SMT.Term) : Strata.SMT.Term :=
+    let placeholderTy := Strata.SMT.TermType.constr "_placeholder" []
+    let uf : Strata.SMT.UF := { id := name, args := [], out := placeholderTy }
+    .app (.core (.uf uf)) args placeholderTy
+
+end SMTResponseDDM
 
 end Strata
