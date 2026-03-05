@@ -91,3 +91,5 @@ so the encoder emits it as a concrete equality rather than a quantified axiom.
 - **Monomorphic SMT encoding only:** Polymorphic recursive functions are not yet
   supported at the SMT encoding level.
 - **No mutual recursion:** Mutually recursive functions are not supported.
+- **Top-level only:** Recursive functions must be declared at the program level;
+  recursive function statements (local declarations) are not supported.
