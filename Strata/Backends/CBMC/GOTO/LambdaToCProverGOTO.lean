@@ -337,7 +337,7 @@ def LExpr.toGotoExprCtx {TBase: LExprParams} [ToString $ LExpr TBase.mono]
     let e2g ← toGotoExprCtx bvars e2
     return { id := .binary .Equal, type := .Boolean, operands := [e1g, e2g] }
   -- Quantifiers
-  | .quant _ kind (some ty) _trigger body =>
+  | .quant _ kind _name (some ty) _trigger body =>
     let gty ← ty.toGotoType
     let qname := s!"__quant_var_{bvars.length}"
     let boundVar := Expr.symbol qname gty

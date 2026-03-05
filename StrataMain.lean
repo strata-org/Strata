@@ -545,8 +545,8 @@ The following are not yet handled:
 private partial def renameExpr (rn : Std.HashMap String String) : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m name ty => .fvar m (renameIdent rn name) ty
   | .app m f e => .app m (renameExpr rn f) (renameExpr rn e)
-  | .abs m ty e => .abs m ty (renameExpr rn e)
-  | .quant m qk ty tr e => .quant m qk ty (renameExpr rn tr) (renameExpr rn e)
+  | .abs m name ty e => .abs m name ty (renameExpr rn e)
+  | .quant m qk name ty tr e => .quant m qk name ty (renameExpr rn tr) (renameExpr rn e)
   | .ite m c t e => .ite m (renameExpr rn c) (renameExpr rn t) (renameExpr rn e)
   | .eq m e1 e2 => .eq m (renameExpr rn e1) (renameExpr rn e2)
   | e => e
