@@ -48,6 +48,7 @@ procedure callPureDivUnsafe(x: int) {
 }
 "
 
+/-- error: Test failed -/
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "DivByZeroE2E" e2eProgram 22 processLaurelFile
 

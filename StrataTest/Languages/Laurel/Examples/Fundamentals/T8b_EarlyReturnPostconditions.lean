@@ -35,6 +35,7 @@ procedure earlyReturnBuggy(x: int) returns (r: int)
 }
 "
 
+/-- error: Test failed -/
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "EarlyReturn" program 14 processLaurelFile
 
