@@ -152,7 +152,6 @@ private def checkDialectName (ld : LoadedDialects) (actual : DialectName) (expec
       .ok ()
   | some expected =>
     if actual = expected then
-      assert! expected ∉ ld.dialects
       .ok ()
     else
       .error s!"Dialect header name of {actual} does not match expected name {expected}."
@@ -167,37 +166,62 @@ private def mkBinaryMessage (fileName : System.FilePath) (msg : Lean.MessageData
     data := msg
   }
 
+/--
+Parse the header of a text dialect file. Returns the input context,
+dialect name location, dialect name, and the position after the header
+on success.
+-/
+private def readDialectTextfileHeader
+    (input : System.FilePath)
+    (contents : String)
+    : BaseIO (Except (Array Message)
+        (Parser.InputContext × SourceRange × DialectName
+          × String.Pos.Raw)) := do
+  let inputContext := Strata.Parser.stringInputContext input contents
+  let leanEnv ←
+    match ← (Lean.mkEmptyEnvironment 0) |>.toBaseIO with
+    | .ok e => pure e
+    | .error _ =>
+      return .error #[Lean.mkStringMessage inputContext 0
+        "Internal error: Failed to create Lean environment"]
+  let (header, errors, startPos) := Elab.elabHeader leanEnv inputContext
+  if errors.size > 0 then
+    return .error errors
+  match header with
+  | .program loc _ =>
+    let msg := Lean.mkStringMessage inputContext loc.start
+      s!"Expected dialect."
+    return .error #[msg]
+  | .dialect loc dialect =>
+    return .ok (inputContext, loc, dialect, startPos)
+
 mutual
 
 partial def loadDialectFromIonFragment
     (fm : DialectFileMap)
-    (ld : LoadedDialects)
     (stk : Array DialectName)
     (dialect : DialectName)
     (frag : Ion.Fragment)
-  : BaseIO (LoadedDialects × Except String Dialect) := do
+  : BaseIO (Except String Dialect) := do
   -- Read dialect from Ion fragment
   let d ←
     match Dialect.fromIonFragment dialect frag with
     | .error msg =>
-      return (ld, .error msg)
+      return .error msg
     | .ok d =>
       pure d
   -- Push dialect name to stack to catch recursive imports
   let stk := stk.push dialect
   -- Iterate through imports and ensure they are loaded.
-  let mut ld := ld
   for i in d.imports do
-    let (ld', r) ← loadDialectRec fm ld stk i
-    ld := ld'
-    match r with
+    match ← loadDialectRec fm stk i with
     | .error msg =>
-      return (ld, .error msg)
+      return .error msg
     | .ok _ =>
       pure ()
   -- Add this dialect to loaded dialects and return it.
-  ld := ld.addDialect! d
-  return (ld, .ok d)
+  fm.modifyLoaded (·.addDialect! d)
+  return .ok d
 
 /--
 Loads a dialect from a file path.
@@ -208,93 +232,78 @@ to contain a particular dialect.
 An actual path can be provided if we want to use one path for reading from disk and another
 for error reporting.
 -/
-partial def loadDialectFromPath
+private partial def loadDialectFromPath
   (fm : DialectFileMap)
-  (ld : LoadedDialects)
   (stk : Array DialectName)
   (path : System.FilePath)
   (actualPath : System.FilePath := path)
-  (expected : Option { d : DialectName // d ∉ ld.dialects } := none) :
-  BaseIO (LoadedDialects × Except (Array Message) Strata.Dialect) := do
+  (expected : Option DialectName := none) :
+  BaseIO (Except (Array Message) Strata.Dialect) := do
   let bytes ←
     match ← IO.FS.readBinFile actualPath |>.toBaseIO with
     | .error _ =>
-      return (ld, .error #[mkBinaryMessage path s!"Error reading {path}."])
+      return .error #[mkBinaryMessage path s!"Error reading {path}."]
     | .ok c =>
       pure c
+  let ld ← fm.getLoaded
   if bytes.startsWith Ion.binaryVersionMarker then
     match Ion.Header.parse bytes with
     | .error msg =>
-      return (ld, .error #[mkBinaryMessage path msg])
+      return .error #[mkBinaryMessage path msg]
     | .ok (hdr, frag) =>
       let dialect ←
         match hdr with
         | .program _ =>
-          return (ld, .error #[mkBinaryMessage path s!"Expected dialect"])
+          return .error #[mkBinaryMessage path s!"Expected dialect"]
         | .dialect dialect =>
           pure dialect
       if let .error msg := checkDialectName ld dialect expected then
-        return (ld, .error #[mkBinaryMessage path msg])
-      match ← loadDialectFromIonFragment fm ld stk dialect frag with
-      | (ld, .error msg) =>
-        pure (ld, .error #[mkBinaryMessage path msg])
-      | (ld, .ok r) =>
-        pure (ld, .ok r)
+        return .error #[mkBinaryMessage path msg]
+      match ← loadDialectFromIonFragment fm stk dialect frag with
+      | .error msg =>
+        pure (.error #[mkBinaryMessage path msg])
+      | .ok r =>
+        pure (.ok r)
   else do
     let contents ←
       match String.fromUTF8? bytes with
       | none =>
-        return (ld, .error #[mkBinaryMessage path s!"Not an Ion file and contains non UTF-8 data"])
+        return .error #[mkBinaryMessage path s!"Not an Ion file and contains non UTF-8 data"]
       | some contents =>
         pure contents
-    readDialectTextfile fm ld stk path contents (expected := expected)
+    let (inputContext, loc, dialect, startPos) ←
+      match ← readDialectTextfileHeader path contents with
+      | .error msgs => return .error msgs
+      | .ok result => pure result
+    let ld ← fm.getLoaded
+    if let .error msg := checkDialectName ld dialect expected then
+      return .error #[Lean.mkStringMessage inputContext loc.start msg]
+    -- Elaborate the dialect body and add it to loaded dialects.
+    let stk := stk.push dialect
+    let (d, s) ← Elab.elabDialectRest fm inputContext loc dialect (stk := stk) (startPos := startPos)
+    if s.errors.size > 0 then
+      pure <| .error s.errors
+    else
+      fm.modifyLoaded (·.addDialect! d)
+      pure <| .ok d
 
 private partial def loadDialectRec
   (fm : DialectFileMap)
-  (ld : LoadedDialects)
   (stk : Array DialectName)
   (name : DialectName) :
-  BaseIO (Elab.LoadedDialects × Except String Dialect) := do
+  BaseIO (Except String Dialect) := do
+  let ld ← fm.getLoaded
   if p : name ∈ ld.dialects then
-    pure (ld, .ok ld.dialects[name])
+    pure (.ok ld.dialects[name])
   else
     let path ←
           match fm.findPath name with
-          | none => return (ld, .error s!"Unknown dialect {name}")
+          | none => return .error s!"Unknown dialect {name}"
           | some path => pure path
-    match ← loadDialectFromPath fm ld stk path (expected := some ⟨name, p⟩) with
-    | (ld, .ok d) => return (ld, .ok d)
-    | (ld, .error a) =>
-      return (ld, .error (← mkErrorReport a))
-
-private partial
-def readDialectTextfile
-    (fm : DialectFileMap)
-    (ld : LoadedDialects)
-    (stk : Array DialectName := #[])
-    (input : System.FilePath)
-    (contents : String)
-    (expected : Option DialectName := none) : BaseIO (LoadedDialects × Except (Array Message) Dialect) := do
-  let inputContext := Strata.Parser.stringInputContext input contents
-  let leanEnv ←
-    match ← (Lean.mkEmptyEnvironment 0) |>.toBaseIO with
-    | .ok e => pure e
-    | .error _ => return (ld, .error #[Lean.mkStringMessage inputContext 0 "Internal error: Failed to create Lean environment"])
-  let (header, errors, startPos) := Elab.elabHeader leanEnv inputContext
-  if errors.size > 0 then
-    return (ld, .error errors)
-  match header with
-  | .program loc _ =>
-    return (ld, .error #[Lean.mkStringMessage inputContext loc.start s!"Expected dialect."])
-  | .dialect loc dialect =>
-    if let .error msg := checkDialectName ld dialect expected then
-      return (ld, .error #[Lean.mkStringMessage inputContext loc.start msg])
-    let stk := stk.push dialect
-    let (ld, d, s) ← Elab.elabDialectRest fm ld stk inputContext loc dialect startPos
-    if s.errors.size > 0 then
-      pure (ld, .error s.errors)
-    else
-      pure (ld.addDialect! d, .ok d)
+    match ← loadDialectFromPath fm stk path (expected := some name) with
+    | .ok d => return .ok d
+    | .error a =>
+      return .error (← mkErrorReport a)
 
 /--
 Elaborate a dialect after the initial header with the name of dialect
@@ -302,20 +311,20 @@ has been processed.
 -/
 partial def elabDialectRest
       (fm : DialectFileMap)
-      (dialects : LoadedDialects)
-      (stk : Array DialectName)
       (inputContext : Parser.InputContext)
       (loc : SourceRange)
       (dialect : DialectName)
+      (stk : Array DialectName := #[])
       (startPos : String.Pos.Raw := 0)
       (stopPos : String.Pos.Raw := inputContext.endPos)
-      : BaseIO (LoadedDialects × Dialect × DeclState) := do
+      : BaseIO (Dialect × DeclState) := do
+  let dialects ← fm.getLoaded
   let leanEnv ←
     match ← Lean.mkEmptyEnvironment 0 |>.toBaseIO with
     | .ok env => pure env
     | .error _ =>
       let m : Message := Lean.mkStringMessage inputContext 0 "Failed to create Lean environment."
-      return (dialects, default, { errors := #[m] })
+      return (default, { errors := #[m] })
 
   assert! "StrataDDL" ∈ dialects.dialects
   let rec run : DialectM Unit := do
@@ -332,13 +341,14 @@ partial def elabDialectRest
     openDialectSet := s.openDialectSet.insert dialect
   }
   let act : DialectM Unit := do
-        if dialect ∈ (← get).loaded.dialects then
+        if dialect ∈ (← getLoadedDialects).dialects then
           logError loc s!"Dialect {dialect} already declared."
         else
           run
   let dctx : DialectContext := {
-    loadDialect := fun ld name =>
-      loadDialectRec fm ld stk name
+    loadDialect := fun name =>
+      loadDialectRec fm stk name
+    loadedRef := fm.loaded
     inputContext := inputContext
     stopPos := stopPos
   }
@@ -348,11 +358,10 @@ partial def elabDialectRest
         name := dialect,
         imports := #[initDialect.name]
     },
-    loaded := dialects
     missingImport := false
   }
   let ((), ds) ← act dctx |>.run ds
-  pure (ds.loaded, ds.dialect, ds.declState)
+  pure (ds.dialect, ds.declState)
 
 end
 
@@ -368,34 +377,44 @@ more structure (such as error location information).
 -/
 partial def loadDialect
   (fm : DialectFileMap)
-  (ld : LoadedDialects)
   (dialect : Strata.DialectName) :
-  BaseIO (Elab.LoadedDialects × Except String Strata.Dialect) := do
-  loadDialectRec fm ld #[] dialect
+  BaseIO (Except String Strata.Dialect) := do
+  loadDialectRec fm #[] dialect
+
+/--
+Load a dialect from a file, using `actualPath` for reading and `path`
+for error reporting. Returns the loaded dialect or an array of error
+messages.
+-/
+partial def loadDialectFromFile
+  (fm : DialectFileMap)
+  (path : System.FilePath)
+  (actualPath : System.FilePath := path) :
+  BaseIO (Except (Array Message) Strata.Dialect) :=
+  loadDialectFromPath fm #[] path (actualPath := actualPath)
 
 /- Elaborate a Strata dialect definition. -/
 def elabDialect
     (fm : DialectFileMap)
-    (dialects : LoadedDialects)
     (inputContext : Parser.InputContext)
     (startPos : String.Pos.Raw := 0)
     (stopPos : String.Pos.Raw := inputContext.endPos)
-     : BaseIO (LoadedDialects × Dialect × DeclState) := do
+     : BaseIO (Dialect × DeclState) := do
   let leanEnv ←
     match ← Lean.mkEmptyEnvironment 0 |>.toBaseIO with
     | .ok env => pure env
     | .error _ =>
       let m : Message := Lean.mkStringMessage inputContext 0 "Failed to create Lean environment."
-      return (dialects, default, { errors := #[m] })
+      return (default, { errors := #[m] })
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
-    return (dialects, default, { errors := errors })
+    return (default, { errors := errors })
   match header with
   | .program loc _ =>
     let msg := Lean.mkStringMessage inputContext loc.start "Expected dialect name"
-    return (dialects, default, { errors := #[msg] })
+    return (default, { errors := #[msg] })
   | .dialect loc dialect =>
-    elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
+    elabDialectRest fm inputContext loc dialect (startPos := startPos) (stopPos := stopPos)
 
 def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (input : InputContext) : IO Strata.Program := do
   let leanEnv ← Lean.mkEmptyEnvironment 0

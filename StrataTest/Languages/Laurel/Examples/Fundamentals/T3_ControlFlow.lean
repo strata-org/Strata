@@ -42,6 +42,9 @@ procedure dag(a: int) returns (r: int)
   assert if (a > 0) { b == 1 } else { true };
     assert if (a > 0) { b == 2 } else { true };
 //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// duplicates due to VCG path duplication (#419):
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b;
 }
 "
