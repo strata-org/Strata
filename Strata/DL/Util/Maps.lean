@@ -504,4 +504,32 @@ theorem Maps.erase_addInNewest_fresh [DecidableEq α]
   · exact Map.erase_append_singleton m x v (h_fresh m List.mem_cons_self)
   · exact Maps.erase_of_fresh rest x (fun r hr => h_fresh r (List.mem_cons_of_mem m hr))
 
+/-- Looking up in `addInNewest ms [(x, v)]` either returns the new binding or
+    falls through to the original map. -/
+theorem Maps.find?_addInNewest_single [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (y : α) :
+    Maps.find? (Maps.addInNewest ms [(x, v)]) y = some v ∧ y = x ∨
+    Maps.find? (Maps.addInNewest ms [(x, v)]) y = Maps.find? ms y := by
+  -- After unfolding, addInNewest ms [(x,v)] prepends (newest ms ++ [(x,v)]) to (pop ms).
+  -- We case split on ms and use Map.find?_append_singleton on the newest map.
+  cases ms with
+  | nil =>
+    show Maps.find? (Maps.addInNewest [] [(x, v)]) y = some v ∧ y = x ∨
+         Maps.find? (Maps.addInNewest [] [(x, v)]) y = Maps.find? [] y
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+    rcases Map.find?_append_singleton [] [(x, v)] x v y rfl with ⟨h1, h2⟩ | h1
+    · left
+      constructor
+      · simp only [Maps.find?]; rw [h1]
+      · exact h2
+    · right
+      simp only [Maps.find?]; rw [h1]; rfl
+  | cons m rest =>
+    show Maps.find? (Maps.addInNewest (m :: rest) [(x, v)]) y = some v ∧ y = x ∨
+         Maps.find? (Maps.addInNewest (m :: rest) [(x, v)]) y = Maps.find? (m :: rest) y
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, Maps.find?]
+    rcases Map.find?_append_singleton m [(x, v)] x v y rfl with ⟨h1, h2⟩ | h1
+    · left; rw [h1]; exact ⟨rfl, h2⟩
+    · right; rw [h1]
+
 ---------------------------------------------------------------------
