@@ -476,13 +476,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       let target := name.val
       let valueExpr ← translateExpr ctx value
       let targetExpr := mkStmtExprMd (StmtExpr.Identifier target)
-      let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
+      let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] valueExpr) md
       return (ctx, assignStmt)
     | .Attribute _ obj attr _ =>
       -- Field assignment: obj.field = expr or self.field = expr
       let valueExpr ← translateExpr ctx value
       let targetExpr ← translateExpr ctx targets.val[0]!  -- This will handle self.field via translateExpr
-      let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] valueExpr)
+      let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] valueExpr) md
       return (ctx, assignStmt)
     | _ => throw (.unsupportedConstruct "Only simple variable or field assignment supported" (toString (repr s)))
 
@@ -501,7 +501,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
             (mkStmtExprMd (StmtExpr.Identifier "self"))
             attr.val)
-          let assignStmt := mkStmtExprMd (StmtExpr.Assign [fieldAccess] valueExpr)
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] valueExpr) md
           return (ctx, assignStmt)
         else
           throw (.unsupportedConstruct "Only self.field assignments supported in methods" (toString (repr s)))
@@ -535,7 +535,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let translatedArgs ← args.val.toList.mapM (translateExpr ctx)
 
         let newExpr := mkStmtExprMd (StmtExpr.New funcName)
-        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some newExpr))
+        let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some newExpr)) md
 
         let initCall := mkStmtExprMd (StmtExpr.InstanceCall
           (mkStmtExprMd (StmtExpr.Identifier varName))
@@ -547,16 +547,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       else
         -- Regular call, not a constructor
         let initVal ← translateCall ctx f args.val.toList
-        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
+        let initVal := { initVal with md := md }
+        let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some initVal)) md
         return (newCtx, declStmt)
     | some initExpr => do
       -- Regular annotated assignment with initializer
       let initVal ← translateExpr newCtx initExpr
-      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType (some initVal))
+      let initVal := { initVal with md := md }
+      let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some initVal)) md
       return (newCtx, declStmt)
     | none =>
       -- Declaration without initializer
-      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType none)
+      let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType none) md
       return (newCtx, declStmt)
 
   -- If statement
@@ -583,13 +585,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else do
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
-    let ifStmt := mkStmtExprMd (StmtExpr.IfThenElse finalCondExpr bodyBlock elseBlock)
+    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse finalCondExpr bodyBlock elseBlock) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
       ifStmt
     else
-      mkStmtExprMd (StmtExpr.Block (condStmts ++ [ifStmt]) none)
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [ifStmt]) none) md
 
     return (bodyCtx, result)
 
@@ -610,13 +612,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     let (loopCtx, bodyStmts) ← translateStmtList condCtx body.val.toList
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
-    let whileStmt := mkStmtExprMd (StmtExpr.While finalCondExpr [] none bodyBlock)
+    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While finalCondExpr [] none bodyBlock) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
       whileStmt
     else
-      mkStmtExprMd (StmtExpr.Block (condStmts ++ [whileStmt]) none)
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileStmt]) none) md
 
     return (loopCtx, result)
 
@@ -627,7 +629,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let e ← translateExpr ctx expr
         .ok (some e)
       | none => .ok none
-    let retStmt := mkStmtExprMd (StmtExpr.Return retVal)
+    let retStmt := mkStmtExprMdWithLoc (StmtExpr.Return retVal) md
     return (ctx, retStmt)
 
   -- Assert statement
@@ -650,13 +652,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let result := if condStmts.isEmpty then
       assertStmt
     else
-      mkStmtExprMd (StmtExpr.Block (condStmts ++ [assertStmt]) none)
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
 
     return (condCtx, result)
 
   -- Expression statement (e.g., function call)
   | .Expr _ value => do
     let expr ← translateExpr ctx value
+    let expr := { expr with md := md }
     return (ctx, expr)
 
   | .Import _ _ | .ImportFrom _ _ _ _ => return (ctx, mkStmtExprMd .Hole)
@@ -690,7 +693,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let handlerBlock := mkStmtExprMd (StmtExpr.Block handlerStmts (some handlerLabel))
 
     -- Wrap in try block
-    let tryBlock := mkStmtExprMd (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel))
+    let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel)) md
     return (bodyCtx, tryBlock)
 
   | .Raise _ _ _ => return (ctx, mkStmtExprMd .Hole)
@@ -717,7 +720,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- Create: { target = havoc; body_statements }
     -- This abstracts: execute body once with arbitrary target value
     let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName targetType (some (mkStmtExprMd .Hole)))
-    let loopBlock := mkStmtExprMd (StmtExpr.Block ([targetDecl] ++ bodyStmts) none)
+    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block ([targetDecl] ++ bodyStmts) none) md
 
     return (finalCtx, loopBlock)
 

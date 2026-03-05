@@ -25,7 +25,8 @@ dialect Core;
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
-accessorTemplate : FunctionTemplate);
+accessorTemplate : FunctionTemplate,
+unsafeAccessorTemplate : FunctionTemplate);
 
 type bool;
 type int;
@@ -130,6 +131,10 @@ fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " div "
 fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " mod " b;
 fn safediv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " / " b;
 fn safemod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " % " b;
+fn divt_expr (tp : Type, a : tp, b : tp) : tp => "Int.DivT(" a ", " b ")";
+fn modt_expr (tp : Type, a : tp, b : tp) : tp => "Int.ModT(" a ", " b ")";
+fn safedivt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " /t " b;
+fn safemodt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " %t " b;
 
 fn bvnot (tp : Type, a : tp) : tp => "~" a;
 fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " & " b;
@@ -358,7 +363,8 @@ op constructorListPush (cl : ConstructorList, c : Constructor)
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor],
                    [.datatype], .builtin "bool"),
-    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType),
+    perField([.datatype, .literal "..", .field, .literal "!"], [.datatype], .fieldType))]
 op command_datatype (name : Ident,
                      typeParams : Option Bindings,
                      @[scopeDatatype(name, typeParams)] constructors : ConstructorList)

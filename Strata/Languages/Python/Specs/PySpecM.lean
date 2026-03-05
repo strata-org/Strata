@@ -23,14 +23,16 @@ structure SpecError where
   loc : SourceRange
   message : String
 
-/-- Type class for monads that support PySpec error reporting. -/
+/-- Type class for monads that support PySpec error and warning reporting. -/
 class PySpecMClass (m : Type → Type) where
   /-- Report an error at a specific source location. -/
   specError (loc : SourceRange) (message : String) : m Unit
+  /-- Report a warning at a specific source location. -/
+  specWarning (loc : SourceRange) (message : String) : m Unit
   /-- Run an action and check if any new errors were reported. -/
   runChecked {α} (act : m α) : m (Bool × α)
 
-export PySpecMClass (specError runChecked)
+export PySpecMClass (specError specWarning runChecked)
 
 end Strata.Python.Specs
 end

@@ -111,7 +111,11 @@ info: ok: [(type Foo (a0 : Type, a1 : Type);
   func Int.SafeMod :  ((x : int) (y : int)) → int
     requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.DivT :  ((x : int) (y : int)) → int;
+  func Int.SafeDivT :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.ModT :  ((x : int) (y : int)) → int;
+  func Int.SafeModT :  ((x : int) (y : int)) → int
+    requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
   func Int.Neg :  ((x : int)) → int;
   func Int.Lt :  ((x : int) (y : int)) → bool;
   func Int.Le :  ((x : int) (y : int)) → bool;
@@ -378,8 +382,8 @@ def polyFuncProg : Program := { decls := [
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: function identity<|$__ty0|> (x : $__ty0) : $__ty0;
-function makePair<|$__ty1|, |$__ty2|> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+info: ok: function identity<$__ty0> (x : $__ty0) : $__ty0;
+function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
 procedure Test () returns ()
 {
   var m : (Map int bool);
