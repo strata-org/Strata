@@ -598,7 +598,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
         let constructors := dt.constructors.map fun c => c.name
         let testers := dt.constructors.map fun c => s!"{dt.name}..is{c.name}"
         let destructors := dt.constructors.foldl (fun acc c =>
-          acc ++ c.args.map fun (fieldName, _) => s!"{dt.name}..{fieldName}") []
+          acc ++ c.args.flatMap fun (fieldName, _) => [s!"{dt.name}..{fieldName}", s!"{dt.name}..{fieldName}!"]) []
         acc ++ constructors ++ testers ++ destructors
     | _ => acc) []
   -- Build mapping from Laurel-level tester names to Core-level tester names
