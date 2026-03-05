@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Util.Map
-import Strata.DL.Util.ListUtils
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Util.Map
+public import Strata.DL.Util.ListUtils
 
 ---------------------------------------------------------------------
 
 namespace Imperative
+
+public section
 
 section
 
@@ -23,16 +26,16 @@ data structure. They'll probably usually be instantiated with map
 lookups. The evaluation functions take two states: an old state and a
 current state. This allows for two-state expressions and predicates.
 -/
-abbrev SemanticStore := P.Ident → Option P.Expr
-abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
-abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
+@[expose] abbrev SemanticStore := P.Ident → Option P.Expr
+@[expose] abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
+@[expose] abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
 
 /--
 Evaluation relation of an Imperative command `Cmd`.
 Commands do not modify the evaluator - only `funcDecl` statements do.
 -/
 -- (FIXME) Change to a type class?
-abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
+@[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
   SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Prop
 
 /-- ### Well-Formedness of `SemanticStore`s -/
@@ -418,3 +421,5 @@ theorem InitStateUniqueResult
   specialize Hfa1 v' h
   specialize Hfa2 v' h
   simp_all
+
+end -- public section

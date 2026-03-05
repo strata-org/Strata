@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprTypeEnv
-import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LExprTypeEnv
+import all Strata.DL.Lambda.LExprTypeEnv
+public import Strata.DL.Lambda.LExprWF
+import all Strata.DL.Lambda.LExprWF
 
 /-! ## Type Inference Transform for Lambda Expressions.
 
@@ -21,9 +24,11 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LTy
 
+public section
+
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)]
 
-abbrev LExprT (T : LExprParamsT) :=
+@[expose] abbrev LExprT (T : LExprParamsT) :=
   LExpr (LExprParamsT.typed T)
 
 partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.IDMeta] (et : LExprT T) : Std.Format :=
@@ -371,4 +376,5 @@ def LExpr.annotate (C: LContext T) (Env : TEnv T.IDMeta) (e : (LExpr T.mono)) :
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Lambda

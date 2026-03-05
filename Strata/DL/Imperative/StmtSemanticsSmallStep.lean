@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Util.Relations
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
 
 namespace Imperative
+
+public section
 
 /-! ## Small-Step Operational Semantics for Statements
 
@@ -295,4 +298,5 @@ theorem terminalIsTerminal
   intro c' h
   cases h
 
+end -- public section
 end Imperative

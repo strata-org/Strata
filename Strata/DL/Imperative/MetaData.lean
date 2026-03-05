@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
-import Strata.DL.Util.DecidableEq
-import Strata.Util.FileRange
+public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Util.DecidableEq
+public import Strata.Util.FileRange
 
 namespace Imperative
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -128,7 +131,7 @@ structure MetaDataElem (P : PureExpr) where
   value : MetaDataElem.Value P
 
 /-- Metadata is an array of tagged elements. -/
-abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
+@[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 
 def MetaData.empty {P : PureExpr} : MetaData P := #[]
 
@@ -213,4 +216,5 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative
