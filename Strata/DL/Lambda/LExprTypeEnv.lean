@@ -1131,4 +1131,290 @@ theorem TGenEnv.genTyVars_allFresh {T : LExprParams} [DecidableEq T.IDMeta]
   exact TContext.isFresh_of_not_mem_knownTypeVars
     (TGenEnv.genTyVars_not_mem_knownTypeVars n Env tvs Env' h tv h_mem)
 
+---------------------------------------------------------------------
+-- tyGen monotonicity lemmas
+---------------------------------------------------------------------
+
+section TyGenMono
+
+-- These lemmas don't need [ToFormat T.Metadata]; omit it so callers
+-- (e.g. in LExprTypeSpec.lean) don't need to provide it.
+omit [ToFormat T.Metadata]
+
+/-- `genTyVar` produces `TState.tyPrefix ++ toString tyGen`. -/
+theorem genTyVar_name_eq (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)
+    (h : TEnv.genTyVar Env = .ok (tv, Env')) :
+    tv = TState.tyPrefix ++ toString Env.genEnv.genState.tyGen := by
+  -- Step 1: Decompose TEnv.genTyVar into TGenEnv.genTyVar
+  simp only [TEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · rename_i v h_gen_env
+    obtain ⟨a, genEnv'⟩ := v
+    simp at h; rw [← h.1]
+    -- Step 2: Decompose TGenEnv.genTyVar: it returns genTySym's name
+    simp only [TGenEnv.genTyVar] at h_gen_env
+    split at h_gen_env
+    · simp at h_gen_env
+    · simp at h_gen_env; rw [← h_gen_env.1]
+      -- Step 3: genTySym.1 = tyPrefix ++ toString tyGen
+      simp [TState.genTySym, TState.incTyGen]
+
+/-- `genTyVar` increments `tyGen` by exactly 1. -/
+theorem genTyVar_tyGen (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)
+    (h : TEnv.genTyVar Env = .ok (tv, Env')) :
+    Env'.genEnv.genState.tyGen = Env.genEnv.genState.tyGen + 1 := by
+  -- Step 1: Decompose TEnv.genTyVar into TGenEnv.genTyVar
+  simp only [TEnv.genTyVar] at h
+  split at h
+  · simp at h
+  · rename_i v h_gen_env
+    obtain ⟨a, genEnv'⟩ := v
+    simp at h; rw [← h.2]
+    -- Step 2: Decompose TGenEnv.genTyVar
+    simp only [TGenEnv.genTyVar] at h_gen_env
+    split at h_gen_env
+    · simp at h_gen_env
+    · simp at h_gen_env; rw [← h_gen_env.2.2]
+      -- Step 3: genTySym increments tyGen by 1
+      simp [TState.genTySym, TState.incTyGen]
+
+/-- `genTyVars n` never decreases `tyGen`. -/
+theorem genTyVars_tyGen_mono [ToFormat IDMeta]
+    (n : Nat) (Env : TGenEnv IDMeta)
+    (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    Env'.genState.tyGen ≥ Env.genState.tyGen := by
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨_, h2⟩ := h; subst h2; omega
+  | succ n ih =>
+    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        -- Env.genState.tyGen ≤ Env1.genState.tyGen ≤ Env2.genState.tyGen
+        have h1 : Env1.genState.tyGen ≥ Env.genState.tyGen := by
+          simp only [TGenEnv.genTyVar] at h_gen
+          split at h_gen
+          · simp at h_gen
+          · simp at h_gen; rw [← h_gen.2]
+            simp [TState.genTySym, TState.incTyGen]
+        exact Nat.le_trans h1 (ih Env1 tvs' Env2 h_rest)
+
+/-- `LMonoTys.instantiate` never decreases `tyGen`. -/
+theorem LMonoTys.instantiate_tyGen_mono [ToFormat IDMeta]
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TGenEnv IDMeta)
+    (result : LMonoTys) (Env' : TGenEnv IDMeta)
+    (h : LMonoTys.instantiate ids mtys Env = .ok (result, Env')) :
+    Env'.genState.tyGen ≥ Env.genState.tyGen := by
+  simp [LMonoTys.instantiate, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_gen
+    obtain ⟨freshtvs, Env1⟩ := v1; simp at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact genTyVars_tyGen_mono ids.length Env freshtvs Env1 h_gen
+
+/-- `LMonoTys.instantiateEnv` never decreases `tyGen`. -/
+theorem LMonoTys.instantiateEnv_tyGen_mono [ToFormat IDMeta]
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv IDMeta)
+    (result : LMonoTys) (Env' : TEnv IDMeta)
+    (h : LMonoTys.instantiateEnv ids mtys Env = .ok (result, Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  unfold LMonoTys.instantiateEnv at h
+  generalize h_inst : LMonoTys.instantiate ids mtys Env.genEnv = r at h
+  match r, h_inst with
+  | .error _, _ => simp at h
+  | .ok (a, gE), h_inst =>
+    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp
+    exact LMonoTys.instantiate_tyGen_mono ids mtys Env.genEnv a gE h_inst
+
+/-- `LTy.instantiate` never decreases `tyGen`. -/
+theorem LTy.instantiate_tyGen_mono [ToFormat IDMeta]
+    (ty : LTy) (Env : TGenEnv IDMeta)
+    (mty : LMonoTy) (Env' : TGenEnv IDMeta)
+    (h : LTy.instantiate ty Env = .ok (mty, Env')) :
+    Env'.genState.tyGen ≥ Env.genState.tyGen := by
+  cases ty with
+  | forAll vars body =>
+    cases vars with
+    | nil =>
+      simp [LTy.instantiate] at h
+      obtain ⟨_, h2⟩ := h; subst h2; omega
+    | cons v vs =>
+      simp [LTy.instantiate, Bind.bind, Except.bind] at h
+      split at h
+      · simp at h
+      · rename_i v1 h_gen
+        obtain ⟨freshtvs, Env1⟩ := v1; simp at h
+        obtain ⟨_, h2⟩ := h; rw [← h2]
+        exact genTyVars_tyGen_mono (v :: vs).length Env freshtvs Env1 h_gen
+
+/-- `tconsAlias` never decreases `tyGen`.
+    It calls `instantiateEnv` (which may increment tyGen) then `unify` + `updateSubst`
+    (which preserve genEnv). -/
+theorem tconsAlias_tyGen_mono
+    (name : String) (args : LMonoTys) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.tconsAlias name args Env = .ok (mty, Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  simp only [LMonoTy.tconsAlias] at h
+  -- Case split on whether a matching alias is found
+  split at h
+  case h_1 =>
+    -- No matching alias: Env' = Env
+    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+  case h_2 alias_val =>
+    -- Matching alias found: calls instantiateEnv then unify + updateSubst
+    split at h
+    · simp at h
+    · rename_i instTypes Env1 h_inst
+      -- unify + updateSubst only change stateSubstInfo, not genEnv
+      split at h
+      · simp at h
+      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
+        simp [TEnv.updateSubst]
+        exact LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst
+
+/-- `LMonoTy.aliasDef?` never decreases `tyGen`. -/
+theorem aliasDef_tyGen_mono
+    (mty : LMonoTy) (Env : TEnv T.IDMeta)
+    (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.aliasDef? mty Env = .ok (mty', Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  simp only [LMonoTy.aliasDef?] at h
+  split at h
+  · exact tconsAlias_tyGen_mono _ _ Env mty' Env' h
+  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+
+mutual
+/-- `LMonoTy.resolveAliases` never decreases `tyGen`. -/
+theorem LMonoTy_resolveAliases_tyGen_mono
+    (mty : LMonoTy) (Env : TEnv T.IDMeta)
+    (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (mty', Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  match mty with
+  | .ftvar _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; subst h2; omega
+  | .bitvec _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; subst h2; omega
+  | .tcons name args =>
+    simp only [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_args
+      obtain ⟨args', Env1⟩ := v1; simp at h h_args
+      split at h
+      · simp at h
+      · rename_i v2 h_alias
+        obtain ⟨mty'', Env2⟩ := v2; simp at h
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨h_mty, h_env⟩ := h; subst h_mty; subst h_env
+        exact Nat.le_trans
+          (LMonoTys_resolveAliases_tyGen_mono args Env args' Env1 h_args)
+          (tconsAlias_tyGen_mono name args' Env1 mty'' Env2 h_alias)
+
+theorem LMonoTys_resolveAliases_tyGen_mono
+    (mtys : LMonoTys) (Env : TEnv T.IDMeta)
+    (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  match mtys with
+  | [] =>
+    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨_, h2⟩ := h; subst h2; omega
+  | mty :: mrest =>
+    simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_one
+      obtain ⟨mty'', Env1⟩ := v1; simp at h h_one
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨mrest', Env2⟩ := v2; simp at h
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, h_env⟩ := h; subst h_env
+        exact Nat.le_trans
+          (LMonoTy_resolveAliases_tyGen_mono mty Env mty'' Env1 h_one)
+          (LMonoTys_resolveAliases_tyGen_mono mrest Env1 mrest' Env2 h_rest)
+end
+
+/-- `LTy.resolveAliases` never decreases `tyGen`. -/
+theorem LTy_resolveAliases_tyGen_mono
+    (ty : LTy) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  -- LTy.resolveAliases = LTy.instantiate on genEnv, then LMonoTy.resolveAliases
+  simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_inst
+    obtain ⟨mty_mid, genEnv1⟩ := v1; simp at h h_inst
+    -- h : mty_mid.resolveAliases {genEnv := genEnv1, stateSubstInfo := Env.stateSubstInfo} = .ok (mty, Env')
+    have h1 : genEnv1.genState.tyGen ≥ Env.genEnv.genState.tyGen :=
+      LTy.instantiate_tyGen_mono ty Env.genEnv mty_mid genEnv1 h_inst
+    have h2 : Env'.genEnv.genState.tyGen ≥ genEnv1.genState.tyGen := by
+      have := LMonoTy_resolveAliases_tyGen_mono mty_mid
+        { Env with genEnv := genEnv1 } mty Env' h
+      simp at this; exact this
+    exact Nat.le_trans h1 h2
+
+/-- Each sub-function used by `resolveAux` never decreases tyGen.
+    This covers `inferConst`, `inferFVar`, `typeBoundVar`, `instantiateWithCheck`,
+    `updateSubst`, `eraseFromContext`, `genTyVar`, and `Constraints.unify`.
+    The proof for each follows from: genTyVar increments by 1, genTyVars by n,
+    unify/updateSubst/eraseFromContext preserve genEnv entirely. -/
+
+theorem LTy_instantiateWithCheck_tyGen_mono
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  -- LTy.instantiateWithCheck = resolveAliases then check isInstanceOfKnownType
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_resolve
+    obtain ⟨mty_res, Env1⟩ := v1; simp at h h_resolve
+    split at h
+    · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+      exact LTy_resolveAliases_tyGen_mono ty Env mty_res Env1 h_resolve
+    · simp at h
+
+theorem LMonoTy_instantiateWithCheck_tyGen_mono
+    (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty, Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  -- LMonoTy.instantiateWithCheck = instantiateEnv then resolveAliases then check
+  simp only [LMonoTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i instTypes Env1 h_inst
+    -- h now has match on resolveAliases
+    split at h
+    · simp at h
+    · rename_i v2 h_resolve
+      obtain ⟨mty_res, Env2⟩ := v2; simp at h h_resolve
+      split at h
+      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+        exact Nat.le_trans
+          (LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst)
+          (LMonoTy_resolveAliases_tyGen_mono _ Env1 mty_res Env2 h_resolve)
+      · simp at h
+
+end TyGenMono
+
 end Lambda

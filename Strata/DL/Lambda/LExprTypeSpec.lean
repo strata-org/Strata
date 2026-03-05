@@ -2787,61 +2787,43 @@ def SubstFreshForGen (S : SubstInfo) (state : TState) : Prop :=
   ∀ v, (v ∈ Maps.keys S.subst ∨ v ∈ Subst.freeVars S.subst) →
     ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n
 
-/-- `genTyVar` produces `TState.tyPrefix ++ toString tyGen`. -/
-private theorem genTyVar_name_eq (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)
-    (h : TEnv.genTyVar Env = .ok (tv, Env')) :
-    tv = TState.tyPrefix ++ toString Env.genEnv.genState.tyGen := by
-  -- Step 1: Decompose TEnv.genTyVar into TGenEnv.genTyVar
-  simp only [TEnv.genTyVar] at h
-  split at h
-  · simp at h
-  · rename_i v h_gen_env
-    obtain ⟨a, genEnv'⟩ := v
-    simp at h; rw [← h.1]
-    -- Step 2: Decompose TGenEnv.genTyVar: it returns genTySym's name
-    simp only [TGenEnv.genTyVar] at h_gen_env
-    split at h_gen_env
-    · simp at h_gen_env
-    · simp at h_gen_env; rw [← h_gen_env.1]
-      -- Step 3: genTySym.1 = tyPrefix ++ toString tyGen
-      simp [TState.genTySym, TState.incTyGen]
 
-/-- `genTyVar` increments `tyGen` by exactly 1. -/
-private theorem genTyVar_tyGen (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)
-    (h : TEnv.genTyVar Env = .ok (tv, Env')) :
-    Env'.genEnv.genState.tyGen = Env.genEnv.genState.tyGen + 1 := by
-  -- genTySym produces (tyPrefix ++ toString tyGen, {state with tyGen := tyGen + 1}).
-  -- genTyVar wraps this: increments tyGen by exactly 1.
-  sorry
-
-/-- Each sub-function used by `resolveAux` never decreases tyGen.
-    This covers `inferConst`, `inferFVar`, `typeBoundVar`, `instantiateWithCheck`,
-    `updateSubst`, `eraseFromContext`, `genTyVar`, and `Constraints.unify`.
-    The proof for each follows from: genTyVar increments by 1, genTyVars by n,
-    unify/updateSubst/eraseFromContext preserve genEnv entirely. -/
 private theorem inferFVar_tyGen_mono
     (C : LContext T) (Env : TEnv T.IDMeta) (x : T.Identifier) (fty : Option LMonoTy)
     (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : inferFVar C Env x fty = .ok (ty_res, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  sorry
+  simp only [inferFVar] at h
+  split at h
+  · simp at h
+  · rename_i ty h_find
+    simp only [Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_iwc
+      obtain ⟨ty_inst, Env1⟩ := v1; simp at h h_iwc
+      cases fty with
+      | none =>
+        simp at h; obtain ⟨_, h_env⟩ := h; subst h_env
+        exact LTy_instantiateWithCheck_tyGen_mono ty C Env ty_inst Env1 h_iwc
+      | some fty_val =>
+        simp only [Except.mapError] at h
+        split at h
+        · simp at h
+        · rename_i v2 h_iwc2
+          obtain ⟨fty_inst, Env2⟩ := v2; simp at h h_iwc2
+          split at h
+          · simp at h
+          · simp at h; obtain ⟨_, h_env⟩ := h; subst h_env
+            simp [TEnv.updateSubst]
+            exact Nat.le_trans
+              (LTy_instantiateWithCheck_tyGen_mono ty C Env ty_inst Env1 h_iwc)
+              (LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_iwc2)
 
 private theorem typeBoundVar_tyGen_mono
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
-    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  sorry
-
-private theorem LTy_instantiateWithCheck_tyGen_mono
-    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
-    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  sorry
-
-private theorem LMonoTy_instantiateWithCheck_tyGen_mono
-    (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   sorry
 
@@ -2851,25 +2833,32 @@ private theorem resolveAux_genState_mono :
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
       Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  intro e; induction e with
-  | const m c =>
-    intro et C Env Env' h
+  intro e
+  -- Use strong induction on sizeOf to handle varOpen in abs/quant cases
+  suffices ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen by
+    exact this e.sizeOf e rfl
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  intro e h_eq et C Env Env' h
+  match e with
+  | .const m c =>
     simp [resolveAux, inferConst] at h
     split at h
     · simp [Bind.bind, Except.bind] at h; obtain ⟨_, h2⟩ := h; rw [← h2]; exact Nat.le_refl _
     · exact absurd h (by simp [Bind.bind, Except.bind])
-  | bvar m i =>
-    intro et C Env Env' h
-    simp [resolveAux, Bind.bind, Except.bind] at h
-  | fvar m x fty =>
-    intro et C Env Env' h
+  | .bvar m i =>
+    simp [resolveAux] at h
+  | .fvar m x fty =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
     rename_i v1 h_infer; obtain ⟨_, Env_res⟩ := v1; simp at h
     obtain ⟨_, h2⟩ := h; rw [← h2]
     exact inferFVar_tyGen_mono C Env x fty _ Env_res h_infer
-  | op m o oty =>
-    intro et C Env Env' h
+  | .op m o oty =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
     rename_i func h_find
@@ -2890,8 +2879,7 @@ private theorem resolveAux_genState_mono :
       exact Nat.le_trans
         (LTy_instantiateWithCheck_tyGen_mono type_val C Env ty_inst Env1 h_inst)
         (LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2)
-  | app m e1 e2 ih1 ih2 =>
-    intro et C Env Env' h
+  | .app m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
     rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
@@ -2901,15 +2889,57 @@ private theorem resolveAux_genState_mono :
     rename_i v3 h_gen; obtain ⟨fresh_name, Env3⟩ := v3; dsimp at h h_gen
     split at h; · simp at h
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
-    -- Chain: Env ≤ Env1 ≤ Env2 ≤ Env3 (= Env2 + 1)
-    exact Nat.le_trans (Nat.le_trans (ih1 e1t C Env Env1 h_res1) (ih2 e2t C Env1 Env2 h_res2))
+    have h_sz1 : e1.sizeOf < n := by
+      subst h_eq; simp [LExpr.sizeOf]; omega
+    have h_sz2 : e2.sizeOf < n := by
+      subst h_eq; simp [LExpr.sizeOf]; omega
+    exact Nat.le_trans
+      (Nat.le_trans
+        (ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1)
+        (ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2))
       (by have := genTyVar_tyGen Env2 fresh_name Env3 h_gen; omega)
-  | abs m bty e ih =>
-    intro et C Env Env' h; sorry
-  | quant m qk bty tr e ih_tr ih_e =>
-    intro et C Env Env' h; sorry
-  | eq m e1 e2 ih1 ih2 =>
-    intro et C Env Env' h
+  | .abs m bty body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_tbv
+      obtain ⟨xv_id, xty_val, Env1⟩ := v1
+      simp at h h_tbv
+      split at h
+      · simp at h
+      · rename_i v2 h_rec; obtain ⟨et', Env2⟩ := v2; simp at h
+        obtain ⟨_, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
+        have h_sz : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
+          subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]
+        exact Nat.le_trans (typeBoundVar_tyGen_mono C Env bty xv_id xty_val Env1 h_tbv)
+          (ih _ h_sz (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec)
+  | .quant m qk bty tr body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_tbv
+      obtain ⟨xv_id, xty_val, Env1⟩ := v1
+      simp at h h_tbv
+      split at h
+      · simp at h
+      · rename_i v2 h_rec_e; obtain ⟨et', Env2⟩ := v2; simp at h h_rec_e
+        split at h
+        · simp at h
+        · rename_i v3 h_rec_tr; obtain ⟨trT, Env3⟩ := v3; simp at h h_rec_tr
+          split at h
+          · -- isTrue: toLMonoTy et' = LMonoTy.bool (success case)
+            simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext]
+            have h_sz_e : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
+              subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+            have h_sz_tr : (varOpen 0 (xv_id, some xty_val) tr).sizeOf < n := by
+              subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+            exact Nat.le_trans (Nat.le_trans
+              (typeBoundVar_tyGen_mono C Env bty xv_id xty_val Env1 h_tbv)
+              (ih _ h_sz_e (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec_e))
+              (ih _ h_sz_tr (varOpen 0 (xv_id, some xty_val) tr) rfl trT C Env2 Env3 h_rec_tr)
+          · -- isFalse: error case
+            simp at h
+  | .eq m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
     rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
@@ -2917,9 +2947,14 @@ private theorem resolveAux_genState_mono :
     rename_i v2 h_res2; obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
     split at h; · simp at h
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
-    exact Nat.le_trans (ih1 e1t C Env Env1 h_res1) (ih2 e2t C Env1 Env2 h_res2)
-  | ite m c t e ih_c ih_t ih_e =>
-    intro et C Env Env' h
+    have h_sz1 : e1.sizeOf < n := by
+      subst h_eq; simp [LExpr.sizeOf]; omega
+    have h_sz2 : e2.sizeOf < n := by
+      subst h_eq; simp [LExpr.sizeOf]; omega
+    exact Nat.le_trans
+      (ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1)
+      (ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2)
+  | .ite m c t e =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
     rename_i v1 h_res_c; obtain ⟨ct, Env1⟩ := v1; dsimp at h h_res_c
@@ -2929,8 +2964,16 @@ private theorem resolveAux_genState_mono :
     rename_i v3 h_res_e; obtain ⟨elt, Env3⟩ := v3; dsimp at h h_res_e
     split at h; · simp at h
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
-    exact Nat.le_trans (Nat.le_trans (ih_c ct C Env Env1 h_res_c)
-      (ih_t tht C Env1 Env2 h_res_t)) (ih_e elt C Env2 Env3 h_res_e)
+    have h_sz_c : c.sizeOf < n := by
+      subst h_eq; simp [LExpr.sizeOf]; omega
+    have h_sz_t : t.sizeOf < n := by
+      subst h_eq; simp [LExpr.sizeOf]; omega
+    have h_sz_e : e.sizeOf < n := by
+      subst h_eq; simp [LExpr.sizeOf]; omega
+    exact Nat.le_trans (Nat.le_trans
+      (ih c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c)
+      (ih t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t))
+      (ih e.sizeOf h_sz_e e rfl elt C Env2 Env3 h_res_e)
 
 /-- `resolveAux` preserves the `SubstFreshForGen` invariant. -/
 private theorem resolveAux_preserves_SubstFreshForGen :
