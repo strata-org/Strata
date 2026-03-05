@@ -3601,9 +3601,38 @@ theorem resolveAux_HasType :
       Env'.context = Env.context ∧
       HasType C (Env.context) e
         (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst et.toLMonoTy)) := by
-  intro e
-  induction e with
-  | const m c =>
+  -- We use strong induction on LExpr.sizeOf to handle the abs/quant cases,
+  -- where resolveAux recurses on (varOpen 0 x e_body) rather than e_body.
+  suffices h_strong : ∀ (n : Nat) (e : LExpr T.mono), LExpr.sizeOf e = n →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      (∀ y ty, Env.context.types.find? y = some ty →
+        (LTy.boundVars ty).Nodup ∧
+        ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env.genEnv.context) →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
+      Env'.context = Env.context ∧
+      HasType C (Env.context) e
+        (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst et.toLMonoTy)) from
+    fun e => h_strong (LExpr.sizeOf e) e rfl
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih_n =>
+  intro e h_sz
+  -- ih_n : ∀ m < n, ∀ e', LExpr.sizeOf e' = m → [full statement for e']
+  -- Helper to apply IH to any e' with LExpr.sizeOf e' < n
+  have ih_sub : ∀ (e' : LExpr T.mono), LExpr.sizeOf e' < n →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e' = .ok (et, Env') →
+      (∀ y ty, Env.context.types.find? y = some ty →
+        (LTy.boundVars ty).Nodup ∧
+        ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env.genEnv.context) →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
+      Env'.context = Env.context ∧
+      HasType C (Env.context) e'
+        (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst et.toLMonoTy)) :=
+    fun e' h_lt => ih_n (LExpr.sizeOf e') h_lt e' rfl
+  match e with
+  | .const m c =>
     intro et C Env Env' h h_wf h_sf
     simp [resolveAux, inferConst] at h
     split at h
@@ -3621,10 +3650,10 @@ theorem resolveAux_HasType :
         | strConst s => exact HasType.tstr_const _ _ _ h_known
         | bitvecConst n b => exact HasType.tbitvec_const _ _ _ _ h_known
     · exact absurd h (by simp [Bind.bind, Except.bind])
-  | bvar m i =>
+  | .bvar m i =>
     intro et C Env Env' h h_wf h_sf
     simp [resolveAux, Bind.bind, Except.bind] at h
-  | fvar m x fty =>
+  | .fvar m x fty =>
     -- resolveAux calls inferFVar, which looks up x in context, instantiates
     -- bound type variables, and optionally unifies with the annotation.
     intro et C Env Env' h h_wf h_sf
@@ -3638,10 +3667,10 @@ theorem resolveAux_HasType :
       rw [← h_et, ← h_env']
       simp [toLMonoTy]
       exact inferFVar_HasType C Env x fty ty_res Env_res m h_infer h_wf
-  | op m o oty =>
+  | .op m o oty =>
     intro et C Env Env' h h_wf h_sf
     exact ⟨sorry, sorry⟩
-  | app m e1 e2 ih1 ih2 =>
+  | .app m e1 e2 =>
     /-
     Theorem: The .app case of resolveAux_HasType.
 
@@ -3723,7 +3752,9 @@ theorem resolveAux_HasType :
             have h_gen_subst := TEnv.genTyVar_subst Env2 fresh_name Env3 h_genTyVar
             have h_gen_ctx := TEnv.genTyVar_context Env2 fresh_name Env3 h_genTyVar
             have h_gen_fresh := TEnv.genTyVar_isFresh Env2 fresh_name Env3 h_genTyVar
-            -- IHs from recursive calls
+            -- IHs from recursive calls (using strong induction)
+            have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
+            have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
             have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_wf h_sf
             have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
               rw [h_ctx1]; exact resolveAux_keys_fresh e1 e1t C Env Env1 h_res1 h_sf
@@ -3832,13 +3863,57 @@ theorem resolveAux_HasType :
                 (by simp [LTy.isMonoType, LTy.boundVars])
                 (by simp [LTy.toMonoType]; exact h_ty1_up)
                 h_ty2_up
-  | abs m bty e ih =>
+  | .abs m bty e_body =>
+    intro et C Env Env' h h_wf h_sf
+    -- The abs case of resolveAux calls typeBoundVar then recurses on the opened body.
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    -- Decompose: typeBoundVar C Env bty
+    split at h
+    · simp at h
+    · rename_i v1 h_tbv
+      obtain ⟨xv, xty, Env1⟩ := v1
+      dsimp at h h_tbv
+      -- Decompose: resolveAux C Env1 (varOpen 0 (xv, some xty) e_body)
+      split at h
+      · simp at h
+      · rename_i v2 h_res_body
+        obtain ⟨et_body, Env2⟩ := v2
+        dsimp at h h_res_body
+        simp at h
+        obtain ⟨h_et, h_env'⟩ := h
+        -- h_tbv : typeBoundVar C Env bty = .ok (xv, xty, Env1)
+        -- h_res_body : resolveAux C Env1 (varOpen 0 (xv, some xty) e_body) = .ok (et_body, Env2)
+        -- h_et : et = .abs ⟨m, mty⟩ bty (varCloseT 0 xv et_body) where mty = subst S (arrow [xty, ety])
+        -- h_env' : Env' = eraseFromContext Env2 xv
+        -- Apply IH to the opened body using strong induction
+        -- sizeOf (varOpen 0 (xv, some xty) e_body) = sizeOf e_body < 2 + sizeOf e_body = sizeOf (.abs m bty e_body) = n
+        have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
+          (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+        -- We need well-formedness and freshness for Env1
+        have h_wf1 : ∀ y ty, Env1.context.types.find? y = some ty →
+            (LTy.boundVars ty).Nodup ∧
+            ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env1.genEnv.context := by
+          sorry -- WF transfers through typeBoundVar
+        have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
+          sorry -- freshness transfers through typeBoundVar
+        have ⟨h_ctx_body, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_wf1 h_sf1
+        -- h_ctx_body : Env2.context = Env1.context
+        -- h_ty_body : HasType C Env1.context (varOpen 0 (xv, some xty) e_body)
+        --             (.forAll [] (subst Env2.subst et_body.toLMonoTy))
+        constructor
+        · -- Context preservation: Env'.context = Env.context
+          -- Env' = eraseFromContext Env2 xv
+          -- Env2.context = Env1.context (from IH)
+          -- Env1 = typeBoundVar result, adds xv to Env's context
+          -- eraseFromContext removes xv → back to Env.context
+          sorry
+        · -- Typing: HasType C Env.context (.abs m bty e_body)
+          --         (.forAll [] (subst Env'.subst et.toLMonoTy))
+          sorry
+  | .quant m qk bty tr e_body =>
     intro et C Env Env' h h_wf h_sf
     exact ⟨sorry, sorry⟩
-  | quant m qk bty tr e ih_tr ih_e =>
-    intro et C Env Env' h h_wf h_sf
-    exact ⟨sorry, sorry⟩
-  | ite m c t e ih_c ih_t ih_e =>
+  | .ite m c t e =>
     -- resolveAux recurses on c, t, e, then unifies [(cty, bool), (tty, ety)].
     -- Result type is tty (the then-branch type), and the HasType rule is `tif`.
     intro et C Env Env' h h_wf h_sf
@@ -3879,7 +3954,10 @@ theorem resolveAux_HasType :
               match res, h_me with
               | .ok val, h_me => simp at h_me; rw [h_me]
               | .error _, h_me => simp at h_me
-            -- IHs from recursive calls
+            -- IHs from recursive calls (using strong induction)
+            have ih_c := ih_sub c (by subst h_sz; simp [LExpr.sizeOf]; omega)
+            have ih_t := ih_sub t (by subst h_sz; simp [LExpr.sizeOf]; omega)
+            have ih_e := ih_sub e (by subst h_sz; simp [LExpr.sizeOf]; omega)
             have ⟨h_ctx1, h_ty_c⟩ := ih_c ct C Env Env1 h_res_c h_wf h_sf
             have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
               rw [h_ctx1]; exact resolveAux_keys_fresh c ct C Env Env1 h_res_c h_sf
@@ -3953,7 +4031,7 @@ theorem resolveAux_HasType :
               exact HasType.tif Env.context m c t e
                 (.forAll [] (LMonoTy.subst v4.subst tht.toLMonoTy))
                 h_ty_c_up h_ty_t_up h_ty_e_up
-  | eq m e1 e2 ih1 ih2 =>
+  | .eq m e1 e2 =>
     -- resolveAux recurses on e1 and e2, then unifies their types.
     -- Result type is LMonoTy.bool (ground), so subst S bool = bool for any S.
     -- We upgrade both IHs to the final substitution via absorption.
@@ -3987,7 +4065,9 @@ theorem resolveAux_HasType :
             match res, h_me with
             | .ok val, h_me => simp at h_me; rw [h_me]
             | .error _, h_me => simp at h_me
-          -- IHs from recursive calls
+          -- IHs from recursive calls (using strong induction)
+          have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
+          have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
           have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_wf h_sf
           have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
             rw [h_ctx1]; exact resolveAux_keys_fresh e1 e1t C Env Env1 h_res1 h_sf
