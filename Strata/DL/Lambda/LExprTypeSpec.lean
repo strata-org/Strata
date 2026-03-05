@@ -1388,81 +1388,255 @@ private theorem unifyOne_sound (c : Constraint) (S : SubstInfo)
     (relS : ValidSubstRelation [c] S)
     (h : Constraint.unifyOne c S = .ok relS) :
     LMonoTy.subst relS.newS.subst c.1 = LMonoTy.subst relS.newS.subst c.2 := by
-  obtain ⟨t1, t2⟩ := c
-  simp only [] at *
-  -- Unfold unifyOne and case-split on the outer if t1 == t2
-  unfold Constraint.unifyOne at h
-  split at h
-  · -- Case: t1 == t2. Substitution unchanged; types definitionally equal.
-    rename_i h_beq
-    simp at h
-    have h_eq : t1 = t2 := eq_of_beq h_beq
-    subst h_eq; simp_all
-  · -- Case: t1 ≠ t2. Split on the type constructor match.
-    split at h
-    · -- Case: .ftvar id on left, orig_lty on right.
-      rename_i h_neq_beq id_val orig_val h_neq_match
-      -- Further decompose: the do-block starts with let lty := subst S orig, then if/match
-      simp [h_neq_match] at h
-      split at h
-      · -- Subcase: ftvar id = subst S orig_lty. S is unchanged.
-        rename_i h_id_eq_lty
-        simp at h; subst h
-        show LMonoTy.subst S.subst (LMonoTy.ftvar _) = LMonoTy.subst S.subst _
-        simp only [h_id_eq_lty, LMonoTy.subst_idempotent S.subst S.isWF _]
-      · -- ftvar id ≠ subst S orig_lty
+  suffices ∀ relS, Constraint.unifyOne c S = .ok relS →
+      LMonoTy.subst relS.newS.subst c.1 = LMonoTy.subst relS.newS.subst c.2
+    from this relS h
+  apply Constraint.unifyOne.induct
+    (motive1 := fun c S => ∀ relS, Constraint.unifyOne c S = .ok relS →
+      LMonoTy.subst relS.newS.subst c.1 = LMonoTy.subst relS.newS.subst c.2)
+    (motive2 := fun cs S => ∀ relS, Constraints.unifyCore cs S = .ok relS →
+      ∀ p, p ∈ cs → LMonoTy.subst relS.newS.subst p.1 = LMonoTy.subst relS.newS.subst p.2)
+  -- Case 1: t1 == t2
+  · intro S t1 t2 h_eq _ relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · simp only [Except.ok.injEq] at h; subst h
+      have := eq_of_beq h_eq; subst this; rfl
+    · exact absurd h_eq ‹_›
+  -- Case 2: ftvar id, orig_lty; ftvar id == lty
+  · intro S id orig_lty h_neq _lty _ _ h_eq_lty relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h
+      show LMonoTy.subst S.subst (.ftvar id) = LMonoTy.subst S.subst orig_lty
+      have h_id_eq : LMonoTy.ftvar id = LMonoTy.subst S.subst orig_lty := eq_of_beq h_eq_lty
+      rw [h_id_eq]; exact LMonoTy.subst_idempotent S.subst S.isWF orig_lty
+  -- Case 3: ftvar id, orig_lty; occurs check — error
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_occurs relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 4: ftvar id, orig_lty; some sty — recursive
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
         split at h
-        · simp at h  -- Occurs check fails: error
-        · split at h
-          · -- S.find? id = some sty: recursive unifyOne call.
-            -- Requires well-founded mutual induction + extension property:
-            -- IH gives subst S' sty = subst S' lty, and extension gives
-            -- subst S' (ftvar id) = subst S' sty and subst S' lty = subst S' orig.
-            sorry
-          · -- S.find? id = none: new binding [id ↦ lty] added.
-            rename_i h_neq2 h_not_occurs h_find_none
-            simp at h; subst h
-            show LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
-                                 _ (LMonoTy.subst S.subst _)) (LMonoTy.ftvar _) =
-                 LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
-                                 _ (LMonoTy.subst S.subst _)) _
-            rw [subst_ftvar_new_binding S.subst _ _ h_find_none,
-                subst_orig_new_binding S.subst _ _ _ h_find_none rfl h_not_occurs]
-    · -- Case: orig_lty on left, .ftvar id on right. Symmetric to the left case.
-      rename_i h_neq_beq id_val orig_val h_neq_match
-      simp [h_neq_match] at h
-      split at h
-      · -- ftvar id = subst S orig_lty. S unchanged. By idempotence (symmetric).
-        rename_i h_id_eq_lty
-        simp at h; subst h
-        show LMonoTy.subst S.subst _ = LMonoTy.subst S.subst (LMonoTy.ftvar _)
-        simp only [h_id_eq_lty, LMonoTy.subst_idempotent S.subst S.isWF _]
-      · split at h
         · simp at h
-        · split at h
-          · sorry  -- recursive case (symmetric)
-          · -- S.find? id = none (symmetric)
-            rename_i h_neq2 h_not_occurs h_find_none
-            simp at h; subst h
-            show LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
-                                 _ (LMonoTy.subst S.subst _)) _ =
-                 LMonoTy.subst (Maps.insert (Subst.apply [(_,  LMonoTy.subst S.subst _)] S.subst)
-                                 _ (LMonoTy.subst S.subst _)) (LMonoTy.ftvar _)
-            rw [subst_ftvar_new_binding S.subst _ _ h_find_none,
-                subst_orig_new_binding S.subst _ _ _ h_find_none rfl h_not_occurs]
-    · -- Case: .bitvec n1, .bitvec n2. Since t1 ≠ t2, we have n1 ≠ n2.
-      -- The inner n1 == n2 check either contradicts t1 ≠ t2, or returns error.
+        · rename_i relS' h_call
+          simp only [Except.ok.injEq] at h; rw [← h]
+          -- IH: subst S'.subst sty = subst S'.subst (subst S.subst orig_lty)
+          have ih := ih_rec relS' h_call
+          simp only [] at ih
+          -- S' absorbs S (from unifyOne_absorbs')
+          have h_abs := unifyOne_absorbs' (sty, LMonoTy.subst S.subst orig_lty) S relS' h_call
+          -- subst S' (ftvar id) = subst S' sty (since S.find? id = some sty, absorption gives this)
+          have h_ftvar : LMonoTy.subst relS'.newS.subst (.ftvar id) =
+              LMonoTy.subst relS'.newS.subst sty := by
+            have := h_abs id sty h_some
+            simp only [this]
+          -- subst S' (subst S orig) = subst S' orig (by absorption)
+          have h_orig : LMonoTy.subst relS'.newS.subst (LMonoTy.subst S.subst orig_lty) =
+              LMonoTy.subst relS'.newS.subst orig_lty :=
+            LMonoTy.subst_absorbs relS'.newS.subst S.subst orig_lty h_abs
+          -- Chain: subst S' (ftvar id) = subst S' sty = subst S' (subst S orig) = subst S' orig
+          rw [h_ftvar, ih, h_orig]
+      · rename_i h_none; rw [h_some] at h_none; simp at h_none
+  -- Case 5: ftvar id, orig_lty; none — insert+apply
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs h_none _ _ _ns h' _nS _ _ relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; rw [← h]; simp only
+        exact Eq.trans
+          (subst_ftvar_new_binding S.subst id (LMonoTy.subst S.subst orig_lty) h_none)
+          (subst_orig_new_binding S.subst id (LMonoTy.subst S.subst orig_lty)
+            orig_lty h_none rfl h_not_occurs).symm
+  -- Case 6: orig_lty, ftvar id; ftvar id == lty
+  · intro S orig_lty id h_neq _ _lty _ _ h_eq_lty relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h
+      show LMonoTy.subst S.subst orig_lty = LMonoTy.subst S.subst (.ftvar id)
+      have h_id_eq : LMonoTy.ftvar id = LMonoTy.subst S.subst orig_lty := eq_of_beq h_eq_lty
+      rw [h_id_eq]; exact (LMonoTy.subst_idempotent S.subst S.isWF orig_lty).symm
+  -- Case 7: orig_lty, ftvar id; occurs check — error
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_occurs relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 8: orig_lty, ftvar id; some sty — recursive (symmetric to case 4)
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
+        split at h
+        · simp at h
+        · rename_i relS' h_call
+          simp only [Except.ok.injEq] at h; rw [← h]; simp only []
+          -- ih: subst S' sty = subst S' (subst S orig_lty)
+          have ih := ih_rec relS' h_call; simp only [] at ih
+          have h_abs := unifyOne_absorbs' (sty, LMonoTy.subst S.subst orig_lty) S relS' h_call
+          have h_ftvar : LMonoTy.subst relS'.newS.subst (.ftvar id) =
+              LMonoTy.subst relS'.newS.subst sty := by
+            have := h_abs id sty h_some; simp only [this]
+          have h_orig : LMonoTy.subst relS'.newS.subst (LMonoTy.subst S.subst orig_lty) =
+              LMonoTy.subst relS'.newS.subst orig_lty :=
+            LMonoTy.subst_absorbs relS'.newS.subst S.subst orig_lty h_abs
+          -- Goal: subst S' orig_lty = subst S' (ftvar id)
+          rw [← h_orig, ← ih, h_ftvar]
+      · rename_i h_none; rw [h_some] at h_none; simp at h_none
+  -- Case 9: orig_lty, ftvar id; none — insert+apply (symmetric to case 5)
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_not_occurs h_none _ _ _ns h' _nS _ _ relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; rw [← h]; simp only
+        exact Eq.symm (Eq.trans
+          (subst_ftvar_new_binding S.subst id (LMonoTy.subst S.subst orig_lty) h_none)
+          (subst_orig_new_binding S.subst id (LMonoTy.subst S.subst orig_lty)
+            orig_lty h_none rfl h_not_occurs).symm)
+  -- Case 10: bitvec n1 == n2 contradiction
+  · intro S n1 n2 h_neq h_eq_n relS h
+    exfalso; simp [beq_iff_eq] at h_eq_n; subst h_eq_n
+    exact h_neq (beq_self_eq_true (LMonoTy.bitvec n1))
+  -- Case 11: bitvec n1 ≠ n2 — error
+  · intro S n1 n2 h_neq h_neq_n relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 12: tcons match — recursive unifyCore
+  · intro S name1 args1 name2 args2 h_neq h_match _nc ih_core relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [bind, Except.bind] at h
       split at h
-      · rename_i _t2 _n1 _n2 h_neq _h_match h_nat
-        exact absurd (by have := eq_of_beq h_nat; subst this; exact beq_self_eq_true _) h_neq
       · simp at h
-    · -- Case: .tcons name1 args1, .tcons name2 args2.
-      -- Delegates to unifyCore on (args1.zip args2). Requires mutual induction:
-      -- unifyCore_sound gives that each argument pair is equalized,
-      -- which implies the full tcons types are equal (same name, equal args).
-      sorry
-    · simp at h -- Case: .bitvec _, .tcons _ _ — always error
-    · simp at h -- Case: .tcons _ _, .bitvec _ — always error
+      · rename_i relS' h_call
+        simp only [Except.ok.injEq] at h; rw [← h]
+        -- h_match : (name1 == name2 && args1.length == args2.length) = true
+        have h_name_eq : name1 = name2 := by
+          have := (Bool.and_eq_true _ _ ▸ h_match : _ ∧ _).1; exact eq_of_beq this
+        have h_len_eq : args1.length = args2.length := by
+          have := (Bool.and_eq_true _ _ ▸ h_match : _ ∧ _).2; exact of_decide_eq_true this
+        subst h_name_eq
+        -- ih_core : all pairs in (args1.zip args2) are equalized under relS'
+        -- We need: subst S' (tcons name args1) = subst S' (tcons name args2)
+        -- i.e., tcons name (subst_list S' args1) = tcons name (subst_list S' args2)
+        -- which requires subst_list S' args1 = subst_list S' args2
+        -- Goal: subst S' (.tcons name args1) = subst S' (.tcons name args2)
+        -- ih_core gives pointwise equality for zip pairs
+        have ih_pw := ih_core relS' h_call
+        -- Show LMonoTy.subst equality by showing the args lists are equal after subst
+        -- subst S (tcons n args) = if hasEmptyScopes then tcons n args else tcons n (subst_list S args)
+        -- We prove the args lists are pointwise equal after substitution
+        -- Helper: derive args1 = args2 or LMonoTys.subst S args1 = LMonoTys.subst S args2
+        -- from pointwise zip equality
+        have h_args_eq : ∀ (l1 l2 : LMonoTys), l1.length = l2.length →
+            (∀ p, p ∈ l1.zip l2 →
+              LMonoTy.subst relS'.newS.subst p.1 = LMonoTy.subst relS'.newS.subst p.2) →
+            LMonoTys.subst relS'.newS.subst l1 = LMonoTys.subst relS'.newS.subst l2 := by
+          intro l1 l2 h_len h_pw
+          rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+          by_cases hS : Subst.hasEmptyScopes relS'.newS.subst
+          · -- Empty scopes: substLogic returns the list unchanged
+            have h_id : ∀ l, LMonoTys.substLogic relS'.newS.subst l = l := by
+              intro l; induction l with
+              | nil => simp [LMonoTys.substLogic, hS]
+              | cons _ _ _ => simp [LMonoTys.substLogic, hS]
+            rw [h_id, h_id]
+            -- Need l1 = l2 from pointwise identity-subst equality
+            induction l1 generalizing l2 with
+            | nil => cases l2 with | nil => rfl | cons _ _ => simp at h_len
+            | cons a rest ih_l =>
+              cases l2 with
+              | nil => simp at h_len
+              | cons b rest2 =>
+                simp at h_len
+                have h_ab := h_pw (a, b) List.mem_cons_self
+                simp [LMonoTy.subst_emptyS hS] at h_ab
+                rw [h_ab, ih_l rest2 h_len fun p hp => h_pw p (List.mem_cons_of_mem _ hp)]
+          · have hS_ne : Subst.hasEmptyScopes relS'.newS.subst = false := by
+              revert hS; cases Subst.hasEmptyScopes relS'.newS.subst <;> simp
+            induction l1 generalizing l2 with
+            | nil => cases l2 with | nil => simp [LMonoTys.substLogic, hS_ne] | cons _ _ => simp at h_len
+            | cons a rest ih_l =>
+              cases l2 with
+              | nil => simp at h_len
+              | cons b rest2 =>
+                simp at h_len
+                simp only [LMonoTys.substLogic, hS_ne, Bool.false_eq_true, ↓reduceIte]
+                have h_ab : LMonoTy.subst relS'.newS.subst a = LMonoTy.subst relS'.newS.subst b :=
+                  h_pw (a, b) List.mem_cons_self
+                rw [h_ab, ih_l rest2 h_len fun p hp => h_pw p (List.mem_cons_of_mem _ hp)]
+        -- Now apply: subst S (tcons n args) uses LMonoTys.subst on args
+        have h_list := h_args_eq args1 args2 h_len_eq ih_pw
+        by_cases hS_final : Subst.hasEmptyScopes relS'.newS.subst
+        · -- Empty scopes: subst is identity
+          simp [LMonoTy.subst_emptyS hS_final]
+          simp [LMonoTys.subst, hS_final] at h_list; rw [h_list]
+        · -- Non-empty scopes: subst on tcons applies to args
+          have hS_ne : Subst.hasEmptyScopes relS'.newS.subst = false := by
+            revert hS_final; cases Subst.hasEmptyScopes relS'.newS.subst <;> simp
+          simp [LMonoTy.subst, hS_ne]; exact h_list
+  -- Case 13: tcons name/length mismatch — error
+  · intro S name1 args1 name2 args2 h_neq h_mismatch relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 14: bitvec, tcons — error
+  · intro S size name args h_neq relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 15: tcons, bitvec — error
+  · intro S name args size h_neq relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- Case 16: unifyCore []
+  · intro S relS h p hp
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Except.ok.injEq] at h; subst h
+    exact absurd hp List.not_mem_nil
+  -- Case 17: unifyCore c :: rest
+  · intro S c c_rest ih_one ih_core relS h p hp
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Bind.bind, Except.bind, Except.mapError] at h
+    split at h
+    · simp at h
+    · rename_i relS_one h_one_raw
+      have h_one := Except.mapError_ok_h' h_one_raw
+      split at h
+      · simp at h
+      · rename_i relS_rest h_rest
+        simp only [Except.ok.injEq] at h
+        have h_eq : relS_rest.newS = relS.newS := by cases h; rfl
+        rw [← h_eq]
+        -- p ∈ c :: c_rest: either p = c or p ∈ c_rest
+        cases List.mem_cons.mp hp with
+        | inl h_pc =>
+          -- p = c: use ih_one to get equality under relS_one, then lift via absorption
+          subst h_pc
+          have h_sound_one := ih_one relS_one h_one
+          have h_abs := unifyCore_absorbs c_rest relS_one.newS relS_rest h_rest
+          calc LMonoTy.subst relS_rest.newS.subst p.1
+              = LMonoTy.subst relS_rest.newS.subst (LMonoTy.subst relS_one.newS.subst p.1) :=
+                (LMonoTy.subst_absorbs _ _ _ h_abs).symm
+            _ = LMonoTy.subst relS_rest.newS.subst (LMonoTy.subst relS_one.newS.subst p.2) := by
+                rw [h_sound_one]
+            _ = LMonoTy.subst relS_rest.newS.subst p.2 :=
+                LMonoTy.subst_absorbs _ _ _ h_abs
+        | inr h_rest_mem =>
+          -- p ∈ c_rest: use ih_core
+          exact ih_core relS_one relS_rest h_rest p h_rest_mem
 
 /--
 Unification produces a substitution that makes the two types equal.
@@ -2573,7 +2747,10 @@ private theorem HasType_LTy_instantiate
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
     (mty : LMonoTy) (genEnv genEnv' : TGenEnv T.IDMeta)
     (h_ty : HasType C Γ e ty)
-    (h_inst : LTy.instantiate ty genEnv = .ok (mty, genEnv')) :
+    (h_inst : LTy.instantiate ty genEnv = .ok (mty, genEnv'))
+    (h_nodup : (LTy.boundVars ty).Nodup)
+    (h_bv_known : ∀ v, v ∈ LTy.boundVars ty →
+      v ∈ TContext.knownTypeVars genEnv.context) :
     HasType C Γ e (.forAll [] mty) := by
   -- Case analysis on ty
   cases ty with
@@ -2598,15 +2775,24 @@ private theorem HasType_LTy_instantiate
         simp [h_len_gen]
       apply HasType_tinst_all C Γ e (x :: xs) body (List.map LMonoTy.ftvar freshtvs)
         h_map_len
-      · -- Nodup: bound variables in a well-formed type scheme are distinct
-        sorry -- requires well-formedness of the type scheme
+      · -- Nodup: from h_nodup, since boundVars (.forAll (x :: xs) body) = x :: xs
+        have : LTy.boundVars (.forAll (x :: xs) body) = x :: xs := by simp [LTy.boundVars]
+        rw [this] at h_nodup; exact h_nodup
       · -- No clash: bound variables don't appear in fresh type variables
-        intro v _ t ht
+        intro v hv t ht
         simp [List.mem_map] at ht
-        obtain ⟨tv, _, h_tv⟩ := ht
+        obtain ⟨tv, htv_mem, h_tv⟩ := ht
         rw [← h_tv]; simp [LMonoTy.freeVars]
-        -- tv is a fresh variable, v is a bound variable; they are distinct
-        sorry -- requires freshness property of genTyVars
+        -- v ∈ (x :: xs) = boundVars ty, so v ∈ knownTypeVars genEnv.context
+        have h_v_known : v ∈ TContext.knownTypeVars genEnv.context := by
+          apply h_bv_known
+          show v ∈ LTy.boundVars (.forAll (x :: xs) body)
+          simp [LTy.boundVars]; exact List.mem_cons.mp hv
+        -- tv ∈ freshtvs, so tv ∉ knownTypeVars genEnv.context
+        have h_tv_not : tv ∉ TContext.knownTypeVars genEnv.context :=
+          TGenEnv.genTyVars_not_mem_knownTypeVars _ genEnv freshtvs genEnv1 h_gen tv htv_mem
+        -- Therefore v ≠ tv
+        exact fun h_eq => h_tv_not (h_eq ▸ h_v_known)
       · exact h_ty
 
 /--
@@ -2640,7 +2826,10 @@ theorem instantiateWithCheck_fvar_HasType
     (m : T.mono.base.Metadata)
     (h_find : Γ.types.find? x = some ty)
     (h_ctx : Env.context = Γ)
-    (h_inst : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    (h_inst : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
+    (h_nodup : (LTy.boundVars ty).Nodup)
+    (h_bv_known : ∀ v, v ∈ LTy.boundVars ty →
+      v ∈ TContext.knownTypeVars Env.genEnv.context) :
     HasType C Γ (.fvar m x none)
       (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty)) := by
   -- Decompose instantiateWithCheck into resolveAliases + known type check
@@ -2668,7 +2857,7 @@ theorem instantiateWithCheck_fvar_HasType
         have h_tvar := HasType.tvar (C := C) Γ m x ty h_find
         -- Step 2: tinst chain gives HasType for (.forAll [] mty_inst)
         have h_mono := HasType_LTy_instantiate C Γ (.fvar m x none) ty mty_inst
-          Env.genEnv genEnv' h_tvar h_inst_inner
+          Env.genEnv genEnv' h_tvar h_inst_inner h_nodup h_bv_known
         -- Step 3: All substitution keys are fresh in Γ (being proved elsewhere)
         have h_fresh : Subst.allKeysFresh Env_ra.stateSubstInfo.subst Γ := by
           sorry -- Needs: freshness property of genTyVar / resolveAliases
@@ -2718,7 +2907,10 @@ theorem inferFVar_HasType
     (C : LContext T) (Env : TEnv T.IDMeta) (x : Identifier T.IDMeta)
     (fty : Option LMonoTy) (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
     (m : T.mono.base.Metadata)
-    (h : inferFVar C Env x fty = .ok (ty_res, Env')) :
+    (h : inferFVar C Env x fty = .ok (ty_res, Env'))
+    (h_wf : ∀ y ty, Env.context.types.find? y = some ty →
+      (LTy.boundVars ty).Nodup ∧
+      ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env.genEnv.context) :
     Env'.context = Env.context ∧
     HasType C (Env.context) (.fvar m x fty)
       (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
@@ -2740,8 +2932,9 @@ theorem inferFVar_HasType
         · -- Context preservation
           exact LTy_instantiateWithCheck_context ty C Env mty Env1 h_inst
         · -- Typing: delegate to instantiateWithCheck_fvar_HasType
+          have ⟨h_nd, h_bvk⟩ := h_wf x ty h_find
           exact instantiateWithCheck_fvar_HasType C Env.context x ty mty Env Env1 m
-            h_find rfl h_inst
+            h_find rfl h_inst h_nd h_bvk
       · -- Case fty = some fty_val
         rename_i fty_val
         split at h
@@ -2794,17 +2987,38 @@ its own output substitution. We upgrade these to the final substitution using
 - `unify_absorbs`: unification absorbs the pre-unification substitution
 - `Subst.absorbs_trans`: absorption composes transitively
 -/
+private theorem transfer_wf
+    {Env Env' : TEnv T.IDMeta}
+    (h_wf : ∀ y ty, Env.context.types.find? y = some ty →
+      (LTy.boundVars ty).Nodup ∧
+      ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env.genEnv.context)
+    (h_ctx : Env'.context = Env.context) :
+    ∀ y ty, Env'.context.types.find? y = some ty →
+      (LTy.boundVars ty).Nodup ∧
+      ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env'.genEnv.context := by
+  intro y ty h_f
+  have h_f' : Env.context.types.find? y = some ty := by
+    show Env.genEnv.context.types.find? y = some ty
+    rw [← (show Env'.genEnv.context = Env.genEnv.context from h_ctx)]
+    exact h_f
+  obtain ⟨h1, h2⟩ := h_wf y ty h_f'
+  exact ⟨h1, fun v hv => by rw [show Env'.genEnv.context = Env.genEnv.context from h_ctx]; exact h2 v hv⟩
+
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
+      (∀ y ty, Env.context.types.find? y = some ty →
+        (LTy.boundVars ty).Nodup ∧
+        ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env.genEnv.context) →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
       Env'.context = Env.context ∧
       HasType C (Env.context) e
         (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst et.toLMonoTy)) := by
   intro e
   induction e with
   | const m c =>
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     simp [resolveAux, inferConst] at h
     split at h
     · rename_i h_known
@@ -2822,12 +3036,12 @@ theorem resolveAux_HasType :
         | bitvecConst n b => exact HasType.tbitvec_const _ _ _ _ h_known
     · exact absurd h (by simp [Bind.bind, Except.bind])
   | bvar m i =>
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     simp [resolveAux, Bind.bind, Except.bind] at h
   | fvar m x fty =>
     -- resolveAux calls inferFVar, which looks up x in context, instantiates
     -- bound type variables, and optionally unifies with the annotation.
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h
     · simp at h
@@ -2837,9 +3051,9 @@ theorem resolveAux_HasType :
       obtain ⟨h_et, h_env'⟩ := h
       rw [← h_et, ← h_env']
       simp [toLMonoTy]
-      exact inferFVar_HasType C Env x fty ty_res Env_res m h_infer
+      exact inferFVar_HasType C Env x fty ty_res Env_res m h_infer h_wf
   | op m o oty =>
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     exact ⟨sorry, sorry⟩
   | app m e1 e2 ih1 ih2 =>
     /-
@@ -2881,7 +3095,7 @@ theorem resolveAux_HasType :
           (by subst_keys_not_in_substituted_type), and keys of S' ⊆ keys of S,
           so subst S' mty = mty (by subst_remove_eq_self).
     -/
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env e1
     split at h
@@ -2924,8 +3138,10 @@ theorem resolveAux_HasType :
             have h_gen_ctx := TEnv.genTyVar_context Env2 fresh_name Env3 h_genTyVar
             have h_gen_fresh := TEnv.genTyVar_isFresh Env2 fresh_name Env3 h_genTyVar
             -- IHs from recursive calls
-            have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1
-            have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2
+            have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_wf h_sf
+            have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
+              rw [h_ctx1]; exact resolveAux_keys_fresh e1 e1t C Env Env1 h_res1 h_sf
+            have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 (transfer_wf h_wf h_ctx1) h_sf1
             -- Absorption chain: v4 absorbs Env3.subst = Env2.subst
             have h_abs_v4_Env3 := unify_absorbs
               [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
@@ -2961,7 +3177,7 @@ theorem resolveAux_HasType :
                     subst h_me
                     exact ⟨rfl, rfl⟩
                   | .error _, h_me => simp at h_me)
-                sorry -- precondition: input subst keys are fresh
+                h_sf
               simp [TEnv.updateSubst] at this
               exact this
             -- Extend to allKeysFresh v4.subst Env.context
@@ -3031,15 +3247,15 @@ theorem resolveAux_HasType :
                 (by simp [LTy.toMonoType]; exact h_ty1_up)
                 h_ty2_up
   | abs m bty e ih =>
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     exact ⟨sorry, sorry⟩
   | quant m qk bty tr e ih_tr ih_e =>
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     exact ⟨sorry, sorry⟩
   | ite m c t e ih_c ih_t ih_e =>
     -- resolveAux recurses on c, t, e, then unifies [(cty, bool), (tty, ety)].
     -- Result type is tty (the then-branch type), and the HasType rule is `tif`.
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env c
     split at h
@@ -3078,9 +3294,14 @@ theorem resolveAux_HasType :
               | .ok val, h_me => simp at h_me; rw [h_me]
               | .error _, h_me => simp at h_me
             -- IHs from recursive calls
-            have ⟨h_ctx1, h_ty_c⟩ := ih_c ct C Env Env1 h_res_c
-            have ⟨h_ctx2, h_ty_t⟩ := ih_t tht C Env1 Env2 h_res_t
+            have ⟨h_ctx1, h_ty_c⟩ := ih_c ct C Env Env1 h_res_c h_wf h_sf
+            have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
+              rw [h_ctx1]; exact resolveAux_keys_fresh c ct C Env Env1 h_res_c h_sf
+            have ⟨h_ctx2, h_ty_t⟩ := ih_t tht C Env1 Env2 h_res_t (transfer_wf h_wf h_ctx1) h_sf1
+            have h_sf2 : Subst.allKeysFresh Env2.stateSubstInfo.subst Env2.context := by
+              rw [h_ctx2]; exact resolveAux_keys_fresh t tht C Env1 Env2 h_res_t h_sf1
             have ⟨h_ctx3, h_ty_e⟩ := ih_e elt C Env2 Env3 h_res_e
+              (transfer_wf (transfer_wf h_wf h_ctx1) h_ctx2) h_sf2
             -- Absorption chain: v4 absorbs Env3 absorbs Env2 absorbs Env1 absorbs Env
             have h_abs_v4_Env3 := unify_absorbs
               [(ct.toLMonoTy, LMonoTy.bool), (tht.toLMonoTy, elt.toLMonoTy)]
@@ -3109,7 +3330,7 @@ theorem resolveAux_HasType :
                   match res, h_me with
                   | .ok val, h_me => simp at h_me ⊢; rw [h_me]
                   | .error _, h_me => simp at h_me)
-                sorry -- precondition: input subst keys are fresh
+                h_sf
               simp [TEnv.updateSubst] at this
               exact this
             constructor
@@ -3150,7 +3371,7 @@ theorem resolveAux_HasType :
     -- resolveAux recurses on e1 and e2, then unifies their types.
     -- Result type is LMonoTy.bool (ground), so subst S bool = bool for any S.
     -- We upgrade both IHs to the final substitution via absorption.
-    intro et C Env Env' h
+    intro et C Env Env' h h_wf h_sf
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env e1
     split at h
@@ -3181,8 +3402,10 @@ theorem resolveAux_HasType :
             | .ok val, h_me => simp at h_me; rw [h_me]
             | .error _, h_me => simp at h_me
           -- IHs from recursive calls
-          have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1
-          have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2
+          have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_wf h_sf
+          have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
+            rw [h_ctx1]; exact resolveAux_keys_fresh e1 e1t C Env Env1 h_res1 h_sf
+          have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 (transfer_wf h_wf h_ctx1) h_sf1
           -- Absorption chain: v3 absorbs Env2 absorbs Env1 absorbs Env
           have h_abs_v3_Env2 := unify_absorbs [(e1t.toLMonoTy, e2t.toLMonoTy)]
             Env2.stateSubstInfo v3 h_unify
@@ -3203,7 +3426,7 @@ theorem resolveAux_HasType :
                 match res, h_me with
                 | .ok val, h_me => simp at h_me ⊢; rw [h_me]
                 | .error _, h_me => simp at h_me)
-              sorry -- precondition: input subst keys are fresh
+              h_sf
             simp [TEnv.updateSubst] at this
             exact this
           constructor
@@ -3247,8 +3470,12 @@ theorem annotate_HasType :
     ∀ (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
       (Env : TEnv T.IDMeta) _env,
       e.resolve C Env = .ok ⟨e_typed, _env⟩ →
+      (∀ y ty, Env.context.types.find? y = some ty →
+        (LTy.boundVars ty).Nodup ∧
+        ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env.genEnv.context) →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
       HasType C (Env.context) e (.forAll [] e_typed.toLMonoTy) := by
-  intro e e_typed C Env _env h
+  intro e e_typed C Env _env h h_wf h_sf
   -- Decompose resolve into resolveAux + applySubstT
   simp only [LExpr.resolve, Bind.bind, Except.bind] at h
   split at h
@@ -3257,7 +3484,7 @@ theorem annotate_HasType :
     obtain ⟨et, Env'⟩ := v
     simp at h
     obtain ⟨h_typed, h_env'⟩ := h
-    have ⟨_h_ctx, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux
+    have ⟨_h_ctx, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux h_wf h_sf
     rw [← h_typed, applySubstT_toLMonoTy]
     exact h_hastype
 
