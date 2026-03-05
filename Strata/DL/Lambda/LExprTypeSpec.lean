@@ -2830,7 +2830,45 @@ private theorem typeBoundVar_tyGen_mono
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  sorry
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  -- Split on the result of HasGen.genVar (now returns Except)
+  split at h
+  · contradiction
+  · -- HasGen.genVar succeeded
+    rename_i genResult h_gen
+    -- Extract: genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen
+    have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+      split at h_gen
+      · contradiction
+      · rename_i _ _ h_genVar
+        have := Except.ok.inj h_gen; rw [← this]
+        simp
+        exact _root_.Lambda.HasGen.genVar_tyGen_mono Env.genEnv _ _ h_genVar
+    -- Now case split on bty
+    split at h
+    · -- some bty_val
+      -- Split on the instantiateWithCheck result
+      split at h
+      · contradiction
+      · -- instantiateWithCheck succeeded
+        rename_i _ bty_mty _ _ Env_inst h_inst
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        exact Nat.le_trans h_gen_tyGen
+          (LMonoTy_instantiateWithCheck_tyGen_mono bty_mty C
+            genResult.snd _ _ h_inst)
+    · -- none
+      -- Split on result of genTyVar
+      split at h
+      · contradiction
+      · rename_i v1 h_genTy
+        obtain ⟨xtyid, Env1⟩ := v1
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+        simp only [TEnv.addInNewestContext, TEnv.updateContext]
+        have h_tyGen := genTyVar_tyGen _ xtyid Env1 h_genTy
+        omega
 
 /-- `resolveAux` never decreases the generator counter. -/
 private theorem resolveAux_genState_mono :
