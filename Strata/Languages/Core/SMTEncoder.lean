@@ -382,7 +382,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
     | "Int.SafeMod"  => .ok (.app Op.mod,        .int ,   ctx)
     -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | "Int.DivT"     =>
+    | "Int.DivT" | "Int.SafeDivT" =>
       let divTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>
@@ -398,7 +398,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
       .ok (divTApp, .int, ctx)
     -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
     -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | "Int.ModT"     =>
+    | "Int.ModT" | "Int.SafeModT" =>
       let modTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>

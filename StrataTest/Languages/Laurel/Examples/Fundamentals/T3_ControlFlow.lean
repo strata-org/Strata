@@ -28,7 +28,7 @@ procedure guards(a: int) returns (r: int)
   var e: int := b + 1;
   assert e <= 3;
     assert e < 3;
-//  ^^^^^^^^^^^^^ error: assertion can be false
+//  ^^^^^^^^^^^^^ error: assertion does not hold
   return e;
 }
 
@@ -41,7 +41,10 @@ procedure dag(a: int) returns (r: int)
   }
   assert if (a > 0) { b == 1 } else { true };
     assert if (a > 0) { b == 2 } else { true };
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion can be false
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// duplicates due to VCG path duplication (#419):
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b;
 }
 "
