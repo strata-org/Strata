@@ -185,9 +185,41 @@ theorem eval_stmt_deterministic
     EvalStatement π φ δ σ stmt σ2 δ2 →
     σ1 = σ2 ∧ δ1 = δ2 := by
   intro h1 h2
-  -- Proof by induction on the evaluation derivation
-  -- This requires showing all evaluation rules are deterministic
-  sorry
+  -- Case analysis on the statement structure
+  cases h1 with
+  | cmd_sem h_cmd1 _ =>
+    cases h2 with
+    | cmd_sem h_cmd2 _ =>
+      -- Both are command evaluations - need command determinism
+      sorry
+  | block_sem h_block1 =>
+    cases h2 with
+    | block_sem h_block2 => sorry
+  | ite_true_sem h_true1 _ h_then1 =>
+    cases h2 with
+    | ite_true_sem h_true2 _ h_then2 =>
+      -- Both branches took the true path
+      -- Use determinism of block evaluation
+      sorry
+    | ite_false_sem h_false _ _ =>
+      -- Contradiction: δ σ c can't be both some tt and some ff
+      rw [h_true1] at h_false
+      contradiction
+  | ite_false_sem h_false1 _ h_else1 =>
+    cases h2 with
+    | ite_true_sem h_true _ _ =>
+      -- Contradiction
+      rw [h_false1] at h_true
+      contradiction
+    | ite_false_sem h_false2 _ h_else2 =>
+      -- Both took false path
+      sorry
+  | funcDecl_sem =>
+    cases h2 with
+    | funcDecl_sem =>
+      -- funcDecl: σ' = σ, δ' = extendEval δ σ decl
+      -- Both evaluations produce the same result
+      constructor <;> rfl
 
 /-- Evaluation of statement lists is deterministic -/
 theorem eval_stmts_deterministic
