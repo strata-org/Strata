@@ -10,7 +10,6 @@ import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils
-import Strata.DL.SMT.CexParser
 import Strata.DL.SMT.Denote
 import Strata.DL.SMT.Translate
 

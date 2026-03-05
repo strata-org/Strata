@@ -18,7 +18,7 @@ namespace Strata
 -- ✓ Multiple invariants
 -- ✓ For loops down to
 -- Division operator `/`
--- Array assignment syntax
+-- ✓ Array assignment syntax
 -- ✓ Quantifier syntax (forall, exists)
 -- Simple procedure calls
 -- Summation expressions

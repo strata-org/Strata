@@ -188,7 +188,7 @@ def toCoreQuant
   let qBVars : Array Core.Expression.Expr := (decls.toArray.mapIdx fun i _ => .bvar () i)
   let q := if isForall then .all else .exist
   let body' ← withBVarExprs qBVars (toCoreExpr body)
-  return tys.foldr (fun ty acc => .quant () q (some ty) (.bvar () 0) acc) body'
+  return tys.foldr (fun ty acc => .quant () q "" (some ty) (.bvar () 0) acc) body'
 
 def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   match e with
@@ -230,9 +230,13 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a => return .app () Core.polyOldOp (← toCoreExpr a)
   | .forall _ ds body
+  | .forall_unicode _ ds body
   | .forallT _ ds _ body => toCoreQuant true ds body
   | .exists _ ds body
+  | .exists_unicode _ ds body
   | .existsT _ ds _ body => toCoreQuant false ds body
+  | .forall_unicodeT _ ds _ body => toCoreQuant true ds body
+  | .exists_unicodeT _ ds _ body => toCoreQuant false ds body
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end
@@ -247,14 +251,13 @@ def nestMapSet (base : Core.Expression.Expr) (idxs : List Core.Expression.Expr) 
     Lambda.LExpr.mkApp () Core.mapUpdateOp [base, i, updatedInner]
 
 def toCoreInvariants (is : BooleDDM.Invariants SourceRange) : TranslateM (List Core.Expression.Expr) := do
-  go [] is
+  go is
 where
-  go (acc : List Core.Expression.Expr) : BooleDDM.Invariants SourceRange → TranslateM (List Core.Expression.Expr)
-    | .nilInvariants _ => return acc.reverse
+  go : BooleDDM.Invariants SourceRange → TranslateM (List Core.Expression.Expr)
+    | .nilInvariants _ => return []
     | .consInvariants _ e rest => do
       let e' ← toCoreExpr e
-      let acc := e' :: acc
-      go acc rest
+      return e' :: (← go rest)
 
 def lowerFor
     (m : SourceRange)

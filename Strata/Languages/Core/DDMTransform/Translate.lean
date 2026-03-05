@@ -979,14 +979,6 @@ end
 
 ---------------------------------------------------------------------
 
-def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (List Core.Expression.Expr) := do
-  match arg with
-  | .option _ (.some m) => do
-    let args ← checkOpArg m q`Core.invariant 1
-    let e ← translateExpr p bindings args[0]!
-    pure [e]
-  | _ => pure []
-
 partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List Core.Expression.Expr) := do
   let .op op := arg

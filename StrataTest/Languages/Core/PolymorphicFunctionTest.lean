@@ -192,7 +192,7 @@ spec {
 #end
 
 /--
-info: error: (4669-4692) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (145-168) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in
