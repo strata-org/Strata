@@ -30,7 +30,9 @@ inductive Primitive where
   | bool
   | empty
   | string
+  | regex
   | integer
+  | real
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Primitive where
@@ -38,7 +40,9 @@ instance : ToFormat Primitive where
     | .bool => "bool"
     | .empty => "empty"
     | .string => "string"
+    | .regex => "regex"
     | .integer => "integer"
+    | .real => "real"
 
 /-- Bitvector types -/
 inductive BitVector where
@@ -63,12 +67,18 @@ inductive Identifier where
   | primitive (p : Identifier.Primitive)
   /-- Bitvector types -/
   | bitVector (bv : Identifier.BitVector)
+  /-- A reference to a named struct type (like CBMC's `struct_tag`). -/
+  | structTag (name : String)
+  /-- Array type with element type -/
+  | array
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Identifier where
   format i := match i with
     | .primitive p => f!"{p}"
     | .bitVector bv => f!"{bv}"
+    | .structTag name => f!"struct_tag({name})"
+    | .array => f!"array"
 
 end Ty
 
@@ -138,6 +148,16 @@ def Integer : Ty :=
 def String : Ty :=
   { id := .primitive .string }
 
+/-- Regex type -/
+@[match_pattern]
+def Regex : Ty :=
+  { id := .primitive .regex }
+
+/-- Real type -/
+@[match_pattern]
+def Real : Ty :=
+  { id := .primitive .real }
+
 /-- Signed bitvector type -/
 @[match_pattern]
 def SignedBV (width : Nat) : Ty :=
@@ -147,6 +167,16 @@ def SignedBV (width : Nat) : Ty :=
 @[match_pattern]
 def UnsignedBV (width : Nat) : Ty :=
   { id := .bitVector (.unsignedbv width) }
+
+/-- A reference to a named struct type (e.g., a user-defined datatype). -/
+@[match_pattern]
+def StructTag (name : _root_.String) : Ty :=
+  { id := .structTag name }
+
+/-- Array type with element type -/
+@[match_pattern]
+def Array (elemTy : Ty) : Ty :=
+  { id := .array, subtypes := [elemTy] }
 
 end Ty
 
