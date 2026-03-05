@@ -15,15 +15,11 @@ Recursive functions are declared with the `rec` keyword. Exactly one parameter
 must be annotated with `@[cases]` to indicate the ADT argument being recursed on:
 
 ```
-datatype List<T> () {
-  Nil(),
-  Cons(head: T, tail: List<T>)
-};
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
-rec function length<T>(@[cases] xs: List<T>) : int
+rec function listLen (@[cases] xs : IntList) : int
 {
-  if (xs is Nil) then 0
-  else 1 + length(Cons#tail(xs))
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 }
 ```
 
