@@ -121,9 +121,35 @@ Unmatchable regex pattern.
 def Core.unmatchableRegex : Core.Expression.Expr :=
   mkApp () (.op () reNoneFunc.name none) []
 
+/--
+Convert `r` to Core's expressions.
+
+`atStart` should be `true` when nothing before `r` has consumed a character.
+`atEnd` should be `true` when nothing after `r` will consume a character.
+
+Intuition for `atStart` and `atEnd` flags: these flags are important
+for preprocessing the regex to remove anchors, since SMTLib theory of strings
+does not support them. We say an anchor "fires" when its appropriate positional
+constraint is satisfied: `^` (`$`, resp.) fires when the current position is the
+start of the string (end of the string, resp.). When an anchor fires, it
+contributes an empty string to the regex, since anchors are zero-width
+assertions. When an anchor does not fire (because it's in the wrong position),
+then it contributes an unmatchable regex.
+
+Now, when a non-consuming (possibly empty) sub-expression `X` is adjacent to `Y`
+which carries an anchor, forwarding a flag to `Y` is wrong. If `X`
+matches non-empty at runtime, `Y` is no longer at the perceived position, so the
+anchor in `Y` should not fire. However, if `X` is consuming, its contribution is
+never empty, so `Y`'s position relative to the string boundary is statically
+determined at translation time and the flag can be forwarded.
+-/
 partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     Core.Expression.Expr :=
   match r with
+  | .anchor_start =>
+    if atStart then Core.emptyRegex else Core.unmatchableRegex
+  | .anchor_end =>
+    if atEnd then Core.emptyRegex else Core.unmatchableRegex
   | .char c =>
     (mkApp () (.op () strToRegexFunc.name none) [strConst () (toString c)])
   | .range c1 c2 =>
@@ -134,44 +160,29 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
   | .complement r =>
     -- atStart/atEnd are passed as false: the inner expression is a character-set
     -- description ([^...]) which never contains anchors, so position context is
-    -- irrelevant. re.comp(X) is complement over all strings, so we intersect with
-    -- re.allchar() to restrict to single characters, matching [^...] semantics.
+    -- irrelevant.
+    -- In SMTLib (and Core), `re.comp(X)` is complement over all strings (e.g.,
+    -- the complement of a single character string would include multi-character
+    -- string), so we intersect with `re.allchar()` to restrict to single
+    -- characters, matching [^...] semantics.
     let rb := toCore r false false
     mkApp () (.op () reInterFunc.name none)
       [mkApp () (.op () reAllCharFunc.name none) [],
        mkApp () (.op () reCompFunc.name none) [rb]]
-  | .anchor_start =>
-    if atStart then Core.emptyRegex else Core.unmatchableRegex
-  | .anchor_end =>
-    if atEnd then Core.emptyRegex else Core.unmatchableRegex
   | .plus r1 =>
     toCore (.concat r1 (.star r1)) atStart atEnd
   | .star r1 =>
     let r1b := toCore r1 atStart atEnd
     let r2b :=
-      match (alwaysConsume r1) with
-      | true =>
-        let r1b := toCore r1 atStart false -- r1 at the beginning
-        let r2b := toCore r1 false false   -- r1s in the middle
-        let r3b := toCore r1 false atEnd   -- r1 at the end
-        let r2b := mkApp () (.op () reStarFunc.name none) [r2b]
+      if alwaysConsume r1 || r1.containsAnchorStart || r1.containsAnchorEnd then
+        let r1b_start    := toCore r1 atStart false
+        let r1b_mid      := toCore r1 false false
+        let r1b_end      := toCore r1 false atEnd
+        let r1b_mid_star := mkApp () (.op () reStarFunc.name none) [r1b_mid]
         mkApp () (.op () reConcatFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
-      | false =>
-        -- When r1 contains anchors, re.*(toCore r1 atStart atEnd) is wrong:
-        -- it passes the start/end context to every iteration, letting ^ or $ fire
-        -- on all iterations instead of only the first or last (e.g. (^a?)* would
-        -- translate to re.*(""│"a") which matches "aa", but Python says no match).
-        -- Fix: apply the same first/middle/last split as | true =>.
-        if r1.containsAnchorStart || r1.containsAnchorEnd then
-          let r1b_start := toCore r1 atStart false
-          let r1b_mid   := toCore r1 false false
-          let r1b_end   := toCore r1 false atEnd
-          let r1b_mid_star := mkApp () (.op () reStarFunc.name none) [r1b_mid]
-          mkApp () (.op () reConcatFunc.name none)
-            [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_mid_star], r1b_end]
-        else
-          mkApp () (.op () reStarFunc.name none) [r1b]
+          [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_mid_star], r1b_end]
+      else
+        mkApp () (.op () reStarFunc.name none) [r1b]
     mkApp () (.op () reUnionFunc.name none)
       [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b], r2b]
   | .optional r1 =>
@@ -182,23 +193,15 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     | 0, 1 => toCore (.union .empty r1) atStart atEnd
     | 0, m => -- Note: m >= 2
       let r1b := toCore r1 atStart atEnd
-      let r2b := match (alwaysConsume r1) with
-                | true =>
-                  let r1b := toCore r1 atStart false -- r1 at the beginning
-                  let r2b := toCore r1 false false   -- r1s in the middle
-                  let r3b := toCore r1 false atEnd   -- r1 at the end
-                  let r2b := mkApp () (.op () reLoopFunc.name none) [r2b, intConst () 0, intConst () (m-2)]
-                  mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
-                | false =>
-                  -- Same anchor fix as star | false =>.
-                  if r1.containsAnchorStart || r1.containsAnchorEnd then
-                    let r1b_start := toCore r1 atStart false
-                    let r1b_mid   := toCore r1 false false
-                    let r1b_end   := toCore r1 false atEnd
-                    let r1b_loop  := mkApp () (.op () reLoopFunc.name none) [r1b_mid, intConst () 0, intConst () (m-2)]
-                    mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_loop], r1b_end]
-                  else
-                    mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
+      let r2b :=
+        if alwaysConsume r1 || r1.containsAnchorStart || r1.containsAnchorEnd then
+          let r1b_start := toCore r1 atStart false
+          let r1b_mid   := toCore r1 false false
+          let r1b_end   := toCore r1 false atEnd
+          let r1b_loop  := mkApp () (.op () reLoopFunc.name none) [r1b_mid, intConst () 0, intConst () (m-2)]
+          mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_loop], r1b_end]
+        else
+          mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
       mkApp () (.op () reUnionFunc.name none)
             [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b],
             r2b]
