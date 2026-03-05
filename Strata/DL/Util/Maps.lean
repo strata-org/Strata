@@ -434,4 +434,33 @@ theorem Maps.find?_insert_self [DecidableEq α]
     | _ :: _ => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
   · exact Maps.find?_update_self ms x v (by simp_all)
 
+/-- `Maps.find?` is unchanged for a different key after `Maps.insert`. -/
+theorem Maps.find?_insert_ne [DecidableEq α]
+    (ms : Maps α β) (x y : α) (v : β) (h_ne : x ≠ y) :
+    Maps.find? (Maps.insert ms y v) x = Maps.find? ms x := by
+  simp only [Maps.insert]
+  cases h_fb : Maps.find? ms y with
+  | none =>
+    match ms with
+    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?, Map.insert, Ne.symm h_ne]
+    | _ :: _ =>
+      simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
+      rw [Map.find?_insert_ne _ _ _ _ h_ne]
+  | some val =>
+    induction ms with
+    | nil => simp [Maps.find?] at h_fb
+    | cons m rest ih =>
+      simp only [Maps.update]
+      split
+      · rename_i h_none
+        simp only [Maps.find?]
+        cases Map.find? m x with
+        | none =>
+          have h_rest : Maps.find? rest y = some val := by
+            simp only [Maps.find?, h_none] at h_fb; exact h_fb
+          exact ih h_rest
+        | some _ => rfl
+      · simp only [Maps.find?]
+        rw [Map.find?_insert_ne _ _ _ _ h_ne]
+
 ---------------------------------------------------------------------
