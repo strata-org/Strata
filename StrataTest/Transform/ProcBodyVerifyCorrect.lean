@@ -180,7 +180,24 @@ theorem postcondition_expr_in_getCheckExprs
     (label, check) ∈ postconditions.toList →
     check.expr ∈ Procedure.Spec.getCheckExprs postconditions := by
   intro h_in
-  sorry
+  unfold Procedure.Spec.getCheckExprs ListMap.values
+  induction postconditions with
+  | nil => cases h_in
+  | cons head tail ih =>
+    simp [ListMap.toList] at h_in ⊢
+    cases h_in with
+    | inl h_eq =>
+      left
+      cases h_eq
+      rfl
+    | inr h_tail =>
+      -- Goal after simp: ∃ a, a ∈ ListMap.values tail ∧ a.expr = check.expr
+      -- ih h_tail gives: check.expr ∈ (ListMap.values tail).map (·.expr)
+      -- Need to extract the witness
+      have h_mem := ih h_tail
+      -- h_mem : check.expr ∈ List.map (fun c => c.expr) (ListMap.values tail)
+      -- This means ∃ c ∈ values tail, c.expr = check.expr
+      sorry
 
 /-- Weaker completeness: If verification statement succeeds, all postcondition asserts passed -/
 theorem procBodyVerify_completeness_weak
