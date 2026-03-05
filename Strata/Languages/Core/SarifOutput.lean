@@ -42,6 +42,17 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
       else .warning
     else
       .note
+  | .bugFindingAssumingCompleteSpec =>
+    if outcome.passAndReachable || outcome.passReachabilityUnknown then
+      .none
+    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown 
+         || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
+      .error  -- Any counterexample is an error when preconditions are complete
+    else if outcome.unreachable then
+      if property == .cover then .error
+      else .warning
+    else
+      .note
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=

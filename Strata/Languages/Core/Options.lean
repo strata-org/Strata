@@ -23,7 +23,8 @@ def VerboseMode.toNat (v : VerboseMode) : Nat :=
 /-- Verification mode for SARIF error level mapping -/
 inductive VerificationMode where
   | deductive  -- Prove correctness (unknown is error)
-  | bugFinding -- Find bugs (provably false if reached/reachable is error, unreachable is warning)
+  | bugFinding -- Find bugs assuming incomplete preconditions (only definite bugs are errors)
+  | bugFindingAssumingCompleteSpec -- Find bugs assuming complete preconditions (any counterexample is error)
   deriving Inhabited, Repr, DecidableEq
 
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=

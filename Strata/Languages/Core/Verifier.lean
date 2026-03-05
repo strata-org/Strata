@@ -169,17 +169,17 @@ The 9 possible outcomes and their interpretations.
 For cover statements, any outcome where P ∧ Q is sat displays as ✅ (cover satisfied).
 Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 
-  Emoji  Label                                          P ∧ Q    P ∧ ¬Q   Reachable  Deductive  BugFinding  Meaning
-  -----  ---------------------------------------------  -------  -------  ---------  ---------  ----------  -------
-  ✅     always true and is reachable                   sat      unsat    yes        pass       pass        Property always true, reachable from declaration entry
-  ❌     always false and is reachable                  unsat    sat      yes        error      error       Property always false, reachable from declaration entry
-  🔶     can be both true and false and is reachable    sat      sat      yes        error      note        Reachable, solver found models for both the property and its negation
-  ⛔     unreachable                                    unsat    unsat    no         warning    warning     Dead code, path unreachable
-  ➕     can be true and is reachable                   sat      unknown  yes        error      note        Property can be true and is reachable, validity unknown
-  ✖️     always false if reached                      unsat    unknown  unknown    error      error       Property always false if reached, reachability unknown
-  ➖     can be false and is reachable                  unknown  sat      yes        error      note        Q can be false and path is reachable, satisfiability of Q unknown
-  ✔️     always true if reached                       unknown  unsat    unknown    pass       pass        Property always true if reached, reachability unknown
-  ❓     unknown                                        unknown  unknown  unknown    error      note        Both checks inconclusive
+  Emoji  Label                                          P ∧ Q    P ∧ ¬Q   Reachable  Deductive  BugFinding  BugFinding+Complete  Meaning
+  -----  ---------------------------------------------  -------  -------  ---------  ---------  ----------  -------------------  -------
+  ✅     always true and is reachable                   sat      unsat    yes        pass       pass        pass                 Property always true, reachable from declaration entry
+  ❌     always false and is reachable                  unsat    sat      yes        error      error       error                Property always false, reachable from declaration entry
+  🔶     can be both true and false and is reachable    sat      sat      yes        error      note        error                Reachable, solver found models for both the property and its negation
+  ⛔     unreachable                                    unsat    unsat    no         warning    warning     warning              Dead code, path unreachable
+  ➕     can be true and is reachable                   sat      unknown  yes        error      note        note                 Property can be true and is reachable, validity unknown
+  ✖️     always false if reached                        unsat    unknown  unknown    error      error       error                Property always false if reached, reachability unknown
+  ➖     can be false and is reachable                  unknown  sat      yes        error      note        error                Q can be false and path is reachable, satisfiability of Q unknown
+  ✔️     always true if reached                         unknown  unsat    unknown    pass       pass        pass                 Property always true if reached, reachability unknown
+  ❓     unknown                                        unknown  unknown  unknown    error      note        note                 Both checks inconclusive
 -/
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
@@ -289,7 +289,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .sat _ => "fail"
       | .unknown => "unknown"
       | .err _ => "unknown"
-    | .assert, .bugFinding =>
+    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec =>
       -- Satisfiability check only: sat=satisfiable, unsat=fail, unknown=unknown
       match o.satisfiabilityProperty with
       | .sat _ => "satisfiable"
@@ -331,7 +331,7 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .sat _ => "❌"
       | .unknown => "❓"
       | .err _ => "❓"
-    | .assert, .bugFinding =>
+    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec =>
       -- Satisfiability check only: sat=❓ (satisfiable), unsat=❌, unknown=❓
       match o.satisfiabilityProperty with
       | .sat _ => "❓"  -- Different meaning: satisfiable but don't know if always true
@@ -581,6 +581,8 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
           | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
+          | .bugFindingAssumingCompleteSpec, .minimal, .assert => (true, false) -- Same as bugFinding for minimal
+          | .bugFindingAssumingCompleteSpec, .minimal, .cover => (true, false)  -- Cover uses satisfiability
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
       -- If PE resolved both checks, we're done
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
