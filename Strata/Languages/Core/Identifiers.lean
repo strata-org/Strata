@@ -54,15 +54,6 @@ instance : Repr CoreIdent where
 instance : Inhabited CoreIdent where
   default := ⟨"_", ()⟩
 
-instance : Lambda.HasGen Unit where
-  genVar T := let (sym, state') := (Lambda.TState.genExprSym T.genState)
-              .ok (⟨sym, ()⟩, { T with genState := state' })
-  genVar_tyGen_mono := by
-    intro Env xv Env' h
-    simp at h
-    obtain ⟨_, h_env⟩ := h
-    rw [← h_env]
-    simp [Lambda.TState.genExprSym, Lambda.TState.incExprGen]
 
 namespace Syntax
 
