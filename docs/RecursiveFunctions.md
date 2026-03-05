@@ -14,7 +14,7 @@ function (UF)** together with **per-constructor axioms** equipped with
 Recursive functions are declared with the `rec` keyword. Exactly one parameter
 must be annotated with `@[cases]` to indicate the ADT argument being recursed on:
 
-```boogie
+```
 datatype List<T> () {
   Nil(),
   Cons(head: T, tail: List<T>)
