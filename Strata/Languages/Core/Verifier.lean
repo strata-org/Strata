@@ -278,9 +278,9 @@ def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) 
-    (checkAmount : CheckAmount := .full) (checkMode : VerificationMode := .deductive) : String :=
+    (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
   -- Simplified labels for minimal check amount
-  if checkAmount == .minimal then
+  if checkLevel == .minimal then
     match property, checkMode with
     | .assert, .deductive =>
       -- Validity check only: unsat=pass, sat=fail, unknown=unknown
@@ -320,9 +320,9 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     else "unknown"
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
-    (checkAmount : CheckAmount := .full) (checkMode : VerificationMode := .deductive) : String :=
+    (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
   -- Simplified emojis for minimal check amount
-  if checkAmount == .minimal then
+  if checkLevel == .minimal then
     match property, checkMode with
     | .assert, .deductive =>
       -- Validity check only: unsat=✅, sat=❌, unknown=❓
@@ -368,6 +368,13 @@ instance : ToFormat VCOutcome where
   format o := s!"{o.emoji} {o.label}"
 
 /--
+A counterexample model with values lifted to LExpr for display purposes.
+This is used for formatting counterexamples in a human-readable way
+using Core's expression formatter and for future use as program metadata.
+-/
+abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
+
+/--
 A collection of all information relevant to a verification condition's
 analysis.
 -/
@@ -376,8 +383,11 @@ structure VCResult where
   outcome : Except String VCOutcome := .error "not yet computed"
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
-  checkAmount : CheckAmount := .full
+  checkLevel : CheckLevel := .full
   checkMode : VerificationMode := .deductive
+  /-- model with values converted from `SMT.Term` to Core `LExpr`.
+      The contents must be consistent with the outcome, if the outcome was a failure. -/
+  lexprModel : LExprModel := []
 
 /-- Mask outcome properties based on requested checks.
     This ensures that PE-optimized results only show the checks that were requested.
@@ -408,28 +418,12 @@ instance : ToFormat VCResult where
     match r.outcome with
     | .error e => f!"Obligation: {r.obligation.label}\nImplementation Error: {e}"
     | .ok outcome =>
-      let models := match outcome.satisfiabilityProperty, outcome.validityProperty with
-        | .sat m1, .sat m2 =>
-          if r.verbose >= VerboseMode.models then
-            if !m1.isEmpty && !m2.isEmpty then
-              f!"\nModel (property true): {m1}\nModel (property false): {m2}"
-            else if !m1.isEmpty then
-              f!"\nModel (property true): {m1}"
-            else if !m2.isEmpty then
-              f!"\nModel (property false): {m2}"
-            else ""
-          else ""
-        | .sat m, _ =>
-          if r.verbose >= VerboseMode.models && !m.isEmpty then
-            f!"\nModel (property true): {m}"
-          else ""
-        | _, .sat m =>
-          if r.verbose >= VerboseMode.models && !m.isEmpty then
-            f!"\nModel (property false): {m}"
-          else ""
-        | _, _ => ""
+      let modelFmt :=
+        if r.verbose >= .models && !r.lexprModel.isEmpty then
+          f!"\nModel:\n{r.lexprModel}"
+        else f!""
       let prop := r.obligation.property
-      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop r.checkAmount r.checkMode} {outcome.label prop r.checkAmount r.checkMode}{models}"
+      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop r.checkLevel r.checkMode} {outcome.label prop r.checkLevel r.checkMode}{modelFmt}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.outcome with
@@ -438,7 +432,7 @@ def VCResult.isSuccess (vr : VCResult) : Bool :=
 
 def VCResult.isFailure (vr : VCResult) : Bool :=
   match vr.outcome with
-  | .ok o => o.isRefuted || o.isCanBeTrueOrFalse
+  | .ok o => o.isRefuted || o.isCanBeTrueOrFalse || o.canBeFalseAndIsReachable
   | .error _ => false
 
 def VCResult.isUnknown (vr : VCResult) : Bool :=
@@ -549,12 +543,18 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   | .ok (satResult, validityResult, estate) =>
     -- Mask SMT results based on requested checks
     let outcome := maskOutcome (VCOutcome.mk satResult validityResult) satisfiabilityCheck validityCheck
+    -- Extract counterexample model from sat results
+    let cex := match satResult, validityResult with
+      | .sat m, _ => convertCounterEx m (SMT.Context.getConstructorNames ctx)
+      | _, .sat m => convertCounterEx m (SMT.Context.getConstructorNames ctx)
+      | _, _ => []
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
                     verbose := options.verbose,
-                    checkAmount := options.checkAmount,
-                    checkMode := options.checkMode }
+                    checkLevel := options.checkLevel,
+                    checkMode := options.checkMode,
+                    lexprModel := cex }
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
@@ -575,7 +575,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           (true, true)  -- fullCheck annotation: always run both
         else
           -- Derive checks from check mode and amount
-          match options.checkMode, options.checkAmount, obligation.property with
+          match options.checkMode, options.checkLevel, obligation.property with
           | _, .full, _ => (true, true)  -- Full: both checks
           | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
           | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
@@ -586,7 +586,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
         let outcome := VCOutcome.mk peSat peVal
         let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
-                                    checkAmount := options.checkAmount, checkMode := options.checkMode }
+                                    checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
         results := results.push result
         if result.isFailure || result.isImplementationError then
           if options.verbose >= .normal then
@@ -604,8 +604,9 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
         let result := { obligation,
                         outcome := .error (toString err),
                         verbose := options.verbose,
-                        checkAmount := options.checkAmount,
-                        checkMode := options.checkMode }
+                        checkLevel := options.checkLevel,
+                        checkMode := options.checkMode,
+                        lexprModel := [] }
         if options.verbose >= .normal then
           let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"

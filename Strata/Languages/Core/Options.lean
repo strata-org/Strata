@@ -50,7 +50,7 @@ instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
 def defaultSolver : String := "cvc5"
 
 /-- Check amount: how much information to gather -/
-inductive CheckAmount where
+inductive CheckLevel where
   | minimal  -- Only checks needed for check mode
   | full     -- Both checks for more informative messages
   deriving Inhabited, Repr, DecidableEq
@@ -75,7 +75,7 @@ structure VerifyOptions where
   /-- Check mode: deductive (prove correctness) or bugFinding (find bugs) -/
   checkMode : VerificationMode
   /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
-  checkAmount : CheckAmount
+  checkLevel : CheckLevel
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -90,7 +90,7 @@ def VerifyOptions.default : VerifyOptions := {
   solver := defaultSolver
   vcDirectory := .none
   checkMode := .deductive
-  checkAmount := .minimal
+  checkLevel := .minimal
 }
 
 instance : Inhabited VerifyOptions where
