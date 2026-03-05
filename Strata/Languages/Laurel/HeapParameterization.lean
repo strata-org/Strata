@@ -151,7 +151,7 @@ structure TransformState where
   heapReaders : List Identifier
   heapWriters : List Identifier
   fieldTypes : List (Identifier × HighTypeMd) := []  -- Maps "TypeName.fieldName" to their value types
-  types : List TypeDefinition := []  -- Type definitions for resolving field owners
+  types : List TypeDefinition  -- Type definitions for resolving field owners
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
 
 abbrev TransformM := StateM TransformState

@@ -54,7 +54,7 @@ def translateType (ty : HighTypeMd) (types : List TypeDefinition) : LMonoTy :=
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
-def lookupType (env : TypeEnv) (name : Identifier) (types : List TypeDefinition := []) : LMonoTy :=
+def lookupType (env : TypeEnv) (name : Identifier) (types : List TypeDefinition) : LMonoTy :=
   match env.find? (fun (n, _) => n == name) with
   | some (_, ty) => translateType ty types
   | none => panic s!"could not find variable {name} in environment '{Std.format env}'"
@@ -87,7 +87,7 @@ structure TranslateState where
   /-- Names of procedures that are translated as Core functions -/
   funcNames : FunctionNames := []
   /-- Laurel type definitions, used to distinguish composites from datatypes -/
-  laurelTypes : List TypeDefinition := []
+  laurelTypes : List TypeDefinition
   /-- Mapping from Laurel-level tester names (e.g. "isCons") to Core-level names (e.g. "IntList..isCons") -/
   testerNameMap : Std.HashMap String String := {}
 
@@ -254,7 +254,7 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
   s!"({fileRange.range.start})"
 
-def defaultExprForType (ty : HighTypeMd) (types : List TypeDefinition := []) : Core.Expression.Expr :=
+def defaultExprForType (ty : HighTypeMd) (types : List TypeDefinition) : Core.Expression.Expr :=
   match ty.val with
   | .TInt => .const () (.intConst 0)
   | .TBool => .const () (.boolConst false)
@@ -400,7 +400,7 @@ private def translateChecks (env : TypeEnv) (checks : List StmtExprMd) (labelBas
 /--
 Translate Laurel Parameter to Core Signature entry
 -/
-def translateParameterToCore (param : Parameter) (types : List TypeDefinition := []) : (Core.CoreIdent × LMonoTy) :=
+def translateParameterToCore (param : Parameter) (types : List TypeDefinition) : (Core.CoreIdent × LMonoTy) :=
   let ident := ⟨param.name, ()⟩
   let ty := translateType param.type types
   (ident, ty)
@@ -537,7 +537,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
 Translate a Laurel DatatypeDefinition to a Core type declaration.
 Zero constructors produces an opaque (abstract) type; otherwise a Core datatype.
 -/
-def translateDatatypeDefinition (dt : DatatypeDefinition) (types : List TypeDefinition := []) : Core.Decl :=
+def translateDatatypeDefinition (dt : DatatypeDefinition) (types : List TypeDefinition) : Core.Decl :=
   match h : dt.constructors with
   | [] =>
     -- Zero constructors: opaque type

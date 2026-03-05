@@ -88,11 +88,11 @@ function Datetime_add(d:Datetime, timedelta:int):Datetime;
 function Datetime_lt(d1:Datetime, d2:Datetime):bool;
 function datetime_to_str(dt : Datetime) : string;
 
+type CoreOnlyDelimiter;
+
 // =====================================================================
 // Core-only declarations (not expressible in Laurel)
 // =====================================================================
-
-type CoreOnlyDelimiter;
 
 // Axioms
 axiom [Object_len_ge_zero]: (forall x : Object :: Object_len(x) >= 0);

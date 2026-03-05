@@ -75,7 +75,7 @@ structure LiftState where
   /-- Type environment -/
   env : TypeEnv := []
   /-- Type definitions from the program -/
-  types : List TypeDefinition := []
+  types : List TypeDefinition
   /-- Global counter for fresh conditional variables -/
   condCounter : Nat := 0
   /-- Names of imperative procedures whose calls must be lifted from expression position -/
