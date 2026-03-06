@@ -1104,50 +1104,120 @@ variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
 ### Definitions and lemmas for the `resolveAux`-based proof strategy
 -/
 
-/--
-`HasType` is preserved under substitution of fresh type variables.
-If `e` has type `mty` and all keys of `S` are fresh in `Γ`, then `e` also has
-type `LMonoTy.subst S mty`.
+/-- Free variables of `subst [[(a, t)]] mty` are either free vars of `mty`
+    (possibly minus `a`) or free vars of `t`. Contrapositively: if `b` is
+    in the freeVars of the substituted type but NOT in freeVars of `t`,
+    then `b` was already in freeVars of `mty`. -/
+private theorem LMonoTy.freeVars_subst_single_mem
+    (a : TyIdentifier) (t mty : LMonoTy) (b : TyIdentifier)
+    (hb : b ∈ LMonoTy.freeVars (LMonoTy.subst [[(a, t)]] mty))
+    (hb_not_t : b ∉ LMonoTy.freeVars t) :
+    b ∈ LMonoTy.freeVars mty := by
+  -- freeVars(subst [[(a,t)]] mty) ⊆ (freeVars(mty) \ {a}) ∪ freeVars(t)
+  -- Since b ∉ freeVars(t), we get b ∈ freeVars(mty).
+  -- Proof by structural induction on mty, with a nested induction for tcons args.
+  -- The hasEmptyScopes [[(a,t)]] is always false.
+  -- If the substitution has empty scopes, it's the identity, so trivial
+  by_cases hS : Subst.hasEmptyScopes [[(a, t)]]
+  · rw [LMonoTy.subst_emptyS hS] at hb; exact hb
+  · -- hasEmptyScopes = false (the normal case)
+    have hS_false : Subst.hasEmptyScopes [[(a, t)]] = false := by
+      revert hS; cases Subst.hasEmptyScopes [[(a, t)]] <;> simp
+    match mty with
+    | .ftvar x =>
+      simp only [LMonoTy.subst, hS_false, ↓reduceIte] at hb
+      -- subst: match find? [[(a,t)]] x
+      by_cases hax : a = x
+      · subst hax
+        have : Maps.find? [[(a, t)]] a = some t := by
+          simp [Maps.find?, Map.find?, beq_self_eq_true]
+        rw [this] at hb; exact absurd hb hb_not_t
+      · -- find? [[(a,t)]] x = none since a ≠ x
+        have h_find_none : Maps.find? [[(a, t)]] x = none :=
+          Maps.not_mem_keys_find?_none' [[(a, t)]] x (by
+            simp [Maps.keys, Map.keys]; exact fun h => hax h.symm)
+        rw [h_find_none] at hb; exact hb
+    | .bitvec _ =>
+      unfold LMonoTy.subst at hb; split at hb <;> exact hb
+    | .tcons name args =>
+      simp only [LMonoTy.subst, hS_false, ↓reduceIte, LMonoTy.freeVars] at hb ⊢
+      rw [LMonoTys.subst_eq_substLogic] at hb
+      -- Nested induction on args
+      suffices ∀ (xs : LMonoTys),
+          b ∈ LMonoTys.freeVars (LMonoTys.substLogic [[(a, t)]] xs) →
+          b ∈ LMonoTys.freeVars xs from this args hb
+      intro xs; induction xs with
+      | nil =>
+        simp only [LMonoTys.substLogic, hS_false, ↓reduceIte, LMonoTys.freeVars]; intro h; exact h
+      | cons y ys ih_ys =>
+        simp only [LMonoTys.substLogic, hS_false, ↓reduceIte]
+        intro h
+        simp only [LMonoTys.freeVars] at h ⊢
+        cases List.mem_append.mp h with
+        | inl h_y => exact List.mem_append_left _ (LMonoTy.freeVars_subst_single_mem a t y b h_y hb_not_t)
+        | inr h_ys => exact List.mem_append_right _ (ih_ys h_ys)
+  termination_by mty
+  decreasing_by simp_wf; sorry
 
-This generalizes `HasType_subst_fresh` from a single variable to a full
-substitution. The proof proceeds by iterating `tgen`/`tinst` for each binding
-in `S`.
--/
+/-- `HasType` is preserved under substitution when keys relevant to the type
+    are fresh. Only keys that appear in `freeVars mty` need to be fresh,
+    not all keys. This is the key weakening that avoids requiring `allKeysFresh`
+    globally. -/
 theorem HasType_subst_fresh_all
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty : LMonoTy)
     (S : Subst)
     (h : HasType C Γ e (.forAll [] mty))
-    (h_fresh : Subst.allKeysFresh S Γ)
+    (h_fresh : ∀ a, a ∈ Maps.keys S → a ∈ LMonoTy.freeVars mty → TContext.isFresh (T := T) a Γ)
     (h_wf : SubstWF S) :
     HasType C Γ e (.forAll [] (LMonoTy.subst S mty)) := by
   -- Trivial case: S has empty scopes
   by_cases hS : Subst.hasEmptyScopes S
   · rw [LMonoTy.subst_emptyS hS]; exact h
   · -- Strong induction on relevantKeys S mty
+    -- Thread the freshness condition through the suffices, since SubstWF
+    -- guarantees that relevant keys only shrink through substitution steps.
     suffices ∀ (n : Nat) (mty : LMonoTy),
         relevantKeys S mty = n →
+        (∀ a, a ∈ Maps.keys S → a ∈ LMonoTy.freeVars mty → TContext.isFresh (T := T) a Γ) →
         HasType C Γ e (.forAll [] mty) →
         HasType C Γ e (.forAll [] (LMonoTy.subst S mty)) from
-      this (relevantKeys S mty) mty rfl h
+      this (relevantKeys S mty) mty rfl h_fresh h
     intro n
     induction n using Nat.strongRecOn with
     | _ n ih =>
-      intro mty h_rk h_ty
+      intro mty h_rk h_fresh_mty h_ty
       -- Check if any key of S is in freeVars mty
       by_cases h_any : ∃ a, a ∈ Maps.keys S ∧ a ∈ LMonoTy.freeVars mty
       · -- Inductive case: there's a relevant key
         obtain ⟨a, ha_key, ha_fv⟩ := h_any
         obtain ⟨t, h_find⟩ := Maps.find?_of_mem_keys' S a ha_key
         -- Step 1: apply HasType_subst_fresh for the single binding (a, t)
-        have h_a_fresh : TContext.isFresh a Γ := h_fresh a ha_key
+        have h_a_fresh : TContext.isFresh a Γ := h_fresh_mty a ha_key ha_fv
         have h1 : HasType C Γ e (.forAll [] (LMonoTy.subst [[(a, t)]] mty)) :=
           HasType_subst_fresh C Γ e mty a t h_ty h_a_fresh
         -- Step 2: by induction, apply HasType_subst_fresh_all to the substituted type
+        -- Freshness transfers: keys relevant to (subst [[(a,t)]] mty) are a subset of
+        -- keys relevant to mty, because SubstWF ensures a ∉ freeVars(t), so
+        -- freeVars(subst [[(a,t)]] mty) ⊆ (freeVars(mty) \ {a}) ∪ freeVars(t)
+        -- and keys(S) ∩ freeVars(t) = ∅ by SubstWF.
+        have h_fresh_inner : ∀ b, b ∈ Maps.keys S → b ∈ LMonoTy.freeVars (LMonoTy.subst [[(a, t)]] mty) →
+            TContext.isFresh (T := T) b Γ := by
+          intro b hb_key hb_fv
+          -- b ∈ freeVars(subst [[(a,t)]] mty) and b ∈ keys(S)
+          -- By SubstWF, b ∉ Subst.freeVars S, and freeVars(t) ⊆ Subst.freeVars S
+          have hb_not_fvS : b ∉ Subst.freeVars S := by
+            have := h_wf; simp [SubstWF, List.all_eq_true] at this
+            exact this b hb_key
+          have hb_not_t : b ∉ LMonoTy.freeVars t :=
+            fun h => hb_not_fvS (Subst.freeVars_of_find_subset S h_find h)
+          -- So b ∈ freeVars(mty) by freeVars_subst_single_mem
+          have hb_in_mty := LMonoTy.freeVars_subst_single_mem a t mty b hb_fv hb_not_t
+          exact h_fresh_mty b hb_key hb_in_mty
         have h_decrease := relevantKeys_decrease S a t mty h_find h_wf ha_fv
         have h2 : HasType C Γ e
             (.forAll [] (LMonoTy.subst S (LMonoTy.subst [[(a, t)]] mty))) :=
           ih (relevantKeys S (LMonoTy.subst [[(a, t)]] mty))
-            (h_rk ▸ h_decrease) (LMonoTy.subst [[(a, t)]] mty) rfl h1
+            (h_rk ▸ h_decrease) (LMonoTy.subst [[(a, t)]] mty) rfl h_fresh_inner h1
         -- Step 3: rewrite using absorption
         rwa [LMonoTy.subst_absorbs_single S a t mty h_find h_wf] at h2
       · -- Base case: no relevant key, so subst S mty = mty
@@ -4886,7 +4956,8 @@ theorem HasType_subst_upgrade
     (S_inner S_outer : Subst)
     (h_ty : HasType C Γ e (.forAll [] (LMonoTy.subst S_inner mty)))
     (h_absorbs : Subst.absorbs S_outer S_inner)
-    (h_fresh : Subst.allKeysFresh S_outer Γ)
+    (h_fresh : ∀ a, a ∈ Maps.keys S_outer → a ∈ LMonoTy.freeVars (LMonoTy.subst S_inner mty) →
+      TContext.isFresh (T := T) a Γ)
     (h_wf : SubstWF S_outer) :
     HasType C Γ e (.forAll [] (LMonoTy.subst S_outer mty)) := by
   have h1 := HasType_subst_fresh_all C Γ e (LMonoTy.subst S_inner mty) S_outer h_ty h_fresh h_wf
@@ -5030,13 +5101,14 @@ is needed because `resolveAux` extends (not replaces) the input substitution.
 For the top-level call via `LExpr.resolve`, the input substitution is empty
 so the precondition is trivially satisfied.
 -/
-theorem resolveAux_keys_fresh :
+theorem resolveAux_keys_vals_fresh :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
       TEnvWF Env →
       Env.context.types ≠ [] →
-      Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
+      Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context ∧
+      Subst.valsFresh Env'.stateSubstInfo.subst Env.context := by
   intro e
   induction e with
   | const m c =>
@@ -5050,7 +5122,7 @@ theorem resolveAux_keys_fresh :
     | .ok (ty, Env1) =>
       simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
       simp [inferConst] at h_ic; split at h_ic
-      · simp at h_ic; obtain ⟨_, h_env⟩ := h_ic; subst h_env; exact h_sf
+      · simp at h_ic; obtain ⟨_, h_env⟩ := h_ic; subst h_env; exact ⟨h_sf, h_vf⟩
       · simp at h_ic
   | bvar m i =>
     intro et C Env Env' h _ _; simp [resolveAux] at h
@@ -5064,7 +5136,8 @@ theorem resolveAux_keys_fresh :
     · rename_i v1 h_infer
       obtain ⟨ty_res, Env_res⟩ := v1; simp at h
       obtain ⟨_, h_env⟩ := h; rw [← h_env]
-      exact inferFVar_allKeysFresh C Env x fty ty_res Env_res h_infer h_sf h_vf h_aw
+      exact ⟨inferFVar_allKeysFresh C Env x fty ty_res Env_res h_infer h_sf h_vf h_aw,
+             sorry⟩ -- valsFresh for inferFVar
   | op m o oty =>
     intro et C Env Env' h h_envwf _
     have h_sf := h_envwf.keysFresh; have h_vf := h_envwf.valsFresh; have h_aw := h_envwf.aliasesWF
@@ -5079,7 +5152,8 @@ theorem resolveAux_keys_fresh :
     cases oty with
     | none =>
       simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-      exact LTy_instantiateWithCheck_allKeysFresh type_val C Env ty_inst Env1 h_inst h_sf h_vf h_aw
+      exact ⟨LTy_instantiateWithCheck_allKeysFresh type_val C Env ty_inst Env1 h_inst h_sf h_vf h_aw,
+             sorry⟩ -- valsFresh for instantiateWithCheck
     | some oty_val =>
       simp only [Except.mapError] at h
       split at h; · simp at h
@@ -5098,9 +5172,10 @@ theorem resolveAux_keys_fresh :
         (h_ctx1 ▸ h_aw)
       have h_ctx2 := LMonoTy_instantiateWithCheck_context oty_val C Env1 oty_inst Env2 h_inst2
       rw [h_ctx1] at h_sf2
-      exact Constraints.unify_allKeysFresh h_unify h_sf2
+      exact ⟨Constraints.unify_allKeysFresh h_unify h_sf2
         (by sorry) -- constraint fvs freshness
-        (by sorry) -- subst value fvs freshness for Env2
+        (by sorry), -- subst value fvs freshness for Env2
+        sorry⟩ -- valsFresh for unify output
   | app m e1 e2 ih1 ih2 =>
     intro et C Env Env' h h_envwf h_ne
     have h_sf := h_envwf.keysFresh; have h_vf := h_envwf.valsFresh; have h_aw := h_envwf.aliasesWF
@@ -5122,13 +5197,13 @@ theorem resolveAux_keys_fresh :
     have h_gen_fresh := TEnv.genTyVar_isFresh Env2 fresh_name Env3 h_gen
     have h_ctx1 := resolveAux_context e1 e1t C Env Env1 h_res1 h_ne
     have h_ne1 := h_ctx1 ▸ h_ne
-    -- IH for e1: allKeysFresh Env1.subst Env.context
-    have h_sf1 := ih1 e1t C Env Env1 h_res1 h_envwf h_ne
+    -- IH for e1: allKeysFresh ∧ valsFresh for Env1.subst w.r.t. Env.context
+    have h_ih1 := ih1 e1t C Env Env1 h_res1 h_envwf h_ne
     have h_ctx2 := resolveAux_context e2 e2t C Env1 Env2 h_res2 h_ne1
-    -- Build TEnvWF for Env1
+    -- Build TEnvWF for Env1 (using both components from IH)
     have h_envwf1 : TEnvWF Env1 :=
-      { keysFresh := h_ctx1 ▸ h_sf1
-        valsFresh := h_ctx1 ▸ sorry -- needs resolveAux_vals_fresh
+      { keysFresh := h_ctx1 ▸ h_ih1.1
+        valsFresh := h_ctx1 ▸ h_ih1.2
         aliasesWF := h_ctx1 ▸ h_aw
         substFreshForGen := resolveAux_preserves_SubstFreshForGen e1 e1t C Env Env1 h_res1 h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne
         ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
@@ -5136,26 +5211,24 @@ theorem resolveAux_keys_fresh :
           have hf' := h_ctx1 ▸ hf
           obtain ⟨h1, h2⟩ := h_envwf.boundVarsWF y ty hf'
           exact ⟨h1, fun v hv => by rw [show Env1.genEnv.context = Env.genEnv.context from h_ctx1]; exact h2 v hv⟩ }
-    -- IH for e2: allKeysFresh Env2.subst Env1.context = Env.context
-    have h_sf2 := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1
+    -- IH for e2: allKeysFresh ∧ valsFresh for Env2.subst w.r.t. Env1.context
+    have h_ih2 := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1
     -- allKeysFresh Env3.subst = allKeysFresh Env2.subst (genTyVar preserves subst)
     rw [h_gen_subst] at h_unify
     -- allKeysFresh of unify output
     have h_fresh_v4 : Subst.allKeysFresh v4.subst Env.context := by
-      rw [h_ctx1] at h_sf2
-      exact Constraints.unify_allKeysFresh h_unify h_sf2
+      rw [h_ctx1] at h_ih2
+      exact Constraints.unify_allKeysFresh h_unify h_ih2.1
         (by sorry) -- constraint fvs freshness
-        (by sorry) -- subst value fvs freshness for Env2
+        (h_ih2.2) -- subst value fvs freshness for Env2 (from IH!)
     -- allKeysFresh of remove: weaker than allKeysFresh of original
-    exact Subst.allKeysFresh_of_remove h_fresh_v4
+    exact ⟨Subst.allKeysFresh_of_remove h_fresh_v4, sorry⟩ -- valsFresh for remove
   | abs m bty e ih =>
     intro et C Env Env' h h_envwf _
-    have h_sf := h_envwf.keysFresh; have h_vf := h_envwf.valsFresh; have h_aw := h_envwf.aliasesWF
-    sorry
+    exact ⟨sorry, sorry⟩ -- abs case: typeBoundVar + recursive + eraseFromContext
   | quant m qk bty triggers e ih_e ih_t =>
     intro et C Env Env' h h_envwf _
-    have h_sf := h_envwf.keysFresh; have h_vf := h_envwf.valsFresh; have h_aw := h_envwf.aliasesWF
-    sorry
+    exact ⟨sorry, sorry⟩ -- quant case: similar to abs
   | eq m e1 e2 ih1 ih2 =>
     intro et C Env Env' h h_envwf h_ne
     have h_sf := h_envwf.keysFresh; have h_vf := h_envwf.valsFresh; have h_aw := h_envwf.aliasesWF
@@ -5171,12 +5244,12 @@ theorem resolveAux_keys_fresh :
           simp [TEnv.updateSubst]
           have h_ctx1 := resolveAux_context e1 e1t C Env Env1 h_res1 h_ne
           have h_ne1 := h_ctx1 ▸ h_ne
-          have h_sf1 := ih1 e1t C Env Env1 h_res1 h_envwf h_ne
+          have h_ih1 := ih1 e1t C Env Env1 h_res1 h_envwf h_ne
           have h_ctx2 := resolveAux_context e2 e2t C Env1 Env2 h_res2 h_ne1
-          -- Build TEnvWF for Env1
+          -- Build TEnvWF for Env1 (using both components from IH)
           have h_envwf1 : TEnvWF Env1 :=
-            { keysFresh := h_ctx1 ▸ h_sf1
-              valsFresh := h_ctx1 ▸ sorry -- needs resolveAux_vals_fresh
+            { keysFresh := h_ctx1 ▸ h_ih1.1
+              valsFresh := h_ctx1 ▸ h_ih1.2
               aliasesWF := h_ctx1 ▸ h_aw
               substFreshForGen := resolveAux_preserves_SubstFreshForGen e1 e1t C Env Env1 h_res1 h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne
               ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
@@ -5184,16 +5257,15 @@ theorem resolveAux_keys_fresh :
                 have hf' := h_ctx1 ▸ hf
                 obtain ⟨h1, h2⟩ := h_envwf.boundVarsWF y ty hf'
                 exact ⟨h1, fun v hv => by rw [show Env1.genEnv.context = Env.genEnv.context from h_ctx1]; exact h2 v hv⟩ }
-          have h_sf2 := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1
+          have h_ih2 := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1
           -- unify preserves allKeysFresh
           have h_unify := unify_of_mapError h_mapError
-          have h_vf2 : ∀ tv, tv ∈ Subst.freeVars Env2.stateSubstInfo.subst →
-              TContext.isFresh (T := T) tv Env.context := by sorry
           -- constraint fvs are fresh (from resolveAux output types)
           have h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars [(e1t.toLMonoTy, e2t.toLMonoTy)] →
               TContext.isFresh (T := T) tv Env.context := by sorry
-          rw [h_ctx1] at h_sf2
-          exact Constraints.unify_allKeysFresh h_unify h_sf2 h_cs_fresh h_vf2
+          rw [h_ctx1] at h_ih2
+          exact ⟨Constraints.unify_allKeysFresh h_unify h_ih2.1 h_cs_fresh h_ih2.2,
+                 Constraints.unify_vals_fresh h_unify h_cs_fresh h_ih2.2⟩
   | ite m c th el ih_c ih_t ih_e =>
     intro et C Env Env' h h_envwf h_ne
     have h_sf := h_envwf.keysFresh; have h_vf := h_envwf.valsFresh; have h_aw := h_envwf.aliasesWF
@@ -5211,13 +5283,13 @@ theorem resolveAux_keys_fresh :
             simp [TEnv.updateSubst]
             have h_ctx1 := resolveAux_context c ct C Env Env1 h_res_c h_ne
             have h_ne1 := h_ctx1 ▸ h_ne
-            have h_sf1 := ih_c ct C Env Env1 h_res_c h_envwf h_ne
+            have h_ih_c := ih_c ct C Env Env1 h_res_c h_envwf h_ne
             have h_ctx2 := resolveAux_context th tht C Env1 Env2 h_res_t h_ne1
             have h_ne2 := h_ctx2 ▸ h_ne1
-            -- Build TEnvWF for Env1
+            -- Build TEnvWF for Env1 (using both components from IH)
             have h_envwf1 : TEnvWF Env1 :=
-              { keysFresh := h_ctx1 ▸ h_sf1
-                valsFresh := h_ctx1 ▸ sorry -- needs resolveAux_vals_fresh
+              { keysFresh := h_ctx1 ▸ h_ih_c.1
+                valsFresh := h_ctx1 ▸ h_ih_c.2
                 aliasesWF := h_ctx1 ▸ h_aw
                 substFreshForGen := resolveAux_preserves_SubstFreshForGen c ct C Env Env1 h_res_c h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne
                 ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono c ct C Env Env1 h_res_c)
@@ -5225,12 +5297,12 @@ theorem resolveAux_keys_fresh :
                   have hf' := h_ctx1 ▸ hf
                   obtain ⟨h1, h2⟩ := h_envwf.boundVarsWF y ty hf'
                   exact ⟨h1, fun v hv => by rw [show Env1.genEnv.context = Env.genEnv.context from h_ctx1]; exact h2 v hv⟩ }
-            have h_sf2 := ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1
+            have h_ih_t := ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1
             have h_ctx3 := resolveAux_context el elt C Env2 Env3 h_res_e h_ne2
-            -- Build TEnvWF for Env2
+            -- Build TEnvWF for Env2 (using both components from IH)
             have h_envwf2 : TEnvWF Env2 :=
-              { keysFresh := h_ctx2 ▸ h_sf2
-                valsFresh := h_ctx2 ▸ sorry -- needs resolveAux_vals_fresh
+              { keysFresh := h_ctx2 ▸ h_ih_t.1
+                valsFresh := h_ctx2 ▸ h_ih_t.2
                 aliasesWF := h_ctx2 ▸ h_ctx1 ▸ h_aw
                 substFreshForGen := resolveAux_preserves_SubstFreshForGen th tht C Env1 Env2 h_res_t h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1
                 ctxFreshForGen := h_ctx2 ▸ ContextFreshForGen.mono _ _ _ h_envwf1.ctxFreshForGen (resolveAux_genState_mono th tht C Env1 Env2 h_res_t)
@@ -5238,13 +5310,27 @@ theorem resolveAux_keys_fresh :
                   have hf' := h_ctx2 ▸ hf
                   obtain ⟨h1, h2⟩ := h_envwf1.boundVarsWF y ty hf'
                   exact ⟨h1, fun v hv => by rw [show Env2.genEnv.context = Env1.genEnv.context from h_ctx2]; exact h2 v hv⟩ }
-            have h_sf3 := ih_e elt C Env2 Env3 h_res_e h_envwf2 h_ne2
+            have h_ih_e := ih_e elt C Env2 Env3 h_res_e h_envwf2 h_ne2
             have h_unify := unify_of_mapError h_mapError
-            have h_sf3_ctx : Subst.allKeysFresh Env3.stateSubstInfo.subst Env.context := by
-              rw [← h_ctx1, ← h_ctx2]; exact h_sf3
-            exact Constraints.unify_allKeysFresh h_unify h_sf3_ctx
-              (by sorry) -- constraint fvs freshness
-              (by sorry) -- subst value fvs freshness for Env3
+            have h_ih_e_ctx : Subst.allKeysFresh Env3.stateSubstInfo.subst Env.context ∧
+                Subst.valsFresh Env3.stateSubstInfo.subst Env.context := by
+              constructor
+              · rw [← h_ctx1, ← h_ctx2]; exact h_ih_e.1
+              · rw [← h_ctx1, ← h_ctx2]; exact h_ih_e.2
+            have h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars [(toLMonoTy ct, LMonoTy.bool), (toLMonoTy tht, toLMonoTy elt)] →
+                TContext.isFresh (T := T) tv Env.context := by sorry
+            exact ⟨Constraints.unify_allKeysFresh h_unify h_ih_e_ctx.1 h_cs_fresh h_ih_e_ctx.2,
+                   Constraints.unify_vals_fresh h_unify h_cs_fresh h_ih_e_ctx.2⟩
+
+/-- Corollary: extract just `allKeysFresh` from the combined theorem. -/
+theorem resolveAux_keys_fresh
+    (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : resolveAux C Env e = .ok (et, Env'))
+    (h_wf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ []) :
+    Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context :=
+  (resolveAux_keys_vals_fresh e et C Env Env' h h_wf h_ne).1
 
 private theorem removeAll_not_mem {x : TyIdentifier} {xs : List TyIdentifier}
     (h : x ∉ xs) : xs.removeAll [x] = xs := by
@@ -5569,13 +5655,13 @@ private theorem HasType_resolveAliases
     simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h_ra
     obtain ⟨h1, h2⟩ := h_ra; subst h1; subst h2
     exact HasType_subst_fresh_all C Γ e _ Env.stateSubstInfo.subst
-      h_ty h_fresh Env.stateSubstInfo.isWF
+      h_ty (fun a hk hfv => h_fresh a hk) Env.stateSubstInfo.isWF
   | .bitvec _ =>
     -- resolveAliases is identity for bitvec
     simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h_ra
     obtain ⟨h1, h2⟩ := h_ra; subst h1; subst h2
     exact HasType_subst_fresh_all C Γ e _ Env.stateSubstInfo.subst
-      h_ty h_fresh Env.stateSubstInfo.isWF
+      h_ty (fun a hk hfv => h_fresh a hk) Env.stateSubstInfo.isWF
   | .tcons name args =>
     -- resolveAliases first resolves args, then tries alias expansion
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h_ra
@@ -5604,14 +5690,14 @@ private theorem HasType_resolveAliases
             revert h_e; cases Subst.hasEmptyScopes Env1.stateSubstInfo.subst <;> simp
           simp [LMonoTy.subst, h_ne]; exact h_list_eq
       have h_ty_subst := HasType_subst_fresh_all C Γ e (.tcons name args)
-        Env1.stateSubstInfo.subst h_ty h_fresh Env1.stateSubstInfo.isWF
+        Env1.stateSubstInfo.subst h_ty (fun a hk hfv => h_fresh a hk) Env1.stateSubstInfo.isWF
       rw [h_eq] at h_ty_subst; exact h_ty_subst
     | some alias =>
       -- Alias expansion: use HasType.talias + tconsAlias_expand_eq
       --
       -- Step 1: Get HasType for subst S (tcons name args)
       have h_ty_subst := HasType_subst_fresh_all C Γ e (.tcons name args)
-        Env2.stateSubstInfo.subst h_ty h_fresh Env2.stateSubstInfo.isWF
+        Env2.stateSubstInfo.subst h_ty (fun a hk hfv => h_fresh a hk) Env2.stateSubstInfo.isWF
       -- Step 2: Decompose subst S (tcons name args) into tcons name (subst S args)
       -- and show subst S args = subst S args' via absorption
       have h_abs := LMonoTys.resolveAliases_absorbs args Env args' Env1 h_args
@@ -6099,12 +6185,12 @@ theorem resolveAux_HasType :
               -- Upgrade IH1: from Env1.subst to v4.subst
               have h_ty1_up := HasType_subst_upgrade C Env.context e1
                 e1t.toLMonoTy Env1.stateSubstInfo.subst v4.subst
-                h_ty1 h_abs_v4_Env1 h_fresh_v4 v4.isWF
+                h_ty1 h_abs_v4_Env1 (fun a hk hfv => h_fresh_v4 a hk) v4.isWF
               -- Upgrade IH2: from Env2.subst to v4.subst
               rw [h_ctx1] at h_ty2
               have h_ty2_up := HasType_subst_upgrade C Env.context e2
                 e2t.toLMonoTy Env2.stateSubstInfo.subst v4.subst
-                h_ty2 h_abs_v4_Env3 h_fresh_v4 v4.isWF
+                h_ty2 h_abs_v4_Env3 (fun a hk hfv => h_fresh_v4 a hk) v4.isWF
               -- Rewrite h_ty1_up using unification equality
               -- First, distribute subst over tcons on the RHS of h_eq
               have h_eq_dist : LMonoTy.subst v4.subst e1t.toLMonoTy =
@@ -6305,17 +6391,17 @@ theorem resolveAux_HasType :
               -- Upgrade IH_c: from Env1.subst to v4.subst
               have h_ty_c_up := HasType_subst_upgrade C Env.context c
                 ct.toLMonoTy Env1.stateSubstInfo.subst v4.subst
-                h_ty_c h_abs_v4_Env1 h_fresh_v4 v4.isWF
+                h_ty_c h_abs_v4_Env1 (fun a hk hfv => h_fresh_v4 a hk) v4.isWF
               -- Upgrade IH_t: from Env2.subst to v4.subst
               rw [h_ctx1] at h_ty_t
               have h_ty_t_up := HasType_subst_upgrade C Env.context t
                 tht.toLMonoTy Env2.stateSubstInfo.subst v4.subst
-                h_ty_t h_abs_v4_Env2 h_fresh_v4 v4.isWF
+                h_ty_t h_abs_v4_Env2 (fun a hk hfv => h_fresh_v4 a hk) v4.isWF
               -- Upgrade IH_e: from Env3.subst to v4.subst
               rw [h_ctx2, h_ctx1] at h_ty_e
               have h_ty_e_up := HasType_subst_upgrade C Env.context e
                 elt.toLMonoTy Env3.stateSubstInfo.subst v4.subst
-                h_ty_e h_abs_v4_Env3 h_fresh_v4 v4.isWF
+                h_ty_e h_abs_v4_Env3 (fun a hk hfv => h_fresh_v4 a hk) v4.isWF
               -- Condition has type bool
               rw [h_eq_bool, LMonoTy.subst_bool] at h_ty_c_up
               -- Then and else branches have the same type
@@ -6410,12 +6496,12 @@ theorem resolveAux_HasType :
             -- Upgrade IH1: from Env1.subst to v3.subst
             have h_ty1_upgraded := HasType_subst_upgrade C Env.context e1
               e1t.toLMonoTy Env1.stateSubstInfo.subst v3.subst
-              h_ty1 h_abs_v3_Env1 h_fresh_v3 v3.isWF
+              h_ty1 h_abs_v3_Env1 (fun a hk hfv => h_fresh_v3 a hk) v3.isWF
             -- Upgrade IH2: from Env2.subst to v3.subst
             rw [h_ctx1] at h_ty2
             have h_ty2_upgraded := HasType_subst_upgrade C Env.context e2
               e2t.toLMonoTy Env2.stateSubstInfo.subst v3.subst
-              h_ty2 h_abs_v3_Env2 h_fresh_v3 v3.isWF
+              h_ty2 h_abs_v3_Env2 (fun a hk hfv => h_fresh_v3 a hk) v3.isWF
             -- Unification makes types equal under v3.subst
             have h_eq := unify_makes_equal e1t.toLMonoTy e2t.toLMonoTy
               Env2.stateSubstInfo v3 h_unify
