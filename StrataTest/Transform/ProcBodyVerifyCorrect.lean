@@ -52,37 +52,29 @@ theorem procBodyVerify_sound
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
     (h_correct : stmt_correct π φ stmt) :
     procedure_obeys_contract π φ proc := by
-  -- Get the structure: stmt = block label (pre_body ++ [body_block] ++ asserts) md
   obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
-  -- Unfold procedure_obeys_contract
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
   -- The postcondition assert is in ensuresToAsserts
   have h_assert_in : Statement.assert label check.expr check.md ∈
       ensuresToAsserts proc.spec.postconditions := by
-    unfold ensuresToAsserts
-    simp only [List.mem_filterMap]
+    unfold ensuresToAsserts; simp only [List.mem_filterMap]
     exact ⟨(label, check), h_post_in, by simp [h_default]⟩
-  -- stmt_correct on the block means stmts_correct on its body
+  -- We need to show the assert is reachable in stmt with (σ_final, δ_final)
+  -- and then h_correct gives us the result.
   rw [h_stmt_eq] at h_correct
-  simp only [stmt_correct] at h_correct
-  -- h_correct : stmts_correct π φ (pre_body ++ [body_block] ++ asserts)
-  -- We need to show the postcondition assert is reachable with (σ_final, δ_final)
-  -- i.e., the prefix (pre_body ++ [body_block]) evaluates to (σ_final, δ_final)
-  let full_prefix := pre_body ++ [Stmt.block bodyLabel proc.body #[]]
-  -- The assert is in the asserts suffix
-  obtain ⟨before_assert, after_assert, h_split⟩ := List.append_of_mem h_assert_in
-  -- The full list = full_prefix ++ (before_assert ++ [assert] ++ after_assert)
-  -- So the prefix before the assert = full_prefix ++ before_assert
-  -- We need: EvalStatements π φ δ₀' σ₀' (full_prefix ++ before_assert) σ_final δ_final
-  -- for some δ₀', σ₀'
-  apply h_correct ⟨label, check.expr, check.md⟩ σ_final δ_final
-  -- Goal: reachable_in_stmts for the postcondition assert at (σ_final, δ_final)
-  -- This requires showing the prefix (pre_body ++ [body_block] ++ before_assert)
-  -- evaluates from some initial state to (σ_final, δ_final).
-  -- pre_body: inits create parameters, assumes filter by preconditions
-  -- body_block: executes proc.body (by h_body)
-  -- before_assert: assert skips (don't change state)
+  -- h_correct : stmt_correct for the verification block
+  -- We need: reachable π φ (block ...) ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩
+  -- This requires constructing a small-step path from the block to a config
+  -- where the postcondition assert is about to be executed with (σ_final, δ_final).
+  --
+  -- The path (using the new seq-based small-step semantics):
+  -- 1. .stmt (block ...) σ₀' δ₀' → .block label stmts σ₀' δ₀'
+  -- 2. .block steps its body via step_block_body
+  -- 3. .stmts (s :: rest) → .seq (.stmt s σ δ) rest via step_stmts_cons
+  -- 4. Each statement in the prefix processes through seq
+  -- 5. Eventually reach .stmts (assert :: rest_asserts) σ_final δ_final
+  -- 6. ProgramState.ofConfig detects the assert → pc = some ⟨label, ...⟩
   sorry
 
 end ProcBodyVerifyCorrect

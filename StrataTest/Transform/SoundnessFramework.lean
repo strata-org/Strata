@@ -10,12 +10,20 @@ import Strata.Languages.Core.StatementSemantics
 /-! # Soundness Framework
 
 General definitions for statement correctness, transformation soundness,
-and procedure contract obedience.
+and procedure contract obedience. Uses small-step semantics throughout.
 -/
 
 namespace Soundness
 
 open Core Imperative
+
+/-! ## Core-specific small-step abbreviations -/
+
+abbrev CoreConfig := Config Expression Command
+abbrev CoreStep (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
+abbrev CoreStepStar (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 /-! ## Assertion Identity -/
 
@@ -25,40 +33,63 @@ structure AssertId where
   expr  : Expression.Expr
   md    : MetaData Expression
 
-/-! ## Reachability and Correctness (Big-Step)
+/-! ## Program State -/
 
-An assert in a statement list is reachable if the prefix before it
-evaluates (big-step) to some state. The assert's condition is then
-checked at that state. -/
+/-- A program state carries the store, evaluator, and an optional assertion id.
+    When execution is about to execute an assert command, `pc` is `some`. -/
+structure ProgramState where
+  store : CoreStore
+  eval  : CoreEval
+  pc    : Option AssertId
 
-/-- An assert is reachable in a statement list if the prefix before it evaluates. -/
-def reachable_in_stmts
+/-- Extract a `ProgramState` from a small-step configuration.
+    Detects asserts at the head of `.stmt`, `.stmts`, `.block`, and `.seq` configs. -/
+def ProgramState.ofConfig : CoreConfig → Option ProgramState
+  | .stmt (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md))) σ δ =>
+    some ⟨σ, δ, some ⟨label, expr, md⟩⟩
+  | .stmts (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md)) :: _) σ δ =>
+    some ⟨σ, δ, some ⟨label, expr, md⟩⟩
+  | .block _ (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md)) :: _) σ δ =>
+    some ⟨σ, δ, some ⟨label, expr, md⟩⟩
+  | .seq inner _ => ProgramState.ofConfig inner
+  | .stmt _ σ δ => some ⟨σ, δ, none⟩
+  | .stmts _ σ δ => some ⟨σ, δ, none⟩
+  | .terminal σ δ => some ⟨σ, δ, none⟩
+  | .block _ _ σ δ => some ⟨σ, δ, none⟩
+  | .exiting _ σ δ => some ⟨σ, δ, none⟩
+
+/-- A program state is reachable from a statement if there exists an initial
+    configuration and a multi-step execution path to a configuration whose
+    program state matches. -/
+def reachable
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (stmts : List Statement) (a : AssertId) (σ : CoreStore) (δ : CoreEval) : Prop :=
-  ∃ (δ₀ : CoreEval) (σ₀ : CoreStore) (before after : List Statement),
-    stmts = before ++ [Statement.assert a.label a.expr a.md] ++ after ∧
-    EvalStatements π φ δ₀ σ₀ before σ δ
+    (stmt : Statement) (ps : ProgramState) : Prop :=
+  ∃ (δ₀ : CoreEval) (σ₀ : CoreStore) (cfg : CoreConfig),
+    CoreStepStar π φ (.stmt stmt σ₀ δ₀) cfg ∧
+    ProgramState.ofConfig cfg = some ps
 
-/-- A statement list is correct if for every reachable assert, the condition holds. -/
-def stmts_correct
+/-! ## Statement Correctness -/
+
+/-- **Validity**: For all reachable states at a given assertion, the predicate holds. -/
+def stmt_valid
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (stmts : List Statement) : Prop :=
-  ∀ (a : AssertId) (σ : CoreStore) (δ : CoreEval),
-    reachable_in_stmts π φ stmts a σ δ →
-    δ σ a.expr = some HasBool.tt
+    (stmt : Statement) (a : AssertId) : Prop :=
+  ∀ (ps : ProgramState),
+    reachable π φ stmt ps →
+    ps.pc = some a →
+    ps.eval ps.store a.expr = some HasBool.tt
 
-/-- A block statement is correct if its body (statement list) is correct. -/
+/-- `stmt_correct` is validity for all assertion ids. -/
 def stmt_correct
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (stmt : Statement) : Prop :=
-  match stmt with
-  | Stmt.block _ stmts _ => stmts_correct π φ stmts
-  | _ => True  -- non-block statements: no assertions to check
+  ∀ (a : AssertId), stmt_valid π φ stmt a
 
 /-! ## Procedure Contract Obedience -/
 
 /-- A procedure obeys its contract: for all initial states where preconditions
-    hold, if the body executes to completion, then all postconditions hold. -/
+    hold, if the body executes to a terminal state, then all postconditions hold.
+    Uses small-step semantics. -/
 def procedure_obeys_contract
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (proc : Procedure) : Prop :=
@@ -66,7 +97,7 @@ def procedure_obeys_contract
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.preconditions.toList →
       δ σ₀ check.expr = some HasBool.tt) →
-    EvalStatements π φ δ σ₀ proc.body σ_final δ_final →
+    CoreStepStar π φ (.stmts proc.body σ₀ δ) (.terminal σ_final δ_final) →
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
       check.attr = Procedure.CheckAttr.Default →
