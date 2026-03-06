@@ -587,13 +587,13 @@ theorem removeLeadingAssertTrue_cases (label : CoreLabel) (md : MetaData Express
     (∃ rest, stmts = Statement.assert label Core.true md :: rest ∧
       removeLeadingAssertTrue label md stmts = rest) ∨
     removeLeadingAssertTrue label md stmts = stmts := by
-  match stmts with
-  | Statement.assert l Core.true m :: rest =>
-    by_cases h : l = label ∧ m = md
-    · obtain ⟨rfl, rfl⟩ := h
-      left; exact ⟨rest, rfl, by simp [removeLeadingAssertTrue]⟩
-    · right; simp [removeLeadingAssertTrue, h]
-  | _ => right; sorry -- removeLeadingAssertTrue is identity for non-matching heads
+  unfold removeLeadingAssertTrue
+  split
+  · rename_i l m rest
+    split
+    · rename_i h; obtain ⟨rfl, rfl⟩ := h; left; exact ⟨rest, rfl, rfl⟩
+    · right; rfl
+  · right; rfl
 
 /-- If (assert :: rest) evaluates and assert is a skip, rest evaluates -/
 theorem eval_skip_assert_rest
