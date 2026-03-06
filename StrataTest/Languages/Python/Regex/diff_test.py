@@ -489,6 +489,19 @@ CORPUS = [
     ("(a$|b)c",  "bc",  "match"),      # match
     ("(a$|b)c",  "bcd", "match"),      # match — trailing d allowed
 
+    # ── Bug-exposing: $ in (false,false) concat — missing atEnd case-split ──────
+    #
+    # a?$b?: both sides may be empty. $ in r1 should only fire when r2="".
+    # Without the atEnd split, $ fires even when b? matches non-empty.
+
+    ("a?$b?", "",   "fullmatch"),  # match — a?="", $ fires, b?=""
+    ("a?$b?", "a",  "fullmatch"),  # match — a?="a", $ fires, b?=""
+    ("a?$b?", "b",  "fullmatch"),  # noMatch — $ at pos 0 but string non-empty; no valid split
+    ("a?$b?", "ab", "fullmatch"),  # noMatch — $ can't fire: b? non-empty after $
+    ("a?$b?", "",   "match"),      # match
+    ("a?$b?", "a",  "match"),      # match
+    ("a?$b?", "b",  "match"),      # noMatch
+
     # ── Error cases ──────────────────────────────────────────────────────────────
 
     ("x{100,2}", "x",   "fullmatch"),  # error — invalid bounds: lo > hi
