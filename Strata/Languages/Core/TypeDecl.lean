@@ -7,7 +7,7 @@
 
 
 import Strata.Languages.Core.Statement
-import Strata.DL.TypeConstructor
+import Strata.DL.Lambda.TypeConstructor
 
 ---------------------------------------------------------------------
 

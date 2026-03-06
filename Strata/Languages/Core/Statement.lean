@@ -13,7 +13,7 @@ import Strata.Languages.Core.Factory
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
-import Strata.DL.TypeConstructor
+import Strata.DL.Lambda.TypeConstructor
 import Strata.Util.Tactics
 
 namespace Core

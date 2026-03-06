@@ -6,7 +6,7 @@
 module
 
 public import Strata.DL.Imperative.Cmd
-public import Strata.DL.TypeConstructor
+public import Strata.DL.Lambda.TypeConstructor
 
 namespace Imperative
 
