@@ -7478,13 +7478,82 @@ private theorem WellScoped_varOpen
   · exact h_sub y.1 (h_ws y h_orig)
 
 /-- `typeBoundVar` extends `knownVars`: all original variables remain. -/
+-- Helper: Map.keys distributes over append
+private theorem Map.keys_append {α β : Type} (m1 m2 : Map α β) :
+    Map.keys (m1 ++ m2) = Map.keys m1 ++ Map.keys m2 := by
+  show Map.keys (List.append m1 m2) = Map.keys m1 ++ Map.keys m2
+  induction m1 with
+  | nil => rfl
+  | cons hd tl ih => obtain ⟨a, _⟩ := hd; exact congrArg (a :: ·) ih
+
+-- addInNewest on cons simplifies to appending to the first scope
+private theorem Maps.addInNewest_cons (scope : Map α β) (rest : Maps α β) (m : Map α β) :
+    Maps.addInNewest (scope :: rest) m = (scope ++ m) :: rest := by
+  simp [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+
+-- Helper: knownVars.go of addInNewest extends with new keys
+private theorem knownVars_go_addInNewest_mono
+    (types : Maps T.Identifier LTy) (xv : T.Identifier) (ty : LTy)
+    (v : T.Identifier) (hv : v ∈ TContext.knownVars.go types) :
+    v ∈ TContext.knownVars.go (types.addInNewest [(xv, ty)]) := by
+  cases types with
+  | nil => simp [TContext.knownVars.go] at hv
+  | cons scope rest =>
+    rw [Maps.addInNewest_cons]
+    simp only [TContext.knownVars.go] at hv ⊢
+    rw [Map.keys_append]
+    simp only [Map.keys, List.mem_append] at hv ⊢
+    rcases hv with h_scope | h_rest
+    · left; left; exact h_scope
+    · right; exact h_rest
+
+private theorem knownVars_go_addInNewest_mem
+    (types : Maps T.Identifier LTy) (xv : T.Identifier) (ty : LTy) :
+    xv ∈ TContext.knownVars.go (types.addInNewest [(xv, ty)]) := by
+  cases types with
+  | nil =>
+    show xv ∈ TContext.knownVars.go [[(xv, ty)]]
+    simp [TContext.knownVars.go, Map.keys]
+  | cons scope rest =>
+    rw [Maps.addInNewest_cons]
+    simp only [TContext.knownVars.go]
+    rw [Map.keys_append]
+    simp only [Map.keys, List.mem_append]
+    left; right; exact List.Mem.head _
+
 private theorem typeBoundVar_knownVars_mono
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
     (v : T.Identifier) (hv : v ∈ TContext.knownVars Env.context) :
     v ∈ TContext.knownVars Env'.context := by
-  sorry
+  -- Decompose typeBoundVar: liftGenEnv → instantiateWithCheck/genTyVar → addInNewestContext
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  have h_g_ctx : Env_g.context = Env.context := liftGenEnv_context Env _ Env_g h_gen
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h
+    generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h
+    match res_ic with
+    | .error _ => simp at h
+    | .ok (_, Env_mid) =>
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, _, h_env'⟩ := h; subst h_env'
+    have h_mid_ctx := (LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ Env_mid h_ic).trans h_g_ctx
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.knownVars] at hv ⊢
+    rw [show Env_mid.genEnv.context.types = Env.genEnv.context.types from congrArg TContext.types h_mid_ctx]
+    exact knownVars_go_addInNewest_mono _ _ _ v hv
+  | none =>
+    simp only [Bind.bind, Except.bind]; intro h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨xtyid, Env_mid⟩ := v_tg
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, _, h_env'⟩ := h; subst h_env'
+    have h_mid_ctx := (TEnv.genTyVar_context Env_g xtyid Env_mid h_tg).trans h_g_ctx
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.knownVars] at hv ⊢
+    rw [show Env_mid.genEnv.context.types = Env.genEnv.context.types from congrArg TContext.types h_mid_ctx]
+    exact knownVars_go_addInNewest_mono _ _ _ v hv
 
 /-- `typeBoundVar` makes `xv` a member of `knownVars`. -/
 private theorem typeBoundVar_xv_in_knownVars
@@ -7492,7 +7561,27 @@ private theorem typeBoundVar_xv_in_knownVars
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
     xv ∈ TContext.knownVars Env'.context := by
-  sorry
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h
+    generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h
+    match res_ic with
+    | .error _ => simp at h
+    | .ok (_, Env_mid) =>
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, _, h_env'⟩ := h; subst h_xv; subst h_env'
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.knownVars]
+    exact knownVars_go_addInNewest_mem _ _ _
+  | none =>
+    simp only [Bind.bind, Except.bind]; intro h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨xtyid, Env_mid⟩ := v_tg
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, _, h_env'⟩ := h; subst h_xv; subst h_env'
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.knownVars]
+    exact knownVars_go_addInNewest_mem _ _ _
 
 /-- WellScoped for varOpen after typeBoundVar: combines `WellScoped_varOpen`
     with `typeBoundVar_knownVars_mono` and `typeBoundVar_xv_in_knownVars`. -/
