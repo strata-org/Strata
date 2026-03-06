@@ -1,4 +1,4 @@
 Successfully parsed.
-McCarthy-91.core.st(10, 2) [F_ensures_0]: ✅ pass
-McCarthy-91.core.st(11, 2) [F_ensures_1]: ✅ pass
+McCarthy-91.core.st(10, 2) [F_ensures_0]: ✔️ always true if reached
+McCarthy-91.core.st(11, 2) [F_ensures_1]: ✔️ always true if reached
 All 2 goals passed.
