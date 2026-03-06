@@ -12,8 +12,8 @@ namespace Core
 open Std (ToFormat Format format)
 open Lambda.LTy.Syntax
 
-/-- info: ∀[_ty0, _ty1, _ty2]. (Foo _ty0 _ty1 _ty2) -/
+/-- info: ∀[a, b, c]. (Foo a b c) -/
 #guard_msgs in
-#eval format $ TypeConstructor.toType { name := "Foo", numargs := 3 }
+#eval format $ TypeConstructor.toType { name := "Foo", params := ["a", "b", "c"] }
 
 end Core

@@ -331,23 +331,23 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typedecl 2
   let name ← translateIdent TyIdentifier op.args[0]!
-  let numargs ←
+  let params ←
     translateOption
       (fun maybearg =>
             do match maybearg with
-            | none => pure 0
+            | none => pure []
             | some arg =>
               let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let numargs ←
-                  match bargs[0]! with
-                  | .seq _ .comma args => pure args.size
-                  | _ => TransM.error
-                          s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
+              match bargs[0]! with
+              | .seq _ .comma args => do
+                args.toList.mapM fun argOp => do
+                  let bindArgs ← checkOpArg argOp q`Core.mkBinding 2
+                  translateIdent String bindArgs[0]!
+              | _ => TransM.error
+                      s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
   let md ← getOpMetaData op
-  -- Only the number of type arguments is important; the exact identifiers are
-  -- irrelevant.
-  let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
+  let decl := Core.Decl.type (.con { name := name, params := params }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 ---------------------------------------------------------------------
@@ -1170,6 +1170,33 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- Add the function to boundVars for subsequent statements.
     let updatedBindings := { bindings with boundVars := bindings.boundVars.push funcBinding }
     return ([.funcDecl decl md], updatedBindings)
+  | q`Core.typeDecl_statement, #[namea, argsa] =>
+    let name ← translateIdent String namea
+    let (typeParams : List String) ← match argsa with
+      | .option _ (.some binds) => do
+        let bargs ← checkOpArg binds q`Core.mkBindings 1
+        match bargs[0]! with
+        | .seq _ .comma args => do
+          args.toList.mapM fun argOp => do
+            let bindArgs ← checkOpArg argOp q`Core.mkBinding 2
+            translateIdent String bindArgs[0]!
+        | _ => TransM.error
+                s!"typeDecl_statement expects a comma separated list: {repr bargs[0]!}"
+      | .option _ .none => pure []
+      | _ => TransM.error s!"Invalid type arguments {repr argsa}"
+    let md ← getOpMetaData op
+
+    -- Create a TypeConstructor and add it to freeVars (same as program-level types)
+    let tc : TypeConstructor := { name := name, params := typeParams }
+    let typeDecl : Core.Decl := .type (.con tc) md
+
+    -- Add type parameters (not the type name itself) to boundTypeVars
+    -- This matches what the DDM parser does with declareType
+    let updatedBindings := { bindings with
+      freeVars := bindings.freeVars.push typeDecl,
+      boundTypeVars := bindings.boundTypeVars ++ typeParams.toArray }
+
+    return ([.typeDecl tc md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :

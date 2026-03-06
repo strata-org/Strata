@@ -187,6 +187,14 @@ theorem Statement.typeCheckAux_go_WF :
         grind
       rw [h_keys] at h_nodup
       exact h_nodup
+    | typeDecl tc md =>
+      simp [Except.bind, tryCatch, tryCatchThe] at tcok
+      split at tcok <;> try contradiction
+      have tcok := Statement.typeCheckAux_elim_singleton tcok
+      rw[List.append_cons]
+      apply ih tcok <;> try assumption
+      simp [WFStatementsProp] at *
+      simp [List.Forall_append, Forall, *]
 
 /--
 A list of Statement `ss` that passes type checking is well formed with respect

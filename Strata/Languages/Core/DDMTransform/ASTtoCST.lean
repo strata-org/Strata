@@ -72,9 +72,6 @@ section ToCST
 /-- Constants for consistent naming -/
 def unknownTypeVar : String := "$__unknown_type"
 
-/-- Generate parameter names efficiently -/
-def mkParamName (i : Nat) : String := "a" ++ toString i
-
 /-- Generate quantifier variable names with a `__` prefix to indicate that they
     are generated names. In the future, we will store existing variable names in an extra field of quantifier expressions. -/
 def mkQuantVarName (level : Nat) : String := "__q" ++ toString level
@@ -225,19 +222,22 @@ def lTyToCoreType {M} [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
     pure result
 
 /-- Convert a type constructor declaration to CST -/
+private def typeConArgsToCST {M} [Inhabited M] (tcons : TypeConstructor)
+    : Ann (Option (Bindings M)) M :=
+  if tcons.params.isEmpty then
+    ⟨default, none⟩
+  else
+    let bindings := tcons.params.map fun paramName =>
+      let paramNameAnn : Ann String M := ⟨default, paramName⟩
+      let paramType := TypeP.type default
+      Binding.mkBinding default paramNameAnn paramType
+    ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+
 def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, tcons.name⟩
   modify (·.addGlobalFreeVars #[name.val])
-  let args : Ann (Option (Bindings M)) M :=
-    if tcons.numargs = 0 then
-      ⟨default, none⟩
-    else
-      let bindings := List.range tcons.numargs |>.map fun i =>
-        let paramName : Ann String M := ⟨default, mkParamName i⟩
-        let paramType := TypeP.type default
-        Binding.mkBinding default paramName paramType
-      ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+  let args := typeConArgsToCST (M := M) tcons
   pure (.command_typedecl default name args)
 
 /-- Convert a datatype declaration to CST -/
@@ -852,6 +852,10 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     | none =>
       pure (.exit_unlabeled_statement default)
   | .funcDecl decl _md => funcDeclToStatement decl
+  | .typeDecl tc _md =>
+    let nameAnn : Ann String M := ⟨default, tc.name⟩
+    let args := typeConArgsToCST (M := M) tc
+    pure (.typeDecl_statement default nameAnn args)
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (CoreDDM.Block M) := do
