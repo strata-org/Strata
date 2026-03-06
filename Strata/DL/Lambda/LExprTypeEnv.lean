@@ -47,6 +47,11 @@ structure TypeAlias where
   type : LMonoTy
   deriving DecidableEq, Repr, Inhabited
 
+/-- A type alias is well-formed when every free variable in its body appears
+    in its list of type arguments. -/
+def TypeAlias.WF (a : TypeAlias) : Prop :=
+  ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs
+
 def TypeAlias.toAliasLTy (a : TypeAlias) : LTy :=
   .forAll a.typeArgs (.tcons a.name (a.typeArgs.map (fun i => .ftvar i)))
 
@@ -71,6 +76,10 @@ structure TContext (IDMeta : Type) where
   aliases :  List TypeAlias := []
 
   deriving DecidableEq, Repr, Inhabited
+
+/-- All type aliases in a context are well-formed. -/
+def TContext.AliasesWF (Γ : TContext IDMeta) : Prop :=
+  ∀ a, a ∈ Γ.aliases → a.WF
 
 instance {IDMeta} [ToFormat IDMeta] : ToFormat (TContext IDMeta) where
   format ctx :=
