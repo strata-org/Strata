@@ -4323,7 +4323,7 @@ private theorem resolveAux_preserves_SubstFreshForGen :
       (et' : LExprT T.mono) (C' : LContext T) (Env0 Env0' : TEnv T.IDMeta)
       (h' : resolveAux C' Env0 e' = .ok (et', Env0')) =>
     (ih sz h_sz e' h_eq' et' C' Env0 Env0' h').1
-  exact ⟨by sorry, -- context preservation: structurally identical to resolveAux_context
+  exact ⟨resolveAux_context e et C Env Env' h,
   fun h_fresh h_ctx => by
   match e with
   | .const m c =>
