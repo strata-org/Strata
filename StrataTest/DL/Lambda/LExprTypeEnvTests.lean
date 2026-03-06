@@ -16,9 +16,9 @@ open LTy.Syntax
 -- are instantiated appropriately and the global substitution is updated.
 -- See `resolveAliases` for a version that also de-aliases `BarAlias`.
 /--
-info: ok: Ans: (Foo $__ty0 (BarAlias $__ty0 $__ty0))
+info: ok: Ans: (Foo p (BarAlias p p))
 Subst:
-[(p, $__ty0) ($__ty1, (BarAlias $__ty0 $__ty0))]
+
 -/
 #guard_msgs in
 #eval do let (ans, Env) ← LMonoTy.aliasDef?
@@ -35,7 +35,7 @@ Subst:
           return (format f!"Ans: {ans}\n\
                             Subst:\n{Env.stateSubstInfo.subst}")
 
-/-- info: ok: (Foo $__ty0 (BarAlias q $__ty0)) -/
+/-- info: ok: (Foo p (BarAlias q p)) -/
 #guard_msgs in
 #eval do let (ans, _Env) ← LMonoTy.aliasDef?
           mty[FooAlias %p (BarAlias %q %p)]
@@ -90,9 +90,9 @@ Subst:
          return format ans
 
 /--
-info: ok: De-aliased type: (Foo $__ty2 (Bar $__ty2 $__ty2))
+info: ok: De-aliased type: (Foo p (Bar p p))
 Subst:
-[(p, $__ty2) ($__ty0, $__ty2) ($__ty1, $__ty2) ($__ty3, (Bar $__ty2 $__ty2))]
+
 -/
 #guard_msgs in
 #eval do let (ty, Env) ← LMonoTy.resolveAliases
