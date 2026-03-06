@@ -2589,6 +2589,69 @@ theorem tconsAlias_fvs_fresh
             (by rw [h_subst_eq]; exact h_vals_fresh) tv h_in_subst
 
 mutual
+/-- Free vars of `openVars vars vals body` are contained in `freeVarsList vals`
+    when `body`'s free vars are all in `vars` and lengths match. -/
+theorem openVars_freeVars_subset
+    (vars : List TyIdentifier) (vals : LMonoTys) (body : LMonoTy)
+    (h_wf : ∀ tv, tv ∈ LMonoTy.freeVars body → tv ∈ vars)
+    (h_len : vars.length = vals.length) :
+    ∀ tv, tv ∈ LMonoTy.freeVars (LMonoTy.openVars vars vals body) →
+      tv ∈ LMonoTys.freeVars vals := by
+  match body with
+  | .ftvar x =>
+    have h_x_in : x ∈ vars := h_wf x (by simp [LMonoTy.freeVars])
+    intro tv htv
+    simp only [LMonoTy.openVars] at htv
+    -- find? for x in zip vars vals gives some val. tv ∈ freeVars(val) ⊆ freeVars(vals)
+    induction vars generalizing vals with
+    | nil => simp at h_x_in
+    | cons v vs ih =>
+      cases vals with
+      | nil => simp at h_len
+      | cons vl vls =>
+        simp only [List.zip, List.zipWith, List.find?, BEq.beq, decide_eq_true_eq] at htv
+        by_cases h_eq : v = x
+        · simp [h_eq] at htv; simp [LMonoTys.freeVars]; left; exact htv
+        · have h_x_vs : x ∈ vs := by
+            cases h_x_in with | head => exact absurd rfl h_eq | tail _ h => exact h
+          simp [LMonoTys.freeVars]; right
+          -- htv is about openVars (v::vs) (vl::vls) (ftvar x) with x ≠ v
+          -- After simp, the find? skips (v,vl) and searches (vs,vls)
+          -- So openVars (v::vs) (vl::vls) (ftvar x) = openVars vs vls (ftvar x)
+          -- and htv's type matches what ih expects
+          simp [h_eq] at htv
+          exact ih vls (by simp at h_len; exact h_len)
+            (fun tv' htv' => by simp [LMonoTy.freeVars] at htv'; rw [htv']; exact h_x_vs)
+            h_x_vs htv
+  | .bitvec _ =>
+    intro tv htv; simp [LMonoTy.openVars, LMonoTy.freeVars] at htv
+  | .tcons nm args =>
+    intro tv htv; simp only [LMonoTy.openVars, LMonoTy.freeVars] at htv
+    exact openVarsList_freeVars_subset vars vals args
+      (fun tv' h => h_wf tv' (by simp [LMonoTy.freeVars]; exact h)) h_len tv htv
+
+/-- List version of `openVars_freeVars_subset`. -/
+theorem openVarsList_freeVars_subset
+    (vars : List TyIdentifier) (vals bodies : LMonoTys)
+    (h_wf : ∀ tv, tv ∈ LMonoTys.freeVars bodies → tv ∈ vars)
+    (h_len : vars.length = vals.length) :
+    ∀ tv, tv ∈ LMonoTys.freeVars (LMonoTys.openVars vars vals bodies) →
+      tv ∈ LMonoTys.freeVars vals := by
+  match bodies with
+  | [] => intro tv htv; simp [LMonoTys.openVars, LMonoTys.freeVars] at htv
+  | hd :: tl =>
+    intro tv htv
+    simp only [LMonoTys.openVars, LMonoTys.freeVars] at htv
+    rw [List.mem_append] at htv
+    cases htv with
+    | inl h =>
+      exact openVars_freeVars_subset vars vals hd
+        (fun tv' h' => h_wf tv' (by simp [LMonoTys.freeVars]; left; exact h')) h_len tv h
+    | inr h =>
+      exact openVarsList_freeVars_subset vars vals tl
+        (fun tv' h' => h_wf tv' (by simp [LMonoTys.freeVars]; right; exact h')) h_len tv h
+end
+mutual
 /-- `LMonoTy.resolveAliases` preserves key freshness. -/
 theorem LMonoTy.resolveAliases_allKeysFresh
     (mty : LMonoTy) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -2784,8 +2847,17 @@ theorem LMonoTy.resolveAliases_fvs_fresh
         simp at h; obtain ⟨h1, _⟩ := h; subst h1
         intro tv htv
         -- fvs of (expand alias args') = fvs of (openVars typeArgs args' alias.type) ⊆ fvs of args'
-        -- (since alias.WF: all fvs of alias.type are in typeArgs, and openVars maps them to args')
-        sorry
+        -- since alias.WF: all fvs of alias.type are in typeArgs, and openVars maps
+        -- each typeArg to the corresponding element of args'.
+        -- So fvs of the result come from args' elements only.
+        have h_alias_mem : alias ∈ Env1.context.aliases :=
+          List.mem_of_find?_eq_some h_find
+        have h_alias_wf := (h_alias_wf alias (by rw [← h_ctx_eq]; exact h_alias_mem))
+        have h_pred := List.find?_some h_find
+        simp [BEq.beq, decide_eq_true_eq] at h_pred
+        simp only [TypeAlias.expand] at htv
+        exact h_args'_fresh tv (openVars_freeVars_subset alias.typeArgs args' alias.type
+          h_alias_wf.fvs_closed h_pred.2 tv htv)
 
 /-- `LMonoTys.resolveAliases` preserves freshness of type free vars. -/
 theorem LMonoTys.resolveAliases_fvs_fresh
@@ -5893,6 +5965,7 @@ private theorem instantiateEnv_decompose
     · rename_i v h_gv; obtain ⟨ftvs, gE⟩ := v; simp at h_inner h_gv
       obtain ⟨h_res, h_ge⟩ := h_inner; subst h_ge
       exact ⟨ftvs, gE, h_gv, h_res.symm, rfl⟩
+
 
 /-- Prepending a binding `(v, vl)` to `vars`/`vals` doesn't affect `openVarsList` on
     `ids.map ftvar` when `v ∉ ids`. -/
