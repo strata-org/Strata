@@ -1044,6 +1044,7 @@ private def scopeSepFormat (name : QualifiedIdent)
   | q`Init.CommaSepBy       => some (.comma, Syntax.getSepArgs)
   | q`Init.SpaceSepBy       => some (.space, Syntax.getArgs)
   | q`Init.SpacePrefixSepBy => some (.spacePrefix, Syntax.getArgs)
+  | q`Init.NewlineSepBy     => some (.newline, Syntax.getArgs)
   | _ => none
 
 /-- Look up the syntax level for a given arg level

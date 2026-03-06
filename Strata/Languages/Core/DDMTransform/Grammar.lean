@@ -384,7 +384,7 @@ op datatype_decl (name : Ident,
 // ending with a semicolon. Uses preRegisterTypes so all type names are visible
 // to all constructors (handles both self-recursive and mutually recursive types).
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (datatypes : SpaceSepBy DatatypeDecl) : Command =>
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
 
 #end

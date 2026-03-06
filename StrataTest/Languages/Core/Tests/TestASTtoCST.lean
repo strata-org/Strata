@@ -321,7 +321,8 @@ spec {
 info: datatype Forest (a : Type) {(
   (FNil())),
   (FCons(head : (RoseTree a), tail : (Forest a)))
-} datatype RoseTree (a : Type) {
+}
+datatype RoseTree (a : Type) {
   (Node(val : a, children : (Forest a)))
 };
 procedure TestPolyRoseTreeHavoc () returns ()

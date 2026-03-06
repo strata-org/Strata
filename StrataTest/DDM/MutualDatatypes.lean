@@ -57,7 +57,7 @@ op datatype_decl (name : Ident,
   "datatype " name typeParams " { " constructors " }";
 
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (datatypes : SpacePrefixSepBy DatatypeDecl) : Command =>
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
 
 #end
@@ -76,8 +76,9 @@ program TestMutual;
 
 /--
 info: program TestMutual;
- datatype Tree { Node(val:int, children:Forest) } datatype Forest { FNil(), FCons(head:Tree, tail:Forest) };
- datatype Wrapper { MkWrapper(t:Tree, f:Forest) };
+datatype Tree { Node(val:int, children:Forest) }
+datatype Forest { FNil(), FCons(head:Tree, tail:Forest) };
+datatype Wrapper { MkWrapper(t:Tree, f:Forest) };
 -/
 #guard_msgs in
 #eval IO.println mutualVisibleAfterPgm
@@ -94,7 +95,7 @@ program TestMutual;
 
 /--
 info: program TestMutual;
- datatype List { Nil(), Cons(head:int, tail:List) };
+datatype List { Nil(), Cons(head:int, tail:List) };
 -/
 #guard_msgs in
 #eval IO.println singleRecursivePgm
@@ -113,7 +114,9 @@ program TestMutual;
 
 /--
 info: program TestMutual;
- datatype A { MkA(toB:B) } datatype B { MkB(toC:C) } datatype C { MkC(toA:A), CBase() };
+datatype A { MkA(toB:B) }
+datatype B { MkB(toC:C) }
+datatype C { MkC(toA:A), CBase() };
 -/
 #guard_msgs in
 #eval IO.println mutualThreeWayPgm
@@ -133,8 +136,9 @@ program TestMutual;
 
 /--
 info: program TestMutual;
- datatype Expr { Lit(val:int), Add(lhs:Expr, rhs:Expr), Call(tag:int, args:ExprList) } datatype ExprList { ENil(), ECons(head:Expr, tail:ExprList) };
- datatype Program { MkProgram(body:Expr) };
+datatype Expr { Lit(val:int), Add(lhs:Expr, rhs:Expr), Call(tag:int, args:ExprList) }
+datatype ExprList { ENil(), ECons(head:Expr, tail:ExprList) };
+datatype Program { MkProgram(body:Expr) };
 -/
 #guard_msgs in
 #eval IO.println mutualTemplatesPgm
