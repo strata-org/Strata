@@ -42,6 +42,10 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
   /-- A block context: execute the inner statement list, then consume matching exits.
       The string is the block label. -/
   | block : String → List (Stmt P CmdT) → SemanticStore P → SemanticEval P → Config P CmdT
+  /-- A sequence context: execute the first statement (as a sub-config), then
+      continue with the remaining statements. The sub-config is represented
+      by the inner Config. -/
+  | seq : Config P CmdT → List (Stmt P CmdT) → Config P CmdT
 
 /--
 Small-step operational semantics for statements. The relation `StepStmt`
@@ -131,21 +135,33 @@ inductive StepStmt
       (.stmts [] σ δ)
       (.terminal σ δ)
 
-  /-- To evaluate a sequence of statements, evaluate the first statement and
-  then evaluate the remaining statements in the resulting state. -/
-  | step_stmt_cons :
-    StepStmt P EvalCmd extendEval (.stmt s σ δ) (.terminal σ' δ') →
-    ----
+  /-- To evaluate a non-empty sequence, enter a seq context that processes
+  the first statement while remembering the remaining statements. -/
+  | step_stmts_cons :
     StepStmt P EvalCmd extendEval
       (.stmts (s :: ss) σ δ)
+      (.seq (.stmt s σ δ) ss)
+
+  /-- A seq context steps its inner config forward. -/
+  | step_seq_inner :
+    StepStmt P EvalCmd extendEval inner inner' →
+    ----
+    StepStmt P EvalCmd extendEval
+      (.seq inner ss)
+      (.seq inner' ss)
+
+  /-- When the inner config of a seq reaches terminal, continue with the
+  remaining statements. -/
+  | step_seq_done :
+    StepStmt P EvalCmd extendEval
+      (.seq (.terminal σ' δ') ss)
       (.stmts ss σ' δ')
 
-  /-- If the first statement in a sequence exits, skip the remaining statements. -/
-  | step_stmt_cons_exit :
-    StepStmt P EvalCmd extendEval (.stmt s σ δ) (.exiting label σ' δ') →
-    ----
+  /-- When the inner config of a seq exits, propagate the exit
+  (skip remaining statements). -/
+  | step_seq_exit :
     StepStmt P EvalCmd extendEval
-      (.stmts (s :: ss) σ δ)
+      (.seq (.exiting label σ' δ') ss)
       (.exiting label σ' δ')
 
   /-- A block context steps its body one step forward. -/

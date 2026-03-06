@@ -18,7 +18,7 @@ public section
 theorem eval_assert_store_cst
   [HasFvar P] [HasBool P] [HasNot P]:
   EvalCmd P δ σ (.assert l e md) σ' → σ = σ' := by
-  intros Heval; cases Heval with | eval_assert _ => rfl
+  intros Heval; cases Heval with | eval_assert => rfl
 
 theorem eval_stmt_assert_store_cst
   [DecidableEq P.Ident]
@@ -60,7 +60,7 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq
     apply EvalStmt.cmd_sem _ (by assumption)
     rename_i Heval
     cases Heval
-    exact EvalCmd.eval_assert (by assumption) Hwf
+    exact EvalCmd.eval_assert
   )
 
 theorem eval_stmts_assert_elim
