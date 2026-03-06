@@ -6475,6 +6475,24 @@ private theorem transfer_ctxFreeVarsGenerated
   rw [h_ctx] at hv
   exact h_gen v hv
 
+/-- Free type variables in the output type of `resolveAux` don't include
+    "future" generated names — i.e., names with counter values ≥ the output
+    environment's generator counter. Since each `genTyVar` during resolution
+    increments the counter, the output type only contains type vars with
+    counter values strictly below the output counter.
+
+    This is used to show that a freshly generated type variable (produced
+    AFTER resolveAux) doesn't appear in the output type. -/
+private theorem resolveAux_output_type_no_future_vars :
+    ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+      (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      TEnvWF Env →
+      Env.context.types ≠ [] →
+      ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+        ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  sorry
+
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
@@ -6749,10 +6767,18 @@ theorem resolveAux_HasType :
                 Env3.stateSubstInfo v4 h_unify
               -- Key: fresh_name ∉ freeVars e1t.toLMonoTy and e2t.toLMonoTy
               -- (These follow from SubstFreshForGen + genTyVar freshness but are not yet proven)
+              have h_gen_name := genTyVar_name_eq Env2 fresh_name Env3 h_genTyVar
               have h_e1t_no_fresh : fresh_name ∉ LMonoTy.freeVars e1t.toLMonoTy := by
-                sorry -- needs resolveAux output type fvs freshness
+                intro h_mem
+                have h_mono_e2 := resolveAux_genState_mono e2 e2t C Env1 Env2 h_res2
+                have h_ne_fresh := resolveAux_output_type_no_future_vars e1 e1t C Env Env1 h_res1 h_envwf h_ne
+                    fresh_name h_mem Env2.genEnv.genState.tyGen h_mono_e2
+                exact h_ne_fresh h_gen_name
               have h_e2t_no_fresh : fresh_name ∉ LMonoTy.freeVars e2t.toLMonoTy := by
-                sorry -- needs resolveAux output type fvs freshness
+                intro h_mem
+                have h_ne_fresh := resolveAux_output_type_no_future_vars e2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1
+                    fresh_name h_mem Env2.genEnv.genState.tyGen (Nat.le_refl _)
+                exact h_ne_fresh h_gen_name
               -- subst v4 x = subst (remove v4 fresh) x when fresh ∉ freeVars x
               have h_subst_e1t : LMonoTy.subst S (LMonoTy.subst v4.subst e1t.toLMonoTy) =
                   LMonoTy.subst S e1t.toLMonoTy := by
