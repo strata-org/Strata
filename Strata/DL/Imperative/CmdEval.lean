@@ -17,7 +17,7 @@ open Std (ToFormat Format format)
 /--
 Partial evaluator for an Imperative Command.
 -/
-def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
+def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
   match EC.lookupError σ with
   | some _ => (c, σ)
   | none =>
@@ -64,12 +64,9 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let e := EC.eval σ e
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
-      let propType := match md.find? (fun elem =>
-          match elem.fld, elem.value with
-          | .label "propertyType", .msg "divisionByZero" => true
-          | _, _ => false) with
-        | some _ => PropertyType.divisionByZero
-        | none => PropertyType.assert
+      let propType := match md.getPropertyType with
+        | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
+        | none => .assert
       match EC.denoteBool e with
       | some true => -- Proved via evaluation.
         (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
@@ -104,7 +101,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
 /--
 Partial evaluator for Imperative's Commands.
 -/
-def Cmds.eval [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
+def Cmds.eval [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
   match cs with
   | [] => ([], σ)
   | c :: crest =>

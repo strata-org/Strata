@@ -342,7 +342,7 @@ private def createUnreachableAssertObligations
   asserts.toArray.map
     (fun (label, md) =>
       let propType := match md.getPropertyType with
-        | some "divisionByZero" => .divisionByZero
+        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero else .assert
         | _ => .assert
       (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
 

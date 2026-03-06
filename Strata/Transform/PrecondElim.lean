@@ -48,7 +48,7 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 /-- Classify a function name into a property type for SARIF reporting. -/
 private def classifyPrecondition (funcName : String) : Option String :=
   if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
-    some "divisionByZero"
+    some Imperative.MetaData.divisionByZero
   else
     none
 
