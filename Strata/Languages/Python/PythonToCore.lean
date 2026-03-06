@@ -908,7 +908,7 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude
   let class_defs := class_defs_and_infos.fst
   let class_infos := class_defs_and_infos.snd
 
-  let class_ty_decls := class_infos.class_infos.map (λ info => .type (.con {name := info.name, numargs := 0}))
+  let class_ty_decls := class_infos.class_infos.map (λ info => .type (.con {name := info.name, params := []}))
 
   let func_defs_and_infos := helper PyFuncDefToCore (fun acc info => {acc with func_infos := info :: acc.func_infos}) class_infos func_defs.toList
   let func_defs := func_defs_and_infos.fst

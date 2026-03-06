@@ -179,6 +179,16 @@ where
           catch e =>
             .error (errorWithSourceLoc e md)
 
+        | .typeDecl tc md => do try
+          -- Add the type to the context. Shadowing is not allowed: if a
+          -- type with the same name was already declared (at the program
+          -- level or in an enclosing scope), this will return an error.
+          let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs }
+            (md.toDiagnosticF f!"Type '{tc.name}' is already declared")
+          .ok (.typeDecl tc md, Env, C)
+          catch e =>
+            .error (errorWithSourceLoc e md)
+
       go C Env srest (s' :: acc) labels
   goBlock (C : LContext CoreLParams) (Env : TEnv Unit) (bss : Imperative.Block Core.Expression Core.Command) (acc : List Statement)
     (labels : List String) :
@@ -238,6 +248,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
       body := decl.body.map (·.applySubst S),
       axioms := decl.axioms.map (·.applySubst S) }
     .funcDecl decl' md
+  | .typeDecl _ _ => s  -- Type declarations don't contain type variables to substitute
   where
     go S ss acc : List Statement :=
     match ss with

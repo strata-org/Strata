@@ -15,8 +15,8 @@ open Std (ToFormat Format format)
 open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 def bad_prog : Program := { decls := [
-      -- type Foo _ _;
-      .type (.con { name := "Foo", numargs := 2}),
+      -- type Foo a b;
+      .type (.con { name := "Foo", params := ["a", "b"]}),
       -- type FooAlias a = Foo bool bool;
       .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo bool bool]}),
       -- const fooAliasVal : FooAlias bool;
@@ -46,8 +46,8 @@ First mismatch: bool with int.
          return (format ans)
 
 def good_prog : Program := { decls := [
-      -- type Foo _ _;
-      .type (.con { name := "Foo", numargs := 2}),
+      -- type Foo a b;
+      .type (.con { name := "Foo", params := ["a", "b"]}),
       -- type FooAlias a = Foo int bool;
       .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo int bool]}),
       -- const fooAliasVal : ∀α. FooAlias α;
@@ -79,7 +79,7 @@ Obligation:
 fooAliasVal == fooVal
 
 ---
-info: ok: [(type Foo (a0 : Type, a1 : Type);
+info: ok: [(type Foo (a : Type, b : Type);
   type FooAlias (a : Type) := Foo int bool;
   function fooAliasVal () : Foo int bool;
   function fooVal () : Foo int bool;

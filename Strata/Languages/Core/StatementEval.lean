@@ -241,7 +241,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .funcDecl _ _ | .exit _ _ => false  -- Function declarations and exits don't contain commands
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => false  -- Function/type declarations and exits don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -280,7 +280,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .funcDecl _ _ | .exit _ _ => []  -- Function declarations and exits don't contain cover commands
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -304,7 +304,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .funcDecl _ _ | .exit _ _ => []  -- Function declarations and exits don't contain assert commands
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -514,6 +514,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | .ok env' => [{ Ewn with env := env' }]
             | .error e =>
               [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
+
+          | .typeDecl tc _ =>
+            -- Type declarations have no runtime effect (only used during type checking)
+            [Ewn]
 
           | .exit l md => [{ Ewn with stk := Ewn.stk.appendToTop [.exit l md], exitLabel := .some l}]
 

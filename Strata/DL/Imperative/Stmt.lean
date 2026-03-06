@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Lambda.TypeConstructor
 
 namespace Imperative
 
@@ -44,6 +45,8 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | exit     (label : Option String) (md : MetaData P)
   /-- A function declaration within a statement block. -/
   | funcDecl (decl : PureFunc P) (md : MetaData P)
+  /-- A type declaration within a statement block. -/
+  | typeDecl (tc : TypeConstructor) (md : MetaData P)
   deriving Inhabited
 
 /-- A block is simply an abbreviation for a list of commands. -/
@@ -77,20 +80,23 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       motive (Stmt.exit label md))
     (funcDecl_case : ∀ (decl : PureFunc P) (md : MetaData P),
       motive (Stmt.funcDecl decl md))
+    (typeDecl_case : ∀ (tc : TypeConstructor) (md : MetaData P),
+      motive (Stmt.typeDecl tc md))
     (s : Stmt P Cmd) : motive s :=
   match s with
   | Stmt.cmd c => cmd_case c
   | Stmt.block label b md =>
-    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
+    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
   | Stmt.ite cond thenb elseb md =>
     ite_case cond thenb elseb md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
   | Stmt.loop guard measure invariant body md =>
     loop_case guard measure invariant body md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
   | Stmt.exit label md => exit_case label md
   | Stmt.funcDecl decl md => funcDecl_case decl md
+  | Stmt.typeDecl tc md => typeDecl_case tc md
   termination_by s
 
 ---------------------------------------------------------------------
@@ -107,6 +113,7 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   | .loop g _ _ bss _ => 3 + sizeOf g + Block.sizeOf bss
   | .exit _ _ => 1
   | .funcDecl _ _ => 1
+  | .typeDecl _ _ => 1
 
 @[simp]
 def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
@@ -136,6 +143,7 @@ def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
   | .loop _ _ _ bss _ => Block.noFuncDecl bss
   | .exit _ _ => true
   | .funcDecl _ _ => false
+  | .typeDecl _ _ => true
   termination_by (Stmt.sizeOf s)
 
 /-- Returns true if the block contains no function declarations. -/
@@ -164,6 +172,7 @@ def Stmt.stripMetaData (s : Stmt P C) : Stmt P C :=
   | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss) .empty
   | .exit label _ => .exit label .empty
   | .funcDecl decl _ => .funcDecl decl .empty
+  | .typeDecl tc _ => .typeDecl tc .empty
   termination_by (Stmt.sizeOf s)
 
 /-- Remove all metadata from a block. -/
@@ -195,6 +204,7 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
       let bodyVars := HasVarsPure.getVars body
       let formals := decl.inputs.map (·.1)
       bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
+  | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
 def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
   match ss with
@@ -219,6 +229,7 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .ite _ tbss ebss _ => Block.definedVars tbss ++ Block.definedVars ebss
   | .loop _ _ _ body _ => Block.definedVars body
   | .funcDecl decl _ => [decl.name]  -- Function declaration defines the function name
+  | .typeDecl _ _ => []  -- Type declarations don't define variables
   | _ => []
 
 def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
@@ -237,6 +248,7 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .ite _ tbss ebss _ => Block.modifiedVars tbss ++ Block.modifiedVars ebss
   | .loop _ _ _ bss _ => Block.modifiedVars bss
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
+  | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
 def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
@@ -300,6 +312,7 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
     | some l => f!"{md}exit {l}"
     | none => f!"{md}exit"
   | .funcDecl _ md => f!"{md}funcDecl <function>"
+  | .typeDecl tc md => f!"{md}type {tc.name} (arity {tc.numargs})"
 
 def formatBlock (P : PureExpr) (ss : List (Stmt P C))
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
@@ -327,4 +340,3 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
 
 end -- public section
 end Imperative
-
