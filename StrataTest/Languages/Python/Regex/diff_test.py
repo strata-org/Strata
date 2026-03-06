@@ -333,11 +333,19 @@ CORPUS = [
 
     # a?(^b) in search: core_ft/core_ff have atStart=false; ^ must not fire mid-string
     ("a?(^b)", "b",   "search"),     # match — pos 0: a?="", ^ fires, b matches
-    ("a?(^b)", "xb",  "search"),     # noMatch — BUG: Strata says match (^ fires mid-string)
-    ("a?(^b)", "ab",  "search"),     # noMatch — BUG: Strata says match
-    ("a?(^b)", "xab", "search"),     # noMatch — BUG: Strata says match
+    ("a?(^b)", "xb",  "search"),     # noMatch
+    ("a?(^b)", "ab",  "search"),     # noMatch
+    ("a?(^b)", "xab", "search"),     # noMatch
     ("a?(^b)", "ba",  "search"),     # match — pos 0: a?="", ^ fires, b matches
     ("a?(^b)", "bx",  "search"),     # match — pos 0: a?="", ^ fires, b matches
+
+    # ^?(^b) in search: r1=^? has no non-anchor content → split doesn't fire → simple path.
+    # The fix (passing atStart instead of true to r2) matters here: with atStart=false in
+    # core_ft/core_ff, ^ in r2 must be blocked even though the split condition was not met.
+    ("^?(^b)", "b",   "search"),     # match — pos 0: ^?="", ^ fires, b matches
+    ("^?(^b)", "xb",  "search"),     # noMatch — ^ can only fire at pos 0; b≠x
+    ("^?(^b)", "ab",  "search"),     # noMatch
+
     # ── Anchors: concat(false, false) — both sides may be empty ─────────────────
     #
     # When both sides may be empty and r2 contains ^, Strata splits into:
@@ -489,10 +497,11 @@ CORPUS = [
     ("(a$|b)c",  "bc",  "match"),      # match
     ("(a$|b)c",  "bcd", "match"),      # match — trailing d allowed
 
-    # ── Bug-exposing: $ in (false,false) concat — missing atEnd case-split ──────
+    # ── $ in (false,false) concat — atEnd case-split ────────────────────────────
     #
     # a?$b?: both sides may be empty. $ in r1 should only fire when r2="".
     # Without the atEnd split, $ fires even when b? matches non-empty.
+    # The split fires at the inner concat($, b?) level.
 
     ("a?$b?", "",   "fullmatch"),  # match — a?="", $ fires, b?=""
     ("a?$b?", "a",  "fullmatch"),  # match — a?="a", $ fires, b?=""
@@ -501,6 +510,19 @@ CORPUS = [
     ("a?$b?", "",   "match"),      # match
     ("a?$b?", "a",  "match"),      # match
     ("a?$b?", "b",  "match"),      # noMatch
+    ("a?$b?", "ab", "match"),      # noMatch — $ can't fire with b? non-empty
+    ("a?$b?", "a",  "search"),     # match — pos 1: a?="", $ fires at end, b?=""
+    ("a?$b?", "b",  "search"),     # match — pos 1: a?="", $ fires at end, b?=""
+    ("a?$b?", "xb", "search"),     # match — pos 2: $ fires at end of string
+    ("a?$b?", "ab", "search"),     # match — pos 2: $ fires at end of string
+
+    # (a?$)b?: semantically identical to a?$b? but the $-split fires at the outer
+    # concat level (r1=group(a?$) contains $, r2=b? has non-anchor content), exercising
+    # the false,false $-split path at a different point in the tree.
+    ("(a?$)b?", "",   "fullmatch"),  # match — group matches "", $ fires, b?=""
+    ("(a?$)b?", "a",  "fullmatch"),  # match — group matches "a", $ fires, b?=""
+    ("(a?$)b?", "ab", "fullmatch"),  # noMatch — $ blocked by non-empty b?
+    ("(a?$)b?", "b",  "fullmatch"),  # noMatch — group can't match at end with "b" remaining
 
     # ── Error cases ──────────────────────────────────────────────────────────────
 
