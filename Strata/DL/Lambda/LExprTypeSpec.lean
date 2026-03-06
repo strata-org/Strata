@@ -4020,7 +4020,15 @@ private theorem resolveAux_preserves_SubstFreshForGen :
       (h_cf : ContextFreshForGen Env0.context Env0.genEnv.genState) =>
     (ih sz h_sz e' h_eq' et' C' Env0 Env0' h').1 ▸
       ContextFreshForGen.mono _ _ _ h_cf (resolveAux_genState_mono e' et' C' Env0 Env0' h')
-  exact ⟨by sorry, fun h_fresh h_ctx => by
+  -- Context preservation (first conjunct): same proof as resolveAux_context.
+  -- resolveAux_context is defined later; use ih for recursive sub-expressions.
+  -- Helper: extract context preservation from ih
+  have ih_context := fun (sz : Nat) (h_sz : sz < n) (e' : LExpr T.mono) (h_eq' : e'.sizeOf = sz)
+      (et' : LExprT T.mono) (C' : LContext T) (Env0 Env0' : TEnv T.IDMeta)
+      (h' : resolveAux C' Env0 e' = .ok (et', Env0')) =>
+    (ih sz h_sz e' h_eq' et' C' Env0 Env0' h').1
+  exact ⟨by sorry, -- context preservation: structurally identical to resolveAux_context
+  fun h_fresh h_ctx => by
   match e with
   | .const m c =>
     simp [resolveAux, inferConst] at h
@@ -4101,7 +4109,12 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     exact h_fresh4 v (by
       cases hv with
       | inl h_key => exact Or.inl (Maps.mem_keys_of_mem_keys_remove _ _ _ h_key)
-      | inr h_fv => exact Or.inr (sorry)) n hn -- freeVars_remove ⊆ freeVars
+      | inr h_fv =>
+        -- freeVars(remove S k) ⊆ freeVars S: values of remove are a subset of values of S
+        exact Or.inr (by
+          simp only [Subst.freeVars, List.mem_flatMap] at h_fv ⊢
+          obtain ⟨ty, h_ty_mem, h_v_fv⟩ := h_fv
+          exact ⟨ty, Maps.mem_values_of_mem_keys_remove _ _ _ h_ty_mem, h_v_fv⟩)) n hn
   | .abs m bty body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
