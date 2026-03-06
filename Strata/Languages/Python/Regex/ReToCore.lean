@@ -255,7 +255,7 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
            mkApp () (.op () reConcatFunc.name none) [r1b, r2b_mid]]
       else
         let r1b := toCore r1 atStart false
-        let r2b := toCore r2 true atEnd
+        let r2b := toCore r2 atStart atEnd
         mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | false, false =>
       -- Both sides may be empty.
