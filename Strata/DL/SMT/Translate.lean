@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Lean
+import Lean.Expr
+import Lean.ToExpr
 import Strata.Languages.Core.SMTEncoder
 
 open Lean
