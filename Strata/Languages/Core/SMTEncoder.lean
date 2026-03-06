@@ -602,7 +602,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
             .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
         -- For recursive functions, generate per-constructor axioms
         let recAxioms ← if func.isRecursive && isNew then
-            Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
+            Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval Strata.SourceRange.none
           else .ok []
         let allAxioms := func.axioms ++ recAxioms
         if isNew then
