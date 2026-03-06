@@ -97,12 +97,40 @@ abbrev CoreStepStar (π : String → Option Procedure) (φ : CoreEval → PureFu
 
 /-! ## Program State -/
 
-/-- A program state tracks which assertion label is being targeted and
-    carries a variable valuation. -/
-structure PS where
-  pc : CoreLabel
-  valuation : CoreStore
-  evaluator : CoreEval
+/-- An assertion identifier: label + expression + metadata -/
+structure AssertId where
+  label : CoreLabel
+  expr  : Expression.Expr
+  md    : MetaData Expression
+
+/-- A program state carries the store, evaluator, and an optional assertion id.
+    When execution reaches an assert command, `pc` is `some` with that assert's id.
+    Otherwise `pc` is `none`. -/
+structure ProgramState where
+  store : CoreStore
+  eval  : CoreEval
+  pc    : Option AssertId
+
+/-- Extract a `ProgramState` from a small-step configuration.
+    When the configuration is at an assert command, `pc` is set. -/
+def ProgramState.ofConfig : CoreConfig → Option ProgramState
+  | .stmt (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md))) σ δ =>
+    some ⟨σ, δ, some ⟨label, expr, md⟩⟩
+  | .stmt _ σ δ => some ⟨σ, δ, none⟩
+  | .stmts _ σ δ => some ⟨σ, δ, none⟩
+  | .terminal σ δ => some ⟨σ, δ, none⟩
+  | .block _ _ σ δ => some ⟨σ, δ, none⟩
+  | .exiting _ σ δ => some ⟨σ, δ, none⟩
+
+/-- A program state is reachable from a statement if there exists an initial
+    configuration and a multi-step execution path to a configuration whose
+    program state matches. -/
+def reachable
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (stmt : Statement) (ps : ProgramState) : Prop :=
+  ∃ (δ₀ : CoreEval) (σ₀ : CoreStore) (cfg : CoreConfig),
+    CoreStepStar π φ (.stmt stmt σ₀ δ₀) cfg ∧
+    ProgramState.ofConfig cfg = some ps
 
 /-! ## The Four Semantic Judgments
 
@@ -116,183 +144,98 @@ These form a square of quantifier duality over reachable program states:
 Dualities:
 - `stmt_valid ↔ ¬stmt_falsifiable`
 - `stmt_satisfiable ↔ ¬stmt_unsatisfiable`
-- `stmt_valid → stmt_satisfiable` (assuming reachability)
-- `stmt_unsatisfiable → stmt_falsifiable` (same direction, for failure)
 -/
 
 /-- **Validity**: For all reachable states at a given assertion, the predicate holds.
     "The assertion is always true." -/
 def stmt_valid
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (stmts : List Statement)
-    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
-  Statement.assert label expr md ∈ stmts →
-  ∀ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
-    EvalStatements π φ δ σ stmts σ' δ' →
-    ∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr = some HasBool.tt
+    (stmt : Statement) (a : AssertId) : Prop :=
+  ∀ (ps : ProgramState),
+    reachable π φ stmt ps →
+    ps.pc = some a →
+    ps.eval ps.store a.expr = some HasBool.tt
 
 /-- **Falsifiability**: There exists a reachable state at a given assertion where
-    the predicate fails. "There is a counterexample." This is `¬stmt_valid`. -/
+    the predicate fails. "There is a counterexample." -/
 def stmt_falsifiable
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (stmts : List Statement)
-    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
-  Statement.assert label expr md ∈ stmts ∧
-  ∃ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
-    EvalStatements π φ δ σ stmts σ' δ' ∧
-    ∀ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr ≠ some HasBool.tt
+    (stmt : Statement) (a : AssertId) : Prop :=
+  ∃ (ps : ProgramState),
+    reachable π φ stmt ps ∧
+    ps.pc = some a ∧
+    ps.eval ps.store a.expr ≠ some HasBool.tt
 
 /-- **Satisfiability**: There exists a reachable state at a given assertion where
     the predicate holds. "The assertion can be true." -/
 def stmt_satisfiable
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (stmts : List Statement)
-    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
-  Statement.assert label expr md ∈ stmts ∧
-  ∃ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
-    EvalStatements π φ δ σ stmts σ' δ' ∧
-    ∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr = some HasBool.tt
+    (stmt : Statement) (a : AssertId) : Prop :=
+  ∃ (ps : ProgramState),
+    reachable π φ stmt ps ∧
+    ps.pc = some a ∧
+    ps.eval ps.store a.expr = some HasBool.tt
 
 /-- **Unsatisfiability**: For all reachable states at a given assertion, the
-    predicate fails. "The assertion is always false." This is `¬stmt_satisfiable`. -/
+    predicate fails. "The assertion is always false." -/
 def stmt_unsatisfiable
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (stmts : List Statement)
-    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
-  Statement.assert label expr md ∈ stmts →
-  ∀ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
-    EvalStatements π φ δ σ stmts σ' δ' →
-    ∀ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr ≠ some HasBool.tt
+    (stmt : Statement) (a : AssertId) : Prop :=
+  ∀ (ps : ProgramState),
+    reachable π φ stmt ps →
+    ps.pc = some a →
+    ps.eval ps.store a.expr ≠ some HasBool.tt
 
-/-- `stmt_correct` is validity for all assertions in the list. -/
+/-- `stmt_correct` is validity for all assertion ids. -/
 def stmt_correct
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (stmts : List Statement) : Prop :=
-  ∀ (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression),
-    stmt_valid π φ stmts label expr md
+    (stmt : Statement) : Prop :=
+  ∀ (a : AssertId), stmt_valid π φ stmt a
 
-/-! ## The Four Transformation Properties
+/-! ## Transformation Structure and Properties -/
 
-Each transformation property lifts the corresponding statement judgment:
-if the property holds for the transformed program, it holds for the original.
--/
+/-- A program transformation bundles the effective transformation with
+    forward and inverse maps on assertion identifiers.
+
+    - `T`: the statement-level transformation
+    - `F`: maps source assertion ids to optional target assertion ids
+      (`none` means the assertion was proved always true and removed)
+    - `F_inv`: maps target assertion ids back to source assertion ids
+      (used for lifting counterexamples) -/
+structure Transformation where
+  T     : Statement → Statement
+  F     : AssertId → Option AssertId
+  F_inv : AssertId → AssertId
 
 /-- If the transformed program is valid, the original is valid. -/
-def transform_preserves_validity
+def Transformation.preserves_validity
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (T : List Statement → List Statement) : Prop :=
-  ∀ (stmts : List Statement),
-    stmt_correct π φ (T stmts) → stmt_correct π φ stmts
+    (t : Transformation) : Prop :=
+  ∀ (stmt : Statement),
+    stmt_correct π φ (t.T stmt) → stmt_correct π φ stmt
 
 /-- If the transformed program has a counterexample, the original does too. -/
-def transform_preserves_counterexample
+def Transformation.preserves_counterexample
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (T : List Statement → List Statement)
-    (F_inv : CoreLabel → CoreLabel) : Prop :=
-  ∀ (stmts : List Statement) (label : CoreLabel)
-    (expr : Expression.Expr) (md : MetaData Expression),
-    stmt_falsifiable π φ (T stmts) label expr md →
-    ∃ (label' : CoreLabel) (expr' : Expression.Expr) (md' : MetaData Expression),
-      stmt_falsifiable π φ stmts label' expr' md'
+    (t : Transformation) : Prop :=
+  ∀ (stmt : Statement) (a : AssertId),
+    stmt_falsifiable π φ (t.T stmt) a →
+    stmt_falsifiable π φ stmt (t.F_inv a)
 
 /-- If the transformed program is satisfiable, the original is too. -/
-def transform_preserves_satisfiability
+def Transformation.preserves_satisfiability
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (T : List Statement → List Statement) : Prop :=
-  ∀ (stmts : List Statement) (label : CoreLabel)
-    (expr : Expression.Expr) (md : MetaData Expression),
-    stmt_satisfiable π φ (T stmts) label expr md →
-    ∃ (label' : CoreLabel) (expr' : Expression.Expr) (md' : MetaData Expression),
-      stmt_satisfiable π φ stmts label' expr' md'
+    (t : Transformation) : Prop :=
+  ∀ (stmt : Statement) (a : AssertId),
+    stmt_satisfiable π φ (t.T stmt) a →
+    stmt_satisfiable π φ stmt (t.F_inv a)
 
 /-- If the transformed program is unsatisfiable, the original is too. -/
-def transform_preserves_unsatisfiability
+def Transformation.preserves_unsatisfiability
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (T : List Statement → List Statement) : Prop :=
-  ∀ (stmts : List Statement) (label : CoreLabel)
-    (expr : Expression.Expr) (md : MetaData Expression),
-    stmt_unsatisfiable π φ (T stmts) label expr md →
-    ∃ (label' : CoreLabel) (expr' : Expression.Expr) (md' : MetaData Expression),
-      stmt_unsatisfiable π φ stmts label' expr' md'
-
-/-! ## Examples -/
-
-/-! ### Example 1: `assert true` is correct -/
-
-/-- A single `assert true` statement is correct: the condition trivially holds. -/
-theorem assert_true_correct
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (label : CoreLabel) (md : MetaData Expression)
-    (h_eval_true : ∀ (δ : CoreEval) (σ : CoreStore), δ σ Core.true = some HasBool.tt) :
-    stmt_correct π φ [Statement.assert label Core.true md] := by
-  intro lbl expr md'
-  unfold stmt_valid
-  intro h_in δ σ σ' δ' _
-  rw [List.mem_singleton] at h_in
-  cases h_in
-  exact ⟨σ, δ, h_eval_true δ σ⟩
-
-/-! ### Example 2: Removing an initial `assert true` is a sound transformation -/
-
-/-- The transformation that removes a leading `assert true` from a statement list. -/
-def removeLeadingAssertTrue (label : CoreLabel) (md : MetaData Expression)
-    (stmts : List Statement) : List Statement :=
-  match stmts with
-  | Statement.assert l Core.true m :: rest =>
-    if l = label ∧ m = md then rest else stmts
-  | _ => stmts
-
-/-- Helper: removeLeadingAssertTrue either returns rest or stmts unchanged -/
-theorem removeLeadingAssertTrue_cases (label : CoreLabel) (md : MetaData Expression)
-    (stmts : List Statement) :
-    (∃ rest, stmts = Statement.assert label Core.true md :: rest ∧
-      removeLeadingAssertTrue label md stmts = rest) ∨
-    removeLeadingAssertTrue label md stmts = stmts := by
-  unfold removeLeadingAssertTrue
-  split
-  · rename_i l m rest
-    split
-    · rename_i h; obtain ⟨rfl, rfl⟩ := h; left; exact ⟨rest, rfl, rfl⟩
-    · right; rfl
-  · right; rfl
-
-/-- If (assert :: rest) evaluates and assert is a skip, rest evaluates -/
-theorem eval_skip_assert_rest
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval)
-    (l : CoreLabel) (e : Expression.Expr) (m : MetaData Expression)
-    (rest : List Statement) :
-    EvalStatements π φ δ σ (Statement.assert l e m :: rest) σ' δ' →
-    EvalStatements π φ δ σ rest σ' δ' := by
-  intro h_eval
-  cases h_eval with
-  | stmts_some_sem h_stmt h_rest =>
-    have ⟨h_σ, h_δ⟩ := ProcBodyVerifyCorrect.eval_assert_is_skip π φ δ σ _ _ l e m h_stmt
-    subst h_σ; subst h_δ
-    exact h_rest
-
-/-- Removing a leading `assert true` preserves validity. -/
-theorem removeLeadingAssertTrue_preserves_validity
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (label : CoreLabel) (md : MetaData Expression)
-    (h_eval_true : ∀ (δ : CoreEval) (σ : CoreStore), δ σ Core.true = some HasBool.tt) :
-    transform_preserves_validity π φ (removeLeadingAssertTrue label md) := by
-  intro stmts h_target_correct lbl expr md'
-  unfold stmt_valid
-  intro h_in δ σ σ' δ' h_eval
-  cases removeLeadingAssertTrue_cases label md stmts with
-  | inl h_removed =>
-    obtain ⟨rest, h_stmts_eq, h_T_eq⟩ := h_removed
-    subst h_stmts_eq
-    rw [h_T_eq] at h_target_correct
-    cases h_in with
-    | head =>
-      exact ⟨σ, δ, h_eval_true δ σ⟩
-    | tail _ h =>
-      have h_rest_eval := eval_skip_assert_rest π φ δ σ σ' δ' label Core.true md rest h_eval
-      exact h_target_correct lbl expr md' h δ σ σ' δ' h_rest_eval
-  | inr h_unchanged =>
-    rw [h_unchanged] at h_target_correct
-    exact h_target_correct lbl expr md' h_in δ σ σ' δ' h_eval
+    (t : Transformation) : Prop :=
+  ∀ (stmt : Statement) (a : AssertId),
+    stmt_unsatisfiable π φ (t.T stmt) a →
+    stmt_unsatisfiable π φ stmt (t.F_inv a)
 
 end Soundness
