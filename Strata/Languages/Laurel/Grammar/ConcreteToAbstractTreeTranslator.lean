@@ -19,12 +19,12 @@ open Lean.Parser (InputContext)
 open Imperative (MetaData)
 
 structure TransState where
-  uri : Uri
+  uri : Option Uri
   errors : Array String
 
 abbrev TransM := StateT TransState (Except String)
 
-def TransM.run (uri : Uri) (m : TransM α) : Except String α :=
+def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
   match StateT.run m { uri := uri, errors := #[] } with
   | .ok (v, _) => .ok v
   | .error e => .error e
@@ -36,8 +36,10 @@ def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData 
   let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
   #[fileRangeElt]
 
-def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
-  return SourceRange.toMetaData (← get).uri arg.ann
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
+  return match (← get).uri with
+  | some uri => SourceRange.toMetaData uri arg.ann
+  | none => default
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -55,7 +57,7 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  return id
+  return { text := id }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -72,7 +74,7 @@ def translateBool (arg : Arg) : TransM Bool := do
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 instance : Inhabited Parameter where
-  default := { name := "", type := ⟨.TVoid, #[]⟩ }
+  default := { name := "" , type := ⟨.TVoid, #[]⟩ }
 
 def mkHighTypeMd (t : HighType) (md : MetaData Core.Expression) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData Core.Expression) : StmtExprMd := ⟨e, md⟩
@@ -85,7 +87,12 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     match op.name, op.args with
     | q`Laurel.intType, _ => return mkHighTypeMd .TInt md
     | q`Laurel.boolType, _ => return mkHighTypeMd .TBool md
+    | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 md
     | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
+    | q`Laurel.mapType, #[keyArg, valArg] =>
+      let keyType ← translateHighType keyArg
+      let valType ← translateHighType valArg
+      return mkHighTypeMd (.TMap keyType valType) md
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md
@@ -257,12 +264,12 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Forall name ty body) md
+      return mkStmtExprMd (.Forall { name := name, type := ty } body) md
     | q`Laurel.existsExpr, #[nameArg, tyArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Exists name ty body) md
+      return mkStmtExprMd (.Exists { name := name, type := ty } body) md
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0
@@ -370,14 +377,22 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Parse modifies clauses (zero or more)
     let modifies ← translateModifiesClauses modifiesArg
     -- Parse optional body
+    let isExternal ← match bodyArg with
+      | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
+        | q`Laurel.externalBody, #[] => pure true
+        | _, _ => pure false
+      | _ => pure false
     let body ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
         | q`Laurel.optionalBody, #[exprArg] => translateCommand exprArg >>= (pure ∘ some)
-        | _, _ => TransM.error s!"Expected optionalBody operation, got {repr bodyOp.name}"
+        | q`Laurel.externalBody, #[] => pure none
+        | _, _ => TransM.error s!"Expected optionalBody or externalBody operation, got {repr bodyOp.name}"
       | .option _ none => pure none
       | _ => TransM.error s!"Expected optionalBody, got {repr bodyArg}"
     -- Determine procedure body kind
-    let procBody := match postconditions, body with
+    let procBody :=
+      if isExternal then Body.External
+      else match postconditions, body with
       | _ :: _, bodyOpt => Body.Opaque postconditions bodyOpt modifies
       | [], some b => Body.Transparent b
       | [], none => Body.Opaque [] none modifies
@@ -435,43 +450,32 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 
-def parseDatatypeField (arg : Arg) : TransM (Identifier × HighTypeMd) := do
+def parseDatatypeConstructorArg (arg : Arg) : TransM Parameter := do
   let .op op := arg
-    | TransM.error s!"parseDatatypeField expects operation"
+    | TransM.error s!"parseDatatypeConstructorArg expects operation"
   match op.name, op.args with
-  | q`Laurel.datatypeField, #[nameArg, typeArg] =>
+  | q`Laurel.datatypeConstructorArg, #[nameArg, typeArg] =>
     let name ← translateIdent nameArg
-    let fieldType ← translateHighType typeArg
-    return (name, fieldType)
+    let argType ← translateHighType typeArg
+    return { name := name, type := argType }
   | _, _ =>
-    TransM.error s!"parseDatatypeField expects datatypeField, got {repr op.name}"
+    TransM.error s!"parseDatatypeConstructorArg expects datatypeConstructorArg, got {repr op.name}"
 
 def parseDatatypeConstructor (arg : Arg) : TransM DatatypeConstructor := do
   let .op op := arg
     | TransM.error s!"parseDatatypeConstructor expects operation"
   match op.name, op.args with
-  | q`Laurel.datatypeConstructor, #[nameArg, fieldsArg] =>
+  | q`Laurel.datatypeConstructor, #[nameArg, argsSeq] =>
     let name ← translateIdent nameArg
-    let fields ← match fieldsArg with
-      | .seq _ .comma args => args.toList.mapM parseDatatypeField
+    let args ← match argsSeq with
+      | .seq _ .comma args => args.toList.mapM parseDatatypeConstructorArg
       | _ => pure []
-    return { name := name, args := fields }
+    return { name := name, args := args }
+  | q`Laurel.datatypeConstructorNoArgs, #[nameArg] =>
+    let name ← translateIdent nameArg
+    return { name := name, args := [] }
   | _, _ =>
     TransM.error s!"parseDatatypeConstructor expects datatypeConstructor, got {repr op.name}"
-
-partial def parseDatatypeConstructorList (arg : Arg) : TransM (List DatatypeConstructor) := do
-  let .op op := arg
-    | TransM.error s!"parseDatatypeConstructorList expects operation"
-  match op.name, op.args with
-  | q`Laurel.datatypeConstructorListAtom, #[cArg] =>
-    let c ← parseDatatypeConstructor cArg
-    return [c]
-  | q`Laurel.datatypeConstructorListPush, #[clArg, cArg] =>
-    let cl ← parseDatatypeConstructorList clArg
-    let c ← parseDatatypeConstructor cArg
-    return cl ++ [c]
-  | _, _ =>
-    TransM.error s!"parseDatatypeConstructorList expects constructor list, got {repr op.name}"
 
 def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
@@ -479,7 +483,14 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   match op.name, op.args with
   | q`Laurel.datatype, #[nameArg, constructorsArg] =>
     let name ← translateIdent nameArg
-    let constructors ← parseDatatypeConstructorList constructorsArg
+    let constructors ← match constructorsArg with
+      | .op listOp => match listOp.name, listOp.args with
+        | q`Laurel.datatypeConstructorList, #[csArg] =>
+          match csArg with
+          | .seq _ .comma args => args.toList.mapM parseDatatypeConstructor
+          | singleArg => do let c ← parseDatatypeConstructor singleArg; pure [c]
+        | _, _ => TransM.error s!"Expected datatypeConstructorList, got {repr listOp.name}"
+      | _ => TransM.error s!"Expected datatypeConstructorList operation"
     return .Datatype { name := name, typeArgs := [], constructors := constructors }
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"

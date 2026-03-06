@@ -42,46 +42,12 @@ procedure dag(a: int) returns (r: int)
   assert if (a > 0) { b == 1 } else { true };
     assert if (a > 0) { b == 2 } else { true };
 //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// duplicates due to VCG path duplication (#419):
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b;
 }
 "
 
 #guard_msgs (error, drop all) in
 #eval! testInputWithOffset "ControlFlow" program 14 processLaurelFile
-
-/-
-Translation towards expression form:
-
-function guards(a: int): int {
-  var b = a + 2;
-  if (b > 2) {
-      var c = b + 3;
-      if (c > 3) {
-        c + 4;
-      } else {
-        var d = c + 5;
-        d + 6;
-      }
-  } else {
-    var e = b + 1;
-    e
-  }
-}
-
-To translate towards SMT we only need to apply something like WP calculus.
- Here's an example of what that looks like:
-
-function dag(a: int): int {
-  (
-    assume a > 0;
-    assume b == 1;
-    b;
-  )
-  OR
-  (
-    assume a <= 0;
-    assume b == 2;
-    b;
-  )
-}
--/

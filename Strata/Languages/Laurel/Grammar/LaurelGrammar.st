@@ -6,7 +6,9 @@ dialect Laurel;
 category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
+op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
+op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
@@ -106,6 +108,20 @@ op optionalExtends(parents: CommaSepBy Ident): OptionalExtends => "extends " par
 category Composite;
 op composite (name: Ident, extending: Option OptionalExtends, fields: Seq Field): Composite => "composite " name extending "{" fields "}";
 
+// Datatype definitions
+category DatatypeConstructorArg;
+op datatypeConstructorArg (name: Ident, argType: LaurelType): DatatypeConstructorArg => name ":" argType;
+
+category DatatypeConstructor;
+op datatypeConstructor (name: Ident, args: CommaSepBy DatatypeConstructorArg): DatatypeConstructor => name "(" args ")";
+op datatypeConstructorNoArgs (name: Ident): DatatypeConstructor => name;
+
+category DatatypeConstructorList;
+op datatypeConstructorList (constructors: CommaSepBy DatatypeConstructor): DatatypeConstructorList => constructors;
+
+category Datatype;
+op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "datatype " name "{" constructors "}";
+
 // Procedures
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
@@ -124,6 +140,7 @@ op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "retu
 
 category OptionalBody;
 op optionalBody(body: StmtExpr): OptionalBody => body:0;
+op externalBody: OptionalBody => "external";
 
 category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
@@ -143,23 +160,6 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
-
-// Datatype definitions
-category DatatypeField;
-op datatypeField (name: Ident, fieldType: LaurelType): DatatypeField => name ":" fieldType;
-
-category DatatypeConstructor;
-op datatypeConstructor (name: Ident, fields: CommaSepBy DatatypeField): DatatypeConstructor
-  => name "(" fields ")";
-
-category DatatypeConstructorList;
-op datatypeConstructorListAtom (c: DatatypeConstructor): DatatypeConstructorList => c;
-op datatypeConstructorListPush (cl: DatatypeConstructorList, c: DatatypeConstructor): DatatypeConstructorList
-  => cl "," c;
-
-category Datatype;
-op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype
-  => "datatype " name "{" constructors "}";
 
 // Opaque type declarations
 category OpaqueType;

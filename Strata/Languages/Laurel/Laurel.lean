@@ -15,7 +15,30 @@ Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
 namespace Strata
 namespace Laurel
 
-abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
+
+/-- A name-introduction site (variable declaration, procedure, field, type, etc.).
+    Carries a mandatory unique ID assigned by the resolution pass. -/
+structure Identifier where
+  /-- The declared name. -/
+  text : String
+  /-- Unique ID assigned by the resolution pass. -/
+  uniqueId : Option Nat := none
+  deriving Repr
+
+-- Temporary hack because the Python through Laurel pipeline doesn't resolve
+instance : BEq Identifier where
+  beq a b := a.text == b.text
+
+instance : Inhabited Identifier where
+ default := { text := "defaultIdentifier" }
+
+instance : ToString Identifier where
+  toString id := id.text
+
+instance : Coe String Identifier where
+  coe s := Identifier.mk s none
+
+def mkId (name: String): Identifier := Identifier.mk name none
 
 /--
 Primitive operations available in Laurel expressions.
@@ -112,7 +135,7 @@ inductive HighType : Type where
   | TSet (elementType : WithMetadata HighType)
   /-- Map type. -/
   | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType)
-  /-- A reference to a user-defined composite or constrained type by name. -/
+  /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
   | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
@@ -146,7 +169,7 @@ structure Procedure : Type where
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
   /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
-  isFunctional : Bool := false
+  isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
   /-- Source-level metadata. -/
@@ -188,6 +211,8 @@ inductive Body where
       (modifies : List (WithMetadata StmtExpr))
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
   | Abstract (postconditions : List (WithMetadata StmtExpr))
+  /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
+  | External
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -201,7 +226,7 @@ inductive StmtExpr : Type where
   /-- Conditional with a then-branch and optional else-branch. -/
   | IfThenElse (cond : WithMetadata StmtExpr) (thenBranch : WithMetadata StmtExpr) (elseBranch : Option (WithMetadata StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
-  | Block (statements : List (WithMetadata StmtExpr)) (label : Option Identifier)
+  | Block (statements : List (WithMetadata StmtExpr)) (label : Option String)
   /-- A local variable declaration with a type and optional initializer. The initializer must be set if this `StmtExpr` is pure. -/
   | LocalVariable (name : Identifier) (type : WithMetadata HighType) (initializer : Option (WithMetadata StmtExpr))
   /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
@@ -209,7 +234,7 @@ inductive StmtExpr : Type where
     (decreases : Option (WithMetadata StmtExpr))
     (body : WithMetadata StmtExpr)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
-  | Exit (target : Identifier)
+  | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/
   | Return (value : Option (WithMetadata StmtExpr))
   /-- An integer literal. -/
@@ -231,8 +256,8 @@ inductive StmtExpr : Type where
   /-- Apply a primitive operation to the given arguments. -/
   | PrimitiveOp (operator : Operation) (arguments : List (WithMetadata StmtExpr))
   /-- Create new object (`new`). -/
-  | New (name: Identifier)
-  /-- Reference to the current object (`this`/`self`). -/
+  | New (ref : Identifier)
+  /-- Identifier to the current object (`this`/`self`). -/
   | This
   /-- Reference equality test between two expressions. -/
   | ReferenceEquals (lhs : WithMetadata StmtExpr) (rhs : WithMetadata StmtExpr)
@@ -242,10 +267,10 @@ inductive StmtExpr : Type where
   | IsType (target : WithMetadata StmtExpr) (type : WithMetadata HighType)
   /-- Call an instance method on a target object. -/
   | InstanceCall (target : WithMetadata StmtExpr) (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
-  /-- Universal quantification over a typed variable. -/
-  | Forall (name : Identifier) (type : WithMetadata HighType) (body : WithMetadata StmtExpr)
-  /-- Existential quantification over a typed variable. -/
-  | Exists (name : Identifier) (type : WithMetadata HighType) (body : WithMetadata StmtExpr)
+  /-- Universal quantification over a typed parameter. -/
+  | Forall (param : Parameter) (body : WithMetadata StmtExpr)
+  /-- Existential quantification over a typed parameter. -/
+  | Exists (param : Parameter) (body : WithMetadata StmtExpr)
   /-- Check whether a variable has been assigned. -/
   | Assigned (name : WithMetadata StmtExpr)
   /-- Refer to the pre-state value of an expression in a postcondition. -/
@@ -299,7 +324,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
-  | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
+  | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
@@ -318,6 +343,10 @@ instance : BEq HighTypeMd where
 
 def HighType.isBool : HighType → Bool
   | TBool => true
+  | _ => false
+
+def Body.isExternal : Body → Bool
+  | .External => true
   | _ => false
 
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool
@@ -372,7 +401,7 @@ structure ConstrainedType where
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/
 structure DatatypeConstructor where
   name : Identifier
-  args : List (Identifier × HighTypeMd)
+  args : List Parameter
 
 /-- A Laurel datatype definition with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.
