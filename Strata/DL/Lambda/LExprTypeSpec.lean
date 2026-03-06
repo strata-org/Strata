@@ -5275,17 +5275,8 @@ private theorem resolveAux_preserves_combined :
     -- Derive that type_val has empty freeVars from FactoryWF
     have h_func_mem : func ∈ C.functions := Array.mem_of_find?_eq_some h_find
     have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
-    have h_ty_closed : LTy.freeVars type_val = [] := by
-      -- LFunc.type returns .forAll typeArgs body where body freeVars ⊆ typeArgs.
-      -- Unfold LFunc.type and case-split on inputs.
-      -- type_val = .forAll func.typeArgs body from LFunc.type.
-      -- Show: every v ∈ LTy.freeVars type_val is impossible.
-      -- LTy.freeVars (.forAll xs body) = (freeVars body).removeAll xs.
-      -- Since body freeVars ⊆ xs (from LFuncWF), removeAll removes everything.
-      -- Needs: List.removeAll xs ys = [] when xs ⊆ ys (not in Lean stdlib)
-      -- + mkArrow/destructArrow freeVars ⊆ input/output freeVars
-      -- Both are provable from LFuncWF but need helper lemmas.
-      sorry
+    have h_ty_closed : LTy.freeVars type_val = [] :=
+      LFunc.type_freeVars_eq_nil func type_val h_type h_func_wf
     have h_ty_fresh_vacuous : ∀ v, v ∈ LTy.freeVars type_val →
         ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
       intro v hv; simp [h_ty_closed] at hv
@@ -5437,8 +5428,30 @@ private theorem resolveAux_preserves_combined :
     have h_ih_result := (ih _ h_sz (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf
     constructor
     · exact h_ih_result.1
-    · -- Output type freshness for abs: sorry (involves substituted arrow type)
-      sorry
+    · -- Output type freshness for abs: et.toLMonoTy = subst Env2.subst (arrow [xty, ety])
+      -- freeVars come from Env2.subst values (gen-fresh by SubstFreshForGen)
+      -- or from xty/ety (gen-fresh from typeBoundVar and IH).
+      intro v hv k hk
+      rw [← h_et] at hv; simp [toLMonoTy] at hv
+      have h_fv_subset := LMonoTy.freeVars_of_subst_subset Env2.stateSubstInfo.subst
+        (.tcons "arrow" [xty_val, (Lambda.LExpr.varCloseT 0 xv_id et').toLMonoTy])
+      have hv_in := h_fv_subset hv
+      simp [List.mem_append] at hv_in
+      rcases hv_in with hv_ty | hv_subst
+      · -- v from freeVars of (arrow [xty_val, varCloseT_toLMonoTy])
+        simp [LMonoTy.freeVars, LMonoTys.freeVars, List.mem_append] at hv_ty
+        rcases hv_ty with hv_xty | hv_ety
+        · -- v from xty_val: gen-fresh from typeBoundVar
+          -- xty_val freeVars are gen-fresh for Env1.genState (from typeBoundVar analysis)
+          -- Env2.genState ≥ Env1.genState by resolveAux genState monotonicity
+          sorry
+        · -- v from varCloseT et': gen-fresh by IH
+          -- varCloseT preserves toLMonoTy, so freeVars match et'.toLMonoTy
+          -- h_ih_result.2 gives the result
+          -- Needs varCloseT_toLMonoTy (defined later in the file)
+          sorry
+      · -- v from Subst.freeVars Env2.subst: gen-fresh by SubstFreshForGen
+        exact h_ih_result.1 v (Or.inr hv_subst) k hk
   | .quant m qk bty tr body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -5466,8 +5479,9 @@ private theorem resolveAux_preserves_combined :
       have h_ih_tr := (ih _ h_sz_tr _ rfl trT C Env2 Env3 h_rec_tr h_ne2).2 h_fresh2 h_ctx2 h_aw2 h_fwf
       constructor
       · exact h_ih_tr.1
-      · -- Output type freshness for quant: toLMonoTy of quant is LMonoTy.bool, vacuously true
-        sorry
+      · -- Output type freshness for quant: toLMonoTy of quant is LMonoTy.bool (empty freeVars)
+        intro v hv n hn
+        rw [← h_et] at hv; simp [toLMonoTy, LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
     · simp at h
   | .eq m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
