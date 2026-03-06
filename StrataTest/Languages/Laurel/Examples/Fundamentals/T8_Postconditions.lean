@@ -25,12 +25,12 @@ procedure callerOfOpaqueProcedure() {
   var x: int := opaqueBody(3);
   assert x > 0;
   assert x == 3;
-//^^^^^^^^^^^^^^ error: assertion can be false
+//^^^^^^^^^^^^^^ error: assertion does not hold
 }
 
 procedure invalidPostcondition(x: int)
     ensures false
-//          ^^^^^ error: assertion can be false
+//          ^^^^^ error: assertion does not hold
 {
 }
 "

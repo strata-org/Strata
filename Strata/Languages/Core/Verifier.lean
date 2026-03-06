@@ -731,19 +731,19 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isSatisfiable then none  -- cover satisfied (pass)
         else if outcome.isPass then none
         else if outcome.isRefuted then some "cover property is not satisfiable"
-        else if outcome.isCanBeTrueOrFalse then some "cover property can be both true and false"
+        else if outcome.isCanBeTrueOrFalse then some "cover property is not satisfiable"
         else if outcome.isRefutedIfReachable then some "cover property is not satisfiable if reached"
-        else if outcome.isReachableAndCanBeFalse then some "cover property can be false"
+        else if outcome.isReachableAndCanBeFalse then some "cover property is not satisfiable"
         else if outcome.isAlwaysTrueIfReachable then none
         else some "cover property could not be checked"
       else
         if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
         else if outcome.isPass then none
         else if outcome.isRefuted then some "assertion does not hold"
-        else if outcome.isCanBeTrueOrFalse then some "assertion can be both true and false"
+        else if outcome.isCanBeTrueOrFalse then some "assertion does not hold"
         else if outcome.isSatisfiable then none
         else if outcome.isRefutedIfReachable then some "assertion does not hold if reached"
-        else if outcome.isReachableAndCanBeFalse then some "assertion can be false"
+        else if outcome.isReachableAndCanBeFalse then some "assertion does not hold"
         else if outcome.isAlwaysTrueIfReachable then none
         else some "assertion could not be proved"
     message?.map fun message => { fileRange, message }
