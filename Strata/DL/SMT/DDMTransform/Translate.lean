@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DL.SMT.DDMTransform.Parse
-import Strata.DL.SMT.Term
-import Strata.Util.Tactics
+module
+
+public import Strata.DL.SMT.DDMTransform.Parse
+public import Strata.DL.SMT.Term
+public import Strata.Util.Tactics
+import Strata.DDM.Elab.LoadedDialects
 
 namespace Strata
+
+public section
 
 namespace SMTDDM
 
@@ -67,9 +72,9 @@ private def translateFromTermPrim (t:SMT.TermPrim):
       return .spec_constant_term srnone (.sc_numeral_neg srnone abs_i.toNat)
   | .real dec =>
     return .spec_constant_term srnone (.sc_decimal srnone dec)
-  | .bitvec bv =>
+  | .bitvec (n := n) bv =>
     let bvty := mkSymbol (s!"bv{bv.toNat}")
-    let val:Index SourceRange := .ind_numeral srnone bv.width
+    let val:Index SourceRange := .ind_numeral srnone n
     return (.qual_identifier srnone
       (.qi_ident srnone (.iden_indexed srnone bvty (Ann.mk srnone #[val]))))
   | .string s =>
@@ -346,5 +351,7 @@ where
     .app (.core (.uf uf)) args placeholderTy
 
 end SMTResponseDDM
+
+end
 
 end Strata
