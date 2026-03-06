@@ -4793,15 +4793,49 @@ private theorem typeBoundVar_preserves_boundVarsFresh
     ∀ y ty, Env'.context.types.find? y = some ty →
       ∀ v, v ∈ LTy.boundVars ty →
         ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  -- Follows the same structure as typeBoundVar_preserves_boundVarsNodup.
-  -- New entry (forAll [] xty) has boundVars = [] → vacuously true.
-  -- Old entries: delegate to h_bf with gen counter monotonicity.
   have h_mono := typeBoundVar_tyGen_mono C Env bty xv xty Env' h
-  -- Decompose: typeBoundVar does genVar/instantiateWithCheck → addInNewestContext
-  -- Context equality for old entries: after addInNewestContext, old entries are unchanged.
-  -- For the new entry, boundVars (forAll [] xty) = [].
-  -- Use the same case analysis as typeBoundVar_preserves_boundVarsNodup.
-  sorry
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  have h_g_ctx : Env_g.context = Env.context := liftGenEnv_context Env _ Env_g h_gen
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h
+    generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h
+    match res_ic with
+    | .error _ => simp at h
+    | .ok (bty_mty, Env_mid) =>
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, h_xty, h_env'⟩ := h
+    have h_mid_ctx : Env_mid.context = Env.context :=
+      (LMonoTy_instantiateWithCheck_context' bty_val C Env_g bty_mty Env_mid h_ic).trans h_g_ctx
+    subst h_xv; subst h_xty; subst h_env'
+    intro y ty_found h_find v hv n hn
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+    rw [show Env_mid.genEnv.context = Env.genEnv.context from h_mid_ctx] at h_find
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types xv_raw (.forAll [] bty_mty) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find
+      simp [LTy.boundVars] at hv
+    · rw [h_old] at h_find
+      exact h_bf y ty_found h_find v hv n (Nat.le_trans h_mono hn)
+  | none =>
+    simp only [Bind.bind, Except.bind]; intro h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨xtyid, Env_mid⟩ := v_tg
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, h_xty, h_env'⟩ := h
+    have h_mid_ctx : Env_mid.context = Env.context :=
+      (TEnv.genTyVar_context Env_g xtyid Env_mid h_tg).trans h_g_ctx
+    subst h_xv; subst h_xty; subst h_env'
+    intro y ty_found h_find v hv n hn
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+    rw [show Env_mid.genEnv.context = Env.genEnv.context from h_mid_ctx] at h_find
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types xv_raw (.forAll [] (LMonoTy.ftvar xtyid)) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find
+      simp [LTy.boundVars] at hv
+    · rw [h_old] at h_find
+      exact h_bf y ty_found h_find v hv n (Nat.le_trans h_mono hn)
 
 /--
 Context preservation for `LTy.instantiateWithCheck`.
@@ -6231,9 +6265,33 @@ private theorem TGenEnv.genTyVars_is_genName
     (h : TGenEnv.genTyVars n Env = .ok (tvs, Env'))
     (tv : TyIdentifier) (h_mem : tv ∈ tvs) :
     ∃ k, k ≥ Env.genState.tyGen ∧ tv = TState.tyPrefix ++ toString k := by
-  -- Each genTyVar produces tyPrefix ++ toString genState.tyGen, then increments.
-  -- By induction on n, each tv in the output list has such a name.
-  sorry
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨h1, _⟩ := h; subst h1; simp at h_mem
+  | succ m ih =>
+    simp only [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_gen1; obtain ⟨tv1, Env1⟩ := v1
+    split at h; · simp at h
+    rename_i v2 h_gen_rest; obtain ⟨rest, Env2⟩ := v2
+    simp at h
+    obtain ⟨h_tvs, h_env⟩ := h; subst h_tvs; subst h_env
+    have h_tv1_name : tv1 = TState.tyPrefix ++ toString Env.genState.tyGen := by
+      simp only [TGenEnv.genTyVar] at h_gen1
+      split at h_gen1; · simp at h_gen1
+      simp at h_gen1; rw [← h_gen1.1]
+      simp [TState.genTySym, TState.incTyGen]
+    have h_gen1_mono : Env1.genState.tyGen = Env.genState.tyGen + 1 := by
+      simp only [TGenEnv.genTyVar] at h_gen1
+      split at h_gen1; · simp at h_gen1
+      simp at h_gen1; rw [← h_gen1.2]
+      simp [TState.genTySym, TState.incTyGen]
+    rcases List.mem_cons.mp h_mem with h_eq | h_rest
+    · exact ⟨Env.genState.tyGen, Nat.le_refl _, h_eq ▸ h_tv1_name⟩
+    · simp at h_gen_rest
+      obtain ⟨k, h_k_ge, h_eq⟩ := ih Env1 rest Env2 h_gen_rest h_rest
+      exact ⟨k, by omega, h_eq⟩
 
 private theorem HasType_LTy_instantiate
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
