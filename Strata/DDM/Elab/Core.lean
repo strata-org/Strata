@@ -250,7 +250,6 @@ def translateQualifiedIdent (t : Tree) : MaybeQualifiedIdent :=
   | q`Init.qualifiedIdentImplicit, 1 => Id.run do
     let .ident _ name := args[0]
       | return panic! "Expected ident"
-    let name := name.dropPrefix "«" |>.dropSuffix "»" |>.toString
     match name.splitOn "." with
     | [dialect, rest] => .qid { dialect, name := rest }
     | _ => .name name
@@ -1448,7 +1447,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
     fun tctx stx => do
       let some loc := mkSourceRange? stx
         | panic! "ident missing source location"
-      let info : IdentInfo := { inputCtx := tctx, loc := loc, val := stx.getId.toString }
+      let info : IdentInfo := { inputCtx := tctx, loc := loc, val := stx.getId.toString (escape := false) }
       pure <| .node (.ofIdentInfo info) #[]
   | q`Init.Num =>
     fun tctx stx => do
