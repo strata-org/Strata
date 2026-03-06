@@ -7408,6 +7408,49 @@ private theorem resolveAux_output_type_no_future_vars :
 def WellScoped (e : LExpr T.mono) (Γ : TContext T.IDMeta) : Prop :=
   ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Γ
 
+/-- A key of a well-formed substitution does not appear in the free variables
+    of any substituted type. Proved via `freeVars_of_subst_subset` + `SubstWF`:
+    freeVars after subst ⊆ freeVars(original) ∪ freeVars(values), and keys ∉ freeVars(values). -/
+private theorem SubstWF.key_not_in_freeVars_subst
+    (S : Subst) (mty : LMonoTy) (a : TyIdentifier)
+    (h_key : a ∈ Maps.keys S) (h_wf : SubstWF S) :
+    a ∉ LMonoTy.freeVars (LMonoTy.subst S mty) := by
+  simp [SubstWF] at h_wf
+  have h_not_val : a ∉ Subst.freeVars S := h_wf a h_key
+  by_cases hS : Subst.hasEmptyScopes S
+  · exact absurd h_key (Subst.isEmpty_implies_keys_empty hS ▸ (by simp))
+  · -- Direct induction on mty with hasEmptyScopes = false
+    have hSF : Subst.hasEmptyScopes S = false := Bool.eq_false_iff.mpr hS
+    induction mty with
+    | ftvar v =>
+      simp only [LMonoTy.subst, hSF, ite_false]
+      cases h_find : Maps.find? S v with
+      | none =>
+        -- result is ftvar v, freeVars = [v]
+        -- v ∉ keys S (from find? = none). If a = v, contradiction with h_key.
+        intro h_eq; simp [LMonoTy.freeVars] at h_eq
+        subst h_eq; exact (Maps.find?_of_not_mem_values S h_find) h_key
+      | some t =>
+        -- result is t: a ∉ freeVars t because a ∉ Subst.freeVars S
+        exact fun h => h_not_val (Subst.freeVars_of_find_subset S h_find h)
+    | bitvec _ => simp [LMonoTy.subst, hSF, LMonoTy.freeVars]
+    | tcons name args ih =>
+      simp only [LMonoTy.subst, hSF, ite_false, LMonoTy.freeVars]
+      -- Need: a ∉ LMonoTys.freeVars (LMonoTys.subst S args)
+      -- Use subst_eq_substLogic to convert to map form
+      rw [LMonoTys.subst_eq_substLogic]
+      suffices ∀ (l : LMonoTys), (∀ m, m ∈ l → a ∉ LMonoTy.freeVars (LMonoTy.subst S m)) →
+          a ∉ LMonoTys.freeVars (LMonoTys.substLogic S l) by
+        exact this args (fun m hm => ih m hm)
+      intro l h_all
+      induction l with
+      | nil => simp [LMonoTys.substLogic, LMonoTys.freeVars]
+      | cons hd tl ih_tl =>
+        simp only [LMonoTys.substLogic, hSF, ite_false, LMonoTys.freeVars]
+        intro h_abs; rcases List.mem_append.mp h_abs with h_hd | h_tl
+        · exact h_all hd (List.mem_cons_self ..) h_hd
+        · exact ih_tl (fun m hm => h_all m (List.mem_cons_of_mem _ hm)) h_tl
+
 /-- `varOpen k x e` only adds `x` to the free variables: every fvar of the
     opened expression is either an original fvar of `e` or the new `x`. -/
 private theorem varOpen_freeVars_subset
@@ -7582,6 +7625,72 @@ private theorem typeBoundVar_xv_in_knownVars
     obtain ⟨h_xv, _, h_env'⟩ := h; subst h_xv; subst h_env'
     simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.knownVars]
     exact knownVars_go_addInNewest_mem _ _ _
+
+/-- Free type variables of `xty` (produced by `typeBoundVar`) are all fresh
+    in the original context `Env.context`. For `some bty_val`: uses
+    `instantiateEnv_freeVars_fresh_closed` + `resolveAliases_freeVars_subset`.
+    For `none`: `xty = ftvar xtyid` with `xtyid` fresh by `genTyVar`. -/
+private theorem typeBoundVar_xty_freeVars_isFresh
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∀ v, v ∈ LMonoTy.freeVars xty → TContext.isFresh (T := T) v Env.context := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  have h_g_ctx : Env_g.context = Env.context := liftGenEnv_context Env _ Env_g h_gen
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h
+    generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h
+    match res_ic with
+    | .error _ => simp at h
+    | .ok (mty_ic, Env_mid) =>
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, h_xty, _⟩ := h; subst h_xty
+    -- xty = mty_ic from LMonoTy.instantiateWithCheck bty_val C Env_g
+    -- All freeVars come from generated vars (instantiateEnv replaces all freeVars
+    -- of bty_val with fresh tvars, resolveAliases doesn't grow freeVars).
+    -- The generated vars are fresh in Env_g.context = Env.context.
+    -- Uses: instantiateEnv_freeVars_fresh_closed + resolveAliases_freeVars_subset
+    -- Use the decomposition lemma for LMonoTy.instantiateWithCheck
+    have ⟨mty_ie, Env_ie, Env_ra, h_ie, h_ra⟩ :=
+      LMonoTy.instantiateWithCheck_decompose bty_val C Env_g mty_ic Env_mid h_ic
+    -- h_ie : instantiateEnv bty_val.freeVars [bty_val] Env_g = .ok ([mty_ie], Env_ie)
+    -- h_ra : resolveAliases mty_ie Env_ie = .ok (mty_ic, Env_ra)
+    have h_ie_ctx := LMonoTys.instantiateEnv_context _ _ Env_g _ _ h_ie
+    have h_ra_sub := LMonoTy_resolveAliases_freeVars_subset _ _ mty_ic Env_ra h_ra
+      (h_ie_ctx ▸ h_g_ctx ▸ h_aw)
+    have h_ie_fresh := LMonoTys.instantiateEnv_freeVars_fresh_closed
+      (LMonoTy.freeVars bty_val) [bty_val] Env_g [mty_ie] Env_ie h_ie
+      (fun tv htv => by simp [LMonoTys.freeVars] at htv; exact htv)
+    intro v hv
+    have hv_ie := h_ra_sub v hv
+    have := h_ie_fresh v (by simp [LMonoTys.freeVars]; exact hv_ie)
+    rw [h_g_ctx] at this; exact this
+  | none =>
+    simp only [Bind.bind, Except.bind]; intro h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨tyId, Env_tg⟩ := v_tg
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, h_xty, _⟩ := h
+    -- h_xty : xty = ftvar tyId, h_tg : TEnv.genTyVar Env_g = .ok (tyId, Env_tg)
+    -- Decompose TEnv.genTyVar to TGenEnv.genTyVar
+    simp only [TEnv.genTyVar, Bind.bind, Except.bind] at h_tg
+    generalize h_inner : TGenEnv.genTyVar Env_g.genEnv = res_inner at h_tg
+    match res_inner with
+    | .error _ => simp at h_tg
+    | .ok (tvId, genEnv') =>
+      simp at h_tg; obtain ⟨h_tvId_eq, _⟩ := h_tg
+      -- h_tvId_eq : tyId = tvId
+      have h_not_kv := TGenEnv.genTyVar_not_mem_knownTypeVars Env_g.genEnv tvId genEnv' h_inner
+      have : Env_g.genEnv.context = Env.genEnv.context := by
+        simp only [TEnv.context] at h_g_ctx; exact h_g_ctx
+      rw [this] at h_not_kv
+      intro v hv
+      have hv' : v ∈ LMonoTy.freeVars (.ftvar tyId) := h_xty ▸ hv
+      simp [LMonoTy.freeVars] at hv'; subst hv'
+      exact h_tvId_eq ▸ TContext.isFresh_of_not_mem_knownTypeVars h_not_kv
 
 /-- WellScoped for varOpen after typeBoundVar: combines `WellScoped_varOpen`
     with `typeBoundVar_knownVars_mono` and `typeBoundVar_xv_in_knownVars`. -/
@@ -8198,7 +8307,16 @@ theorem resolveAux_HasType :
           have h1 := HasType_subst_fresh_all C Env.context (.abs m bty e_body)
             (.tcons "arrow" [xty, LMonoTy.subst S et_body.toLMonoTy]) S
             (by simp [LTy.toMonoType] at h_tabs; exact h_tabs)
-            (by sorry) -- freshness: keys of S in freeVars (arrow [xty, subst S ety])
+            (by -- keys of S in freeVars (arrow [xty, subst S ety]) are fresh
+                intro a ha_key ha_fv
+                -- freeVars (arrow [xty, subst S ety]) = freeVars xty ++ freeVars (subst S ety)
+                simp only [LMonoTy.freeVars, LMonoTys.freeVars, List.mem_append, List.append_nil] at ha_fv
+                rcases ha_fv with ha_xty | ha_subst
+                · -- a ∈ freeVars xty: xty from typeBoundVar, freeVars are generated $__ty vars
+                  -- All generated vars are fresh in Env.context by ContextFreshForGen
+                  exact typeBoundVar_xty_freeVars_isFresh C Env bty xv xty Env1 h_tbv h_aw a ha_xty
+                · -- a ∈ freeVars (subst S ety): impossible by SubstWF (keys eliminated by subst)
+                  exact absurd ha_subst (SubstWF.key_not_in_freeVars_subst S _ a ha_key h_wf_S))
             h_wf_S
           -- h1 : HasType ... (.forAll [] (subst S (tcons "arrow" [xty, subst S ety])))
           -- Rewrite: subst S (tcons "arrow" [xty, subst S ety])
