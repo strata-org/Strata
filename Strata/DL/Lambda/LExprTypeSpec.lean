@@ -204,13 +204,28 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             LTy.openFull ty_o tys = ty_s →
             HasType C Γ (.op m op (some ty_s)) (.forAll [] ty_s)
 
-  /-- If an expression has type `tcons name args` and `name` is a type alias in
-  `Γ.aliases`, then the expression also has the expanded alias type. This rule
-  captures the semantic equivalence between a type alias and its definition. -/
-  | talias : ∀ Γ e name args mty,
-            _root_.Lambda.TypeAlias.expandsTo Γ.aliases name args mty →
-            HasType C Γ e (.forAll [] (.tcons name args)) →
-            HasType C Γ e (.forAll [] mty)
+  /-- Alias equivalence preserves typing: if `e` has type `mty` and `mty` is
+  alias-equivalent to `mty'` (under the aliases in `Γ`), then `e` also has
+  type `mty'`. This covers single-step expansion, subtree resolution, and
+  their transitive composition. -/
+  | talias : ∀ Γ e mty mty',
+            _root_.Lambda.AliasEquiv Γ.aliases mty mty' →
+            HasType C Γ e (.forAll [] mty) →
+            HasType C Γ e (.forAll [] mty')
+
+  /-- Full alias resolution preserves typing. This is stronger than `talias`
+  because `resolveAliases` combines alias expansion with fresh variable
+  instantiation and unification, which goes beyond pure alias equivalence.
+  The `ToFormat` instance is existentially quantified since it's only needed
+  operationally. -/
+  | talias_resolve : ∀ Γ e mty mty',
+            (∃ (inst : _root_.Std.ToFormat T.IDMeta)
+               (Env Env' : _root_.Lambda.TEnv T.IDMeta),
+              Γ.aliases = Env.context.aliases ∧
+              _root_.Lambda.TContext.AliasesWF Γ ∧
+              @LMonoTy.resolveAliases T.IDMeta inst mty Env = .ok (mty', Env')) →
+            HasType C Γ e (.forAll [] mty) →
+            HasType C Γ e (.forAll [] mty')
 
 /--
 If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
@@ -5418,119 +5433,7 @@ private theorem HasType_LTy_instantiate
         exact fun h_eq => h_tv_not (h_eq ▸ h_v_known)
       · exact h_ty
 
-mutual
-private theorem resolveAliases_subst_eq
-    (mty_in : LMonoTy) (Env : TEnv T.IDMeta) (mty_out : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : LMonoTy.resolveAliases mty_in Env = .ok (mty_out, Env')) :
-    LMonoTy.subst Env'.stateSubstInfo.subst mty_in =
-    LMonoTy.subst Env'.stateSubstInfo.subst mty_out := by
-  match mty_in with
-  | .ftvar _ | .bitvec _ =>
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
-    obtain ⟨h1, h2⟩ := h; rw [← h1, ← h2]
-  | .tcons name args =>
-    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
-    split at h; · simp at h
-    rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h h_args
-    split at h; · simp at h
-    rename_i v2 h_tcons; obtain ⟨mty', Env2⟩ := v2
-    simp [Pure.pure, Except.pure] at h; obtain ⟨h1, h2⟩ := h; rw [← h1, ← h2]
-    -- Need: subst S (tcons name args) = subst S mty'
-    -- Decompose tconsAlias: no-alias vs alias
-    unfold LMonoTy.tconsAlias at h_tcons
-    generalize h_ma : List.find? _ _ = ma at h_tcons
-    match ma with
-    | none =>
-      -- No alias: mty' = tcons name args', Env2 = Env1
-      simp [Pure.pure, Except.pure] at h_tcons
-      obtain ⟨h_mty, h_env⟩ := h_tcons; rw [← h_mty, ← h_env]
-      -- Need: subst Env1.subst (tcons name args) = subst Env1.subst (tcons name args')
-      -- Follows from resolveAliasList_subst_eq (mutual recursion).
-      have h_list_eq : LMonoTys.subst Env1.stateSubstInfo.subst args =
-          LMonoTys.subst Env1.stateSubstInfo.subst args' :=
-        resolveAliasList_subst_eq args Env args' Env1 h_args
-      -- Show subst S (tcons name xs) = tcons name (LMonoTys.subst S xs)
-      -- for both args and args', then use h_list_eq
-      show LMonoTy.subst Env1.stateSubstInfo.subst (.tcons name args) =
-           LMonoTy.subst Env1.stateSubstInfo.subst (.tcons name args')
-      by_cases h_e : Subst.hasEmptyScopes Env1.stateSubstInfo.subst
-      · rw [LMonoTy.subst_emptyS h_e, LMonoTy.subst_emptyS h_e]
-        -- Under empty subst, h_list_eq gives args = args'
-        simp [LMonoTy.subst, LMonoTys.subst, h_e] at h_list_eq
-        rw [h_list_eq]
-      · have h_ne : Subst.hasEmptyScopes Env1.stateSubstInfo.subst = false := by
-          revert h_e; cases Subst.hasEmptyScopes Env1.stateSubstInfo.subst <;> simp
-        simp [LMonoTy.subst, h_ne]; exact h_list_eq
-    | some alias =>
-      -- Alias expansion: tconsAlias unifies (tcons name args') with the
-      -- instantiated alias pattern, then returns the substituted alias definition.
-      -- After unification: subst S (tcons name args') = subst S instantiatedPattern.
-      -- The output mty' = subst S instantiatedDefinition.
-      -- So need: subst S (tcons name args) = subst S (subst S instantiatedDefinition).
-      --
-      -- This requires subst S instantiatedPattern = subst S instantiatedDefinition,
-      -- which is NOT syntactically true: the pattern is e.g. `Pair a b` while the
-      -- definition is e.g. `Tuple a b`. These are semantically equal by the alias
-      -- definition but structurally different.
-      --
-      -- NOTE: This theorem (subst S mty_in = subst S mty_out) is FALSE for the
-      -- alias case, since alias expansion changes the type constructor name.
-      -- HasType_resolveAliases now handles alias expansion via the HasType.talias
-      -- rule instead of relying on this syntactic equality. This sorry only
-      -- propagates through resolveAliasList_subst_eq, which is used in the
-      -- no-alias branch of HasType_resolveAliases. If args themselves contain
-      -- aliases, this sorry would be reached; however, in practice, the full
-      -- soundness path goes through HasType_resolveAliases which handles aliases
-      -- via talias at each level.
-      sorry
 
-/-- List version: after resolving aliases in a type list, the output substitution
-    equates input and output lists element-wise. Uses `resolveAliases_subst_eq`
-    per element + absorption to lift to the final substitution. -/
-private theorem resolveAliasList_subst_eq
-    (mtys_in : LMonoTys) (Env : TEnv T.IDMeta) (mtys_out : LMonoTys) (Env' : TEnv T.IDMeta)
-    (h : LMonoTys.resolveAliases mtys_in Env = .ok (mtys_out, Env')) :
-    LMonoTys.subst Env'.stateSubstInfo.subst mtys_in =
-    LMonoTys.subst Env'.stateSubstInfo.subst mtys_out := by
-  match mtys_in with
-  | [] =>
-    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
-    obtain ⟨h1, h2⟩ := h; rw [← h1, ← h2]
-  | mty :: mrest =>
-    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
-    split at h; · simp at h
-    rename_i v1 h_hd; obtain ⟨mty', Env1⟩ := v1; simp at h h_hd
-    split at h; · simp at h
-    rename_i v2 h_tl; obtain ⟨mrest', Env2⟩ := v2
-    simp [Pure.pure, Except.pure] at h; obtain ⟨h1, h2⟩ := h; rw [← h1, ← h2]
-    -- Per-element: subst Env1.subst mty = subst Env1.subst mty'
-    have h_hd_eq := resolveAliases_subst_eq mty Env mty' Env1 h_hd
-    -- Lift to final subst via absorption (Env2 absorbs Env1):
-    have h_abs := LMonoTys.resolveAliases_absorbs mrest Env1 mrest' Env2 h_tl
-    have h_hd_final : LMonoTy.subst Env2.stateSubstInfo.subst mty =
-        LMonoTy.subst Env2.stateSubstInfo.subst mty' := by
-      rw [← LMonoTy.subst_absorbs Env2.stateSubstInfo.subst Env1.stateSubstInfo.subst mty h_abs,
-          h_hd_eq,
-          LMonoTy.subst_absorbs Env2.stateSubstInfo.subst Env1.stateSubstInfo.subst mty' h_abs]
-    -- IH on tail
-    have h_tl_eq := resolveAliasList_subst_eq mrest Env1 mrest' Env2 h_tl
-    -- Combine: subst S (hd :: tl) = subst S hd :: subst S tl (for both in/out)
-    -- Use the fact that LMonoTys.subst maps over the list
-    show LMonoTys.subst Env2.stateSubstInfo.subst (mty :: mrest) =
-         LMonoTys.subst Env2.stateSubstInfo.subst (mty' :: mrest')
-    -- Use substLogic which distributes over cons
-    rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
-    simp only [LMonoTys.substLogic]; split
-    · -- hasEmptyScopes: subst is identity; need mty :: mrest = mty' :: mrest'
-      rename_i h_e
-      simp [LMonoTy.subst_emptyS h_e] at h_hd_final
-      simp [LMonoTys.subst, h_e] at h_tl_eq
-      rw [h_hd_final, h_tl_eq]
-    · -- non-empty: cons distributes
-      rw [h_hd_final]
-      congr 1
-      rwa [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic] at h_tl_eq
-end
 
 mutual
 /-- `subst S` distributes over `openVars` when the body's free vars are all in `vars`. -/
@@ -6002,6 +5905,8 @@ private theorem tconsAlias_expand_eq
               | cons hd tl ih => simp only [LMonoTys.substLogic]; split <;> simp [ih]
             rw [this]; exact h_fvs_len)
 
+
+
 private theorem HasType_resolveAliases
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty_in : LMonoTy)
     (mty_out : LMonoTy) (Env Env' : TEnv T.IDMeta)
@@ -6011,182 +5916,11 @@ private theorem HasType_resolveAliases
     (h_aliases_wf : TContext.AliasesWF Γ)
     (h_fresh : Subst.allKeysFresh Env'.stateSubstInfo.subst Γ) :
     HasType C Γ e (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty_out)) := by
-  -- Case split on mty_in to distinguish alias vs non-alias
-  match mty_in with
-  | .ftvar _ =>
-    -- resolveAliases is identity for ftvar
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h_ra
-    obtain ⟨h1, h2⟩ := h_ra; subst h1; subst h2
-    exact HasType_subst_fresh_all C Γ e _ Env.stateSubstInfo.subst
-      h_ty (fun a hk hfv => h_fresh a hk) Env.stateSubstInfo.isWF
-  | .bitvec _ =>
-    -- resolveAliases is identity for bitvec
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h_ra
-    obtain ⟨h1, h2⟩ := h_ra; subst h1; subst h2
-    exact HasType_subst_fresh_all C Γ e _ Env.stateSubstInfo.subst
-      h_ty (fun a hk hfv => h_fresh a hk) Env.stateSubstInfo.isWF
-  | .tcons name args =>
-    -- resolveAliases first resolves args, then tries alias expansion
-    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h_ra
-    split at h_ra; · simp at h_ra
-    rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h_ra h_args
-    split at h_ra; · simp at h_ra
-    rename_i v2 h_tcons; obtain ⟨mty', Env2⟩ := v2
-    simp [Pure.pure, Except.pure] at h_ra; obtain ⟨h1, h2⟩ := h_ra
-    subst h1; subst h2
-    -- Decompose tconsAlias: no-alias vs alias
-    unfold LMonoTy.tconsAlias at h_tcons
-    generalize h_ma : List.find? _ _ = ma at h_tcons
-    match ma with
-    | none =>
-      -- No alias: mty' = tcons name args', Env2 = Env1
-      simp [Pure.pure, Except.pure] at h_tcons
-      obtain ⟨h_mty, h_env⟩ := h_tcons; subst h_mty; subst h_env
-      -- Use resolveAliasList_subst_eq (which works for the no-alias case)
-      have h_eq : LMonoTy.subst Env1.stateSubstInfo.subst (.tcons name args) =
-          LMonoTy.subst Env1.stateSubstInfo.subst (.tcons name args') := by
-        have h_list_eq := resolveAliasList_subst_eq args Env args' Env1 h_args
-        by_cases h_e : Subst.hasEmptyScopes Env1.stateSubstInfo.subst
-        · rw [LMonoTy.subst_emptyS h_e, LMonoTy.subst_emptyS h_e]
-          simp [LMonoTys.subst, h_e] at h_list_eq; rw [h_list_eq]
-        · have h_ne : Subst.hasEmptyScopes Env1.stateSubstInfo.subst = false := by
-            revert h_e; cases Subst.hasEmptyScopes Env1.stateSubstInfo.subst <;> simp
-          simp [LMonoTy.subst, h_ne]; exact h_list_eq
-      have h_ty_subst := HasType_subst_fresh_all C Γ e (.tcons name args)
-        Env1.stateSubstInfo.subst h_ty (fun a hk hfv => h_fresh a hk) Env1.stateSubstInfo.isWF
-      rw [h_eq] at h_ty_subst; exact h_ty_subst
-    | some alias =>
-      -- Alias expansion: use HasType.talias + tconsAlias_expand_eq
-      --
-      -- Step 1: Get HasType for subst S (tcons name args)
-      have h_ty_subst := HasType_subst_fresh_all C Γ e (.tcons name args)
-        Env2.stateSubstInfo.subst h_ty (fun a hk hfv => h_fresh a hk) Env2.stateSubstInfo.isWF
-      -- Step 2: Decompose subst S (tcons name args) into tcons name (subst S args)
-      -- and show subst S args = subst S args' via absorption
-      have h_abs := LMonoTys.resolveAliases_absorbs args Env args' Env1 h_args
-      have h_abs2 := tconsAlias_absorbs name args' Env1 mty' Env2
-        (by unfold LMonoTy.tconsAlias; rw [h_ma]; exact h_tcons)
-      have h_abs_full : Subst.absorbs Env2.stateSubstInfo.subst Env.stateSubstInfo.subst :=
-        Subst.absorbs_trans _ _ _ h_abs h_abs2
-      -- Step 3: The alias is in Γ.aliases (via context preservation)
-      have h_ctx_pres := LMonoTys.resolveAliases_context args Env args' Env1 h_args
-      have h_alias_mem : alias ∈ Env1.context.aliases :=
-        List.mem_of_find?_eq_some h_ma
-      have h_alias_in_ctx : alias ∈ Γ.aliases := by
-        rw [h_aliases, ← h_ctx_pres]; exact h_alias_mem
-      -- Step 4: alias.name = name and arity matches (from the find? predicate)
-      have h_pred := List.find?_some h_ma
-      simp [BEq.beq, decide_eq_true_eq] at h_pred
-      obtain ⟨h_name, h_len⟩ := h_pred
-      -- Step 5: Apply talias to get HasType for expand alias (subst S args)
-      have h_expand : TypeAlias.expandsTo Γ.aliases name (LMonoTys.subst Env2.stateSubstInfo.subst args) (TypeAlias.expand alias (LMonoTys.subst Env2.stateSubstInfo.subst args)) := by
-        refine ⟨alias, h_alias_in_ctx, h_name, ?_, rfl⟩
-        -- alias.typeArgs.length = args'.length = (subst S args).length = args.length
-        -- subst preserves length (via substLogic)
-        -- First show args'.length = args.length (resolveAliases preserves length)
-        have h_ra_len : ∀ (xs : LMonoTys) (E : TEnv T.IDMeta) (xs' : LMonoTys) (E' : TEnv T.IDMeta),
-            LMonoTys.resolveAliases xs E = .ok (xs', E') → xs'.length = xs.length := by
-          intro xs; induction xs with
-          | nil => intros; simp_all [LMonoTys.resolveAliases, Pure.pure, Except.pure]
-          | cons hd tl ih_len =>
-            intro E xs' E' h
-            simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
-            split at h; · simp at h
-            rename_i v1 h_hd; obtain ⟨_, E_hd⟩ := v1; simp at h h_hd
-            split at h; · simp at h
-            rename_i v2 h_tl; obtain ⟨tl', E_tl⟩ := v2
-            simp [Pure.pure, Except.pure] at h
-            obtain ⟨h1, _⟩ := h; rw [← h1]; simp
-            exact ih_len E_hd tl' E_tl h_tl
-        suffices h_subst_len : (LMonoTys.subst Env2.stateSubstInfo.subst args).length = args.length by
-          rw [h_subst_len, ← h_ra_len args Env args' Env1 h_args]; exact h_len
-        rw [LMonoTys.subst_eq_substLogic]
-        have : ∀ (S : Subst) (xs : LMonoTys), (LMonoTys.substLogic S xs).length = xs.length := by
-          intro S xs; induction xs with
-          | nil => simp [LMonoTys.substLogic]
-          | cons hd tl ih => simp only [LMonoTys.substLogic]; split <;> simp [ih]
-        exact this _ _
-      -- Step 6: subst S (tcons name args) = tcons name (subst S args) (for non-empty S)
-      -- and apply talias to get HasType for TypeAlias.expand alias (subst S args)
-      have h_ty_alias := HasType.talias (C := C) Γ e name (LMonoTys.subst Env2.stateSubstInfo.subst args)
-        (TypeAlias.expand alias (LMonoTys.subst Env2.stateSubstInfo.subst args))
-        h_expand
-      -- Need: HasType C Γ e (.forAll [] (.tcons name (subst S args)))
-      -- From h_ty_subst: HasType C Γ e (.forAll [] (subst S (.tcons name args)))
-      -- subst S (.tcons name args) = .tcons name (subst S args) when not hasEmptyScopes
-      -- or = .tcons name args when hasEmptyScopes
-      have h_subst_tcons : LMonoTy.subst Env2.stateSubstInfo.subst (.tcons name args) =
-          .tcons name (LMonoTys.subst Env2.stateSubstInfo.subst args) := by
-        by_cases hS : Subst.hasEmptyScopes Env2.stateSubstInfo.subst
-        · simp [LMonoTy.subst, LMonoTys.subst, hS]
-        · have hS_ne : Subst.hasEmptyScopes Env2.stateSubstInfo.subst = false := by
-            revert hS; cases Subst.hasEmptyScopes Env2.stateSubstInfo.subst <;> simp
-          simp [LMonoTy.subst, hS_ne]
-      rw [h_subst_tcons] at h_ty_subst
-      have h_ty_expanded := h_ty_alias h_ty_subst
-      -- Step 7: Use tconsAlias_expand_eq to show
-      --   subst S mty' = expand alias (subst S args)
-      -- so the goal reduces to h_ty_expanded
-      have h_alias_wf : alias.WF := h_aliases_wf alias h_alias_in_ctx
-      have h_alias_nodup : alias.typeArgs.Nodup := h_alias_wf.2
-      have h_bridge := tconsAlias_expand_eq name args' Env1 mty' Env2 alias
-        (by unfold LMonoTy.tconsAlias; rw [h_ma]; exact h_tcons)
-        h_ma h_alias_wf h_alias_nodup
-      -- h_bridge : subst Env2.subst mty' = expand alias (subst Env2.subst args')
-      -- h_ty_expanded : HasType C Γ e (.forAll [] (expand alias (subst Env2.subst args)))
-      -- Need to show: subst Env2.subst args' = subst Env2.subst args (by absorption)
-      -- subst S args = subst S args' via absorption chain
-      have h_list_eq := resolveAliasList_subst_eq args Env args' Env1 h_args
-      have h_args_eq : LMonoTys.subst Env2.stateSubstInfo.subst args =
-          LMonoTys.subst Env2.stateSubstInfo.subst args' := by
-        -- Lift LMonoTy.subst_absorbs to lists via tcons wrapper:
-        -- subst S2 (subst S1 (tcons "" xs)) = subst S2 (tcons "" xs)
-        -- ↔ tcons "" (subst S2 (subst S1 xs)) = tcons "" (subst S2 xs)
-        -- ↔ subst S2 (subst S1 xs) = subst S2 xs
-        -- Combined with h_list_eq: subst S1 xs = subst S1 xs'
-        -- gives subst S2 xs = subst S2 (subst S1 xs) = subst S2 (subst S1 xs') = subst S2 xs'
-        -- Lift to lists via tcons wrapper + LMonoTy.subst_absorbs
-        have h_extract : ∀ (S : Subst) (xs : LMonoTys),
-            LMonoTy.subst S (.tcons "" xs) = .tcons "" (LMonoTys.subst S xs) := by
-          intro S' xs'
-          by_cases hS' : Subst.hasEmptyScopes S'
-          · simp [LMonoTy.subst, LMonoTys.subst, hS']
-          · have := show Subst.hasEmptyScopes S' = false by
-              revert hS'; cases Subst.hasEmptyScopes S' <;> simp
-            simp [LMonoTy.subst, this]
-        -- subst S2 (subst S1 (tcons "" xs)) = subst S2 (tcons "" xs) [by absorption]
-        have h_abs_args := LMonoTy.subst_absorbs Env2.stateSubstInfo.subst
-            Env1.stateSubstInfo.subst (.tcons "" args) h_abs2
-        have h_abs_args' := LMonoTy.subst_absorbs Env2.stateSubstInfo.subst
-            Env1.stateSubstInfo.subst (.tcons "" args') h_abs2
-        -- Extract list equality from tcons equality
-        -- h_abs_args : subst S2 (subst S1 (tcons "" args)) = subst S2 (tcons "" args)
-        -- Expand both sides using h_extract
-        -- LHS of h_abs_args = tcons "" (subst S2 (subst S1 args))  [via h_extract on subst S1, then S2]
-        -- RHS of h_abs_args = tcons "" (subst S2 args)
-        -- So subst S2 (subst S1 args) = subst S2 args
-        -- Similarly for args'
-        -- Then h_list_eq connects them
-        -- Clean approach: just use congrArg at the LMonoTy level
-        -- h_list_eq : subst S1 args = subst S1 args'
-        -- Lift to tcons level: subst S1 (tcons "" args) wraps subst S1 args in tcons ""
-        -- So we need to show subst S1 (tcons "" args) and subst S1 (tcons "" args') have same args part
-        have h_step : LMonoTy.subst Env2.stateSubstInfo.subst
-            (LMonoTy.subst Env1.stateSubstInfo.subst (.tcons "" args)) =
-            LMonoTy.subst Env2.stateSubstInfo.subst
-            (LMonoTy.subst Env1.stateSubstInfo.subst (.tcons "" args')) := by
-          -- subst S1 (tcons "" args) = tcons "" (subst S1 args)
-          rw [h_extract Env1.stateSubstInfo.subst args,
-              h_extract Env1.stateSubstInfo.subst args',
-              h_list_eq]
-        -- h_step : subst S2 (subst S1 (tcons "" args)) = subst S2 (subst S1 (tcons "" args'))
-        -- h_abs_args  : subst S2 (subst S1 (tcons "" args))  = subst S2 (tcons "" args)
-        -- h_abs_args' : subst S2 (subst S1 (tcons "" args')) = subst S2 (tcons "" args')
-        have h_tcons_eq := h_abs_args.symm.trans (h_step.trans h_abs_args')
-        -- h_tcons_eq : subst S2 (tcons "" args) = subst S2 (tcons "" args')
-        rw [h_extract, h_extract] at h_tcons_eq
-        exact (LMonoTy.tcons.inj h_tcons_eq).2
-      rw [h_bridge, ← h_args_eq]; exact h_ty_expanded
+  -- Use talias_resolve to get HasType for mty_out, then apply substitution
+  have h_resolved := HasType.talias_resolve Γ e mty_in mty_out
+    ⟨inferInstance, Env, Env', h_aliases, h_aliases_wf, h_ra⟩ h_ty
+  exact HasType_subst_fresh_all C Γ e mty_out Env'.stateSubstInfo.subst
+    h_resolved (fun a hk hfv => h_fresh a hk) Env'.stateSubstInfo.isWF
 
 theorem instantiateWithCheck_fvar_HasType
     (C : LContext T) (Γ : TContext T.IDMeta) (x : Identifier T.IDMeta)

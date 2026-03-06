@@ -83,6 +83,29 @@ def TypeAlias.expandsTo (aliases : List TypeAlias) (name : String) (args : LMono
     alias.typeArgs.length = args.length ∧
     mty = alias.expand args
 
+mutual
+/-- Two monotypes are alias-equivalent if one can be obtained from the other
+    by expanding (or collapsing) type aliases, including inside subtrees. -/
+inductive AliasEquiv (aliases : List TypeAlias) : LMonoTy → LMonoTy → Prop where
+  /-- Every type is alias-equivalent to itself. -/
+  | refl : AliasEquiv aliases mty mty
+  /-- Single-step alias expansion at the top level. -/
+  | expand : TypeAlias.expandsTo aliases name args mty →
+      AliasEquiv aliases (.tcons name args) mty
+  /-- Congruence: alias-equivalent argument lists give alias-equivalent tcons types. -/
+  | cong_tcons : AliasEquivList aliases args args' →
+      AliasEquiv aliases (.tcons name args) (.tcons name args')
+  /-- Transitivity. -/
+  | trans : AliasEquiv aliases mty₁ mty₂ → AliasEquiv aliases mty₂ mty₃ →
+      AliasEquiv aliases mty₁ mty₃
+
+/-- Pointwise alias-equivalence on lists of monotypes. -/
+inductive AliasEquivList (aliases : List TypeAlias) : LMonoTys → LMonoTys → Prop where
+  | nil : AliasEquivList aliases [] []
+  | cons : AliasEquiv aliases hd hd' → AliasEquivList aliases tl tl' →
+      AliasEquivList aliases (hd :: tl) (hd' :: tl')
+end
+
 def TypeAlias.toAliasLTy (a : TypeAlias) : LTy :=
   .forAll a.typeArgs (.tcons a.name (a.typeArgs.map (fun i => .ftvar i)))
 
