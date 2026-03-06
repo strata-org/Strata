@@ -7529,7 +7529,23 @@ theorem resolveAux_HasType :
             (typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv) h_ne
         · -- Typing under arbitrary absorbing S
           intro S h_abs_S h_wf_S
-          sorry -- abs case typing: needs tabs rule + varClose reasoning
+          -- Step 1: Simplify et.toLMonoTy
+          rw [← h_et]; simp [toLMonoTy]
+          -- Step 2: Absorption: S absorbs Env2.subst
+          have h_abs_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst := by
+            rw [← h_env'] at h_abs_S
+            simp [TEnv.eraseFromContext, TEnv.updateContext] at h_abs_S
+            exact h_abs_S
+          -- Step 3: Use IH to get body typing under S
+          have h_body_S := h_ty_body S h_abs_Env2 h_wf_S
+          -- h_body_S : HasType C Env1.context (varOpen ..) (.forAll [] (subst S et_body.toLMonoTy))
+          -- The proof applies `tabs` then upgrades via `HasType_subst_fresh_all`.
+          -- Key issue: tabs requires annotation matching (bty = none ∨ bty = some xty).
+          -- When bty = some bty_val, the original annotation may differ from the
+          -- resolved xty (after instantiateWithCheck). This is a spec limitation.
+          -- For bty = none: the proof goes through.
+          -- For bty = some: needs additional typing rule for annotated abs.
+          sorry
   | .quant m qk bty tr e_body =>
     intro et C Env Env' h h_envwf h_ne h_fwf
     have h_aw := h_envwf.aliasesWF
