@@ -52,6 +52,36 @@ structure TypeAlias where
 def TypeAlias.WF (a : TypeAlias) : Prop :=
   ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs
 
+mutual
+/-- Replace free type variables in `mty` according to a positional mapping
+    from `vars` to `vals`. Variables not in `vars` are unchanged. -/
+def LMonoTy.openVars (vars : List TyIdentifier) (vals : LMonoTys) (mty : LMonoTy) : LMonoTy :=
+  match mty with
+  | .ftvar x =>
+    match List.zip vars vals |>.find? (fun p => p.1 == x) with
+    | some (_, v) => v
+    | none => .ftvar x
+  | .bitvec n => .bitvec n
+  | .tcons name args => .tcons name (LMonoTys.openVars vars vals args)
+
+/-- Apply `openVars` to a list of monotypes. -/
+def LMonoTys.openVars (vars : List TyIdentifier) (vals : LMonoTys) (mtys : LMonoTys) : LMonoTys :=
+  match mtys with
+  | [] => []
+  | mty :: rest => LMonoTy.openVars vars vals mty :: LMonoTys.openVars vars vals rest
+end
+
+/-- Pure alias expansion: substitute `args` for `a.typeArgs` in `a.type`. -/
+def TypeAlias.expand (a : TypeAlias) (args : LMonoTys) : LMonoTy :=
+  LMonoTy.openVars a.typeArgs args a.type
+
+/-- There exists an alias in `aliases` that expands `tcons name args` to `mty`. -/
+def TypeAlias.expandsTo (aliases : List TypeAlias) (name : String) (args : LMonoTys) (mty : LMonoTy) : Prop :=
+  ∃ alias ∈ aliases,
+    alias.name = name ∧
+    alias.typeArgs.length = args.length ∧
+    mty = alias.expand args
+
 def TypeAlias.toAliasLTy (a : TypeAlias) : LTy :=
   .forAll a.typeArgs (.tcons a.name (a.typeArgs.map (fun i => .ftvar i)))
 
