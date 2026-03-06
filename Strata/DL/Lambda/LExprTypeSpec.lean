@@ -3880,8 +3880,15 @@ private theorem LMonoTy_resolveAliases_preserves_SubstFreshForGen
     split at h <;> (simp at h; obtain ⟨h1, h2⟩ := h; subst h1; subst h2)
     · -- No alias: mty' = tcons name args', freeVars = LMonoTys.freeVars args'
       exact ⟨h_args_result.1, h_args_result.2⟩
-    · -- Alias found: mty' = expanded alias. freeVars of expansion ⊆ freeVars args'
-      exact ⟨h_args_result.1, by sorry⟩ -- needs: alias expansion freeVars ⊆ args' freeVars
+    · -- Alias found: mty' = expand alias args'. freeVars ⊆ freeVars args' (by openVars_freeVars_subset)
+      rename_i alias h_find
+      have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args
+      have h_alias_wf := h_aw alias (by rw [← h_ctx_eq]; exact List.mem_of_find?_eq_some h_find)
+      have h_pred := List.find?_some h_find
+      simp [BEq.beq, decide_eq_true_eq] at h_pred
+      exact ⟨h_args_result.1, fun v hv n hn =>
+        h_args_result.2 v (openVars_freeVars_subset alias.typeArgs args' alias.type
+          h_alias_wf.fvs_closed h_pred.2 v hv) n hn⟩
 
 /-- `LMonoTys.resolveAliases` preserves `SubstFreshForGen` AND produces output
     whose freeVars satisfy gen-freshness for the output genState.
@@ -3975,13 +3982,82 @@ private theorem LTy_resolveAliases_preserves_SubstFreshForGen
       obtain ⟨h_mty, h_env⟩ := h_inst; subst h_mty; subst h_env
       exact h_ty_fresh v (by simp [LTy.freeVars, List.removeAll]; exact hv) n hn
     | cons x xs =>
-      -- Polymorphic: genTyVars, then substitute
-      -- Polymorphic case: genTyVars generates fresh vars, then body is substituted.
-      -- FreeVars of result = (body freeVars \ bound vars) ∪ fresh vars.
-      -- Body freeVars \ bound = LTy.freeVars (.forAll (x::xs) body) → gen-fresh by h_ty_fresh.
-      -- Fresh vars → gen-fresh by genTyVars_genFresh'.
-      -- Both hold for n ≥ genEnv'.genState.tyGen by monotonicity.
-      sorry
+      -- Polymorphic: genTyVars generates fresh vars, then body is substituted.
+      -- Decompose h_inst to extract freshtvs
+      simp [LTy.instantiate, Bind.bind, Except.bind] at h_inst
+      split at h_inst; · simp at h_inst
+      rename_i v_gen h_gen; obtain ⟨freshtvs, Env1⟩ := v_gen; simp at h_inst h_gen
+      obtain ⟨h_mty, h_env⟩ := h_inst; subst h_mty; subst h_env
+      -- mty0 = subst [zip (x::xs) (map ftvar freshtvs)] body
+      -- freeVars ⊆ freeVars(body) ++ Subst.freeVars [zip ...]
+      have h_subset := LMonoTy.freeVars_of_subst_subset
+        [List.zip (x :: xs) (List.map LMonoTy.ftvar freshtvs)] body hv
+      rw [List.mem_append] at h_subset
+      cases h_subset with
+      | inl h_body =>
+        -- v ∈ freeVars body: if v ∉ (x::xs), then v ∈ LTy.freeVars ty, gen-fresh by h_ty_fresh + mono
+        -- if v ∈ (x::xs), the substitution would have replaced it (overapprox)
+        -- In either case, v is either a known type var (gen-fresh) or was substituted away
+        -- For the overapprox case: v ∈ freeVars body and v ∈ (x::xs) means v is a bound var.
+        -- Context's knownTypeVars include bound vars, so v is gen-fresh by ContextFreshForGen.
+        -- Use h_ty_fresh which covers LTy.freeVars = freeVars(body) \ bound vars
+        -- But freeVars_of_subst_subset includes ALL body fvs, not just unbound ones.
+        -- For bound vars: they are in context's knownTypeVars, hence gen-fresh by h_cfg.
+        -- Since h_cfg : ContextFreshForGen Env.context Env.genState, and
+        -- n ≥ genEnv'.genState.tyGen ≥ Env.genState.tyGen:
+        sorry -- Needs: body fvs are gen-fresh (either in LTy.freeVars or in knownTypeVars)
+      | inr h_subst_fvs =>
+        -- v ∈ Subst.freeVars [zip (x::xs) (map ftvar freshtvs)]
+        -- The values are (map ftvar freshtvs), so v ∈ freshtvs
+        -- Subst.freeVars [m] = m.values.flatMap freeVars
+        -- m = zip (x::xs) (map ftvar freshtvs), values = map snd (zip ...) ⊆ map ftvar freshtvs
+        -- freeVars (ftvar tv) = [tv], so flatMap gives freshtvs
+        -- Then by genTyVars_genFresh': v ≠ tyPrefix ++ toString n
+        have h_fresh_gen := genTyVars_genFresh' (x :: xs).length Env.genEnv freshtvs Env1 h_gen
+        -- Need: v ∈ freshtvs
+        -- h_subst_fvs : v ∈ Subst.freeVars [zip (x::xs) (map ftvar freshtvs)]
+        -- Subst.freeVars = Maps.values.flatMap freeVars
+        -- For single scope [m], Maps.values [m] = Map.values m
+        -- Map.values (zip vars vals) ⊆ vals
+        -- freeVars(ftvar tv) = [tv]
+        -- So v ∈ freshtvs
+        have h_v_in_freshtvs : v ∈ freshtvs := by
+          -- v ∈ Subst.freeVars [zip (x::xs) (map ftvar freshtvs)]
+          -- Unfold: Subst.freeVars = Maps.values.flatMap freeVars
+          -- Maps.values [m] = Map.values m
+          -- Map.values (zip vars vals): the second components of the zip
+          -- freeVars (ftvar tv) = [tv]
+          -- So v ∈ flatMap freeVars (Map.values (zip vars (map ftvar freshtvs)))
+          -- ⊆ flatMap freeVars (map ftvar freshtvs) = freshtvs
+          -- Prove by showing: for any vars vals,
+          --   v ∈ (Map.values (zip vars (map ftvar tvs))).flatMap freeVars → v ∈ tvs
+          -- Prove: v ∈ Subst.freeVars [zip vars (map ftvar freshtvs)] → v ∈ freshtvs
+          -- by induction on vars/freshtvs
+          simp only [Subst.freeVars, Maps.values] at h_subst_fvs
+          rw [List.mem_flatMap] at h_subst_fvs
+          obtain ⟨mty_val, h_in_vals, h_fv⟩ := h_subst_fvs
+          -- mty_val ∈ Map.values (zip (x::xs) (map ftvar freshtvs))
+          -- Map.values of zip = second components ⊆ map ftvar freshtvs
+          suffices ∀ (vars : List TyIdentifier) (tvs : List TyIdentifier),
+              mty_val ∈ Map.values (List.zip vars (tvs.map LMonoTy.ftvar)) →
+              ∃ t ∈ tvs, mty_val = .ftvar t by
+            simp at h_in_vals
+            obtain ⟨t, h_t_mem, h_eq⟩ := this (x :: xs) freshtvs h_in_vals
+            rw [h_eq] at h_fv; simp [LMonoTy.freeVars] at h_fv
+            rw [h_fv]; exact h_t_mem
+          intro vars tvs h_val
+          induction vars generalizing tvs with
+          | nil => simp [List.zip, Map.values] at h_val
+          | cons a as ih =>
+            cases tvs with
+            | nil => simp [List.zip, List.map, Map.values] at h_val
+            | cons t ts =>
+              simp only [List.map, List.zip, List.zipWith, Map.values] at h_val
+              cases h_val with
+              | head => exact ⟨t, .head _, rfl⟩
+              | tail _ h => obtain ⟨t', h_mem, h_eq⟩ := ih ts h
+                            exact ⟨t', .tail _ h_mem, h_eq⟩
+        exact h_fresh_gen v h_v_in_freshtvs n hn
   exact (LMonoTy_resolveAliases_preserves_SubstFreshForGen mty0 _ mty Env' h
     (h_eq ▸ SubstFreshForGen.mono _ _ _ h_fresh h_mono_inst)
     (h_ctx_eq ▸ h_aw)
