@@ -6552,7 +6552,7 @@ theorem resolveAux_HasType :
             have h_ne1 := h_ctx1 ▸ h_ne
             -- Build TEnvWF for Env1 (context preserved, subst/gen extended)
             have h_envwf1 : TEnvWF Env1 :=
-              { valsFresh := h_ctx1 ▸ sorry -- needs resolveAux_vals_fresh
+              { valsFresh := h_ctx1 ▸ resolveAux_vals_fresh _ _ C Env _ (by assumption) h_envwf h_ne
                 aliasesWF := h_ctx1 ▸ h_aw
                 substFreshForGen := resolveAux_preserves_SubstFreshForGen e1 e1t C Env Env1 h_res1 h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne
                 ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
@@ -6744,7 +6744,7 @@ theorem resolveAux_HasType :
             -- (h_sf1 removed: keysFresh no longer in TEnvWF)
             -- Build TEnvWF for Env1
             have h_envwf1 : TEnvWF Env1 :=
-              { valsFresh := h_ctx1 ▸ sorry -- needs resolveAux_vals_fresh
+              { valsFresh := h_ctx1 ▸ resolveAux_vals_fresh _ _ C Env _ (by assumption) h_envwf h_ne
                 aliasesWF := h_ctx1 ▸ h_aw
                 substFreshForGen := resolveAux_preserves_SubstFreshForGen c ct C Env Env1 h_res_c h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne
                 ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono c ct C Env Env1 h_res_c)
@@ -6753,7 +6753,10 @@ theorem resolveAux_HasType :
             have h_ne2 := h_ctx2 ▸ h_ne1
             -- Build TEnvWF for Env2
             have h_envwf2 : TEnvWF Env2 :=
-              { valsFresh := h_ctx2 ▸ h_ctx1 ▸ sorry -- needs resolveAux_vals_fresh
+              { valsFresh := by
+                  rw [show Env2.context = Env.context from h_ctx2.trans h_ctx1]
+                  have h_vf2 := resolveAux_vals_fresh _ _ C Env1 _ h_res_t h_envwf1 h_ne1
+                  rw [h_ctx1] at h_vf2; exact h_vf2
                 aliasesWF := h_ctx2 ▸ h_ctx1 ▸ h_aw
                 substFreshForGen := resolveAux_preserves_SubstFreshForGen t tht C Env1 Env2 h_res_t h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1
                 ctxFreshForGen := h_ctx2 ▸ ContextFreshForGen.mono _ _ _ h_envwf1.ctxFreshForGen (resolveAux_genState_mono t tht C Env1 Env2 h_res_t)
@@ -6855,7 +6858,7 @@ theorem resolveAux_HasType :
           -- (h_sf1 removed: keysFresh no longer in TEnvWF)
           -- Build TEnvWF for Env1
           have h_envwf1 : TEnvWF Env1 :=
-            { valsFresh := h_ctx1 ▸ sorry -- needs resolveAux_vals_fresh
+            { valsFresh := h_ctx1 ▸ resolveAux_vals_fresh _ _ C Env _ (by assumption) h_envwf h_ne
               aliasesWF := h_ctx1 ▸ h_aw
               substFreshForGen := resolveAux_preserves_SubstFreshForGen e1 e1t C Env Env1 h_res1 h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne
               ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
