@@ -63,31 +63,30 @@ def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
   | .empty => false
   | .complement _ => true
 
+/--
+Returns true if any node in `r` satisfies `p`, where `p` is intended to be used
+for positional checks. As such, this does not recurse into
+`.complement`: its child is a character-set description (`[^...]`) that
+cannot contain positional nodes.
+-/
+private def RegexAST.anyNode (p : RegexAST → Bool) (r : RegexAST) : Bool :=
+  p r || match r with
+  | .concat r1 r2 => r1.anyNode p || r2.anyNode p
+  | .union  r1 r2 => r1.anyNode p || r2.anyNode p
+  | .star   r     => r.anyNode p
+  | .plus   r     => r.anyNode p
+  | .optional r   => r.anyNode p
+  | .loop   r _ _ => r.anyNode p
+  | .group  r     => r.anyNode p
+  | _             => false
+
 /-- Returns true if `r` contains an `anchor_end` (`$`) node anywhere. -/
 def RegexAST.containsAnchorEnd (r : RegexAST) : Bool :=
-  match r with
-  | .anchor_end   => true
-  | .concat r1 r2 => r1.containsAnchorEnd || r2.containsAnchorEnd
-  | .union  r1 r2 => r1.containsAnchorEnd || r2.containsAnchorEnd
-  | .star   r     => r.containsAnchorEnd
-  | .plus   r     => r.containsAnchorEnd
-  | .optional r   => r.containsAnchorEnd
-  | .loop   r _ _ => r.containsAnchorEnd
-  | .group  r     => r.containsAnchorEnd
-  | _             => false
+  r.anyNode (· matches .anchor_end)
 
 /-- Returns true if `r` contains an `anchor_start` (`^`) node anywhere. -/
 def RegexAST.containsAnchorStart (r : RegexAST) : Bool :=
-  match r with
-  | .anchor_start => true
-  | .concat r1 r2 => r1.containsAnchorStart || r2.containsAnchorStart
-  | .union  r1 r2 => r1.containsAnchorStart || r2.containsAnchorStart
-  | .star   r     => r.containsAnchorStart
-  | .plus   r     => r.containsAnchorStart
-  | .optional r   => r.containsAnchorStart
-  | .loop   r _ _ => r.containsAnchorStart
-  | .group  r     => r.containsAnchorStart
-  | _             => false
+  r.anyNode (· matches .anchor_start)
 
 /--
 Returns true if `r` contains any character-matching node (char, range, anychar,
@@ -95,19 +94,13 @@ complement). Used to inform anchor interaction: when false, the regex can only
 produce empty or none, regardless of the anchor context.
 -/
 def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
-  match r with
-  | .char _        => true
-  | .range _ _     => true
-  | .anychar       => true
-  | .complement _  => true
-  | .concat r1 r2  => r1.hasNonAnchorContent || r2.hasNonAnchorContent
-  | .union  r1 r2  => r1.hasNonAnchorContent || r2.hasNonAnchorContent
-  | .star   r      => r.hasNonAnchorContent
-  | .plus   r      => r.hasNonAnchorContent
-  | .optional r    => r.hasNonAnchorContent
-  | .loop   r _ _  => r.hasNonAnchorContent
-  | .group  r      => r.hasNonAnchorContent
-  | _              => false
+  r.anyNode (fun
+    | .char _       => true
+    | .range _ _    => true
+    | .anychar      => true
+    -- a complement class always matches one character
+    | .complement _ => true
+    | _             => false)
 
 /--
 Empty regex pattern; matches an empty string.
@@ -232,9 +225,9 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         let r2b     := toCore r2 false true
         -- Restrict `r2` to `""` for Case 1 (`r2` is non-consuming, so
         -- intersection with `""` checks that `r2` can indeed match `""` here).
-        let r2b_eps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
+        let r2bEps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
         mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2b_eps],
+          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2bEps],
            mkApp () (.op () reConcatFunc.name none) [r1bMid, r2b]]
       else
         let r1b := toCore r1 atStart atEnd
@@ -278,9 +271,9 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         let r1bEnd := toCore r1 atStart true
         let r1bMid := toCore r1 atStart false
         let r2b     := toCore r2 atStart true
-        let r2b_eps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
+        let r2bEps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
         mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2b_eps],
+          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2bEps],
            mkApp () (.op () reConcatFunc.name none) [r1bMid, r2b]]
       else
         let r1b := toCore r1 atStart atEnd
