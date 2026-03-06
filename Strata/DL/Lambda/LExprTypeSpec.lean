@@ -5104,7 +5104,7 @@ private theorem LMonoTy.freeVars_destructArrow_subset (mty : LMonoTy) :
     intro x hx
     rcases List.mem_append.mp hx with h1 | h2
     · exact List.mem_append_left _ h1
-    · exact List.mem_append_right _ (sorry)
+    · exact List.mem_append_right _ (sorry) -- needs LMonoTys.freeVars_destructArrow_subset
   | .tcons _ _ =>
     intro x hx
     unfold LMonoTy.destructArrow at hx
@@ -5113,7 +5113,7 @@ private theorem LMonoTy.freeVars_destructArrow_subset (mty : LMonoTy) :
       rw [heq]; simp only [LMonoTy.freeVars, LMonoTys.freeVars] at hx ⊢
       rcases List.mem_append.mp hx with h1 | h2
       · exact List.mem_append_left _ h1
-      · exact List.mem_append_right _ (sorry)
+      · exact List.mem_append_right _ (sorry) -- needs LMonoTys.freeVars_destructArrow_subset
     · simp [LMonoTys.freeVars] at hx; exact hx
 
 private theorem LMonoTys.freeVars_destructArrow_subset (mtys : LMonoTys) :
@@ -5134,34 +5134,27 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
     (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty)
     (h_wf : LFuncWF func) :
     LTy.freeVars ty = [] := by
-  -- ty must be .forAll vars body for some vars, body
   cases ty with
   | forAll vars body =>
   simp [LTy.freeVars]
-  -- Goal: (LMonoTy.freeVars body).removeAll vars = []
-  -- From LFunc.type: vars = func.typeArgs and body freeVars ⊆ func.typeArgs
   apply List.removeAll_eq_nil_of_forall_mem
-  -- Show all body freeVars ⊆ typeArgs (= vars after extraction)
   unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind, decide_eq_true_eq] at h_type
   split at h_type; · simp at h_type
   split at h_type; · simp at h_type
   generalize h_vals : func.inputs.values = vals at h_type
   cases vals with
   | nil =>
-    injection h_type with h1; injection h1 with h1a h1b; subst h1a; subst h1b; exact h_wf.output_typevars_in_typeArgs
+    injection h_type with h1; injection h1 with h1a h1b; subst h1a; subst h1b
+    exact h_wf.output_typevars_in_typeArgs
   | cons ity irest =>
     injection h_type with h1; injection h1 with h1a h1b; subst h1a; subst h1b
     rw [LMonoTy.freeVars_mkArrow]
     intro x hx
     simp [LMonoTys.freeVars_append, List.mem_append] at hx
-    -- hx : x from freeVars ity ∨ x from freeVars irest ∨ x from freeVars (destructArrow output)
     rcases hx with hx_ity | hx_irest | hx_destr
-    · -- x from ity (first input)
-      exact h_wf.inputs_typevars_in_typeArgs ity (h_vals ▸ List.mem_cons_self) hx_ity
-    · -- x from irest: need ∃ ty ∈ irest, x ∈ ty.freeVars, then ty ∈ func.inputs.values
-      have h_irest_sub : ∀ ty, ty ∈ irest → ty ∈ func.inputs.values :=
+    · exact h_wf.inputs_typevars_in_typeArgs ity (h_vals ▸ List.mem_cons_self) hx_ity
+    · have h_irest_sub : ∀ ty, ty ∈ irest → ty ∈ func.inputs.values :=
         fun ty ht => h_vals ▸ List.mem_cons_of_mem _ ht
-      -- Extract: x ∈ LMonoTys.freeVars irest → ∃ ty ∈ irest, x ∈ ty.freeVars
       have : ∀ (xs : LMonoTys), (∀ ty, ty ∈ xs → ty ∈ func.inputs.values) →
           ∀ v, v ∈ LMonoTys.freeVars xs → v ∈ func.typeArgs := by
         intro xs h_sub v hv
@@ -5173,24 +5166,12 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
           · exact h_wf.inputs_typevars_in_typeArgs t (h_sub t List.mem_cons_self) hv_t
           · exact ih (fun ty ht => h_sub ty (List.mem_cons_of_mem _ ht)) hv_ts
       exact this irest h_irest_sub x hx_irest
-    · -- x from destructArrow output: freeVars ⊆ output freeVars ⊆ typeArgs
-      exact h_wf.output_typevars_in_typeArgs (LMonoTy.freeVars_destructArrow_subset func.output hx_destr)
+    · exact h_wf.output_typevars_in_typeArgs (LMonoTy.freeVars_destructArrow_subset func.output hx_destr)
 
-/-- `resolveAux` preserves the `SubstFreshForGen` invariant. -/
-private theorem resolveAux_preserves_SubstFreshForGen :
-    ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
-      (Env Env' : TEnv T.IDMeta),
-      resolveAux C Env e = .ok (et, Env') →
-      SubstFreshForGen Env.stateSubstInfo Env.genEnv.genState →
-      ContextFreshForGen Env.context Env.genEnv.genState →
-      Env.context.types ≠ [] →
-      TContext.AliasesWF Env.context →
-      FactoryWF C.functions →
-      SubstFreshForGen Env'.stateSubstInfo Env'.genEnv.genState := by
-  intro e
-  -- Strengthen the IH to also prove context preservation.
-  -- This avoids a forward reference to resolveAux_context.
-  suffices ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
+/-- Combined result: context preservation, SubstFreshForGen preservation, and output type freshness.
+    These are proved together by strong induction to avoid circular dependencies. -/
+private theorem resolveAux_preserves_combined :
+    ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
       ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
       Env.context.types ≠ [] →
@@ -5199,9 +5180,9 @@ private theorem resolveAux_preserves_SubstFreshForGen :
        ContextFreshForGen Env.context Env.genEnv.genState →
        TContext.AliasesWF Env.context →
        FactoryWF C.functions →
-       SubstFreshForGen Env'.stateSubstInfo Env'.genEnv.genState) by
-    intro et C Env Env' h h_sf h_cf h_ne h_aw h_fwf
-    exact (this e.sizeOf e rfl et C Env Env' h h_ne).2 h_sf h_cf h_aw h_fwf
+       SubstFreshForGen Env'.stateSubstInfo Env'.genEnv.genState ∧
+       (∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+         ∀ k, k ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString k)) := by
   intro n
   induction n using Nat.strongRecOn with
   | _ n ih =>
@@ -5223,21 +5204,66 @@ private theorem resolveAux_preserves_SubstFreshForGen :
       (h' : resolveAux C' Env0 e' = .ok (et', Env0'))
       (h_ne0 : Env0.context.types ≠ []) =>
     (ih sz h_sz e' h_eq' et' C' Env0 Env0' h' h_ne0).1
+  -- Helper: extract output type freshness from ih
+  have ih_output_fresh := fun (sz : Nat) (h_sz : sz < n) (e' : LExpr T.mono) (h_eq' : e'.sizeOf = sz)
+      (et' : LExprT T.mono) (C' : LContext T) (Env0 Env0' : TEnv T.IDMeta)
+      (h' : resolveAux C' Env0 e' = .ok (et', Env0'))
+      (h_ne0 : Env0.context.types ≠ [])
+      (h_sf0 : SubstFreshForGen Env0.stateSubstInfo Env0.genEnv.genState)
+      (h_cf0 : ContextFreshForGen Env0.context Env0.genEnv.genState)
+      (h_aw0 : TContext.AliasesWF Env0.context)
+      (h_fwf0 : FactoryWF C'.functions) =>
+    ((ih sz h_sz e' h_eq' et' C' Env0 Env0' h' h_ne0).2 h_sf0 h_cf0 h_aw0 h_fwf0).2
   exact ⟨resolveAux_context e et C Env Env' h h_ne,
   fun h_fresh h_ctx h_aw h_fwf => by
   match e with
   | .const m c =>
     simp [resolveAux, inferConst] at h
     split at h
-    · simp [Bind.bind, Except.bind] at h; obtain ⟨_, h2⟩ := h; rw [← h2]; exact h_fresh
+    · simp [Bind.bind, Except.bind] at h; obtain ⟨h_et, h2⟩ := h; rw [← h2]
+      exact ⟨h_fresh, fun v hv => by
+        rw [← h_et] at hv; simp [toLMonoTy] at hv
+        cases c with
+        | boolConst _ => simp [LConst.ty, LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        | intConst _ => simp [LConst.ty, LMonoTy.int, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        | realConst _ => simp [LConst.ty, LMonoTy.real, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        | strConst _ => simp [LConst.ty, LMonoTy.string, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        | bitvecConst _ _ => simp [LConst.ty, LMonoTy.freeVars] at hv⟩
     · exact absurd h (by simp [Bind.bind, Except.bind])
   | .bvar _ _ => simp [resolveAux, Bind.bind, Except.bind] at h
   | .fvar m x fty =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
-    rename_i v1 h_infer; obtain ⟨_, Env_res⟩ := v1; simp at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]
-    exact inferFVar_preserves_SubstFreshForGen C Env x fty _ Env_res h_infer h_fresh h_ctx h_aw
+    rename_i v1 h_infer; obtain ⟨ty_res, Env_res⟩ := v1; simp at h
+    obtain ⟨h_et, h2⟩ := h; rw [← h2]
+    constructor
+    · exact inferFVar_preserves_SubstFreshForGen C Env x fty _ Env_res h_infer h_fresh h_ctx h_aw
+    · -- Output type freshness for fvar
+      subst h_et h2
+      intro v hv k hk
+      simp [toLMonoTy] at hv
+      -- Decompose inferFVar to extract instantiateWithCheck
+      simp only [inferFVar, Bind.bind, Except.bind] at h_infer
+      split at h_infer; · simp at h_infer
+      rename_i ty_found h_find_ctx
+      split at h_infer; · simp at h_infer
+      rename_i v2 h_inst; obtain ⟨mty, Env1⟩ := v2; dsimp at h_infer h_inst
+      have h_mty_fresh := LTy_instantiateWithCheck_freeVars_fresh _ C Env mty Env1
+        h_inst h_ctx
+      cases fty with
+      | none =>
+        simp at h_infer; obtain ⟨h_ty, h_env1⟩ := h_infer
+        rw [← h_ty] at hv; rw [← h_env1] at hk
+        exact h_mty_fresh v hv k hk
+      | some fty_val =>
+        simp only [Except.mapError] at h_infer
+        split at h_infer; · simp at h_infer
+        rename_i v3 h_inst2; obtain ⟨fty_inst, Env2⟩ := v3; dsimp at h_infer h_inst2
+        split at h_infer; · simp at h_infer
+        simp at h_infer; obtain ⟨h_ty, h_env2⟩ := h_infer
+        rw [← h_ty] at hv; rw [← h_env2] at hk; simp [TEnv.updateSubst] at hk
+        have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_inst2
+        exact h_mty_fresh v hv k (Nat.le_trans h_mono2 hk)
   | .op m o oty =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -5265,16 +5291,21 @@ private theorem resolveAux_preserves_SubstFreshForGen :
       intro v hv; simp [h_ty_closed] at hv
     cases oty with
     | none =>
-      simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-      exact LTy_instantiateWithCheck_preserves_SubstFreshForGen type_val C Env ty_inst Env1 h_inst h_fresh h_aw h_ctx
-        h_ty_fresh_vacuous
+      simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2
+      constructor
+      · exact LTy_instantiateWithCheck_preserves_SubstFreshForGen type_val C Env ty_inst Env1 h_inst h_fresh h_aw h_ctx
+          h_ty_fresh_vacuous
+      · intro v hv k hk
+        simp [toLMonoTy] at hv
+        exact LTy_instantiateWithCheck_freeVars_fresh type_val C Env ty_inst Env1 h_inst h_ctx v hv k hk
     | some oty_val =>
       simp only [Except.mapError] at h
       split at h; · simp at h
       rename_i v2 h_inst2; obtain ⟨oty_inst, Env2⟩ := v2; dsimp at h h_inst2
       split at h; · simp at h
       rename_i v3 h_mapError
-      simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
+      simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2
+      simp [TEnv.updateSubst]
       have h_aw1 : TContext.AliasesWF Env1.context :=
         (LTy_instantiateWithCheck_context' _ C Env ty_inst Env1 h_inst) ▸ h_aw
       have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState :=
@@ -5286,19 +5317,25 @@ private theorem resolveAux_preserves_SubstFreshForGen :
       have h_fresh2 := LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
         oty_val C Env1 oty_inst Env2 h_inst2 h_fresh1 h_aw1 h_ctx1
       have h_unify := unify_of_mapError h_mapError
-      exact unify_preserves_SubstFreshForGen h_unify h_fresh2 (fun v hv n hn => by
-        simp [Constraints.freeVars, Constraint.freeVars] at hv
-        cases hv with
-        | inl h_ty =>
-          exact LTy_instantiateWithCheck_freeVars_fresh type_val C Env ty_inst Env1
-            h_inst h_ctx v h_ty n (Nat.le_trans
-            (LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2) hn)
-        | inr h_oty =>
-          have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by
-            rw [LTy_instantiateWithCheck_context' _ C Env _ Env1 h_inst]
-            exact ContextFreshForGen.mono _ _ _ h_ctx (LTy_instantiateWithCheck_tyGen_mono _ C Env _ Env1 h_inst)
-          exact LMonoTy_instantiateWithCheck_freeVars_fresh oty_val C Env1 oty_inst Env2
-            h_inst2 h_ctx1 v h_oty n hn)
+      constructor
+      · exact unify_preserves_SubstFreshForGen h_unify h_fresh2 (fun v hv n hn => by
+          simp [Constraints.freeVars, Constraint.freeVars] at hv
+          cases hv with
+          | inl h_ty =>
+            exact LTy_instantiateWithCheck_freeVars_fresh type_val C Env ty_inst Env1
+              h_inst h_ctx v h_ty n (Nat.le_trans
+              (LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2) hn)
+          | inr h_oty =>
+            have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState := by
+              rw [LTy_instantiateWithCheck_context' _ C Env _ Env1 h_inst]
+              exact ContextFreshForGen.mono _ _ _ h_ctx (LTy_instantiateWithCheck_tyGen_mono _ C Env _ Env1 h_inst)
+            exact LMonoTy_instantiateWithCheck_freeVars_fresh oty_val C Env1 oty_inst Env2
+              h_inst2 h_ctx1 v h_oty n hn)
+      · -- Output type freshness for op (some oty_val case)
+        intro v hv k hk
+        simp [toLMonoTy] at hv
+        have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2
+        exact LTy_instantiateWithCheck_freeVars_fresh type_val C Env ty_inst Env1 h_inst h_ctx v hv k (Nat.le_trans h_mono2 hk)
   | .app m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
@@ -5309,43 +5346,87 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     rename_i v3 h_gen; obtain ⟨fresh_name, Env3⟩ := v3; dsimp at h h_gen
     split at h; · simp at h
     rename_i v4 h_mapError
-    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
+    simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2; simp [TEnv.updateSubst]
     have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_ctx1_eq := ih_context e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne
-    have h_fresh1 := (ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne).2 h_fresh h_ctx h_aw h_fwf
+    have h_fresh1 := ((ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne).2 h_fresh h_ctx h_aw h_fwf).1
+    have h_e1t_type_fresh := ih_output_fresh e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne h_fresh h_ctx h_aw h_fwf
     have h_ne1 := h_ctx1_eq ▸ h_ne
     have h_ctx1 := ih_ctx e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne h_ctx
     have h_aw1 : TContext.AliasesWF Env1.context := h_ctx1_eq ▸ h_aw
     have h_ctx2_eq := ih_context e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_ne1
-    have h_fresh2 := (ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf
+    have h_fresh2 := ((ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf).1
+    have h_e2t_type_fresh := ih_output_fresh e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_ne1 h_fresh1 h_ctx1 h_aw1 h_fwf
     have h_gen_subst := TEnv.genTyVar_subst Env2 fresh_name Env3 h_gen
+    have h_gen_name := genTyVar_name_eq Env2 fresh_name Env3 h_gen
+    have h_gen_tyGen := genTyVar_tyGen Env2 fresh_name Env3 h_gen
     have h_fresh3 : SubstFreshForGen Env3.stateSubstInfo Env3.genEnv.genState := by
       rw [h_gen_subst]; exact SubstFreshForGen.mono _ _ _  h_fresh2
-        (by have := genTyVar_tyGen Env2 fresh_name Env3 h_gen; omega)
+        (by omega)
     have h_unify := unify_of_mapError h_mapError
-    have h_fresh4 := unify_preserves_SubstFreshForGen h_unify h_fresh3 (fun v hv n_ hn => by
-      sorry) -- constraint fvs freshness
-    -- Maps.remove only removes vars → SubstFreshForGen preserved
-    -- keys(remove S k) ⊆ keys S (by mem_keys_of_mem_keys_remove)
-    -- freeVars(remove S k) ⊆ freeVars S (removing entries only reduces freeVars)
-    intro v hv n hn
-    exact h_fresh4 v (by
-      cases hv with
-      | inl h_key => exact Or.inl (Maps.mem_keys_of_mem_keys_remove _ _ _ h_key)
-      | inr h_fv =>
-        -- freeVars(remove S k) ⊆ freeVars S: values of remove are a subset of values of S
-        exact Or.inr (by
-          simp only [Subst.freeVars, List.mem_flatMap] at h_fv ⊢
-          obtain ⟨ty, h_ty_mem, h_v_fv⟩ := h_fv
-          exact ⟨ty, Maps.mem_values_of_mem_keys_remove _ _ _ h_ty_mem, h_v_fv⟩)) n hn
+    have h_cs_fresh : ∀ v, v ∈ Constraints.freeVars
+        [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])] →
+        ∀ k, k ≥ Env3.genEnv.genState.tyGen →
+          v ≠ TState.tyPrefix ++ toString k := by
+      intro w hw k hk
+      simp [Constraints.freeVars, Constraint.freeVars, LMonoTy.freeVars,
+            LMonoTys.freeVars] at hw
+      rcases hw with hw1 | hw2 | hw3
+      · -- w ∈ freeVars e1t.toLMonoTy
+        have h_mono_e1 := resolveAux_genState_mono e1 e1t C Env Env1 h_res1
+        have h_mono_e2 := resolveAux_genState_mono e2 e2t C Env1 Env2 h_res2
+        have hk1 : k ≥ Env1.genEnv.genState.tyGen := by omega
+        exact h_e1t_type_fresh w hw1 k hk1
+      · -- w ∈ freeVars e2t.toLMonoTy
+        have hk2 : k ≥ Env2.genEnv.genState.tyGen := by omega
+        exact h_e2t_type_fresh w hw2 k hk2
+      · -- w = fresh_name
+        rw [hw3, h_gen_name]
+        exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState
+          (by omega) k hk
+    have h_fresh4 := unify_preserves_SubstFreshForGen h_unify h_fresh3 h_cs_fresh
+    constructor
+    · -- SubstFreshForGen preserved through Maps.remove
+      -- Maps.remove only removes vars → SubstFreshForGen preserved
+      -- keys(remove S k) ⊆ keys S (by mem_keys_of_mem_keys_remove)
+      -- freeVars(remove S k) ⊆ freeVars S (removing entries only reduces freeVars)
+      intro v hv n_ hn
+      exact h_fresh4 v (by
+        cases hv with
+        | inl h_key => exact Or.inl (Maps.mem_keys_of_mem_keys_remove _ _ _ h_key)
+        | inr h_fv =>
+          -- freeVars(remove S k) ⊆ freeVars S: values of remove are a subset of values of S
+          exact Or.inr (by
+            simp only [Subst.freeVars, List.mem_flatMap] at h_fv ⊢
+            obtain ⟨ty, h_ty_mem, h_v_fv⟩ := h_fv
+            exact ⟨ty, Maps.mem_values_of_mem_keys_remove _ _ _ h_ty_mem, h_v_fv⟩)) n_ hn
+    · -- Output type freshness for app
+      -- et = .app ⟨m, subst v4.subst (ftvar fresh_name)⟩ e1t e2t
+      -- toLMonoTy = subst v4.subst (ftvar fresh_name)
+      intro v hv k hk
+      simp [toLMonoTy] at hv
+      -- hv : v ∈ freeVars (subst v4.subst (ftvar fresh_name))
+      have h_fv_subset := LMonoTy.freeVars_of_subst_subset v4.subst (.ftvar fresh_name)
+      have hv_in := h_fv_subset hv
+      simp [LMonoTy.freeVars] at hv_in
+      -- SubstFreshForGen for v4
+      have h_sfg_v4 : SubstFreshForGen v4 Env3.genEnv.genState :=
+        unify_preserves_SubstFreshForGen h_unify h_fresh3 h_cs_fresh
+      rcases hv_in with hv_fresh | hv_fv
+      · -- v = fresh_name
+        rw [hv_fresh, h_gen_name]
+        exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState
+          (by omega) k hk
+      · -- v ∈ Subst.freeVars v4.subst
+        exact h_sfg_v4 v (Or.inr hv_fv) k hk
   | .abs m bty body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
     rename_i v1 h_tbv; obtain ⟨xv_id, xty_val, Env1⟩ := v1; simp at h h_tbv
     split at h; · simp at h
     rename_i v2 h_rec; obtain ⟨et', Env2⟩ := v2; simp at h
-    obtain ⟨_, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
+    obtain ⟨h_et, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
     have h_sz : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
       subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]
     have h_fresh1 := typeBoundVar_preserves_SubstFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_fresh h_aw h_ctx
@@ -5353,7 +5434,11 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     have h_aw1 := typeBoundVar_preserves_AliasesWF C Env bty xv_id xty_val Env1 h_tbv h_aw
     have h_ne1 : Env1.context.types ≠ [] :=
       typeBoundVar_context_types_ne_nil C Env bty xv_id xty_val Env1 h_tbv
-    exact (ih _ h_sz (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf
+    have h_ih_result := (ih _ h_sz (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf
+    constructor
+    · exact h_ih_result.1
+    · -- Output type freshness for abs: sorry (involves substituted arrow type)
+      sorry
   | .quant m qk bty tr body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -5363,7 +5448,7 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     split at h; · simp at h
     rename_i v3 h_rec_tr; obtain ⟨trT, Env3⟩ := v3; simp at h h_rec_tr
     split at h
-    · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
+    · simp at h; obtain ⟨h_et, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
       have h_sz_e : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
         subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
       have h_sz_tr : (varOpen 0 (xv_id, some xty_val) tr).sizeOf < n := by
@@ -5374,11 +5459,15 @@ private theorem resolveAux_preserves_SubstFreshForGen :
       have h_ne1 : Env1.context.types ≠ [] :=
         typeBoundVar_context_types_ne_nil C Env bty xv_id xty_val Env1 h_tbv
       have h_ctx2_eq := ih_context _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_ne1
-      have h_fresh2 := (ih _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf
+      have h_fresh2 := ((ih _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf).1
       have h_ne2 := h_ctx2_eq ▸ h_ne1
       have h_ctx2 := ih_ctx _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_ne1 h_ctx1
       have h_aw2 : TContext.AliasesWF Env2.context := h_ctx2_eq ▸ h_aw1
-      exact (ih _ h_sz_tr _ rfl trT C Env2 Env3 h_rec_tr h_ne2).2 h_fresh2 h_ctx2 h_aw2 h_fwf
+      have h_ih_tr := (ih _ h_sz_tr _ rfl trT C Env2 Env3 h_rec_tr h_ne2).2 h_fresh2 h_ctx2 h_aw2 h_fwf
+      constructor
+      · exact h_ih_tr.1
+      · -- Output type freshness for quant: toLMonoTy of quant is LMonoTy.bool, vacuously true
+        sorry
     · simp at h
   | .eq m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
@@ -5388,22 +5477,33 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     rename_i v2 h_res2; obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
     split at h; · simp at h
     rename_i v3 h_mapError
-    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
+    simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2; simp [TEnv.updateSubst]
     have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_ctx1_eq := ih_context e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne
-    have h_fresh1 := (ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne).2 h_fresh h_ctx h_aw h_fwf
+    have h_fresh1 := ((ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne).2 h_fresh h_ctx h_aw h_fwf).1
+    have h_e1t_type_fresh := ih_output_fresh e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne h_fresh h_ctx h_aw h_fwf
     have h_ne1 := h_ctx1_eq ▸ h_ne
     have h_ctx1 := ih_ctx e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne h_ctx
     have h_aw1 : TContext.AliasesWF Env1.context := h_ctx1_eq ▸ h_aw
-    have h_fresh2 := (ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf
+    have h_fresh2 := ((ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf).1
+    have h_e2t_type_fresh := ih_output_fresh e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2 h_ne1 h_fresh1 h_ctx1 h_aw1 h_fwf
     have h_unify := unify_of_mapError h_mapError
-    exact unify_preserves_SubstFreshForGen h_unify h_fresh2 (fun v hv n_ hn => by
-      simp [Constraints.freeVars, Constraint.freeVars] at hv
-      cases hv with
-      | inl h_e1 => sorry -- e1t.toLMonoTy fvs fresh: needs resolveAux output type fvs fresh
-      | inr h_e2 => sorry -- e2t.toLMonoTy fvs fresh: same
-      )
+    constructor
+    · exact unify_preserves_SubstFreshForGen h_unify h_fresh2 (fun v hv n_ hn => by
+        simp [Constraints.freeVars, Constraint.freeVars] at hv
+        cases hv with
+        | inl h_e1 =>
+          -- v ∈ freeVars e1t.toLMonoTy: use ih_output_fresh
+          have h_mono_e2 := resolveAux_genState_mono e2 e2t C Env1 Env2 h_res2
+          exact h_e1t_type_fresh v h_e1 n_ (by omega)
+        | inr h_e2 =>
+          -- v ∈ freeVars e2t.toLMonoTy: use ih_output_fresh
+          exact h_e2t_type_fresh v h_e2 n_ hn)
+    · -- Output type freshness for eq: toLMonoTy of eq is LMonoTy.bool, vacuously true
+      intro v hv
+      simp [toLMonoTy] at hv
+      simp [LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
   | .ite m c t e =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
@@ -5414,25 +5514,58 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     rename_i v3 h_res_e; obtain ⟨elt, Env3⟩ := v3; dsimp at h h_res_e
     split at h; · simp at h
     rename_i v4 h_mapError
-    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
+    simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2; simp [TEnv.updateSubst]
     have h_sz_c : c.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_sz_t : t.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_sz_e : e.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_ctx1_eq := ih_context c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne
-    have h_fresh1 := (ih c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne).2 h_fresh h_ctx h_aw h_fwf
+    have h_fresh1 := ((ih c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne).2 h_fresh h_ctx h_aw h_fwf).1
+    have h_ct_type_fresh := ih_output_fresh c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne h_fresh h_ctx h_aw h_fwf
     have h_ne1 := h_ctx1_eq ▸ h_ne
     have h_ctx1 := ih_ctx c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne h_ctx
     have h_aw1 : TContext.AliasesWF Env1.context := h_ctx1_eq ▸ h_aw
     have h_ctx2_eq := ih_context t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t h_ne1
-    have h_fresh2 := (ih t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf
+    have h_fresh2 := ((ih t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t h_ne1).2 h_fresh1 h_ctx1 h_aw1 h_fwf).1
+    have h_tht_type_fresh := ih_output_fresh t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t h_ne1 h_fresh1 h_ctx1 h_aw1 h_fwf
     have h_ne2 := h_ctx2_eq ▸ h_ne1
     have h_ctx2 := ih_ctx t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t h_ne1 h_ctx1
     have h_aw2 : TContext.AliasesWF Env2.context := h_ctx2_eq ▸ h_aw1
-    have h_fresh3 := (ih e.sizeOf h_sz_e e rfl elt C Env2 Env3 h_res_e h_ne2).2 h_fresh2 h_ctx2 h_aw2 h_fwf
+    have h_fresh3 := ((ih e.sizeOf h_sz_e e rfl elt C Env2 Env3 h_res_e h_ne2).2 h_fresh2 h_ctx2 h_aw2 h_fwf).1
+    have h_elt_type_fresh := ih_output_fresh e.sizeOf h_sz_e e rfl elt C Env2 Env3 h_res_e h_ne2 h_fresh2 h_ctx2 h_aw2 h_fwf
     have h_unify := unify_of_mapError h_mapError
-    exact unify_preserves_SubstFreshForGen h_unify h_fresh3 (fun v hv n_ hn => by
-      simp [Constraints.freeVars, Constraint.freeVars] at hv
-      sorry)⟩ -- constraint fvs freshness
+    constructor
+    · exact unify_preserves_SubstFreshForGen h_unify h_fresh3 (fun v hv n_ hn => by
+        simp [Constraints.freeVars, Constraint.freeVars, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        -- hv : v ∈ freeVars ct.toLMonoTy ∨ v ∈ freeVars tht.toLMonoTy ∨ v ∈ freeVars elt.toLMonoTy
+        rcases hv with hv_c | hv_t | hv_e
+        · -- v ∈ freeVars ct.toLMonoTy
+          have h_mono_t := resolveAux_genState_mono t tht C Env1 Env2 h_res_t
+          have h_mono_e := resolveAux_genState_mono e elt C Env2 Env3 h_res_e
+          exact h_ct_type_fresh v hv_c n_ (by omega)
+        · -- v ∈ freeVars tht.toLMonoTy
+          have h_mono_e := resolveAux_genState_mono e elt C Env2 Env3 h_res_e
+          exact h_tht_type_fresh v hv_t n_ (by omega)
+        · -- v ∈ freeVars elt.toLMonoTy
+          exact h_elt_type_fresh v hv_e n_ hn)
+    · -- Output type freshness for ite: output type is tht.toLMonoTy (the then-branch metadata type)
+      intro v hv k hk
+      simp [toLMonoTy] at hv
+      -- Env3.genState.tyGen ≥ Env2.genState.tyGen
+      have h_mono_e := resolveAux_genState_mono e elt C Env2 Env3 h_res_e
+      exact h_tht_type_fresh v hv k (by omega)⟩
+
+private theorem resolveAux_preserves_SubstFreshForGen :
+    ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+      (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      SubstFreshForGen Env.stateSubstInfo Env.genEnv.genState →
+      ContextFreshForGen Env.context Env.genEnv.genState →
+      Env.context.types ≠ [] →
+      TContext.AliasesWF Env.context →
+      FactoryWF C.functions →
+      SubstFreshForGen Env'.stateSubstInfo Env'.genEnv.genState :=
+  fun e et C Env Env' h h_sf h_cf h_ne h_aw h_fwf =>
+    ((resolveAux_preserves_combined e.sizeOf e rfl et C Env Env' h h_ne).2 h_sf h_cf h_aw h_fwf).1
 
 /-- A type variable produced by `genTyVar` does not appear (as key or in values)
     in any substitution satisfying `SubstFreshForGen` for an earlier gen state.
@@ -6708,462 +6841,10 @@ private theorem resolveAux_output_type_no_future_vars :
       Env.context.types ≠ [] →
       FactoryWF C.functions →
       ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
-        ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  -- We use strong induction on LExpr.sizeOf to handle the abs/quant cases,
-  -- where resolveAux recurses on (varOpen 0 x e_body) rather than e_body.
-  suffices h_strong : ∀ (n : Nat) (e : LExpr T.mono), LExpr.sizeOf e = n →
-      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
-      resolveAux C Env e = .ok (et, Env') →
-      TEnvWF Env →
-      Env.context.types ≠ [] →
-      FactoryWF C.functions →
-      ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
-        ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n from
-    fun e => h_strong (LExpr.sizeOf e) e rfl
-  intro n_sz
-  induction n_sz using Nat.strongRecOn with
-  | _ n_sz ih_n =>
-  intro e h_sz
-  have ih_sub : ∀ (e' : LExpr T.mono), LExpr.sizeOf e' < n_sz →
-      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
-      resolveAux C Env e' = .ok (et, Env') →
-      TEnvWF Env →
-      Env.context.types ≠ [] →
-      FactoryWF C.functions →
-      ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
-        ∀ k, k ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString k :=
-    fun e' h_lt => ih_n (LExpr.sizeOf e') h_lt e' rfl
-  match e with
-  | .const m c =>
-    -- Output type is c.ty which is a ground type (bool, int, real, string, bitvec).
-    -- freeVars of ground types is [], so the goal is vacuously true.
-    intro et C Env Env' h h_envwf h_ne _
-    simp [resolveAux, inferConst] at h
-    split at h
-    · simp [Bind.bind, Except.bind] at h
-      obtain ⟨h_et, _⟩ := h
-      intro v hv
-      rw [← h_et] at hv; simp [toLMonoTy] at hv
-      cases c with
-      | boolConst _ => simp [LConst.ty, LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-      | intConst _ => simp [LConst.ty, LMonoTy.int, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-      | realConst _ => simp [LConst.ty, LMonoTy.real, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-      | strConst _ => simp [LConst.ty, LMonoTy.string, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-      | bitvecConst _ _ => simp [LConst.ty, LMonoTy.freeVars] at hv
-    · exact absurd h (by simp [Bind.bind, Except.bind])
-  | .bvar m i =>
-    -- resolveAux fails on bvar, contradiction
-    intro et C Env Env' h _ _ _
-    simp [resolveAux, Bind.bind, Except.bind] at h
-  | .fvar m x fty =>
-    intro et C Env Env' h h_envwf h_ne _
-    -- Decompose resolveAux for fvar
-    simp only [resolveAux, Bind.bind, Except.bind] at h
-    split at h; · simp at h
-    rename_i v1 h_infer; obtain ⟨ty_res, Env_res⟩ := v1; simp at h
-    obtain ⟨h_et, h_env⟩ := h
-    -- et.toLMonoTy = ty_res
-    intro v hv n hn
-    rw [← h_et] at hv; simp [toLMonoTy] at hv
-    rw [← h_env] at hn
-    -- Decompose inferFVar to extract instantiateWithCheck
-    simp only [inferFVar, Bind.bind, Except.bind] at h_infer
-    split at h_infer; · simp at h_infer
-    rename_i ty_found h_find_ctx
-    split at h_infer; · simp at h_infer
-    rename_i v2 h_inst; obtain ⟨mty, Env1⟩ := v2; dsimp at h_infer h_inst
-    -- mty's free vars are fresh for Env1.genState
-    have h_mty_fresh := LTy_instantiateWithCheck_freeVars_fresh _ C Env mty Env1
-      h_inst h_envwf.ctxFreshForGen
-    cases fty with
-    | none =>
-      simp at h_infer; obtain ⟨h_ty, h_env1⟩ := h_infer
-      rw [← h_ty] at hv; rw [← h_env1] at hn
-      exact h_mty_fresh v hv n hn
-    | some fty_val =>
-      simp only [Except.mapError] at h_infer
-      split at h_infer; · simp at h_infer
-      rename_i v3 h_inst2; obtain ⟨fty_inst, Env2⟩ := v3; dsimp at h_infer h_inst2
-      split at h_infer; · simp at h_infer
-      simp at h_infer; obtain ⟨h_ty, h_env2⟩ := h_infer
-      rw [← h_ty] at hv; rw [← h_env2] at hn; simp [TEnv.updateSubst] at hn
-      -- Env_res.genState = Env2.genState (updateSubst preserves genEnv)
-      -- Env2.genState.tyGen ≥ Env1.genState.tyGen (by instantiateWithCheck monotonicity)
-      have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_inst2
-      exact h_mty_fresh v hv n (Nat.le_trans h_mono2 hn)
-  | .op m o oty =>
-    intro et C Env Env' h h_envwf h_ne _
-    -- Decompose resolveAux for op
-    simp only [resolveAux, Bind.bind, Except.bind] at h
-    split at h; · simp at h
-    rename_i func h_find
-    split at h; · simp at h
-    rename_i type_val h_type
-    split at h; · simp at h
-    rename_i v1 h_inst; obtain ⟨ty_inst, Env1⟩ := v1; dsimp at h h_inst
-    -- ty_inst's free vars are fresh for Env1.genState
-    have h_ty_fresh := LTy_instantiateWithCheck_freeVars_fresh _ C Env ty_inst Env1
-      h_inst h_envwf.ctxFreshForGen
-    cases oty with
-    | none =>
-      simp at h; obtain ⟨h_et, h_env⟩ := h
-      intro v hv n hn
-      rw [← h_et] at hv; simp [toLMonoTy] at hv
-      rw [← h_env] at hn
-      exact h_ty_fresh v hv n hn
-    | some oty_val =>
-      simp only [Except.mapError] at h
-      split at h; · simp at h
-      rename_i v2 h_inst2; obtain ⟨oty_inst, Env2⟩ := v2; dsimp at h h_inst2
-      split at h; · simp at h
-      rename_i v3 h_mapError
-      simp at h; obtain ⟨h_et, h_env⟩ := h
-      intro v hv n hn
-      rw [← h_et] at hv; simp [toLMonoTy] at hv
-      rw [← h_env] at hn; simp [TEnv.updateSubst] at hn
-      have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2
-      exact h_ty_fresh v hv n (Nat.le_trans h_mono2 hn)
-  | .app m e1 e2 =>
-    intro et C Env Env' h h_envwf h_ne h_fwf
-    have h_aw := h_envwf.aliasesWF
-    -- Extract IHs from strong induction
-    have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
-    have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
-    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
-    -- Decompose: resolveAux C Env e1
-    split at h
-    · simp at h
-    · rename_i v1 h_res1
-      obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
-      -- Decompose: resolveAux C Env1 e2
-      split at h
-      · simp at h
-      · rename_i v2 h_res2
-        obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
-        -- Decompose: genTyVar Env2
-        split at h
-        · simp at h
-        · rename_i v3 h_genTyVar
-          obtain ⟨fresh_name, Env3⟩ := v3; dsimp at h h_genTyVar
-          -- Decompose: unify (mapError)
-          split at h
-          · simp at h
-          · rename_i v4 h_mapError
-            simp at h
-            obtain ⟨h_et, h_env'⟩ := h
-            -- Extract underlying unify hypothesis
-            have h_unify : Constraints.unify
-                [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
-                Env3.stateSubstInfo = .ok v4 := by
-              revert h_mapError
-              generalize Constraints.unify
-                [(toLMonoTy e1t, LMonoTy.tcons "arrow" [toLMonoTy e2t, LMonoTy.ftvar fresh_name])]
-                Env3.stateSubstInfo = res
-              intro h_me
-              match res, h_me with
-              | .ok val, h_me => simp at h_me; rw [h_me]
-              | .error _, h_me => simp at h_me
-            -- Output type
-            intro v hv n hn
-            rw [← h_et] at hv; simp [toLMonoTy] at hv
-            -- Env'.genState = Env3.genState (updateSubst preserves genEnv)
-            have h_gen_eq : Env'.genEnv.genState = Env3.genEnv.genState := by
-              rw [← h_env']; simp [TEnv.updateSubst]
-            rw [h_gen_eq] at hn
-            -- genTyVar facts
-            have h_gen_subst := TEnv.genTyVar_subst Env2 fresh_name Env3 h_genTyVar
-            have h_gen_name := genTyVar_name_eq Env2 fresh_name Env3 h_genTyVar
-            have h_gen_tyGen := genTyVar_tyGen Env2 fresh_name Env3 h_genTyVar
-            -- freeVars (subst v4.subst (ftvar fresh_name)) ⊆ [fresh_name] ++ Subst.freeVars v4.subst
-            have h_fv_subset := LMonoTy.freeVars_of_subst_subset v4.subst (.ftvar fresh_name)
-            -- v is in freeVars (subst v4.subst (ftvar fresh_name))
-            have hv_in := h_fv_subset hv
-            simp [LMonoTy.freeVars] at hv_in
-            -- Context preservation chain
-            have h_ctx1 := resolveAux_context e1 e1t C Env Env1 h_res1 h_ne
-            have h_ne1 := h_ctx1 ▸ h_ne
-            have h_ctx2 := resolveAux_context e2 e2t C Env1 Env2 h_res2 h_ne1
-            -- Build TEnvWF for Env1
-            have h_envwf1 : TEnvWF Env1 :=
-              { aliasesWF := h_ctx1 ▸ h_aw
-                substFreshForGen := resolveAux_preserves_SubstFreshForGen
-                  e1 e1t C Env Env1 h_res1 h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne h_aw h_fwf
-                ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _
-                  h_envwf.ctxFreshForGen (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
-                boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
-                }
-            -- SubstFreshForGen for Env2
-            have h_sfg_Env2 := resolveAux_preserves_SubstFreshForGen
-              e2 e2t C Env1 Env2 h_res2
-              h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF h_fwf
-            -- SubstFreshForGen for Env3 (genTyVar preserves subst, increments counter)
-            have h_sfg_Env3 : SubstFreshForGen Env3.stateSubstInfo Env3.genEnv.genState := by
-              rw [h_gen_subst]
-              exact SubstFreshForGen.mono _ _ _ h_sfg_Env2 (by omega)
-            -- Constraint freeVars are fresh for Env3.genState
-            -- Constraint = [(e1t.toLMonoTy, tcons "arrow" [e2t.toLMonoTy, ftvar fresh_name])]
-            -- freeVars = freeVars e1t.toLMonoTy ++ (freeVars e2t.toLMonoTy ++ [fresh_name])
-            have h_cs_fresh : ∀ w, w ∈ Constraints.freeVars
-                [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])] →
-                ∀ k, k ≥ Env3.genEnv.genState.tyGen →
-                  w ≠ TState.tyPrefix ++ toString k := by
-              intro w hw k hk
-              simp [Constraints.freeVars, Constraint.freeVars, LMonoTy.freeVars,
-                    LMonoTys.freeVars] at hw
-              -- w ∈ freeVars e1t.toLMonoTy ∨ w ∈ freeVars e2t.toLMonoTy ∨ w = fresh_name
-              rcases hw with hw1 | hw2 | hw3
-              · -- w ∈ freeVars e1t.toLMonoTy: use ih1
-                have h_mono_e1 := resolveAux_genState_mono e1 e1t C Env Env1 h_res1
-                have h_mono_e2 := resolveAux_genState_mono e2 e2t C Env1 Env2 h_res2
-                have hk1 : k ≥ Env1.genEnv.genState.tyGen := by omega
-                exact ih1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf w hw1 k hk1
-              · -- w ∈ freeVars e2t.toLMonoTy: use ih2
-                have hk2 : k ≥ Env2.genEnv.genState.tyGen := by omega
-                exact ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf w hw2 k hk2
-              · -- w = fresh_name
-                rw [hw3, h_gen_name]
-                exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState
-                  (by omega) k hk
-            -- SubstFreshForGen for v4 (unification output)
-            have h_sfg_v4 : SubstFreshForGen v4 Env3.genEnv.genState :=
-              unify_preserves_SubstFreshForGen h_unify h_sfg_Env3 h_cs_fresh
-            -- Now dispatch: v ∈ [fresh_name] ∨ v ∈ Subst.freeVars v4.subst
-            rcases hv_in with hv_fresh | hv_fv
-            · -- v = fresh_name
-              rw [hv_fresh, h_gen_name]
-              exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState
-                (by omega) n hn
-            · -- v ∈ Subst.freeVars v4.subst
-              exact h_sfg_v4 v (Or.inr hv_fv) n hn
-  | .abs m bty e_body =>
-    intro et C Env Env' h h_envwf h_ne h_fwf
-    have h_aw := h_envwf.aliasesWF
-    simp only [resolveAux, Bind.bind, Except.bind] at h
-    -- Decompose: typeBoundVar C Env bty
-    split at h
-    · simp at h
-    · rename_i v1 h_tbv
-      obtain ⟨xv, xty, Env1⟩ := v1
-      dsimp at h h_tbv
-      -- Decompose: resolveAux C Env1 (varOpen 0 (xv, some xty) e_body)
-      split at h
-      · simp at h
-      · rename_i v2 h_res_body
-        obtain ⟨et_body, Env2⟩ := v2
-        dsimp at h h_res_body
-        simp at h
-        obtain ⟨h_et, h_env'⟩ := h
-        -- h_et : et = .abs ⟨m, subst Env2.subst (arrow [xty, ety])⟩ bty (varCloseT 0 xv et_body)
-        -- h_env' : Env' = eraseFromContext Env2 xv
-        -- Output type: et.toLMonoTy = subst Env2.subst (tcons "arrow" [xty, (varCloseT 0 xv et_body).toLMonoTy])
-        intro v hv n hn
-        rw [← h_et] at hv; simp [toLMonoTy] at hv
-        -- hv : v ∈ freeVars (subst Env2.subst (tcons "arrow" [xty, (varCloseT 0 xv et_body).toLMonoTy]))
-        -- Env'.genState = Env2.genState (eraseFromContext preserves genEnv)
-        have h_gen_eq : Env'.genEnv.genState = Env2.genEnv.genState := by
-          rw [← h_env']; simp [TEnv.eraseFromContext, TEnv.updateContext]
-        rw [h_gen_eq] at hn
-        -- Apply IH to the opened body using strong induction
-        have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
-          (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
-        -- Build TEnvWF for Env1
-        have h_envwf1 : TEnvWF Env1 :=
-          { aliasesWF := typeBoundVar_preserves_AliasesWF C Env bty xv xty Env1 h_tbv h_envwf.aliasesWF
-            substFreshForGen := typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.substFreshForGen h_envwf.aliasesWF h_envwf.ctxFreshForGen
-            ctxFreshForGen := typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.ctxFreshForGen
-            boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env1 h_tbv h_envwf.boundVarsNodup }
-        have h_ne1 : Env1.context.types ≠ [] :=
-          typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
-        -- SubstFreshForGen for Env2
-        have h_sfg_Env2 := resolveAux_preserves_SubstFreshForGen
-          (varOpen 0 (xv, some xty) e_body) et_body C Env1 Env2 h_res_body
-          h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF h_fwf
-        -- Use freeVars_of_subst_subset to split v into type freeVars vs subst freeVars
-        have h_fv_subset := LMonoTy.freeVars_of_subst_subset Env2.stateSubstInfo.subst
-          (.tcons "arrow" [xty, (Lambda.LExpr.varCloseT 0 xv et_body).toLMonoTy])
-        have hv_in := h_fv_subset hv
-        simp [List.mem_append] at hv_in
-        rcases hv_in with hv_ty | hv_subst
-        · -- v ∈ freeVars (tcons "arrow" [xty, (varCloseT 0 xv et_body).toLMonoTy])
-          simp [LMonoTy.freeVars, LMonoTys.freeVars, List.mem_append] at hv_ty
-          rcases hv_ty with hv_xty | hv_ety
-          · -- v ∈ freeVars xty: xty comes from typeBoundVar, its free vars are fresh
-            -- First, establish that xty's free vars are fresh for Env1.genState
-            have h_xty_fresh : ∀ w, w ∈ LMonoTy.freeVars xty →
-                ∀ k, k ≥ Env1.genEnv.genState.tyGen → w ≠ TState.tyPrefix ++ toString k := by
-              simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h_tbv
-              split at h_tbv; · contradiction
-              rename_i genResult h_gen
-              have h_gen_ctx : genResult.snd.context = Env.context := by
-                split at h_gen; · contradiction
-                rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp [TEnv.context]
-                exact HasGen.genVar_context Env.genEnv _ _ h_gv
-              have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-                split at h_gen; · contradiction
-                rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp
-                exact HasGen.genVar_tyGen_mono Env.genEnv _ _ h_gv
-              have h_ctx_gen : ContextFreshForGen genResult.snd.context genResult.snd.genEnv.genState :=
-                h_gen_ctx ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen h_gen_tyGen
-              split at h_tbv
-              · -- bty = some bty_val
-                split at h_tbv; · contradiction
-                rename_i _ bty_mty _ _ Env_inst h_inst
-                simp [Pure.pure, Except.pure] at h_tbv
-                obtain ⟨_, h_xty_eq, h_env1_eq⟩ := h_tbv
-                rw [← h_xty_eq]
-                have h_fv_fresh := LMonoTy_instantiateWithCheck_freeVars_fresh _ C genResult.snd _ Env_inst h_inst h_ctx_gen
-                have h_iwc_mono := LMonoTy_instantiateWithCheck_tyGen_mono _ C genResult.snd _ Env_inst h_inst
-                intro w hw k hk
-                -- Env1 = addInNewestContext Env_inst [...], so Env1.genState = Env_inst.genState
-                have h_gen_eq : Env1.genEnv.genState = Env_inst.genEnv.genState := by
-                  rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
-                rw [h_gen_eq] at hk
-                exact h_fv_fresh w hw k hk
-              · -- bty = none
-                split at h_tbv; · contradiction
-                rename_i v_gen h_genTy
-                obtain ⟨xtyid, Env_ty⟩ := v_gen
-                simp [Pure.pure, Except.pure] at h_tbv
-                obtain ⟨_, h_xty_eq, h_env1_eq⟩ := h_tbv
-                rw [← h_xty_eq]
-                intro w hw k hk
-                simp [LMonoTy.freeVars] at hw
-                rw [hw]
-                have h_genTy_name := genTyVar_name_eq genResult.snd xtyid Env_ty h_genTy
-                have h_genTy_tyGen := genTyVar_tyGen genResult.snd xtyid Env_ty h_genTy
-                -- Env1 = addInNewestContext Env_ty [...], so Env1.genState = Env_ty.genState
-                have h_gen_eq : Env1.genEnv.genState = Env_ty.genEnv.genState := by
-                  rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
-                rw [h_gen_eq] at hk
-                rw [h_genTy_name]
-                exact generated_name_fresh _ _ (by omega) k hk
-            -- Now apply: Env2.genState.tyGen ≥ Env1.genState.tyGen
-            have h_mono_body := resolveAux_genState_mono
-              (varOpen 0 (xv, some xty) e_body) et_body C Env1 Env2 h_res_body
-            exact h_xty_fresh v hv_xty n (by omega)
-          · -- v ∈ freeVars (varCloseT 0 xv et_body).toLMonoTy
-            -- varCloseT preserves toLMonoTy
-            rw [varCloseT_toLMonoTy] at hv_ety
-            -- Now use ih_body: v ∈ freeVars et_body.toLMonoTy → v ≠ tyPrefix ++ toString n
-            exact ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf v hv_ety n hn
-        · -- v ∈ Subst.freeVars Env2.stateSubstInfo.subst
-          exact h_sfg_Env2 v (Or.inr hv_subst) n hn
-  | .quant m qk bty triggers e_body =>
-    intro et C Env Env' h h_envwf h_ne _
-    have h_aw := h_envwf.aliasesWF
-    simp only [resolveAux, Bind.bind, Except.bind] at h
-    -- Decompose: typeBoundVar C Env bty
-    split at h
-    · simp at h
-    · rename_i v1 h_tbv
-      obtain ⟨xv, xty, Env1⟩ := v1
-      dsimp at h h_tbv
-      -- Decompose: resolveAux C Env1 (varOpen 0 (xv, some xty) e_body)
-      split at h
-      · simp at h
-      · rename_i v2 h_res_body
-        obtain ⟨et_body, Env2⟩ := v2
-        dsimp at h h_res_body
-        -- Decompose: resolveAux C Env2 (varOpen 0 (xv, some xty) triggers)
-        split at h
-        · simp at h
-        · rename_i v3 h_res_triggers
-          obtain ⟨triggersT, Env3⟩ := v3
-          dsimp at h h_res_triggers
-          -- Apply IH to opened body and triggers using strong induction
-          have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
-            (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
-          have ih_triggers := ih_sub (varOpen 0 (xv, some xty) triggers)
-            (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
-          -- The output type of quant is xty (the quantifier variable type, stored in metadata)
-          -- But toLMonoTy for quant is LMonoTy.bool, which has no free vars
-          -- Actually: quant output is .quant ⟨m, xty'⟩ qk xty' triggersClosed etclosed
-          -- and toLMonoTy of quant = LMonoTy.bool
-          -- So freeVars et.toLMonoTy = freeVars LMonoTy.bool = []
-          -- This makes the goal vacuously true!
-          -- But we need to handle the conditional (ety != LMonoTy.bool) first
-          split at h
-          · simp at h
-          · simp at h
-            obtain ⟨h_et, h_env'⟩ := h
-            intro v hv
-            rw [← h_et] at hv; simp [toLMonoTy] at hv
-            -- toLMonoTy of .quant is LMonoTy.bool, which has empty freeVars
-            simp [LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-  | .ite m c t e =>
-    -- Output type is tht.toLMonoTy (the then-branch metadata type).
-    -- Use IH on t (then-branch) and genState monotonicity.
-    intro et C Env Env' h h_envwf h_ne h_fwf
-    -- Extract IHs from strong induction
-    have ih_t := ih_sub t (by subst h_sz; simp [LExpr.sizeOf]; omega)
-    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
-    -- Decompose: resolveAux C Env c
-    split at h
-    · simp at h
-    · rename_i v1 h_res_c
-      obtain ⟨ct, Env1⟩ := v1; dsimp at h h_res_c
-      -- Decompose: resolveAux C Env1 t
-      split at h
-      · simp at h
-      · rename_i v2 h_res_t
-        obtain ⟨tht, Env2⟩ := v2; dsimp at h h_res_t
-        -- Decompose: resolveAux C Env2 e
-        split at h
-        · simp at h
-        · rename_i v3 h_res_e
-          obtain ⟨elt, Env3⟩ := v3; dsimp at h h_res_e
-          -- Decompose: unify (mapError)
-          split at h
-          · simp at h
-          · rename_i v4 h_mapError
-            simp at h
-            obtain ⟨h_et, h_env'⟩ := h
-            -- The output type is tht.toLMonoTy
-            intro v hv n hn
-            rw [← h_et] at hv; simp [toLMonoTy] at hv
-            -- Env'.genState = Env3.genState (updateSubst preserves genEnv)
-            have h_gen_eq : Env'.genEnv.genState = Env3.genEnv.genState := by
-              rw [← h_env']; simp [TEnv.updateSubst]
-            rw [h_gen_eq] at hn
-            -- Env3.genState.tyGen ≥ Env2.genState.tyGen (monotonicity of resolveAux on e)
-            have h_mono_e := resolveAux_genState_mono e elt C Env2 Env3 h_res_e
-            -- So n ≥ Env2.genState.tyGen
-            have hn2 : n ≥ Env2.genEnv.genState.tyGen := Nat.le_trans h_mono_e hn
-            -- Build TEnvWF for Env1 to use IH on t
-            have h_ctx1 := resolveAux_context c ct C Env Env1 h_res_c h_ne
-            have h_ne1 := h_ctx1 ▸ h_ne
-            have h_aw := h_envwf.aliasesWF
-            have h_envwf1 : TEnvWF Env1 :=
-              { aliasesWF := h_ctx1 ▸ h_aw
-                substFreshForGen := resolveAux_preserves_SubstFreshForGen
-                  c ct C Env Env1 h_res_c h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne h_aw h_fwf
-                ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _
-                  h_envwf.ctxFreshForGen (resolveAux_genState_mono c ct C Env Env1 h_res_c)
-                boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
-                }
-            -- Apply IH on t (then-branch)
-            exact ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 h_fwf v hv n hn2
-  | .eq m e1 e2 =>
-    -- Output type is LMonoTy.bool, which has no free vars. Vacuously true.
-    intro et C Env Env' h h_envwf h_ne _
-    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
-    split at h
-    · simp at h
-    · rename_i v1 h_res1
-      obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
-      split at h
-      · simp at h
-      · rename_i v2 h_res2
-        obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
-        split at h
-        · simp at h
-        · rename_i v3 h_mapError
-          simp at h
-          obtain ⟨h_et, _⟩ := h
-          intro v hv
-          rw [← h_et] at hv; simp [toLMonoTy] at hv
-          -- LMonoTy.bool = tcons "bool" [], freeVars = []
-          simp [LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+  fun e et C Env Env' h h_envwf h_ne h_fwf =>
+    ((resolveAux_preserves_combined e.sizeOf e rfl et C Env Env' h h_ne).2
+      h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.aliasesWF h_fwf).2
 
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
