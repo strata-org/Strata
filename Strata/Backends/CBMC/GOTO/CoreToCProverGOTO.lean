@@ -6,7 +6,8 @@
 
 import Strata.Languages.Core.Verifier
 import Strata.Backends.CBMC.GOTO.InstToJson
-import StrataTest.Backends.CBMC.ToCProverGOTO
+import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+import Strata.DL.Imperative.ToCProverGOTO
 
 open Std (ToFormat Format format)
 
@@ -133,6 +134,10 @@ structure CProverGOTO.Context where
   locals : List String
   formals : Map String CProverGOTO.Ty
   ret : CProverGOTO.Ty
+  /-- Contract annotations for the code type (e.g., `#spec_requires`, `#spec_ensures`). -/
+  contracts : List (String × Lean.Json) := []
+  /-- Optional types for local variables (output parameters, typed locals). -/
+  localTypes : Std.HashMap String CProverGOTO.Ty := {}
 
 structure CProverGOTO.Json where
   symtab : Lean.Json := .null
@@ -142,7 +147,7 @@ open Strata in
 def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context) :
   CProverGOTO.Json :=
   let fn_symbol : Map String CProverGOTO.CBMCSymbol :=
-    [CProverGOTO.createFunctionSymbol programName ctx.formals ctx.ret]
+    [CProverGOTO.createFunctionSymbol programName ctx.formals ctx.ret ctx.contracts]
   let formals : Map String CProverGOTO.CBMCSymbol :=
     ctx.formals.map (fun (name, ty) =>
         CProverGOTO.createGOTOSymbol programName name (CProverGOTO.mkFormalSymbol programName name)
@@ -150,8 +155,17 @@ def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context
   let locals : Map String CProverGOTO.CBMCSymbol :=
     ctx.locals.map (fun name =>
         CProverGOTO.createGOTOSymbol programName name (CProverGOTO.mkLocalSymbol programName name)
-          (isParameter := false) (isStateVar := false) (ty := none))
-  let symbols := Lean.toJson (fn_symbol ++ formals ++ locals)
+          (isParameter := false) (isStateVar := false) (ty := ctx.localTypes.get? name))
+  let fnAppSymbols : Map String CProverGOTO.CBMCSymbol :=
+    (CProverGOTO.collectFnApps ctx.program).map CProverGOTO.createFnAppSymbol
+  let knownSymbols := fn_symbol ++ formals ++ locals ++ fnAppSymbols
+  let knownNames := knownSymbols.map (·.1)
+  let extraSymbols : Map String CProverGOTO.CBMCSymbol :=
+    (CProverGOTO.collectSymbolRefs ctx.program).filter (fun info => !knownNames.contains info.name)
+      |>.map fun info =>
+        CProverGOTO.createGOTOSymbol programName info.name info.name
+          (isParameter := false) (isStateVar := false) (ty := some info.type)
+  let symbols := Lean.toJson (knownSymbols ++ extraSymbols)
   let goto_functions := CProverGOTO.programsToJson [(programName, ctx.program)]
   { symtab := symbols, goto := goto_functions }
 
@@ -197,7 +211,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       let cmds := Core.Cmds.renameVars args_renamed cmds
 
       let ans ← @Imperative.Cmds.toGotoTransform Core.ExprStr
-                    CoreToGOTO.instToGotoExprStr _ Env pname cmds (loc := 0)
+                    CoreToGOTO.instToGotoExprStr _ Env pname cmds (loc := 0) (sourceText := none)
       let ending_insts : Array CProverGOTO.Instruction := #[
         -- (FIXME): Add lifetime markers.
         -- { type := .DEAD, locationNum := ans.nextLoc + 1,
