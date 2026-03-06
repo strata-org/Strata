@@ -184,8 +184,8 @@ def Transformation.preserves_unsatisfiability
 /-! ## Procedure Contract Obedience -/
 
 /-- A procedure obeys its contract: for all initial states where preconditions
-    hold, if the body executes to a terminal state, then all postconditions hold.
-    Uses small-step semantics throughout. -/
+    hold, if the body executes to completion, then all postconditions hold.
+    Uses big-step semantics for body execution. -/
 def procedure_obeys_contract
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (proc : Procedure) : Prop :=
@@ -194,8 +194,8 @@ def procedure_obeys_contract
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.preconditions.toList →
       δ σ₀ check.expr = some HasBool.tt) →
-    -- Body executes to terminal (small-step)
-    CoreStepStar π φ (.stmts proc.body σ₀ δ) (.terminal σ_final δ_final) →
+    -- Body executes to completion (big-step)
+    EvalStatements π φ δ σ₀ proc.body σ_final δ_final →
     -- Postconditions hold at exit
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
