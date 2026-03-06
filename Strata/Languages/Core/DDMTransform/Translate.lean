@@ -1174,8 +1174,14 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let name ← translateIdent String namea
     let (typeParams : List String) ← match argsa with
       | .option _ (.some binds) => do
-        let args ← translateMonoDeclList bindings binds
-        pure (args.map (·.1.name))
+        let bargs ← checkOpArg binds q`Core.mkBindings 1
+        match bargs[0]! with
+        | .seq _ .comma args => do
+          args.toList.mapM fun argOp => do
+            let bindArgs ← checkOpArg argOp q`Core.mkBinding 2
+            translateIdent String bindArgs[0]!
+        | _ => TransM.error
+                s!"typeDecl_statement expects a comma separated list: {repr bargs[0]!}"
       | .option _ .none => pure []
       | _ => TransM.error s!"Invalid type arguments {repr argsa}"
     let md ← getOpMetaData op

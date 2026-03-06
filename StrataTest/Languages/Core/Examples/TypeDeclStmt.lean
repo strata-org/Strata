@@ -50,7 +50,7 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify typeDeclStmt1
 
-/-- Type scoping - type declared in one procedure not visible in another -/
+/-- Type scoping - same type name in different procedures -/
 def typeDeclStmt2 : Program :=
 #strata
 program Core;
@@ -61,33 +61,14 @@ procedure P1 () returns () {
 };
 
 procedure P2 () returns () {
-  var y : int;
-  assert [trivial]: (y == y);
+  type T;
+  var y : T;
 };
 #end
 
 /-- info: #[] -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt2) |>.snd
-
-/--
-info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: trivial
-Property: assert
-Obligation:
-true
-
----
-info:
-Obligation: trivial
-Property: assert
-Result: ✅ pass
--/
-#guard_msgs in
-#eval verify typeDeclStmt2
 
 /-- Multiple distinct uninterpreted types in same procedure -/
 def typeDeclStmt3 : Program :=
@@ -129,5 +110,60 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify typeDeclStmt3
+
+/-- Parameterized type declaration -/
+def typeDeclStmt4 : Program :=
+#strata
+program Core;
+
+procedure P () returns () {
+  type T (a : Type, b : Type);
+  var x : T int bool;
+  var y : T int bool;
+  assume [diff]: (x != y);
+  assert [neq]: (x != y);
+};
+#end
+
+/-- info: #[] -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram typeDeclStmt4) |>.snd
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: neq
+Property: assert
+Assumptions:
+diff: !($__x0 == $__y1)
+Obligation:
+!($__x0 == $__y1)
+
+---
+info:
+Obligation: neq
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify typeDeclStmt4
+
+/--
+error: Expression has type fvar!0 int bool when fvar!0 bool int expected.
+-/
+#guard_msgs in
+def typeDeclStmtError1 :=
+#strata
+program Core;
+
+procedure P () returns () {
+  type T (a : Type, b : Type);
+  var p1 : T int bool;
+  var p2 : T bool int;
+  assert [wrong]: (p1 == p2);
+};
+#end
 
 end Strata
