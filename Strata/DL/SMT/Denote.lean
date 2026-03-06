@@ -376,8 +376,9 @@ structure TermDenoteResult (ctx : Context) where
 
 -- Note: `noncomputable` due to a compiler error
 /--
-Check that the denotations `as` match the types of the variables `vs` when the
-two lists have the same length.
+Check that denoted argument types match declared variable types.
+
+If lengths differ, this returns `false`.
 -/
 @[simp]
 noncomputable def argTypesAlignAux (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
@@ -387,18 +388,7 @@ noncomputable def argTypesAlignAux (as : List (TermDenoteResult ctx)) (vs : List
     a.ty == v.ty && argTypesAlignAux as vs
   | _, _ => false
 
--- Note: `noncomputable` because `argTypesAlignAux` is `noncomputable` due to a compiler error
-/--
-Check that the argument denotations align with the declared term-variable types.
--/
-@[simp]
-noncomputable def argTypesAlign (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
-  if _ : as.length = vs.length then
-    argTypesAlignAux as vs
-  else
-    false
-
-theorem argTypesAlignAux_true (h : argTypesAlignAux as vs) (hl : as.length = vs.length) :
+private theorem argTypesAlignAux_true_with_len (h : argTypesAlignAux as vs) (hl : as.length = vs.length) :
   ∀ i, (h : i < as.length) → as[i].ty = (vs[i]'(hl ▸ h)).ty := fun i hi =>
   match as, vs with
   | [], _ => nomatch h
@@ -409,23 +399,24 @@ theorem argTypesAlignAux_true (h : argTypesAlignAux as vs) (hl : as.length = vs.
     | 0 => eq_of_beq (Bool.and_eq_true_iff.mp h).left
     | i + 1 =>
       (List.getElem_cons_succ a as i hi).symm ▸ (List.getElem_cons_succ v vs i (hl ▸ hi)).symm ▸
-      argTypesAlignAux_true (Bool.and_eq_true_iff.mp h).right (Nat.succ.inj hl) i (Nat.lt_of_succ_lt_succ hi)
+      argTypesAlignAux_true_with_len (Bool.and_eq_true_iff.mp h).right (Nat.succ.inj hl) i (Nat.lt_of_succ_lt_succ hi)
 
-theorem argTypesAlign_length_eq (h : argTypesAlign as vs) : as.length = vs.length := by
-  unfold argTypesAlign at h
-  by_cases hl : as.length = vs.length
-  case pos => exact hl
-  case neg => rewrite [dif_neg hl] at h; contradiction
+theorem argTypesAlignAux_length_eq (h : argTypesAlignAux as vs) : as.length = vs.length := by
+  match as, vs with
+  | [], [] => rfl
+  | [], _ :: _ => contradiction
+  | _ :: _, [] => contradiction
+  | _ :: as, _ :: vs =>
+    have h' : as.length = vs.length := argTypesAlignAux_length_eq (Bool.and_eq_true_iff.mp h).right
+    simpa using congrArg Nat.succ h'
 
-theorem argTypesAlign_arg_types (h : argTypesAlign as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
-  unfold argTypesAlign at h
-  by_cases hl : as.length = vs.length
-  case pos =>
-    simp [hl] at h
-    exact argTypesAlignAux_true h hl
-  case neg =>
-    rewrite [dif_neg hl] at h; contradiction
+theorem argTypesAlignAux_true (h : argTypesAlignAux as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlignAux_length_eq h ▸ hi)).ty := by
+  exact argTypesAlignAux_true_with_len h (argTypesAlignAux_length_eq h)
+
+theorem argTypesAlignAux_arg_types (h : argTypesAlignAux as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlignAux_length_eq h ▸ hi)).ty := by
+  exact argTypesAlignAux_true h
 
 -- Note: `noncomputable` because of a compiler error
 /--
@@ -448,9 +439,9 @@ Apply the semantic interpretation of a UF symbol to denoted arguments.
 -/
 @[simp]
 noncomputable def applyUF (tdi : TermDenoteInput ctx) (uf : (denoteFunSort ctx.sctx args out).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
-  (as : List (TermDenoteResult ctx)) (hAlign : argTypesAlign as args) :
+  (as : List (TermDenoteResult ctx)) (hAlign : argTypesAlignAux as args) :
     (denoteSort ctx.sctx out).get (denoteSortOut_isSome_of_denoteFunSort_isSome h) ⟨tdi.sΓ, tdi.hsΓ⟩ :=
-  applyUFAux tdi uf as (argTypesAlign_length_eq hAlign).symm (argTypesAlign_arg_types hAlign)
+  applyUFAux tdi uf as (argTypesAlignAux_length_eq hAlign).symm (argTypesAlignAux_arg_types hAlign)
 
 /--
 Semantics helper for universal quantification.
@@ -490,6 +481,15 @@ def bindForallVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
 
+/--
+Semantics helper for existential quantification.
+
+Given a body interpretation over the context extended with one bound variable
+`(n : ty)`, produce the interpretation in the original context by existentially
+quantifying over Lean values of the denoted sort `ty`. This also extends the
+term environment with the chosen witness and carries the corresponding `WF`
+proof for the extended context.
+-/
 @[simp]
 def bindExistsVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
     let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
@@ -519,7 +519,20 @@ def bindExistsVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
 
-def buildQuant (isForall : Bool) (ctx : Context) (vs : List TermVar)
+/--
+Shape of a one-variable quantifier binder combinator (`∀` or `∃`).
+-/
+abbrev QuantVarBinder :=
+  {n : String} → {ty : TermType} → (ctx : Context) →
+    (hTy : (denoteSort ctx.sctx ty).isSome) →
+      let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
+      let v' := { id := n, ty := ty }
+      let vs' := v' :: ctx.tctx.vs
+      let tctx' := { ufs := ctx.tctx.ufs, vs := vs' }
+      (TermDenoteInput ⟨ctx.sctx, tctx'⟩ → Prop) →
+      TermDenoteInput ⟨ctx.sctx, tctx⟩ → Prop
+
+def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
@@ -531,25 +544,22 @@ def buildQuant (isForall : Bool) (ctx : Context) (vs : List TermVar)
       letI ctx' : Context := { sctx := ctx.sctx, tctx := { vs := { id := n, ty := ty } :: ctx.tctx.vs, ufs := ctx.tctx.ufs } }
       have hvs : ({ id := n, ty := ty } :: vs).reverse ++ ctx.tctx.vs = vs.reverse ++ ctx'.tctx.vs :=
         List.reverse_cons ▸ List.append_assoc _ _ _ ▸ rfl
-      let ft' := buildQuant isForall ctx' vs hTys' (hvs ▸ bodyFt)
-      if isForall then
-        bindForallVar ctx (denoteFunSortCons_isSome hTys).left ft' tdi
-      else
-        bindExistsVar ctx (denoteFunSortCons_isSome hTys).left ft' tdi
+      let ft' := buildQuant bindVar ctx' vs hTys' (hvs ▸ bodyFt)
+      bindVar (n := n) (ty := ty) ctx (denoteFunSortCons_isSome hTys).left ft' tdi
 
 def buildExists (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
-  buildQuant false ctx vs hTys bodyFt tdi
+  buildQuant bindExistsVar ctx vs hTys bodyFt tdi
 
 def buildForall (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
-  buildQuant true ctx vs hTys bodyFt tdi
+  buildQuant bindForallVar ctx vs hTys bodyFt tdi
 
 mutual
 
@@ -589,7 +599,7 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
       match h : ctx.tctx.ufs.findIdx? (· == uf) with
       | some i =>
         let as ← denoteTerms ctx as
-        if hufas : argTypesAlign as uf.args then
+        if hufas : argTypesAlignAux as uf.args then
           have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp h).left
           have hiuf := of_decide_eq_true (List.getElem_of_findIdx?_eq_some h)
           let ft (tdi : TermDenoteInput ctx) :=
@@ -1227,4 +1237,3 @@ noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (con
   let ufs := ctx.ufs.toList.reverse
   let ifs := ctx.ifs.toList.reverse
   (denoteBoolTermFromContext uss iss ufs ifs t).map PLift.down
-
