@@ -129,11 +129,16 @@ def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
     let fname := CoreIdent.toPretty fname
     if builtinFunctions.contains fname then [] else [fname]
   | .const _ _ => []
-  | .app _ fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
-  | .ite _ c t e => extractFunctionCallsFromExpr c ++ extractFunctionCallsFromExpr t ++ extractFunctionCallsFromExpr e
-  | .eq _ e1 e2 => extractFunctionCallsFromExpr e1 ++ extractFunctionCallsFromExpr e2
+  | .app _ fn arg => extractFunctionCallsFromExpr fn ++
+                     extractFunctionCallsFromExpr arg
+  | .ite _ c t e => extractFunctionCallsFromExpr c ++
+                    extractFunctionCallsFromExpr t ++
+                    extractFunctionCallsFromExpr e
+  | .eq _ e1 e2 => extractFunctionCallsFromExpr e1 ++
+                   extractFunctionCallsFromExpr e2
   | .abs _ _ _ body => extractFunctionCallsFromExpr body
-  | .quant _ _ _ _ trigger body => extractFunctionCallsFromExpr trigger ++ extractFunctionCallsFromExpr body
+  | .quant _ _ _ _ trigger body => extractFunctionCallsFromExpr trigger ++
+                                   extractFunctionCallsFromExpr body
 
 def extractCallsFromFunction (func : Function) : List String :=
   match func.body with
@@ -173,7 +178,8 @@ abbrev FunctionCG := CallGraph
 def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   let procedures := prog.decls.filterMap (fun decl =>
     match decl with
-    | .proc p _ => some (CoreIdent.toPretty p.header.name, extractCallsFromProcedure p)
+    | .proc p _ => some (CoreIdent.toPretty p.header.name,
+                         extractCallsFromProcedure p)
     | _ => none)
   buildCallGraph procedures
 
@@ -210,18 +216,20 @@ def Program.functionImmediateAxiomMap (prog : Program) : FuncAxMap :=
       acc.insert funcName (ax.name :: existing).dedup)
     Std.HashMap.emptyWithCapacity
 
-/-- Fixed-point computation for axiom relevance. Starting from
-  `relevantFunctions`, finds all axioms that immediately mention those
-  functions, then expands the relevant-function set with functions appearing
-  in those newly discovered axioms (and their call-graph neighbors), repeating
-  until no new axioms are found.
+/--
+Fixed-point computation for axiom relevance. Starting from
+`relevantFunctions`, finds all axioms that immediately mention those
+functions, then expands the relevant-function set with functions appearing
+in those newly discovered axioms (and their call-graph neighbors), repeating
+until no new axioms are found.
 
-  Terminates because each recursive call strictly grows `discoveredAxioms`
-  by at least one element (checked via `newAxioms.isEmpty`), and the total
-  number of axioms is bounded by `fuel` (initially `prog.decls.length`).
+Terminates because each recursive call strictly grows `discoveredAxioms`
+by at least one element (checked via `newAxioms.isEmpty`), and the total
+number of axioms is bounded by `fuel` (initially `prog.decls.length`).
 -/
-private def computeRelevantAxiomsAux (prog : Program) (cg : FunctionCG) (fmap : FuncAxMap)
-    (fuel : Nat) (relevantFunctions discoveredAxioms : List String) : List String :=
+private def computeRelevantAxiomsAux (prog : Program) (cg : FunctionCG)
+    (fmap : FuncAxMap) (fuel : Nat)
+    (relevantFunctions discoveredAxioms : List String) : List String :=
   match fuel with
   | 0 => discoveredAxioms
   | n + 1 =>
@@ -252,8 +260,9 @@ def computeRelevantAxioms (prog : Program) (cg : FunctionCG) (fmap : FuncAxMap)
   -- Each iteration adds ≥1 new axiom; total axioms ≤ total declarations.
   computeRelevantAxiomsAux prog cg fmap prog.decls.length relevantFunctions discoveredAxioms
 
-/-- Compute all axioms relevant to function `f`. An axiom `a` is relevant to
-  function `f` if:
+/--
+Compute all axioms relevant to function `f`. An axiom `a` is relevant to
+function `f` if:
 
 1. `f` is present in the body of `a`.
 2. A callee of `f` is present in the body of `a`.

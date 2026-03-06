@@ -33,7 +33,7 @@ structure Cache where
   funcCG   : FunctionCG
   axiomMap : FuncAxMap
 
-/-- Build the cache from `prog`. Call this once before the per-goal loop. -/
+/-- Build the cache from `prog`. -/
 def Cache.build (prog : Program) : Cache :=
   { funcCG   := prog.toFunctionCG
     axiomMap := prog.functionImmediateAxiomMap }
