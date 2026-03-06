@@ -6211,9 +6211,33 @@ private theorem TGenEnv.genTyVars_is_genName
     (h : TGenEnv.genTyVars n Env = .ok (tvs, Env'))
     (tv : TyIdentifier) (h_mem : tv ∈ tvs) :
     ∃ k, k ≥ Env.genState.tyGen ∧ tv = TState.tyPrefix ++ toString k := by
-  -- Each genTyVar produces tyPrefix ++ toString genState.tyGen, then increments.
-  -- By induction on n, each tv in the output list has such a name.
-  sorry
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨h1, _⟩ := h; subst h1; simp at h_mem
+  | succ m ih =>
+    simp only [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_gen1; obtain ⟨tv1, Env1⟩ := v1
+    split at h; · simp at h
+    rename_i v2 h_gen_rest; obtain ⟨rest, Env2⟩ := v2
+    simp at h
+    obtain ⟨h_tvs, h_env⟩ := h; subst h_tvs; subst h_env
+    have h_tv1_name : tv1 = TState.tyPrefix ++ toString Env.genState.tyGen := by
+      simp only [TGenEnv.genTyVar] at h_gen1
+      split at h_gen1; · simp at h_gen1
+      simp at h_gen1; rw [← h_gen1.1]
+      simp [TState.genTySym, TState.incTyGen]
+    have h_gen1_mono : Env1.genState.tyGen = Env.genState.tyGen + 1 := by
+      simp only [TGenEnv.genTyVar] at h_gen1
+      split at h_gen1; · simp at h_gen1
+      simp at h_gen1; rw [← h_gen1.2]
+      simp [TState.genTySym, TState.incTyGen]
+    rcases List.mem_cons.mp h_mem with h_eq | h_rest
+    · exact ⟨Env.genState.tyGen, Nat.le_refl _, h_eq ▸ h_tv1_name⟩
+    · simp at h_gen_rest
+      obtain ⟨k, h_k_ge, h_eq⟩ := ih Env1 rest Env2 h_gen_rest h_rest
+      exact ⟨k, by omega, h_eq⟩
 
 private theorem HasType_LTy_instantiate
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
