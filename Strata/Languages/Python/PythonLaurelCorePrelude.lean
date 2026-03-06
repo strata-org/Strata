@@ -339,7 +339,7 @@ inline function PMul (v1: Any, v2: Any) : Any
   else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
     from_int(Any..as_int!(v1) * bool_to_int(Any..as_bool!(v2)))
   else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) then
-    from_float(bool_to_real(Any..as_bool!(v1)) + Any..as_float!(v2))
+    from_float(bool_to_real(Any..as_bool!(v1)) * Any..as_float!(v2))
   else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) then
     from_float(Any..as_float!(v1) * bool_to_real(Any..as_bool!(v2)))
   else if (Any..isfrom_bool(v1) && Any..isfrom_string(v2)) then
