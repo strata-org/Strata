@@ -6481,7 +6481,7 @@ theorem resolveAux_HasType :
           have h_aliases : Env.context.aliases = ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context.aliases := by
             simp [TEnv.context]; rw [h_ctx_pres]
           exact HasType_resolveAliases C Env.context _ mty_inst mty_ra
-            {Env with genEnv := genEnv'} Env_ra h_mono h_ra h_aliases h_fresh
+            {Env with genEnv := genEnv'} Env_ra h_mono h_ra h_aliases h_aw h_fresh
         · simp at h_inst
     | some oty_val =>
       simp only [Except.mapError] at h
