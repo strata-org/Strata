@@ -8,7 +8,7 @@ import Strata.DL.Lambda.Factory
 import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.LExprTypeSpec
+
 import Strata.DL.Lambda.Semantics
 import Strata.DDM.Util.Array
 import Strata.DL.Util.Func
