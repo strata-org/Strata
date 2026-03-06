@@ -4793,15 +4793,49 @@ private theorem typeBoundVar_preserves_boundVarsFresh
     ∀ y ty, Env'.context.types.find? y = some ty →
       ∀ v, v ∈ LTy.boundVars ty →
         ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  -- Follows the same structure as typeBoundVar_preserves_boundVarsNodup.
-  -- New entry (forAll [] xty) has boundVars = [] → vacuously true.
-  -- Old entries: delegate to h_bf with gen counter monotonicity.
   have h_mono := typeBoundVar_tyGen_mono C Env bty xv xty Env' h
-  -- Decompose: typeBoundVar does genVar/instantiateWithCheck → addInNewestContext
-  -- Context equality for old entries: after addInNewestContext, old entries are unchanged.
-  -- For the new entry, boundVars (forAll [] xty) = [].
-  -- Use the same case analysis as typeBoundVar_preserves_boundVarsNodup.
-  sorry
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  have h_g_ctx : Env_g.context = Env.context := liftGenEnv_context Env _ Env_g h_gen
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h
+    generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h
+    match res_ic with
+    | .error _ => simp at h
+    | .ok (bty_mty, Env_mid) =>
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, h_xty, h_env'⟩ := h
+    have h_mid_ctx : Env_mid.context = Env.context :=
+      (LMonoTy_instantiateWithCheck_context' bty_val C Env_g bty_mty Env_mid h_ic).trans h_g_ctx
+    subst h_xv; subst h_xty; subst h_env'
+    intro y ty_found h_find v hv n hn
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+    rw [show Env_mid.genEnv.context = Env.genEnv.context from h_mid_ctx] at h_find
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types xv_raw (.forAll [] bty_mty) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find
+      simp [LTy.boundVars] at hv
+    · rw [h_old] at h_find
+      exact h_bf y ty_found h_find v hv n (Nat.le_trans h_mono hn)
+  | none =>
+    simp only [Bind.bind, Except.bind]; intro h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨xtyid, Env_mid⟩ := v_tg
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, h_xty, h_env'⟩ := h
+    have h_mid_ctx : Env_mid.context = Env.context :=
+      (TEnv.genTyVar_context Env_g xtyid Env_mid h_tg).trans h_g_ctx
+    subst h_xv; subst h_xty; subst h_env'
+    intro y ty_found h_find v hv n hn
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+    rw [show Env_mid.genEnv.context = Env.genEnv.context from h_mid_ctx] at h_find
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types xv_raw (.forAll [] (LMonoTy.ftvar xtyid)) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find
+      simp [LTy.boundVars] at hv
+    · rw [h_old] at h_find
+      exact h_bf y ty_found h_find v hv n (Nat.le_trans h_mono hn)
 
 /--
 Context preservation for `LTy.instantiateWithCheck`.
@@ -5275,6 +5309,20 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
       exact this irest h_irest_sub x hx_irest
     · exact h_wf.output_typevars_in_typeArgs (LMonoTy.freeVars_destructArrow_subset func.output hx_destr)
 
+/-- Factory function types produced by `LFunc.type` have `boundVars = func.typeArgs`. -/
+private theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
+    (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty) :
+    LTy.boundVars ty = func.typeArgs := by
+  unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind, decide_eq_true_eq] at h_type
+  split at h_type; · simp at h_type
+  split at h_type; · simp at h_type
+  generalize h_vals : func.inputs.values = vals at h_type
+  cases vals with
+  | nil =>
+    simp [Pure.pure, Except.pure] at h_type; subst h_type; simp [LTy.boundVars]
+  | cons _ _ =>
+    simp [Pure.pure, Except.pure] at h_type; subst h_type; simp [LTy.boundVars]
+
 /-- Combined result: context preservation, SubstFreshForGen preservation, and output type freshness.
     These are proved together by strong induction to avoid circular dependencies. -/
 
@@ -5408,13 +5456,19 @@ private theorem resolveAux_preserves_combined :
     have h_ty_fresh_vacuous : ∀ v, v ∈ LTy.freeVars type_val →
         ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
       intro v hv; simp [h_ty_closed] at hv
+    have h_bv_fresh : ∀ v, v ∈ LTy.boundVars type_val →
+        ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+      rw [LFunc.type_boundVars_eq_typeArgs func type_val h_type]
+      intro v hv _ _ h_eq
+      have := h_func_wf.typeArgs_no_gen_prefix v hv
+      exact this (h_eq ▸ startsWith_append_self _ _)
     cases oty with
     | none =>
       simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2
       constructor
       · exact LTy_instantiateWithCheck_preserves_SubstFreshForGen type_val C Env ty_inst Env1 h_inst h_fresh h_aw h_ctx
           h_ty_fresh_vacuous
-          (by sorry) -- factory type bound vars are gen-fresh (user names, not $__ty)
+          h_bv_fresh
       · intro v hv k hk
         simp [toLMonoTy] at hv
         exact LTy_instantiateWithCheck_freeVars_fresh type_val C Env ty_inst Env1 h_inst h_ctx v hv k hk
@@ -5434,7 +5488,7 @@ private theorem resolveAux_preserves_combined :
       have h_fresh1 := LTy_instantiateWithCheck_preserves_SubstFreshForGen
         type_val C Env ty_inst Env1 h_inst h_fresh h_aw h_ctx
         h_ty_fresh_vacuous
-        (by sorry) -- factory type bound vars are gen-fresh
+        h_bv_fresh
       have h_fresh2 := LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
         oty_val C Env1 oty_inst Env2 h_inst2 h_fresh1 h_aw1 h_ctx1
       have h_unify := unify_of_mapError h_mapError
