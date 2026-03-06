@@ -244,29 +244,53 @@ def Transformation.preserves_unsatisfiability
     stmt_unsatisfiable π φ (t.T stmt) a →
     stmt_unsatisfiable π φ stmt (t.F_inv a)
 
+/-! ## Procedure Contract Obedience
+
+A procedure obeys its contract if, for all executions of its body where
+preconditions hold at entry, all postconditions hold at exit. This is
+defined using the big-step semantics for body execution. -/
+
+/-- A procedure obeys its contract: for all initial states where preconditions
+    hold, if the body executes to completion, then all postconditions hold. -/
+def procedure_obeys_contract
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (proc : Procedure) : Prop :=
+  ∀ (δ : CoreEval) (σ₀ σ_final : CoreStore) (δ_final : CoreEval),
+    -- Preconditions hold at entry
+    (∀ (label : CoreLabel) (check : Procedure.Check),
+      (label, check) ∈ proc.spec.preconditions.toList →
+      δ σ₀ check.expr = some HasBool.tt) →
+    -- Body executes to completion
+    EvalStatements π φ δ σ₀ proc.body σ_final δ_final →
+    -- Postconditions hold at exit
+    (∀ (label : CoreLabel) (check : Procedure.Check),
+      (label, check) ∈ proc.spec.postconditions.toList →
+      check.attr = Procedure.CheckAttr.Default →
+      δ_final σ_final check.expr = some HasBool.tt)
+
 /-! ## Soundness of ProcBodyVerify
 
-`procToVerifyStmt` transforms a `Procedure` into a verification `Statement`.
-This is not a `Statement → Statement` transformation, so we state soundness
-directly: if all assertions in the verification statement are valid, then
-the procedure's postconditions hold after body execution under preconditions.
--/
+`procToVerifyStmt` transforms a `Procedure` into a verification `Statement`:
+```
+block "verify_P" {
+  init inputs; init outputs; init modifies;
+  assume preconditions;
+  block "body_P" { body... }
+  assert postconditions;
+}
+```
 
-/-- Soundness of procToVerifyStmt: if the verification statement is correct
-    (all its assertions are valid), then for every postcondition assertion `a`
-    in the verification statement, `a` is valid. This is a direct consequence
-    of `stmt_correct`. The deeper property — relating validity of the
-    verification statement to the original procedure contract — requires
-    showing that the reachable states of the verification block faithfully
-    model the procedure's execution under its contract. -/
+Soundness: if all assertions in the verification statement are valid
+(i.e., `stmt_correct` holds), then the procedure obeys its contract. -/
+
 theorem procBodyVerify_sound
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
     (h_correct : stmt_correct π φ stmt) :
-    ∀ (a : AssertId), stmt_valid π φ stmt a :=
-  h_correct
+    procedure_obeys_contract π φ proc := by
+  sorry
 
 /-! ## Example: Wrapping in a block preserves validity
 
