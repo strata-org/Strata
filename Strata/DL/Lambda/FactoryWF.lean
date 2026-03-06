@@ -28,13 +28,18 @@ open Strata.DL.Util (Func FuncWF TyIdentifier)
 
 variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
-/-- Well-formedness properties for LFunc - abbreviation of FuncWF with Lambda-specific extractors. -/
-abbrev LFuncWF {T : LExprParams} (f : LFunc T) :=
-  FuncWF
-    (fun id => id.name) -- getName
-    (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
-    (fun e => e.freeVars) -- getTyFreeVars
-    f
+/-- Well-formedness properties for LFunc — extends generic `FuncWF` with
+    Lambda-specific extractors and the generated-prefix guard on `typeArgs`. -/
+structure LFuncWF {T : LExprParams} (f : LFunc T) extends
+    FuncWF
+      (fun id => id.name) -- getName
+      (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
+      (fun e => e.freeVars) -- getTyFreeVars
+      f where
+  /-- Type arguments must not start with the reserved generated-variable
+      prefix `$__ty` used by the type-checker. -/
+  typeArgs_no_gen_prefix :
+    ∀ ta, ta ∈ f.typeArgs → ¬ ta.startsWith "$__ty" := by decide
 
 /-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where

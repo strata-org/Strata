@@ -5275,6 +5275,20 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
       exact this irest h_irest_sub x hx_irest
     · exact h_wf.output_typevars_in_typeArgs (LMonoTy.freeVars_destructArrow_subset func.output hx_destr)
 
+/-- Factory function types produced by `LFunc.type` have `boundVars = func.typeArgs`. -/
+private theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
+    (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty) :
+    LTy.boundVars ty = func.typeArgs := by
+  unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind, decide_eq_true_eq] at h_type
+  split at h_type; · simp at h_type
+  split at h_type; · simp at h_type
+  generalize h_vals : func.inputs.values = vals at h_type
+  cases vals with
+  | nil =>
+    simp [Pure.pure, Except.pure] at h_type; subst h_type; simp [LTy.boundVars]
+  | cons _ _ =>
+    simp [Pure.pure, Except.pure] at h_type; subst h_type; simp [LTy.boundVars]
+
 /-- Combined result: context preservation, SubstFreshForGen preservation, and output type freshness.
     These are proved together by strong induction to avoid circular dependencies. -/
 
@@ -5408,13 +5422,19 @@ private theorem resolveAux_preserves_combined :
     have h_ty_fresh_vacuous : ∀ v, v ∈ LTy.freeVars type_val →
         ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
       intro v hv; simp [h_ty_closed] at hv
+    have h_bv_fresh : ∀ v, v ∈ LTy.boundVars type_val →
+        ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+      rw [LFunc.type_boundVars_eq_typeArgs func type_val h_type]
+      intro v hv _ _ h_eq
+      have := h_func_wf.typeArgs_no_gen_prefix v hv
+      exact this (h_eq ▸ startsWith_append_self _ _)
     cases oty with
     | none =>
       simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2
       constructor
       · exact LTy_instantiateWithCheck_preserves_SubstFreshForGen type_val C Env ty_inst Env1 h_inst h_fresh h_aw h_ctx
           h_ty_fresh_vacuous
-          (by sorry) -- factory type bound vars are gen-fresh (user names, not $__ty)
+          h_bv_fresh
       · intro v hv k hk
         simp [toLMonoTy] at hv
         exact LTy_instantiateWithCheck_freeVars_fresh type_val C Env ty_inst Env1 h_inst h_ctx v hv k hk
@@ -5434,7 +5454,7 @@ private theorem resolveAux_preserves_combined :
       have h_fresh1 := LTy_instantiateWithCheck_preserves_SubstFreshForGen
         type_val C Env ty_inst Env1 h_inst h_fresh h_aw h_ctx
         h_ty_fresh_vacuous
-        (by sorry) -- factory type bound vars are gen-fresh
+        h_bv_fresh
       have h_fresh2 := LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
         oty_val C Env1 oty_inst Env2 h_inst2 h_fresh1 h_aw1 h_ctx1
       have h_unify := unify_of_mapError h_mapError
