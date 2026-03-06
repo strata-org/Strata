@@ -8,6 +8,63 @@ module
 public section
 namespace Core
 
+/--
+Controls irrelevant-axiom removal during verification. This mode is intended
+only for _assert_-style proof obligations (deductive verification). Axiom
+removal is **never** applied to _cover_ obligations, where it would be unsound:
+removing an axiom weakens the path conditions, potentially making unreachable
+paths appear satisfiable and producing spurious "covered" results.
+
+## Soundness for assert obligations
+
+Consider a goal `G: P ==> Q`, where `P` contains an axiom/assumption `A`. If
+`A` is removed, we get `G': P' ==> Q`, where `P'` is a weaker version of `P`.
+`G'` is therefore a stronger version of `G`. For soundness w.r.t. deductive
+verification, we want: if `G'` is valid, then `G` was valid (but not necessarily
+the converse).
+
+**Case 1: `G'` is valid.**
+Since `P' ==> P`, we have `P ==> Q`, i.e., `G` is valid too. Soundness is
+preserved.
+
+**Case 2: `G'` is invalid.**
+There exists a model `M` for which `G'` is false, i.e., `M ⊨ P'` but `M ⊭ Q`.
+This alone doesn't tell us about the validity of `G`:
+- If `M ⊨ P` (i.e., `M` also satisfies the removed axiom `A`), then `M` is a
+  counterexample for `G` too, so `G` is invalid too. Thus, a counterexample can
+  be validated by checking if it satisfies `P`.
+- If `M ⊭ P` (i.e., `M` violates the removed axiom `A`), then `M` is not a
+  valid counterexample for `G`, and `G` might still be valid.
+
+**Case 3: Validity of `G'` cannot be determined.**
+This can be due to various reasons, like solver timeout, problem's complexity,
+or incomplete solver theories. `G` could be valid, invalid, or undecidable.
+
+**Soundness guarantee:** Axiom removal does not lead to proofs of invalid goals,
+but it may cause valid goals to become unprovable, resulting in "unknown"
+results. Moreover, if a counterexample is found for the weakened goal, it may
+not be a valid counterexample for the original goal.
+
+Note that soundness is preserved regardless of the quality of axiom relevance
+analysis.
+-/
+inductive IrrelevantAxiomsMode where
+  /--
+  Only the functions in the consequent `Q` of a goal `P ==> Q` will be taken
+  into account for relevant axiom analysis. This means that axioms relevant to
+  some function in `P` (but not in `Q`) may be removed. This is sound, but may
+  yield unknown results from the solver.
+  -/
+  | Aggressive
+  /--
+  Functions in both `P` and `Q` of a goal `P ==> Q` will be considered for
+  relevant axiom analysis.
+  -/
+  | Precise
+  /-- Do not prune any axioms. -/
+  | Off
+  deriving Repr, DecidableEq, Inhabited
+
 inductive VerboseMode where
   | quiet
   | models
@@ -51,7 +108,7 @@ structure VerifyOptions where
   typeCheckOnly : Bool
   checkOnly : Bool
   stopOnFirstError : Bool
-  removeIrrelevantAxioms : Bool
+  removeIrrelevantAxioms : IrrelevantAxiomsMode
   /-- Use SMT-LIB Array theory instead of axiomatized maps -/
   useArrayTheory : Bool
   /-- Solver time limit in seconds -/
@@ -85,7 +142,7 @@ def VerifyOptions.default : VerifyOptions := {
   typeCheckOnly := false,
   checkOnly := false,
   stopOnFirstError := false,
-  removeIrrelevantAxioms := false,
+  removeIrrelevantAxioms := .Off,
   useArrayTheory := false,
   solverTimeout := 10,
   outputSarif := false,
