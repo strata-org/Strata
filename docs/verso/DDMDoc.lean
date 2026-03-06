@@ -623,7 +623,7 @@ op datatype_decl (name : Ident,
   "datatype " name typeParams " {" constructors "}";
 
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (datatypes : SpaceSepBy DatatypeDecl) : Command =>
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
 ```
 

@@ -1042,7 +1042,7 @@ private def scopeSepFormat (name : QualifiedIdent)
   match name with
   | q`Init.Seq              => some (.none, Syntax.getArgs)
   | q`Init.CommaSepBy       => some (.comma, Syntax.getSepArgs)
-  | q`Init.SpaceSepBy       => some (.space, Syntax.getArgs)
+  | q`Init.SpaceSepBy       => some (.space, Syntax.getSepArgs)
   | q`Init.SpacePrefixSepBy => some (.spacePrefix, Syntax.getArgs)
   | q`Init.NewlineSepBy     => some (.newline, Syntax.getArgs)
   | _ => none
@@ -1188,7 +1188,8 @@ partial def runSyntaxElaborator
     if let some typeParamsLevel := ae.scopeTVar then
       -- @[scopeTVar(typeParams)] — converts .type bindings to .tvar bindings
       let some typeParamsT := trees[typeParamsLevel]
-        | continue
+        | logError aloc "Internal: missing type parameter"
+          return default
       let tloc := typeParamsT.info.loc
       let paramCtx := typeParamsT.resultContext
       let (typeParamNames, success) ← runChecked <|

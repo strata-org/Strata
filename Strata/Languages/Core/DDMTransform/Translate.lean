@@ -1637,7 +1637,9 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
 
     -- Second pass: translate all constructors with all placeholders in scope
     let ldatatypes ← (datatypeOps.zip datatypeInfos).toList.mapM fun (dtOp, (datatypeName, typeArgs, _idx)) => do
-      -- Re-translate type args to populate boundTypeVars for this datatype
+      -- Re-translate type args to populate boundTypeVars for this datatype.
+      -- The first pass already translated them but only to collect names/args;
+      -- we need per-datatype bindings here so constructors resolve type vars correctly.
       let (_, dtBindings) ← translateDatatypeTypeArgs bindingsWithPlaceholders dtOp.args[1]! "translateDatatypes"
       let constructors ← translateConstructorList p dtBindings dtOp.args[2]!
       if h : constructors.size == 0 then
