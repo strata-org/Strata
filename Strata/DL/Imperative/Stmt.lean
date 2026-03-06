@@ -3,16 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.Cmd
-import Strata.DL.TypeConstructor
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.TypeConstructor
 
 namespace Imperative
 
+public section
+
 open Std.Format
-open Strata
 
 ---------------------------------------------------------------------
 
@@ -50,7 +50,7 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   deriving Inhabited
 
 /-- A block is simply an abbreviation for a list of commands. -/
-abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
+@[expose] abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
 def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=
   match s with
@@ -338,5 +338,5 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative
-

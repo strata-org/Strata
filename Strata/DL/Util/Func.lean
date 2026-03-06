@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Util.ListMap
-import Strata.DL.Util.FuncAttr
+public import Strata.DL.Util.ListMap
+public import Strata.DL.Util.FuncAttr
 
 /-!
 ## Generic Function Structure
@@ -22,8 +23,10 @@ namespace Strata.DL.Util
 
 open Std (ToFormat Format format)
 
+public section
+
 /-- Type identifiers for generic type arguments. Alias for String. -/
-abbrev TyIdentifier := String
+@[expose] abbrev TyIdentifier := String
 
 /-- A precondition with its associated metadata -/
 structure FuncPrecondition (ExprT : Type) (MetadataT : Type) where
@@ -196,4 +199,5 @@ instance FuncWF.precond_freevars_decidable
   exact List.decidableBAll (fun x => getVarNames x.expr ⊆ f.inputs.map (getName ·.1))
     f.preconditions
 
+end -- public section
 end Strata.DL.Util

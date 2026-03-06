@@ -1,0 +1,37 @@
+# Expected CBMC property results for Laurel pipeline tests.
+# Format: <basename>.lr.st [main.N] line <L> <pattern>: <SUCCESS|FAILURE>
+# Each line after the filename specifies a CBMC property to match.
+# The test runner checks that every listed property appears in CBMC output
+# with the expected status.
+
+test_arithmetic.lr.st
+  [main.1] line 6 assert: SUCCESS
+  [main.2] line 11 assert: SUCCESS
+  [main.3] line 14 assert: SUCCESS
+  [main.4] line 17 assert: SUCCESS
+
+test_comparisons.lr.st
+  [main.1] line 4 assert: SUCCESS
+  [main.2] line 8 assert: SUCCESS
+  [main.3] line 9 assert: SUCCESS
+  [main.4] line 10 assert: SUCCESS
+  [main.5] line 11 assert: SUCCESS
+
+test_control_flow.lr.st
+  [main.1] line 10 assert: SUCCESS
+  [main.2] line 24 assert: SUCCESS
+  [main.3] line 34 assert: SUCCESS
+
+test_failing_assert.lr.st
+  [main.1] line 3 assert: FAILURE
+
+test_operators.lr.st
+  [main.1] line 5 assert: SUCCESS
+  [main.2] line 7 assert: SUCCESS
+  [main.3] line 9 assert: SUCCESS
+  [main.4] line 11 assert: SUCCESS
+  [main.5] line 16 assert: SUCCESS
+
+test_strings.lr.st
+  [main.1] line 5 assert: SUCCESS
+  [main.2] line 9 assert: SUCCESS

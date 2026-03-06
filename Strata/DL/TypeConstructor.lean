@@ -3,13 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LTy
-
-namespace Strata
+public import Strata.DL.Lambda.LTy
 
 open Std (ToFormat Format format)
-open Lambda
+
+public section
 
 /-! # Type Constructor
 
@@ -35,10 +35,10 @@ instance : ToFormat TypeConstructor where
     let args := (if t.params.isEmpty then [] else t.params).toString
     f!"type {repr t.bound} {t.name} {args}"
 
-def TypeConstructor.toType (t : TypeConstructor) : LTy :=
+def TypeConstructor.toType (t : TypeConstructor) : Lambda.LTy :=
   if t.params.isEmpty then
     .forAll [] (.tcons t.name [])
   else
-    .forAll t.params (.tcons t.name (t.params.map LMonoTy.ftvar))
+    .forAll t.params (.tcons t.name (t.params.map Lambda.LMonoTy.ftvar))
 
-end Strata
+end -- public section

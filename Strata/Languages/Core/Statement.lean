@@ -18,7 +18,6 @@ import Strata.Util.Tactics
 
 namespace Core
 open Imperative
-open Strata (TypeConstructor)
 open Std (ToFormat Format format)
 open Std.Format
 

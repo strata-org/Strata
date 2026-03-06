@@ -15,15 +15,8 @@ namespace Core
 
 open Std (ToFormat Format format)
 open Lambda
-open Strata
 
 /-! # Strata Core Type Declarations -/
-
--- Re-export shared types and functions
-export Strata (Boundedness TypeConstructor)
-namespace TypeConstructor
-export Strata.TypeConstructor (toType)
-end TypeConstructor
 
 ---------------------------------------------------------------------
 

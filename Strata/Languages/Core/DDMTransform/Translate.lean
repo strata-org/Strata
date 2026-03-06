@@ -1181,7 +1181,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
 
     -- Create a TypeConstructor and add it to freeVars (same as program-level types)
-    let tc : Core.TypeConstructor := { name := name, params := typeParams }
+    let tc : TypeConstructor := { name := name, params := typeParams }
     let typeDecl : Core.Decl := .type (.con tc) md
 
     -- Add type parameters (not the type name itself) to boundTypeVars

@@ -61,11 +61,6 @@ Strips Lean's «» notation if present.
 Follows SMT-LIB 2.6 specification for quoted symbols.
 -/
 private def formatIdent (s : String) : Format :=
-  -- Strip Lean's «» notation if present
-  let s := if s.startsWith "«" && s.endsWith "»" then
-             s.drop 1 |>.dropEnd 1 |>.toString
-           else
-             s
   if needsPipeDelimiters s then
     Format.text ("|" ++ escapePipeIdent s ++ "|")
   else
