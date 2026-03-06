@@ -336,9 +336,10 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     leftAssocOp mkIntDiv as
   | .app .mod as _ =>
     leftAssocOp mkIntMod as
-  -- | .app .abs [a] _ =>
-  --   let (_, a) ← translateTerm a
-  --   return (mkInt, .app (.const ``Int.abs []) a)
+  | .app .abs [a] _ =>
+    let (_, a) ← translateTerm a
+    let c := mkApp2 mkIntLT a (toExpr (0 : Int))
+    return (mkInt, mkApp5 (.const ``ite [1]) mkInt c (.app (.const ``Classical.propDecidable []) c) (.app mkIntNeg a) a)
   | .app .le [x, y] _ =>
     let (_, x) ← translateTerm x
     let (_, y) ← translateTerm y
@@ -498,6 +499,10 @@ where
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
     return (α, as.foldl (mkApp2 op) a)
 
+/--
+Translate assumptions and a conclusion into a right-associated implication
+chain: `a₁ -> a₂ -> ... -> conc`.
+-/
 def mkPropArrowN (as : Array SMT.Term) (a : SMT.Term) : TranslateM Expr := do
   let level := (← get).level
   let f as a := do
@@ -509,9 +514,15 @@ def mkPropArrowN (as : Array SMT.Term) (a : SMT.Term) : TranslateM Expr := do
   modify fun s => { s with level := level + 1 }
   return as.foldr mkArrow a
 
+/--
+Introduce uninterpreted sort declarations as outer `forall` binders.
+
+For each declared sort we also add an implicit `Nonempty` instance binder, so
+terms that quantify over values of that sort remain type-correct.
+-/
 def withTypeDecls (uss : Array Core.SMT.Sort) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
-  let mut decls ← uss.mapM translateTypeDecl
+  let decls ← uss.mapM translateTypeDecl
   let b ← k
   set state
   return decls.flatten.foldr (fun (n, t, bi) b => .forallE n t b bi) b
@@ -527,6 +538,9 @@ where
     modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.is us) (ht, s.level) }
     return #[(n, t, .default), (hn, ht, .instImplicit)]
 
+/--
+Introduce concrete sort definitions (`define-sort`) as local `let` bindings.
+-/
 def withTypeDefs (iss : Map String TermType) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   let defs ← iss.mapM translateTypeDef
@@ -544,9 +558,12 @@ where
     modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.us { name := is.fst, arity := 0 }) (t, s.level) }
     return (n, t, v)
 
+/--
+Introduce uninterpreted function declarations as outer `forall` binders.
+-/
 def withFunDecls (ufs : Array UF) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
-  let mut decls ← ufs.mapM translateFunDecl
+  let decls ← ufs.mapM translateFunDecl
   let b ← k
   set state
   return decls.foldr (fun (n, t) b => .forallE n t b .default) b
@@ -565,6 +582,10 @@ where
     modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
     return (n, t)
 
+/--
+Introduce interpreted function definitions (`define-fun`) as local `let`
+bindings, with lambda bodies over their parameters.
+-/
 def withFunDefs (ifs : Array Core.SMT.IF) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   -- it's common for SMT-LIB queries to be "letified" using define-fun to
@@ -591,6 +612,14 @@ where
     modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
     return (n, t)
 
+/--
+Build the full translation scope for an SMT context:
+1. sort declarations (`forall`)
+2. sort definitions (`let`)
+3. function declarations (`forall`)
+4. function definitions (`let`)
+5. context axioms as implications
+-/
 def withCtx (ctx : Core.SMT.Context) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   let p ← withTypeDecls ctx.sorts <| withTypeDefs ctx.tySubst <|
@@ -605,6 +634,11 @@ def withCtx (ctx : Core.SMT.Context) (k : TranslateM Expr) : TranslateM Expr := 
   set state
   return p
 
+/--
+Translate an SMT query under `ctx` by first introducing context symbols and
+axioms (`withCtx`), then building the assumption-to-conclusion implication
+shape (`mkPropArrowN`).
+-/
 def translateQuery (ctx : Core.SMT.Context) (assums : Array SMT.Term) (conc : SMT.Term) : TranslateM Expr := do
   withCtx ctx (mkPropArrowN assums conc)
 
@@ -615,32 +649,3 @@ def translateQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT
 
 def translateQueryMeta (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term) : MetaM Expr := do
   Lean.ofExcept (translateQuery ctx assums conc)
-
-open Elab Command in
-def elabQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term) : CommandElabM Unit := do
-  runTermElabM fun _ => do
-  let e ← translateQueryMeta ctx assums conc
-  logInfo e
-
-set_option trace.debug true
-
-/-- info: ∀ (a : Int), 42 > a -/
-#guard_msgs in
-#eval
-  let a := { id := "a", ty := .prim .int }
-  (elabQuery {} [] (.quant .all [a] a (.app .gt [.prim (.int 42), a] (.prim .int))))
-
-/--
-info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty (α α_1 α_2)] (β : Type) [inst : Nonempty β]
-  (γ : Type → Type) [inst : ∀ (α : Type), Nonempty (γ α)] (a : α β Prop) (b : γ (α β Prop)) (f : α β Prop → β),
-  a = a ∧ b = b
--/
-#guard_msgs in
-#eval
-  let α := { name := "α", arity := 2 }
-  let β := { name := "β", arity := 0 }
-  let γ := { name := "γ", arity := 1 }
-  let f := { id := "f", args := [{ id := "x", ty := .constr α.name [.constr β.name [], .prim .bool] }], out := .constr β.name [] }
-  let a := { id := "a", args := [], out := .constr α.name [.constr β.name [], .prim .bool] }
-  let b := { id := "b", args := [], out := .constr γ.name [.constr α.name [.constr β.name [], .prim .bool]] }
-  elabQuery { sorts := #[α, β, γ], ufs := #[a, b, f] } [] (.app .and [(.app .eq [.app (.uf a) [] a.out, .app (.uf a) [] a.out] (.prim .bool)), (.app .eq [.app (.uf b) [] b.out, .app (.uf b) [] b.out] (.prim .bool))] (.prim .bool))

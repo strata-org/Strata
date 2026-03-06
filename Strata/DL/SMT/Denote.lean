@@ -133,6 +133,18 @@ def substituteIFIS (isctx : ISContext) (iF : Core.SMT.IF) : Core.SMT.IF :=
 
 mutual
 
+/-- Interpret primitive SMT types as Lean types, when supported. -/
+def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
+  match pty with
+  | .bool => return fun _ => Prop
+  | .int => return fun _ => Int
+  | .bitvec n => return fun _ => BitVec n
+  -- We don't have access to `Real` in `Strata`, so we leave it as `none` for now.
+  | .real => none -- fin _ => Real
+  | .string => return fun _ => String
+  | .regex => none
+  | .trigger => none
+
 /--
 Interpret an SMT `TermType` as a Lean `Type`, when supported.
 
@@ -142,14 +154,7 @@ Note: similar to `denoteSort`, but does not attempt to look up type synonyms.
 -/
 def denoteSortAux (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
   match ty with
-  | .prim .bool => return fun _ => Prop
-  | .prim .int => return fun _ => Int
-  | .prim (.bitvec n) => return fun _ => BitVec n
-  -- We don't have access to `Real` in `Strata`, so we leave it as `none` for now.
-  | .prim .real => none -- fin _ => Real
-  | .prim .string => return fun _ => String
-  | .prim .regex => none
-  | .prim .trigger => none
+  | .prim pty => denotePrimSort sctx pty
   | .option ty =>
     let ty ← denoteSortAux sctx ty
     return fun sΓ => Option (ty sΓ)
@@ -185,14 +190,7 @@ Returns `none` when we lack an interpretation (e.g. for reals).
 -/
 def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
   match ty with
-  | .prim .bool => return fun _ => Prop
-  | .prim .int => return fun _ => Int
-  | .prim (.bitvec n) => return fun _ => BitVec n
-  -- We don't have access to `Real` in `Strata`, so we leave it as `none` for now.
-  | .prim .real => none -- fin _ => Real
-  | .prim .string => return fun _ => String
-  | .prim .regex => none
-  | .prim .trigger => none
+  | .prim pty => denotePrimSort sctx pty
   | .option ty =>
     let ty ← denoteSort sctx ty
     return fun sΓ => Option (ty sΓ)
@@ -283,6 +281,10 @@ structure TermVarDenote (sΓ : SortDenoteInput sctx) where
 abbrev TermVarContext := List TermVar
 abbrev TermVarEnvironment (sΓ : SortDenoteInput sctx) := List (TermVarDenote sΓ)
 
+/-- Forget semantic values, keeping only the declared term variables. -/
+def TermVarEnvironment.toContext (tΓ : TermVarEnvironment sΓ) : TermVarContext :=
+  tΓ.map (·.var)
+
 /--
 Well-formedness predicate ensuring that an interpreted term-variable
 environment matches its syntactic context.
@@ -303,6 +305,10 @@ structure UFDenote (sΓ : SortDenoteInput sctx) where
 abbrev UFContext := List UF
 abbrev UFEnvironment (sΓ : SortDenoteInput sctx) := List (UFDenote sΓ)
 
+/-- Forget semantic values, keeping only UF declarations. -/
+def UFEnvironment.toContext (Γ : UFEnvironment sΓ) : UFContext :=
+  Γ.map (·.uf)
+
 /--
 Well-formedness predicate ensuring that an interpreted uninterpreted-function
 environment aligns with the syntactic declarations.
@@ -314,6 +320,11 @@ structure UFEnvironment.WF (ufs : UFContext) (Γ : UFEnvironment sΓ) where
 /--
 Syntactic context tracking the declared term variables and uninterpreted
 functions that may appear in a term.
+
+This is intentionally separate from `TermEnvironment`: an environment contains
+strictly more information (semantic values), but denotation judgments are
+formulated against syntax-level declarations and then related to environments
+via `TermEnvironment.WF`.
 -/
 structure TermContext where
   vs  : TermVarContext := []
@@ -321,7 +332,12 @@ structure TermContext where
 
 /--
 Semantic environment providing Lean values for the elements stored in a
-`Context`.
+`TermContext`.
+
+Although this could project back to a context (`toContext`), we keep an
+explicit `TermContext` parameter in denotation APIs so binder-extension and
+lookup steps can be stated over declarations first, with realizability tracked
+separately via `WF`.
 -/
 structure TermEnvironment (sΓ : SortDenoteInput sctx) where
   vs  : TermVarEnvironment sΓ
@@ -364,11 +380,11 @@ Check that the denotations `as` match the types of the variables `vs` when the
 two lists have the same length.
 -/
 @[simp]
-noncomputable def argTypesAlignAux (as : List (TermDenoteResult ctx)) (vs : List TermVar) (hl : as.length = vs.length) : Bool :=
+noncomputable def argTypesAlignAux (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
   match as, vs with
   | [], [] => true
   | a :: as, v :: vs =>
-    a.ty == v.ty && argTypesAlignAux as vs (Nat.succ.inj hl)
+    a.ty == v.ty && argTypesAlignAux as vs
   | _, _ => false
 
 -- Note: `noncomputable` because `argTypesAlignAux` is `noncomputable` due to a compiler error
@@ -377,21 +393,23 @@ Check that the argument denotations align with the declared term-variable types.
 -/
 @[simp]
 noncomputable def argTypesAlign (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
-  if h : as.length = vs.length then
-    argTypesAlignAux as vs h
+  if _ : as.length = vs.length then
+    argTypesAlignAux as vs
   else
     false
 
-theorem argTypesAlignAux_true (h : argTypesAlignAux as vs hl) :
+theorem argTypesAlignAux_true (h : argTypesAlignAux as vs) (hl : as.length = vs.length) :
   ∀ i, (h : i < as.length) → as[i].ty = (vs[i]'(hl ▸ h)).ty := fun i hi =>
   match as, vs with
   | [], _ => nomatch h
+  | _ :: _, [] =>
+    False.elim (by simp at hl)
   | a :: as, v :: vs =>
     match i with
     | 0 => eq_of_beq (Bool.and_eq_true_iff.mp h).left
     | i + 1 =>
       (List.getElem_cons_succ a as i hi).symm ▸ (List.getElem_cons_succ v vs i (hl ▸ hi)).symm ▸
-      argTypesAlignAux_true (Bool.and_eq_true_iff.mp h).right i (Nat.lt_of_succ_lt_succ hi)
+      argTypesAlignAux_true (Bool.and_eq_true_iff.mp h).right (Nat.succ.inj hl) i (Nat.lt_of_succ_lt_succ hi)
 
 theorem argTypesAlign_length_eq (h : argTypesAlign as vs) : as.length = vs.length := by
   unfold argTypesAlign at h
@@ -403,16 +421,18 @@ theorem argTypesAlign_arg_types (h : argTypesAlign as vs) :
   ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
   unfold argTypesAlign at h
   by_cases hl : as.length = vs.length
-  case pos => exact argTypesAlignAux_true (dif_pos hl ▸ h)
+  case pos =>
+    simp [hl] at h
+    exact argTypesAlignAux_true h hl
   case neg =>
     rewrite [dif_neg hl] at h; contradiction
 
 -- Note: `noncomputable` because of a compiler error
 /--
-Apply an interpreted uninterpreted function to a list of argument denotations.
+Apply the semantic interpretation of a UF symbol to denoted arguments.
 -/
 @[simp]
-noncomputable def applyUF (tdi : TermDenoteInput ctx) (uf : (denoteFunSort ctx.sctx args out).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
+noncomputable def applyUFAux (tdi : TermDenoteInput ctx) (uf : (denoteFunSort ctx.sctx args out).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
   (as : List (TermDenoteResult ctx)) (hl : args.length = as.length) (has : ∀ i, (hi : i < as.length) → as[i].ty = (args[i]'(hl ▸ hi)).ty) :
     (denoteSort ctx.sctx out).get (denoteSortOut_isSome_of_denoteFunSort_isSome h) ⟨tdi.sΓ, tdi.hsΓ⟩ :=
   match args, as with
@@ -421,8 +441,26 @@ noncomputable def applyUF (tdi : TermDenoteInput ctx) (uf : (denoteFunSort ctx.s
     let uf := arrow_of_denoteFunSortCons_isSome h ▸ uf
     have ha : denoteSort ctx.sctx arg.ty = denoteSort ctx.sctx a.ty := has 0 (Nat.zero_lt_succ _) ▸ rfl
     let uf := uf (Option.get_congr ha ▸ a.res tdi)
-    applyUF tdi uf as (Nat.succ.inj hl) (fun i hi => (has (i + 1) (Nat.succ_lt_succ hi)))
+    applyUFAux tdi uf as (Nat.succ.inj hl) (fun i hi => (has (i + 1) (Nat.succ_lt_succ hi)))
 
+/--
+Apply the semantic interpretation of a UF symbol to denoted arguments.
+-/
+@[simp]
+noncomputable def applyUF (tdi : TermDenoteInput ctx) (uf : (denoteFunSort ctx.sctx args out).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
+  (as : List (TermDenoteResult ctx)) (hAlign : argTypesAlign as args) :
+    (denoteSort ctx.sctx out).get (denoteSortOut_isSome_of_denoteFunSort_isSome h) ⟨tdi.sΓ, tdi.hsΓ⟩ :=
+  applyUFAux tdi uf as (argTypesAlign_length_eq hAlign).symm (argTypesAlign_arg_types hAlign)
+
+/--
+Semantics helper for universal quantification.
+
+Given a body interpretation over the context extended with one bound variable
+`(n : ty)`, produce the interpretation in the original context by universally
+quantifying over all Lean values of the denoted sort `ty`. This also extends
+the term environment with the chosen value and carries the corresponding `WF`
+proof for the extended context.
+-/
 @[simp]
 def bindForallVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
     let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
@@ -451,21 +489,6 @@ def bindForallVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
       let tdi' : TermDenoteInput ⟨ctx.sctx, tctx'⟩ :=
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
-
-def buildForall (ctx : Context) (vs : List TermVar)
-    (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
-    (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
-    (tdi : TermDenoteInput ctx)
-    : Prop :=
-    match vs with
-    | [] => bodyFt tdi
-    | { id := n, ty := ty } :: vs =>
-      have hTys' := (denoteFunSortCons_isSome hTys).right
-      letI ctx' : Context := { sctx := ctx.sctx, tctx := { vs := { id := n, ty := ty } :: ctx.tctx.vs, ufs := ctx.tctx.ufs } }
-      have hvs : ({ id := n, ty := ty } :: vs).reverse ++ ctx.tctx.vs = vs.reverse ++ ctx'.tctx.vs :=
-        List.reverse_cons ▸ List.append_assoc _ _ _ ▸ rfl
-      let ft' := buildForall ctx' vs hTys' (hvs ▸ bodyFt)
-      bindForallVar ctx (denoteFunSortCons_isSome hTys).left ft' tdi
 
 @[simp]
 def bindExistsVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
@@ -496,7 +519,7 @@ def bindExistsVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
 
-def buildExists (ctx : Context) (vs : List TermVar)
+def buildQuant (isForall : Bool) (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
@@ -508,8 +531,25 @@ def buildExists (ctx : Context) (vs : List TermVar)
       letI ctx' : Context := { sctx := ctx.sctx, tctx := { vs := { id := n, ty := ty } :: ctx.tctx.vs, ufs := ctx.tctx.ufs } }
       have hvs : ({ id := n, ty := ty } :: vs).reverse ++ ctx.tctx.vs = vs.reverse ++ ctx'.tctx.vs :=
         List.reverse_cons ▸ List.append_assoc _ _ _ ▸ rfl
-      let ft' := buildExists ctx' vs hTys' (hvs ▸ bodyFt)
-      bindExistsVar ctx (denoteFunSortCons_isSome hTys).left ft' tdi
+      let ft' := buildQuant isForall ctx' vs hTys' (hvs ▸ bodyFt)
+      if isForall then
+        bindForallVar ctx (denoteFunSortCons_isSome hTys).left ft' tdi
+      else
+        bindExistsVar ctx (denoteFunSortCons_isSome hTys).left ft' tdi
+
+def buildExists (ctx : Context) (vs : List TermVar)
+    (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
+    (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
+    (tdi : TermDenoteInput ctx)
+    : Prop :=
+  buildQuant false ctx vs hTys bodyFt tdi
+
+def buildForall (ctx : Context) (vs : List TermVar)
+    (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
+    (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
+    (tdi : TermDenoteInput ctx)
+    : Prop :=
+  buildQuant true ctx vs hTys bodyFt tdi
 
 mutual
 
@@ -524,7 +564,9 @@ and semantics when successful.
 -/
 noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResult ctx) := do
   match t with
-  -- Variables and uninterpreted functions (UFs).
+  -- Variable lookup: if `v` is declared in `ctx.tctx.vs` and its sort can be
+  -- interpreted, return the corresponding semantic value from `tdi.tΓ.vs`.
+  -- The proof terms below only transport this value across context/WF equalities.
   | .var v@hv:{ id := n, ty := ty } =>
     if hTy : (denoteSort ctx.sctx v.ty).isSome then
       match h : ctx.tctx.vs.findIdx? (· == v) with
@@ -539,6 +581,9 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
       | none => none
     else
       none
+  -- UF application: lookup the UF symbol in `ctx.tctx.ufs`, denote arguments,
+  -- check argument-type alignment, then apply the UF interpretation from
+  -- `tdi.tΓ.ufs` to the denoted arguments.
   | .app (.uf uf) as _ =>
     if hTys : (denoteFunSort ctx.sctx uf.args uf.out).isSome then
       match h : ctx.tctx.ufs.findIdx? (· == uf) with
@@ -552,7 +597,7 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
             have hufΓ : denoteFunSort ctx.sctx uf.args uf.out = denoteFunSort ctx.sctx tdi.tΓ.ufs[i].uf.args tdi.tΓ.ufs[i].uf.out :=
               hiuf.symm ▸ tdi.htΓ.huf.ha i hi ▸ rfl
             @applyUF ctx uf.args uf.out hTys tdi
-              (Option.get_congr hufΓ ▸ tdi.tΓ.ufs[i].ufΓ) as (argTypesAlign_length_eq hufas).symm (argTypesAlign_arg_types hufas)
+              (Option.get_congr hufΓ ▸ tdi.tΓ.ufs[i].ufΓ) as hufas
           return ⟨uf.out, denoteSortOut_isSome_of_denoteFunSort_isSome hTys, ft⟩
         else
           none
@@ -933,6 +978,10 @@ noncomputable def denoteIntTermAux (t : Term) : Option Int := do
   let some ⟨.prim .int, _, fi⟩ := denoteTerm {} t | none
   return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
+/--
+Eliminate one uninterpreted sort binder by quantifying over all of its
+semantic realizations and extending the sort environment accordingly.
+-/
 @[simp]
 noncomputable def bindUS (uss iss) {us'} (ft' : SortDenoteInput ⟨(us' :: uss), iss⟩ → Prop) :
   Option (SortDenoteInput ⟨uss, iss⟩ → Prop) := do
@@ -990,6 +1039,9 @@ noncomputable def bindUF {n} {args out} (ctx : Context) (ft' :
   else
     none
 
+/--
+Lambda-lift one IF-body argument binder into an arrow in the resulting function.
+-/
 @[simp]
 noncomputable def bindIFVar (ctx : Context) {hTys hTyTys} :
     let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
@@ -1021,6 +1073,9 @@ noncomputable def bindIFVar (ctx : Context) {hTys hTyTys} :
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
 
+/--
+Turn a denoted IF body (under its argument binders) into a denoted function.
+-/
 noncomputable def buildIFBody (ctx : Context) {hTys hTy}
     (bodyFt : (tdi : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } }) →
               (denoteSort ctx.sctx out).get hTy ⟨tdi.sΓ, tdi.hsΓ⟩)
@@ -1036,6 +1091,14 @@ noncomputable def buildIFBody (ctx : Context) {hTys hTy}
       let ft' := buildIFBody ctx' (hTys := hTys') (hvs ▸ bodyFt)
       bindIFVar ctx ft' tdi
 
+/--
+Eliminate one interpreted-function declaration from the term context.
+
+`ft'` expects a context where the function symbol `(n : args -> out)` is
+available in `tctx.ufs`. This combinator constructs the semantic function by
+denoting `body`, pushes that interpretation into the environment, and returns a
+proposition over the original (smaller) context.
+-/
 @[simp]
 noncomputable def bindIF {n} {args out} (body : Term) (ctx : Context) (ft' :
     let uf' := { id := n, args := args, out := out }
@@ -1075,7 +1138,14 @@ noncomputable def bindIF {n} {args out} (body : Term) (ctx : Context) (ft' :
     none
 
 /--
-Interpret a boolean term using the bindings defined in an SMT context.
+Interpret a closed boolean term under SMT declarations.
+
+`denoteTerm` is context-parametric: it interprets a term relative to explicit
+sort/term contexts and semantic environments. This function "closes" that
+interpretation by successively eliminating context binders (`IF`, `UF`, sort
+aliases, uninterpreted sorts) and then evaluating in the empty environment.
+
+It is boolean-specific because SMT queries denote propositions.
 -/
 @[simp]
 noncomputable def denoteBoolTermFromContext
@@ -1097,6 +1167,9 @@ noncomputable def denoteBoolTermFromContext
   let hsΓ : sΓ.WF {} := { h := rfl, ha := fun _ hi => nomatch hi }
   return PLift.up (ft { sΓ, hsΓ })
 where
+  /--
+  Eliminate all uninterpreted sort binders by repeatedly applying `bindUS`.
+  -/
   @[simp]
   bindUSs uss iss (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨[], iss⟩ → Prop) :=
     do match uss with
@@ -1104,9 +1177,16 @@ where
     | _ :: uss =>
       let ft ← bindUS uss iss ft'
       bindUSs uss iss ft
+  /--
+  Eliminate interpreted-sort aliases. They are already substituted, so this
+  step only reindexes the context shape.
+  -/
   @[simp]
   bindISs uss iss (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨uss, []⟩ → Prop) :=
     return fun (tdi : SortDenoteInput ⟨uss, []⟩) => ft' ⟨tdi.sΓ, tdi.hsΓ⟩
+  /--
+  Eliminate all uninterpreted-function binders by repeatedly applying `bindUF`.
+  -/
   @[simp]
   bindUFs sctx vs ufs (ft' : TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) : Option (TermDenoteInput ⟨sctx, ⟨vs, []⟩⟩ → Prop) :=
     do match ufs with
@@ -1114,6 +1194,9 @@ where
     | _ :: ufs =>
       let ft ← bindUF { sctx, tctx := { vs, ufs } } ft'
       bindUFs sctx vs ufs ft
+  /--
+  Eliminate all interpreted-function declarations by repeatedly applying `bindIF`.
+  -/
   @[simp]
   bindIFs sctx vs ufs (ifs : List _) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map Core.SMT.IF.uf ++ ufs⟩⟩ → Prop) :
       Option (TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) :=
@@ -1145,137 +1228,3 @@ noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (con
   let ifs := ctx.ifs.toList.reverse
   (denoteBoolTermFromContext uss iss ufs ifs t).map PLift.down
 
-#reduce denoteIntTermAux (.app .add [.prim (.int 1), .prim (.int 2)] (.prim .int))
-#reduce (types := true) denoteBoolTermAux (.app .lt [.prim (.int 1), .prim (.int 2)] (.prim .int))
--- #reduce (types := true) let a := { id := "a", ty := .prim .int }
-  -- (denoteBoolTermAux (.quant .all [a] a (.app .gt [.prim (.int 42), a] (.prim .int))))
-
-example :
-  let a := { id := "a", ty := .prim .int }
-  (denoteBoolTermAux (.quant .all [a] a (.app .gt [.prim (.int 42), a] (.prim .int)))) =
-  .some (∀ (x : Int), 42 > x) := by
-  rfl
-
-example :
-  let a := { id := "a", ty := .prim (.bitvec 32) }
-  (denoteQuery {} [] (.quant .all [a] a (.app .bvugt [.prim (.bitvec (42 : BitVec 32)), a] (.prim (.bitvec 32))))) =
-  .some (∀ (x : BitVec 32), 42 > x) := by
-  rfl
-
-example :
-  let a := { id := "a", args := [],  out := .prim (.bitvec 32) }
-  let b := { id := "b", args := [],  out := .prim (.bitvec 16) }
-  (denoteQuery { ufs := #[a, b] } []
-    (.app .eq [.app .bvconcat [.app (.uf a) [] a.out, .app (.uf b) [] b.out] (.prim (.bitvec 48)),
-               .app .bvconcat [.app (.uf b) [] b.out, .app (.uf a) [] a.out] (.prim (.bitvec 48))] (.prim .bool))) =
-  .some (∀ (x : BitVec 32) (y : BitVec 16), x ++ y = y ++ x) := by
-  rfl
-
-example :
-  let α := { name := "α", arity := 0 }
-  let a := { id := "a", args := [],  out := .constr α.name [] }
-  (denoteQuery { sorts := #[α], ufs := #[a] } [] (.app .eq [.app (.uf a) [] a.out, .app (.uf a) [] a.out] (.prim .bool))) =
-  .some (∀ (α : Type) [Nonempty α] (x : α), x = x) := by
-  rfl
-
-example :
-  let α := { name := "α", arity := 1 }
-  let a := { id := "a", args := [],  out := .constr α.name [.prim .int] }
-  (denoteQuery { sorts := #[α], ufs := #[a] } [] (.app .eq [.app (.uf a) [] a.out, .app (.uf a) [] a.out] (.prim .bool))) =
-  .some (∀ (α : Type → Type) [∀ x, Nonempty (α x)] (x : α Int), x = x) := by
-  rfl
-
-example :
-  let α := { name := "α", arity := 2 }
-  let β := { name := "β", arity := 0 }
-  let a := { id := "a", args := [],  out := .constr α.name [.constr β.name [], .prim .bool] }
-  (denoteQuery { sorts := #[α, β], ufs := #[a] } [] (.app .eq [.app (.uf a) [] a.out, .app (.uf a) [] a.out] (.prim .bool))) =
-  .some (∀ (α : Type → Type → Type) [∀ x y, Nonempty (α x y)] (β : Type) [Nonempty β] (x : α β Prop), x = x) := by
-  rfl
-
-example :
-  let α := { name := "α", arity := 2 }
-  let β := { name := "β", arity := 0 }
-  let γ := ("γ", .constr α.name [.constr β.name [], .prim .bool])
-  let a := { id := "a", args := [],  out := .constr γ.fst [] }
-  (denoteQuery { sorts := #[α, β], ufs := #[a], tySubst := [γ] } [] (.app .eq [.app (.uf a) [] a.out, .app (.uf a) [] a.out] (.prim .bool))) =
-  .some (∀ (α : Type → Type → Type) [∀ (x y : Type), Nonempty (α x y)] (β : Type) [Nonempty β],
-         let γ := α β Prop
-         ∀ (a : γ), a = a) := by
-  rfl
-
-example :
-  let α := ("α", .prim .bool)
-  let a := { id := "a", args := [],  out := .constr α.fst [] }
-  (denoteQuery { ufs := #[a], tySubst := [α] } [] (.app .not [.app (.uf a) [] a.out] (.prim .bool))) =
-  .some (let α := Prop
-         ∀ (a : α), ¬a) := by
-  rfl
-
-example :
-  let α := ("α", .prim .bool)
-  let a := { id := "a", args := [],  out := .prim .bool }
-  (denoteQuery { ufs := #[a], tySubst := [α] } [] (.app .not [.app (.uf a) [] a.out] (.prim .bool))) =
-  .some (let α := Prop
-         ∀ (a : α), ¬a) := by
-  rfl
-
-example :
-  let a := { id := "a", args := [],  out := .prim .int }
-  (denoteQuery { ufs := #[a] } [] (.app .gt [.prim (.int 42), .app (.uf a) [] a.out] (.prim .int))) =
-  .some (∀ (x : Int), 42 > x) := by
-  rfl
-
-example :
-  let a := { id := "a", args := [], out := .prim .int }
-  (denoteQuery {ufs := #[a]} [] (.app .gt [.prim (.int 42), .app (.uf a) [] (.prim .int)] (.prim .int))) =
-  .some (∀ (x : Int), 42 > x) := by
-  rfl
-
-example :
-  let f := { id := "f", args := [{ id := "a", ty := .prim .int }], out := .prim .int }
-  let f3 := .app (.uf f) [.prim (.int 3)] (.prim .int)
-  (denoteQuery {ufs := #[f]} [] (.app .gt [.prim (.int 42), f3] (.prim .int))) =
-  .some (∀ (f : Int → Int), 42 > f 3) := by
-  rfl
-
-example :
-  let a := { id := "a", ty := .prim .int }
-  let f := { uf := { id := "f", args := [a], out := .prim .int }, body := .app .add [.var a, .prim (.int 2)] (.prim .int) }
-  let f3 := .app (.uf f.uf) [.prim (.int 3)] (.prim .int)
-  (denoteQuery {ifs := #[f]} [] (.app .gt [.prim (.int 42), f3] (.prim .int))) =
-  .some (let f (a : Int) := a + 2; 42 > f 3) := by
-  rfl
-
-example :
-  let ctx := {
-      sorts := #[],
-      ufs := #[{ id := "$__n0", args := [], out := TermType.prim (TermPrimType.int) }],
-      ifs := #[],
-      axms := #[],
-      tySubst := [] }
-  let ts := [Term.app
-       (Op.lt)
-       [Term.prim (TermPrim.int 0),
-        Term.app
-          (Op.uf { id := "$__n0", args := [], out := TermType.prim (TermPrimType.int) }) [] (TermType.prim (TermPrimType.int))]
-       (TermType.prim (TermPrimType.bool)),
-     Term.app
-       (Op.ge)
-       [Term.app
-          (Op.uf { id := "$__n0", args := [], out := TermType.prim (TermPrimType.int) }) [] (TermType.prim (TermPrimType.int)),
-        Term.prim (TermPrim.int 0)]
-       (TermType.prim (TermPrimType.bool))]
-  let t := Term.app
-      (Op.and)
-      [Term.app
-         (Op.le)
-         [Term.prim (TermPrim.int 0),
-          Term.app
-            (Op.uf { id := "$__n0", args := [], out := TermType.prim (TermPrimType.int) }) [] (TermType.prim (TermPrimType.int))]
-         (TermType.prim (TermPrimType.bool)),
-       Term.prim (TermPrim.bool true)]
-      (TermType.prim (TermPrimType.bool))
-  (denoteQuery ctx ts t) =
-  .some (∀ («$__n0» : Int), 0 < «$__n0» → «$__n0» ≥ 0 → 0 ≤ «$__n0» ∧ True) := by
-  rfl
