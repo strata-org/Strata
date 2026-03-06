@@ -157,6 +157,12 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
   SMT.Context :=
   match E.datatypes.getType id with
   | some d =>
+    -- Even if this datatype is already seen, recurse into concrete args
+    -- to register any referenced types (e.g. Inner in Option Inner).
+    let ctx := args.foldl (fun ctx arg =>
+      match arg with
+      | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+      | _ => ctx) ctx
     if ctx.hasDatatype id then ctx else
     let ctx := ctx.addDatatype d
     d.constrs.foldl (fun (ctx : SMT.Context) c =>
