@@ -32,6 +32,45 @@ open LTy
 
 variable {IDMeta : Type} [DecidableEq IDMeta]
 
+/-!
+### Lean 4 Standard Library Gaps
+
+The following lemmas are standard string/number roundtrip properties that are
+not yet provable in Lean 4.27 due to the `String` API being based on the
+`Slice`/`Pattern` infrastructure with private internal definitions
+(`memcmpStr.go`, etc.) that have no proof-level lemmas.
+
+These are expected to become provable in **Lean 4.29+**, which will provide
+`String.startsWith` lemmas and a more transparent `String` API. See:
+https://github.com/leanprover/lean4/issues/XXXX (String API proof support)
+
+Until then, these are axiomatized via `sorry`.
+-/
+
+/-- `toString` on `Nat` is injective (decimal representation is unique).
+    Blocked: requires `Nat.toDigits 10` injectivity, not in Lean 4 stdlib or Mathlib core.
+    Expected: provable once `Nat.repr`/`String.toNat?` roundtrip lemmas are available (Lean 4.29+). -/
+private theorem Nat.toString_injective : Function.Injective (toString : Nat → String) := by
+  intro a b h
+  simp [toString, Nat.repr] at h
+  sorry -- Nat.toDigits 10 is injective
+
+/-- `(s ++ t).startsWith s = true` for any strings.
+    Blocked: `String.startsWith` goes through the private `memcmpStr.go` in the
+    `Slice.Pattern` API, which has no proof-level lemmas in Lean 4.27.
+    Expected: provable in Lean 4.29+ with `String.startsWith` simp lemmas. -/
+private theorem startsWith_append_self (s t : String) :
+    (s ++ t).startsWith s = true := by
+  sorry
+
+/-- Dropping a prefix from `(s_prefix ++ toString n)` and parsing as `Nat` recovers `n`.
+    Blocked: `String.drop` returns a `Slice`, and `Slice.toNat?` / `Nat.repr` roundtrip
+    lemmas don't exist in Lean 4.27.
+    Expected: provable in Lean 4.29+ with `String.drop`/`String.toNat?` lemmas. -/
+private theorem drop_prefix_toNat (s_prefix : String) (n : Nat) :
+    ((s_prefix ++ toString n).drop (s_prefix.length)).toNat? = some n := by
+  sorry
+
 /--
 Close `ty` by `x`, i.e., add `x` as a bound type variable.
 -/
@@ -4149,12 +4188,6 @@ private theorem LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
           exact h_gen v h_in_all n hn)).1
   · simp at h
 
-/-- `toString` on `Nat` is injective (decimal representation is unique). -/
-private theorem Nat.toString_injective : Function.Injective (toString : Nat → String) := by
-  intro a b h
-  simp [toString, Nat.repr] at h
-  sorry -- Nat.toDigits 10 is injective (true but not in Mathlib core)
-
 /-- Generated names with different indices are different. -/
 private theorem tyPrefix_ne_of_ne (a b : Nat) (h : a ≠ b) :
     TState.tyPrefix ++ toString a ≠ TState.tyPrefix ++ toString b := by
@@ -4169,20 +4202,6 @@ private theorem generated_name_fresh (k : Nat) (state : TState)
     (h_lt : k < state.tyGen) :
     ∀ n, n ≥ state.tyGen → TState.tyPrefix ++ toString k ≠ TState.tyPrefix ++ toString n :=
   fun n hn => tyPrefix_ne_of_ne k n (by omega)
-
-/-- `(s ++ t).startsWith s = true` for any strings.
-    Not yet provable in Lean 4.27: `String.startsWith` goes through the private
-    `memcmpStr.go` in the `Slice.Pattern` API, which has no proof-level lemmas. -/
-private theorem startsWith_append_self (s t : String) :
-    (s ++ t).startsWith s = true := by
-  sorry -- No String.startsWith lemmas in Lean 4.27
-
-/-- Dropping a prefix from `(s_prefix ++ toString n)` and parsing as `Nat` recovers `n`.
-    This is a standard string roundtrip property (`drop ∘ toNat? ∘ toString = some`)
-    that is not yet available in Lean 4's String library (v4.27). -/
-private theorem drop_prefix_toNat (s_prefix : String) (n : Nat) :
-    ((s_prefix ++ toString n).drop (s_prefix.length)).toNat? = some n := by
-  sorry -- String.drop / Slice.toNat? / Nat.repr roundtrip; no library support in Lean 4.27
 
 /-- `isFutureGenVar` returns `true` on a generated name `tyPrefix ++ toString n`
     when `n ≥ state.tyGen`. -/
@@ -5564,18 +5583,57 @@ private theorem resolveAux_preserves_combined :
           -- Env2.genState ≥ Env1.genState by resolveAux genState monotonicity.
           have h_mono_body := resolveAux_genState_mono
             (LExpr.varOpen 0 (xv_id, some xty_val) body) et' C Env1 Env2 h_rec
-          -- Need: xty_val freeVars gen-fresh for Env1.genState
-          -- This follows from typeBoundVar analysis (same as resolveAux_output_type_no_future_vars)
-          sorry
+          -- xty_val freeVars are gen-fresh for Env1.genState
+          -- Decompose typeBoundVar to extract xty_val's origin
+          simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h_tbv
+          split at h_tbv; · contradiction
+          rename_i genResult h_gen
+          have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+            split at h_gen; · contradiction
+            rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp
+            exact HasGen.genVar_tyGen_mono Env.genEnv _ _ h_gv
+          have h_gen_ctx : genResult.snd.context = Env.context := by
+            split at h_gen; · contradiction
+            rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp [TEnv.context]
+            exact HasGen.genVar_context Env.genEnv _ _ h_gv
+          have h_ctx_gen : ContextFreshForGen genResult.snd.context genResult.snd.genEnv.genState :=
+            h_gen_ctx ▸ ContextFreshForGen.mono _ _ _ h_ctx h_gen_tyGen
+          split at h_tbv
+          · -- bty = some: xty_val from LMonoTy.instantiateWithCheck
+            split at h_tbv; · contradiction
+            rename_i _ bty_mty _ _ Env_inst h_inst
+            simp [Pure.pure, Except.pure] at h_tbv
+            obtain ⟨_, rfl, h_env1_eq⟩ := h_tbv
+            have h_fv_fresh := LMonoTy_instantiateWithCheck_freeVars_fresh _ C genResult.snd _ Env_inst h_inst h_ctx_gen
+            have h_iwc_mono := LMonoTy_instantiateWithCheck_tyGen_mono _ C genResult.snd _ Env_inst h_inst
+            have h_gen_eq : Env1.genEnv.genState = Env_inst.genEnv.genState := by
+              rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
+            exact h_fv_fresh v hv_xty k (by rw [h_gen_eq] at h_mono_body; omega)
+          · -- bty = none: xty_val = ftvar xtyid from genTyVar
+            split at h_tbv; · contradiction
+            rename_i v_gen h_genTy
+            obtain ⟨xtyid, Env_ty⟩ := v_gen
+            simp [Pure.pure, Except.pure] at h_tbv
+            obtain ⟨_, rfl, h_env1_eq⟩ := h_tbv
+            simp [LMonoTy.freeVars] at hv_xty; rw [hv_xty]
+            have h_genTy_name := genTyVar_name_eq genResult.snd xtyid Env_ty h_genTy
+            have h_genTy_tyGen := genTyVar_tyGen genResult.snd xtyid Env_ty h_genTy
+            have h_gen_eq : Env1.genEnv.genState = Env_ty.genEnv.genState := by
+              rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
+            rw [h_genTy_name]
+            exact generated_name_fresh _ _ (by rw [h_gen_eq] at h_mono_body; omega) k hk
         · -- v from varCloseT et': varCloseT preserves toLMonoTy
           -- (varCloseT 0 xv et').toLMonoTy = et'.toLMonoTy
           -- So v ∈ freeVars et'.toLMonoTy, gen-fresh by IH (h_ih_result.2)
           -- varCloseT_toLMonoTy is defined later, but the equality is simple:
           -- varCloseT only changes fvar/bvar structure, not metadata types
           have : (Lambda.LExpr.varCloseT 0 xv_id et').toLMonoTy = et'.toLMonoTy := by
-            -- varCloseT preserves toLMonoTy (metadata type unchanged)
-            -- varCloseT_toLMonoTy is proved later in the file
-            sorry
+            match et' with
+            | .const _ _ | .op _ _ _ | .bvar _ _ | .abs _ _ _ | .app _ _ _
+            | .ite _ _ _ _ | .eq _ _ _ | .quant _ _ _ _ _ => rfl
+            | .fvar _ y _ =>
+              -- toLMonoTy gives m.type for both bvar and fvar
+              simp only [Lambda.LExpr.varCloseT]; split <;> rfl
           rw [this] at hv_ety
           exact h_ih_result.2 v hv_ety k hk
       · -- v from Subst.freeVars Env2.subst: gen-fresh by SubstFreshForGen
