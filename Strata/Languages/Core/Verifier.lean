@@ -9,6 +9,7 @@ import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder
+import Strata.Languages.Core.DiagnosisTypes
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DDM.AST
@@ -151,6 +152,13 @@ instance : ToFormat Outcome where
     | .unknown => "🟡 unknown"
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
+/-- Diagnosis information for verification failures -/
+structure DiagnosisInfo where
+  isRefuted : Bool := false
+  diagnosedFailures : List Core.DiagnosedFailure := []
+  statePathCondition : List Core.Expression.Expr := []
+  deriving Inhabited
+
 /--
 A model expressed as Core `LExpr` values, suitable for display
 using Core's expression formatter and for future use as program metadata.
@@ -168,10 +176,30 @@ structure VCResult where
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
+  diagnosis : Option DiagnosisInfo := .none
   /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with smtObligationResult, if
       smtObligationResult was .sat. -/
   lexprModel : LExprModel := []
+
+/-- Simplified verification report for display and API use -/
+structure VerificationReport where
+  label : String
+  outcome : Outcome
+  diagnosis : Option DiagnosisInfo := none
+  obligation : Option (Imperative.ProofObligation Expression) := none
+
+/-- Procedure-level verification report grouping multiple checks -/
+structure ProcedureReport where
+  procedureName : String
+  results : List VerificationReport
+
+/-- Convert VCResult to VerificationReport -/
+def vcResultToVerificationReport (vcResult : VCResult) : VerificationReport :=
+  { label := vcResult.obligation.label
+    outcome := vcResult.result
+    diagnosis := vcResult.diagnosis
+    obligation := some vcResult.obligation }
 
 /--
 Map the result from an SMT backend engine to an `Outcome`.

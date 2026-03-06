@@ -72,7 +72,7 @@ def reCompileFunc : LFunc Core.CoreLParams :=
       output := mty[ExceptErrorRegex],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst () s, LExpr.intConst () 0] =>
+          | [LExpr.strConst _ s, LExpr.intConst _ 0] =>
             -- This function has a concrete evaluation implementation only when
             -- flags == 0.
             -- (FIXME): We use `.match` mode below because we support only
@@ -84,13 +84,13 @@ def reCompileFunc : LFunc Core.CoreLParams :=
               -- Note: Do not use `eb` (in Strata Core Syntax) here (e.g., see below)
               -- eb[(~ExceptErrorRegex_mkOK expr)]
               -- that captures `expr` as an `.fvar`.
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkOK" none) [expr])
+              .some (LExpr.mkApp Strata.SourceRange.none (.op Strata.SourceRange.none "ExceptErrorRegex_mkOK" none) [expr])
             | some (ParseError.unimplemented msg _pattern _pos) =>
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp () (.op () "Error_Unimplemented" none) [.strConst () (toString msg)]])
+              .some (LExpr.mkApp Strata.SourceRange.none (.op Strata.SourceRange.none "ExceptErrorRegex_mkErr" none)
+                  [LExpr.mkApp Strata.SourceRange.none (.op Strata.SourceRange.none "Error_Unimplemented" none) [.strConst Strata.SourceRange.none (toString msg)]])
             | some (ParseError.patternError msg _pattern _pos) =>
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp () (.op () "Error_RePatternErr" none) [.strConst () (toString msg)]])
+              .some (LExpr.mkApp Strata.SourceRange.none (.op Strata.SourceRange.none "ExceptErrorRegex_mkErr" none)
+                  [LExpr.mkApp Strata.SourceRange.none (.op Strata.SourceRange.none "Error_RePatternErr" none) [.strConst Strata.SourceRange.none (toString msg)]])
           | _ => .none)
       }
 

@@ -10,12 +10,13 @@ import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.PureExpr
 import Strata.Languages.Core.Identifiers
 import Strata.DL.Imperative.HasVars
+import Strata.DDM.Util.SourceRange
 
 namespace Core
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
-def ExpressionMetadata := Unit
+def ExpressionMetadata := Strata.SourceRange
 
 abbrev Expression : Imperative.PureExpr :=
    { Ident := CoreIdent,
@@ -31,7 +32,7 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
 
 instance : Inhabited Expression.Expr where
-  default := .intConst () 0
+  default := .intConst Strata.SourceRange.none 0
 
 ---------------------------------------------------------------------
 

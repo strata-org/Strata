@@ -7,13 +7,14 @@
 
 import Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.Factory
+import Strata.DDM.Util.SourceRange
 namespace Core
 
 open Std
 
 abbrev CoreIdent := Lambda.Identifier Unit
 
-abbrev CoreExprMetadata := Unit
+abbrev CoreExprMetadata := Strata.SourceRange
 abbrev CoreLParams: Lambda.LExprParams := {Metadata := CoreExprMetadata, IDMeta := Unit}
 abbrev CoreLabel := String
 
@@ -73,19 +74,21 @@ def elabCoreIdent : Syntax → MetaM Expr
 instance : MkLExprParams ⟨CoreExprMetadata, Unit⟩ where
   elabIdent := elabCoreIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (mkConst ``Unit)
+  defaultMetadata := return mkConst ``Strata.SourceRange.none
 
 elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Unit⟩) e
 
 /--
-info: Lambda.LExpr.op () { name := "old", metadata := () }
+info: Lambda.LExpr.op Strata.SourceRange.none { name := "old", metadata := () }
   none : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Unit }.mono
 -/
 #guard_msgs in
 #check eb[~old]
 
 /--
-info: Lambda.LExpr.app () (Lambda.LExpr.op () { name := "old", metadata := () } none)
-  (Lambda.LExpr.fvar () { name := "a", metadata := () }
+info: Lambda.LExpr.app Strata.SourceRange.none
+  (Lambda.LExpr.op Strata.SourceRange.none { name := "old", metadata := () } none)
+  (Lambda.LExpr.fvar Strata.SourceRange.none { name := "a", metadata := () }
     none) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Unit }.mono
 -/
 #guard_msgs in
@@ -94,7 +97,7 @@ info: Lambda.LExpr.app () (Lambda.LExpr.op () { name := "old", metadata := () } 
 open Lambda.LTy.Syntax in
 
 /--
-info: Lambda.LExpr.fvar () { name := "x", metadata := () }
+info: Lambda.LExpr.fvar Strata.SourceRange.none { name := "x", metadata := () }
   (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Unit }.mono
 -/
 #guard_msgs in

@@ -13,7 +13,7 @@ import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Core
-open Lambda LTy.Syntax LExpr.SyntaxMono
+open Lambda LTy.Syntax LExpr.SyntaxMono Core.Syntax
 
 @[match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
@@ -37,6 +37,8 @@ def KnownTypes : KnownTypes :=
   makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
 
 def TImplicit {Metadata: Type} (IDMeta: Type): LExprParamsT := ({Metadata := Metadata, IDMeta}: LExprParams).mono
+
+
 
 /-- Kind of bitvector evaluator, used to generate both the combinator name
     and the concrete-evaluator syntax for each BV operation. -/
@@ -210,7 +212,7 @@ def mapConstFunc : WFLFunc CoreLParams :=
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
-      esM[∀ (%v): -- %1 d
+      eb[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
                 ((~const : %v → (Map %k %v)) %1)) %0)}
@@ -230,7 +232,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
     (mapTy mty[%k] mty[%v])
     (axioms := [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
-      esM[∀(Map %k %v):
+      eb[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
               (((~select : (Map %k %v) → %k → %v)
@@ -238,7 +240,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
-      esM[∀ (Map %k %v): -- %3 m
+      eb[∀ (Map %k %v): -- %3 m
           (∀ (%k): -- %2 okk
             (∀ (%k): -- %1 kk
               (∀ (%v): -- %0 vv
@@ -394,7 +396,7 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
 instance : Inhabited CoreLParams.Metadata where
-  default := ()
+  default := Strata.SourceRange.none
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
@@ -418,7 +420,7 @@ def emptyTriggerGroupOp : Expression.Expr := emptyTriggerGroupFunc.opExpr
 def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 
 instance : Inhabited (⟨ExpressionMetadata, CoreIdent⟩: LExprParams).Metadata where
-  default := ()
+  default := Strata.SourceRange.none
 
 def intAddOp : Expression.Expr := (@intAddFunc CoreLParams _).opExpr
 def intSubOp : Expression.Expr := (@intSubFunc CoreLParams _).opExpr
@@ -472,11 +474,11 @@ def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
-  ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
+  ts.foldl (fun g t => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerOp t) g) emptyTriggerGroupOp
 
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
-  groups.foldl (fun gs g => .app () (.app () addTriggerGroupOp g) gs) emptyTriggersOp
+  groups.foldl (fun gs g => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerGroupOp g) gs) emptyTriggersOp
 
 /--
 Get all the built-in functions supported by Strata Core.

@@ -97,7 +97,7 @@ private def renameAllLocalNames (c:Procedure)
   -- Do substitution
   let new_body := List.map (fun (s0:Statement) =>
     var_map.foldl (fun (s:Statement) (old_id,new_id) =>
-        let s := Statement.substFvar s old_id (.fvar () new_id .none)
+        let s := Statement.substFvar s old_id (.fvar Strata.SourceRange.none new_id .none)
         let s := Statement.renameLhs s old_id new_id
         Statement.replaceLabels s label_map)
       s0) c.body
@@ -217,7 +217,7 @@ def inlineCallCmd
           let outs_lhs_and_sig := List.zip lhs out_vars
           List.map
             (fun (lhs_var,out_var) =>
-              Statement.set lhs_var (.fvar () out_var (.none)) md)
+              Statement.set lhs_var (.fvar Strata.SourceRange.none out_var (.none)) md)
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)

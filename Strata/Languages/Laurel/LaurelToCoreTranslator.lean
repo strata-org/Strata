@@ -113,7 +113,7 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   -- Dummy expression used as placeholder when an error is emitted in pure context
-  let dummy := .fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
+  let dummy := .fvar Strata.SourceRange.none (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
   let disallowed (e : StmtExprMd) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
@@ -121,39 +121,40 @@ def translateExpr (expr : StmtExprMd)
       return dummy
     else
       panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format e)}"
+  let sr := (Imperative.getFileRange expr.md).map (·.range) |>.getD Strata.SourceRange.none
   match h: expr.val with
-  | .LiteralBool b => return .const () (.boolConst b)
-  | .LiteralInt i => return .const () (.intConst i)
-  | .LiteralString s => return .const () (.strConst s)
+  | .LiteralBool b => return .const sr (.boolConst b)
+  | .LiteralInt i => return .const sr (.intConst i)
+  | .LiteralString s => return .const sr (.strConst s)
   | .Identifier name =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
       | some idx =>
           -- Bound variable: use de Bruijn index
-          return .bvar () idx
+          return .bvar Strata.SourceRange.none idx
       | none =>
         match model.get name with
         | .field _ f =>
-            return .op () ⟨f.name.text, ()⟩ none
+            return .op Strata.SourceRange.none ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr")))
+            return .fvar Strata.SourceRange.none ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr")))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
       let re ← translateExpr e boundVars isPureContext
-      return .app () boolNotOp re
+      return .app Strata.SourceRange.none boolNotOp re
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
-      return .app () intNegOp re
+      return .app Strata.SourceRange.none intNegOp re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
-      LExpr.mkApp () bop [re1, re2]
+      LExpr.mkApp Strata.SourceRange.none bop [re1, re2]
     match op with
-    | .Eq => return .eq () re1 re2
-    | .Neq => return .app () boolNotOp (.eq () re1 re2)
+    | .Eq => return .eq Strata.SourceRange.none re1 re2
+    | .Neq => return .app Strata.SourceRange.none boolNotOp (.eq Strata.SourceRange.none re1 re2)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
     | .Implies => return binOp boolImpliesOp
@@ -182,30 +183,30 @@ def translateExpr (expr : StmtExprMd)
               have := WithMetadata.sizeOf_val_lt expr
               cases expr; simp_all; omega
             translateExpr e boundVars isPureContext
-      return .ite () bcond bthen belse
+      return .ite Strata.SourceRange.none bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && !model.isFunction callee then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
+        let fnOp : Core.Expression.Expr := .op Strata.SourceRange.none ⟨callee.text, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
-          return .app () acc re) fnOp
+          return .app Strata.SourceRange.none acc re) fnOp
   | .Block [single] _ => translateExpr single boundVars isPureContext
   | .Forall ⟨ name, ty ⟩ body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.all () name.text (some coreTy) coreBody
+      return LExpr.all Strata.SourceRange.none name.text (some coreTy) coreBody
   | .Exists ⟨ name, ty ⟩ body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.exist () name.text (some coreTy) coreBody
+      return LExpr.exist Strata.SourceRange.none name.text (some coreTy) coreBody
   | .Hole => return dummy
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
-      return .eq () re1 re2
+      return .eq Strata.SourceRange.none re1 re2
   | .Assign _ _ =>
       disallowed expr "destructive assignments are not supported in functions or contracts"
   | .While _ _ _ _ =>
@@ -246,15 +247,15 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
 
 def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expression.Expr :=
   match ty.val with
-  | .TInt => .const () (.intConst 0)
-  | .TBool => .const () (.boolConst false)
-  | .TString => .const () (.strConst "")
+  | .TInt => .const Strata.SourceRange.none (.intConst 0)
+  | .TBool => .const Strata.SourceRange.none (.boolConst false)
+  | .TString => .const Strata.SourceRange.none (.strConst "")
   | _ =>
     -- For types without a natural default (arrays, composites, etc.),
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
     let coreTy := translateType model ty
-    .fvar () (⟨"$default", ()⟩) (some coreTy)
+    .fvar Strata.SourceRange.none (⟨"$default", ()⟩) (some coreTy)
 
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
@@ -417,7 +418,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+    | _ => pure [Core.Statement.assume "no_body" (.const Strata.SourceRange.none (.boolConst false)) .empty]
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts .empty]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
@@ -498,7 +499,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition [] true
-    return { expr := checkExpr, md := () })
+    return { expr := checkExpr, md := Strata.SourceRange.none })
 
   let body ← match proc.body with
     | .Transparent bodyExpr => some <$> translateExpr bodyExpr [] (isPureContext := true)

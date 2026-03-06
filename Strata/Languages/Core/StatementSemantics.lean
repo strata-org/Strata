@@ -16,17 +16,17 @@ namespace Core
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const () _)
-  | bvar  :  Value (.bvar () _)
-  | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () _ _ _)
+  | const :  Value (.const _ _)
+  | bvar  :  Value (.bvar _ _)
+  | op    :  Value (.op _ _ _)
+  | abs   :  Value (.abs _ _ _ _)
 
 open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar () · none)
+  mkFvar := (.fvar Strata.SourceRange.none · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -35,9 +35,9 @@ instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
 
 @[match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst () Bool.true
+def Core.true : Core.Expression.Expr := .boolConst Strata.SourceRange.none Bool.true
 @[match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst () Bool.false
+def Core.false : Core.Expression.Expr := .boolConst Strata.SourceRange.none Bool.false
 
 instance : HasBool Core.Expression where
   tt := Core.true
@@ -47,7 +47,7 @@ instance : HasNot Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  | e => Lambda.LExpr.app Strata.SourceRange.none (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
 abbrev CoreEval := SemanticEval Expression
 abbrev CoreStore := SemanticStore Expression
@@ -185,10 +185,10 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
         ∀ v,
           -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
+            δ σ (.fvar Strata.SourceRange.none (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
           -- if the variable is not modified, "old g" is the same as g
           (¬ v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ v))
+            δ σ (.fvar Strata.SourceRange.none (CoreIdent.mkOld v.name) none) = σ v))
 
 /-! ### Closure Capture for Function Declarations -/
 

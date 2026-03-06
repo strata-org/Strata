@@ -67,27 +67,27 @@ def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
 Empty regex pattern; matches an empty string.
 -/
 def Core.emptyRegex : Core.Expression.Expr :=
-  mkApp () (.op () strToRegexFunc.name none) [strConst () ""]
+  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none strToRegexFunc.name none) [strConst Strata.SourceRange.none ""]
 
 /--
 Unmatchable regex pattern.
 -/
 def Core.unmatchableRegex : Core.Expression.Expr :=
-  mkApp () (.op () reNoneFunc.name none) []
+  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reNoneFunc.name none) []
 
 partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     Core.Expression.Expr :=
   match r with
   | .char c =>
-    (mkApp () (.op () strToRegexFunc.name none) [strConst () (toString c)])
+    (mkApp Strata.SourceRange.none (.op Strata.SourceRange.none strToRegexFunc.name none) [strConst Strata.SourceRange.none (toString c)])
   | .range c1 c2 =>
-    mkApp () (.op () reRangeFunc.name none) [strConst () (toString c1), strConst () (toString c2)]
+    mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reRangeFunc.name none) [strConst Strata.SourceRange.none (toString c1), strConst Strata.SourceRange.none (toString c2)]
   | .anychar =>
-    mkApp () (.op () reAllCharFunc.name none) []
+    mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reAllCharFunc.name none) []
   | .empty => Core.emptyRegex
   | .complement r =>
     let rb := toCore r atStart atEnd
-    mkApp () (.op () reCompFunc.name none) [rb]
+    mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reCompFunc.name none) [rb]
   | .anchor_start =>
     if atStart then Core.emptyRegex else Core.unmatchableRegex
   | .anchor_end =>
@@ -102,13 +102,13 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
         let r1b := toCore r1 atStart false -- r1 at the beginning
         let r2b := toCore r1 false false   -- r1s in the middle
         let r3b := toCore r1 false atEnd   -- r1 at the end
-        let r2b := mkApp () (.op () reStarFunc.name none) [r2b]
-        mkApp () (.op () reConcatFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
+        let r2b := mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reStarFunc.name none) [r2b]
+        mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none)
+          [mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none) [r1b, r2b], r3b]
       | false =>
-        mkApp () (.op () reStarFunc.name none) [r1b]
-    mkApp () (.op () reUnionFunc.name none)
-      [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b], r2b]
+        mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reStarFunc.name none) [r1b]
+    mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reUnionFunc.name none)
+      [mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reUnionFunc.name none) [Core.emptyRegex, r1b], r2b]
   | .optional r1 =>
     toCore (.union .empty r1) atStart atEnd
   | .loop r1 n m =>
@@ -122,12 +122,12 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
                   let r1b := toCore r1 atStart false -- r1 at the beginning
                   let r2b := toCore r1 false false   -- r1s in the middle
                   let r3b := toCore r1 false atEnd   -- r1 at the end
-                  let r2b := mkApp () (.op () reLoopFunc.name none) [r2b, intConst () 0, intConst () (m-2)]
-                  mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
+                  let r2b := mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reLoopFunc.name none) [r2b, intConst Strata.SourceRange.none 0, intConst Strata.SourceRange.none (m-2)]
+                  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none) [mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none) [r1b, r2b], r3b]
                 | false =>
-                  mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
-      mkApp () (.op () reUnionFunc.name none)
-            [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b],
+                  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reLoopFunc.name none) [r1b, intConst Strata.SourceRange.none 0, intConst Strata.SourceRange.none m]
+      mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reUnionFunc.name none)
+            [mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reUnionFunc.name none) [Core.emptyRegex, r1b],
             r2b]
     | _, _ =>
       toCore (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
@@ -137,28 +137,28 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     | true, true =>
       let r1b := toCore r1 atStart false
       let r2b := toCore r2 false atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none) [r1b, r2b]
     | true, false =>
       let r1b := toCore r1 atStart atEnd
       let r2b := toCore r2 false atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none) [r1b, r2b]
     | false, true =>
       let r1b := toCore r1 atStart false
       let r2b := toCore r2 true atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none) [r1b, r2b]
     | false, false =>
       let r1b := toCore r1 atStart atEnd
       let r2b := toCore r2 atStart atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name none) [r1b, r2b]
   | .union r1 r2 =>
       let r1b := toCore r1 atStart atEnd
       let r2b := toCore r2 atStart atEnd
-      mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
+      mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reUnionFunc.name none) [r1b, r2b]
 
 def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
-  | .error err => (mkApp () (.op () reAllFunc.name none) [], some err)
+  | .error err => (mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reAllFunc.name none) [], some err)
   | .ok ast =>
     let dotStar := (RegexAST.star (.anychar))
     -- Wrap with `.*` based on mode.
