@@ -154,13 +154,15 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
 
   /--
   An annotated free variable has its claimed type `ty_s` if `ty_s` is an
-  instantiation of the type `ty_o` recorded for it in `Γ`.
+  instantiation of the type `ty_o` recorded for it in `Γ`, and the annotation
+  `ann` is compatible with `ty_s` (via substitution + alias equivalence).
   -/
-  | tvar_annotated : ∀ Γ m x ty_o ty_s tys,
+  | tvar_annotated : ∀ Γ m x ty_o ty_s tys ann,
             Γ.types.find? x = some ty_o →
             tys.length = ty_o.boundVars.length →
             LTy.openFull ty_o tys = ty_s →
-            HasType C Γ (.fvar m x (some ty_s)) (.forAll [] ty_s)
+            AnnotCompat Γ.aliases ann ty_s →
+            HasType C Γ (.fvar m x (some ann)) (.forAll [] ty_s)
 
   /--
   An abstraction `λ x.e` has type `x_ty → e_ty` if the claimed type of `x` is
@@ -246,14 +248,16 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ (.op m op none) ty
   /--
   Similarly to free variables, an annotated operator has its claimed type `ty_s` if `ty_s` is an
-  instantiation of the type `ty_o` recorded for it in `C.functions`.
+  instantiation of the type `ty_o` recorded for it in `C.functions`, and the annotation
+  `ann` is compatible with `ty_s`.
   -/
-  | top_annotated: ∀ Γ m f op ty_o ty_s tys,
+  | top_annotated: ∀ Γ m f op ty_o ty_s tys ann,
             C.functions.find? (fun fn => fn.name.name == op.name) = some f →
             f.type = .ok ty_o →
             tys.length = ty_o.boundVars.length →
             LTy.openFull ty_o tys = ty_s →
-            HasType C Γ (.op m op (some ty_s)) (.forAll [] ty_s)
+            AnnotCompat Γ.aliases ann ty_s →
+            HasType C Γ (.op m op (some ann)) (.forAll [] ty_s)
 
   /-- Alias equivalence preserves typing: if `e` has type `mty` and `mty` is
   alias-equivalent to `mty'` (under the aliases in `Γ`), then `e` also has
@@ -6992,6 +6996,52 @@ theorem tconsAlias_eq_simple
       h_alias_wf.fvs_closed h_pred.2).symm
 
 mutual
+/-- `AliasEquiv` is preserved under type substitution. -/
+private theorem AliasEquiv_subst (aliases : List TypeAlias)
+    (a b : LMonoTy) (S : Subst) (h : AliasEquiv aliases a b)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
+    AliasEquiv aliases (LMonoTy.subst S a) (LMonoTy.subst S b) := by
+  by_cases hS : Subst.hasEmptyScopes S
+  · simp [LMonoTy.subst_emptyS hS]; exact h
+  · match h with
+    | .refl => exact .refl
+    | .expand h_exp =>
+      obtain ⟨alias, h_mem, h_name, h_len, h_expand⟩ := h_exp
+      subst h_expand
+      simp [LMonoTy.subst, hS, TypeAlias.expand]
+      rw [subst_openVars_comm S alias.typeArgs _ alias.type
+        (h_aw alias h_mem).fvs_closed h_len]
+      rw [LMonoTys.subst_eq_substLogic]
+      have h_sl_len : ∀ (S' : Subst) (xs : LMonoTys), (LMonoTys.substLogic S' xs).length = xs.length := by
+        intro S' xs; induction xs with
+        | nil => simp [LMonoTys.substLogic]
+        | cons _ _ ih => unfold LMonoTys.substLogic; split <;> simp [ih]
+      refine .expand ⟨alias, h_mem, h_name, ?_⟩
+      rw [h_sl_len]; exact ⟨h_len, rfl⟩
+    | .cong_tcons h_args =>
+      simp [LMonoTy.subst, hS]
+      exact .cong_tcons (AliasEquivList_subst aliases _ _ S h_args h_aw)
+    | .trans h1 h2 =>
+      exact .trans (AliasEquiv_subst aliases _ _ S h1 h_aw) (AliasEquiv_subst aliases _ _ S h2 h_aw)
+
+/-- `AliasEquivList` is preserved under type substitution. -/
+private theorem AliasEquivList_subst (aliases : List TypeAlias)
+    (as bs : LMonoTys) (S : Subst) (h : AliasEquivList aliases as bs)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
+    AliasEquivList aliases (LMonoTys.subst S as) (LMonoTys.subst S bs) := by
+  by_cases hS : Subst.hasEmptyScopes S
+  · simp [LMonoTys.subst, hS]; exact h
+  · match h with
+    | .nil => simp [LMonoTys.subst, hS, LMonoTys.subst.substAux]; exact .nil
+    | .cons h_hd h_tl =>
+      rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+      simp [LMonoTys.substLogic, hS]
+      exact .cons (AliasEquiv_subst aliases _ _ S h_hd h_aw)
+        (by rw [← LMonoTys.subst_eq_substLogic, ← LMonoTys.subst_eq_substLogic]
+            exact AliasEquivList_subst aliases _ _ S h_tl h_aw)
+end
+
+mutual
 /-- `LMonoTy.resolveAliases` (with `tconsAliasSimple`) produces alias-equivalent output. -/
 private theorem resolveAliases_aliasEquiv
     (mty : LMonoTy) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -7215,13 +7265,43 @@ theorem instantiateWithCheck_fvar_annotated_HasType
     (h_ctx : Env.context = Γ)
     (h_inst : LTy.instantiateWithCheck ty C Env = .ok (mty, Env1))
     (h_inst2 : LMonoTy.instantiateWithCheck fty_val C Env1 = .ok (fty_inst, Env2))
-    (h_unify : Constraints.unify [(fty_inst, mty)] Env2.stateSubstInfo = .ok S) :
+    (h_unify : Constraints.unify [(fty_inst, mty)] Env2.stateSubstInfo = .ok S)
+    (h_nodup : (LTy.boundVars ty).Nodup)
+    (h_bv_fresh : ∀ v, v ∈ LTy.boundVars ty →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n)
+    (h_aw : TContext.AliasesWF Γ) :
     HasType C Γ (.fvar m x (some fty_val))
       (.forAll [] (LMonoTy.subst S.subst mty)) := by
-  -- Depends on `HasType_subst_fresh_all` and the tgen/tinst bridge, same as
-  -- `instantiateWithCheck_fvar_HasType` but additionally uses `tvar_annotated`
-  -- and the unification result to connect the annotation with the inferred type.
-  sorry
+  -- Strategy: use tvar_annotated with tys that give the right openFull result,
+  -- then chain talias + HasType_subst_fresh_all.
+  -- Step 1: Decompose LTy.instantiateWithCheck to get the intermediate mty_inst
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h_inst
+  split at h_inst; · simp at h_inst
+  rename_i v1 h_ra; obtain ⟨mty_ra, Env_ra⟩ := v1
+  split at h_inst; · simp at h_inst
+  split at h_inst
+  · simp [Pure.pure, Except.pure] at h_inst
+    obtain ⟨h_mty, h_env⟩ := h_inst; subst h_mty; subst h_env
+    -- h_ra : LTy.resolveAliases ty Env = .ok (mty_ra, Env_ra) where mty_ra = mty
+    -- Decompose: LTy.resolveAliases = ty.instantiate + LMonoTy.resolveAliases
+    simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+    split at h_ra; · simp at h_ra
+    rename_i v2 h_inst_inner; obtain ⟨mty_inst, genEnv'⟩ := v2
+    simp at h_ra h_inst_inner
+    -- h_inst_inner : ty.instantiate Env.genEnv = .ok (mty_inst, genEnv')
+    -- h_ra : LMonoTy.resolveAliases mty_inst ... = .ok (mty, ...)
+    -- mty_inst = openFull ty (map ftvar freshtvs)
+    -- mty is alias-equivalent to mty_inst
+    -- Step 2: Use tvar_annotated with tys from ty.instantiate
+    -- We need: openFull ty tys = mty_inst for some tys
+    -- Then AnnotCompat Γ.aliases fty_val mty_inst
+    -- For AnnotCompat: fty_val → (instantiateWithCheck) → fty_inst
+    --   We have AnnotCompat Env1.aliases fty_val fty_inst
+    --   And unify says subst S fty_inst = subst S mty
+    --   mty is alias-equiv to mty_inst
+    --   So AnnotCompat Γ.aliases fty_val mty_inst should hold with the right σ
+    sorry
+  · simp at h_inst
 
 /--
 Helper: `inferFVar` preserves the context and produces a well-typed result.
@@ -7321,7 +7401,7 @@ theorem inferFVar_HasType
               --   HasType ... (subst S.subst mty) where S is the unification result
               have h_base := instantiateWithCheck_fvar_annotated_HasType C Env.context x ty
                 mty fty_val fty_inst Env Env1 Env2 S m h_find rfl h_inst h_inst2
-                h_unify
+                h_unify (h_bvnd x ty h_find) (h_bvf x ty h_find) h_aw
               -- h_base : HasType ... (.forAll [] (subst S.subst mty))
               -- Need: HasType ... (.forAll [] (subst S_outer mty))
               -- Since S_outer absorbs S.subst, subst S_outer (subst S.subst mty) = subst S_outer mty
@@ -8847,9 +8927,10 @@ example : LExpr.HasType (LContext.default.addFactoryFunction idFactory) {} (.op 
 
 example : LExpr.HasType (LContext.default.addFactoryFunction idFactory) {} (.op () ⟨"id", ()⟩ mty[int → int]) t[int → int] := by
   apply (LExpr.HasType.top_annotated _ _ idFactory _ t[∀a. %a → %a] _ [.int]) <;> try rfl
-  simp only[LTy.openFull, LTy.toMonoTypeUnsafe, List.zip, LTy.boundVars];
-  unfold LMonoTy.subst ;
-  simp[Subst.hasEmptyScopes, Map.isEmpty, LMonoTys.subst, LMonoTys.subst.substAux, LMonoTy.subst, Maps.find?, Map.find?, LMonoTy.int]
+  · simp only[LTy.openFull, LTy.toMonoTypeUnsafe, List.zip, LTy.boundVars];
+    unfold LMonoTy.subst ;
+    simp[Subst.hasEmptyScopes, Map.isEmpty, LMonoTys.subst, LMonoTys.subst.substAux, LMonoTy.subst, Maps.find?, Map.find?, LMonoTy.int]
+  · exact AnnotCompat.of_eq
 
 end Tests
 
