@@ -77,7 +77,7 @@ CORPUS = [
     (r"[^b]",   "b",     "fullmatch"),  # noMatch
     (r"[^A-Z]+","hello",  "fullmatch"),  # match
     (r"[^A-Z]+","Hello",  "fullmatch"),  # noMatch — H is uppercase
-    # Regression: complement must be single-char, not multi-char or empty
+    # Complement must be single-char, not multi-char or empty
     (r"[^a]",   "",      "fullmatch"),  # noMatch — must be exactly 1 char
     (r"[^a]",   "bc",    "fullmatch"),  # noMatch — 2 chars, not 1
     (r"[^a]",   "bb",    "fullmatch"),  # noMatch — 2 chars
@@ -523,6 +523,153 @@ CORPUS = [
     ("(a?$)b?", "a",  "fullmatch"),  # match — group matches "a", $ fires, b?=""
     ("(a?$)b?", "ab", "fullmatch"),  # noMatch — $ blocked by non-empty b?
     ("(a?$)b?", "b",  "fullmatch"),  # noMatch — group can't match at end with "b" remaining
+
+    # ── Multi-char literals and patterns ─────────────────────────────────────────
+
+    # Basic multi-char literals
+    ("abc",      "abc",    "fullmatch"),  # match
+    ("abc",      "ab",     "fullmatch"),  # noMatch — too short
+    ("abc",      "abcd",   "fullmatch"),  # noMatch — too long
+    ("abc",      "ABC",    "fullmatch"),  # noMatch — case mismatch
+    ("abc",      "abc",    "match"),      # match
+    ("abc",      "abcd",   "match"),      # match — trailing d allowed
+    ("abc",      "xabc",   "match"),      # noMatch — doesn't start with a
+    ("abc",      "xabc",   "search"),     # match — found in middle
+    ("abc",      "xabcx",  "search"),     # match
+    ("abc",      "xabx",   "search"),     # noMatch — no abc substring
+
+    # Multi-char alternation
+    ("abc|def",  "abc",    "fullmatch"),  # match
+    ("abc|def",  "def",    "fullmatch"),  # match
+    ("abc|def",  "abcdef", "fullmatch"),  # noMatch — too long
+    ("abc|def",  "abd",    "fullmatch"),  # noMatch
+    ("abc|def",  "xdef",   "search"),     # match
+    ("abc|def",  "xabx",   "search"),     # noMatch
+
+    # Multi-char groups with quantifiers
+    ("(abc)+",   "abc",    "fullmatch"),  # match
+    ("(abc)+",   "abcabc", "fullmatch"),  # match
+    ("(abc)+",   "abcab",  "fullmatch"),  # noMatch — incomplete last rep
+    ("(abc){2}", "abcabc", "fullmatch"),  # match
+    ("(abc){2}", "abc",    "fullmatch"),  # noMatch — only 1 rep
+    ("(abc){2}", "abcabcabc", "fullmatch"),  # noMatch — 3 reps
+    ("(abc){1,3}", "abc",       "fullmatch"),  # match — 1 rep
+    ("(abc){1,3}", "abcabcabc", "fullmatch"),  # match — 3 reps
+    ("(abc){1,3}", "abcabcabcabc", "fullmatch"),  # noMatch — 4 reps
+
+    # Multi-char alternation inside groups
+    ("(ab|cd)+",  "abcd",   "fullmatch"),  # match — ab then cd
+    ("(ab|cd)+",  "cdab",   "fullmatch"),  # match — cd then ab
+    ("(ab|cd)+",  "abce",   "fullmatch"),  # noMatch — ce not in group
+    ("(ab|cd)+",  "xabcdy", "search"),     # match
+    ("(ab|cd)+",  "xacx",   "search"),     # noMatch
+
+    # Multi-char character class sequences
+    ("[a-z][0-9]",    "a1",    "fullmatch"),  # match
+    ("[a-z][0-9]",    "a12",   "fullmatch"),  # noMatch — too long
+    ("[a-z][0-9]",    "11",    "fullmatch"),  # noMatch — first char not [a-z]
+    ("[a-z][0-9]+",   "a123",  "fullmatch"),  # match
+    ("[a-z][0-9]+",   "a",     "fullmatch"),  # noMatch — no digit
+    ("[a-z]{2}[0-9]{2}", "ab12", "fullmatch"),  # match
+    ("[a-z]{2}[0-9]{2}", "a12",  "fullmatch"),  # noMatch — only 1 letter
+    ("[a-z]{2}[0-9]{2}", "ab1",  "fullmatch"),  # noMatch — only 1 digit
+    ("[a-z]{2}[0-9]{2}", "xab12y", "search"),   # match
+    ("[a-z]{2}[0-9]{2}", "xab1y",  "search"),   # noMatch
+
+    # Multi-char patterns with anchors
+    ("^abc$",     "abc",    "fullmatch"),  # match
+    ("^abc$",     "xabc",   "fullmatch"),  # noMatch
+    ("^abc$",     "abcx",   "fullmatch"),  # noMatch
+    ("^abc",      "abcxyz", "search"),     # match — ^ forces start
+    ("^abc",      "xabc",   "search"),     # noMatch — ^ blocks
+    ("abc$",      "xyzabc", "search"),     # match — $ forces end
+    ("abc$",      "abcx",   "search"),     # noMatch — $ blocked by x
+    ("^abc$",     "abc",    "search"),     # match — both anchors: exactly "abc"
+    ("^abc$",     "xabc",   "search"),     # noMatch
+    ("^abc$",     "abcx",   "search"),     # noMatch
+
+    # Multi-char with .* wildcard
+    ("abc.*def",  "abcdef",    "fullmatch"),  # match — .* = ""
+    ("abc.*def",  "abcXXdef",  "fullmatch"),  # match — .* = "XX"
+    ("abc.*def",  "abcdef",    "search"),     # match
+    ("abc.*def",  "xabcXXdefy","search"),     # match
+    ("abc.*def",  "abcXXdeg",  "fullmatch"),  # noMatch — ends with g not f
+    ("abc.+def",  "abcdef",    "fullmatch"),  # noMatch — .+ needs ≥1 char between
+    ("abc.+def",  "abcXdef",   "fullmatch"),  # match
+
+    # Multi-char search: overlapping candidates
+    ("ab",        "ababab",  "search"),     # match — first ab at pos 0
+    ("ab",        "bbbabb",  "search"),     # match — ab at pos 3
+    ("ab",        "aabb",    "search"),     # match — ab at pos 1
+    ("ab",        "ba",      "search"),     # noMatch — no ab substring
+    ("abc",       "aabbc",   "search"),     # noMatch — no abc substring
+    ("abc",       "aabcbc",  "search"),     # match — abc at pos 1
+
+    # ── Special characters: colon, backslash, and escaped metacharacters ─────────
+
+    # Literal colon
+    ("a:b",       "a:b",    "fullmatch"),  # match
+    ("a:b",       "ab",     "fullmatch"),  # noMatch — missing colon
+    ("a:b",       "a:b:c",  "fullmatch"),  # noMatch — too long
+    ("a:b",       "a:b",    "match"),      # match
+    ("a:b",       "a:bc",   "match"),      # match — trailing c allowed
+    ("a:b",       "xa:b",   "match"),      # noMatch — doesn't start with a
+    ("a:b",       "xa:by",  "search"),     # match
+    ("a:b",       "xaby",   "search"),     # noMatch
+    ("[a-z]+:[0-9]+", "foo:42",  "fullmatch"),  # match
+    ("[a-z]+:[0-9]+", "foo42",   "fullmatch"),  # noMatch — no colon
+    ("[a-z]+:[0-9]+", "foo:42",  "match"),      # match
+    ("[a-z]+:[0-9]+", "foo:42x", "match"),      # match — trailing x allowed
+    ("[a-z]+:[0-9]+", "foo:42",  "search"),     # match
+    ("[a-z]+:[0-9]+", "xfoo:42y","search"),     # match
+    ("(a:b)+",    "a:b",    "fullmatch"),  # match — 1 rep
+    ("(a:b)+",    "a:ba:b", "fullmatch"),  # match — 2 reps
+    ("(a:b)+",    "a:ba:",  "fullmatch"),  # noMatch — incomplete last rep
+    ("(a:b)+",    "a:b",    "match"),      # match
+    ("(a:b)+",    "a:bx",   "match"),      # match — trailing x allowed
+    ("^[a-z]+:[0-9]+$", "foo:42",  "fullmatch"),  # match
+    ("^[a-z]+:[0-9]+$", "foo:42",  "match"),      # match — $ blocks trailing
+    ("^[a-z]+:[0-9]+$", "foo:42x", "match"),      # noMatch — $ blocks x
+    ("^[a-z]+:[0-9]+$", "foo:42",  "search"),     # match
+    ("^[a-z]+:[0-9]+$", "xfoo:42", "search"),     # noMatch — ^ blocks
+
+    # Escaped metacharacters as literals
+    (r"a\.b",    "a.b",    "fullmatch"),  # match — \. matches literal dot
+    (r"a\.b",    "axb",    "fullmatch"),  # noMatch — x is not a dot
+    (r"a\.b",    "a.b",    "match"),      # match
+    (r"a\.b",    "a.bc",   "match"),      # match — trailing c allowed
+    (r"a\.b",    "a.b",    "search"),     # match
+    (r"a\.b",    "xaxbx",  "search"),     # noMatch
+    (r"a\+b",    "a+b",    "fullmatch"),  # match — \+ matches literal +
+    (r"a\+b",    "ab",     "fullmatch"),  # noMatch
+    (r"a\+b",    "a+b",    "match"),      # match
+    (r"a\+b",    "a+bc",   "match"),      # match — trailing c allowed
+    (r"a\*b",    "a*b",    "fullmatch"),  # match — \* matches literal *
+    (r"a\*b",    "aab",    "fullmatch"),  # noMatch
+    (r"a\*b",    "a*b",    "match"),      # match
+    (r"a\?b",    "a?b",    "fullmatch"),  # match — \? matches literal ?
+    (r"a\?b",    "ab",     "fullmatch"),  # noMatch
+    (r"a\?b",    "a?b",    "match"),      # match
+    (r"a\(b\)",  "a(b)",   "fullmatch"),  # match — escaped parens are literals
+    (r"a\(b\)",  "ab",     "fullmatch"),  # noMatch
+    (r"a\(b\)",  "a(b)",   "match"),      # match
+    (r"a\[b\]",  "a[b]",   "fullmatch"),  # match — escaped brackets are literals
+    (r"a\[b\]",  "ab",     "fullmatch"),  # noMatch
+    (r"a\[b\]",  "a[b]",   "match"),      # match
+    (r"a\\b",    "a\\b",   "fullmatch"),  # match — \\ matches literal backslash
+    (r"a\\b",    "ab",     "fullmatch"),  # noMatch
+    (r"a\\b",    "a\\b",   "match"),      # match
+    (r"a\\b",    "a\\bc",  "match"),      # match — trailing c allowed
+    (r"a\\b",    "xa\\by", "search"),     # match
+    (r"a\\b",    "xaby",   "search"),     # noMatch
+
+    # Mixed: colon and escaped metacharacters together
+    (r"\w+:\d+\.\d+", "foo:3.14",   "fullmatch"),  # match
+    (r"\w+:\d+\.\d+", "foo:3x14",   "fullmatch"),  # noMatch — x not a dot
+    (r"\w+:\d+\.\d+", "foo:3.14",   "match"),      # match
+    (r"\w+:\d+\.\d+", "foo:3.14x",  "match"),      # match — trailing x allowed
+    (r"\w+:\d+\.\d+", "xfoo:3.14y", "search"),     # match
+    (r"\w+:\d+\.\d+", "xfoo:3x14y", "search"),     # noMatch
 
     # ── Error cases ──────────────────────────────────────────────────────────────
 

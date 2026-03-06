@@ -146,7 +146,8 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
   | .char c =>
     (mkApp () (.op () strToRegexFunc.name none) [strConst () (toString c)])
   | .range c1 c2 =>
-    mkApp () (.op () reRangeFunc.name none) [strConst () (toString c1), strConst () (toString c2)]
+    mkApp () (.op () reRangeFunc.name none)
+      [strConst () (toString c1), strConst () (toString c2)]
   | .anychar =>
     mkApp () (.op () reAllCharFunc.name none) []
   | .empty => Core.emptyRegex
@@ -300,19 +301,19 @@ def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     | .match =>
         -- `atStart` always true (match anchors at string start).
         -- union: (1) `$` fires → no trailing content; (2) `$` absent → trailing .* .
-        let core_tt := RegexAST.toCore ast true true
-        let core_tf := RegexAST.toCore ast true false
-        mkUnion core_tt (mkConcat core_tf dotStar)
+        let coreTT := RegexAST.toCore ast true true
+        let coreTF := RegexAST.toCore ast true false
+        mkUnion coreTT (mkConcat coreTF dotStar)
     | .search =>
         -- Four combinations of (`^` active, `$` active).
-        let core_tt := RegexAST.toCore ast true  true
-        let core_tf := RegexAST.toCore ast true  false
-        let core_ft := RegexAST.toCore ast false true
-        let core_ff := RegexAST.toCore ast false false
-        mkUnion core_tt
-          (mkUnion (mkConcat core_tf dotStar)
-            (mkUnion (mkConcat dotStar core_ft)
-                     (mkConcat dotStar (mkConcat core_ff dotStar))))
+        let coreTT := RegexAST.toCore ast true  true
+        let coreTF := RegexAST.toCore ast true  false
+        let coreFT := RegexAST.toCore ast false true
+        let coreFF := RegexAST.toCore ast false false
+        mkUnion coreTT
+          (mkUnion (mkConcat coreTF dotStar)
+            (mkUnion (mkConcat dotStar coreFT)
+                     (mkConcat dotStar (mkConcat coreFF dotStar))))
     (result, none)
 
 -------------------------------------------------------------------------------
