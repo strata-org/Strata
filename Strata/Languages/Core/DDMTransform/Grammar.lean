@@ -332,6 +332,11 @@ op funcDecl_statement (name : Ident,
                        inline? : Option Inline) : Statement =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }\n";
 
+// Type declaration statement
+@[declareScopedType(name, some args)]
+op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
+  "type " name args ";\n";
+
 @[scope(b)]
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
