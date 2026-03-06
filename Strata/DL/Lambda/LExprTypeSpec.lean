@@ -1104,6 +1104,7 @@ variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
 ### Definitions and lemmas for the `resolveAux`-based proof strategy
 -/
 
+mutual
 /-- Free variables of `subst [[(a, t)]] mty` are either free vars of `mty`
     (possibly minus `a`) or free vars of `t`. Contrapositively: if `b` is
     in the freeVars of the substituted type but NOT in freeVars of `t`,
@@ -1113,27 +1114,20 @@ private theorem LMonoTy.freeVars_subst_single_mem
     (hb : b ∈ LMonoTy.freeVars (LMonoTy.subst [[(a, t)]] mty))
     (hb_not_t : b ∉ LMonoTy.freeVars t) :
     b ∈ LMonoTy.freeVars mty := by
-  -- freeVars(subst [[(a,t)]] mty) ⊆ (freeVars(mty) \ {a}) ∪ freeVars(t)
-  -- Since b ∉ freeVars(t), we get b ∈ freeVars(mty).
-  -- Proof by structural induction on mty, with a nested induction for tcons args.
-  -- The hasEmptyScopes [[(a,t)]] is always false.
   -- If the substitution has empty scopes, it's the identity, so trivial
   by_cases hS : Subst.hasEmptyScopes [[(a, t)]]
   · rw [LMonoTy.subst_emptyS hS] at hb; exact hb
-  · -- hasEmptyScopes = false (the normal case)
-    have hS_false : Subst.hasEmptyScopes [[(a, t)]] = false := by
+  · have hS_false : Subst.hasEmptyScopes [[(a, t)]] = false := by
       revert hS; cases Subst.hasEmptyScopes [[(a, t)]] <;> simp
     match mty with
     | .ftvar x =>
       simp only [LMonoTy.subst, hS_false, ↓reduceIte] at hb
-      -- subst: match find? [[(a,t)]] x
       by_cases hax : a = x
       · subst hax
         have : Maps.find? [[(a, t)]] a = some t := by
           simp [Maps.find?, Map.find?, beq_self_eq_true]
         rw [this] at hb; exact absurd hb hb_not_t
-      · -- find? [[(a,t)]] x = none since a ≠ x
-        have h_find_none : Maps.find? [[(a, t)]] x = none :=
+      · have h_find_none : Maps.find? [[(a, t)]] x = none :=
           Maps.not_mem_keys_find?_none' [[(a, t)]] x (by
             simp [Maps.keys, Map.keys]; exact fun h => hax h.symm)
         rw [h_find_none] at hb; exact hb
@@ -1142,22 +1136,27 @@ private theorem LMonoTy.freeVars_subst_single_mem
     | .tcons name args =>
       simp only [LMonoTy.subst, hS_false, ↓reduceIte, LMonoTy.freeVars] at hb ⊢
       rw [LMonoTys.subst_eq_substLogic] at hb
-      -- Nested induction on args
-      suffices ∀ (xs : LMonoTys),
-          b ∈ LMonoTys.freeVars (LMonoTys.substLogic [[(a, t)]] xs) →
-          b ∈ LMonoTys.freeVars xs from this args hb
-      intro xs; induction xs with
-      | nil =>
-        simp only [LMonoTys.substLogic, hS_false, ↓reduceIte, LMonoTys.freeVars]; intro h; exact h
-      | cons y ys ih_ys =>
-        simp only [LMonoTys.substLogic, hS_false, ↓reduceIte]
-        intro h
-        simp only [LMonoTys.freeVars] at h ⊢
-        cases List.mem_append.mp h with
-        | inl h_y => exact List.mem_append_left _ (LMonoTy.freeVars_subst_single_mem a t y b h_y hb_not_t)
-        | inr h_ys => exact List.mem_append_right _ (ih_ys h_ys)
-  termination_by mty
-  decreasing_by simp_wf; sorry
+      exact LMonoTys.freeVars_substLogic_single_mem a t args b hb hb_not_t
+
+/-- List version: free vars of `substLogic [[(a,t)]] mtys` that are not in
+    `freeVars t` must be in `freeVars mtys`. -/
+private theorem LMonoTys.freeVars_substLogic_single_mem
+    (a : TyIdentifier) (t : LMonoTy) (mtys : LMonoTys) (b : TyIdentifier)
+    (hb : b ∈ LMonoTys.freeVars (LMonoTys.substLogic [[(a, t)]] mtys))
+    (hb_not_t : b ∉ LMonoTy.freeVars t) :
+    b ∈ LMonoTys.freeVars mtys := by
+  have hS_false : Subst.hasEmptyScopes [[(a, t)]] = false := by
+    simp [Subst.hasEmptyScopes, Map.isEmpty]
+  match mtys with
+  | [] =>
+    simp only [LMonoTys.substLogic, hS_false, ↓reduceIte, LMonoTys.freeVars] at hb
+    exact hb
+  | y :: ys =>
+    simp only [LMonoTys.substLogic, hS_false, ↓reduceIte, LMonoTys.freeVars] at hb ⊢
+    cases List.mem_append.mp hb with
+    | inl h_y => exact List.mem_append_left _ (LMonoTy.freeVars_subst_single_mem a t y b h_y hb_not_t)
+    | inr h_ys => exact List.mem_append_right _ (LMonoTys.freeVars_substLogic_single_mem a t ys b h_ys hb_not_t)
+end
 
 /-- `HasType` is preserved under substitution when keys relevant to the type
     are fresh. Only keys that appear in `freeVars mty` need to be fresh,
