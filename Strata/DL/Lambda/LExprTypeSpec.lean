@@ -3187,7 +3187,16 @@ structure TEnvWF (Env : TEnv T.IDMeta) : Prop where
   substFreshForGen : SubstFreshForGen Env.stateSubstInfo Env.genEnv.genState
   /-- Context type variables have names below the generator counter. -/
   ctxFreshForGen : ContextFreshForGen Env.context Env.genEnv.genState
-  /-- All types in the context have well-formed bound variables. -/
+  /-- All polymorphic types in the context have well-formed bound variables:
+      (1) bound variable names are distinct (`Nodup`), and
+      (2) each bound variable name appears as a free type variable somewhere
+          in the context (`knownTypeVars`).
+      Condition (2) ensures that when `LTy.instantiate` generates fresh type
+      variables to replace the bound ones, the fresh names (which are guaranteed
+      *not* in `knownTypeVars`) cannot collide with the bound variable names.
+      This is established by whoever constructs the initial `TEnv` (e.g., from
+      parsed declarations) and preserved by `resolveAux` since it does not
+      modify the context's type bindings. -/
   boundVarsWF : ∀ y ty, Env.context.types.find? y = some ty →
     (LTy.boundVars ty).Nodup ∧
     ∀ v, v ∈ LTy.boundVars ty → v ∈ TContext.knownTypeVars Env.genEnv.context
