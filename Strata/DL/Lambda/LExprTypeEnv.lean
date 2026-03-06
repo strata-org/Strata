@@ -48,9 +48,10 @@ structure TypeAlias where
   deriving DecidableEq, Repr, Inhabited
 
 /-- A type alias is well-formed when every free variable in its body appears
-    in its list of type arguments. -/
-def TypeAlias.WF (a : TypeAlias) : Prop :=
-  ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs
+    in its list of type arguments, and the type arguments are distinct. -/
+structure TypeAlias.WF (a : TypeAlias) : Prop where
+  fvs_closed : ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs
+  typeArgs_nodup : a.typeArgs.Nodup
 
 mutual
 /-- Replace free type variables in `mty` according to a positional mapping

@@ -2384,7 +2384,7 @@ theorem tconsAlias_allKeysFresh
           simp [LMonoTys.freeVars, LMonoTy.freeVars] at h_tv
           rcases h_tv with h_pat | h_alias_fv
           · rw [LMonoTys.freeVars_map_ftvar] at h_pat; exact h_pat
-          · exact h_alias_wf alias h_alias_mem tv h_alias_fv
+          · exact (h_alias_wf alias h_alias_mem).fvs_closed tv h_alias_fv
         -- All free vars of instTypes are fresh in Env.context
         have h_inst_fresh :=
           LMonoTys.instantiateEnv_freeVars_fresh_closed
@@ -2452,7 +2452,7 @@ theorem tconsAlias_vals_fresh
           simp [LMonoTys.freeVars, LMonoTy.freeVars] at h_tv
           rcases h_tv with h_pat | h_alias_fv
           · rw [LMonoTys.freeVars_map_ftvar] at h_pat; exact h_pat
-          · exact h_alias_wf alias h_alias_mem tv h_alias_fv
+          · exact (h_alias_wf alias h_alias_mem).fvs_closed tv h_alias_fv
         have h_inst_fresh :=
           LMonoTys.instantiateEnv_freeVars_fresh_closed
             alias.typeArgs _ Env instTypes updatedEnv h_inst h_closed
@@ -2522,7 +2522,7 @@ theorem tconsAlias_fvs_fresh
           rw [← h_ctx]; exact List.mem_of_find?_eq_some h_ma
         -- h_alias_wf for this specific alias
         have h_this_alias_wf : ∀ tv, tv ∈ LMonoTy.freeVars alias.type → tv ∈ alias.typeArgs :=
-          h_alias_wf alias h_alias_mem
+          (h_alias_wf alias h_alias_mem).fvs_closed
         -- typesToInstantiate = [aliasPattern, alias.type]
         -- All free vars of alias.type are in alias.typeArgs (by h_alias_wf)
         -- instantiateEnv replaces alias.typeArgs with fresh vars
@@ -2699,8 +2699,7 @@ theorem LMonoTys.resolveAliases_allKeysFresh
         have h_vals_fresh_mid :=
           LMonoTy.resolveAliases_vals_fresh mty Env mty' Env1 h_hd
             h_vals_fresh h_alias_wf h_hd_fvs
-        have h_alias_wf' : ∀ a, a ∈ Env1.context.aliases →
-            ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := by
+        have h_alias_wf' : TContext.AliasesWF Env1.context := by
           rw [show Env1.context = Env.context from h_ctx_eq]; exact h_alias_wf
         have h_tl_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mrest →
             TContext.isFresh (T := T) tv Env1.context := by
@@ -2742,8 +2741,7 @@ theorem LMonoTys.resolveAliases_vals_fresh
         have h_vals_fresh_mid :=
           LMonoTy.resolveAliases_vals_fresh mty Env mty' Env1 h_hd
             h_vals_fresh h_alias_wf h_hd_fvs
-        have h_alias_wf' : ∀ a, a ∈ Env1.context.aliases →
-            ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := by
+        have h_alias_wf' : TContext.AliasesWF Env1.context := by
           rw [show Env1.context = Env.context from h_ctx_eq]; exact h_alias_wf
         have h_tl_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mrest →
             TContext.isFresh (T := T) tv Env1.context := by
@@ -2830,8 +2828,7 @@ theorem LMonoTys.resolveAliases_fvs_fresh
         have h_vals_fresh_mid :=
           LMonoTy.resolveAliases_vals_fresh mty Env mty' Env1 h_hd
             h_vals_fresh h_alias_wf h_hd_fvs
-        have h_alias_wf' : ∀ a, a ∈ Env1.context.aliases →
-            ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := by
+        have h_alias_wf' : TContext.AliasesWF Env1.context := by
           rw [h_ctx_eq]; exact h_alias_wf
         have h_tl_fvs : ∀ tv, tv ∈ LMonoTys.freeVars mrest →
             TContext.isFresh (T := T) tv Env1.context := by
@@ -5785,11 +5782,27 @@ private theorem instantiateEnv_decompose
       obtain ⟨h_res, h_ge⟩ := h_inner; subst h_ge
       exact ⟨ftvs, gE, h_gv, h_res.symm, rfl⟩
 
-/-- `openVarsList vars vals (vars.map ftvar) = vals` when lengths match.
-    Each `ftvar aᵢ` is looked up in `zip vars vals` and maps to `vals[i]`. -/
+/-- Prepending a binding `(v, vl)` to `vars`/`vals` doesn't affect `openVarsList` on
+    `ids.map ftvar` when `v ∉ ids`. -/
+private theorem openVarsList_cons_skip_map_ftvar
+    (v : TyIdentifier) (vl : LMonoTy) (vars : List TyIdentifier) (vals : LMonoTys)
+    (ids : List TyIdentifier) (h_v_notin : v ∉ ids) :
+    LMonoTys.openVars (v :: vars) (vl :: vals) (ids.map .ftvar) =
+    LMonoTys.openVars vars vals (ids.map .ftvar) := by
+  induction ids with
+  | nil => simp [LMonoTys.openVars]
+  | cons w ws ih =>
+    have h_w_ne : w ≠ v := fun h => h_v_notin (h ▸ .head _)
+    simp only [List.map, LMonoTys.openVars, LMonoTy.openVars,
+               List.zip, List.zipWith, List.find?, BEq.beq, decide_eq_true_eq]
+    simp only [h_w_ne, Ne.symm h_w_ne, ↓reduceIte]
+    congr 1
+    exact ih (fun h => h_v_notin (.tail _ h))
+
 private theorem openVarsList_map_ftvar_id
     (vars : List TyIdentifier) (vals : LMonoTys)
-    (h_len : vars.length = vals.length) :
+    (h_len : vars.length = vals.length)
+    (h_nodup : vars.Nodup := by assumption) :
     LMonoTys.openVars vars vals (vars.map .ftvar) = vals := by
   -- Each ftvar vᵢ is looked up in zip vars vals and finds vals[i] at position i.
   -- The first match in zip for vᵢ is at position i (no earlier match since
@@ -5803,21 +5816,21 @@ private theorem openVarsList_map_ftvar_id
     cases vals with
     | nil => simp at h_len
     | cons vl vls =>
-      simp only [List.map, LMonoTys.openVars, LMonoTy.openVars,
-                  List.zip, List.zipWith, List.find?, BEq.beq, decide_eq_true_eq]
-      -- After simp only, the goal is:
-      -- vl :: openVarsList (v::vs) (vl::vls) (vs.map ftvar) = vl :: vls
-      -- (because find? for v in zip (v::vs) (vl::vls) returns (v, vl), so head = vl)
-      -- The tail: openVarsList (v::vs) (vl::vls) (vs.map ftvar) = vls
-      -- For each vᵢ ∈ vs, find? in zip (v::vs) (vl::vls) for vᵢ finds vals[i]
-      -- at position i+1 (or at position 0 if vᵢ = v, giving vl which is also the
-      -- correct value when v appears multiple times with the same value in the zip).
-      -- This works because find? returns the FIRST match, which is (v, vl) for v,
-      -- and (vᵢ, vls[i-1]) for other vᵢ. With duplicates, v = vᵢ gives vl which
-      -- IS vls[i-1] only if the alias has a consistent structure.
-      -- Without a Nodup assumption, this requires that find? always returns the
-      -- first-occurring binding, which it does by definition.
-      sorry
+      have h_v_notin : v ∉ vs := (List.nodup_cons.mp h_nodup).1
+      -- Unfold to see the structure
+      simp only [List.map, LMonoTys.openVars]
+      -- Goal: openVars (v::vs) (vl::vls) (ftvar v) :: openVarsList (v::vs) (vl::vls) (vs.map ftvar) = vl :: vls
+      -- Head: openVars for ftvar v finds v at position 0 → vl
+      have h_head : LMonoTy.openVars (v :: vs) (vl :: vls) (.ftvar v) = vl := by
+        simp [LMonoTy.openVars, List.zip, List.zipWith, List.find?, BEq.beq, decide_eq_true_eq]
+      rw [h_head]
+      -- Goal: vl :: openVarsList (v::vs) (vl::vls) (vs.map ftvar) = vl :: vls
+      congr 1
+      -- Goal: openVarsList (v::vs) (vl::vls) (vs.map ftvar) = vls
+      -- Strip the (v, vl) prefix using h_v_notin
+      rw [openVarsList_cons_skip_map_ftvar v vl vs vls vs h_v_notin]
+      -- Goal: openVarsList vs vls (vs.map ftvar) = vls — by IH
+      exact ih vls (by simp at h_len; exact h_len) (List.nodup_cons.mp h_nodup).2
 
 /-- Key bridge lemma: when `tconsAlias` expands an alias, the result under
     the final substitution equals `TypeAlias.expand alias (subst S args)`.
@@ -5833,7 +5846,8 @@ private theorem tconsAlias_expand_eq
     (h_tcons : LMonoTy.tconsAlias name args Env = .ok (mty', Env'))
     (h_find : Env.context.aliases.find?
         (fun a => a.name == name && a.typeArgs.length == args.length) = some alias)
-    (h_wf : alias.WF) :
+    (h_wf : alias.WF)
+    (h_nodup : alias.typeArgs.Nodup) :
     LMonoTy.subst Env'.stateSubstInfo.subst mty' =
     TypeAlias.expand alias (LMonoTys.subst Env'.stateSubstInfo.subst args) := by
   -- Unfold tconsAlias and use h_find to match the alias branch
@@ -5929,8 +5943,8 @@ private theorem tconsAlias_expand_eq
           have h_getD_b : ([a, b] : LMonoTys)[1]?.getD (.tcons name args) = b := rfl
           rw [h_getD_b]
           -- Now goal: subst S b = expand alias (subst S args)
-          rw [h_b, subst_single_scope_eq_openVars alias.typeArgs fvs alias.type h_wf h_fvs_len,
-              subst_openVars_comm substInfo.subst alias.typeArgs fvs alias.type h_wf h_fvs_len]
+          rw [h_b, subst_single_scope_eq_openVars alias.typeArgs fvs alias.type h_wf.fvs_closed h_fvs_len,
+              subst_openVars_comm substInfo.subst alias.typeArgs fvs alias.type h_wf.fvs_closed h_fvs_len]
           simp only [TypeAlias.expand]; congr 1
           -- Goal: substLogic substInfo.subst fvs = subst substInfo.subst args
 
@@ -6114,9 +6128,10 @@ private theorem HasType_resolveAliases
       --   subst S mty' = expand alias (subst S args)
       -- so the goal reduces to h_ty_expanded
       have h_alias_wf : alias.WF := h_aliases_wf alias h_alias_in_ctx
+      have h_alias_nodup : alias.typeArgs.Nodup := h_alias_wf.2
       have h_bridge := tconsAlias_expand_eq name args' Env1 mty' Env2 alias
         (by unfold LMonoTy.tconsAlias; rw [h_ma]; exact h_tcons)
-        h_ma h_alias_wf
+        h_ma h_alias_wf h_alias_nodup
       -- h_bridge : subst Env2.subst mty' = expand alias (subst Env2.subst args')
       -- h_ty_expanded : HasType C Γ e (.forAll [] (expand alias (subst Env2.subst args)))
       -- Need to show: subst Env2.subst args' = subst Env2.subst args (by absorption)
