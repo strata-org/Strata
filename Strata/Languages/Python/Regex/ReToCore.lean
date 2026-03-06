@@ -182,12 +182,12 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     let r1b := toCore r1 atStart atEnd
     let r2b :=
       if alwaysConsume r1 || r1.containsAnchorStart || r1.containsAnchorEnd then
-        let r1b_start    := toCore r1 atStart false
-        let r1b_mid      := toCore r1 false false
-        let r1b_end      := toCore r1 false atEnd
-        let r1b_mid_star := mkApp () (.op () reStarFunc.name none) [r1b_mid]
+        let r1bStart    := toCore r1 atStart false
+        let r1bMid      := toCore r1 false false
+        let r1bEnd      := toCore r1 false atEnd
+        let r1bMidStar := mkApp () (.op () reStarFunc.name none) [r1bMid]
         mkApp () (.op () reConcatFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_mid_star], r1b_end]
+          [mkApp () (.op () reConcatFunc.name none) [r1bStart, r1bMidStar], r1bEnd]
       else
         mkApp () (.op () reStarFunc.name none) [r1b]
     mkApp () (.op () reUnionFunc.name none)
@@ -200,11 +200,11 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
       let r1b := toCore r1 atStart atEnd
       let r2b :=
         if alwaysConsume r1 || r1.containsAnchorStart || r1.containsAnchorEnd then
-          let r1b_start := toCore r1 atStart false
-          let r1b_mid   := toCore r1 false false
-          let r1b_end   := toCore r1 false atEnd
-          let r1b_loop  := mkApp () (.op () reLoopFunc.name none) [r1b_mid, intConst () 0, intConst () (m-2)]
-          mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b_start, r1b_loop], r1b_end]
+          let r1bStart := toCore r1 atStart false
+          let r1bMid   := toCore r1 false false
+          let r1bEnd   := toCore r1 false atEnd
+          let r1bLoop  := mkApp () (.op () reLoopFunc.name none) [r1bMid, intConst () 0, intConst () (m-2)]
+          mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1bStart, r1bLoop], r1bEnd]
         else
           mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
       mkApp () (.op () reUnionFunc.name none)
@@ -227,15 +227,15 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
       -- Case 2: (`r2` non-empty, so `r2` is the last consumer and `r1` must not
       -- see `atEnd`).
       if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
-        let r1b_end := toCore r1 atStart true
-        let r1b_mid := toCore r1 atStart false
+        let r1bEnd := toCore r1 atStart true
+        let r1bMid := toCore r1 atStart false
         let r2b     := toCore r2 false true
         -- Restrict `r2` to `""` for Case 1 (`r2` is non-consuming, so
         -- intersection with `""` checks that `r2` can indeed match `""` here).
         let r2b_eps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
         mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1b_end, r2b_eps],
-           mkApp () (.op () reConcatFunc.name none) [r1b_mid, r2b]]
+          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2b_eps],
+           mkApp () (.op () reConcatFunc.name none) [r1bMid, r2b]]
       else
         let r1b := toCore r1 atStart atEnd
         let r2b := toCore r2 false atEnd
@@ -247,12 +247,12 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
       if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
         let r1b       := toCore r1 atStart false
         -- Restrict `r1` to "" for Case 1, as before.
-        let r1b_eps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
-        let r2b_start := toCore r2 atStart atEnd
-        let r2b_mid   := toCore r2 false atEnd
+        let r1bEps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
+        let r2bStart := toCore r2 atStart atEnd
+        let r2bMid   := toCore r2 false atEnd
         mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1b_eps, r2b_start],
-           mkApp () (.op () reConcatFunc.name none) [r1b, r2b_mid]]
+          [mkApp () (.op () reConcatFunc.name none) [r1bEps, r2bStart],
+           mkApp () (.op () reConcatFunc.name none) [r1b, r2bMid]]
       else
         let r1b := toCore r1 atStart false
         let r2b := toCore r2 atStart atEnd
@@ -263,12 +263,25 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
       -- Case 2: (`r1` non-empty, `^` must not fire, so `atStart=false` for `r2`).
       if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
         let r1b       := toCore r1 atStart atEnd
-        let r1b_eps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
-        let r2b_start := toCore r2 atStart atEnd
-        let r2b_mid   := toCore r2 false atEnd
+        let r1bEps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
+        let r2bStart := toCore r2 atStart atEnd
+        let r2bMid   := toCore r2 false atEnd
         mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1b_eps, r2b_start],
-           mkApp () (.op () reConcatFunc.name none) [r1b, r2b_mid]]
+          [mkApp () (.op () reConcatFunc.name none) [r1bEps, r2bStart],
+           mkApp () (.op () reConcatFunc.name none) [r1b, r2bMid]]
+      -- Symmetric to `true, false`: when `$` is in `r1` and `r2` has non-anchor
+      -- content, `r2` may match non-empty, in which case `r1` is not last and
+      -- `atEnd` must not be forwarded to `r1`.
+      -- Case 1: (`r2=""`, `r1` sees `atEnd`) and
+      -- Case 2: (`r2` non-empty, `r1` must not see `atEnd`).
+      else if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
+        let r1bEnd := toCore r1 atStart true
+        let r1bMid := toCore r1 atStart false
+        let r2b     := toCore r2 atStart true
+        let r2b_eps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
+        mkApp () (.op () reUnionFunc.name none)
+          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2b_eps],
+           mkApp () (.op () reConcatFunc.name none) [r1bMid, r2b]]
       else
         let r1b := toCore r1 atStart atEnd
         let r2b := toCore r2 atStart atEnd
