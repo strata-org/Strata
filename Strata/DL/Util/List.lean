@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 /-! # List Utilities
 -/
 
@@ -449,3 +451,4 @@ def foldlIdx (f : β → Nat → α → β) (init : β) (l : List α) : β :=
   ((List.range l.length).zip l).foldl (fun acc (i, a) => f acc i a) init
 
 end List
+end

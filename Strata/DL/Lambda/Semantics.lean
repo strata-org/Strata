@@ -3,16 +3,25 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LState
-import Strata.DL.Util.Relations
+public import Strata.DL.Lambda.LExpr
+import all Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LExprEval
+import all Strata.DL.Lambda.LExprEval
+public import Strata.DL.Lambda.LExprWF
+import all Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.Scopes
+public import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
 
 namespace Lambda
+
+public section
 
 variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
@@ -162,4 +171,5 @@ def StepStar (F:@Factory Tbase) (rf:Env Tbase)
   : LExpr Tbase.mono → LExpr Tbase.mono → Prop :=
   ReflTrans (Step F rf)
 
+end -- public section
 end Lambda

@@ -208,12 +208,12 @@ def instructionToJson (inst : Instruction) : Json :=
   let baseFields := [
     ("instruction", Json.str (instructionToString inst)),
     ("instructionId", Json.str (toString inst.type)),
-    ("locationNumber", Json.num inst.locationNum.toNat)
+    ("locationNumber", Json.num inst.locationNum)
   ]
   let guardField := if inst.type == .GOTO || !Expr.beq inst.guard Expr.true then [("guard", exprToJsonWithNamedFields inst.guard)] else []
   let codeField := if inst.code == Code.skip then [] else [("code", codeToJson inst.code)]
   let targetsField := match inst.type, inst.target with
-    | .GOTO, some t => [("targets", Json.arr #[Json.num t.toNat])]
+    | .GOTO, some t => [("targets", Json.arr #[Json.num t])]
     | _, _ => []
   let sourceField :=  [sourceLocationToJson inst.sourceLoc]
   Json.mkObj (baseFields ++ guardField ++ codeField ++ targetsField ++ sourceField)

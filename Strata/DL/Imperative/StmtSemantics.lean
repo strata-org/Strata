@@ -3,19 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.Stmt
 import Strata.Util.Tactics
 
 ---------------------------------------------------------------------
 
 namespace Imperative
 
+public section
+
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
-abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
+@[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
 mutual
 
@@ -173,3 +174,5 @@ theorem EvalBlockDefMonotone
     apply EvalStmtDefMonotone <;> assumption
     assumption
 end
+
+end -- public section
