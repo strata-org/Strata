@@ -3694,7 +3694,7 @@ theorem genTyVar_genFresh'
     -- Nat.toDigits injectivity (sorry'd due to Lean 4 library gap).
     rw [String.ext_iff] at h_eq
     simp [String.toList_append] at h_eq
-    exact absurd (sorry : Env.genState.tyGen = n) h_ne
+    exact absurd (Nat.toString_injective (String.toList_injective h_eq)) h_ne
 
 /-- All vars produced by `TGenEnv.genTyVars` satisfy gen-freshness for the
     output state: each is `tyPrefix ++ toString k` for some
