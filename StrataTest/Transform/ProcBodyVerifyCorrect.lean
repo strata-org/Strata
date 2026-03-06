@@ -90,7 +90,17 @@ theorem procToVerifyStmt_has_asserts
     (h : (procToVerifyStmt proc p).run st = (Except.ok stmt, st')) :
     ∃ (label : String) (prefix_ : List Statement) (md : MetaData Expression),
       stmt = Stmt.block label (prefix_ ++ ensuresToAsserts proc.spec.postconditions) md := by
-  sorry
+  unfold procToVerifyStmt at h
+  simp only [bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure, ExceptT.run, StateT.bind] at h
+  simp only [ExceptT.bindCont] at h
+  split at h
+  · rename_i a s h_mapM
+    split at h
+    · rename_i modifiesInits
+      simp only [StateT.pure, pure, Prod.mk.injEq] at h
+      obtain ⟨rfl, _⟩ := h
+      exact ⟨_, _, _, rfl⟩
+    · rename_i e; exact absurd h nofun
 
 /-- Stepping through assert statements (which are skips) in a block preserves
     the store and evaluator. If all statements in `skips` are asserts, then
@@ -171,12 +181,30 @@ theorem procBodyVerify_sound
     unfold ensuresToAsserts
     simp only [List.mem_filterMap]
     exact ⟨(label, check), h_post_in, by simp [h_default]⟩
-  -- 3. We need to show δ_final σ_final check.expr = some tt
-  -- By h_correct (rewritten with h_stmt_eq) and the fact that the assert
-  -- is reachable in the block with store σ_final and evaluator δ_final,
-  -- the postcondition holds.
-  -- The reachability requires constructing the execution path through
-  -- the verification block: inits → assumes → body → asserts
-  sorry
+  -- 3. Use block_correct_implies_asserts_hold
+  rw [h_stmt_eq] at h_correct
+  -- All ensuresToAsserts are assert statements
+  have h_all_asserts : ∀ s, s ∈ ensuresToAsserts proc.spec.postconditions →
+      ∃ l e m, s = Statement.assert l e m := by
+    intro s h_s
+    unfold ensuresToAsserts at h_s
+    simp only [List.mem_filterMap] at h_s
+    obtain ⟨⟨l, c⟩, _, h_eq⟩ := h_s
+    cases h_attr : c.attr <;> simp [h_attr] at h_eq
+    subst h_eq
+    exact ⟨l, c.expr, c.md, rfl⟩
+  -- The key step: construct the execution path through the prefix
+  -- (inits, assumes, body) to reach the asserts with store σ_final
+  have h_prefix_exec : ∃ (δ₀' : CoreEval) (σ₀' : CoreStore),
+      CoreStepStar π φ
+        (.stmt (Stmt.block blk_label (prefix_ ++ ensuresToAsserts proc.spec.postconditions) blk_md) σ₀' δ₀')
+        (.block blk_label (ensuresToAsserts proc.spec.postconditions) σ_final δ_final) := by
+    -- This requires showing that the verification block's prefix
+    -- (inits + assumes + body) can execute to (σ_final, δ_final)
+    -- given that preconditions hold and the body executes
+    sorry
+  exact block_correct_implies_asserts_hold π φ blk_label prefix_
+    (ensuresToAsserts proc.spec.postconditions) blk_md σ_final δ_final
+    h_correct h_prefix_exec h_all_asserts label check.expr check.md h_assert_in
 
 end ProcBodyVerifyCorrect
