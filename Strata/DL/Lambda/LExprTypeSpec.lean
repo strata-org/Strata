@@ -43,8 +43,6 @@ not yet provable in Lean 4.27 due to the `String` API being based on the
 These are expected to become provable in **Lean 4.29+**, which will provide
 `String.startsWith` lemmas and a more transparent `String` API. See:
 https://github.com/leanprover/lean4/issues/XXXX (String API proof support)
-
-Until then, these are axiomatized via `sorry`.
 -/
 
 /-- `toString` on `Nat` is injective (decimal representation is unique).
@@ -3698,8 +3696,6 @@ theorem genTyVar_genFresh'
     -- By String left-cancellation + Nat.toString injectivity, Env.genState.tyGen = n
     -- Left-cancel the common prefix to get toString equality,
     -- then Nat.toString injectivity gives k = n, contradicting h_ne.
-    -- Nat.toString_injective is defined later in the file and depends on
-    -- Nat.toDigits injectivity (sorry'd due to Lean 4 library gap).
     rw [String.ext_iff] at h_eq
     simp [String.toList_append] at h_eq
     exact absurd (Nat.toString_injective (String.toList_injective h_eq)) h_ne
