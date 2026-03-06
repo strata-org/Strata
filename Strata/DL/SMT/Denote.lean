@@ -381,14 +381,14 @@ Check that denoted argument types match declared variable types.
 If lengths differ, this returns `false`.
 -/
 @[simp]
-noncomputable def argTypesAlignAux (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
+noncomputable def argTypesAlign (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
   match as, vs with
   | [], [] => true
   | a :: as, v :: vs =>
-    a.ty == v.ty && argTypesAlignAux as vs
+    a.ty == v.ty && argTypesAlign as vs
   | _, _ => false
 
-private theorem argTypesAlignAux_true_with_len (h : argTypesAlignAux as vs) (hl : as.length = vs.length) :
+private theorem argTypesAlign_true_with_len (h : argTypesAlign as vs) (hl : as.length = vs.length) :
   ∀ i, (h : i < as.length) → as[i].ty = (vs[i]'(hl ▸ h)).ty := fun i hi =>
   match as, vs with
   | [], _ => nomatch h
@@ -399,24 +399,24 @@ private theorem argTypesAlignAux_true_with_len (h : argTypesAlignAux as vs) (hl 
     | 0 => eq_of_beq (Bool.and_eq_true_iff.mp h).left
     | i + 1 =>
       (List.getElem_cons_succ a as i hi).symm ▸ (List.getElem_cons_succ v vs i (hl ▸ hi)).symm ▸
-      argTypesAlignAux_true_with_len (Bool.and_eq_true_iff.mp h).right (Nat.succ.inj hl) i (Nat.lt_of_succ_lt_succ hi)
+      argTypesAlign_true_with_len (Bool.and_eq_true_iff.mp h).right (Nat.succ.inj hl) i (Nat.lt_of_succ_lt_succ hi)
 
-theorem argTypesAlignAux_length_eq (h : argTypesAlignAux as vs) : as.length = vs.length := by
+theorem argTypesAlign_length_eq (h : argTypesAlign as vs) : as.length = vs.length := by
   match as, vs with
   | [], [] => rfl
   | [], _ :: _ => contradiction
   | _ :: _, [] => contradiction
   | _ :: as, _ :: vs =>
-    have h' : as.length = vs.length := argTypesAlignAux_length_eq (Bool.and_eq_true_iff.mp h).right
+    have h' : as.length = vs.length := argTypesAlign_length_eq (Bool.and_eq_true_iff.mp h).right
     simpa using congrArg Nat.succ h'
 
-theorem argTypesAlignAux_true (h : argTypesAlignAux as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlignAux_length_eq h ▸ hi)).ty := by
-  exact argTypesAlignAux_true_with_len h (argTypesAlignAux_length_eq h)
+theorem argTypesAlign_true (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
+  exact argTypesAlign_true_with_len h (argTypesAlign_length_eq h)
 
-theorem argTypesAlignAux_arg_types (h : argTypesAlignAux as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlignAux_length_eq h ▸ hi)).ty := by
-  exact argTypesAlignAux_true h
+theorem argTypesAlign_arg_types (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
+  exact argTypesAlign_true h
 
 -- Note: `noncomputable` because of a compiler error
 /--
@@ -439,9 +439,22 @@ Apply the semantic interpretation of a UF symbol to denoted arguments.
 -/
 @[simp]
 noncomputable def applyUF (tdi : TermDenoteInput ctx) (uf : (denoteFunSort ctx.sctx args out).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
-  (as : List (TermDenoteResult ctx)) (hAlign : argTypesAlignAux as args) :
+  (as : List (TermDenoteResult ctx)) (hAlign : argTypesAlign as args) :
     (denoteSort ctx.sctx out).get (denoteSortOut_isSome_of_denoteFunSort_isSome h) ⟨tdi.sΓ, tdi.hsΓ⟩ :=
-  applyUFAux tdi uf as (argTypesAlignAux_length_eq hAlign).symm (argTypesAlignAux_arg_types hAlign)
+  applyUFAux tdi uf as (argTypesAlign_length_eq hAlign).symm (argTypesAlign_arg_types hAlign)
+
+/--
+Shape of a one-variable quantifier binder combinator (`∀` or `∃`).
+-/
+abbrev QuantVarBinder :=
+  {n : String} → {ty : TermType} → (ctx : Context) →
+    (hTy : (denoteSort ctx.sctx ty).isSome) →
+      let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
+      let v' := { id := n, ty := ty }
+      let vs' := v' :: ctx.tctx.vs
+      let tctx' := { ufs := ctx.tctx.ufs, vs := vs' }
+      (TermDenoteInput ⟨ctx.sctx, tctx'⟩ → Prop) →
+      TermDenoteInput ⟨ctx.sctx, tctx⟩ → Prop
 
 /--
 Semantics helper for universal quantification.
@@ -453,13 +466,7 @@ the term environment with the chosen value and carries the corresponding `WF`
 proof for the extended context.
 -/
 @[simp]
-def bindForallVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
-    let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
-    let v' := { id := n, ty := ty }
-    let vs' := v' :: ctx.tctx.vs
-    let tctx' := { ufs := ctx.tctx.ufs, vs := vs' }
-    (TermDenoteInput ⟨ctx.sctx, tctx'⟩ → Prop) →
-    TermDenoteInput ⟨ctx.sctx, tctx⟩ → Prop :=
+def bindForallVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
   let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
   let v' := { id := n, ty := ty }
   let vs' := v' :: ctx.tctx.vs
@@ -491,13 +498,7 @@ term environment with the chosen witness and carries the corresponding `WF`
 proof for the extended context.
 -/
 @[simp]
-def bindExistsVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
-    let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
-    let v' := { id := n, ty := ty }
-    let vs' := v' :: ctx.tctx.vs
-    let tctx' := { ufs := ctx.tctx.ufs, vs := vs' }
-    (TermDenoteInput ⟨ctx.sctx, tctx'⟩ → Prop) →
-    TermDenoteInput ⟨ctx.sctx, tctx⟩ → Prop :=
+def bindExistsVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
   let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
   let v' := { id := n, ty := ty }
   let vs' := v' :: ctx.tctx.vs
@@ -518,19 +519,6 @@ def bindExistsVar (ctx : Context) (hTy : (denoteSort ctx.sctx ty).isSome) :
       let tdi' : TermDenoteInput ⟨ctx.sctx, tctx'⟩ :=
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
-
-/--
-Shape of a one-variable quantifier binder combinator (`∀` or `∃`).
--/
-abbrev QuantVarBinder :=
-  {n : String} → {ty : TermType} → (ctx : Context) →
-    (hTy : (denoteSort ctx.sctx ty).isSome) →
-      let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
-      let v' := { id := n, ty := ty }
-      let vs' := v' :: ctx.tctx.vs
-      let tctx' := { ufs := ctx.tctx.ufs, vs := vs' }
-      (TermDenoteInput ⟨ctx.sctx, tctx'⟩ → Prop) →
-      TermDenoteInput ⟨ctx.sctx, tctx⟩ → Prop
 
 def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
@@ -599,7 +587,7 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
       match h : ctx.tctx.ufs.findIdx? (· == uf) with
       | some i =>
         let as ← denoteTerms ctx as
-        if hufas : argTypesAlignAux as uf.args then
+        if hufas : argTypesAlign as uf.args then
           have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp h).left
           have hiuf := of_decide_eq_true (List.getElem_of_findIdx?_eq_some h)
           let ft (tdi : TermDenoteInput ctx) :=
