@@ -6491,7 +6491,120 @@ private theorem resolveAux_output_type_no_future_vars :
       Env.context.types ≠ [] →
       ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
         ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  sorry
+  intro e; induction e with
+  | const m c =>
+    -- Output type is c.ty which is a ground type (bool, int, real, string, bitvec).
+    -- freeVars of ground types is [], so the goal is vacuously true.
+    intro et C Env Env' h h_envwf h_ne
+    simp [resolveAux, inferConst] at h
+    split at h
+    · simp [Bind.bind, Except.bind] at h
+      obtain ⟨h_et, _⟩ := h
+      intro v hv
+      rw [← h_et] at hv; simp [toLMonoTy] at hv
+      cases c with
+      | boolConst _ => simp [LConst.ty, LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+      | intConst _ => simp [LConst.ty, LMonoTy.int, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+      | realConst _ => simp [LConst.ty, LMonoTy.real, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+      | strConst _ => simp [LConst.ty, LMonoTy.string, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+      | bitvecConst _ _ => simp [LConst.ty, LMonoTy.freeVars] at hv
+    · exact absurd h (by simp [Bind.bind, Except.bind])
+  | bvar m i =>
+    -- resolveAux fails on bvar, contradiction
+    intro et C Env Env' h _ _
+    simp [resolveAux, Bind.bind, Except.bind] at h
+  | fvar m x fty =>
+    -- sorry: needs inferFVar_output_type_no_future_vars
+    intro et C Env Env' h h_envwf h_ne
+    sorry
+  | op m o oty =>
+    -- sorry: needs instantiateWithCheck_output_type_no_future_vars
+    intro et C Env Env' h h_envwf h_ne
+    sorry
+  | app m e1 e2 ih1 ih2 =>
+    -- sorry: needs SubstFreshForGen analysis of unification output
+    intro et C Env Env' h h_envwf h_ne
+    sorry
+  | abs m bty e_body ih =>
+    -- sorry: needs typeBoundVar + varOpen analysis
+    intro et C Env Env' h h_envwf h_ne
+    sorry
+  | quant m qk bty triggers e_body ih_triggers ih_body =>
+    -- sorry: needs typeBoundVar + varOpen analysis
+    intro et C Env Env' h h_envwf h_ne
+    sorry
+  | ite m c t e ih_c ih_t ih_e =>
+    -- Output type is tht.toLMonoTy (the then-branch metadata type).
+    -- Use IH on t (then-branch) and genState monotonicity.
+    intro et C Env Env' h h_envwf h_ne
+    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
+    -- Decompose: resolveAux C Env c
+    split at h
+    · simp at h
+    · rename_i v1 h_res_c
+      obtain ⟨ct, Env1⟩ := v1; dsimp at h h_res_c
+      -- Decompose: resolveAux C Env1 t
+      split at h
+      · simp at h
+      · rename_i v2 h_res_t
+        obtain ⟨tht, Env2⟩ := v2; dsimp at h h_res_t
+        -- Decompose: resolveAux C Env2 e
+        split at h
+        · simp at h
+        · rename_i v3 h_res_e
+          obtain ⟨elt, Env3⟩ := v3; dsimp at h h_res_e
+          -- Decompose: unify (mapError)
+          split at h
+          · simp at h
+          · rename_i v4 h_mapError
+            simp at h
+            obtain ⟨h_et, h_env'⟩ := h
+            -- The output type is tht.toLMonoTy
+            intro v hv n hn
+            rw [← h_et] at hv; simp [toLMonoTy] at hv
+            -- Env'.genState = Env3.genState (updateSubst preserves genEnv)
+            have h_gen_eq : Env'.genEnv.genState = Env3.genEnv.genState := by
+              rw [← h_env']; simp [TEnv.updateSubst]
+            rw [h_gen_eq] at hn
+            -- Env3.genState.tyGen ≥ Env2.genState.tyGen (monotonicity of resolveAux on e)
+            have h_mono_e := resolveAux_genState_mono e elt C Env2 Env3 h_res_e
+            -- So n ≥ Env2.genState.tyGen
+            have hn2 : n ≥ Env2.genEnv.genState.tyGen := Nat.le_trans h_mono_e hn
+            -- Build TEnvWF for Env1 to use IH on t
+            have h_ctx1 := resolveAux_context c ct C Env Env1 h_res_c h_ne
+            have h_ne1 := h_ctx1 ▸ h_ne
+            have h_aw := h_envwf.aliasesWF
+            have h_envwf1 : TEnvWF Env1 :=
+              { aliasesWF := h_ctx1 ▸ h_aw
+                substFreshForGen := resolveAux_preserves_SubstFreshForGen
+                  c ct C Env Env1 h_res_c h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne h_aw
+                ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _
+                  h_envwf.ctxFreshForGen (resolveAux_genState_mono c ct C Env Env1 h_res_c)
+                boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
+                ctxFreeVarsGenerated := transfer_ctxFreeVarsGenerated h_envwf.ctxFreeVarsGenerated h_ctx1 }
+            -- Apply IH on t (then-branch)
+            exact ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 v hv n hn2
+  | eq m e1 e2 ih1 ih2 =>
+    -- Output type is LMonoTy.bool, which has no free vars. Vacuously true.
+    intro et C Env Env' h h_envwf h_ne
+    simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_res1
+      obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
+      split at h
+      · simp at h
+      · rename_i v2 h_res2
+        obtain ⟨e2t, Env2⟩ := v2; dsimp at h h_res2
+        split at h
+        · simp at h
+        · rename_i v3 h_mapError
+          simp at h
+          obtain ⟨h_et, _⟩ := h
+          intro v hv
+          rw [← h_et] at hv; simp [toLMonoTy] at hv
+          -- LMonoTy.bool = tcons "bool" [], freeVars = []
+          simp [LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
 
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
