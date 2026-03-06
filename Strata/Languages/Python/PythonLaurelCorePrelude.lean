@@ -130,7 +130,7 @@ inline function isAttributeError (e: Error) : Any {
 }
 
 inline function isAssertionError (e: Error) : Any {
-  from_bool (Error..isAssertionError(e))
+  from_bool (Error..isAttributeError(e))
 }
 
 inline function isUnimplementedError (e: Error) : Any {
