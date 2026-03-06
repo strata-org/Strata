@@ -11,6 +11,7 @@ import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
@@ -116,12 +117,12 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   -- Dummy expression used as placeholder when an error is emitted in pure context
   let dummy := .fvar () (⟨s!"DUMMY_VAR_{env.length}", ()⟩) none
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
-  let disallowed (e : StmtExprMd) (msg : String) : TranslateM Core.Expression.Expr := do
+  let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
-      emitDiagnostic (e.md.toDiagnostic msg)
+      emitDiagnostic (md.toDiagnostic msg)
       return dummy
     else
-      panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format e)}"
+      panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format md)}"
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
@@ -187,7 +188,7 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
   | .StaticCall name args =>
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && !isCoreFunction funcNames name then
-        disallowed expr "calls to procedures are not supported in functions or contracts"
+        disallowed expr.md "calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨name, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
@@ -208,10 +209,29 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       let re2 ← translateExpr env e2 boundVars isPureContext
       return .eq () re1 re2
   | .Assign _ _ =>
-      disallowed expr "destructive assignments are not supported in functions or contracts"
+      disallowed expr.md "destructive assignments are not supported in functions or contracts"
   | .While _ _ _ _ =>
-      disallowed expr "loops are not supported in functions or contracts"
-  | .Exit _ => disallowed expr "exit is not supported in expression position"
+      disallowed expr.md "loops are not supported in functions or contracts"
+  | .Exit _ => disallowed expr.md "exit is not supported in expression position"
+
+  | .Block (⟨ .Assert _, md⟩ :: rest) label => do
+    _ ← disallowed md "asserts are not YET supported in functions or contracts"
+    translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
+  | .Block (⟨ .Assume _, md⟩ :: rest) label =>
+    _ ← disallowed md "assumes are not YET supported in functions or contracts"
+    translateExpr env ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
+  | .Block (⟨ .LocalVariable name ty (some initializer), md⟩ :: rest) label => do
+      let env' := (name, ty) :: env
+      let valueExpr ← translateExpr env initializer boundVars isPureContext
+      let bodyExpr ← translateExpr env' ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
+      disallowed md "local variables in functions are not YET supported"
+      -- This doesn't work because of a limitation in Core.
+      -- let coreMonoType := translateType ty
+      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
+  | .Block (⟨ .LocalVariable name ty none, md⟩ :: rest) label =>
+    disallowed md "local variables in functions must have initializers"
+  | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
+    disallowed md "if-then-else only supported as the last statement in a block"
 
   | .IsType _ _ => panic "IsType should have been lowered"
   | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
@@ -219,9 +239,9 @@ def translateExpr (env : TypeEnv) (expr : StmtExprMd)
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldName}"
-  | .Block _ _ => panic "block expression not yet implemented (should be lowered in a separate pass)"
+  | .Block _ _ => panic! "block expression should have been lowered in a separate pass"
   | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
-  | .Return _ => disallowed expr "return expression not yet implemented (should be lowered in a separate pass)"
+  | .Return _ => disallowed expr.md "return expression not yet implemented (should be lowered in a separate pass)"
 
   | .AsType target _ => panic "AsType expression not implemented"
   | .Assigned _ => panic "assigned expression not implemented"
@@ -280,29 +300,29 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       return (env', stmtsList)
   | .LocalVariable name ty initializer =>
       let env' := (name, ty) :: env
-      let boogieMonoType := translateType ty
-      let boogieType := LTy.forAll [] boogieMonoType
+      let coreMonoType := translateType ty
+      let coreType := LTy.forAll [] coreMonoType
       let ident := ⟨name, ()⟩
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
           if isCoreFunction functionNames callee then
             -- Translate as expression (function application)
-            let boogieExpr ← translateExpr env (⟨ .StaticCall callee args, callMd ⟩)
-            return (env', [Core.Statement.init ident boogieType (some boogieExpr) md])
+            let coreExpr ← translateExpr env (⟨ .StaticCall callee args, callMd ⟩)
+            return (env', [Core.Statement.init ident coreType (some coreExpr) md])
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr env a)
             let defaultExpr := defaultExprForType ty
-            let initStmt := Core.Statement.init ident boogieType (some defaultExpr) md
+            let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee coreArgs md
             return (env', [initStmt, callStmt])
       | some initExpr =>
           let coreExpr ← translateExpr env initExpr
-          return (env', [Core.Statement.init ident boogieType (some coreExpr) md])
+          return (env', [Core.Statement.init ident coreType (some coreExpr) md])
       | none =>
           let defaultExpr := defaultExprForType ty
-          return (env', [Core.Statement.init ident boogieType (some defaultExpr) md])
+          return (env', [Core.Statement.init ident coreType (some defaultExpr) md])
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier name, _ ⟩] =>
@@ -431,67 +451,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   return { header, spec, body }
 
 /--
-Check if a Laurel expression is pure (contains no side effects).
-Used to determine if a procedure can be translated as a Core function.
--/
-private def isPureExpr(expr: StmtExprMd): Bool :=
-  match _h : expr.val with
-  | .LiteralBool _ => true
-  | .LiteralInt _ => true
-  | .LiteralString _ => true
-  | .Identifier _ => true
-  | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .IfThenElse c t none => isPureExpr c && isPureExpr t
-  | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
-  | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .New _ => false
-  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
-  | .Block [single] _ => isPureExpr single
-  | .Block _ _ => false
-  -- Statement-like
-  | .LocalVariable .. => true
-  | .While .. => false
-  | .Exit .. => false
-  | .Return .. => false
-  -- Expression-like
-  | .Assign .. => false
-  | .FieldSelect .. => true
-  | .PureFieldUpdate .. => true
-  -- Instance related
-  | .This => panic s!"isPureExpr not implemented for This"
-  | .AsType .. => panic s!"isPureExpr not supported for AsType"
-  | .IsType .. => panic s!"isPureExpr not supported for IsType"
-  | .InstanceCall .. => panic s!"isPureExpr not implemented for InstanceCall"
-  -- Verification specific
-  | .Forall .. => panic s!"isPureExpr not implemented for Forall"
-  | .Exists .. => panic s!"isPureExpr not implemented for Exists"
-  | .Assigned .. => panic s!"isPureExpr not supported for AsType"
-  | .Old .. => panic s!"isPureExpr not supported for AsType"
-  | .Fresh .. => panic s!"isPureExpr not supported for AsType"
-  | .Assert .. => panic s!"isPureExpr not implemented for Assert"
-  | .Assume .. => panic s!"isPureExpr not implemented for Assume"
-  | .ProveBy .. => panic s!"isPureExpr not implemented for ProveBy"
-  | .ContractOf .. => panic s!"isPureExpr not implemented for ContractOf"
-  | .Abstract => panic s!"isPureExpr not implemented for Abstract"
-  | .All => panic s!"isPureExpr not implemented for All"
-  -- Dynamic / closures
-  | .Hole => true
-  termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
-
-/-- Check if a pure-marked procedure can actually be represented as a Core function:
-    transparent body that is a pure expression and has exactly one output. -/
-private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
-  match proc.body with
-  | .Transparent bodyExpr =>
-    isPureExpr bodyExpr &&
-    proc.outputs.length == 1
-  | .Opaque _ bodyExprOption _ =>
-    (bodyExprOption.map isPureExpr).getD true &&
-    proc.outputs.length == 1
-  | _ => false
-
-/--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
@@ -566,6 +525,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   dbg_trace "================================="
   let program := liftImperativeExpressions program
+  let program := eliminateReturnsInExpressionTransform program
   -- Collect field names from the Field datatype (generated by heapParameterization)
   let fieldNames : List Identifier := program.types.foldl (fun acc td =>
     match td with
