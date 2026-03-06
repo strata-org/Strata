@@ -479,7 +479,7 @@ partial def unifyTypes
       let .ofTypeInfo info := t.info
         | panic! "Expected type info"
       if !(← checkExpressionType tctx inferredType info.typeExpr) then
-        logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected."
+        logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected." (globalContext? := some tctx.globalContext)
       pure args
   | .tvar _ _ =>
     -- tvar nodes are passed through without attempting unification
@@ -878,6 +878,23 @@ def evalBindingSpec
             | _ =>
               panic! "Bad arg"
     pure <| tctx.push { ident, kind := .type loc params value }
+  | .scopedType b =>
+    let ident := evalBindingNameIndex args b.nameIndex
+    let params ← elabTypeParams initSize args b.argsIndex
+    let value : Option TypeExpr :=
+          match b.defIndex with
+          | none => none
+          | some idx =>
+            match args[idx.toLevel].info with
+            | .ofTypeInfo info =>
+              some info.typeExpr
+            | _ =>
+              panic! "Bad arg"
+    -- For scoped types, add to global context instead of local bindings
+    let gctx := tctx.globalContext
+    let gkind := GlobalKind.type params value
+    let newGctx := gctx.ensureDefined ident gkind
+    pure (tctx.withGlobalContext newGctx)
   | .datatype b =>
     let nameInfo := args[b.nameIndex.toLevel].info
     let (nameLoc, ident) ←
