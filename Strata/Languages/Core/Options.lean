@@ -52,10 +52,11 @@ instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
 /-- Default SMT solver to use -/
 def defaultSolver : String := "cvc5"
 
-/-- Check amount: how much information to gather -/
+/-- Check level: how much information to gather and display -/
 inductive CheckLevel where
-  | minimal  -- Only checks needed for check mode
-  | full     -- Both checks for more informative messages
+  | minimal         -- One check, simple messages (pass/fail/unknown)
+  | minimalVerbose  -- One check, detailed messages (always true if reached, etc.)
+  | full            -- Both checks, detailed messages (all 9 outcomes)
   deriving Inhabited, Repr, DecidableEq
 
 structure VerifyOptions where

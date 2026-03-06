@@ -279,12 +279,8 @@ def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) 
     (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
-  -- Handle unreachable specially in both modes
-  if o.unreachable then
-    if property == .assert then "pass (❗path unreachable)"
-    else "fail (❗path unreachable)"
-  -- Simplified labels for minimal check amount
-  else if checkLevel == .minimal then
+  -- Simplified labels for minimal check level
+  if checkLevel == .minimal then
     match property, checkMode with
     | .assert, .deductive =>
       -- Validity check only: unsat=pass, sat=fail, unknown=unknown
@@ -307,10 +303,14 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .unsat => "fail"
       | .unknown => "unknown"
       | .err _ => "unknown"
+  -- MinimalVerbose and Full: detailed labels with unreachable indicator
   else
-    -- Full check amount: detailed labels
+    -- Handle unreachable specially
+    if o.unreachable then
+      if property == .assert then "pass (❗path unreachable)"
+      else "fail (❗path unreachable)"
     -- For cover: satisfiability sat means the cover is satisfied (pass)
-    if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
+    else if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
     else if o.passAndReachable then "always true and is reachable from declaration entry"
     else if o.alwaysFalseAndReachable then "always false and is reachable from declaration entry"
     else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
@@ -323,7 +323,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
-  -- Simplified emojis for minimal check amount
+  -- Simplified emojis for minimal check level
   if checkLevel == .minimal then
     match property, checkMode with
     | .assert, .deductive =>
@@ -347,17 +347,15 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .unsat => "❌"
       | .unknown => "❓"
       | .err _ => "❓"
+  -- MinimalVerbose and Full: detailed emojis
   else
-    -- Full check amount: detailed emojis
-    -- Special case: unreachable assert in full mode shows as pass
-    if property == .assert && o.unreachable then "✅"
-    -- For cover: satisfiability sat means the cover is satisfied (pass)
+    -- Handle unreachable specially
+    if o.unreachable then
+      if property == .assert then "✅" else "❌"
     else if property == .cover && o.isSatisfiable then "✅"
     else if o.passAndReachable then "✅"
     else if o.alwaysFalseAndReachable then "❌"
     else if o.canBeTrueOrFalseAndIsReachable then "🔶"
-    else if o.unreachable then
-      if property == .cover then "❌" else "⛔"
     else if o.satisfiableValidityUnknown then "➕"
     else if o.alwaysFalseReachabilityUnknown then "✖️"
     else if o.canBeFalseAndIsReachable then "➖"
@@ -592,14 +590,18 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
         if Imperative.MetaData.hasFullCheck obligation.metadata then
           (true, true)  -- fullCheck annotation: always run both
         else
-          -- Derive checks from check mode and amount
+          -- Derive checks from check mode and level
           match options.checkMode, options.checkLevel, obligation.property with
           | _, .full, _ => (true, true)  -- Full: both checks
           | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
           | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
+          | .deductive, .minimalVerbose, .assert => (false, true)  -- Same checks as minimal
           | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
+          | .deductive, .minimalVerbose, .cover => (true, false)   -- Same checks as minimal
           | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
+          | .bugFinding, .minimalVerbose, .assert => (true, false) -- Same checks as minimal
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
+          | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
       -- If PE resolved both checks, we're done
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then

@@ -130,7 +130,7 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
+#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
 
@@ -172,18 +172,18 @@ Result: ❌ fail (❗path unreachable)
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✅ pass
+Result: ✅ always true and is reachable from declaration entry
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ✅ pass
+Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ❌ fail
+Result: ❌ always false and is reachable from declaration entry
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
+#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
 
@@ -214,7 +214,7 @@ procedure Test() returns ()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass
 
 Obligation: no_rc_assert
 Property: assert
@@ -222,7 +222,7 @@ Result: ✅ pass
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail
 
 Obligation: no_rc_cover
 Property: cover
@@ -256,7 +256,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
+  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -305,6 +305,34 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
+#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
+
+---------------------------------------------------------------------
+
+-- Test: minimalVerbose check level shows detailed messages with one check
+def minimalVerbosePgm :=
+#strata
+program Core;
+procedure Test() returns ()
+{
+  var x : int;
+  assume (x > 0);
+  assert [test_pass]: (x >= 0);
+  assert [test_fail]: (x < 0);
+};
+#end
+
+/--
+info:
+Obligation: test_pass
+Property: assert
+Result: ✔️ always true if reached
+
+Obligation: test_fail
+Property: assert
+Result: ➖ can be false and is reachable from declaration entry
+-/
+#guard_msgs in
+#eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose})

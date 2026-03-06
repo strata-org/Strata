@@ -48,8 +48,9 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
       | opts, "--check-level" :: levelStr :: rest, procs =>
          match levelStr with
          | "minimal" => go {opts with checkLevel := .minimal} rest procs
+         | "minimalVerbose" => go {opts with checkLevel := .minimalVerbose} rest procs
          | "full" => go {opts with checkLevel := .full} rest procs
-         | _ => .error f!"Invalid check level: {levelStr}. Must be 'minimal' or 'full'."
+         | _ => .error f!"Invalid check level: {levelStr}. Must be 'minimal', 'minimalVerbose', or 'full'."
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -70,7 +71,7 @@ def usageMessage : Std.Format :=
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
   --check-mode <mode>         Check mode: 'deductive' (default, prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions).{Std.Format.line}  \
-  --check-level <level>       Check level: 'minimal' (default, only necessary checks) or 'full' (both checks for better messages)."
+  --check-level <level>       Check level: 'minimal' (default, simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
