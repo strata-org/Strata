@@ -3,9 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.Program
-import Strata.DL.Imperative.Imperative
+public import Strata.Backends.CBMC.GOTO.Program
+public import Strata.DL.Imperative.Imperative
+import all Strata.DL.Imperative.Stmt
 import Strata.Util.FileRange
 
 open Std (ToFormat Format format)
@@ -37,6 +39,8 @@ The following Imperative constructs are not yet fully translated to GOTO:
 namespace Imperative
 
 open CProverGOTO
+
+public section
 
 class ToGoto (P : PureExpr) where
   -- NOTE: `lookupType` and `updateType` correspond to the functions `lookup`
@@ -358,7 +362,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     -- Function declarations are not yet supported in GOTO translation
     .error "funcDecl: Unimplemented statement."
 termination_by Stmt.sizeOf s
-decreasing_by all_goals simp [*] at * <;> omega
+decreasing_by all_goals simp_all <;> omega
 
 /--
 Convert a block (list of statements) to GOTO instructions.
@@ -372,7 +376,7 @@ def Block.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let new_trans ← Stmt.toGotoInstructions T functionName s trans
     Block.toGotoInstructions T functionName rest new_trans
 termination_by Block.sizeOf stmts
-decreasing_by all_goals simp [*] at * <;> omega
+decreasing_by all_goals simp_all <;> omega
 end
 
 /--
@@ -393,3 +397,5 @@ def Stmts.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident] (T : P.TyEnv)
     return trans
 
 -------------------------------------------------------------------------------
+
+end -- public section

@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.PureExpr
 
 namespace Imperative
+
+public section
 
 /-! # Pure Expression Variable Lookup : HasVarsPure -/
 
@@ -43,6 +46,7 @@ class HasVarsTrans
   allVarsTrans : (String → Option PT) → α → List P.Ident
   := λ π a ↦ modifiedVarsTrans π a ++ getVarsTrans π a
 
-abbrev HasVarsProcTrans (P : PureExpr) (PT : Type) := HasVarsTrans P PT PT
+@[expose] abbrev HasVarsProcTrans (P : PureExpr) (PT : Type) := HasVarsTrans P PT PT
 
+end -- public section
 end Imperative
