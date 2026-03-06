@@ -3792,6 +3792,53 @@ private theorem inferFVar_preserves_SubstFreshForGen
         exact h_ty_fresh n (Nat.le_trans
           (LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_inst2) hn))
 
+private theorem not_mem_go_find_none
+    (types : Maps (Identifier IDMeta) LTy) (xv : Identifier IDMeta)
+    (h : xv ∉ TContext.knownVars.go types) :
+    ∀ m, m ∈ types → Map.find? m xv = none := by
+  induction types with
+  | nil => intro m hm; contradiction
+  | cons hd tl ih =>
+    simp only [TContext.knownVars.go, List.mem_append, not_or] at h
+    intro m hm; cases hm with
+    | head => exact Map.find?_none_of_not_mem_keys' _ xv h.1
+    | tail _ h_tl => exact ih h.2 m h_tl
+
+/-- If `xv ∉ knownVars ctx`, then `Map.find? m xv = none` for all `m ∈ ctx.types`. -/
+private theorem not_mem_knownVars_find_none
+    (ctx : TContext IDMeta) (xv : Identifier IDMeta)
+    (h : xv ∉ TContext.knownVars ctx) :
+    ∀ m, m ∈ ctx.types → Map.find? m xv = none :=
+  not_mem_go_find_none ctx.types xv (by simp only [TContext.knownVars] at h; exact h)
+
+/-- The variable `xv` produced by `typeBoundVar` is fresh in the input context:
+    it does not appear as a key in any map of `Env.context.types`. -/
+private theorem typeBoundVar_xv_fresh_in_context
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1)) :
+    ∀ m, m ∈ Env.context.types → Map.find? m xv = none := by
+  -- Decompose typeBoundVar (without unfolding liftGenEnv) to extract xv
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  -- xv_raw is fresh in Env.context via liftGenEnv_genVar_fresh
+  have h_fresh := liftGenEnv_genVar_fresh Env xv_raw Env_g h_gen
+  -- Extract xv = xv_raw
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h; split at h; · simp at h
+    rename_i v_ic _; obtain ⟨_, _⟩ := v_ic
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, _, _⟩ := h; subst h_xv
+    exact not_mem_knownVars_find_none Env.context xv_raw h_fresh
+  | none =>
+    simp only [Bind.bind, Except.bind]; intro h; split at h; · simp at h
+    rename_i v_tg _; obtain ⟨_, _⟩ := v_tg
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨h_xv, _, _⟩ := h; subst h_xv
+    exact not_mem_knownVars_find_none Env.context xv_raw h_fresh
+
 /-- `typeBoundVar` always produces an environment with non-empty `context.types`,
     because it applies `addInNewestContext` which uses `Maps.addInNewest`. -/
 private theorem typeBoundVar_context_types_ne_nil
@@ -4263,7 +4310,7 @@ theorem resolveAux_context :
                 rw [varOpen_sizeOf]; simp [LExpr.sizeOf])
             et_ C Env1 Env2 h_ra h_ne1
         exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env2 h_ctx_ra
-          (by sorry) -- xv is fresh in Env.context
+          (typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv)
           h_ne
   | .quant m qk bty triggers body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
