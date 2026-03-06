@@ -1157,6 +1157,7 @@ theorem LTy.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
 
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
   [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+  [Std.ToFormat T.Metadata]
 
 /-!
 ### Definitions and lemmas for the `resolveAux`-based proof strategy
@@ -7120,7 +7121,7 @@ private theorem instantiateWithCheck_AnnotCompat [Std.ToFormat T.Metadata]
     · rename_i hS; simp at h; rw [h]; exact (LMonoTy.subst_emptyS hS).symm
     · simp [LMonoTys.subst.substAux] at h; exact h
   subst h_eq
-  exact ⟨_, h_alias⟩
+  exact ⟨_, h_ie_ctx ▸ h_alias⟩
 
 /-- `typeBoundVar` with a `some` annotation produces a type that is
     `AnnotCompat` with the annotation. -/
