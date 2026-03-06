@@ -143,7 +143,7 @@ def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
   | .loop _ _ _ bss _ => Block.noFuncDecl bss
   | .exit _ _ => true
   | .funcDecl _ _ => false
-  | .typeDecl _ _ => true  -- Type declarations are allowed
+  | .typeDecl _ _ => true
   termination_by (Stmt.sizeOf s)
 
 /-- Returns true if the block contains no function declarations. -/
