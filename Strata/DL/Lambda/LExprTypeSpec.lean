@@ -6224,21 +6224,25 @@ private theorem HasType_tinst_all
       simp only [List.zip_cons_cons] at h_ih ⊢
       exact h_ih
 
-/--
-Helper: `LTy.instantiate` preserves HasType by repeated tinst.
-If `e` has type `ty` and `instantiate ty` produces monotype `mty`,
-then `e` has type `(.forAll [] mty)`.
-For monomorphic types this is immediate; for polymorphic types this
-follows from applying `tinst` for each bound variable.
--/
+/-- Each var produced by `genTyVars` is `tyPrefix ++ toString k` for some
+    `k ≥ Env.genState.tyGen`. -/
+private theorem TGenEnv.genTyVars_is_genName
+    (n : Nat) (Env : TGenEnv T.IDMeta) (tvs : List TyIdentifier) (Env' : TGenEnv T.IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env'))
+    (tv : TyIdentifier) (h_mem : tv ∈ tvs) :
+    ∃ k, k ≥ Env.genState.tyGen ∧ tv = TState.tyPrefix ++ toString k := by
+  -- Each genTyVar produces tyPrefix ++ toString genState.tyGen, then increments.
+  -- By induction on n, each tv in the output list has such a name.
+  sorry
+
 private theorem HasType_LTy_instantiate
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
     (mty : LMonoTy) (genEnv genEnv' : TGenEnv T.IDMeta)
     (h_ty : HasType C Γ e ty)
     (h_inst : LTy.instantiate ty genEnv = .ok (mty, genEnv'))
     (h_nodup : (LTy.boundVars ty).Nodup)
-    (h_bv_known : ∀ v, v ∈ LTy.boundVars ty →
-      v ∈ TContext.knownTypeVars genEnv.context) :
+    (h_bv_fresh : ∀ v, v ∈ LTy.boundVars ty →
+      ∀ n, n ≥ genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) :
     HasType C Γ e (.forAll [] mty) := by
   -- Case analysis on ty
   cases ty with
@@ -6271,16 +6275,16 @@ private theorem HasType_LTy_instantiate
         simp [List.mem_map] at ht
         obtain ⟨tv, htv_mem, h_tv⟩ := ht
         rw [← h_tv]; simp [LMonoTy.freeVars]
-        -- v ∈ (x :: xs) = boundVars ty, so v ∈ knownTypeVars genEnv.context
-        have h_v_known : v ∈ TContext.knownTypeVars genEnv.context := by
-          apply h_bv_known
-          show v ∈ LTy.boundVars (.forAll (x :: xs) body)
+        -- v ∈ (x :: xs) = boundVars ty
+        have h_v_bv : v ∈ LTy.boundVars (.forAll (x :: xs) body) := by
           simp [LTy.boundVars]; exact List.mem_cons.mp hv
-        -- tv ∈ freshtvs, so tv ∉ knownTypeVars genEnv.context
-        have h_tv_not : tv ∉ TContext.knownTypeVars genEnv.context :=
-          TGenEnv.genTyVars_not_mem_knownTypeVars _ genEnv freshtvs genEnv1 h_gen tv htv_mem
-        -- Therefore v ≠ tv
-        exact fun h_eq => h_tv_not (h_eq ▸ h_v_known)
+        -- tv ∈ freshtvs, so tv = tyPrefix ++ toString k for some k ≥ genEnv.genState.tyGen
+        -- (each genTyVar output is tyPrefix ++ toString genState.tyGen, then counter increments)
+        have h_tv_is_gen := TGenEnv.genTyVars_is_genName
+          (x :: xs).length genEnv freshtvs genEnv1 h_gen tv htv_mem
+        obtain ⟨k, h_k_ge, h_tv_eq⟩ := h_tv_is_gen
+        -- v ≠ tv: h_bv_fresh says v ≠ tyPrefix ++ toString k for k ≥ genState.tyGen
+        exact fun h_eq => absurd (h_tv_eq ▸ h_eq) (h_bv_fresh v h_v_bv k h_k_ge)
       · exact h_ty
 
 
@@ -6867,8 +6871,8 @@ theorem instantiateWithCheck_fvar_HasType
     (h_ctx : Env.context = Γ)
     (h_inst : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
     (h_nodup : (LTy.boundVars ty).Nodup)
-    (h_bv_known : ∀ v, v ∈ LTy.boundVars ty →
-      v ∈ TContext.knownTypeVars Env.genEnv.context)
+    (h_bv_fresh : ∀ v, v ∈ LTy.boundVars ty →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n)
     (h_aliases_wf : TContext.AliasesWF Γ) :
     HasType C Γ (.fvar m x none)
       (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty)) := by
@@ -6898,7 +6902,7 @@ theorem instantiateWithCheck_fvar_HasType
         have h_tvar := HasType.tvar (C := C) Γ m x ty h_find
         -- Step 2: tinst chain gives HasType for (.forAll [] mty_inst)
         have h_mono := HasType_LTy_instantiate C Γ (.fvar m x none) ty mty_inst
-          Env.genEnv genEnv' h_tvar h_inst_inner h_nodup h_bv_known
+          Env.genEnv genEnv' h_tvar h_inst_inner h_nodup h_bv_fresh
         -- Step 3: All substitution keys are fresh in Γ (being proved elsewhere)
         have h_fresh : Subst.allKeysFresh Env_ra.stateSubstInfo.subst Γ := by
           sorry -- Needs: freshness property of genTyVar / resolveAliases
@@ -6956,6 +6960,9 @@ theorem inferFVar_HasType
     (h : inferFVar C Env x fty = .ok (ty_res, Env'))
     (h_bvnd : ∀ y ty, Env.context.types.find? y = some ty →
       (LTy.boundVars ty).Nodup)
+    (h_bvf : ∀ y ty, Env.context.types.find? y = some ty →
+      ∀ v, v ∈ LTy.boundVars ty →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n)
     (h_aw : TContext.AliasesWF Env.context) :
     Env'.context = Env.context ∧
     HasType C (Env.context) (.fvar m x fty)
@@ -6979,11 +6986,8 @@ theorem inferFVar_HasType
           exact LTy_instantiateWithCheck_context ty C Env mty Env1 h_inst
         · -- Typing: delegate to instantiateWithCheck_fvar_HasType
           have h_nd := h_bvnd x ty h_find
-          -- needs reworking: old boundVarsWF h_bv_known condition removed
-          have h_bvk : ∀ v, v ∈ LTy.boundVars ty →
-            v ∈ TContext.knownTypeVars Env.genEnv.context := by sorry
           exact instantiateWithCheck_fvar_HasType C Env.context x ty mty Env Env1 m
-            h_find rfl h_inst h_nd h_bvk h_aw
+            h_find rfl h_inst h_nd (h_bvf x ty h_find) h_aw
       · -- Case fty = some fty_val
         rename_i fty_val
         split at h
@@ -7167,12 +7171,12 @@ theorem resolveAux_HasType :
       simp [toLMonoTy]
       constructor
       · -- Context preservation from inferFVar
-        exact (inferFVar_HasType C Env x fty ty_res Env_res m h_infer h_envwf.boundVarsNodup h_envwf.aliasesWF).1
+        exact (inferFVar_HasType C Env x fty ty_res Env_res m h_infer h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF).1
       · -- Typing under arbitrary absorbing S
         intro S h_abs_S h_wf_S
         -- We have: HasType ... (subst Env_res.subst ty_res) from inferFVar_HasType
         have ⟨_, h_ty⟩ := inferFVar_HasType C Env x fty ty_res Env_res m h_infer
-          h_envwf.boundVarsNodup h_envwf.aliasesWF
+          h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF
         -- Upgrade: subst S (subst Env_res ty_res) = subst S ty_res (by absorption)
         have h1 := HasType_subst_fresh_all C Env.context (.fvar m x fty)
           (LMonoTy.subst Env_res.stateSubstInfo.subst ty_res) S h_ty
