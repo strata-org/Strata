@@ -68,7 +68,7 @@ function increment(heap: Heap): Heap {
 // because Laurel's grammar also parses # signs
 // Having this datatype here brings the parser in a state where it won't consume the #
 // A fix would be to require ';' after the body of functions/procedures
-datatype Workaround  {}
+datatype Workaround2  {}
 #end
 
 /-- The Laurel Core prelude as a Laurel Program. -/
