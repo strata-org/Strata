@@ -5094,39 +5094,76 @@ private theorem LMonoTys.freeVars_append (xs ys : LMonoTys) :
   | nil => simp [LMonoTys.freeVars]
   | cons x xrest ih => simp [LMonoTys.freeVars, ih, List.append_assoc]
 
-private theorem LMonoTy.freeVars_destructArrow_subset (mty : LMonoTy) :
-    LMonoTys.freeVars (LMonoTy.destructArrow mty) ⊆ LMonoTy.freeVars mty := by
+-- Combined proof by well-founded induction on sizeOf, proving both single-type
+-- and list versions together.
+mutual
+private def mtySize (mty : LMonoTy) : Nat :=
   match mty with
-  | .ftvar _ | .bitvec _ =>
-    simp [LMonoTy.destructArrow, LMonoTys.freeVars, LMonoTy.freeVars]
-  | .tcons "arrow" (a :: rest) =>
-    simp only [LMonoTy.destructArrow, LMonoTy.freeVars, LMonoTys.freeVars]
-    intro x hx
-    rcases List.mem_append.mp hx with h1 | h2
-    · exact List.mem_append_left _ h1
-    · exact List.mem_append_right _ (sorry) -- needs LMonoTys.freeVars_destructArrow_subset
-  | .tcons _ _ =>
-    intro x hx
-    unfold LMonoTy.destructArrow at hx
-    split at hx
-    · rename_i th tl heq
-      rw [heq]; simp only [LMonoTy.freeVars, LMonoTys.freeVars] at hx ⊢
-      rcases List.mem_append.mp hx with h1 | h2
-      · exact List.mem_append_left _ h1
-      · exact List.mem_append_right _ (sorry) -- needs LMonoTys.freeVars_destructArrow_subset
-    · simp [LMonoTys.freeVars] at hx; exact hx
+  | .ftvar _ => 1
+  | .bitvec _ => 1
+  | .tcons _ args => 1 + mtysSize args
+private def mtysSize (mtys : LMonoTys) : Nat :=
+  match mtys with
+  | [] => 0
+  | mty :: rest => 1 + mtySize mty + mtysSize rest
+end
+
+private theorem freeVars_destructArrow_subset_combined (n : Nat) :
+    (∀ (mty : LMonoTy), mtySize mty ≤ n →
+      LMonoTys.freeVars (LMonoTy.destructArrow mty) ⊆ LMonoTy.freeVars mty) ∧
+    (∀ (mtys : LMonoTys), mtysSize mtys ≤ n →
+      LMonoTys.freeVars (LMonoTys.destructArrow mtys) ⊆ LMonoTys.freeVars mtys) := by
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  refine ⟨?_, ?_⟩
+  · -- Single type case
+    intro mty h_sz
+    unfold LMonoTy.destructArrow
+    split
+    · -- arrow case: tcons "arrow" (t1 :: trest) => t1 :: LMonoTys.destructArrow trest
+      rename_i t1 trest
+      simp only [LMonoTys.freeVars, LMonoTy.freeVars]
+      intro x hx
+      cases List.mem_append.mp hx with
+      | inl h1 => exact List.mem_append_left _ h1
+      | inr h2 =>
+        -- Need: LMonoTys.freeVars (LMonoTys.destructArrow trest) ⊆ LMonoTys.freeVars trest
+        have h_trest_sz : mtysSize trest < n := by
+          simp only [mtySize, mtysSize] at h_sz ⊢
+          omega
+        have := (ih (mtysSize trest) h_trest_sz).2 trest (Nat.le_refl _)
+        exact List.mem_append_right _ (this h2)
+    · -- non-arrow case: returns [mty]
+      simp [LMonoTys.freeVars, List.Subset]
+  · -- List case
+    intro mtys h_sz
+    match mtys with
+    | [] => simp [LMonoTys.destructArrow, LMonoTys.freeVars, List.Subset]
+    | mty :: mrest =>
+      simp only [LMonoTys.destructArrow, LMonoTys.freeVars]
+      rw [LMonoTys.freeVars_append]
+      intro x hx
+      cases List.mem_append.mp hx with
+      | inl h1 =>
+        -- Use IH on mty (mtySize mty < mtysSize (mty :: mrest))
+        have h_mty_sz : mtySize mty < n := by
+          simp only [mtysSize] at h_sz
+          omega
+        exact List.mem_append_left _ ((ih (mtySize mty) h_mty_sz).1 mty (Nat.le_refl _) h1)
+      | inr h2 =>
+        -- Use IH on mrest (mtysSize mrest < mtysSize (mty :: mrest))
+        have h_mrest_sz : mtysSize mrest < n := by
+          simp only [mtysSize] at h_sz
+          omega
+        exact List.mem_append_right _ ((ih (mtysSize mrest) h_mrest_sz).2 mrest (Nat.le_refl _) h2)
+
+private theorem LMonoTy.freeVars_destructArrow_subset (mty : LMonoTy) :
+    LMonoTys.freeVars (LMonoTy.destructArrow mty) ⊆ LMonoTy.freeVars mty :=
+  (freeVars_destructArrow_subset_combined (mtySize mty)).1 mty (Nat.le_refl _)
 
 private theorem LMonoTys.freeVars_destructArrow_subset (mtys : LMonoTys) :
-    LMonoTys.freeVars (LMonoTys.destructArrow mtys) ⊆ LMonoTys.freeVars mtys := by
-  induction mtys with
-  | nil => simp [LMonoTys.destructArrow, LMonoTys.freeVars]
-  | cons mty mrest ih =>
-    simp only [LMonoTys.destructArrow, LMonoTys.freeVars]
-    rw [LMonoTys.freeVars_append]
-    intro x hx
-    rcases List.mem_append.mp hx with h1 | h2
-    · exact List.mem_append_left _ (LMonoTy.freeVars_destructArrow_subset mty h1)
-    · exact List.mem_append_right _ (ih h2)
+    LMonoTys.freeVars (LMonoTys.destructArrow mtys) ⊆ LMonoTys.freeVars mtys :=
+  (freeVars_destructArrow_subset_combined (mtysSize mtys)).2 mtys (Nat.le_refl _)
 
 /-- Factory function types produced by `LFunc.type` have empty `freeVars`
     when the function satisfies `LFuncWF`. -/
