@@ -4651,7 +4651,10 @@ theorem resolveAux_absorbs :
       (Subst.absorbs_trans
         Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
         (ih1 e1t C Env Env1 h_res1 h_env_fresh)
-        (ih2 e2t C Env1 Env2 h_res2 ⟨h_fresh1, sorry⟩))
+        (ih2 e2t C Env1 Env2 h_res2
+          ⟨h_fresh1, (resolveAux_context e1 e1t C Env Env1 h_res1) ▸
+            ContextFreshForGen.mono _ _ _ h_env_fresh.2
+              (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)⟩))
       (unify_absorbs _ _ _ h_unify)
   | ite m c t e ih_c ih_t ih_e =>
     intro et C Env Env' h h_env_fresh
@@ -4666,10 +4669,16 @@ theorem resolveAux_absorbs :
     rename_i v4 h_mapError
     simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]; simp [TEnv.updateSubst]
     have h_unify := unify_of_mapError h_mapError
+    have h_ctx1 : ContextFreshForGen Env1.context Env1.genEnv.genState :=
+      (resolveAux_context c ct C Env Env1 h_res_c) ▸
+        ContextFreshForGen.mono _ _ _ h_env_fresh.2 (resolveAux_genState_mono c ct C Env Env1 h_res_c)
     have h_fresh1 := resolveAux_preserves_SubstFreshForGen
       c ct C Env Env1 h_res_c h_env_fresh.1 h_env_fresh.2
+    have h_ctx2 : ContextFreshForGen Env2.context Env2.genEnv.genState :=
+      (resolveAux_context t tht C Env1 Env2 h_res_t) ▸
+        ContextFreshForGen.mono _ _ _ h_ctx1 (resolveAux_genState_mono t tht C Env1 Env2 h_res_t)
     have h_fresh2 := resolveAux_preserves_SubstFreshForGen
-      t tht C Env1 Env2 h_res_t h_fresh1 sorry
+      t tht C Env1 Env2 h_res_t h_fresh1 h_ctx1
     exact Subst.absorbs_trans
       Env.stateSubstInfo.subst Env3.stateSubstInfo.subst v4.subst
       (Subst.absorbs_trans
@@ -4677,9 +4686,9 @@ theorem resolveAux_absorbs :
         (Subst.absorbs_trans
           Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
           (ih_c ct C Env Env1 h_res_c h_env_fresh)
-          (ih_t tht C Env1 Env2 h_res_t ⟨h_fresh1, sorry⟩))
-        (ih_e elt C Env2 Env3 h_res_e ⟨h_fresh2, sorry⟩))
-              (unify_absorbs _ _ _ h_unify)
+          (ih_t tht C Env1 Env2 h_res_t ⟨h_fresh1, h_ctx1⟩))
+        (ih_e elt C Env2 Env3 h_res_e ⟨h_fresh2, h_ctx2⟩))
+      (unify_absorbs _ _ _ h_unify)
 
 /--
 Upgrade lemma: if `e` has type `subst S_inner mty` and `S_outer` absorbs
