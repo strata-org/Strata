@@ -213,19 +213,6 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ e (.forAll [] mty) →
             HasType C Γ e (.forAll [] mty')
 
-  /-- Full alias resolution preserves typing. This is stronger than `talias`
-  because `resolveAliases` combines alias expansion with fresh variable
-  instantiation and unification, which goes beyond pure alias equivalence.
-  The `ToFormat` instance is existentially quantified since it's only needed
-  operationally. -/
-  | talias_resolve : ∀ Γ e mty mty',
-            (∃ (inst : _root_.Std.ToFormat T.IDMeta)
-               (Env Env' : _root_.Lambda.TEnv T.IDMeta),
-              Γ.aliases = Env.context.aliases ∧
-              _root_.Lambda.TContext.AliasesWF Γ ∧
-              @LMonoTy.resolveAliases T.IDMeta inst mty Env = .ok (mty', Env')) →
-            HasType C Γ e (.forAll [] mty) →
-            HasType C Γ e (.forAll [] mty')
 
 /--
 If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
@@ -2630,8 +2617,9 @@ theorem LMonoTy.resolveAliases_allKeysFresh
       simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
       split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
       -- Env' = Env1 (tconsAliasSimple doesn't change Env). Delegate to list version.
-      -- Env' = Env1 (tconsAliasSimple doesn't change Env). Delegate to list version.
-      all_goals sorry -- Needs LMonoTys.resolveAliases_allKeysFresh (forward ref in mutual)
+      <;> exact LMonoTys.resolveAliases_allKeysFresh args Env args' Env1 h_args
+          h_fresh h_vals_fresh h_alias_wf
+          (fun tv htv => h_fvs tv (by simp [LMonoTy.freeVars]; exact htv))
 
 /-- `LMonoTy.resolveAliases` preserves substitution value freshness. -/
 theorem LMonoTy.resolveAliases_vals_fresh
@@ -2661,7 +2649,9 @@ theorem LMonoTy.resolveAliases_vals_fresh
       simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
       split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
       -- Env' = Env1 (tconsAliasSimple doesn't change Env). Delegate to list version.
-      all_goals sorry -- Needs LMonoTys.resolveAliases_vals_fresh (forward ref in mutual)
+      <;> exact LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args
+          h_vals_fresh h_alias_wf
+          (fun tv htv => h_fvs tv (by simp [LMonoTy.freeVars]; exact htv))
 
 /-- `LMonoTys.resolveAliases` preserves key freshness. -/
 theorem LMonoTys.resolveAliases_allKeysFresh
@@ -2776,8 +2766,25 @@ theorem LMonoTy.resolveAliases_fvs_fresh
       obtain ⟨args', Env1⟩ := v1; simp at h h_args_ra
       -- tconsAliasSimple doesn't change Env; proof simplified
       simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
-      split at h <;> (simp at h; obtain ⟨h1, _⟩ := h; subst h1)
-      all_goals sorry
+      have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
+          TContext.isFresh (T := T) tv Env.context := by
+        intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
+      have h_args'_fresh :=
+        LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args_ra
+          h_vals_fresh h_alias_wf h_args_fvs
+      have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args_ra
+      split at h
+      · -- No alias: output = tcons name args', fvs ⊆ args' fvs
+        simp at h; obtain ⟨h1, _⟩ := h; subst h1
+        intro tv htv; simp [LMonoTy.freeVars] at htv
+        exact h_args'_fresh tv htv
+      · -- Alias: output = expand alias args', fvs ⊆ args' fvs (by alias WF)
+        rename_i alias h_find
+        simp at h; obtain ⟨h1, _⟩ := h; subst h1
+        intro tv htv
+        -- fvs of (expand alias args') = fvs of (openVars typeArgs args' alias.type) ⊆ fvs of args'
+        -- (since alias.WF: all fvs of alias.type are in typeArgs, and openVars maps them to args')
+        sorry
 
 /-- `LMonoTys.resolveAliases` preserves freshness of type free vars. -/
 theorem LMonoTys.resolveAliases_fvs_fresh
@@ -3817,7 +3824,8 @@ private theorem LMonoTy_resolveAliases_preserves_SubstFreshForGen
     simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
     split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
     -- Env' = Env1; delegate to list version
-    all_goals sorry -- Needs LMonoTys version (forward ref in mutual)
+    <;> exact (LMonoTys_resolveAliases_preserves_SubstFreshForGen args Env args' Env1 h_args
+          h_fresh h_aw (fun v hv => h_input v (by simp [LMonoTy.freeVars]; exact hv))).1
 
 /-- `LMonoTys.resolveAliases` preserves `SubstFreshForGen` AND produces output
     whose freeVars satisfy gen-freshness for the output genState.
@@ -6135,6 +6143,65 @@ theorem tconsAlias_eq_simple
     exact (subst_openVars_comm Env'.stateSubstInfo.subst alias.typeArgs args alias.type
       h_alias_wf.fvs_closed h_pred.2).symm
 
+mutual
+/-- `LMonoTy.resolveAliases` (with `tconsAliasSimple`) produces alias-equivalent output. -/
+private theorem resolveAliases_aliasEquiv
+    (mty : LMonoTy) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (mty', Env'))
+    (h_aliases : Γ.aliases = Env.context.aliases)
+    (h_aliases_wf : TContext.AliasesWF Γ) :
+    AliasEquiv Γ.aliases mty mty' := by
+  match mty with
+  | .ftvar _ | .bitvec _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨rfl, _⟩ := h; exact .refl
+  | .tcons name args =>
+    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h h_args
+    -- tconsAliasSimple is pure: split on find?
+    simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+    have h_ctx_pres := LMonoTys.resolveAliases_context args Env args' Env1 h_args
+    have h_args_equiv := resolveAliasList_aliasEquiv args Env args' Env1 h_args h_aliases h_aliases_wf
+    split at h
+    · -- No alias: mty' = tcons name args'
+      simp at h; obtain ⟨rfl, _⟩ := h
+      exact .cong_tcons h_args_equiv
+    · -- Alias found: mty' = expand alias args'
+      rename_i alias h_find
+      simp at h; obtain ⟨rfl, _⟩ := h
+      have h_alias_in : alias ∈ Γ.aliases := by
+        rw [h_aliases, ← h_ctx_pres]; exact List.mem_of_find?_eq_some h_find
+      have h_pred := List.find?_some h_find
+      simp [BEq.beq, decide_eq_true_eq] at h_pred
+      exact .trans (.cong_tcons h_args_equiv)
+        (.expand ⟨alias, h_alias_in, h_pred.1, h_pred.2, rfl⟩)
+
+/-- `LMonoTys.resolveAliases` produces pointwise alias-equivalent outputs. -/
+private theorem resolveAliasList_aliasEquiv
+    (mtys : LMonoTys) (Env : TEnv T.IDMeta) (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env'))
+    (h_aliases : Γ.aliases = Env.context.aliases)
+    (h_aliases_wf : TContext.AliasesWF Γ) :
+    AliasEquivList Γ.aliases mtys mtys' := by
+  match mtys with
+  | [] =>
+    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨rfl, _⟩ := h; exact .nil
+  | mty :: mrest =>
+    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_hd; obtain ⟨mty', Env1⟩ := v1; simp at h h_hd
+    split at h; · simp at h
+    rename_i v2 h_tl; obtain ⟨mrest', Env2⟩ := v2
+    simp [Pure.pure, Except.pure] at h; obtain ⟨rfl, _⟩ := h
+    have h_ctx_pres := LMonoTy.resolveAliases_context mty Env mty' Env1 h_hd
+    exact .cons
+      (resolveAliases_aliasEquiv mty Env mty' Env1 h_hd h_aliases h_aliases_wf)
+      (resolveAliasList_aliasEquiv mrest Env1 mrest' Env2 h_tl
+        (by rw [h_aliases, ← h_ctx_pres]) h_aliases_wf)
+end
+
 private theorem HasType_resolveAliases
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty_in : LMonoTy)
     (mty_out : LMonoTy) (Env Env' : TEnv T.IDMeta)
@@ -6144,9 +6211,9 @@ private theorem HasType_resolveAliases
     (h_aliases_wf : TContext.AliasesWF Γ)
     (h_fresh : Subst.allKeysFresh Env'.stateSubstInfo.subst Γ) :
     HasType C Γ e (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty_out)) := by
-  -- Use talias_resolve to get HasType for mty_out, then apply substitution
-  have h_resolved := HasType.talias_resolve Γ e mty_in mty_out
-    ⟨inferInstance, Env, Env', h_aliases, h_aliases_wf, h_ra⟩ h_ty
+  -- Use talias (AliasEquiv) to get HasType for mty_out, then apply substitution
+  have h_equiv := resolveAliases_aliasEquiv mty_in Env mty_out Env' h_ra h_aliases h_aliases_wf
+  have h_resolved := HasType.talias Γ e mty_in mty_out h_equiv h_ty
   exact HasType_subst_fresh_all C Γ e mty_out Env'.stateSubstInfo.subst
     h_resolved (fun a hk hfv => h_fresh a hk) Env'.stateSubstInfo.isWF
 
