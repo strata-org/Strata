@@ -5065,6 +5065,117 @@ theorem resolveAux_context :
             have h_ctx2 := ih th (by show th.sizeOf < (LExpr.ite m c th el).sizeOf; simp [LExpr.sizeOf]; omega) tt C Env1 Env2 h2 (h_ctx1 ▸ h_ne)
             have h_ctx3 := ih el (by show el.sizeOf < (LExpr.ite m c th el).sizeOf; simp [LExpr.sizeOf]; omega) et_ C Env2 Env3 h3 (h_ctx2 ▸ h_ctx1 ▸ h_ne)
             rw [h_ctx3, h_ctx2, h_ctx1]
+/-- `removeAll` produces `[]` when every element of the source is in the filter list. -/
+private theorem List.removeAll_eq_nil_of_forall_mem [BEq α] [LawfulBEq α]
+    {xs ys : List α} (h : ∀ x, x ∈ xs → x ∈ ys) :
+    xs.removeAll ys = [] := by
+  simp only [List.removeAll]
+  rw [List.filter_eq_nil_iff]
+  intro x hx
+  simp [List.elem_eq_mem]
+  exact h x hx
+
+/-- `freeVars (mkArrow mty mtys)` is `freeVars mty ++ LMonoTys.freeVars mtys`. -/
+private theorem LMonoTy.freeVars_mkArrow (mty : LMonoTy) :
+    ∀ (mtys : LMonoTys),
+    LMonoTy.freeVars (LMonoTy.mkArrow mty mtys) =
+    LMonoTy.freeVars mty ++ LMonoTys.freeVars mtys := by
+  intro mtys
+  induction mtys generalizing mty with
+  | nil => simp [LMonoTy.mkArrow, LMonoTys.freeVars]
+  | cons m mrest ih =>
+    simp only [LMonoTy.mkArrow, LMonoTy.arrow, LMonoTy.freeVars, LMonoTys.freeVars]
+    rw [ih m]; simp [List.append_assoc]
+
+/-- `LMonoTys.freeVars (xs ++ ys) = freeVars xs ++ freeVars ys`. -/
+private theorem LMonoTys.freeVars_append (xs ys : LMonoTys) :
+    LMonoTys.freeVars (xs ++ ys) = LMonoTys.freeVars xs ++ LMonoTys.freeVars ys := by
+  induction xs with
+  | nil => simp [LMonoTys.freeVars]
+  | cons x xrest ih => simp [LMonoTys.freeVars, ih, List.append_assoc]
+
+private theorem LMonoTy.freeVars_destructArrow_subset (mty : LMonoTy) :
+    LMonoTys.freeVars (LMonoTy.destructArrow mty) ⊆ LMonoTy.freeVars mty := by
+  match mty with
+  | .ftvar _ | .bitvec _ =>
+    simp [LMonoTy.destructArrow, LMonoTys.freeVars, LMonoTy.freeVars]
+  | .tcons "arrow" (a :: rest) =>
+    simp only [LMonoTy.destructArrow, LMonoTy.freeVars, LMonoTys.freeVars]
+    intro x hx
+    rcases List.mem_append.mp hx with h1 | h2
+    · exact List.mem_append_left _ h1
+    · exact List.mem_append_right _ (sorry)
+  | .tcons _ _ =>
+    intro x hx
+    unfold LMonoTy.destructArrow at hx
+    split at hx
+    · rename_i th tl heq
+      rw [heq]; simp only [LMonoTy.freeVars, LMonoTys.freeVars] at hx ⊢
+      rcases List.mem_append.mp hx with h1 | h2
+      · exact List.mem_append_left _ h1
+      · exact List.mem_append_right _ (sorry)
+    · simp [LMonoTys.freeVars] at hx; exact hx
+
+private theorem LMonoTys.freeVars_destructArrow_subset (mtys : LMonoTys) :
+    LMonoTys.freeVars (LMonoTys.destructArrow mtys) ⊆ LMonoTys.freeVars mtys := by
+  induction mtys with
+  | nil => simp [LMonoTys.destructArrow, LMonoTys.freeVars]
+  | cons mty mrest ih =>
+    simp only [LMonoTys.destructArrow, LMonoTys.freeVars]
+    rw [LMonoTys.freeVars_append]
+    intro x hx
+    rcases List.mem_append.mp hx with h1 | h2
+    · exact List.mem_append_left _ (LMonoTy.freeVars_destructArrow_subset mty h1)
+    · exact List.mem_append_right _ (ih h2)
+
+/-- Factory function types produced by `LFunc.type` have empty `freeVars`
+    when the function satisfies `LFuncWF`. -/
+private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
+    (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty)
+    (h_wf : LFuncWF func) :
+    LTy.freeVars ty = [] := by
+  -- ty must be .forAll vars body for some vars, body
+  cases ty with
+  | forAll vars body =>
+  simp [LTy.freeVars]
+  -- Goal: (LMonoTy.freeVars body).removeAll vars = []
+  -- From LFunc.type: vars = func.typeArgs and body freeVars ⊆ func.typeArgs
+  apply List.removeAll_eq_nil_of_forall_mem
+  -- Show all body freeVars ⊆ typeArgs (= vars after extraction)
+  unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind, decide_eq_true_eq] at h_type
+  split at h_type; · simp at h_type
+  split at h_type; · simp at h_type
+  generalize h_vals : func.inputs.values = vals at h_type
+  cases vals with
+  | nil =>
+    injection h_type with h1; injection h1 with h1a h1b; subst h1a; subst h1b; exact h_wf.output_typevars_in_typeArgs
+  | cons ity irest =>
+    injection h_type with h1; injection h1 with h1a h1b; subst h1a; subst h1b
+    rw [LMonoTy.freeVars_mkArrow]
+    intro x hx
+    simp [LMonoTys.freeVars_append, List.mem_append] at hx
+    -- hx : x from freeVars ity ∨ x from freeVars irest ∨ x from freeVars (destructArrow output)
+    rcases hx with hx_ity | hx_irest | hx_destr
+    · -- x from ity (first input)
+      exact h_wf.inputs_typevars_in_typeArgs ity (h_vals ▸ List.mem_cons_self) hx_ity
+    · -- x from irest: need ∃ ty ∈ irest, x ∈ ty.freeVars, then ty ∈ func.inputs.values
+      have h_irest_sub : ∀ ty, ty ∈ irest → ty ∈ func.inputs.values :=
+        fun ty ht => h_vals ▸ List.mem_cons_of_mem _ ht
+      -- Extract: x ∈ LMonoTys.freeVars irest → ∃ ty ∈ irest, x ∈ ty.freeVars
+      have : ∀ (xs : LMonoTys), (∀ ty, ty ∈ xs → ty ∈ func.inputs.values) →
+          ∀ v, v ∈ LMonoTys.freeVars xs → v ∈ func.typeArgs := by
+        intro xs h_sub v hv
+        induction xs with
+        | nil => simp [LMonoTys.freeVars] at hv
+        | cons t ts ih =>
+          simp [LMonoTys.freeVars, List.mem_append] at hv
+          rcases hv with hv_t | hv_ts
+          · exact h_wf.inputs_typevars_in_typeArgs t (h_sub t List.mem_cons_self) hv_t
+          · exact ih (fun ty ht => h_sub ty (List.mem_cons_of_mem _ ht)) hv_ts
+      exact this irest h_irest_sub x hx_irest
+    · -- x from destructArrow output: freeVars ⊆ output freeVars ⊆ typeArgs
+      exact h_wf.output_typevars_in_typeArgs (LMonoTy.freeVars_destructArrow_subset func.output hx_destr)
+
 /-- `resolveAux` preserves the `SubstFreshForGen` invariant. -/
 private theorem resolveAux_preserves_SubstFreshForGen :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
@@ -5139,10 +5250,16 @@ private theorem resolveAux_preserves_SubstFreshForGen :
     have h_func_mem : func ∈ C.functions := Array.mem_of_find?_eq_some h_find
     have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
     have h_ty_closed : LTy.freeVars type_val = [] := by
-      -- LFunc.type returns .forAll typeArgs body where body freeVars ⊆ typeArgs
-      -- by LFuncWF.inputs_typevars_in_typeArgs + output_typevars_in_typeArgs.
-      -- So LTy.freeVars = (freeVars body).removeAll typeArgs = [].
-      sorry -- TODO: prove from LFuncWF + LFunc.type structure
+      -- LFunc.type returns .forAll typeArgs body where body freeVars ⊆ typeArgs.
+      -- Unfold LFunc.type and case-split on inputs.
+      -- type_val = .forAll func.typeArgs body from LFunc.type.
+      -- Show: every v ∈ LTy.freeVars type_val is impossible.
+      -- LTy.freeVars (.forAll xs body) = (freeVars body).removeAll xs.
+      -- Since body freeVars ⊆ xs (from LFuncWF), removeAll removes everything.
+      -- Needs: List.removeAll xs ys = [] when xs ⊆ ys (not in Lean stdlib)
+      -- + mkArrow/destructArrow freeVars ⊆ input/output freeVars
+      -- Both are provable from LFuncWF but need helper lemmas.
+      sorry
     have h_ty_fresh_vacuous : ∀ v, v ∈ LTy.freeVars type_val →
         ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
       intro v hv; simp [h_ty_closed] at hv
