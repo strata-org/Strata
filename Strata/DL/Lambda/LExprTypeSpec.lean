@@ -4529,9 +4529,18 @@ theorem resolveAux_absorbs :
       EnvFreshForGen Env →
       Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
   intro e
-  induction e with
-  | const m c =>
-    intro et C Env Env' h _
+  suffices ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      EnvFreshForGen Env →
+      Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst by
+    exact this e.sizeOf e rfl
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  intro e h_eq et C Env Env' h h_env_fresh
+  match e with
+  | .const m c =>
     simp [resolveAux, inferConst] at h
     split at h
     · simp [Bind.bind, Except.bind] at h
@@ -4539,10 +4548,8 @@ theorem resolveAux_absorbs :
       exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
     · exact absurd h (by simp [Bind.bind, Except.bind])
   | bvar m i =>
-    intro et C Env Env' h _
     simp [resolveAux, Bind.bind, Except.bind] at h
-  | fvar m x fty =>
-    intro et C Env Env' h _
+  | .fvar m x fty =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h
     · simp at h
@@ -4550,8 +4557,7 @@ theorem resolveAux_absorbs :
       obtain ⟨ty_res, Env_res⟩ := v1; simp at h
       obtain ⟨_, h_env⟩ := h; rw [← h_env]
       exact inferFVar_absorbs C Env x fty ty_res Env_res h_infer
-  | op m o oty =>
-    intro et C Env Env' h _
+  | .op m o oty =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     -- Peel through nested matches: function lookup, func.type, instantiateWithCheck
     split at h; · simp at h    -- function not found
@@ -4582,8 +4588,7 @@ theorem resolveAux_absorbs :
           (LTy_instantiateWithCheck_absorbs type_val C Env ty_inst Env1 h_inst)
           (LMonoTy_instantiateWithCheck_absorbs oty_val C Env1 oty_inst Env2 h_inst2))
         (unify_absorbs _ _ _ (unify_of_mapError h_mapError))
-  | app m e1 e2 ih1 ih2 =>
-    intro et C Env Env' h h_env_fresh
+  | .app m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
     rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
@@ -4605,8 +4610,8 @@ theorem resolveAux_absorbs :
     have h_fresh1 := resolveAux_preserves_SubstFreshForGen
       e1 e1t C Env Env1 h_res1 h_fresh h_env_fresh.2
     -- Absorption from IHs
-    have h_abs1 := ih1 e1t C Env Env1 h_res1 h_env_fresh
-    have h_abs2 := ih2 e2t C Env1 Env2 h_res2
+    have h_abs1 := ih e1.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e1 rfl e1t C Env Env1 h_res1 h_env_fresh
+    have h_abs2 := ih e2.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e2 rfl e2t C Env1 Env2 h_res2
       ⟨h_fresh1, (resolveAux_context e1 e1t C Env Env1 h_res1) ▸
         ContextFreshForGen.mono _ _ _ h_env_fresh.2
           (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)⟩
@@ -4623,18 +4628,60 @@ theorem resolveAux_absorbs :
         (Nat.le_trans h_mono1 h_mono2)
     exact Subst.absorbs_of_remove v4.subst Env.stateSubstInfo.subst fresh_name
       h_abs_chain h_not_key h_not_fv
-  | abs m bty e ih =>
-    -- resolveAux recurses on `varOpen 0 (xv, some xty) e`, not on `e` directly.
-    -- Structural induction gives IH for `e`, not for `varOpen ... e`.
-    -- This case requires well-founded induction on sizeOf.
-    intro et C Env Env' h _
-    sorry
-  | quant m qk bty tr e ih_tr ih_e =>
-    -- Same as abs: resolveAux recurses on `varOpen` applied to `e` and `tr`.
-    intro et C Env Env' h _
-    sorry
-  | eq m e1 e2 ih1 ih2 =>
-    intro et C Env Env' h h_env_fresh
+  | .abs m bty body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_tbv; obtain ⟨xv, xty, Env1⟩ := v1; simp at h h_tbv
+    split at h; · simp at h
+    rename_i v2 h_rec; obtain ⟨et', Env2⟩ := v2; simp at h
+    obtain ⟨_, h_env⟩ := h; rw [← h_env]
+    simp [TEnv.eraseFromContext, TEnv.updateContext]
+    have h_sz : (varOpen 0 (xv, some xty) body).sizeOf < n := by
+      subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]
+    -- typeBoundVar absorbs, then recursive call absorbs
+    have h_abs1 := typeBoundVar_absorbs C Env bty xv xty Env1 h_tbv
+    -- For the recursive call, need EnvFreshForGen Env1
+    have h_env_fresh1 : EnvFreshForGen Env1 :=
+      ⟨typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.1,
+       typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.2⟩
+    exact Subst.absorbs_trans
+      Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+      h_abs1
+      (ih _ h_sz _ rfl et' C Env1 Env2 h_rec h_env_fresh1)
+  | .quant m qk bty tr body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_tbv; obtain ⟨xv, xty, Env1⟩ := v1; simp at h h_tbv
+    split at h; · simp at h
+    rename_i v2 h_rec_e; obtain ⟨et', Env2⟩ := v2; simp at h h_rec_e
+    split at h; · simp at h
+    rename_i v3 h_rec_tr; obtain ⟨trT, Env3⟩ := v3; simp at h h_rec_tr
+    split at h
+    · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
+      simp [TEnv.eraseFromContext, TEnv.updateContext]
+      have h_sz_e : (varOpen 0 (xv, some xty) body).sizeOf < n := by
+        subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+      have h_sz_tr : (varOpen 0 (xv, some xty) tr).sizeOf < n := by
+        subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+      have h_abs1 := typeBoundVar_absorbs C Env bty xv xty Env1 h_tbv
+      have h_env_fresh1 : EnvFreshForGen Env1 :=
+        ⟨typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.1,
+         typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.2⟩
+      -- Chain: Env → Env1 (typeBoundVar) → Env2 (resolveAux e') → Env3 (resolveAux tr')
+      have h_env_fresh2 : EnvFreshForGen Env2 :=
+        ⟨resolveAux_preserves_SubstFreshForGen _ et' C Env1 Env2 h_rec_e h_env_fresh1.1 h_env_fresh1.2,
+         (resolveAux_context _ et' C Env1 Env2 h_rec_e) ▸
+           ContextFreshForGen.mono _ _ _ h_env_fresh1.2
+             (resolveAux_genState_mono _ et' C Env1 Env2 h_rec_e)⟩
+      exact Subst.absorbs_trans
+        Env.stateSubstInfo.subst Env2.stateSubstInfo.subst Env3.stateSubstInfo.subst
+        (Subst.absorbs_trans
+          Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
+          h_abs1
+          (ih _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_env_fresh1))
+        (ih _ h_sz_tr _ rfl trT C Env2 Env3 h_rec_tr h_env_fresh2)
+    · simp at h
+  | .eq m e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
     rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h h_res1
@@ -4650,14 +4697,13 @@ theorem resolveAux_absorbs :
       Env.stateSubstInfo.subst Env2.stateSubstInfo.subst v3.subst
       (Subst.absorbs_trans
         Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
-        (ih1 e1t C Env Env1 h_res1 h_env_fresh)
-        (ih2 e2t C Env1 Env2 h_res2
+        (ih e1.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e1 rfl e1t C Env Env1 h_res1 h_env_fresh)
+        (ih e2.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e2 rfl e2t C Env1 Env2 h_res2
           ⟨h_fresh1, (resolveAux_context e1 e1t C Env Env1 h_res1) ▸
             ContextFreshForGen.mono _ _ _ h_env_fresh.2
               (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)⟩))
       (unify_absorbs _ _ _ h_unify)
-  | ite m c t e ih_c ih_t ih_e =>
-    intro et C Env Env' h h_env_fresh
+  | .ite m c t e =>
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     split at h; · simp at h
     rename_i v1 h_res_c; obtain ⟨ct, Env1⟩ := v1; dsimp at h h_res_c
@@ -4685,9 +4731,9 @@ theorem resolveAux_absorbs :
         Env.stateSubstInfo.subst Env2.stateSubstInfo.subst Env3.stateSubstInfo.subst
         (Subst.absorbs_trans
           Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
-          (ih_c ct C Env Env1 h_res_c h_env_fresh)
-          (ih_t tht C Env1 Env2 h_res_t ⟨h_fresh1, h_ctx1⟩))
-        (ih_e elt C Env2 Env3 h_res_e ⟨h_fresh2, h_ctx2⟩))
+          (ih c.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) c rfl ct C Env Env1 h_res_c h_env_fresh)
+          (ih t.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) t rfl tht C Env1 Env2 h_res_t ⟨h_fresh1, h_ctx1⟩))
+        (ih e.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e rfl elt C Env2 Env3 h_res_e ⟨h_fresh2, h_ctx2⟩))
       (unify_absorbs _ _ _ h_unify)
 
 /--
