@@ -7047,13 +7047,14 @@ private theorem HasType_resolveAliases
     (h_ra : LMonoTy.resolveAliases mty_in Env = .ok (mty_out, Env'))
     (h_aliases : Γ.aliases = Env.context.aliases)
     (h_aliases_wf : TContext.AliasesWF Γ)
-    (h_fresh : Subst.allKeysFresh Env'.stateSubstInfo.subst Γ) :
+    (h_fresh : ∀ a, a ∈ Maps.keys Env'.stateSubstInfo.subst →
+      a ∈ LMonoTy.freeVars mty_out → TContext.isFresh (T := T) a Γ) :
     HasType C Γ e (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty_out)) := by
   -- Use talias (AliasEquiv) to get HasType for mty_out, then apply substitution
   have h_equiv := resolveAliases_aliasEquiv mty_in Env mty_out Env' h_ra h_aliases h_aliases_wf
   have h_resolved := HasType.talias Γ e mty_in mty_out h_equiv h_ty
   exact HasType_subst_fresh_all C Γ e mty_out Env'.stateSubstInfo.subst
-    h_resolved (fun a hk hfv => h_fresh a hk) Env'.stateSubstInfo.isWF
+    h_resolved h_fresh Env'.stateSubstInfo.isWF
 
 theorem instantiateWithCheck_fvar_HasType
     (C : LContext T) (Γ : TContext T.IDMeta) (x : Identifier T.IDMeta)
@@ -7095,9 +7096,19 @@ theorem instantiateWithCheck_fvar_HasType
         -- Step 2: tinst chain gives HasType for (.forAll [] mty_inst)
         have h_mono := HasType_LTy_instantiate C Γ (.fvar m x none) ty mty_inst
           Env.genEnv genEnv' h_tvar h_inst_inner h_nodup h_bv_fresh
-        -- Step 3: All substitution keys are fresh in Γ (being proved elsewhere)
-        have h_fresh : Subst.allKeysFresh Env_ra.stateSubstInfo.subst Γ := by
-          sorry -- Needs: freshness property of genTyVar / resolveAliases
+        -- Step 3: Relevant subst keys (those in freeVars mty_ra) are fresh in Γ
+        -- freeVars mty_ra ⊆ freeVars mty_inst (by resolveAliases_freeVars_subset)
+        -- freeVars mty_inst come from genTyVars (generated names), hence fresh in Γ
+        have h_ra_ctx : ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context = Env.context := by
+          simp [TEnv.context]; exact LTy.instantiate_context ty Env.genEnv mty_inst genEnv' h_inst_inner
+        have h_fresh : ∀ a, a ∈ Maps.keys Env_ra.stateSubstInfo.subst →
+            a ∈ LMonoTy.freeVars mty_ra → TContext.isFresh (T := T) a Γ := by
+          intro a _ ha_fv
+          -- Need: freeVars mty_ra are fresh in Γ = Env.context
+          -- This holds because freeVars mty_ra come from genTyVars for ty's bound vars
+          -- For .fvar, ty comes from context, and its bound vars are tracked by boundVarsFresh
+          -- The generated replacement vars are fresh in the context
+          sorry -- TODO: prove via instantiate + resolveAliases freeVars chain
         -- Step 4: Aliases in Γ match the Env's context aliases
         have h_ctx_pres := LTy.instantiate_context ty Env.genEnv mty_inst genEnv' h_inst_inner
         have h_aliases : Γ.aliases = ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context.aliases := by
@@ -7485,7 +7496,7 @@ theorem resolveAux_HasType :
           have h_typed_subst := HasType_resolveAliases C Env.context (.op m o none) mty_inst mty_ra
             {Env with genEnv := genEnv'} Env_ra h_mono h_ra h_aliases_eq
             (h_ra_ctx ▸ h_aw)
-            sorry -- allKeysFresh — same sorry as .fvar case
+            (fun a _ ha_fv => h_fv_fresh a ha_fv)
           -- h_typed_subst : HasType ... (.forAll [] (subst Env_ra.subst mty_ra))
           -- Apply HasType_subst_fresh_all for S
           have h1 := HasType_subst_fresh_all C Env.context (.op m o none)
