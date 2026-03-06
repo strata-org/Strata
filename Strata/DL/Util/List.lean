@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-! # List Utilities
 -/
@@ -20,7 +21,7 @@ theorem List.subset_append_cons_right {α : Type} [DecidableEq α] {a b c : List
 /--
 Remove duplicates in a list.
 -/
-def dedup {α : Type} [DecidableEq α] : List α → List α
+@[expose] public def dedup {α : Type} [DecidableEq α] : List α → List α
   | [] => []
   | a :: as =>
     let as := as.dedup
@@ -411,7 +412,7 @@ theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List
       simp_all [dedup]
       omega
 
-theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
+public theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
   induction s1 generalizing s2 with
   | nil => simp
   | cons x t IH =>
@@ -424,7 +425,7 @@ theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s
 
 
 /-- Deduplicates l and counts the number of occurrences for each element. -/
-def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=
+@[expose] public def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=
   l.dedup.map (λ x => (x, l.count x))
 
 theorem occurrences_len_eq_dedup {α} [DecidableEq α]:
