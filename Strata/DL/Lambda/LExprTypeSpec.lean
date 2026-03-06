@@ -3633,18 +3633,30 @@ private theorem generated_name_fresh (k : Nat) (state : TState)
     ∀ n, n ≥ state.tyGen → TState.tyPrefix ++ toString k ≠ TState.tyPrefix ++ toString n :=
   fun n hn => tyPrefix_ne_of_ne k n (by omega)
 
+/-- `(s ++ t).startsWith s = true` for any strings.
+    Not yet provable in Lean 4.27: `String.startsWith` goes through the private
+    `memcmpStr.go` in the `Slice.Pattern` API, which has no proof-level lemmas. -/
+private theorem startsWith_append_self (s t : String) :
+    (s ++ t).startsWith s = true := by
+  sorry -- No String.startsWith lemmas in Lean 4.27
+
+/-- Dropping a prefix from `(s_prefix ++ toString n)` and parsing as `Nat` recovers `n`.
+    This is a standard string roundtrip property (`drop ∘ toNat? ∘ toString = some`)
+    that is not yet available in Lean 4's String library (v4.27). -/
+private theorem drop_prefix_toNat (s_prefix : String) (n : Nat) :
+    ((s_prefix ++ toString n).drop (s_prefix.length)).toNat? = some n := by
+  sorry -- String.drop / Slice.toNat? / Nat.repr roundtrip; no library support in Lean 4.27
+
 /-- `isFutureGenVar` returns `true` on a generated name `tyPrefix ++ toString n`
     when `n ≥ state.tyGen`. -/
 private theorem isFutureGenVar_of_tyPrefix (n : Nat) (state : TState)
     (hn : n ≥ state.tyGen) :
     TState.isFutureGenVar state (TState.tyPrefix ++ toString n) = true := by
-  simp only [TState.isFutureGenVar]
-  -- The proof reduces to three string facts about (tyPrefix ++ toString n):
-  -- (1) startsWith tyPrefix = true
-  -- (2) drop tyPrefix.length = toString n
-  -- (3) (toString n).toNat? = some n
-  -- These are standard string roundtrip properties but may need dedicated lemmas in Lean 4.
-  sorry
+  simp only [TState.isFutureGenVar, TState.tyPrefix]
+  rw [startsWith_append_self]
+  simp only [ite_true]
+  rw [drop_prefix_toNat]
+  simp [hn]
 
 /-- `isFutureGenVar state v = false` implies `v ≠ tyPrefix ++ toString n` for `n ≥ state.tyGen`. -/
 private theorem not_isFutureGenVar_imp_ne (state : TState) (v : TyIdentifier)
