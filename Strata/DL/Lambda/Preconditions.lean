@@ -3,10 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.IntBoolFactory
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.IntBoolFactory
+public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprWF
 
 /-! # Function Precondition Obligation Collection
 
@@ -16,6 +17,8 @@ from expressions that call functions with preconditions.
 
 namespace Lambda
 open Std (ToFormat Format format)
+
+public section
 
 variable {T : LExprParams} [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
 
@@ -125,4 +128,5 @@ where
       | .eq _ e1 e2 => go F e1 implications ++ go F e2 implications
     callObligations ++ subObligations
 
+end -- public section
 end Lambda

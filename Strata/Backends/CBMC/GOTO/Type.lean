@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.SourceLocation
+public import Strata.Backends.CBMC.GOTO.SourceLocation
 import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
 
 -------------------------------------------------------------------------------
+
+public section
 
 namespace Ty
 
@@ -129,55 +132,57 @@ instance : ToFormat Ty where
 namespace Ty
 
 /-- Empty type -/
-@[match_pattern]
+@[expose, match_pattern]
 def Empty : Ty :=
   { id := .primitive .empty }
 
 /-- Boolean type -/
-@[match_pattern]
+@[expose, match_pattern]
 def Boolean : Ty :=
   { id := .primitive .bool }
 
 /-- Integer type -/
-@[match_pattern]
+@[expose, match_pattern]
 def Integer : Ty :=
   { id := .primitive .integer }
 
 /-- String type -/
-@[match_pattern]
+@[expose, match_pattern]
 def String : Ty :=
   { id := .primitive .string }
 
 /-- Regex type -/
-@[match_pattern]
+@[expose, match_pattern]
 def Regex : Ty :=
   { id := .primitive .regex }
 
 /-- Real type -/
-@[match_pattern]
+@[expose, match_pattern]
 def Real : Ty :=
   { id := .primitive .real }
 
 /-- Signed bitvector type -/
-@[match_pattern]
+@[expose, match_pattern]
 def SignedBV (width : Nat) : Ty :=
   { id := .bitVector (.signedbv width) }
 
 /-- Unsigned bitvector type -/
-@[match_pattern]
+@[expose, match_pattern]
 def UnsignedBV (width : Nat) : Ty :=
   { id := .bitVector (.unsignedbv width) }
 
 /-- A reference to a named struct type (e.g., a user-defined datatype). -/
-@[match_pattern]
+@[expose, match_pattern]
 def StructTag (name : _root_.String) : Ty :=
   { id := .structTag name }
 
 /-- Array type with element type -/
-@[match_pattern]
+@[expose, match_pattern]
 def Array (elemTy : Ty) : Ty :=
   { id := .array, subtypes := [elemTy] }
 
 end Ty
 
 -------------------------------------------------------------------------------
+
+end -- public section

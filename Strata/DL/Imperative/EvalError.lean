@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.PureExpr
 
 namespace Imperative
 open Std (ToFormat Format format)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -63,5 +64,6 @@ instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] : ToFormat (EvalWa
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative
 

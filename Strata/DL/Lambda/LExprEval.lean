@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LState
 
 /-! ## Partial evaluator for Lambda expressions
 
@@ -17,6 +18,8 @@ See function `Lambda.LExpr.eval` for the implementation.
 namespace Lambda
 open Std (ToFormat Format format)
 open Strata.DL.Util (FuncAttr)
+
+public section
 
 namespace LExpr
 
@@ -258,4 +261,5 @@ instance : Traceable EvalProvenance Unit where
   combine _ := ()
 
 end LExpr
+end -- public section
 end Lambda
