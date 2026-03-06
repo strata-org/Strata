@@ -872,7 +872,8 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
   match extraSyms with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
   return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
-private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
+private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
+    (mutualNames : List String := [dt.name]) :
     Except Std.Format (String × CProverGOTO.CBMCSymbol) := do
   let mut components : Array (String × Lean.Json) :=
     #[("$tag", CProverGOTO.tyToJson .Integer)]
@@ -880,10 +881,10 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
     for (fieldId, fieldTy) in constr.args do
       let gty ← Lambda.LMonoTy.toGotoType fieldTy
       let tyJson := CProverGOTO.tyToJson gty
-      -- Recursive fields (type refers back to this datatype) must be pointers
+      -- Recursive fields (type refers to any datatype in the mutual block) must be pointers
       let tyJson := match fieldTy with
         | .tcons name _ =>
-          if name == dt.name then
+          if mutualNames.contains name then
             Lean.Json.mkObj [
               ("id", "pointer"),
               ("sub", Lean.Json.arr #[tyJson]),
@@ -961,9 +962,10 @@ private def collectDatatypeSymbols (pgm : Core.Program) :
   for decl in pgm.decls do
     match decl with
     | .type (.data dts) _ =>
+      let mutualNames := dts.map (·.name)
       for dt in dts do
         if dt.typeArgs.isEmpty then
-          let entry ← datatypeToSymbolEntry dt
+          let entry ← datatypeToSymbolEntry dt mutualNames
           syms := syms ++ [entry]
     | .type (.con tc) _ =>
       if tc.numargs == 0 then
