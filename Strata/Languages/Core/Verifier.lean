@@ -771,3 +771,4 @@ def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.
 end Strata
 
 ---------------------------------------------------------------------
+
