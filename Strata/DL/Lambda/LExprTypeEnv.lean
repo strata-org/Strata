@@ -691,9 +691,9 @@ def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
     match h_inst : LMonoTys.instantiateEnv alias.typeArgs typesToInstantiate Env with
     | .error e => .error e
     | .ok (instantiatedTypes, updatedEnv) =>
+    -- Extract the instantiated pattern and definition.
     have h_len : 1 < instantiatedTypes.length := by
       have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_inst; simp [typesToInstantiate] at this; omega
-    -- Extract the instantiated pattern and definition.
     let instantiatedPattern := instantiatedTypes[0]'(by omega)
     let instantiatedDefinition := instantiatedTypes[1]'(by omega)
     -- Unify the input type with the instantiated alias pattern.

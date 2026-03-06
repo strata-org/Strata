@@ -5858,31 +5858,8 @@ private theorem subst_openVarsList_comm
           intro tv h; exact h_wf tv (by simp [LMonoTys.freeVars]; right; exact h)) h_len
 end
 
-mutual
-/-- `subst` with a single-scope substitution `[zip vars vals]` acts the same as
-    `openVars vars vals` on a body whose free vars are contained in `vars`. -/
-private theorem subst_single_scope_eq_openVars
-    (vars : List TyIdentifier) (vals : LMonoTys) (body : LMonoTy)
-    (h_wf : ∀ tv, tv ∈ LMonoTy.freeVars body → tv ∈ vars)
-    (h_len : vars.length = vals.length) :
-    LMonoTy.subst [List.zip vars vals] body = LMonoTy.openVars vars vals body := by
-  -- For ftvar: both look up x in zip vars vals (Map.find? vs List.find? agree for String/LawfulBEq)
-  -- For bitvec: trivial (both leave it unchanged)
-  -- For tcons: structural, delegates to list version
-  -- The hasEmptyScopes guard requires case splitting but is resolved when vars.length = vals.length > 0
-  sorry
-
-/-- List version of `subst_single_scope_eq_openVars`. -/
-private theorem subst_single_scope_eq_openVarsList
-    (vars : List TyIdentifier) (vals : LMonoTys) (bodies : LMonoTys)
-    (h_wf : ∀ tv, tv ∈ LMonoTys.freeVars bodies → tv ∈ vars)
-    (h_len : vars.length = vals.length) :
-    LMonoTys.substLogic [List.zip vars vals] bodies = LMonoTys.openVars vars vals bodies := by
-  sorry
-end
-
 /-- `Map.find?` on a zip agrees with `List.find?` using BEq on the first component. -/
-private theorem map_find_eq_list_find (vars : List TyIdentifier) (vals : LMonoTys) (x : TyIdentifier) :
+private theorem map_find_eq_list_find' (vars : List TyIdentifier) (vals : LMonoTys) (x : TyIdentifier) :
     Map.find? (List.zip vars vals) x =
     (match (List.zip vars vals).find? (fun p => p.1 == x) with
      | some (_, v) => some v
@@ -5897,6 +5874,149 @@ private theorem map_find_eq_list_find (vars : List TyIdentifier) (vals : LMonoTy
       by_cases h_eq : v = x
       · simp [h_eq]
       · simp [h_eq, Ne.symm h_eq]; exact ih vls
+
+/-- `openVars` with empty vars/vals is identity. -/
+private theorem openVars_nil_id (body : LMonoTy) :
+    LMonoTy.openVars [] [] body = body := by
+  match body with
+  | .ftvar _ => simp [LMonoTy.openVars, List.zip, List.find?]
+  | .bitvec _ => simp [LMonoTy.openVars]
+  | .tcons nm args =>
+    simp only [LMonoTy.openVars]; congr 1
+    exact openVarsList_nil_id args
+where
+  openVarsList_nil_id : (args : LMonoTys) → LMonoTys.openVars [] [] args = args
+    | [] => by simp [LMonoTys.openVars]
+    | hd :: tl => by
+        simp only [LMonoTys.openVars]
+        rw [openVars_nil_id hd, openVarsList_nil_id tl]
+
+mutual
+/-- `subst` with a single-scope substitution `[zip vars vals]` acts the same as
+    `openVars vars vals` on a body whose free vars are contained in `vars`. -/
+private theorem subst_single_scope_eq_openVars
+    (vars : List TyIdentifier) (vals : LMonoTys) (body : LMonoTy)
+    (h_wf : ∀ tv, tv ∈ LMonoTy.freeVars body → tv ∈ vars)
+    (h_len : vars.length = vals.length) :
+    LMonoTy.subst [List.zip vars vals] body = LMonoTy.openVars vars vals body := by
+  cases vars with
+  | nil =>
+    -- vars = [], vals = [] (by h_len). Both sides reduce to body.
+    have : vals = [] := by simpa using h_len.symm
+    subst this
+    -- LHS: subst [zip [] []] body. zip [] [] = []. hasEmptyScopes [[]] = true.
+    -- So subst [[]] body = body. And openVars [] [] body = body.
+    show LMonoTy.subst [List.zipWith Prod.mk [] []] body = LMonoTy.openVars [] [] body
+    -- List.zipWith Prod.mk [] [] = []
+    have h_zip_nil : List.zipWith Prod.mk ([] : List TyIdentifier) ([] : LMonoTys) = [] := by rfl
+    rw [h_zip_nil]
+    -- subst [[]] body = body
+    have h_emptyS : Subst.hasEmptyScopes [([] : Map TyIdentifier LMonoTy)] = true := by
+      simp [Subst.hasEmptyScopes, List.all, Map.isEmpty]
+    rw [LMonoTy.subst_emptyS h_emptyS]
+    exact (openVars_nil_id body).symm
+  | cons v vs =>
+    cases vals with
+    | nil => simp at h_len
+    | cons vl vls =>
+      -- hasEmptyScopes is false for non-empty zip
+      have h_ne : Subst.hasEmptyScopes [List.zip (v :: vs) (vl :: vls)] = false := by
+        simp [Subst.hasEmptyScopes, List.all, List.zip, List.zipWith, Map.isEmpty]
+      match body with
+      | .ftvar x =>
+        -- Both sides look up x in the zip. Connect via map_find_eq_list_find'.
+        simp only [LMonoTy.subst, h_ne, ↓reduceIte, LMonoTy.openVars, Maps.find?]
+        rw [map_find_eq_list_find' (v :: vs) (vl :: vls) x]
+        generalize (List.zip (v :: vs) (vl :: vls)).find? (fun p => p.1 == x) = res
+        match res with
+        | some (_, val) => rfl
+        | none => rfl
+      | .bitvec n =>
+        simp [LMonoTy.subst, h_ne, LMonoTy.openVars]
+      | .tcons nm args =>
+        simp only [LMonoTy.openVars]
+        -- Goal: subst [zip ...] (tcons nm args) = tcons nm (openVars ... args)
+        -- Unfold subst, use h_ne to eliminate hasEmptyScopes guard
+        have h_eq : LMonoTy.subst [List.zip (v :: vs) (vl :: vls)] (.tcons nm args) =
+            .tcons nm (LMonoTys.subst [List.zip (v :: vs) (vl :: vls)] args) := by
+          unfold LMonoTy.subst; rw [h_ne]; simp
+        rw [h_eq, LMonoTys.subst_eq_substLogic,
+            subst_single_scope_eq_openVarsList (v :: vs) (vl :: vls) args
+              (by intro tv htv; exact h_wf tv (by simp [LMonoTy.freeVars]; exact htv))
+              (by simp at h_len ⊢; exact h_len)]
+
+/-- List version of `subst_single_scope_eq_openVars`. -/
+private theorem subst_single_scope_eq_openVarsList
+    (vars : List TyIdentifier) (vals : LMonoTys) (bodies : LMonoTys)
+    (h_wf : ∀ tv, tv ∈ LMonoTys.freeVars bodies → tv ∈ vars)
+    (h_len : vars.length = vals.length) :
+    LMonoTys.substLogic [List.zip vars vals] bodies = LMonoTys.openVars vars vals bodies := by
+  cases vars with
+  | nil =>
+    have : vals = [] := by simpa using h_len.symm
+    subst this
+    show LMonoTys.substLogic [List.zipWith Prod.mk [] []] bodies =
+         LMonoTys.openVars [] [] bodies
+    have h_zip_nil : List.zipWith Prod.mk ([] : List TyIdentifier) ([] : LMonoTys) = [] := rfl
+    rw [h_zip_nil]
+    have hS : Subst.hasEmptyScopes [([] : Map TyIdentifier LMonoTy)] = true := by
+      simp [Subst.hasEmptyScopes, List.all, Map.isEmpty]
+    -- substLogic [[]] bodies = bodies (since hasEmptyScopes [[]] = true)
+    have : LMonoTys.substLogic [([] : Map TyIdentifier LMonoTy)] bodies = bodies := by
+      unfold LMonoTys.substLogic; rw [hS]; simp
+    rw [this]
+    exact (openVarsList_nil_id bodies).symm
+  | cons v vs =>
+    cases vals with
+    | nil => simp at h_len
+    | cons vl vls =>
+      have h_ne : Subst.hasEmptyScopes [List.zip (v :: vs) (vl :: vls)] = false := by
+        simp [Subst.hasEmptyScopes, List.all, List.zip, List.zipWith, Map.isEmpty]
+      match bodies with
+      | [] => simp [LMonoTys.substLogic, h_ne, LMonoTys.openVars]
+      | hd :: tl =>
+        show LMonoTy.subst [List.zip (v :: vs) (vl :: vls)] hd ::
+             LMonoTys.substLogic [List.zip (v :: vs) (vl :: vls)] tl =
+             LMonoTy.openVars (v :: vs) (vl :: vls) hd ::
+             LMonoTys.openVars (v :: vs) (vl :: vls) tl
+        rw [subst_single_scope_eq_openVars (v :: vs) (vl :: vls) hd
+            (by intro tv h; exact h_wf tv (by simp [LMonoTys.freeVars]; left; exact h))
+            (by simp at h_len ⊢; exact h_len),
+            subst_single_scope_eq_openVarsList (v :: vs) (vl :: vls) tl
+            (by intro tv h; exact h_wf tv (by simp [LMonoTys.freeVars]; right; exact h))
+            (by simp at h_len ⊢; exact h_len)]
+where
+  openVarsList_nil_id : (bodies : LMonoTys) → LMonoTys.openVars [] [] bodies = bodies
+    | [] => by simp [LMonoTys.openVars]
+    | hd :: tl => by
+        simp only [LMonoTys.openVars]
+        rw [openVars_nil_id hd, openVarsList_nil_id tl]
+end
+
+/-- Decompose `LMonoTys.instantiateEnv` into its components: fresh vars, substitution, and env. -/
+private theorem instantiateEnv_decompose
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv T.IDMeta)
+    (result : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.instantiateEnv ids mtys Env = .ok (result, Env')) :
+    ∃ (freshtvs : List TyIdentifier) (genEnv' : TGenEnv T.IDMeta),
+      TGenEnv.genTyVars ids.length Env.genEnv = .ok (freshtvs, genEnv') ∧
+      result = LMonoTys.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mtys ∧
+      Env' = {Env with genEnv := genEnv'} := by
+  -- First unfold instantiateEnv only (one level)
+  simp only [LMonoTys.instantiateEnv] at h
+  -- h now has: match LMonoTys.instantiate ids mtys Env.genEnv with ...
+  generalize h_inner : LMonoTys.instantiate ids mtys Env.genEnv = res at h
+  match res with
+  | .error _ => simp at h
+  | .ok (instResult, genEnv') =>
+    simp at h; obtain ⟨h1, h2⟩ := h; subst h1; subst h2
+    -- Now unfold instantiate
+    simp only [LMonoTys.instantiate, Bind.bind, Except.bind] at h_inner
+    split at h_inner
+    · simp at h_inner
+    · rename_i v h_gv; obtain ⟨ftvs, gE⟩ := v; simp at h_inner h_gv
+      obtain ⟨h_res, h_ge⟩ := h_inner; subst h_ge
+      exact ⟨ftvs, gE, h_gv, h_res.symm, rfl⟩
 
 /-- Key bridge lemma: when `tconsAlias` expands an alias, the result under
     the final substitution equals `TypeAlias.expand alias (subst S args)`.
@@ -5935,55 +6055,21 @@ private theorem tconsAlias_expand_eq
       simp [Pure.pure, Except.pure] at h_tcons
       obtain ⟨h_mty, h_env⟩ := h_tcons
       rw [← h_mty, ← h_env]
-      -- Now goal: subst (updatedEnv.updateSubst substInfo).subst
-      --           (subst substInfo.subst instTypes[1]) =
-      --           expand alias (subst (updatedEnv.updateSubst substInfo).subst args)
-      -- updatedEnv.updateSubst substInfo has .subst = substInfo.subst
+      -- Now goal uses getD instead of dependent indexing:
+      -- subst (updatedEnv.updateSubst substInfo).subst
+      --   (subst substInfo.subst (instTypes.getD 1 inputMty)) =
+      --   expand alias (subst (updatedEnv.updateSubst substInfo).subst args)
       simp only [TEnv.updateSubst]
-      -- Goal: subst S (subst S instTypes[1]) = expand alias (subst S args)
-      -- where S = substInfo.subst
 
       -- Step 1: Idempotency. subst S (subst S x) = subst S x
       rw [LMonoTy.subst_absorbs substInfo.subst substInfo.subst
         (instTypes[1]'(by omega)) (Subst.absorbs_refl _ substInfo.isWF)]
       -- Goal: subst S instTypes[1] = expand alias (subst S args)
-      --     = openVars alias.typeArgs (subst S args) alias.type
 
-      -- Step 2: Decompose instantiateEnv to extract freshtvs
-      -- instantiateEnv generates freshtvs, builds S_inst = zip alias.typeArgs (map ftvar freshtvs),
-      -- then instTypes = subst [S_inst] [aliasPattern, alias.type]
-      -- Key facts we need:
-      -- (a) instTypes[1] = subst [S_inst] alias.type
-      --                   = openVars alias.typeArgs (map ftvar freshtvs) alias.type
-      -- (b) freshtvs.length = alias.typeArgs.length
-      -- (c) subst S (tcons name args) = subst S instTypes[0]  (from unify_makes_equal)
-      --     where instTypes[0] = tcons name (map ftvar freshtvs)   [after subst [S_inst]]
-      --     ⟹ subst S args = subst S (map ftvar freshtvs)
-
-      -- Using (a) + subst_openVars_comm:
-      -- subst S instTypes[1]
-      --   = subst S (openVars alias.typeArgs (map ftvar freshtvs) alias.type)
-      --   = openVars alias.typeArgs (substLogic S (map ftvar freshtvs)) alias.type
-      -- Using (c) + subst_eq_substLogic:
-      --   substLogic S (map ftvar freshtvs) = subst S (map ftvar freshtvs) = subst S args
-      -- Therefore:
-      --   subst S instTypes[1] = openVars alias.typeArgs (subst S args) alias.type = RHS
-
-      -- The proof requires extracting freshtvs from instantiateEnv,
-      -- showing instTypes[1] = openVars ... alias.type, using subst_openVars_comm,
-      -- and connecting via unify_makes_equal. Each step is individually straightforward.
-      -- We combine them into a single sorry that captures the complete chain.
-      --
-      -- Key facts:
-      -- (a) From instantiateEnv: instTypes = subst [S_inst] [pattern, alias.type]
-      --     where S_inst = zip alias.typeArgs (map ftvar freshtvs)
-      -- (b) instTypes[1] = subst [S_inst] alias.type = openVars typeArgs fvs alias.type
-      --     (by subst_single_scope_eq_openVars)
-      -- (c) subst S (openVars typeArgs fvs alias.type)
-      --     = openVars typeArgs (substLogic S fvs) alias.type
-      --     (by subst_openVars_comm, already proved)
-      -- (d) From unify_makes_equal: subst S args = subst S fvs = substLogic S fvs
-      -- (e) Therefore: subst S instTypes[1] = openVars typeArgs (subst S args) alias.type
+      -- Step 2+: Decompose and apply chain. All sub-lemmas proved above.
+      -- The proof requires extracting elements from a 2-element list returned by
+      -- instantiateEnv, which involves case-splitting on hasEmptyScopes.
+      -- Then: subst_single_scope_eq_openVars, subst_openVars_comm, unify_makes_equal.
       sorry
 
 private theorem HasType_resolveAliases
