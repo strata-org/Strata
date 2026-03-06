@@ -3792,6 +3792,32 @@ private theorem inferFVar_preserves_SubstFreshForGen
         exact h_ty_fresh n (Nat.le_trans
           (LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_inst2) hn))
 
+/-- `typeBoundVar` always produces an environment with non-empty `context.types`,
+    because it applies `addInNewestContext` which uses `Maps.addInNewest`. -/
+private theorem typeBoundVar_context_types_ne_nil
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1)) :
+    Env1.context.types ≠ [] := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen _; obtain ⟨_, Env_g⟩ := v_gen
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h; split at h; · simp at h
+    rename_i v_ic _; obtain ⟨_, Env_mid⟩ := v_ic
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, _, h_env1⟩ := h; rw [← h_env1]
+    simp [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
+          Maps.addInNewest, Maps.push, Maps.pop, Maps.newest]
+  | none =>
+    simp only [Bind.bind, Except.bind]; intro h; split at h; · simp at h
+    rename_i v_tg _; obtain ⟨_, Env_mid⟩ := v_tg
+    simp [Pure.pure, Except.pure] at h
+    obtain ⟨_, _, h_env1⟩ := h; rw [← h_env1]
+    simp [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
+          Maps.addInNewest, Maps.push, Maps.pop, Maps.newest]
+
 /-- `typeBoundVar` preserves `SubstFreshForGen`. -/
 private theorem typeBoundVar_preserves_SubstFreshForGen
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
@@ -4229,8 +4255,8 @@ theorem resolveAux_context :
       split at h; · simp at h
       · rename_i v2 h_ra; obtain ⟨et_, Env2⟩ := v2; simp at h
         obtain ⟨_, h_env⟩ := h; rw [← h_env]
-        have h_ne1 : Env1.context.types ≠ [] := by
-          sorry -- typeBoundVar applies addInNewestContext, result is always non-empty
+        have h_ne1 : Env1.context.types ≠ [] :=
+          typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
         have h_ctx_ra : Env2.context = Env1.context :=
           ih (LExpr.varOpen 0 (xv, some xty) body)
             (by show (varOpen 0 (xv, some xty) body).sizeOf < (LExpr.abs m bty body).sizeOf
@@ -4251,8 +4277,8 @@ theorem resolveAux_context :
           split at h
           · -- ety != bool is true → if returns .error → simp closes this
             simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
-            have h_ne1 : Env1.context.types ≠ [] := by
-              sorry -- typeBoundVar applies addInNewestContext, result is always non-empty
+            have h_ne1 : Env1.context.types ≠ [] :=
+              typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
             have h_ctx2 : Env2.context = Env1.context :=
               ih (LExpr.varOpen 0 (xv, some xty) body)
                 (by show (varOpen 0 (xv, some xty) body).sizeOf < (LExpr.quant m qk bty triggers body).sizeOf
@@ -4437,8 +4463,8 @@ private theorem resolveAux_preserves_SubstFreshForGen :
       subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]
     have h_fresh1 := typeBoundVar_preserves_SubstFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_fresh
     have h_ctx1 := typeBoundVar_preserves_ContextFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_ctx
-    have h_ne1 : Env1.context.types ≠ [] := by
-      sorry -- typeBoundVar applies addInNewestContext, result is always non-empty
+    have h_ne1 : Env1.context.types ≠ [] :=
+      typeBoundVar_context_types_ne_nil C Env bty xv_id xty_val Env1 h_tbv
     exact (ih _ h_sz (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec h_ne1).2 h_fresh1 h_ctx1
   | .quant m qk bty tr body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
@@ -4456,8 +4482,8 @@ private theorem resolveAux_preserves_SubstFreshForGen :
         subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
       have h_fresh1 := typeBoundVar_preserves_SubstFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_fresh
       have h_ctx1 := typeBoundVar_preserves_ContextFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_ctx
-      have h_ne1 : Env1.context.types ≠ [] := by
-        sorry -- typeBoundVar applies addInNewestContext, result is always non-empty
+      have h_ne1 : Env1.context.types ≠ [] :=
+        typeBoundVar_context_types_ne_nil C Env bty xv_id xty_val Env1 h_tbv
       have h_fresh2 := (ih _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_ne1).2 h_fresh1 h_ctx1
       have h_ne2 := (ih_context _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_ne1) ▸ h_ne1
       have h_ctx2 := ih_ctx _ h_sz_e _ rfl et' C Env1 Env2 h_rec_e h_ne1 h_ctx1
@@ -4670,8 +4696,8 @@ theorem resolveAux_absorbs :
     have h_env_fresh1 : EnvFreshForGen Env1 :=
       ⟨typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.1,
        typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.2⟩
-    have h_ne1 : Env1.context.types ≠ [] := by
-      sorry -- typeBoundVar applies addInNewestContext, result is always non-empty
+    have h_ne1 : Env1.context.types ≠ [] :=
+      typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
     exact Subst.absorbs_trans
       Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
       h_abs1
@@ -4695,8 +4721,8 @@ theorem resolveAux_absorbs :
       have h_env_fresh1 : EnvFreshForGen Env1 :=
         ⟨typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.1,
          typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_env_fresh.2⟩
-      have h_ne1 : Env1.context.types ≠ [] := by
-        sorry -- typeBoundVar applies addInNewestContext, result is always non-empty
+      have h_ne1 : Env1.context.types ≠ [] :=
+        typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
       -- Chain: Env → Env1 (typeBoundVar) → Env2 (resolveAux e') → Env3 (resolveAux tr')
       have h_ne2 := (resolveAux_context _ et' C Env1 Env2 h_rec_e h_ne1) ▸ h_ne1
       have h_env_fresh2 : EnvFreshForGen Env2 :=
@@ -5582,8 +5608,8 @@ theorem resolveAux_HasType :
           sorry -- WF transfers through typeBoundVar
         have h_sf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context := by
           sorry -- freshness transfers through typeBoundVar
-        have h_ne1 : Env1.context.types ≠ [] := by
-          sorry -- typeBoundVar applies addInNewestContext, result is always non-empty
+        have h_ne1 : Env1.context.types ≠ [] :=
+          typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
         have ⟨h_ctx_body, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_wf1
           ⟨h_sf1, sorry, sorry⟩ h_ne1 -- TEnvWF Env1 for body env
         -- h_ctx_body : Env2.context = Env1.context
