@@ -6404,9 +6404,33 @@ private theorem TGenEnv.genTyVars_is_genName
     (h : TGenEnv.genTyVars n Env = .ok (tvs, Env'))
     (tv : TyIdentifier) (h_mem : tv ∈ tvs) :
     ∃ k, k ≥ Env.genState.tyGen ∧ tv = TState.tyPrefix ++ toString k := by
-  -- Each genTyVar produces tyPrefix ++ toString genState.tyGen, then increments.
-  -- By induction on n, each tv in the output list has such a name.
-  sorry
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨h1, _⟩ := h; subst h1; simp at h_mem
+  | succ m ih =>
+    simp only [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_gen1; obtain ⟨tv1, Env1⟩ := v1
+    split at h; · simp at h
+    rename_i v2 h_gen_rest; obtain ⟨rest, Env2⟩ := v2
+    simp at h
+    obtain ⟨h_tvs, h_env⟩ := h; subst h_tvs; subst h_env
+    have h_tv1_name : tv1 = TState.tyPrefix ++ toString Env.genState.tyGen := by
+      simp only [TGenEnv.genTyVar] at h_gen1
+      split at h_gen1; · simp at h_gen1
+      simp at h_gen1; rw [← h_gen1.1]
+      simp [TState.genTySym, TState.incTyGen]
+    have h_gen1_mono : Env1.genState.tyGen = Env.genState.tyGen + 1 := by
+      simp only [TGenEnv.genTyVar] at h_gen1
+      split at h_gen1; · simp at h_gen1
+      simp at h_gen1; rw [← h_gen1.2]
+      simp [TState.genTySym, TState.incTyGen]
+    rcases List.mem_cons.mp h_mem with h_eq | h_rest
+    · exact ⟨Env.genState.tyGen, Nat.le_refl _, h_eq ▸ h_tv1_name⟩
+    · simp at h_gen_rest
+      obtain ⟨k, h_k_ge, h_eq⟩ := ih Env1 rest Env2 h_gen_rest h_rest
+      exact ⟨k, by omega, h_eq⟩
 
 private theorem HasType_LTy_instantiate
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
@@ -7747,9 +7771,59 @@ theorem resolveAux_HasType :
           intro S h_abs_S h_wf_S
           sorry -- abs case typing: needs tabs rule + varClose reasoning
   | .quant m qk bty tr e_body =>
-    intro et C Env Env' h h_envwf _ _
+    intro et C Env Env' h h_envwf h_ne h_fwf
     have h_aw := h_envwf.aliasesWF
-    exact ⟨sorry, fun S _ _ => sorry⟩
+    -- Decompose resolveAux for quant
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    -- typeBoundVar
+    split at h; · simp at h
+    rename_i v1 h_tbv; obtain ⟨xv, xty, Env1⟩ := v1; dsimp at h h_tbv
+    -- resolveAux on opened body
+    split at h; · simp at h
+    rename_i v2 h_res_body; obtain ⟨et_body, Env2⟩ := v2; dsimp at h h_res_body
+    -- resolveAux on opened triggers
+    split at h; · simp at h
+    rename_i v3 h_res_tr; obtain ⟨triggersT, Env3⟩ := v3; dsimp at h h_res_tr
+    -- if check (ety != bool): split gives two branches
+    split at h
+    · -- ety ≠ bool → error path
+      simp at h
+    · -- ety = bool → success path
+      simp at h; obtain ⟨h_et, h_env'⟩ := h
+      -- Build TEnvWF for Env1
+      have h_envwf1 : TEnvWF Env1 :=
+        { aliasesWF := typeBoundVar_preserves_AliasesWF C Env bty xv xty Env1 h_tbv h_envwf.aliasesWF
+          substFreshForGen := typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.substFreshForGen h_envwf.aliasesWF h_envwf.ctxFreshForGen
+          ctxFreshForGen := typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.ctxFreshForGen
+          boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env1 h_tbv h_envwf.boundVarsNodup
+          boundVarsFresh := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_envwf.boundVarsFresh }
+      have h_ne1 : Env1.context.types ≠ [] :=
+        typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
+      -- IH for body
+      have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
+        (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+      have ⟨h_ctx2, _⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf
+      -- IH for triggers (need TEnvWF Env2)
+      have ih_tr := ih_sub (varOpen 0 (xv, some xty) tr)
+        (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+      have h_envwf2 : TEnvWF Env2 :=
+        { aliasesWF := h_ctx2 ▸ h_envwf1.aliasesWF
+          substFreshForGen := resolveAux_preserves_SubstFreshForGen _ et_body C Env1 Env2 h_res_body h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF h_fwf h_envwf1.boundVarsFresh
+          ctxFreshForGen := h_ctx2 ▸ ContextFreshForGen.mono _ _ _ h_envwf1.ctxFreshForGen (resolveAux_genState_mono _ et_body C Env1 Env2 h_res_body)
+          boundVarsNodup := transfer_boundVarsNodup h_envwf1.boundVarsNodup h_ctx2
+          boundVarsFresh := transfer_boundVarsFresh h_envwf1.boundVarsFresh h_ctx2 (resolveAux_genState_mono _ et_body C Env1 Env2 h_res_body) }
+      have h_ne2 := h_ctx2 ▸ h_ne1
+      have ⟨h_ctx3, _⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf
+      constructor
+      · -- Context preservation: eraseFromContext Env3 xv → Env.context
+        rw [← h_env']
+        exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env3
+          (h_ctx3.trans h_ctx2)
+          (typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv) h_ne
+      · -- Typing: quant result type is bool, subst S bool = bool
+        intro S _ _
+        rw [← h_et]; simp [toLMonoTy, LMonoTy.subst_bool]
+        sorry -- needs tquant rule application
   | .ite m c t e =>
     -- resolveAux recurses on c, t, e, then unifies [(cty, bool), (tty, ety)].
     -- Result type is tty (the then-branch type), and the HasType rule is `tif`.
