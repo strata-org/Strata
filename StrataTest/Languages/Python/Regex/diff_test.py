@@ -326,6 +326,13 @@ CORPUS = [
     ("a?(^b)", "ba",  "match"),      # match — a? = "", ^ fires, b matches, trailing a ok
     ("a?(^b)", "ab",  "match"),      # noMatch
 
+    # a?(^b) in search: core_ft/core_ff have atStart=false; ^ must not fire mid-string
+    ("a?(^b)", "b",   "search"),     # match — pos 0: a?="", ^ fires, b matches
+    ("a?(^b)", "xb",  "search"),     # noMatch — BUG: Strata says match (^ fires mid-string)
+    ("a?(^b)", "ab",  "search"),     # noMatch — BUG: Strata says match
+    ("a?(^b)", "xab", "search"),     # noMatch — BUG: Strata says match
+    ("a?(^b)", "ba",  "search"),     # match — pos 0: a?="", ^ fires, b matches
+    ("a?(^b)", "bx",  "search"),     # match — pos 0: a?="", ^ fires, b matches
     # ── Anchors: concat(false, false) — both sides may be empty ─────────────────
     #
     # When both sides may be empty and r2 contains ^, Strata splits into:
