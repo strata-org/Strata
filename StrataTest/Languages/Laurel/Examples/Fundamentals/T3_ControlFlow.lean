@@ -13,24 +13,6 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-procedure guards(a: int) returns (r: int)
-{
-  var b: int := a + 2;
-  if (b > 2) {
-      var c: int := b + 3;
-      if (c > 3) {
-          return c + 4;
-      }
-      var d: int := c + 5;
-      return d + 6;
-  }
-  var e: int := b + 1;
-  assert e <= 3;
-    assert e < 3;
-//  ^^^^^^^^^^^^^ error: assertion does not hold
-  return e;
-}
-
 function returnAtEnd(x: int) returns (r: int) {
   if (x > 0) {
     if (x == 1) {
@@ -66,6 +48,24 @@ procedure testFunctions() {
   assert guardInFunction(1) == 1;
   assert guardInFunction(1) == 2;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+}
+
+procedure guards(a: int) returns (r: int)
+{
+  var b: int := a + 2;
+  if (b > 2) {
+      var c: int := b + 3;
+      if (c > 3) {
+          return c + 4;
+      }
+      var d: int := c + 5;
+      return d + 6;
+  }
+  var e: int := b + 1;
+  assert e <= 3;
+    assert e < 3;
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+  return e;
 }
 
 procedure dag(a: int) returns (r: int)
