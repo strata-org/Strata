@@ -47,7 +47,10 @@ def parseLaurelAndLift (input : String) : IO Program := do
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program => pure (liftImperativeExpressions program)
+  | .ok program =>
+    let result := resolve program
+    let (program, model) := (result.program, result.model)
+    pure (liftExpressionAssignments model program)
 
 /--
 info: procedure heapUpdateInBlockExpr(b: Box) returns ⏎

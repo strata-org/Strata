@@ -259,6 +259,17 @@ def resolveDispatch (ctx : TranslationContext)
 
 /-! ## Expression Translation -/
 
+/-- Check if a Python expression has string type, using the Python AST and variable types.
+    Used to disambiguate `+` between arithmetic Add and string StrConcat. -/
+def isPyExprStringTyped (ctx : TranslationContext) (e : Python.expr SourceRange) : Bool :=
+  match e with
+  | .Constant _ (.ConString ..) _ => true
+  | .Name _ name _ =>
+    match ctx.variableTypes.find? (·.1 == name.val) with
+    | some (_, ty) => highEq ty (mkHighTypeMd .TString)
+    | none => false
+  | _ => false
+
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
   ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName || ctx.preludeFunctions.contains funcName ||
@@ -1163,6 +1174,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       determinism := .nondeterministic
+      isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
       md := default

@@ -3,26 +3,29 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.SMT
+public import Strata.DL.SMT.SMT
 import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DDM.Elab
 import Strata.DDM.Format
-import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.EvalContext
+public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.EvalContext
 
 namespace Imperative
 open Std (ToFormat Format format)
 
 namespace SMT
+
+public section
 ---------------------------------------------------------------------
 
 /--
 A counterexample derived from an SMT solver is a map from an identifier
 to an `SMT.Term`.
 -/
-abbrev CounterEx (Ident : Type) := Map Ident Strata.SMT.Term
+@[expose] abbrev CounterEx (Ident : Type) := Map Ident Strata.SMT.Term
 
 /-- Render an `SMT.Term` to a string via the SMTDDM translation. -/
 private def termToString (t : Strata.SMT.Term) : String :=
@@ -285,8 +288,10 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   | .ok (reachDecision, result) => return .ok (reachDecision, result, estate)
 
 ---------------------------------------------------------------------
+end -- public section
 end SMT
 
+public section
 
 /--
 SMT solver's `result` along with an SMT encoder state `estate` for a given
@@ -316,7 +321,7 @@ instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.CounterEx P.Ident)]
 /--
 An array of `VCResult`s.
 -/
-abbrev VCResults (P : Imperative.PureExpr) := Array (VCResult P)
+@[expose] abbrev VCResults (P : Imperative.PureExpr) := Array (VCResult P)
 
 def VCResults.format [ToFormat (VCResult P)] (rs : VCResults P) : Format :=
   let rsf := rs.map (fun r => f!"{Format.line}{r}")
@@ -328,4 +333,5 @@ instance [ToFormat (VCResult P)] : ToFormat (VCResults P) where
 instance [ToFormat (VCResult P)] : ToString (VCResults P) where
   toString rs := toString (VCResults.format rs)
 
+end -- public section
 end Imperative

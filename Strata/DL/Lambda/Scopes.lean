@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Util.Maps
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Util.Maps
 
 namespace Lambda
 
 open Std (ToFormat Format format)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -27,10 +28,10 @@ of Lambda expressions in isolation, the stack can contain a single scope.
 
 variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [BEq (LExpr T.mono)] [ToFormat (LExpr T.mono)]
 
-def Scope (T : LExprParams) : Type := Map T.Identifier (Option LMonoTy × (LExpr T.mono))
+@[expose] def Scope (T : LExprParams) : Type := Map T.Identifier (Option LMonoTy × (LExpr T.mono))
 
-def Scope.ofMap (m : Map T.Identifier (Option LMonoTy × (LExpr T.mono))) : Scope T := m
-def Scope.toMap (s : Scope T) : Map T.Identifier (Option LMonoTy × (LExpr T.mono)) := s
+@[expose] def Scope.ofMap (m : Map T.Identifier (Option LMonoTy × (LExpr T.mono))) : Scope T := m
+@[expose] def Scope.toMap (s : Scope T) : Map T.Identifier (Option LMonoTy × (LExpr T.mono)) := s
 
 instance : BEq (Scope T) where
   beq m1 m2 := m1.toMap == m2.toMap
@@ -50,7 +51,7 @@ private def Scope.format (m : Scope T) : Std.Format :=
     | none => f!"{k} → {v}"
 
 instance (priority := high) : ToFormat (Scope T) where
-  format := Scope.format
+  format := private Scope.format
 
 /--
 Merge two maps `m1` and `m2`, where `m1` is assumed to be the map if `cond`
@@ -82,7 +83,7 @@ def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
 A stack of scopes, where each scope maps the free variables
 to their `LExpr` values.
 -/
-abbrev Scopes (T : LExprParams) := Maps T.Identifier (Option LMonoTy × LExpr T.mono)
+@[expose] abbrev Scopes (T : LExprParams) := Maps T.Identifier (Option LMonoTy × LExpr T.mono)
 
 /--
 Merge two scopes, where `s1` is assumed to be the scope if `cond` is true, and
@@ -97,4 +98,5 @@ def Scopes.merge (cond : LExpr T.mono) (s1 s2 : Scopes T) : Scopes T :=
 
 --------------------------------------------------------------------
 
+end -- public section
 end Lambda

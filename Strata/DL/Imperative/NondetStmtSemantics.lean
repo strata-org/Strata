@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.NondetStmt
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.NondetStmt
+public import Strata.DL.Imperative.Stmt
 
 ---------------------------------------------------------------------
 
 namespace Imperative
+
+public section
 
 mutual
 
@@ -57,3 +60,5 @@ inductive EvalNondetStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P C
     -/
 
 end
+
+end -- public section

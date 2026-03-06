@@ -3,12 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.Basic
-import Strata.DL.SMT.Encoder
-import Strata.DL.SMT.Factory
-import Strata.DL.SMT.Function
-import Strata.DL.SMT.Op
-import Strata.DL.SMT.Solver
-import Strata.DL.SMT.Term
-import Strata.DL.SMT.TermType
+public import Strata.DL.SMT.Encoder
+public import Strata.DL.SMT.Factory
+public import Strata.DL.SMT.Function
+public import Strata.DL.SMT.Op
+public import Strata.DL.SMT.Solver
+public import Strata.DL.SMT.Term
+public import Strata.DL.SMT.TermType

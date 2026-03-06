@@ -8,7 +8,7 @@ For DDM-specific documentation on datatype annotations and the function template
 Strata supports algebraic datatypes (ADTs) similar to those found in functional programming languages. Datatypes allow one to define custom types with multiple constructors, each of which can have zero or more fields (constructor arguments).
 
 Example in Strata Core syntax:
-```boogie
+```
 datatype Option<T> () {
   None(),
   Some(val: T)
@@ -21,7 +21,7 @@ datatype Option<T> () {
 
 Datatypes are declared using the `datatype` keyword:
 
-```boogie
+```
 datatype <Name> (<TypeParams>) {
   <Constructor1>(<field1>: <type1>, ...),
   <Constructor2>(<field2>: <type2>, ...),
@@ -38,7 +38,7 @@ datatype <Name> (<TypeParams>) {
 ### Examples
 
 **Simple enum (no fields):**
-```boogie
+```
 datatype Color () {
   Red(),
   Green(),
@@ -47,7 +47,7 @@ datatype Color () {
 ```
 
 **Option type (polymorphic):**
-```boogie
+```
 datatype Option<T> () {
   None(),
   Some(val: T)
@@ -55,7 +55,7 @@ datatype Option<T> () {
 ```
 
 **Recursive list:**
-```boogie
+```
 datatype List<T> () {
   Nil(),
   Cons(head: T, tail: List<T>)
@@ -63,7 +63,7 @@ datatype List<T> () {
 ```
 
 **Binary tree:**
-```boogie
+```
 datatype Tree<T> () {
   Leaf(),
   Node(value: T, left: Tree<T>, right: Tree<T>)

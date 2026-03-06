@@ -127,10 +127,10 @@ def getRHSIdent (op : Operation) : String :=
   | _ => ""
 
 -- Verify: \| is unescaped to | in AST (stored with Lean's «» notation)
-#guard (getRHSIdent testEscapeAST.commands[0]!) == "«name|with|pipes»"
+#guard (getRHSIdent testEscapeAST.commands[0]!) == "name|with|pipes"
 
 -- Verify: \\ is unescaped to single \ in AST (stored with Lean's «» notation)
-#guard (getRHSIdent testEscapeAST.commands[1]!) == "«path\\to\\file»"
+#guard (getRHSIdent testEscapeAST.commands[1]!) == "path\\to\\file"
 
 -- Verify dots are preserved in AST
 def testDotIdent := #strata
@@ -143,11 +143,11 @@ v := trailing..end;
 #end
 
 -- Verify: dots are preserved in identifier names in AST (stored with Lean's «» notation)
-#guard (getRHSIdent testDotIdent.commands[0]!) == "«qualified.name»"
-#guard (getRHSIdent testDotIdent.commands[1]!) == "«another.dotted.identifier»"
-#guard (getRHSIdent testDotIdent.commands[2]!) == "«a..b»"
-#guard (getRHSIdent testDotIdent.commands[3]!) == "«x...y»"
-#guard (getRHSIdent testDotIdent.commands[4]!) == "«trailing..end»"
+#guard (getRHSIdent testDotIdent.commands[0]!) == "qualified.name"
+#guard (getRHSIdent testDotIdent.commands[1]!) == "another.dotted.identifier"
+#guard (getRHSIdent testDotIdent.commands[2]!) == "a..b"
+#guard (getRHSIdent testDotIdent.commands[3]!) == "x...y"
+#guard (getRHSIdent testDotIdent.commands[4]!) == "trailing..end"
 
 -- Test dialect with | operator that has NO spaces in syntax definition
 #dialect
