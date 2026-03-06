@@ -121,10 +121,11 @@ def translateExpr (expr : StmtExprMd)
       return dummy
     else
       panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format e)}"
+  let sr := (Imperative.getFileRange expr.md).map (·.range) |>.getD Strata.SourceRange.none
   match h: expr.val with
-  | .LiteralBool b => return .const Strata.SourceRange.none (.boolConst b)
-  | .LiteralInt i => return .const Strata.SourceRange.none (.intConst i)
-  | .LiteralString s => return .const Strata.SourceRange.none (.strConst s)
+  | .LiteralBool b => return .const sr (.boolConst b)
+  | .LiteralInt i => return .const sr (.intConst i)
+  | .LiteralString s => return .const sr (.strConst s)
   | .Identifier name =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
