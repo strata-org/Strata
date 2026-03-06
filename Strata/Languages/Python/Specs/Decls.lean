@@ -57,6 +57,7 @@ def typingUnion := mk "typing" "Union"
 def typingRequired := mk "typing" "Required"
 def typingNotRequired := mk "typing" "NotRequired"
 def typingUnpack := mk "typing" "Unpack"
+def reCompile := mk "re" "compile"
 
 end PythonIdent
 
@@ -317,9 +318,10 @@ def count (ad : ArgDecls) := ad.args.size + ad.kwonly.size
 end ArgDecls
 
 /--
-A specification expression with `free` free variables (arguments + return value
-for postconditions). Supports value and predicate expressions for assert
-statements in function bodies.
+A composable expression tree for translating Python `assert` statements into
+structured preconditions and postconditions. Leaf nodes are `var`, `intLit`,
+and `placeholder`; interior nodes represent operations like `len`, `getIndex`,
+`intGe`/`intLe`, `isInstanceOf`, and `enumMember`.
 -/
 inductive SpecExpr where
 /-- Stands in for an assert pattern not yet supported by the translator.
@@ -328,10 +330,10 @@ inductive SpecExpr where
 | var (name : String)
 | getIndex (subject : SpecExpr) (field : String)
 | isInstanceOf (subject : SpecExpr) (typeName : String)
-| lenGe (subject : SpecExpr) (bound : Nat) -- Nat: len() is non-negative
-| lenLe (subject : SpecExpr) (bound : Nat)
-| valueGe (subject : SpecExpr) (bound : Int) -- Int: values may be negative
-| valueLe (subject : SpecExpr) (bound : Int)
+| len (subject : SpecExpr)
+| intLit (value : Int)
+| intGe (subject : SpecExpr) (bound : SpecExpr)
+| intLe (subject : SpecExpr) (bound : SpecExpr)
 | enumMember (subject : SpecExpr) (values : Array String)
 deriving Inhabited
 
