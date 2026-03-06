@@ -7094,22 +7094,41 @@ end
 /-- `LMonoTy.instantiateWithCheck` produces a type that is `AnnotCompat` with
     the input: there exists a substitution σ (renaming free vars to fresh
     generated names) such that the output is alias-equivalent to `subst [σ] mty_in`. -/
-private theorem instantiateWithCheck_AnnotCompat
+private theorem instantiateWithCheck_AnnotCompat [Std.ToFormat T.Metadata]
     (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
     (mty_out : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty_out, Env'))
     (h_aw : TContext.AliasesWF Env.context) :
     AnnotCompat Env.context.aliases mty_in mty_out := by
-  -- Proof sketch: instantiateWithCheck does instantiateEnv (renames free vars
-  -- to fresh generated names via σ) then resolveAliases (alias-equivalent output).
-  -- Together: ∃ σ, AliasEquiv aliases (subst [σ] mty_in) mty_out.
-  -- The σ witness is zip(mty_in.freeVars, map ftvar freshtvs) from genTyVars.
-  -- Uses instantiateEnv_decompose + resolveAliases_aliasEquiv.
-  sorry
+  -- Use the decomposition lemma to extract intermediate values cleanly.
+  have ⟨mty_ie, Env_ie, Env_ra, h_ie, h_ra⟩ :=
+    LMonoTy.instantiateWithCheck_decompose mty_in C Env mty_out Env' h
+  -- h_ie : instantiateEnv mty_in.freeVars [mty_in] Env = .ok ([mty_ie], Env_ie)
+  -- h_ra : resolveAliases mty_ie Env_ie = .ok (mty_out, Env_ra)
+  -- Step 1: Get the substitution σ from instantiateEnv_decompose
+  have ⟨freshtvs, genEnv', h_gen, h_result, h_env_eq⟩ :=
+    instantiateEnv_decompose _ _ _ _ _ h_ie
+  -- h_result : [mty_ie] = LMonoTys.subst [σ] [mty_in]
+  -- Step 2: Get AliasEquiv from resolveAliases_aliasEquiv
+  have h_ie_ctx := LMonoTys.instantiateEnv_context _ _ Env _ _ h_ie
+  have h_alias := resolveAliases_aliasEquiv mty_ie Env_ie mty_out Env_ra h_ra
+      (by rw [h_ie_ctx]) (h_ie_ctx ▸ h_aw)
+  -- h_alias : AliasEquiv Env.context.aliases mty_ie mty_out
+  -- Step 3: Show mty_ie = subst [σ] mty_in from the singleton list equation h_result,
+  -- then substitute to close the goal.
+  have h_eq : mty_ie = LMonoTy.subst
+      [List.zip (LMonoTy.freeVars mty_in) (List.map LMonoTy.ftvar freshtvs)] mty_in := by
+    have h := h_result
+    simp only [LMonoTys.subst] at h
+    split at h
+    · rename_i hS; simp at h; rw [h]; exact (LMonoTy.subst_emptyS hS).symm
+    · simp [LMonoTys.subst.substAux] at h; exact h
+  subst h_eq
+  exact ⟨_, h_alias⟩
 
 /-- `typeBoundVar` with a `some` annotation produces a type that is
     `AnnotCompat` with the annotation. -/
-private theorem typeBoundVar_AnnotCompat
+private theorem typeBoundVar_AnnotCompat [Std.ToFormat T.Metadata]
     (C : LContext T) (Env : TEnv T.IDMeta) (bty_val : LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env (some bty_val) = .ok (xv, xty, Env'))

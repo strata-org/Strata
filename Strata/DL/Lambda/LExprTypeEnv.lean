@@ -907,6 +907,42 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
   else .error f!"Type {mty} is not an instance of a previously registered type!\n\
                  Known Types: {C.knownTypes}"
 
+/-- Decompose `LMonoTy.instantiateWithCheck` into its two main steps:
+    `instantiateEnv` (which renames free vars to fresh generated names)
+    followed by `resolveAliases` (which expands type aliases). -/
+theorem LMonoTy.instantiateWithCheck_decompose
+    (mty : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (result : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty C Env = .ok (result, Env')) :
+    ∃ (mty_ie : LMonoTy) (Env_ie Env_ra : TEnv T.IDMeta),
+      LMonoTys.instantiateEnv (mty.freeVars) [mty] Env = .ok ([mty_ie], Env_ie) ∧
+      LMonoTy.resolveAliases mty_ie Env_ie = .ok (result, Env_ra) := by
+  -- Use dsimp to avoid simp's structure decomposition
+  dsimp only [LMonoTy.instantiateWithCheck, bind, Except.instMonad, Except.bind] at h
+  -- First split: on the instantiateEnv result
+  split at h
+  · simp at h  -- instantiateEnv error
+  · -- instantiateEnv succeeded
+    rename_i instTypes Env_ie h_ie
+    have h_len : instTypes.length = 1 := by
+      have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_ie; simp at this; exact this
+    obtain ⟨mty_ie, rfl⟩ : ∃ m, instTypes = [m] := by
+      match instTypes, h_len with | [x], _ => exact ⟨x, rfl⟩
+    -- Second split: on the resolveAliases result
+    split at h
+    · simp at h  -- resolveAliases error
+    · rename_i mty_ra Env_ra h_ra
+      -- Third split: checkNoFutureGenVars
+      split at h
+      · simp at h
+      · -- Fourth split: isInstanceOfKnownType
+        split at h
+        · simp [Pure.pure, Except.pure] at h
+          obtain ⟨h1, _⟩ := h
+          subst h1
+          exact ⟨mty_ie, _, _, h_ie, h_ra⟩
+        · simp at h
+
 /--
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
