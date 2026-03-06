@@ -1042,7 +1042,7 @@ private def scopeSepFormat (name : QualifiedIdent)
   match name with
   | q`Init.Seq              => some (.none, Syntax.getArgs)
   | q`Init.CommaSepBy       => some (.comma, Syntax.getSepArgs)
-  | q`Init.SpaceSepBy       => some (.space, Syntax.getSepArgs)
+  | q`Init.SpaceSepBy       => some (.space, Syntax.getArgs)
   | q`Init.SpacePrefixSepBy => some (.spacePrefix, Syntax.getArgs)
   | _ => none
 
@@ -1183,24 +1183,13 @@ partial def runSyntaxElaborator
     let astx := args[ae.syntaxLevel]
     let some aloc := mkSourceRange? astx
       | panic! "Arg syntax missing position information"
-    -- Handle datatype declaration.
-    if let some (nameLevel, typeParamsLevel) := ae.datatypeScope then
-      let some nameT := trees[nameLevel]
-        | logError aloc "Internal: missing name assignment"
-          return default
+    -- Handle scoping annotations.
+    if let some typeParamsLevel := ae.scopeTVar then
+      -- @[scopeTVar(typeParams)] — converts .type bindings to .tvar bindings
       let some typeParamsT := trees[typeParamsLevel]
-        | logError aloc "Internal: missing type parameter"
-          return default
-      let datatypeName :=
-        match nameT.info with
-        | .ofIdentInfo info => info.val
-        | _ => panic! "Expected identifier for datatype name"
+        | continue
       let tloc := typeParamsT.info.loc
       let paramCtx := typeParamsT.resultContext
-
-      -- Extract type parameter names only from NEW bindings added by
-      -- typeParams, not inherited bindings (which may include datatypes from
-      -- previous commands)
       let (typeParamNames, success) ← runChecked <|
         paramCtx.bindings.toArray.foldlM (init := #[]) fun a b => do
           match b.kind with
@@ -1211,13 +1200,7 @@ partial def runSyntaxElaborator
             pure a
       if success = false then
         return default
-      -- Add the datatype name to the GlobalContext as a type
-      -- Use tctx0.globalContext so pre-registered types are visible
-      let gctx := tctx0.globalContext
-      let gctx := gctx.ensureDefined datatypeName (GlobalKind.type typeParamNames.toList none)
-      let tctx := TypingContext.empty gctx
-      -- Add .tvar bindings for type parameters
-      -- Start with extended global context.
+      let tctx := TypingContext.empty tctx0.globalContext
       let tctx := typeParamNames.foldl (init := tctx) fun ctx name =>
           ctx.push { ident := name, kind := .tvar tloc name }
       trees ← elabSyntaxArg getKind isTypeP tctx astx ⟨argLevel, argLevelP⟩ trees
