@@ -333,8 +333,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   -- We no longer need to strip it from translate output.
   let laurelPreludeSize := 0
   let mut preludeDecls : Array Core.Decl :=
-    Strata.Python.Core.PythonLaurelPrelude.decls.toArray ++
-    (Strata.Laurel.corePrelude.decls.filter (λ d => d.name.name != "Box")).toArray
+    Strata.Python.Core.PythonLaurelPrelude.decls.toArray
   let mut existingNames : Std.HashSet String :=
     preludeDecls.foldl (init := {}) fun s d =>
       (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
@@ -449,7 +448,7 @@ def pyAnalyzeLaurelCommand : Command where
           -- The Laurel prelude is now included at the Laurel level during
           -- HeapParameterization, so translate output contains prelude decls as normal decls.
           -- No stripping needed.
-          let programDecls := coreProgramDecls.decls
+          let programDecls := coreProgramDecls.decls.filter (λ d=> d.name.name != "Box")
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names
@@ -1077,8 +1076,8 @@ def pyTranslateLaurelCommand : Command where
     match laurelPgm with
     | .error e =>
       exitFailure s!"Python to Laurel translation failed: {e}"
-    | .ok laurelProgram =>
-      match Strata.Laurel.translate laurelProgram with
+    | .ok (laurelProgram, _) =>
+      match Strata.Laurel.translate laurelProgram Strata.Python.CorePrelude_functions with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
@@ -1099,11 +1098,11 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! none sourcePathForMetadata
     match laurelPgm with
     | .error e => exitFailure s!"Python to Laurel translation failed: {e}"
-    | .ok laurelProgram =>
-      match Strata.Laurel.translate laurelProgram with
+    | .ok (laurelProgram,_) =>
+      match Strata.Laurel.translate laurelProgram Strata.Python.CorePrelude_functions with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
@@ -1278,7 +1277,7 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
+      let results ← Strata.Laurel.verifyToVcResults laurelProgram Strata.Python.CorePrelude_functions { VerifyOptions.default with solver := "z3" }
       match results with
       | .error errors =>
         IO.println s!"==== ERRORS ===="
@@ -1305,7 +1304,7 @@ def laurelAnalyzeToGotoCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      match Strata.Laurel.translate laurelProgram with
+      match Strata.Laurel.translate laurelProgram Strata.Python.CorePrelude_functions with
       | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | .ok coreProgram =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
@@ -1435,7 +1434,7 @@ def laurelToCoreCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      match Strata.Laurel.translate laurelProgram with
+      match Strata.Laurel.translate laurelProgram Strata.Python.CorePrelude_functions with
       | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | .ok coreProgram => IO.println (prettyPrintCore coreProgram.fst)
 

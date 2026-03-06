@@ -120,7 +120,7 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
     -- expressions; any real errors will be caught during Core type checking.
     -- Make an exception for 'test_helper_procedure' since it's a procedure
     -- We will remove this hack when we enable the Python through Laurel pipeline to correctly resolve
-    id.text != "test_helper_procedure"
+    id.text ∉ ["test_helper_procedure", "datetime_now", "datetime_date"]
   else
     match model.get id with
     | .staticProcedure proc => proc.isFunctional

@@ -207,7 +207,7 @@ def HighTypeToString (ty: HighType) : String :=
   | .TFloat64 => "float"
   | .TString => "string"
   | .THeap => "heap"
-  | .UserDefined name => name
+  | .UserDefined name => name.text
   | .TCore s => s
   | _ => "Any"
 
@@ -259,16 +259,6 @@ def resolveDispatch (ctx : TranslationContext)
 
 /-! ## Expression Translation -/
 
-/-- Check if a Python expression has string type, using the Python AST and variable types.
-    Used to disambiguate `+` between arithmetic Add and string StrConcat. -/
-def isPyExprStringTyped (ctx : TranslationContext) (e : Python.expr SourceRange) : Bool :=
-  match e with
-  | .Constant _ (.ConString ..) _ => true
-  | .Name _ name _ =>
-    match ctx.variableTypes.find? (·.1 == name.val) with
-    | some (_, ty) => highEq ty (mkHighTypeMd .TString)
-    | none => false
-  | _ => false
 
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
@@ -694,14 +684,14 @@ partial def translateAssign  (ctx : TranslationContext)
               let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
               let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
               [newStmt, initStmt]
-            else if withException ctx fnname then
+            else if withException ctx fnname.text then
               [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybe_except_var] rhs_trans)]
             else [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         | _ => [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
             if ctx.compositeTypes.any (fun ct => ct.name == fnname) then
-              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, fnname)]}
+              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, fnname.text)]}
             else newctx
         | _=> newctx
         if n.val ∈ newctx.variableTypes.unzip.1 then
@@ -865,7 +855,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
         | some funsig =>
             let targets := if funsig.ret.isNone then [] else [nullcall_var]
-            let targets := if withException ctx fnname then targets++[maybe_except_var] else targets
+            let targets := if withException ctx fnname.text then targets++[maybe_except_var] else targets
             if targets.length > 0 then
               return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assign targets expr) md])
             else
@@ -1055,6 +1045,7 @@ def translateFunction (ctx : TranslationContext) (funcdecl : PythonFunctionDecl)
       decreases := none
       body := Body.Transparent bodyBlock
       md := default
+      isFunctional := false
     }
 
     return (proc, {newctx with variableTypes := []})
@@ -1323,6 +1314,7 @@ def pythonToLaurel (prelude: Core.Program)
       decreases := none,
       body := .Transparent bodyBlock
       md := default
+      isFunctional := false
       }
 
     let program : Laurel.Program := {
