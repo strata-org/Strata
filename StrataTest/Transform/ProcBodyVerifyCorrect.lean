@@ -439,54 +439,85 @@ structure PS where
   valuation : CoreStore
   evaluator : CoreEval
 
-/-! ## Statement Correctness -/
+/-! ## The Four Semantic Judgments
 
-/-- A configuration reaches an assert with a given label if it can step to
-    a terminal configuration and along the way the assert command with that
-    label was evaluated. We model this via the big-step semantics: the
-    statement list containing `assert label e md` evaluates successfully,
-    which means `e` held (since `eval_assert` requires `δ σ e = some tt`).
+These form a square of quantifier duality over reachable program states:
 
-    More precisely: a statement is correct if for every reachable state
-    where the program counter points to an assert, that assert holds.
+|                    | ∀ initial states (universal) | ∃ initial state (existential) |
+|--------------------|------------------------------|-------------------------------|
+| predicate holds    | `stmt_valid`                 | `stmt_satisfiable`            |
+| predicate fails    | `stmt_unsatisfiable`         | `stmt_falsifiable`            |
 
-    In the big-step semantics, an assert that holds simply evaluates
-    (the `eval_assert` constructor requires the condition to be true).
-    An assert that fails has no derivation — execution gets stuck.
+Dualities:
+- `stmt_valid ↔ ¬stmt_falsifiable`
+- `stmt_satisfiable ↔ ¬stmt_unsatisfiable`
+- `stmt_valid → stmt_satisfiable` (assuming reachability)
+- `stmt_unsatisfiable → stmt_falsifiable` (same direction, for failure)
+-/
 
-    So `stmt_correct` says: for all initial stores and evaluators,
-    if the statement list evaluates to completion, then every assert
-    in the list had its condition hold at the point it was evaluated. -/
+/-- **Validity**: For all reachable states at a given assertion, the predicate holds.
+    "The assertion is always true." -/
+def stmt_valid
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (stmts : List Statement)
+    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
+  Statement.assert label expr md ∈ stmts →
+  ∀ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
+    EvalStatements π φ δ σ stmts σ' δ' →
+    ∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr = some HasBool.tt
+
+/-- **Falsifiability**: There exists a reachable state at a given assertion where
+    the predicate fails. "There is a counterexample." This is `¬stmt_valid`. -/
+def stmt_falsifiable
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (stmts : List Statement)
+    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
+  Statement.assert label expr md ∈ stmts ∧
+  ∃ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
+    EvalStatements π φ δ σ stmts σ' δ' ∧
+    ∀ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr ≠ some HasBool.tt
+
+/-- **Satisfiability**: There exists a reachable state at a given assertion where
+    the predicate holds. "The assertion can be true." -/
+def stmt_satisfiable
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (stmts : List Statement)
+    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
+  Statement.assert label expr md ∈ stmts ∧
+  ∃ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
+    EvalStatements π φ δ σ stmts σ' δ' ∧
+    ∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr = some HasBool.tt
+
+/-- **Unsatisfiability**: For all reachable states at a given assertion, the
+    predicate fails. "The assertion is always false." This is `¬stmt_satisfiable`. -/
+def stmt_unsatisfiable
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (stmts : List Statement)
+    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression) : Prop :=
+  Statement.assert label expr md ∈ stmts →
+  ∀ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
+    EvalStatements π φ δ σ stmts σ' δ' →
+    ∀ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr ≠ some HasBool.tt
+
+/-- `stmt_correct` is validity for all assertions in the list. -/
 def stmt_correct
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (stmts : List Statement) : Prop :=
-  ∀ (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval),
-    EvalStatements π φ δ σ stmts σ' δ' →
-    ∀ (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression),
-      Statement.assert label expr md ∈ stmts →
-      ∃ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr = some HasBool.tt
+  ∀ (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression),
+    stmt_valid π φ stmts label expr md
 
 /-! ## Statement Failure -/
 
-/-- A statement list fails if there exist initial conditions under which
-    execution reaches an assert whose condition is false.
-    In the big-step semantics, this means the assert prevents evaluation
-    from completing — there is no derivation for the full list.
-
-    More precisely: there exist δ, σ such that the list does NOT evaluate
-    to any terminal state, AND the reason is that some assert's condition
-    is false. -/
+-- `stmt_fail` is an alias for `stmt_falsifiable` at a specific initial state
 def stmt_fail
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (stmts : List Statement)
     (label : CoreLabel) (δ₀ : CoreEval) (σ₀ : CoreStore) : Prop :=
-  -- There is an assert with this label in the statements
   ∃ (expr : Expression.Expr) (md : MetaData Expression),
     Statement.assert label expr md ∈ stmts ∧
-    -- And execution reaches a state where the condition is false
-    -- (modeled as: there exists a prefix that evaluates, but the assert fails)
-    ∃ (σ_at : CoreStore) (δ_at : CoreEval),
-      δ_at σ_at expr ≠ some HasBool.tt
+    ∃ (σ' : CoreStore) (δ' : CoreEval),
+      EvalStatements π φ δ₀ σ₀ stmts σ' δ' ∧
+      ∀ (σ_at : CoreStore) (δ_at : CoreEval), δ_at σ_at expr ≠ some HasBool.tt
 
 /-! ## Transformation Correctness -/
 
@@ -533,7 +564,9 @@ theorem assert_true_correct
     (label : CoreLabel) (md : MetaData Expression)
     (h_eval_true : ∀ (δ : CoreEval) (σ : CoreStore), δ σ Core.true = some HasBool.tt) :
     stmt_correct π φ [Statement.assert label Core.true md] := by
-  intro δ σ σ' δ' h_eval lbl expr md' h_in
+  intro lbl expr md'
+  unfold stmt_valid
+  intro h_in δ σ σ' δ' _
   rw [List.mem_singleton] at h_in
   cases h_in
   exact ⟨σ, δ, h_eval_true δ σ⟩
@@ -584,24 +617,22 @@ theorem removeLeadingAssertTrue_correct
     (label : CoreLabel) (md : MetaData Expression)
     (h_eval_true : ∀ (δ : CoreEval) (σ : CoreStore), δ σ Core.true = some HasBool.tt) :
     transform_correct π φ (removeLeadingAssertTrue label md) := by
-  intro stmts h_target_correct δ σ σ' δ' h_eval lbl expr md' h_in
+  intro stmts h_target_correct lbl expr md'
+  unfold stmt_valid
+  intro h_in δ σ σ' δ' h_eval
   cases removeLeadingAssertTrue_cases label md stmts with
   | inl h_removed =>
-    -- T removed the leading assert: stmts = assert label true md :: rest, T(stmts) = rest
     obtain ⟨rest, h_stmts_eq, h_T_eq⟩ := h_removed
     subst h_stmts_eq
     rw [h_T_eq] at h_target_correct
-    -- h_in : assert lbl expr md' ∈ (assert label true md :: rest)
     cases h_in with
     | head =>
       exact ⟨σ, δ, h_eval_true δ σ⟩
     | tail _ h =>
-      exact h_target_correct δ σ σ' δ'
-        (eval_skip_assert_rest π φ δ σ σ' δ' label Core.true md rest h_eval)
-        lbl expr md' h
+      have h_rest_eval := eval_skip_assert_rest π φ δ σ σ' δ' label Core.true md rest h_eval
+      exact h_target_correct lbl expr md' h δ σ σ' δ' h_rest_eval
   | inr h_unchanged =>
-    -- T didn't change anything: T(stmts) = stmts
     rw [h_unchanged] at h_target_correct
-    exact h_target_correct δ σ σ' δ' h_eval lbl expr md' h_in
+    exact h_target_correct lbl expr md' h_in δ σ σ' δ' h_eval
 
 end Soundness
