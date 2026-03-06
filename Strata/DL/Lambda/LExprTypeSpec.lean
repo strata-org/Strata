@@ -3,22 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LExprTypeEnv
-import all Strata.DL.Lambda.LExprTypeEnv
-public import Strata.DL.Lambda.LExprWF
-import all Strata.DL.Lambda.LExprWF
-import all Strata.DL.Lambda.LExpr
-import all Strata.DL.Lambda.LTy
-import all Strata.DL.Lambda.LTyUnify
-import all Strata.DL.Util.Map
-import all Strata.DL.Util.Maps
-import all Strata.DL.Lambda.Factory
-import all Strata.DL.Lambda.Identifiers
-import all Strata.DL.Util.Func
-import all Strata.DL.Util.ListMap
-import all Strata.DL.Util.List
+import Strata.DL.Lambda.LExprTypeEnv
+import Strata.DL.Lambda.LExprWF
 
 /-! ## Typing Relation for Lambda Expressions
 
@@ -37,8 +24,6 @@ TODO: prove that the implementation conforms to the specification here.
 namespace Lambda
 
 open Std (ToFormat Format format)
-
-public section
 
 namespace LExpr
 open LTy
@@ -304,5 +289,4 @@ end Tests
 
 ---------------------------------------------------------------------
 end LExpr
-end -- public section
 end Lambda

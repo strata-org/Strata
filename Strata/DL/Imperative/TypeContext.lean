@@ -3,14 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Imperative.Cmd
+
+
+import Strata.DL.Imperative.Cmd
 
 namespace Imperative
 open Std (ToFormat Format format)
-
-public section
 
 ---------------------------------------------------------------------
 
@@ -40,5 +39,4 @@ class TypeContext (P : PureExpr) (Context TypeEnv TypeError : Type) where
   typeErrorFmt : TypeError → Std.Format
 
 ---------------------------------------------------------------------
-end -- public section
 end Imperative

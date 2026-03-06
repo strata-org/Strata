@@ -3,17 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.HasVars
+
+
+import Strata.DL.Imperative.MetaData
+import Strata.DL.Imperative.Stmt
+import Strata.DL.Imperative.HasVars
 
 ---------------------------------------------------------------------
 
 namespace Imperative
-
-public section
 
 /-! # Imperative dialect: non-deterministic statements
 
@@ -108,5 +107,4 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
 
 ---------------------------------------------------------------------
 
-end -- public section
 end Imperative

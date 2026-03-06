@@ -3,12 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.SMT.DDMTransform.Translate
-public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
-public import Strata.Languages.Core.Options
+import Strata.DL.SMT.DDMTransform.Translate
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.TermType
+import Strata.Languages.Core.Options
 import Std.Data.HashMap
 
 /-!
@@ -25,8 +24,6 @@ works purely with `Term` values and delegates string rendering to the Solver via
 -/
 
 namespace Strata.SMT
-
-public section
 
 inductive Decision where
   | sat
@@ -59,7 +56,7 @@ structure SolverState where
 
 def SolverState.init : SolverState := {}
 
-@[expose] abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
+abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
 
 def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
   ReaderT.run (StateT.run x state) solver
@@ -272,7 +269,5 @@ def exit : SolverM Unit :=
   emitln "(exit)"
 
 end Solver
-
-end
 
 end Strata.SMT

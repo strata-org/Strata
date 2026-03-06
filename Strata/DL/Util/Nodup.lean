@@ -3,9 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
-
-public section
 
 /-! ## No Duplication Properties
   This file contains theormes related to `List.Nodup` property. The main theorem
@@ -301,5 +298,3 @@ theorem filter_nodup : as.Nodup → (List.filter p as).Nodup := by
   induction as <;> simp [List.filter]
   case cons h t ih =>
   split <;> simp_all
-
-end

@@ -3,11 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.SMT.Term
+import Strata.DL.SMT.Term
 
-public section
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Function.lean)
@@ -35,4 +33,3 @@ def Function.isUF : Function → Bool
   | .uf _ => true
 
 end Strata.SMT
-end

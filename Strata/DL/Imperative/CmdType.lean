@@ -3,16 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Imperative.Cmd
-public import Strata.DL.Imperative.TypeContext
+
+
+import Strata.DL.Imperative.Cmd
+import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
-
-public section
 
 ---------------------------------------------------------------------
 
@@ -110,5 +109,4 @@ def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     .ok (c :: crest, τ)
 
 ---------------------------------------------------------------------
-end -- public section
 end Imperative

@@ -3,9 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
-
-public section
 
 def beq_eq_DecidableEq
   {T : Type}
@@ -31,4 +28,3 @@ macro_rules
     try (induction $e1:ident generalizing $e2 <;> cases $e2:ident <;> grind) <;>
     (subst_vars; induction $e2:ident <;> grind)
   )
-end

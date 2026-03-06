@@ -3,15 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Util.Func
+import Strata.DL.Util.Func
 
 namespace Imperative
 
 open Strata.DL.Util (Func)
-
-public section
 
 /--
 Expected interface for pure expressions that can be used to specialize the
@@ -39,8 +36,8 @@ structure PureExpr : Type 1 where
   /-- Evaluation environment -/
   EvalEnv : Type
 
-@[expose] abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
-@[expose] abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
+abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
+abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
 
 /-! ## Type Classes for Expressions -/
 /-- Boolean expressions -/
@@ -84,7 +81,6 @@ def HasSubstFvar.substFvars [HasSubstFvar P] (e : P.Expr) (substs : List (P.Iden
 A function declaration for use with `PureExpr` - instantiation of `Func` for
 any expression system that implements the `PureExpr` interface.
 -/
-@[expose] abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
+abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
 
-end -- public section
 end Imperative

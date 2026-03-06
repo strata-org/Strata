@@ -3,9 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public section
 /-!
 ## Structured Function Attributes
 
@@ -45,4 +43,3 @@ def FuncAttr.findEvalIfConstr (attrs : Array FuncAttr) : Option Nat :=
   attrs.findSome? fun | .evalIfConstr i => some i | _ => none
 
 end Strata.DL.Util
-end

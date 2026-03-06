@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
+import Lean.Elab.Tactic
 
-public meta import Lean.Elab.Tactic
-
-public section
 /-!
 # Tactics
 
@@ -32,7 +29,7 @@ open Lean Meta Elab Tactic
 
 /-- Check if type is of the form `x ∈ xs` and return
   (x, xs, containerType) if so -/
-private meta def getMemInfo? (ty : Expr) : MetaM (Option (Expr × Expr × Name)) := do
+private def getMemInfo? (ty : Expr) : MetaM (Option (Expr × Expr × Name)) := do
   let ty ← whnf ty
   match_expr ty with
   | List.Mem _ x xs => return some (x, xs, ``List)
@@ -40,13 +37,13 @@ private meta def getMemInfo? (ty : Expr) : MetaM (Option (Expr × Expr × Name))
   | _ => return none
 
 /-- Get the head type name from an expression's type -/
-private meta def getElemTypeName (x : Expr) : MetaM (Option Name) := do
+private def getElemTypeName (x : Expr) : MetaM (Option Name) := do
   let ty ← inferType x
   let ty ← whnf ty
   return ty.getAppFn.constName?
 
 /-- Core implementation: add size lemmas with optional custom mappings -/
-private meta def addMemSizeLemmasCore (customLemmas : Array (Name × Name)) :
+private def addMemSizeLemmasCore (customLemmas : Array (Name × Name)) :
 TacticM Unit :=
   withMainContext do
     let lctx ← getLCtx
@@ -106,4 +103,3 @@ syntax "term_by_mem" "[" (ident "," ident),* "]" : tactic
 macro_rules
   | `(tactic| term_by_mem [ $[$types , $lemmas],* ]) =>
     `(tactic| solve | (add_mem_size_lemmas [$[$types, $lemmas],*]; (try simp_all); (try omega)))
-end

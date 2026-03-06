@@ -3,16 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LTy
-import all Strata.DL.Lambda.LTy
-public import Strata.DL.Lambda.Factory
-import all Strata.DL.Lambda.Factory
-public import Strata.DL.Util.List
-public import Strata.Util.Tactics
-import all Strata.Util.Tactics
+import Strata.DL.Lambda.LExprWF
+import Strata.DL.Lambda.LTy
+import Strata.DL.Lambda.Factory
+import Strata.DL.Util.List
+import Strata.Util.Tactics
 
 /-!
 ## Lambda's Type Factory
@@ -28,8 +24,6 @@ namespace Lambda
 
 open Strata
 open Std (ToFormat Format format)
-
-public section
 
 ---------------------------------------------------------------------
 
@@ -97,7 +91,7 @@ def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
   data d (d.typeArgs.map .ftvar)
 
 /-- A group of mutually recursive datatypes. -/
-@[expose] abbrev MutualDatatype (IDMeta : Type) := List (LDatatype IDMeta)
+abbrev MutualDatatype (IDMeta : Type) := List (LDatatype IDMeta)
 
 ---------------------------------------------------------------------
 
@@ -539,7 +533,7 @@ def unsafeDestructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited
 -- Type Factories
 
 /-- A TypeFactory stores datatypes grouped by mutual recursion. -/
-@[expose] def TypeFactory := Array (MutualDatatype IDMeta)
+def TypeFactory := Array (MutualDatatype IDMeta)
 
 instance: ToFormat (@TypeFactory IDMeta) where
   format f :=
@@ -624,7 +618,7 @@ memoizing the results.
 -/
 
 /-- Stores whether a type is known to be inhabited -/
-@[expose] abbrev inhabMap : Type := Map String Bool
+abbrev inhabMap : Type := Map String Bool
 
 /-
 The termination argument follows from the fact that each time a type symbol
@@ -802,5 +796,4 @@ def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabi
 
 ---------------------------------------------------------------------
 
-end -- public section
 end Lambda

@@ -3,16 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.Backends.CBMC.GOTO.Instruction
+import Strata.Backends.CBMC.GOTO.Instruction
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
 
 -------------------------------------------------------------------------------
-
-public section
 
 /-- A GOTO program; corresponds to
   [`goto_programt`](https://diffblue.github.io/cbmc/classgoto__programt.html) -/
@@ -23,5 +20,3 @@ structure Program where
   isInternal : Bool := false
   isBodyAvailable : Bool := true
 deriving Repr
-
-end -- public section

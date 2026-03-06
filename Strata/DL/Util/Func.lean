@@ -3,10 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Util.ListMap
-public import Strata.DL.Util.FuncAttr
+import Strata.DL.Util.ListMap
+import Strata.DL.Util.FuncAttr
 
 /-!
 ## Generic Function Structure
@@ -23,10 +22,8 @@ namespace Strata.DL.Util
 
 open Std (ToFormat Format format)
 
-public section
-
 /-- Type identifiers for generic type arguments. Alias for String. -/
-@[expose] abbrev TyIdentifier := String
+abbrev TyIdentifier := String
 
 /-- A precondition with its associated metadata -/
 structure FuncPrecondition (ExprT : Type) (MetadataT : Type) where
@@ -69,7 +66,6 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   name     : IdentT
   typeArgs : List TyIdentifier := []
   isConstr : Bool := false --whether function is datatype constructor
-  isRecursive : Bool := false
   inputs   : ListMap IdentT TyT
   output   : TyT
   body     : Option ExprT := .none
@@ -97,9 +93,8 @@ def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat 
   let precondsStr := if preconds.isEmpty then f!"" else Format.line ++ Format.joinSep preconds Format.line
   let sep := if f.body.isNone then f!";" else f!" :="
   let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
-  let recPrefix := if f.isRecursive then f!"rec " else f!""
   f!"{attr}\
-     {recPrefix}func {f.name} : {type}{precondsStr}{sep}\
+     func {f.name} : {type}{precondsStr}{sep}\
      {body}"
 
 instance {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] : ToFormat (Func IdentT ExprT TyT MetadataT) where
@@ -199,5 +194,4 @@ instance FuncWF.precond_freevars_decidable
   exact List.decidableBAll (fun x => getVarNames x.expr ⊆ f.inputs.map (getName ·.1))
     f.preconditions
 
-end -- public section
 end Strata.DL.Util

@@ -3,15 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LState
-public import Strata.DL.Lambda.FactoryWF
-import all Strata.DL.Lambda.LTy
-import all Strata.DL.Lambda.LExpr
-import all Strata.DL.Lambda.Factory
-import all Strata.DL.Lambda.FactoryWF
-import all Strata.DL.Util.ListMap
+import Strata.DL.Lambda.LState
+import Strata.DL.Lambda.FactoryWF
 
 /-! ## A Minimal Factory with Support for Unbounded Integer and Boolean Operations
 
@@ -23,8 +17,6 @@ See also `Strata.DL.Lambda.Factory`.
 namespace Lambda
 open Std (ToFormat Format format)
 open LExpr LTy
-
-public section
 
 section IntBoolFactory
 
@@ -337,7 +329,5 @@ def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
   ] : Array (WFLFunc T)).map (·.func)
 
 end IntBoolFactory
-
-end -- public section
 
 ---------------------------------------------------------------------

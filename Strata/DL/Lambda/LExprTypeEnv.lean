@@ -3,15 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LTyUnify
-import all Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.TypeFactory
-public import Strata.DL.Util.Maps
-import all Strata.DL.Util.Maps
+import Strata.DL.Lambda.LExprWF
+import Strata.DL.Lambda.LTyUnify
+import Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.TypeFactory
+import Strata.DL.Util.Maps
 
 /-! ## Type Environment
 
@@ -25,8 +22,6 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LExpr
 open Strata
-
-public section
 
 ---------------------------------------------------------------------
 
@@ -174,7 +169,7 @@ def TState.genExprSym (state : TState) : String × TState :=
 ---------------------------------------------------------------------
 
 /-- Name and arity of a registered type. -/
-@[expose] def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
+def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
 
 def KnownType.arity (k: KnownType) := k.metadata
 
@@ -193,7 +188,7 @@ instance : ToFormat KnownType where
   format k := f!"{k.toLTy}"
 
 /-- Registered types. -/
-@[expose] abbrev KnownTypes := Identifiers Nat
+abbrev KnownTypes := Identifiers Nat
 
 def makeKnownTypes (l: List KnownType) : KnownTypes :=
   Std.HashMap.ofList (l.map (fun x => (x.name, x.arity)))
@@ -898,5 +893,4 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
 
 ---------------------------------------------------------------------
 
-end -- public section
 end Lambda

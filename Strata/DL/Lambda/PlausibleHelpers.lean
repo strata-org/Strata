@@ -3,11 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public meta import Plausible.Sampleable
-public meta import Plausible.DeriveArbitrary
-public meta import Plausible.Attr
+import Plausible.Sampleable
+import Plausible.DeriveArbitrary
+import Plausible.Attr
 
 /-! ## Helpers for using Plausible with Chamelean generated instances.
 
@@ -18,8 +17,6 @@ This entire file may be removed, if a dependency is added on https://github.com/
 namespace TestGen
 
 open Plausible
-
-public meta section
 
 class ArbitrarySizedSuchThat (α : Type) (P : α → Prop) where
   arbitrarySizedST : Nat → Gen α
@@ -164,4 +161,3 @@ def elementsWithDefault [Inhabited α] (default : α) (xs : List α) : Gen α :=
     return xs[i]!
 
 end GeneratorCombinators
-end -- public section

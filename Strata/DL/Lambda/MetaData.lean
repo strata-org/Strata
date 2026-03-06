@@ -3,9 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public section
 namespace Lambda
 /--
 Metadata annotations.
@@ -18,4 +16,3 @@ structure Info where
   deriving DecidableEq, Repr
 
 end Lambda
-end

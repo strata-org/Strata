@@ -3,25 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LExpr
-import all Strata.DL.Lambda.LExpr
-public import Strata.DL.Lambda.LExprEval
-import all Strata.DL.Lambda.LExprEval
-public import Strata.DL.Lambda.LExprWF
-import all Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LState
-import all Strata.DL.Lambda.LState
-import all Strata.DL.Lambda.Factory
-import all Strata.DL.Lambda.Scopes
-public import Strata.DL.Util.Relations
+import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LExprEval
+import Strata.DL.Lambda.LExprWF
+import Strata.DL.Lambda.LState
+import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
 
 namespace Lambda
-
-public section
 
 variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
@@ -82,12 +73,16 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
     Step F rf e1 e1' →
     Step F rf (.app m e1 e2) (.app m' e1' e2)
 
-/-- Evaluation of `ite`: condition is true, select "then" branch. -/
+/-- Lazy evaluation of `ite`: condition is true. To evaluate `ite x e1 e2`, do
+not first evaluate `e1` and `e2`. In other words, `ite x e1 e2` is interpreted
+as `ite x (λ.e1) (λ.e2)`.  -/
 | ite_reduce_then:
   ∀ (ethen eelse:LExpr Tbase.mono),
     Step F rf (.ite m (.const mc (.boolConst true)) ethen eelse) ethen
 
-/-- Evaluation of `ite`: condition is false, select "else" branch. -/
+/-- Lazy evaluation of `ite`: condition is false. To evaluate `ite x e1 e2`, do
+not first evaluate `e1` and `e2`. In other words, `ite x e1 e2` is interpreted
+as `ite x (λ.e1) (λ.e2)`.  -/
 | ite_reduce_else:
   ∀ (ethen eelse:LExpr Tbase.mono),
     Step F rf (.ite m (.const mc (.boolConst false)) ethen eelse) eelse
@@ -97,18 +92,6 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
   ∀ (econd econd' ethen eelse:LExpr Tbase.mono),
     Step F rf econd econd' →
     Step F rf (.ite m econd ethen eelse) (.ite m' econd' ethen eelse)
-
-/-- Evaluation of `ite` "then" branch (when condition is not yet resolved). -/
-| ite_reduce_then_branch:
-  ∀ (econd ethen ethen' eelse:LExpr Tbase.mono),
-    Step F rf ethen ethen' →
-    Step F rf (.ite m econd ethen eelse) (.ite m' econd ethen' eelse)
-
-/-- Evaluation of `ite` "else" branch (when condition is not yet resolved). -/
-| ite_reduce_else_branch:
-  ∀ (econd ethen eelse eelse':LExpr Tbase.mono),
-    Step F rf eelse eelse' →
-    Step F rf (.ite m econd ethen eelse) (.ite m' econd ethen eelse')
 
 /-- Evaluation of equality. Reduce after both operands evaluate to values. -/
 | eq_reduce:
@@ -171,5 +154,4 @@ def StepStar (F:@Factory Tbase) (rf:Env Tbase)
   : LExpr Tbase.mono → LExpr Tbase.mono → Prop :=
   ReflTrans (Step F rf)
 
-end -- public section
 end Lambda

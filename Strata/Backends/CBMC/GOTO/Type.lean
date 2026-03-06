@@ -3,17 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.Backends.CBMC.GOTO.SourceLocation
+import Strata.Backends.CBMC.GOTO.SourceLocation
 import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
 
 -------------------------------------------------------------------------------
-
-public section
 
 namespace Ty
 
@@ -33,9 +30,7 @@ inductive Primitive where
   | bool
   | empty
   | string
-  | regex
   | integer
-  | real
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Primitive where
@@ -43,9 +38,7 @@ instance : ToFormat Primitive where
     | .bool => "bool"
     | .empty => "empty"
     | .string => "string"
-    | .regex => "regex"
     | .integer => "integer"
-    | .real => "real"
 
 /-- Bitvector types -/
 inductive BitVector where
@@ -70,18 +63,12 @@ inductive Identifier where
   | primitive (p : Identifier.Primitive)
   /-- Bitvector types -/
   | bitVector (bv : Identifier.BitVector)
-  /-- A reference to a named struct type (like CBMC's `struct_tag`). -/
-  | structTag (name : String)
-  /-- Array type with element type -/
-  | array
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Identifier where
   format i := match i with
     | .primitive p => f!"{p}"
     | .bitVector bv => f!"{bv}"
-    | .structTag name => f!"struct_tag({name})"
-    | .array => f!"array"
 
 end Ty
 
@@ -132,57 +119,35 @@ instance : ToFormat Ty where
 namespace Ty
 
 /-- Empty type -/
-@[expose, match_pattern]
+@[match_pattern]
 def Empty : Ty :=
   { id := .primitive .empty }
 
 /-- Boolean type -/
-@[expose, match_pattern]
+@[match_pattern]
 def Boolean : Ty :=
   { id := .primitive .bool }
 
 /-- Integer type -/
-@[expose, match_pattern]
+@[match_pattern]
 def Integer : Ty :=
   { id := .primitive .integer }
 
 /-- String type -/
-@[expose, match_pattern]
+@[match_pattern]
 def String : Ty :=
   { id := .primitive .string }
 
-/-- Regex type -/
-@[expose, match_pattern]
-def Regex : Ty :=
-  { id := .primitive .regex }
-
-/-- Real type -/
-@[expose, match_pattern]
-def Real : Ty :=
-  { id := .primitive .real }
-
 /-- Signed bitvector type -/
-@[expose, match_pattern]
+@[match_pattern]
 def SignedBV (width : Nat) : Ty :=
   { id := .bitVector (.signedbv width) }
 
 /-- Unsigned bitvector type -/
-@[expose, match_pattern]
+@[match_pattern]
 def UnsignedBV (width : Nat) : Ty :=
   { id := .bitVector (.unsignedbv width) }
-
-/-- A reference to a named struct type (e.g., a user-defined datatype). -/
-@[expose, match_pattern]
-def StructTag (name : _root_.String) : Ty :=
-  { id := .structTag name }
-
-/-- Array type with element type -/
-@[expose, match_pattern]
-def Array (elemTy : Ty) : Ty :=
-  { id := .array, subtypes := [elemTy] }
 
 end Ty
 
 -------------------------------------------------------------------------------
-
-end -- public section

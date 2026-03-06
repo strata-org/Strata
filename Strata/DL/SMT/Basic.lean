@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 @[inline] def BitVec.width {n : Nat} (_ : BitVec n) : Nat := n
 

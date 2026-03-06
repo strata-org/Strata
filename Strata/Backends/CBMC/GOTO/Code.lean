@@ -3,18 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.Backends.CBMC.GOTO.Expr
-public import Strata.Backends.CBMC.GOTO.SourceLocation
+import Strata.Backends.CBMC.GOTO.Expr
+import Strata.Backends.CBMC.GOTO.SourceLocation
 import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
 
 -------------------------------------------------------------------------------
-
-public section
 
 namespace Code
 
@@ -226,14 +223,6 @@ FIXME: Is this analogous to `SET_RETURN_VALUE`? -/
 def set_return_value (symbol : Expr) : Code :=
   { id := .function .return, operands := [symbol] }
 
-/-- Function call: `lhs := callee(args...)`.
-    Operands: [lhs, callee_symbol, arguments_node]. -/
-def functionCall (lhs callee : Expr) (args : List Expr) : Code :=
-  let argsNode : Expr := { id := .nullary (.symbol "arguments"), operands := args, type := .Empty }
-  { id := .function .functionCall, operands := [lhs, callee, argsNode] }
-
 end Code
 
 -------------------------------------------------------------------------------
-
-end -- public section

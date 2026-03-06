@@ -3,16 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-import all Strata.DL.Util.BitVec
-public import Strata.DL.SMT.Function
-public import Strata.DL.SMT.Op
-public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
+import Strata.DL.SMT.Basic
+import Strata.DL.SMT.Function
+import Strata.DL.SMT.Op
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.TermType
 
 
-public section
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Factory.lean)
@@ -253,4 +251,3 @@ def option.get : Term → Term
 end Factory
 
 end Strata.SMT
-end

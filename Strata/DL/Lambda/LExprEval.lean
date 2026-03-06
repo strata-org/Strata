@@ -3,10 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LState
+import Strata.DL.Lambda.LExprWF
+import Strata.DL.Lambda.LState
 
 /-! ## Partial evaluator for Lambda expressions
 
@@ -18,8 +17,6 @@ See function `Lambda.LExpr.eval` for the implementation.
 namespace Lambda
 open Std (ToFormat Format format)
 open Strata.DL.Util (FuncAttr)
-
-public section
 
 namespace LExpr
 
@@ -205,20 +202,20 @@ def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBas
   | .eq m e1 e2 => evalEq n' σ m e1 e2
   | .ite m c t f => evalIte n' σ m c t f
 
--- Note: this evaluation is eager -- both branches are fully evaluated even when
--- the condition is not resolved to true/false. This was originally lazy (only
--- substituting free variables via `substFvarsFromState`), but we switched to
--- eager evaluation to support recursive functions, where the branches may
--- contain recursive calls that need to be unfolded. If we ever need a lazy mode
--- again, we should add a flag.
 def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TBase.mono) : LExpr TBase.mono :=
   let c' := eval n' σ c
   match c' with
   | .true _ => eval n' σ t
   | .false _ => eval n' σ f
   | _ =>
-    let t' := eval n' σ t
-    let f' := eval n' σ f
+    -- It's important to at least substitute `.fvar`s in both branches of the
+    -- `ite` here so that we can replace the variables by the values in the
+    -- state; these variables can come from an imperative dialect.
+    -- (TODO): Is it worth it to evaluate these branches instead?
+    -- let t' := eval n' σ t
+    -- let f' := eval n' σ f
+    let t' := substFvarsFromState σ t
+    let f' := substFvarsFromState σ f
     .ite m c' t' f'
 
 def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
@@ -261,5 +258,4 @@ instance : Traceable EvalProvenance Unit where
   combine _ := ()
 
 end LExpr
-end -- public section
 end Lambda

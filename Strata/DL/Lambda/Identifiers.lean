@@ -3,12 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LTy
-public import Strata.DL.Util.Map
-public import Strata.Util.FileRange
-public import Std.Data.HashMap.Lemmas
+import Strata.DL.Lambda.LTy
+import Strata.DL.Util.Map
+import Strata.Util.FileRange
 
 ---------------------------------------------------------------------
 
@@ -16,7 +14,7 @@ namespace Lambda
 open Std (ToFormat Format format)
 open Strata
 
-public section
+section Identifiers
 
 /--
 Identifiers with a name and additional metadata
@@ -41,8 +39,8 @@ instance {IDMeta} [Inhabited IDMeta] : Coe String (Identifier IDMeta) where
 /--
 Identifiers, optionally with their inferred type.
 -/
-@[expose] abbrev IdentT (ITy IDMeta: Type) := (Identifier IDMeta) × Option ITy
-@[expose] abbrev IdentTs (ITy IDMeta: Type) := List (IdentT ITy IDMeta)
+abbrev IdentT (ITy IDMeta: Type) := (Identifier IDMeta) × Option ITy
+abbrev IdentTs (ITy IDMeta: Type) := List (IdentT ITy IDMeta)
 
 instance {IDMeta ITy: Type} [ToFormat ITy]: ToFormat (IdentT ITy IDMeta) where
   format i := match i.snd with
@@ -61,7 +59,7 @@ def IdentTs.idents (xs : (IdentTs ITy IDMeta)) : List (Identifier IDMeta) :=
 def IdentTs.tys? (xs : (IdentTs ITy IDMeta)) : List (Option ITy) :=
   xs.map Prod.snd
 
-@[expose] abbrev Identifiers IDMeta := Std.HashMap String IDMeta
+abbrev Identifiers IDMeta := Std.HashMap String IDMeta
 
 def Identifiers.default {IDMeta} : Identifiers IDMeta := Std.HashMap.emptyWithCapacity
 
@@ -161,5 +159,5 @@ instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
 
 ---------------------------------------------------------------------
 
-end -- public section
+end Identifiers
 end Lambda

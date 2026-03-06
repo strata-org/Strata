@@ -3,10 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LExpr
-import all Strata.DL.Lambda.LExpr
+
+
+import Strata.DL.Lambda.LExpr
 
 /-! ## Well-formedness of Lambda Expressions
 
@@ -18,8 +18,6 @@ See the definition `Lambda.LExpr.WF`. Also see theorem `HasType.regularity` in
 
 namespace Lambda
 open Std (ToFormat Format format)
-
-public section
 
 namespace LExpr
 
@@ -356,5 +354,4 @@ def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identif
 ---------------------------------------------------------------------
 
 end LExpr
-end -- public section
 end Lambda

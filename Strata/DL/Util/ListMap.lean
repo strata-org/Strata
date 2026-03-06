@@ -3,9 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public section
 -- Copied over from LNSym
 -- https://github.com/leanprover/LNSym/blob/main/Arm/Map.lean
 
@@ -15,7 +13,7 @@ open Std (ToFormat Format format)
 A simple Map-like type based on lists
 -/
 
-@[expose] def ListMap (α : Type u) (β : Type v) := List (α × β)
+def ListMap (α : Type u) (β : Type v) := List (α × β)
 
 instance [BEq α] [BEq β] : BEq (ListMap α β) where
   beq m1 m2 := go m1 m2 where
@@ -155,4 +153,3 @@ theorem ListMap.keys.length :
   case cons h t ih => assumption
 
 -------------------------------------------------------------------------------
-end

@@ -3,13 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Util.Counter
-import all Strata.DL.Util.Counter
-import all Init.Data.Repr
-
-public section
+import Strata.DL.Util.Counter
 
 /-! ## String Generator
   This file contains a string generator `StringGenState.gen`, where the
@@ -299,4 +294,3 @@ theorem StringGenState.WFMono :
     simp only [H.right, H.left, String.IsSuffix, String.toList_append, List.append_assoc]
     apply List.suffix_append
   · apply Hwf.right.right.right <;> assumption
-end

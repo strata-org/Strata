@@ -3,13 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.LTy
-public import Strata.DL.Lambda.Identifiers
-public import Strata.DL.Lambda.MetaData
-public import Strata.DL.Util.DecidableEq
-public meta import Lean.Elab.Term
+import Strata.DL.Lambda.LTy
+import Strata.DL.Lambda.Identifiers
+import Strata.DL.Lambda.MetaData
+import Strata.DL.Util.DecidableEq
 
 /-! ## Lambda Expressions with Quantifiers
 
@@ -21,8 +19,6 @@ formalization is described in `Strata.DL.Lambda.LTy`.
 
 namespace Lambda
 open Std (ToFormat Format format)
-
-public section
 
 inductive QuantifierKind
   | all
@@ -65,20 +61,20 @@ structure LExprParamsT : Type 1 where
 /--
 Dot notation syntax: T.mono transforms LExprParams into LExprParamsT with LMonoTy.
 -/
-@[expose] abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
+abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
   ⟨T, LMonoTy⟩
 
-@[expose] abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
+abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
 
 structure Typed (T: Type) where
   underlying: T
   type: LMonoTy
 
 -- Metadata annotated with a type
-@[expose] abbrev LExprParams.typed (T: LExprParams): LExprParams :=
+abbrev LExprParams.typed (T: LExprParams): LExprParams :=
   ⟨ Typed T.Metadata, T.IDMeta ⟩
 
-@[expose] abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
+abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
   ⟨T.base.typed, LMonoTy⟩
 
 /--
@@ -237,15 +233,15 @@ def LExpr.all {T : LExprParamsT} (m : T.base.Metadata) (name : String) (ty : Opt
 def LExpr.existTr {T : LExprParamsT} (m : T.base.Metadata) (name : String) (ty : Option T.TypeType) := @LExpr.quant T m .exist name ty
 def LExpr.exist {T : LExprParamsT} (m : T.base.Metadata) (name : String) (ty : Option T.TypeType) := @LExpr.quant T m .exist name ty (LExpr.noTrigger m)
 
-@[expose, match_pattern]
+@[match_pattern]
 def LExpr.intConst (m : T.base.Metadata) (n: Int) : LExpr T := .const m <| LConst.intConst n
-@[expose, match_pattern]
+@[match_pattern]
 def LExpr.strConst (m : T.base.Metadata) (s: String) : LExpr T := .const m <| LConst.strConst s
-@[expose, match_pattern]
+@[match_pattern]
 def LExpr.realConst (m : T.base.Metadata) (r: Rat) : LExpr T := .const m <| LConst.realConst r
-@[expose, match_pattern]
+@[match_pattern]
 def LExpr.bitvecConst (m : T.base.Metadata) (n: Nat) (b: BitVec n) : LExpr T := .const m <| LConst.bitvecConst n b
-@[expose, match_pattern]
+@[match_pattern]
 def LExpr.boolConst (m : T.base.Metadata) (b: Bool) : LExpr T := .const m <| LConst.boolConst b
 
 abbrev LExpr.absUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.abs T m ""  .none
@@ -348,10 +344,10 @@ def isOp (e : LExpr T) : Bool :=
   | .op _ _ _ => true
   | _ => false
 
-@[expose, match_pattern]
+@[match_pattern]
 protected def true {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .boolConst m true
 
-@[expose, match_pattern]
+@[match_pattern]
 protected def false {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .boolConst m false
 
 def isTrue (T : LExprParamsT) (e : LExpr T) : Bool :=
@@ -604,7 +600,7 @@ private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.
   termination_by sizeOf e
 
 instance (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] : ToFormat (LExpr T) where
-  format := private formatLExpr T
+  format := formatLExpr T
 
 /-
 Syntax for conveniently building `LExpr` terms with `LMonoTy`, scoped under the namespace
@@ -615,7 +611,7 @@ open Lean Elab Meta
 
 -- Although T is not used in the class, it makes it possible to create instances
 -- so that toExpr is meant to be typed
-meta class MkLExprParams (T: LExprParams) where
+class MkLExprParams (T: LExprParams) where
   elabIdent : Lean.Syntax → MetaM Expr
   toExpr : Expr
 
@@ -639,10 +635,10 @@ scoped syntax "#" noWs ident : lconstmono
 scoped syntax "(" lconstmono ":" lmonoty ")" : lconstmono
 scoped syntax lconstmono : lexprmono
 
-meta def mkIntLit (n: NumLit) : Expr := Expr.app (.const ``Int.ofNat []) (mkNatLit n.getNat)
-meta def mkNegLit (n: NumLit) := Expr.app (.const ``Int.neg []) (mkIntLit n)
+def mkIntLit (n: NumLit) : Expr := Expr.app (.const ``Int.ofNat []) (mkNatLit n.getNat)
+def mkNegLit (n: NumLit) := Expr.app (.const ``Int.neg []) (mkIntLit n)
 
-meta def elabLConstMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLConstMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lconstmono| #$n:num)  => do
     let metadata ← mkAppM ``Unit.unit #[]
     let tMono ← mkAppM ``LExprParams.mono #[MkLExprParams.toExpr T]
@@ -678,7 +674,7 @@ scoped syntax "~" noWs lidentmono : lopmono
 scoped syntax "(" lopmono ":" lmonoty ")" : lopmono
 scoped syntax lopmono : lexprmono
 
-meta def elabLOpMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLOpMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lopmono| ~$s:lidentmono)  => do
     let none ← mkNone (mkConst ``LMonoTy)
     let metadata ← mkAppM ``Unit.unit #[]
@@ -694,7 +690,7 @@ meta def elabLOpMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
 
 declare_syntax_cat lbvarmono
 scoped syntax "%" noWs num : lbvarmono
-meta def elabLBVarMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLBVarMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lbvarmono| %$n:num) => do
     let metadata ← mkAppM ``Unit.unit #[]
     let tMono ← mkAppM ``LExprParams.mono #[MkLExprParams.toExpr T]
@@ -706,7 +702,7 @@ declare_syntax_cat lfvarmono
 scoped syntax lidentmono : lfvarmono
 scoped syntax "(" lidentmono ":" lmonoty ")" : lfvarmono
 
-meta def elabLFVarMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLFVarMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lfvarmono| $i:lidentmono) => do
     let none ← mkNone (mkConst ``LMonoTy)
     let metadata ← mkAppM ``Unit.unit #[]
@@ -758,7 +754,7 @@ All type annotations in `LExpr` are for monotypes, not polytypes. It's the
 user's responsibility to ensure correct usage of type variables (i.e., they're
 unique).
 -/
-meta partial def elabLExprMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
+partial def elabLExprMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lexprmono| $c:lconstmono) => elabLConstMono (T:=T) c
   | `(lexprmono| $o:lopmono) => elabLOpMono (T:=T) o
   | `(lexprmono| $b:lbvarmono) => elabLBVarMono (T:=T) b
@@ -855,14 +851,14 @@ meta partial def elabLExprMono [MkLExprParams T] : Lean.Syntax → MetaM Expr
 
 scoped syntax ident : lidentmono
 /-- Elaborator for String identifiers, construct a String instance -/
-meta def elabStrIdent : Lean.Syntax → MetaM Expr
+def elabStrIdent : Lean.Syntax → MetaM Expr
   | `(lidentmono| $s:ident) => do
     let s := s.getId
     return mkAppN (.const `Lambda.Identifier.mk []) #[.const ``Unit [], mkStrLit s.toString, .const ``Unit.unit []]
   | _ => throwUnsupportedSyntax
 
 -- Unit metadata, Unit IDMeta
-meta instance : MkLExprParams ⟨Unit, Unit⟩ where
+instance : MkLExprParams ⟨Unit, Unit⟩ where
   elabIdent := elabStrIdent
   toExpr := mkApp2 (mkConst ``LExprParams.mk) (mkConst ``Unit) (mkConst ``Unit)
 
@@ -883,7 +879,7 @@ open Lean Elab Meta
 
 -- Although T is not used in the class, it makes it possible to create instances
 -- so that toExpr is meant to be typed
-meta class MkLExprParams (T: LExprParams) where
+class MkLExprParams (T: LExprParams) where
   elabIdent : Lean.Syntax → MetaM Expr
   toExpr : Expr
 
@@ -907,10 +903,10 @@ scoped syntax "#" noWs ident : lconst
 scoped syntax "(" lconst ":" lty ")" : lconst
 scoped syntax lconst : lexpr
 
-meta def mkIntLit (n: NumLit) : Expr := Expr.app (.const ``Int.ofNat []) (mkNatLit n.getNat)
-meta def mkNegLit (n: NumLit) := Expr.app (.const ``Int.neg []) (mkIntLit n)
+def mkIntLit (n: NumLit) : Expr := Expr.app (.const ``Int.ofNat []) (mkNatLit n.getNat)
+def mkNegLit (n: NumLit) := Expr.app (.const ``Int.neg []) (mkIntLit n)
 
-meta def elabLConst [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLConst [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lconst| #$n:num)  => do
     let metadata ← mkAppM ``Unit.unit #[]
     let baseParams := MkLExprParams.toExpr T
@@ -946,7 +942,7 @@ scoped syntax "~" noWs lident : lop
 scoped syntax "(" lop ":" lty ")" : lop
 scoped syntax lop : lexpr
 
-meta def elabLOp [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLOp [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lop| ~$s:lident)  => do
     let none ← mkNone (mkConst ``LTy)
     let ident ← MkLExprParams.elabIdent T s
@@ -966,7 +962,7 @@ meta def elabLOp [MkLExprParams T] : Lean.Syntax → MetaM Expr
 declare_syntax_cat lbvar
 scoped syntax "%" noWs num : lbvar
 
-meta def elabLBVar [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLBVar [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lbvar| %$n:num) => do
     let metadata ← mkAppM ``Unit.unit #[]
     let baseParams := MkLExprParams.toExpr T
@@ -979,7 +975,7 @@ declare_syntax_cat lfvar
 scoped syntax lident : lfvar
 scoped syntax "(" lident ":" lty ")" : lfvar
 
-meta def elabLFVar [MkLExprParams T] : Lean.Syntax → MetaM Expr
+def elabLFVar [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lfvar| $i:lident) => do
     let none ← mkNone (mkConst ``LTy)
     let metadata ← mkAppM ``Unit.unit #[]
@@ -1032,7 +1028,7 @@ open LTy.Syntax in
 It's the user's responsibility to ensure correct usage of type variables (i.e., they're
 unique).
 -/
-meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
+partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lexpr| $c:lconst) => elabLConst (T:=T) c
   | `(lexpr| $o:lop) => elabLOp (T:=T) o
   | `(lexpr| $b:lbvar) => elabLBVar (T:=T) b
@@ -1142,13 +1138,13 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
 
 scoped syntax ident : lident
 /-- Elaborator for String identifiers, construct a String instance -/
-meta def elabStrIdent : Lean.Syntax → MetaM Expr
+def elabStrIdent : Lean.Syntax → MetaM Expr
   | `(lident| $s:ident) => do
     let s := s.getId
     return mkAppN (.const `Lambda.Identifier.mk []) #[.const ``Unit [], mkStrLit s.toString, .const ``Unit.unit []]
   | _ => throwUnsupportedSyntax
 
-meta instance : MkLExprParams ⟨Unit, Unit⟩ where
+instance : MkLExprParams ⟨Unit, Unit⟩ where
   elabIdent := elabStrIdent
   toExpr := mkApp2 (mkConst ``LExprParams.mk) (mkConst ``Unit) (mkConst ``Unit)
 
@@ -1161,5 +1157,4 @@ end Syntax
 ---------------------------------------------------------------------
 
 end LExpr
-end -- public section
 end Lambda

@@ -365,8 +365,6 @@ theorem Program.typeCheckFunctionDisjoint :
         grind
     | func f =>
       split_contra_case Hty; rename_i Hty
-      split at Hty <;> try contradiction
-      simp only[pure, Except.pure, Except.mapError] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       match hx with
@@ -464,8 +462,6 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
       simp_all; grind
     | func f =>
       split_contra_case Hty; rename_i Hty
-      split at Hty <;> try contradiction
-      simp only[pure, Except.pure, Except.mapError] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
