@@ -403,6 +403,21 @@ def processExit : Statements → Option (Option String) → (Statements × Optio
 | _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
 /--
+Merge two `EnvWithNext` results by inspecting the newest path condition of
+`ewn2` to determine which is the true/false branch and what the ite condition is.
+-/
+private def mergeTwoEnvs (ewn1 ewn2 : EnvWithNext) : EnvWithNext :=
+  let (ewn_t, ewn_f, cond) := match ewn2.env.pathConditions.newest with
+    | (_, c) :: _ =>
+      match c with
+      | .ite _ inner (.false _) (.true _) =>
+        -- ewn2 has the negated condition, so it's the false branch
+        (ewn1, ewn2, inner)
+      | _ => (ewn2, ewn1, c)
+    | [] => (ewn1, ewn2, LExpr.true ())
+  { ewn_t with env := Env.merge cond ewn_t.env ewn_f.env }
+
+/--
 Merge `EnvWithNext` results that share the same exit label after block exit
 consumption.
 
@@ -412,12 +427,11 @@ paths in the input list are siblings (they started from the same entry point),
 so if they converge to the same exit label, they represent different execution
 paths through the same code that should be merged.
 
-The function handles two cases:
-1. Exactly two paths with the same label: Merges them using the ite condition
-   extracted from their path conditions. The environment whose newest path
-   condition is positive (not negated) is treated as E1 (true branch).
-2. Other cases (1 path, or 3+ paths): Returns paths unmerged to avoid
-   corrupting the path-condition structure with repeated `Env.merge` calls.
+For groups of 2+ paths with the same label, paths are iteratively merged by
+inspecting each path's newest path condition to determine the ite condition.
+This handles nested if-then-else with exits (e.g., 3 paths from two levels
+of branching) by folding merges from right to left — innermost branches are
+merged first, then outer branches.
 
 Note: This merging is essential to prevent path multiplication in the VCG.
 Without it, subsequent procedures would be verified once per path from the
@@ -428,21 +442,9 @@ private def mergeByExitLabel (ewns : List EnvWithNext) : List EnvWithNext :=
   labels.flatMap fun label =>
     let group := ewns.filter (·.exitLabel == label)
     match group with
-    | [ewn1, ewn2] =>
-      -- Determine which is the true branch by checking if its newest path
-      -- condition is the positive (non-negated) ite condition.
-      -- The true branch's condition is `cond'`, the false branch's is
-      -- `ite cond' false true` (i.e., negation).
-      let (ewn_t, ewn_f, cond) := match ewn1.env.pathConditions.newest with
-        | (_, c) :: _ =>
-          match c with
-          | .ite _ inner (.false _) (.true _) =>
-            -- ewn1 has the negated condition, so it's the false branch
-            (ewn2, ewn1, inner)
-          | _ => (ewn1, ewn2, c)
-        | [] => (ewn1, ewn2, LExpr.true ())
-      [{ ewn_t with env := Env.merge cond ewn_t.env ewn_f.env }]
-    | _ => group
+    | [] => []
+    | [ewn] => [ewn]
+    | ewn :: rest => [rest.foldr (init := ewn) fun next acc => mergeTwoEnvs acc next]
 
 mutual
 def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
