@@ -32,6 +32,45 @@ open LTy
 
 variable {IDMeta : Type} [DecidableEq IDMeta]
 
+/-!
+### Lean 4 Standard Library Gaps
+
+The following lemmas are standard string/number roundtrip properties that are
+not yet provable in Lean 4.27 due to the `String` API being based on the
+`Slice`/`Pattern` infrastructure with private internal definitions
+(`memcmpStr.go`, etc.) that have no proof-level lemmas.
+
+These are expected to become provable in **Lean 4.29+**, which will provide
+`String.startsWith` lemmas and a more transparent `String` API. See:
+https://github.com/leanprover/lean4/issues/XXXX (String API proof support)
+
+Until then, these are axiomatized via `sorry`.
+-/
+
+/-- `toString` on `Nat` is injective (decimal representation is unique).
+    Blocked: requires `Nat.toDigits 10` injectivity, not in Lean 4 stdlib or Mathlib core.
+    Expected: provable once `Nat.repr`/`String.toNat?` roundtrip lemmas are available (Lean 4.29+). -/
+private theorem Nat.toString_injective : Function.Injective (toString : Nat → String) := by
+  intro a b h
+  simp [toString, Nat.repr] at h
+  sorry -- Nat.toDigits 10 is injective
+
+/-- `(s ++ t).startsWith s = true` for any strings.
+    Blocked: `String.startsWith` goes through the private `memcmpStr.go` in the
+    `Slice.Pattern` API, which has no proof-level lemmas in Lean 4.27.
+    Expected: provable in Lean 4.29+ with `String.startsWith` simp lemmas. -/
+private theorem startsWith_append_self (s t : String) :
+    (s ++ t).startsWith s = true := by
+  sorry
+
+/-- Dropping a prefix from `(s_prefix ++ toString n)` and parsing as `Nat` recovers `n`.
+    Blocked: `String.drop` returns a `Slice`, and `Slice.toNat?` / `Nat.repr` roundtrip
+    lemmas don't exist in Lean 4.27.
+    Expected: provable in Lean 4.29+ with `String.drop`/`String.toNat?` lemmas. -/
+private theorem drop_prefix_toNat (s_prefix : String) (n : Nat) :
+    ((s_prefix ++ toString n).drop (s_prefix.length)).toNat? = some n := by
+  sorry
+
 /--
 Close `ty` by `x`, i.e., add `x` as a bound type variable.
 -/
@@ -4126,12 +4165,6 @@ private theorem LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
           exact h_gen v h_in_all n hn)).1
   · simp at h
 
-/-- `toString` on `Nat` is injective (decimal representation is unique). -/
-private theorem Nat.toString_injective : Function.Injective (toString : Nat → String) := by
-  intro a b h
-  simp [toString, Nat.repr] at h
-  sorry -- Nat.toDigits 10 is injective (true but not in Mathlib core)
-
 /-- Generated names with different indices are different. -/
 private theorem tyPrefix_ne_of_ne (a b : Nat) (h : a ≠ b) :
     TState.tyPrefix ++ toString a ≠ TState.tyPrefix ++ toString b := by
@@ -4146,20 +4179,6 @@ private theorem generated_name_fresh (k : Nat) (state : TState)
     (h_lt : k < state.tyGen) :
     ∀ n, n ≥ state.tyGen → TState.tyPrefix ++ toString k ≠ TState.tyPrefix ++ toString n :=
   fun n hn => tyPrefix_ne_of_ne k n (by omega)
-
-/-- `(s ++ t).startsWith s = true` for any strings.
-    Not yet provable in Lean 4.27: `String.startsWith` goes through the private
-    `memcmpStr.go` in the `Slice.Pattern` API, which has no proof-level lemmas. -/
-private theorem startsWith_append_self (s t : String) :
-    (s ++ t).startsWith s = true := by
-  sorry -- No String.startsWith lemmas in Lean 4.27
-
-/-- Dropping a prefix from `(s_prefix ++ toString n)` and parsing as `Nat` recovers `n`.
-    This is a standard string roundtrip property (`drop ∘ toNat? ∘ toString = some`)
-    that is not yet available in Lean 4's String library (v4.27). -/
-private theorem drop_prefix_toNat (s_prefix : String) (n : Nat) :
-    ((s_prefix ++ toString n).drop (s_prefix.length)).toNat? = some n := by
-  sorry -- String.drop / Slice.toNat? / Nat.repr roundtrip; no library support in Lean 4.27
 
 /-- `isFutureGenVar` returns `true` on a generated name `tyPrefix ++ toString n`
     when `n ≥ state.tyGen`. -/
