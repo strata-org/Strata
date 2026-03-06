@@ -3,10 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Util.Counter
-import Strata.DL.Util.StringGen
+public import Strata.DL.Util.Counter
+import all Strata.DL.Util.Counter
+public import Strata.DL.Util.StringGen
+import all Strata.DL.Util.StringGen
 namespace LabelGen
+
+public section
 
 /-! ## Well-Formed Label Generator -/
 
@@ -66,6 +71,8 @@ instance : WFLabelGen String StringGenState where
     . exact StringGenState.contains Hgen
     . exact StringGenState.subset Hgen
 
-abbrev StringGenM := StateM StringGenState
+@[expose] abbrev StringGenM := StateM StringGenState
+
+end
 
 end LabelGen

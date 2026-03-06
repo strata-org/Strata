@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.DDMTransform.Translate
-import Strata.DL.SMT.Factory
-import Strata.DL.SMT.Op
-import Strata.DL.SMT.Solver
-import Strata.DL.SMT.Term
-import Strata.DL.SMT.TermType
+public import Strata.DL.SMT.DDMTransform.Translate
+public import Strata.DL.SMT.Factory
+public import Strata.DL.SMT.Op
+public import Strata.DL.SMT.Solver
+public import Strata.DL.SMT.Term
+public import Strata.DL.SMT.TermType
 import Std.Data.HashMap
 
 /-!
@@ -68,6 +69,8 @@ namespace Strata.SMT
 
 open Solver
 
+public section
+
 structure EncoderState where
   /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `t0`).
       This is a cache after converting terms to A-Normal Form. -/
@@ -79,7 +82,7 @@ def EncoderState.init : EncoderState where
   terms := {}
   ufs := {}
 
-abbrev EncoderM (α) := StateT EncoderState SolverM α
+@[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
 
 
 namespace Encoder
@@ -335,4 +338,7 @@ def encode (ts : List Term) : SolverM Unit := do
     Solver.assert t
 
 end Encoder
+
+end
+
 namespace Strata.SMT

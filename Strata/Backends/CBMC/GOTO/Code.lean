@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.Expr
-import Strata.Backends.CBMC.GOTO.SourceLocation
+public import Strata.Backends.CBMC.GOTO.Expr
+public import Strata.Backends.CBMC.GOTO.SourceLocation
 import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
 
 -------------------------------------------------------------------------------
+
+public section
 
 namespace Code
 
@@ -232,3 +235,5 @@ def functionCall (lhs callee : Expr) (args : List Expr) : Code :=
 end Code
 
 -------------------------------------------------------------------------------
+
+end -- public section

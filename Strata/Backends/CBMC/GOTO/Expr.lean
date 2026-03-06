@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.Type
-import Strata.Backends.CBMC.GOTO.SourceLocation
+public import Strata.Backends.CBMC.GOTO.Type
+public import Strata.Backends.CBMC.GOTO.SourceLocation
 import Strata.Util.Tactics
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
 
 -------------------------------------------------------------------------------
+
+public section
 namespace Expr
 
 namespace Identifier
@@ -382,3 +385,5 @@ partial def hasUnsupportedQuantifierTypes (e : Expr) : Bool :=
 end Expr
 
 -------------------------------------------------------------------------------
+
+end -- public section

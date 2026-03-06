@@ -3,14 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.EvalContext
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.EvalContext
 
 namespace Imperative
 open Std (ToFormat Format format)
+
+public section
 
 --------------------------------------------------------------------
 
@@ -111,4 +112,5 @@ def Cmds.eval [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P ×
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative
