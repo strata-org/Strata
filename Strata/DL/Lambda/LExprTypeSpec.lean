@@ -7408,6 +7408,105 @@ private theorem resolveAux_output_type_no_future_vars :
 def WellScoped (e : LExpr T.mono) (Γ : TContext T.IDMeta) : Prop :=
   ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Γ
 
+/-- `varOpen k x e` only adds `x` to the free variables: every fvar of the
+    opened expression is either an original fvar of `e` or the new `x`. -/
+private theorem varOpen_freeVars_subset
+    (k : Nat) (x : T.mono.base.Identifier × Option LMonoTy) (e : LExpr T.mono) :
+    ∀ y, y ∈ LExpr.freeVars (LExpr.varOpen k x e) → y = x ∨ y ∈ LExpr.freeVars e := by
+  induction e generalizing k with
+  | const _ _ | op _ _ _ => simp [LExpr.varOpen, LExpr.substK, LExpr.freeVars]
+  | bvar _ i =>
+    intro y hy
+    simp [LExpr.varOpen, LExpr.substK] at hy
+    split at hy
+    · simp [LExpr.freeVars] at hy; left; exact hy
+    · simp [LExpr.freeVars] at hy
+  | fvar _ v ty =>
+    intro y hy
+    simp [LExpr.varOpen, LExpr.substK, LExpr.freeVars] at hy
+    right; simp [LExpr.freeVars]; exact hy
+  | abs _ _ e ih =>
+    intro y hy
+    simp [LExpr.varOpen, LExpr.substK, LExpr.freeVars] at hy ⊢
+    exact ih (k + 1) y hy
+  | quant _ _ _ tr body ih_tr ih_body =>
+    intro y hy
+    simp [LExpr.varOpen, LExpr.substK, LExpr.freeVars, List.mem_append] at hy ⊢
+    rcases hy with h_tr | h_body
+    · rcases ih_tr (k + 1) y h_tr with rfl | h
+      · left; rfl
+      · right; left; exact h
+    · rcases ih_body (k + 1) y h_body with rfl | h
+      · left; rfl
+      · right; right; exact h
+  | app _ e1 e2 ih1 ih2 =>
+    intro y hy
+    simp only [LExpr.varOpen, LExpr.substK, LExpr.freeVars, List.mem_append] at hy
+    rcases hy with h1 | h2
+    · exact (ih1 k y h1).imp_right (List.mem_append_left _)
+    · exact (ih2 k y h2).imp_right (List.mem_append_right _)
+  | ite m_ite c t e ih_c ih_t ih_e =>
+    intro y hy
+    simp only [LExpr.varOpen, LExpr.substK, LExpr.freeVars] at hy
+    rw [show LExpr.freeVars (.ite m_ite c t e) =
+      LExpr.freeVars c ++ LExpr.freeVars t ++ LExpr.freeVars e from rfl]
+    simp only [List.mem_append] at hy ⊢
+    rcases hy with (h_c | h_t) | h_e
+    · exact (ih_c k y h_c).imp_right (fun h => Or.inl (Or.inl h))
+    · exact (ih_t k y h_t).imp_right (fun h => Or.inl (Or.inr h))
+    · exact (ih_e k y h_e).imp_right (fun h => Or.inr h)
+  | eq _ e1 e2 ih1 ih2 =>
+    intro y hy
+    simp only [LExpr.varOpen, LExpr.substK, LExpr.freeVars, List.mem_append] at hy
+    rcases hy with h1 | h2
+    · exact (ih1 k y h1).imp_right (List.mem_append_left _)
+    · exact (ih2 k y h2).imp_right (List.mem_append_right _)
+
+/-- `WellScoped` propagates through `varOpen` + context extension:
+    if `e` is well-scoped in `Γ` and `xv ∈ knownVars Γ'` where `Γ ⊆ Γ'`,
+    then `varOpen 0 (xv, some xty) e` is well-scoped in `Γ'`. -/
+private theorem WellScoped_varOpen
+    (e : LExpr T.mono) (Γ Γ' : TContext T.IDMeta)
+    (xv : T.Identifier) (xty : LMonoTy)
+    (h_ws : WellScoped e Γ)
+    (h_sub : ∀ v, v ∈ TContext.knownVars Γ → v ∈ TContext.knownVars Γ')
+    (h_xv : xv ∈ TContext.knownVars Γ') :
+    WellScoped (LExpr.varOpen 0 (xv, some xty) e) Γ' := by
+  intro y hy
+  rcases varOpen_freeVars_subset 0 (xv, some xty) e y hy with rfl | h_orig
+  · exact h_xv
+  · exact h_sub y.1 (h_ws y h_orig)
+
+/-- `typeBoundVar` extends `knownVars`: all original variables remain. -/
+private theorem typeBoundVar_knownVars_mono
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (v : T.Identifier) (hv : v ∈ TContext.knownVars Env.context) :
+    v ∈ TContext.knownVars Env'.context := by
+  sorry
+
+/-- `typeBoundVar` makes `xv` a member of `knownVars`. -/
+private theorem typeBoundVar_xv_in_knownVars
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    xv ∈ TContext.knownVars Env'.context := by
+  sorry
+
+/-- WellScoped for varOpen after typeBoundVar: combines `WellScoped_varOpen`
+    with `typeBoundVar_knownVars_mono` and `typeBoundVar_xv_in_knownVars`. -/
+private theorem WellScoped_varOpen_typeBoundVar
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
+    (body : LExpr T.mono)
+    (h_tbv : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    (h_ws_body : WellScoped body Env.context) :
+    WellScoped (LExpr.varOpen 0 (xv, some xty) body) Env1.context := by
+  exact WellScoped_varOpen body Env.context Env1.context xv xty h_ws_body
+    (typeBoundVar_knownVars_mono C Env bty xv xty Env1 h_tbv)
+    (typeBoundVar_xv_in_knownVars C Env bty xv xty Env1 h_tbv)
+
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
@@ -7864,7 +7963,12 @@ theorem resolveAux_HasType :
             boundVarsFresh := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_envwf.boundVarsFresh }
         have h_ne1 : Env1.context.types ≠ [] :=
           typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
-        have ⟨h_ctx_body, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (by sorry)
+        -- WellScoped for the opened body
+        have h_ws_body : WellScoped e_body Env.context :=
+          fun x hx => h_ws x (by simp [LExpr.freeVars]; exact hx)
+        have h_ws_open := WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1
+          e_body h_tbv h_ws_body
+        have ⟨h_ctx_body, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf h_ws_open
         -- h_ctx_body : Env2.context = Env1.context
         -- h_ty_body : HasType C Env1.context (varOpen 0 (xv, some xty) e_body)
         --             (.forAll [] (subst Env2.subst et_body.toLMonoTy))
@@ -8047,7 +8151,8 @@ theorem resolveAux_HasType :
       -- IH for body
       have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
         (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
-      have ⟨h_ctx2, _⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (by sorry)
+      have ⟨h_ctx2, _⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 e_body h_tbv
+              (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)))
       -- IH for triggers (need TEnvWF Env2)
       have ih_tr := ih_sub (varOpen 0 (xv, some xty) tr)
         (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
@@ -8058,7 +8163,11 @@ theorem resolveAux_HasType :
           boundVarsNodup := transfer_boundVarsNodup h_envwf1.boundVarsNodup h_ctx2
           boundVarsFresh := transfer_boundVarsFresh h_envwf1.boundVarsFresh h_ctx2 (resolveAux_genState_mono _ et_body C Env1 Env2 h_res_body) }
       have h_ne2 := h_ctx2 ▸ h_ne1
-      have ⟨h_ctx3, _⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf (by sorry)
+      have h_ws_tr : WellScoped (varOpen 0 (xv, some xty) tr) Env1.context :=
+        WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 tr h_tbv
+          (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; left; exact hx))
+      have ⟨h_ctx3, _⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf
+        (by rw [h_ctx2]; exact h_ws_tr)
       constructor
       · -- Context preservation: eraseFromContext Env3 xv → Env.context
         rw [← h_env']
@@ -8079,7 +8188,8 @@ theorem resolveAux_HasType :
         -- Body: IH gives HasType under any absorbing S. Take S = Env3.subst.
         have h_abs_Env3_Env2 : Subst.absorbs Env3.stateSubstInfo.subst Env2.stateSubstInfo.subst :=
           resolveAux_absorbs _ triggersT C Env2 Env3 h_res_tr h_envwf2.toEnvFreshForGen h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.boundVarsFresh
-        have ⟨_, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (by sorry)
+        have ⟨_, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 e_body h_tbv
+              (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)))
         have h_body_bool := h_ty_body Env3.stateSubstInfo.subst h_abs_Env3_Env2 Env3.stateSubstInfo.isWF
         -- et_body.toLMonoTy should be bool (from the if-check)
         -- h_ety_bool : ¬(et_body.toLMonoTy != LMonoTy.bool) = true means et_body.toLMonoTy = bool
@@ -8088,7 +8198,11 @@ theorem resolveAux_HasType :
         rw [h_ety_eq_bool, LMonoTy.subst_bool] at h_body_bool
         -- h_body_bool : HasType C Env1.context (varOpen 0 (xv, some xty) e_body) (.forAll [] .bool)
         -- Trigger typing from IH
-        have ⟨_, h_ty_tr⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf (by sorry)
+        have h_ws_tr' : WellScoped (varOpen 0 (xv, some xty) tr) Env1.context :=
+          WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 tr h_tbv
+            (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; left; exact hx))
+        have ⟨_, h_ty_tr⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf
+          (by rw [h_ctx2]; exact h_ws_tr')
         have h_tr_typed := h_ty_tr Env3.stateSubstInfo.subst (Subst.absorbs_refl _ Env3.stateSubstInfo.isWF) Env3.stateSubstInfo.isWF
         rw [h_ctx2] at h_tr_typed
         -- h_tr_typed : HasType C Env1.context (varOpen 0 (xv, some xty) tr) (...)
