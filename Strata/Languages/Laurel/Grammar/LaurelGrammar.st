@@ -148,4 +148,10 @@ category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
 op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
 
+category ConstrainedType;
+op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
+                    constraint: StmtExpr, witness: StmtExpr): ConstrainedType
+  => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
+op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct;
+
 op program (items: Seq TopLevel): Command => items;
