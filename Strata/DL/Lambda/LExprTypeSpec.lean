@@ -299,6 +299,19 @@ theorem LMonoTy.subst_bool (S : Subst) : LMonoTy.subst S LMonoTy.bool = LMonoTy.
   intro h
   simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
 
+/-- Substitution distributes over a 2-element `tcons`, giving component-wise results. -/
+private theorem LMonoTy.subst_tcons_pair (S : Subst) (name : String) (a b : LMonoTy) :
+    LMonoTy.subst S (.tcons name [a, b]) = .tcons name [LMonoTy.subst S a, LMonoTy.subst S b] := by
+  rw [LMonoTy.subst_tcons]
+  congr 1
+  rw [LMonoTys.subst_eq_substLogic]
+  by_cases hS : Subst.hasEmptyScopes S
+  · simp [LMonoTys.substLogic, hS]
+    exact ⟨(LMonoTy.subst_emptyS hS).symm, (LMonoTy.subst_emptyS hS).symm⟩
+  · have hS_ne : Subst.hasEmptyScopes S = false := by
+      revert hS; cases Subst.hasEmptyScopes S <;> simp
+    simp [LMonoTys.substLogic, hS_ne]
+
 /-!
 ### Proof architecture for `annotate_HasType`
 
@@ -6625,10 +6638,38 @@ theorem resolveAux_HasType :
               -- Goal: HasType C Γ (.app m e1 e2) (.forAll [] (subst S (subst v4 (ftvar fresh))))
               -- We need: S absorbs Env1.subst and S absorbs Env2.subst
               -- Chain: S absorbs remove(v4, fresh) and v4 absorbs Env2 absorbs Env1
-              have h_abs_S_Env1 : Subst.absorbs S Env1.stateSubstInfo.subst := by
-                sorry -- S absorbs Env1.subst: via chain S → Env'.subst → v4 → Env2 → Env1
-              have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst := by
-                sorry -- S absorbs Env2.subst: via chain S → Env'.subst → v4 → Env2
+              -- Derive absorbs S (remove v4.subst fresh_name) from h_abs_S
+              have h_abs_S_rem : Subst.absorbs S (Maps.remove v4.subst fresh_name) := by
+                rw [← h_env'] at h_abs_S
+                simp [TEnv.updateSubst] at h_abs_S
+                exact h_abs_S
+              -- Freshness: fresh_name not in Env1.subst keys/values
+              have h_fresh_Env1 := genTyVar_fresh_wrt_input_subst
+                Env1 Env2 Env3 fresh_name h_genTyVar
+                h_envwf1.substFreshForGen
+                (resolveAux_genState_mono e2 e2t C Env1 Env2 h_res2)
+              -- Freshness: fresh_name not in Env2.subst keys/values
+              have h_fresh_Env2 := genTyVar_fresh_wrt_input_subst
+                Env2 Env2 Env3 fresh_name h_genTyVar
+                (resolveAux_preserves_SubstFreshForGen e2 e2t C Env1 Env2 h_res2
+                  h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1)
+                (Nat.le_refl _)
+              -- absorbs (remove v4 fresh) Env1.subst and Env2.subst
+              have h_abs_rem_Env1 := Subst.absorbs_of_remove
+                v4.subst Env1.stateSubstInfo.subst fresh_name
+                h_abs_v4_Env1 h_fresh_Env1.1 h_fresh_Env1.2
+              have h_abs_rem_Env2 := Subst.absorbs_of_remove
+                v4.subst Env2.stateSubstInfo.subst fresh_name
+                h_abs_v4_Env3 h_fresh_Env2.1 h_fresh_Env2.2
+              -- Chain: S absorbs (remove v4 fresh) absorbs Env1/Env2
+              have h_abs_S_Env1 : Subst.absorbs S Env1.stateSubstInfo.subst :=
+                Subst.absorbs_trans
+                  Env1.stateSubstInfo.subst (Maps.remove v4.subst fresh_name) S
+                  h_abs_rem_Env1 h_abs_S_rem
+              have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst :=
+                Subst.absorbs_trans
+                  Env2.stateSubstInfo.subst (Maps.remove v4.subst fresh_name) S
+                  h_abs_rem_Env2 h_abs_S_rem
               -- Apply IHs with S directly (no HasType_subst_upgrade needed!)
               have h_ty1_S := h_ty1 S h_abs_S_Env1 h_wf_S
               rw [h_ctx1] at h_ty2
@@ -6638,25 +6679,38 @@ theorem resolveAux_HasType :
                 e1t.toLMonoTy
                 (LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])
                 Env3.stateSubstInfo v4 h_unify
-              -- Apply subst S to both sides and use absorption: subst S (subst v4 x) = subst S x
-              -- This gives: subst S e1t.toLMonoTy = tcons "arrow" [subst S e2t.toLMonoTy, subst S (ftvar fresh_name)]
+              -- Key: fresh_name ∉ freeVars e1t.toLMonoTy and e2t.toLMonoTy
+              -- (These follow from SubstFreshForGen + genTyVar freshness but are not yet proven)
+              have h_e1t_no_fresh : fresh_name ∉ LMonoTy.freeVars e1t.toLMonoTy := by
+                sorry -- needs resolveAux output type fvs freshness
+              have h_e2t_no_fresh : fresh_name ∉ LMonoTy.freeVars e2t.toLMonoTy := by
+                sorry -- needs resolveAux output type fvs freshness
+              -- subst v4 x = subst (remove v4 fresh) x when fresh ∉ freeVars x
+              have h_subst_e1t : LMonoTy.subst S (LMonoTy.subst v4.subst e1t.toLMonoTy) =
+                  LMonoTy.subst S e1t.toLMonoTy := by
+                rw [← LMonoTy.subst_remove_not_fv v4.subst fresh_name e1t.toLMonoTy h_e1t_no_fresh]
+                exact LMonoTy.subst_absorbs S (Maps.remove v4.subst fresh_name) e1t.toLMonoTy h_abs_S_rem
+              have h_subst_e2t : LMonoTy.subst S (LMonoTy.subst v4.subst e2t.toLMonoTy) =
+                  LMonoTy.subst S e2t.toLMonoTy := by
+                rw [← LMonoTy.subst_remove_not_fv v4.subst fresh_name e2t.toLMonoTy h_e2t_no_fresh]
+                exact LMonoTy.subst_absorbs S (Maps.remove v4.subst fresh_name) e2t.toLMonoTy h_abs_S_rem
+              -- Apply subst S to h_eq and simplify using absorption
+              -- Result: subst S e1t.toLMonoTy = tcons "arrow" [subst S e2t.toLMonoTy, subst S (subst v4 (ftvar fresh))]
               have h_eq_S : LMonoTy.subst S e1t.toLMonoTy =
                   LMonoTy.tcons "arrow"
                     [LMonoTy.subst S e2t.toLMonoTy,
-                     LMonoTy.subst S (.ftvar fresh_name)] := by
-                sorry -- follows from h_eq + S absorbs v4.subst + subst_tcons distribution
+                     LMonoTy.subst S (LMonoTy.subst v4.subst (.ftvar fresh_name))] := by
+                have h := congrArg (LMonoTy.subst S) h_eq
+                rw [h_subst_e1t] at h
+                rw [LMonoTy.subst_tcons_pair v4.subst "arrow" e2t.toLMonoTy (.ftvar fresh_name)] at h
+                rw [LMonoTy.subst_tcons_pair S "arrow" (LMonoTy.subst v4.subst e2t.toLMonoTy)
+                    (LMonoTy.subst v4.subst (.ftvar fresh_name))] at h
+                rw [h_subst_e2t] at h
+                exact h
               rw [h_eq_S] at h_ty1_S
-              -- Apply HasType.tapp
-              -- Result type: et.toLMonoTy = subst v4.subst (ftvar fresh_name)
-              -- So subst S et.toLMonoTy = subst S (subst v4.subst (ftvar fresh_name))
-              --                         = subst S (ftvar fresh_name) (by absorption S absorbs v4)
-              -- ... actually et.toLMonoTy is already a concrete value
-              have h_result_ty : LMonoTy.subst S (LMonoTy.subst v4.subst (LMonoTy.ftvar fresh_name)) =
-                  LMonoTy.subst S (LMonoTy.ftvar fresh_name) := by
-                sorry -- follows from S absorbs v4.subst
-              rw [h_result_ty]
+              -- Apply HasType.tapp with result type = subst S (subst v4 (ftvar fresh))
               exact HasType.tapp Env.context m e1 e2
-                (.forAll [] (LMonoTy.subst S (.ftvar fresh_name)))
+                (.forAll [] (LMonoTy.subst S (LMonoTy.subst v4.subst (.ftvar fresh_name))))
                 (.forAll [] (LMonoTy.subst S e2t.toLMonoTy))
                 (by simp [LTy.isMonoType, LTy.boundVars])
                 (by simp [LTy.isMonoType, LTy.boundVars])
@@ -6813,12 +6867,20 @@ theorem resolveAux_HasType :
               rw [← h_et]; simp [toLMonoTy]
               -- Goal: HasType C Γ (.ite m c t e) (.forAll [] (subst S tht.toLMonoTy))
               -- We need: S absorbs Env1.subst, Env2.subst, Env3.subst
-              have h_abs_S_Env1 : Subst.absorbs S Env1.stateSubstInfo.subst := by
-                sorry -- S absorbs Env1.subst: via chain S → v4 → Env2 → Env1
-              have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst := by
-                sorry -- S absorbs Env2.subst: via chain S → v4 → Env2
-              have h_abs_S_Env3 : Subst.absorbs S Env3.stateSubstInfo.subst := by
-                sorry -- S absorbs Env3.subst: via chain S → v4 → Env3
+              -- Derive absorbs S v4.subst from h_abs_S (Env'.subst = v4.subst)
+              have h_abs_S_v4 : Subst.absorbs S v4.subst := by
+                rw [← h_env'] at h_abs_S
+                simp [TEnv.updateSubst] at h_abs_S
+                exact h_abs_S
+              have h_abs_S_Env1 : Subst.absorbs S Env1.stateSubstInfo.subst :=
+                Subst.absorbs_trans
+                  Env1.stateSubstInfo.subst v4.subst S h_abs_v4_Env1 h_abs_S_v4
+              have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst :=
+                Subst.absorbs_trans
+                  Env2.stateSubstInfo.subst v4.subst S h_abs_v4_Env2 h_abs_S_v4
+              have h_abs_S_Env3 : Subst.absorbs S Env3.stateSubstInfo.subst :=
+                Subst.absorbs_trans
+                  Env3.stateSubstInfo.subst v4.subst S h_abs_v4_Env3 h_abs_S_v4
               -- Apply IHs with S directly (no HasType_subst_upgrade needed!)
               have h_ty_c_S := h_ty_c S h_abs_S_Env1 h_wf_S
               rw [h_ctx1] at h_ty_t
@@ -6832,10 +6894,17 @@ theorem resolveAux_HasType :
               -- Apply subst S to unification equalities and use absorption
               -- subst S ct.toLMonoTy = subst S bool = bool (ground type)
               have h_eq_bool_S : LMonoTy.subst S ct.toLMonoTy = LMonoTy.bool := by
-                sorry -- follows from h_eq_bool + S absorbs v4.subst
+                have h := congrArg (LMonoTy.subst S) h_eq_bool
+                rw [LMonoTy.subst_absorbs S v4.subst _ h_abs_S_v4,
+                    LMonoTy.subst_absorbs S v4.subst _ h_abs_S_v4,
+                    LMonoTy.subst_bool] at h
+                exact h
               -- subst S tht.toLMonoTy = subst S elt.toLMonoTy
               have h_eq_te_S : LMonoTy.subst S tht.toLMonoTy = LMonoTy.subst S elt.toLMonoTy := by
-                sorry -- follows from h_eq_te + S absorbs v4.subst
+                have h := congrArg (LMonoTy.subst S) h_eq_te
+                rw [LMonoTy.subst_absorbs S v4.subst _ h_abs_S_v4,
+                    LMonoTy.subst_absorbs S v4.subst _ h_abs_S_v4] at h
+                exact h
               -- Condition has type bool
               rw [h_eq_bool_S] at h_ty_c_S
               -- Then and else branches have the same type
@@ -6912,10 +6981,17 @@ theorem resolveAux_HasType :
             rw [LMonoTy.subst_bool]
             -- Env'.subst = v3.subst, S absorbs v3.subst
             -- We need: S absorbs Env1.subst, Env2.subst
-            have h_abs_S_Env1 : Subst.absorbs S Env1.stateSubstInfo.subst := by
-              sorry -- S absorbs Env1.subst: via chain S → v3 → Env2 → Env1
-            have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst := by
-              sorry -- S absorbs Env2.subst: via chain S → v3 → Env2
+            -- Derive absorbs S v3.subst from h_abs_S (Env'.subst = v3.subst)
+            have h_abs_S_v3 : Subst.absorbs S v3.subst := by
+              rw [← h_env'] at h_abs_S
+              simp [TEnv.updateSubst] at h_abs_S
+              exact h_abs_S
+            have h_abs_S_Env1 : Subst.absorbs S Env1.stateSubstInfo.subst :=
+              Subst.absorbs_trans
+                Env1.stateSubstInfo.subst v3.subst S h_abs_v3_Env1 h_abs_S_v3
+            have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst :=
+              Subst.absorbs_trans
+                Env2.stateSubstInfo.subst v3.subst S h_abs_v3_Env2 h_abs_S_v3
             -- Apply IHs with S directly (no HasType_subst_upgrade needed!)
             have h_ty1_S := h_ty1 S h_abs_S_Env1 h_wf_S
             rw [h_ctx1] at h_ty2
@@ -6925,7 +7001,10 @@ theorem resolveAux_HasType :
               Env2.stateSubstInfo v3 h_unify
             -- Apply subst S to unification equality and use absorption
             have h_eq_S : LMonoTy.subst S e1t.toLMonoTy = LMonoTy.subst S e2t.toLMonoTy := by
-              sorry -- follows from h_eq + S absorbs v3.subst
+              have h := congrArg (LMonoTy.subst S) h_eq
+              rw [LMonoTy.subst_absorbs S v3.subst _ h_abs_S_v3,
+                  LMonoTy.subst_absorbs S v3.subst _ h_abs_S_v3] at h
+              exact h
             rw [h_eq_S] at h_ty1_S
             exact HasType.teq Env.context m e1 e2
               (.forAll [] (LMonoTy.subst S e2t.toLMonoTy))
