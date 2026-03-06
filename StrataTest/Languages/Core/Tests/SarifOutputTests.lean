@@ -4,10 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
--- TODO: This file needs to be updated for the new VCOutcome API
--- Temporarily disabled until the SARIF output format is updated
+-- TODO(PR #487): This file needs to be updated for the new VCOutcome API.
+-- The old API used Outcome enum (.pass, .fail, .unknown) and VCResult had
+-- smtObligationResult and result fields. The new API uses VCOutcome structure
+-- with satisfiabilityProperty and validityProperty, and VCResult has outcome field.
+-- This requires updating all test cases to construct VCOutcome values and use
+-- the new outcomeToLevel/outcomeToMessage signatures that take VerificationMode.
 #exit
-
 
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.Verifier
@@ -27,6 +30,7 @@ namespace Core.Sarif.Tests
 
 open Lean (Json)
 open Imperative
+open Lambda
 open Strata.Sarif (Level Message)
 open Core.SMT (Result)
 
@@ -59,44 +63,49 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
     metadata := md }
 
 /-- Create a VCResult for testing -/
-def makeVCResult (label : String) (outcome : VCOutcome)
-  (md : MetaData Expression := #[]) : VCResult :=
+def makeVCResult (label : String) (outcome : Outcome)
+  (smtResult : Result := .unknown) (md : MetaData Expression := #[])
+  (outcome : VCOutcome)
+  (lexprModel : LExprModel := []) : VCResult :=
   { obligation := makeObligation label md
     outcome := .ok outcome
-    verbose := .normal }
+    verbose := .normal
+    lexprModel := lexprModel
+    checkLevel := .minimal
+    checkMode := .deductive }
 
 /-! ## Level Conversion Tests -/
 
 -- Test that pass (verified) maps to "none" level
--- #guard outcomeToLevel .pass = Level.none
+#guard outcomeToLevel .deductive .assert (VCOutcome.mk (.sat []) .unsat) = Level.none
 
 -- Test that fail maps to "error" level
--- #guard outcomeToLevel .fail = Level.error
+#guard outcomeToLevel .deductive .assert (VCOutcome.mk .unsat (.sat [])) = Level.error
 
--- Test that unknown maps to "warning" level
--- #guard outcomeToLevel .unknown = Level.warning
+-- Test that unknown maps to "error" level in deductive mode
+#guard outcomeToLevel .deductive .assert (VCOutcome.mk .unknown .unknown) = Level.error
 
--- Test that implementationError maps to "error" level
--- #guard outcomeToLevel (.implementationError "test error") = Level.error
+-- Test that unreachable assert maps to "warning" level
+#guard outcomeToLevel .deductive .assert (VCOutcome.mk .unsat .unsat) = Level.warning
 
 /-! ## Message Generation Tests -/
 
 -- Test pass message
--- #guard outcomeToMessage .pass .unknown = "Verification succeeded"
+#guard outcomeToMessage (VCOutcome.mk (.sat []) .unsat) = "Always true and reachable"
 
 -- Test fail message without counterexample
--- #guard outcomeToMessage .fail .unknown = "Verification failed"
+#guard outcomeToMessage (VCOutcome.mk .unsat (.sat [])) = "Always false and reachable"
 
 -- Test unknown message
--- #guard (outcomeToMessage .unknown .unknown).startsWith "Verification result unknown"
+#guard outcomeToMessage (VCOutcome.mk .unknown .unknown) = "Unknown (solver timeout or incomplete)"
 
--- Test error message
--- #guard (outcomeToMessage (.implementationError "test error") .unknown).startsWith "Verification error:"
+-- Test unreachable message
+#guard outcomeToMessage (VCOutcome.mk .unsat .unsat) = "Unreachable: path condition is contradictory"
 
 /-! ## Location Extraction Tests -/
 
 -- Test location extraction from complete metadata
--- #guard
+#guard
   let md := makeMetadata "/test/file.st" 10 5
   let files := makeFilesMap "/test/file.st"
   let loc? := extractLocation files md
@@ -245,11 +254,13 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 
 -- Test SARIF output with counter-example
 #guard
-  let cex : List (Core.Expression.Ident × String) :=
-    [({ name := "x", metadata := () }, "42")]
+  let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 42))]
+  let lexprCex : LExprModel :=
+    [({ name := "x", metadata := () }, .intConst () 42)]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
-  let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md
+  let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md lexprCex
   let sarifResult := vcResultToSarifResult files vcr
   sarifResult.level = Level.error &&
   (sarifResult.message.text.splitOn "counterexample").length > 1 &&
