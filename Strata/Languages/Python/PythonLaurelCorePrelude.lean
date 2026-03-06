@@ -286,7 +286,7 @@ inline function PAdd (v1: Any, v2: Any) : Any
     from_float(Any..as_float!(v1) + int_to_real(Any..as_int!(v2)) )
   else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) then
     from_float(Any..as_float!(v1) + Any..as_float!(v2))
-  else if (Any..isfrom_string(v1) && Any..isfrom_string(v1)) then
+  else if (Any..isfrom_string(v1) && Any..isfrom_string(v2)) then
     from_string(str.concat(Any..as_string!(v1),Any..as_string!(v2)))
   else if (Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2)) then
     from_ListAny(List_extend(Any..as_ListAny!(v1),Any..as_ListAny!(v2)))
