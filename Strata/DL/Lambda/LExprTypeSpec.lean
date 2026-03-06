@@ -5486,18 +5486,57 @@ private theorem resolveAux_preserves_combined :
           -- Env2.genState ≥ Env1.genState by resolveAux genState monotonicity.
           have h_mono_body := resolveAux_genState_mono
             (LExpr.varOpen 0 (xv_id, some xty_val) body) et' C Env1 Env2 h_rec
-          -- Need: xty_val freeVars gen-fresh for Env1.genState
-          -- This follows from typeBoundVar analysis (same as resolveAux_output_type_no_future_vars)
-          sorry
+          -- xty_val freeVars are gen-fresh for Env1.genState
+          -- Decompose typeBoundVar to extract xty_val's origin
+          simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h_tbv
+          split at h_tbv; · contradiction
+          rename_i genResult h_gen
+          have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+            split at h_gen; · contradiction
+            rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp
+            exact HasGen.genVar_tyGen_mono Env.genEnv _ _ h_gv
+          have h_gen_ctx : genResult.snd.context = Env.context := by
+            split at h_gen; · contradiction
+            rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp [TEnv.context]
+            exact HasGen.genVar_context Env.genEnv _ _ h_gv
+          have h_ctx_gen : ContextFreshForGen genResult.snd.context genResult.snd.genEnv.genState :=
+            h_gen_ctx ▸ ContextFreshForGen.mono _ _ _ h_ctx h_gen_tyGen
+          split at h_tbv
+          · -- bty = some: xty_val from LMonoTy.instantiateWithCheck
+            split at h_tbv; · contradiction
+            rename_i _ bty_mty _ _ Env_inst h_inst
+            simp [Pure.pure, Except.pure] at h_tbv
+            obtain ⟨_, rfl, h_env1_eq⟩ := h_tbv
+            have h_fv_fresh := LMonoTy_instantiateWithCheck_freeVars_fresh _ C genResult.snd _ Env_inst h_inst h_ctx_gen
+            have h_iwc_mono := LMonoTy_instantiateWithCheck_tyGen_mono _ C genResult.snd _ Env_inst h_inst
+            have h_gen_eq : Env1.genEnv.genState = Env_inst.genEnv.genState := by
+              rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
+            exact h_fv_fresh v hv_xty k (by rw [h_gen_eq] at h_mono_body; omega)
+          · -- bty = none: xty_val = ftvar xtyid from genTyVar
+            split at h_tbv; · contradiction
+            rename_i v_gen h_genTy
+            obtain ⟨xtyid, Env_ty⟩ := v_gen
+            simp [Pure.pure, Except.pure] at h_tbv
+            obtain ⟨_, rfl, h_env1_eq⟩ := h_tbv
+            simp [LMonoTy.freeVars] at hv_xty; rw [hv_xty]
+            have h_genTy_name := genTyVar_name_eq genResult.snd xtyid Env_ty h_genTy
+            have h_genTy_tyGen := genTyVar_tyGen genResult.snd xtyid Env_ty h_genTy
+            have h_gen_eq : Env1.genEnv.genState = Env_ty.genEnv.genState := by
+              rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
+            rw [h_genTy_name]
+            exact generated_name_fresh _ _ (by rw [h_gen_eq] at h_mono_body; omega) k hk
         · -- v from varCloseT et': varCloseT preserves toLMonoTy
           -- (varCloseT 0 xv et').toLMonoTy = et'.toLMonoTy
           -- So v ∈ freeVars et'.toLMonoTy, gen-fresh by IH (h_ih_result.2)
           -- varCloseT_toLMonoTy is defined later, but the equality is simple:
           -- varCloseT only changes fvar/bvar structure, not metadata types
           have : (Lambda.LExpr.varCloseT 0 xv_id et').toLMonoTy = et'.toLMonoTy := by
-            -- varCloseT preserves toLMonoTy (metadata type unchanged)
-            -- varCloseT_toLMonoTy is proved later in the file
-            sorry
+            match et' with
+            | .const _ _ | .op _ _ _ | .bvar _ _ | .abs _ _ _ | .app _ _ _
+            | .ite _ _ _ _ | .eq _ _ _ | .quant _ _ _ _ _ => rfl
+            | .fvar _ y _ =>
+              -- toLMonoTy gives m.type for both bvar and fvar
+              simp only [Lambda.LExpr.varCloseT]; split <;> rfl
           rw [this] at hv_ety
           exact h_ih_result.2 v hv_ety k hk
       · -- v from Subst.freeVars Env2.subst: gen-fresh by SubstFreshForGen
