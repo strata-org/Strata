@@ -107,8 +107,10 @@ theorem block_step_through_asserts
   | cons s skips' ih =>
     obtain ⟨l, e, m, rfl⟩ := h_all_asserts s (List.mem_cons.mpr (Or.inl rfl))
     apply ReflTrans.step _ (.block label (skips' ++ rest) σ δ)
-    · -- One step: assert is a skip, so block body advances
-      sorry -- needs step_block_body + step_stmt_cons + step_cmd for assert
+    · -- One step: assert is a skip, block body advances
+      exact StepStmt.step_block_body
+        (StepStmt.step_stmt_cons
+          (StepStmt.step_cmd (EvalCommand.cmd_sem EvalCmd.eval_assert)))
     · exact ih (fun s h => h_all_asserts s (List.mem_cons.mpr (Or.inr h)))
 
 theorem block_correct_implies_asserts_hold
