@@ -281,4 +281,22 @@ theorem Map.find?_append_singleton [DecidableEq α]
     · right; simp [h]
     · simp only [h, ↓reduceIte]; exact ih
 
+/-- When `x` is not in the map, `Map.insert` appends `(x, v)` at the end. -/
+theorem Map.insert_fresh_eq_append [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) (h : Map.find? m x = none) :
+    Map.insert m x v = List.append m [(x, v)] := by
+  induction m with
+  | nil => unfold Map.insert; rfl
+  | cons hd tl ih =>
+    obtain ⟨a, b⟩ := hd
+    simp only [Map.find?] at h
+    split at h
+    · exact absurd h (by simp)
+    · rename_i h_ne
+      show (if a = x then (x, v) :: tl else (a, b) :: Map.insert tl x v) =
+           (a, b) :: List.append tl [(x, v)]
+      rw [if_neg h_ne]
+      congr 1
+      exact ih h
+
 -------------------------------------------------------------------------------
