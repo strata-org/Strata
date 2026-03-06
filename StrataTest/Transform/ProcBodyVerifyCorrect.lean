@@ -82,8 +82,22 @@ The proof proceeds in two parts:
 2. Show that `stmt_correct` on that structure implies `procedure_obeys_contract`
 -/
 
-/-- If `.stmts (stmts₁ ++ stmts₂) σ δ` steps through `stmts₁` to reach
-    `.stmts stmts₂ σ' δ'`, then the enclosing block also advances. -/
+/-- Terminal configs cannot step. -/
+private theorem not_terminal_step
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (σ : CoreStore) (δ : CoreEval) (c : CoreConfig) :
+    CoreStep π φ (.terminal σ δ) c → False := by
+  intro h; cases h
+
+/-- Exiting configs cannot step. -/
+private theorem not_exiting_step
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (l : Option String) (σ : CoreStore) (δ : CoreEval) (c : CoreConfig) :
+    CoreStep π φ (.exiting l σ δ) c → False := by
+  intro h; cases h
+
+/-- If `.stmts` steps to `.stmts` via a multi-step path, the enclosing
+    `.block` can follow the same path via `step_block_body`. -/
 theorem block_steps_through_prefix
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (label : String) (stmts₁ stmts₂ : List Statement)
@@ -92,7 +106,44 @@ theorem block_steps_through_prefix
     CoreStepStar π φ
       (.block label (stmts₁ ++ stmts₂) σ δ)
       (.block label stmts₂ σ' δ') := by
-  sorry
+  intro h_steps
+  -- Generalize: for any two .stmts configs connected by steps,
+  -- the corresponding .block configs are also connected
+  suffices ∀ (c₁ c₂ : CoreConfig),
+    CoreStepStar π φ c₁ c₂ →
+    ∀ ss₁ σ₁ δ₁ ss₂ σ₂ δ₂,
+      c₁ = .stmts ss₁ σ₁ δ₁ → c₂ = .stmts ss₂ σ₂ δ₂ →
+      CoreStepStar π φ (.block label ss₁ σ₁ δ₁) (.block label ss₂ σ₂ δ₂) by
+    exact this _ _ h_steps _ _ _ _ _ _ rfl rfl
+  intro c₁ c₂ h
+  induction h with
+  | refl x =>
+    intro ss₁ σ₁ δ₁ ss₂ σ₂ δ₂ h₁ h₂
+    rw [h₁] at h₂; cases h₂; exact ReflTrans.refl _
+  | step x y z h_step h_rest ih =>
+    intro ss₁ σ₁ δ₁ ss₂ σ₂ δ₂ h₁ h₂
+    subst h₁
+    -- h_step : CoreStep (.stmts ss₁ σ₁ δ₁) y
+    -- y must be .stmts (since the path eventually reaches .stmts ss₂)
+    -- Cases on h_step from .stmts:
+    cases h_step with
+    | step_stmts_nil =>
+      -- ss₁ = [], y = .terminal σ₁ δ₁
+      -- But then h_rest : .terminal →* .stmts ss₂, which is impossible
+      exfalso
+      cases h_rest with
+      | refl => simp_all
+      | step _ _ _ h_next => exact not_terminal_step π φ _ _ _ h_next
+    | step_stmt_cons h_s =>
+      apply ReflTrans.step _ (.block label _ _ _)
+      · exact StepStmt.step_block_body (StepStmt.step_stmt_cons h_s)
+      · exact ih _ _ _ ss₂ σ₂ δ₂ rfl h₂
+    | step_stmt_cons_exit h_s =>
+      -- y = .exiting, but then can't reach .stmts ss₂
+      exfalso
+      cases h_rest with
+      | refl => simp_all
+      | step _ _ _ h_next => exact not_exiting_step π φ _ _ _ _ h_next
 
 /-- The output of `procToVerifyStmt` is a block containing inits, assumes,
     the body block, and postcondition asserts. We characterize it as:
