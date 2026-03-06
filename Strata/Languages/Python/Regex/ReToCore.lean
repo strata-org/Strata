@@ -114,6 +114,65 @@ Unmatchable regex pattern.
 def Core.unmatchableRegex : Core.Expression.Expr :=
   mkApp () (.op () reNoneFunc.name none) []
 
+-- Core regex expression builders.
+private abbrev mkReFromStr (s : String) : Core.Expression.Expr :=
+  mkApp () (.op () strToRegexFunc.name none) [strConst () s]
+private abbrev mkReRange   (c1 c2 : Char) : Core.Expression.Expr :=
+  mkApp () (.op () reRangeFunc.name none) [strConst () (toString c1), strConst () (toString c2)]
+private abbrev mkReAllChar : Core.Expression.Expr :=
+  .op () reAllCharFunc.name none
+private abbrev mkReComp    (r : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkApp () (.op () reCompFunc.name none) [r]
+private abbrev mkReUnion   (a b : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkApp () (.op () reUnionFunc.name none) [a, b]
+private abbrev mkReConcat  (a b : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkApp () (.op () reConcatFunc.name none) [a, b]
+private abbrev mkReInter   (a b : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkApp () (.op () reInterFunc.name none) [a, b]
+private abbrev mkReStar    (r   : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkApp () (.op () reStarFunc.name none) [r]
+private abbrev mkReLoop    (r   : Core.Expression.Expr) (lo hi : Nat) : Core.Expression.Expr :=
+  mkApp () (.op () reLoopFunc.name none) [r, intConst () lo, intConst () hi]
+
+/--
+Shared body for `star` and `loop {0, m}` (m ≥ 2):
+  `union(union(empty, r1b), r2b)`
+where `r2b` uses a split or simple path depending on whether `inner`
+always consumes or contains an anchor.
+- `simple r` wraps `r` for the no-split path (e.g. `mkReStar`).
+- `center r` wraps `r` for the middle repetition in the split path
+  (e.g. `mkReStar` for `star`; `mkReLoop · 0 (m-2)` for `loop {0,m}`).
+- `rec s e` computes `toCore inner s e`.
+-/
+private def toCoreStarBody (inner : RegexAST)
+    (simple center : Core.Expression.Expr → Core.Expression.Expr)
+    (atStart atEnd : Bool)
+    (rec : Bool → Bool → Core.Expression.Expr) : Core.Expression.Expr :=
+  let r1b := rec atStart atEnd
+  let r2b :=
+    if inner.alwaysConsume || inner.containsAnchorStart || inner.containsAnchorEnd then
+      let r1bStart := rec atStart false
+      let r1bMid   := rec false false
+      let r1bEnd   := rec false atEnd
+      mkReConcat (mkReConcat r1bStart (center r1bMid)) r1bEnd
+    else
+      simple r1b
+  mkReUnion (mkReUnion Core.emptyRegex r1b) r2b
+
+-- `endSplit r1End r1Mid r2`: the `$`-in-r1 split for `concat`:
+--   union(concat(r1End, r2∩ε), concat(r1Mid, r2))
+-- Case 1: r2="" (intersection with ε forces this), r1 sees atEnd=true (r1End).
+-- Case 2: r2 non-empty, r1 must not see atEnd (r1Mid).
+private abbrev endSplit (r1End r1Mid r2 : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkReUnion (mkReConcat r1End (mkReInter r2 Core.emptyRegex)) (mkReConcat r1Mid r2)
+
+-- `startSplit r1 r2Start r2Mid`: the `^`-in-r2 split for `concat`:
+--   union(concat(r1∩ε, r2Start), concat(r1, r2Mid))
+-- Case 1: r1="" (intersection with ε forces this), r2 sees atStart=true (r2Start).
+-- Case 2: r1 non-empty, r2 must not see atStart (r2Mid).
+private abbrev startSplit (r1 r2Start r2Mid : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkReUnion (mkReConcat (mkReInter r1 Core.emptyRegex) r2Start) (mkReConcat r1 r2Mid)
+
 /--
 Convert `r` to Core's expressions.
 
@@ -143,13 +202,9 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     if atStart then Core.emptyRegex else Core.unmatchableRegex
   | .anchor_end =>
     if atEnd then Core.emptyRegex else Core.unmatchableRegex
-  | .char c =>
-    (mkApp () (.op () strToRegexFunc.name none) [strConst () (toString c)])
-  | .range c1 c2 =>
-    mkApp () (.op () reRangeFunc.name none)
-      [strConst () (toString c1), strConst () (toString c2)]
-  | .anychar =>
-    mkApp () (.op () reAllCharFunc.name none) []
+  | .char c => mkReFromStr (toString c)
+  | .range c1 c2 => mkReRange c1 c2
+  | .anychar => mkReAllChar
   | .empty => Core.emptyRegex
   | .group r1 => toCore r1 atStart atEnd
   | .complement r =>
@@ -160,58 +215,27 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     -- the complement of a single character string would include multi-character
     -- string), so we intersect with `re.allchar()` to restrict to single
     -- characters, matching [^...] semantics.
-    let rb := toCore r false false
-    mkApp () (.op () reInterFunc.name none)
-      [mkApp () (.op () reAllCharFunc.name none) [],
-       mkApp () (.op () reCompFunc.name none) [rb]]
+    mkReInter mkReAllChar (mkReComp (toCore r false false))
   | .plus r1 =>
     toCore (.concat r1 (.star r1)) atStart atEnd
   | .optional r1 =>
     toCore (.union .empty r1) atStart atEnd
   | .union r1 r2 =>
-      let r1b := toCore r1 atStart atEnd
-      let r2b := toCore r2 atStart atEnd
-      mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
+    mkReUnion (toCore r1 atStart atEnd) (toCore r2 atStart atEnd)
   | .star r1 =>
-    let r1b := toCore r1 atStart atEnd
-    let r2b :=
-      if alwaysConsume r1 || r1.containsAnchorStart || r1.containsAnchorEnd then
-        let r1bStart    := toCore r1 atStart false
-        let r1bMid      := toCore r1 false false
-        let r1bEnd      := toCore r1 false atEnd
-        let r1bMidStar := mkApp () (.op () reStarFunc.name none) [r1bMid]
-        mkApp () (.op () reConcatFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1bStart, r1bMidStar], r1bEnd]
-      else
-        mkApp () (.op () reStarFunc.name none) [r1b]
-    mkApp () (.op () reUnionFunc.name none)
-      [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b], r2b]
+    toCoreStarBody r1 mkReStar mkReStar atStart atEnd (toCore r1)
   | .loop r1 n m =>
     match n, m with
     | 0, 0 => Core.emptyRegex
     | 0, 1 => toCore (.union .empty r1) atStart atEnd
     | 0, m => -- Note: m >= 2
-      let r1b := toCore r1 atStart atEnd
-      let r2b :=
-        if alwaysConsume r1 || r1.containsAnchorStart || r1.containsAnchorEnd then
-          let r1bStart := toCore r1 atStart false
-          let r1bMid   := toCore r1 false false
-          let r1bEnd   := toCore r1 false atEnd
-          let r1bLoop  := mkApp () (.op () reLoopFunc.name none) [r1bMid, intConst () 0, intConst () (m-2)]
-          mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1bStart, r1bLoop], r1bEnd]
-        else
-          mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
-      mkApp () (.op () reUnionFunc.name none)
-            [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b],
-            r2b]
+      toCoreStarBody r1 (mkReLoop · 0 m) (mkReLoop · 0 (m-2)) atStart atEnd (toCore r1)
     | _, _ =>
       toCore (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
   | .concat r1 r2 =>
     match (alwaysConsume r1), (alwaysConsume r2) with
     | true, true =>
-      let r1b := toCore r1 atStart false
-      let r2b := toCore r2 false atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkReConcat (toCore r1 atStart false) (toCore r2 false atEnd)
     | true, false =>
       -- `r1` always consumes; `r2` may be empty. `r1` might be last.
       -- When `atEnd=true` and `r1` contains `$`, passing `atEnd` to `r2` would
@@ -221,74 +245,41 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
       -- Case 2: (`r2` non-empty, so `r2` is the last consumer and `r1` must not
       -- see `atEnd`).
       if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
-        let r1bEnd := toCore r1 atStart true
-        let r1bMid := toCore r1 atStart false
-        let r2b     := toCore r2 false true
-        -- Restrict `r2` to `""` for Case 1 (`r2` is non-consuming, so
-        -- intersection with `""` checks that `r2` can indeed match `""` here).
-        let r2bEps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
-        mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2bEps],
-           mkApp () (.op () reConcatFunc.name none) [r1bMid, r2b]]
+        endSplit (toCore r1 atStart true) (toCore r1 atStart false) (toCore r2 false true)
       else
-        let r1b := toCore r1 atStart atEnd
-        let r2b := toCore r2 false atEnd
-        mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+        mkReConcat (toCore r1 atStart atEnd) (toCore r2 false atEnd)
     | false, true =>
       -- `r2` always consumes; `r1` may be empty. `r2` might be first.
       -- Case 1: (`r1=""`, `r2` starts at original position, `atStart` propagates) and
       -- Case 2: (`r1` non-empty, `r2` starts after `r1`, `atStart` must not propagate).
       if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
-        let r1b       := toCore r1 atStart false
-        -- Restrict `r1` to "" for Case 1, as before.
-        let r1bEps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
-        let r2bStart := toCore r2 atStart atEnd
-        let r2bMid   := toCore r2 false atEnd
-        mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1bEps, r2bStart],
-           mkApp () (.op () reConcatFunc.name none) [r1b, r2bMid]]
-      else
         let r1b := toCore r1 atStart false
-        let r2b := toCore r2 atStart atEnd
-        mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+        startSplit r1b (toCore r2 atStart atEnd) (toCore r2 false atEnd)
+      else
+        mkReConcat (toCore r1 atStart false) (toCore r2 atStart atEnd)
     | false, false =>
       -- Both sides may be empty.
       -- Case 1: (`r1=""`, `^` fires correctly) and
       -- Case 2: (`r1` non-empty, `^` must not fire, so `atStart=false` for `r2`).
       if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
-        let r1b       := toCore r1 atStart atEnd
-        let r1bEps   := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]
-        let r2bStart := toCore r2 atStart atEnd
-        let r2bMid   := toCore r2 false atEnd
-        mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1bEps, r2bStart],
-           mkApp () (.op () reConcatFunc.name none) [r1b, r2bMid]]
+        let r1b := toCore r1 atStart atEnd
+        startSplit r1b (toCore r2 atStart atEnd) (toCore r2 false atEnd)
       -- Symmetric to `true, false`: when `$` is in `r1` and `r2` has non-anchor
       -- content, `r2` may match non-empty, in which case `r1` is not last and
       -- `atEnd` must not be forwarded to `r1`.
       -- Case 1: (`r2=""`, `r1` sees `atEnd`) and
       -- Case 2: (`r2` non-empty, `r1` must not see `atEnd`).
       else if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
-        let r1bEnd := toCore r1 atStart true
-        let r1bMid := toCore r1 atStart false
-        let r2b     := toCore r2 atStart true
-        let r2bEps := mkApp () (.op () reInterFunc.name none) [r2b, Core.emptyRegex]
-        mkApp () (.op () reUnionFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1bEnd, r2bEps],
-           mkApp () (.op () reConcatFunc.name none) [r1bMid, r2b]]
+        endSplit (toCore r1 atStart true) (toCore r1 atStart false) (toCore r2 atStart true)
       else
-        let r1b := toCore r1 atStart atEnd
-        let r2b := toCore r2 atStart atEnd
-        mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+        mkReConcat (toCore r1 atStart atEnd) (toCore r2 atStart atEnd)
 
 def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
   | .error err => (mkApp () (.op () reAllFunc.name none) [], some err)
   | .ok ast =>
-    let mkConcat a b := mkApp () (.op () reConcatFunc.name none) [a, b]
-    let mkUnion  a b := mkApp () (.op () reUnionFunc.name none)  [a, b]
-    -- dotStar: passed with `atStart=false`, `atEnd=false` since `anychar`
+    -- `dotStar`: passed with `atStart=false`, `atEnd=false` since `anychar`
     -- ignores both.
     let dotStar := RegexAST.toCore (.star .anychar) false false
     -- We compute `toCore(ast, atStart, atEnd)` for each combination of anchor
@@ -303,17 +294,17 @@ def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
         -- union: (1) `$` fires → no trailing content; (2) `$` absent → trailing .* .
         let coreTT := RegexAST.toCore ast true true
         let coreTF := RegexAST.toCore ast true false
-        mkUnion coreTT (mkConcat coreTF dotStar)
+        mkReUnion coreTT (mkReConcat coreTF dotStar)
     | .search =>
         -- Four combinations of (`^` active, `$` active).
         let coreTT := RegexAST.toCore ast true  true
         let coreTF := RegexAST.toCore ast true  false
         let coreFT := RegexAST.toCore ast false true
         let coreFF := RegexAST.toCore ast false false
-        mkUnion coreTT
-          (mkUnion (mkConcat coreTF dotStar)
-            (mkUnion (mkConcat dotStar coreFT)
-                     (mkConcat dotStar (mkConcat coreFF dotStar))))
+        mkReUnion coreTT
+          (mkReUnion (mkReConcat coreTF dotStar)
+            (mkReUnion (mkReConcat dotStar coreFT)
+                       (mkReConcat dotStar (mkReConcat coreFF dotStar))))
     (result, none)
 
 -------------------------------------------------------------------------------
