@@ -1,3 +1,4 @@
+from re import compile
 from basetypes import BaseClass
 from typing import Any, Dict, List, Sequence
 
