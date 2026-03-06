@@ -131,6 +131,8 @@ private abbrev mkReInter   (a b : Core.Expression.Expr) : Core.Expression.Expr :
   mkApp () (.op () reInterFunc.name none) [a, b]
 private abbrev mkReStar    (r   : Core.Expression.Expr) : Core.Expression.Expr :=
   mkApp () (.op () reStarFunc.name none) [r]
+private abbrev mkRePlus    (r   : Core.Expression.Expr) : Core.Expression.Expr :=
+  mkApp () (.op () rePlusFunc.name none) [r]
 private abbrev mkReLoop    (r   : Core.Expression.Expr) (lo hi : Nat) : Core.Expression.Expr :=
   mkApp () (.op () reLoopFunc.name none) [r, intConst () lo, intConst () hi]
 
@@ -159,19 +161,77 @@ private def toCoreStarBody (inner : RegexAST)
       simple r1b
   mkReUnion (mkReUnion Core.emptyRegex r1b) r2b
 
--- `endSplit r1End r1Mid r2`: the `$`-in-r1 split for `concat`:
---   union(concat(r1End, r2∩ε), concat(r1Mid, r2))
--- Case 1: r2="" (intersection with ε forces this), r1 sees atEnd=true (r1End).
--- Case 2: r2 non-empty, r1 must not see atEnd (r1Mid).
+/--
+`endSplit r1End r1Mid r2`: the `$`-in-r1 split for `concat`:
+  union(concat(r1End, r2∩ε), concat(r1Mid, r2))
+Case 1: r2="" (intersection with ε forces this), r1 sees atEnd=true (r1End).
+Case 2: r2 non-empty, r1 must not see atEnd (r1Mid).
+-/
 private abbrev endSplit (r1End r1Mid r2 : Core.Expression.Expr) : Core.Expression.Expr :=
   mkReUnion (mkReConcat r1End (mkReInter r2 Core.emptyRegex)) (mkReConcat r1Mid r2)
 
--- `startSplit r1 r2Start r2Mid`: the `^`-in-r2 split for `concat`:
---   union(concat(r1∩ε, r2Start), concat(r1, r2Mid))
--- Case 1: r1="" (intersection with ε forces this), r2 sees atStart=true (r2Start).
--- Case 2: r1 non-empty, r2 must not see atStart (r2Mid).
+/--
+`startSplit r1 r2Start r2Mid`: the `^`-in-r2 split for `concat`:
+  union(concat(r1∩ε, r2Start), concat(r1, r2Mid))
+Case 1: r1="" (intersection with ε forces this), r2 sees atStart=true (r2Start).
+Case 2: r1 non-empty, r2 must not see atStart (r2Mid).
+-/
 private abbrev startSplit (r1 r2Start r2Mid : Core.Expression.Expr) : Core.Expression.Expr :=
   mkReUnion (mkReConcat (mkReInter r1 Core.emptyRegex) r2Start) (mkReConcat r1 r2Mid)
+
+/--
+Shared concat logic for `.concat` and `.plus`.
+`r1` and `r2` supply the structural data for anchor/consume checks;
+`rec1`/`rec2` are their translations (called as `rec1 atStart atEnd`, etc.).
+Made `abbrev` so the body is transparent to the termination checker.
+-/
+private abbrev toCoreConcat (r1 r2 : RegexAST) (atStart atEnd : Bool)
+    (rec1 rec2 : Bool → Bool → Core.Expression.Expr) : Core.Expression.Expr :=
+  match r1.alwaysConsume, r2.alwaysConsume with
+  | true, true =>
+    mkReConcat (rec1 atStart false) (rec2 false atEnd)
+  | true, false =>
+    if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
+      endSplit (rec1 atStart true) (rec1 atStart false) (rec2 false true)
+    else
+      mkReConcat (rec1 atStart atEnd) (rec2 false atEnd)
+  | false, true =>
+    if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
+      let r1b := rec1 atStart false
+      startSplit r1b (rec2 atStart atEnd) (rec2 false atEnd)
+    else
+      mkReConcat (rec1 atStart false) (rec2 atStart atEnd)
+  | false, false =>
+    if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
+      let r1b := rec1 atStart atEnd
+      startSplit r1b (rec2 atStart atEnd) (rec2 false atEnd)
+    else if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
+      endSplit (rec1 atStart true) (rec1 atStart false) (rec2 atStart true)
+    else
+      mkReConcat (rec1 atStart atEnd) (rec2 atStart atEnd)
+
+/--
+Shared loop logic for `.loop`. Recurses on `n`; `recInner` translates `r1`
+(called as `recInner atStart atEnd`, etc.), so all inner calls are structural
+in the original `.loop` node when invoked as `toCoreLoop r1 n m ... (toCore r1)`.
+-/
+private def toCoreLoop (r1 : RegexAST) (n m : Nat) (atStart atEnd : Bool)
+    (recInner : Bool → Bool → Core.Expression.Expr) : Core.Expression.Expr :=
+  match n, m with
+  | 0, 0 => Core.emptyRegex
+  | 0, 1 => mkReUnion Core.emptyRegex (recInner atStart atEnd)
+  | 0, _ => -- m >= 2
+    toCoreStarBody r1 (mkReLoop · 0 m) (mkReLoop · 0 (m - 2)) atStart atEnd recInner
+  | n + 1, _ =>
+    if !r1.containsAnchorStart && !r1.containsAnchorEnd then
+      -- No anchors: all repetitions are identical, emit re.loop directly.
+      mkReLoop (recInner false false) (n + 1) m
+    else
+      -- Anchors present: expand as concat(r1, loop(r1, n, m-1)) so each iteration
+      -- gets the correct atStart/atEnd context.
+      toCoreConcat r1 (.loop r1 n (m - 1)) atStart atEnd
+        recInner
+        (fun s e => toCoreLoop r1 n (m - 1) s e recInner)
 
 /--
 Convert `r` to Core's expressions.
@@ -195,7 +255,7 @@ anchor in `Y` should not fire. However, if `X` is consuming, its contribution is
 never empty, so `Y`'s position relative to the string boundary is statically
 determined at translation time and the flag can be forwarded.
 -/
-partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
+def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     Core.Expression.Expr :=
   match r with
   | .anchor_start =>
@@ -217,62 +277,25 @@ partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     -- characters, matching [^...] semantics.
     mkReInter mkReAllChar (mkReComp (toCore r false false))
   | .plus r1 =>
-    toCore (.concat r1 (.star r1)) atStart atEnd
+    if !r1.containsAnchorStart && !r1.containsAnchorEnd then
+      -- No anchors: all repetitions are identical, emit re.+ directly.
+      mkRePlus (toCore r1 atStart atEnd)
+    else
+      -- Anchors present: expand as concat(r1, star(r1)) so each iteration
+      -- gets the correct atStart/atEnd context.
+      toCoreConcat r1 (.star r1) atStart atEnd
+        (toCore r1)
+        (fun s e => toCoreStarBody r1 mkReStar mkReStar s e (toCore r1))
   | .optional r1 =>
-    toCore (.union .empty r1) atStart atEnd
+    mkReUnion Core.emptyRegex (toCore r1 atStart atEnd)
   | .union r1 r2 =>
     mkReUnion (toCore r1 atStart atEnd) (toCore r2 atStart atEnd)
   | .star r1 =>
     toCoreStarBody r1 mkReStar mkReStar atStart atEnd (toCore r1)
   | .loop r1 n m =>
-    match n, m with
-    | 0, 0 => Core.emptyRegex
-    | 0, 1 => toCore (.union .empty r1) atStart atEnd
-    | 0, m => -- Note: m >= 2
-      toCoreStarBody r1 (mkReLoop · 0 m) (mkReLoop · 0 (m-2)) atStart atEnd (toCore r1)
-    | _, _ =>
-      toCore (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
+    toCoreLoop r1 n m atStart atEnd (toCore r1)
   | .concat r1 r2 =>
-    match (alwaysConsume r1), (alwaysConsume r2) with
-    | true, true =>
-      mkReConcat (toCore r1 atStart false) (toCore r2 false atEnd)
-    | true, false =>
-      -- `r1` always consumes; `r2` may be empty. `r1` might be last.
-      -- When `atEnd=true` and `r1` contains `$`, passing `atEnd` to `r2` would
-      -- let `r2` expand beyond the end marker (e.g. `a$.*` matching `"ab"`).
-      -- So we split into two cases:
-      -- Case 1: (`r2=""`, so `$` in `r1` fires at the true string end)
-      -- Case 2: (`r2` non-empty, so `r2` is the last consumer and `r1` must not
-      -- see `atEnd`).
-      if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
-        endSplit (toCore r1 atStart true) (toCore r1 atStart false) (toCore r2 false true)
-      else
-        mkReConcat (toCore r1 atStart atEnd) (toCore r2 false atEnd)
-    | false, true =>
-      -- `r2` always consumes; `r1` may be empty. `r2` might be first.
-      -- Case 1: (`r1=""`, `r2` starts at original position, `atStart` propagates) and
-      -- Case 2: (`r1` non-empty, `r2` starts after `r1`, `atStart` must not propagate).
-      if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
-        let r1b := toCore r1 atStart false
-        startSplit r1b (toCore r2 atStart atEnd) (toCore r2 false atEnd)
-      else
-        mkReConcat (toCore r1 atStart false) (toCore r2 atStart atEnd)
-    | false, false =>
-      -- Both sides may be empty.
-      -- Case 1: (`r1=""`, `^` fires correctly) and
-      -- Case 2: (`r1` non-empty, `^` must not fire, so `atStart=false` for `r2`).
-      if atStart && r2.containsAnchorStart && r1.hasNonAnchorContent then
-        let r1b := toCore r1 atStart atEnd
-        startSplit r1b (toCore r2 atStart atEnd) (toCore r2 false atEnd)
-      -- Symmetric to `true, false`: when `$` is in `r1` and `r2` has non-anchor
-      -- content, `r2` may match non-empty, in which case `r1` is not last and
-      -- `atEnd` must not be forwarded to `r1`.
-      -- Case 1: (`r2=""`, `r1` sees `atEnd`) and
-      -- Case 2: (`r2` non-empty, `r1` must not see `atEnd`).
-      else if atEnd && r1.containsAnchorEnd && r2.hasNonAnchorContent then
-        endSplit (toCore r1 atStart true) (toCore r1 atStart false) (toCore r2 atStart true)
-      else
-        mkReConcat (toCore r1 atStart atEnd) (toCore r2 atStart atEnd)
+    toCoreConcat r1 r2 atStart atEnd (toCore r1) (toCore r2)
 
 def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
