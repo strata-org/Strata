@@ -8,10 +8,10 @@ module
 import Strata.DDM.Integration.Lean
 
 /-!
-# Tests for unified datatype blocks in DDM
+# Tests for datatype blocks in DDM
 
 Tests that datatypes (single and mutually recursive) can be declared via
-a unified `command_datatypes` operation using `preRegisterTypes`.
+a `command_datatypes` operation using `preRegisterTypes`.
 -/
 
 #dialect
@@ -147,7 +147,7 @@ datatype Program { MkProgram(body:Expr) };
 -- Negative Tests
 ---------------------------------------------------------------------
 
--- Test: Reference to undefined type inside datatype block
+-- Test: Reference to undefined type inside datatype
 /-- error: Undeclared type or category Bogus. -/
 #guard_msgs in
 def undefinedRefPgm :=
@@ -156,7 +156,7 @@ program TestMutual;
   datatype A { MkA(x: Bogus) };
 #end
 
--- Test: Duplicate type name in datatype block
+-- Test: Duplicate type name in mutual block
 /-- error: Type 'Dup' is already declared. -/
 #guard_msgs in
 def duplicatePgm :=
@@ -176,7 +176,7 @@ program TestMutual;
   datatype Existing { MkClash() };
 #end
 
--- Test: Duplicate constructor name across datatypes
+-- Test: Duplicate constructor name across mutual datatypes
 /--
 error: Mk already defined.
 -/

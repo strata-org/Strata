@@ -833,8 +833,7 @@ def argScopeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fi
       let varCount := argDecls.size
       panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
 
-/-- Returns the typeParams level if @[scopeTVar] is present.
-    Converts .type bindings to .tvar bindings for the scoped argument. -/
+/-- Returns the typeParams level if @[scopeTVar] is present. -/
 def argScopeTVarLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val) :=
   match argDecls[level].metadata.scopeTVarIndex with
   | none => none

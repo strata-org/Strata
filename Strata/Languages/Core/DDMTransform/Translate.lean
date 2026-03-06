@@ -1590,8 +1590,7 @@ def genDatatypeFactory (ldatatypes : List (LDatatype Unit)) :
 ---------------------------------------------------------------------
 
 /--
-Translate a unified datatype block (one or more datatype declarations).
-Handles both single and mutually recursive datatypes uniformly.
+Translate a datatype block (one or more datatype declarations).
 The `@[preRegisterTypes]` metadata on `command_datatypes` ensures that
 type names are pre-registered in the DDM GlobalContext before processing.
 -/

@@ -366,7 +366,7 @@ op constructorListPush (cl : ConstructorList, c : Constructor)
     : ConstructorList => cl ",\n  " c;
 
 // preRegisterTypes on command_datatypes handles bringing datatype names into
-// scope; @[scope(typeParams)] brings type parameters into scope for constructors.
+// scope; @[scopeTVar(typeParams)] brings type parameters into scope for constructors.
 category DatatypeDecl;
 
 @[declareDatatype(name, typeParams, constructors,
@@ -380,9 +380,8 @@ op datatype_decl (name : Ident,
       : DatatypeDecl =>
       "datatype " name typeParams " {" constructors "\n}";
 
-// Unified datatype command: one or more datatype declarations separated by space,
-// ending with a semicolon. Uses preRegisterTypes so all type names are visible
-// to all constructors (handles both self-recursive and mutually recursive types).
+// Unified datatype command: one or more datatype declarations separated by
+// newlines, ending with a semicolon.
 @[scope(datatypes), preRegisterTypes(datatypes)]
 op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";

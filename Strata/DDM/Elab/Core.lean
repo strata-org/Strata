@@ -1186,7 +1186,6 @@ partial def runSyntaxElaborator
       | panic! "Arg syntax missing position information"
     -- Handle scoping annotations.
     if let some typeParamsLevel := ae.scopeTVar then
-      -- @[scopeTVar(typeParams)] — converts .type bindings to .tvar bindings
       let some typeParamsT := trees[typeParamsLevel]
         | logError aloc "Internal: missing type parameter"
           return default
