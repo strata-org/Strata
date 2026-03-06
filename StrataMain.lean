@@ -328,7 +328,7 @@ def pyAnalyzeCommand : Command where
         let files := match pySourceOpt with
           | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
           | none => Map.empty
-        Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
+        Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 /-- Result of building the PySpec-augmented prelude. -/
 structure PySpecPrelude where
@@ -495,17 +495,29 @@ def pyAnalyzeLaurelCommand : Command where
                     | .file path =>
                       if path == pyPath then
                         let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
-                        match vcResult.outcome with | .ok outcome => match outcome with
-                        | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                        | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                        let isFail := match vcResult.outcome with
+                          | .error _ => true
+                          | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
+                        if isFail then
+                          (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                        else
+                          ("", s!" (at line {pos.line}, col {pos.column})")
                       else
-                        match vcResult.outcome with | .ok outcome => match outcome with
-                        | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                        | _ => ("", s!" (at byte {fr.range.start})")
+                        let isFail := match vcResult.outcome with
+                          | .error _ => true
+                          | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
+                        if isFail then
+                          (s!"Assertion failed at byte {fr.range.start}: ", "")
+                        else
+                          ("", s!" (at byte {fr.range.start})")
                   | none =>
-                    match vcResult.outcome with | .ok outcome => match outcome with
-                    | .fail => (s!"Assertion failed at byte {fr.range.start}: ", "")
-                    | _ => ("", s!" (at byte {fr.range.start})")
+                    let isFail := match vcResult.outcome with
+                      | .error _ => true
+                      | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
+                    if isFail then
+                      (s!"Assertion failed at byte {fr.range.start}: ", "")
+                    else
+                      ("", s!" (at byte {fr.range.start})")
               | none => ("", "")
             s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => Std.format o | .error e => e}{locationSuffix}\n"
           IO.println s
@@ -514,7 +526,7 @@ def pyAnalyzeLaurelCommand : Command where
             let files := match pySourceOpt with
               | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
               | none => Map.empty
-            Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
+            Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
@@ -1297,7 +1309,7 @@ def laurelAnalyzeCommand : Command where
       | .ok vcResults =>
         IO.println s!"==== RESULTS ===="
         for vc in vcResults do
-          IO.println s!"{vc.obligation.label}: {repr vc.result}"
+          IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
 
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"
