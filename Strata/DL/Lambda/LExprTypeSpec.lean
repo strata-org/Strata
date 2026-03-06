@@ -7181,8 +7181,9 @@ theorem inferFVar_HasType
       ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n)
     (h_aw : TContext.AliasesWF Env.context) :
     Env'.context = Env.context ∧
-    HasType C (Env.context) (.fvar m x fty)
-      (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
+    ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      HasType C (Env.context) (.fvar m x fty)
+        (.forAll [] (LMonoTy.subst S ty_res)) := by
   simp only [inferFVar, Bind.bind, Except.bind] at h
   split at h
   · simp at h  -- context lookup failed
@@ -7200,20 +7201,21 @@ theorem inferFVar_HasType
         constructor
         · -- Context preservation
           exact LTy_instantiateWithCheck_context ty C Env mty Env1 h_inst
-        · -- Typing: instantiateWithCheck_fvar_HasType gives HasType ... (forAll [] mty)
-          -- We need HasType ... (forAll [] (subst Env1.subst mty))
-          -- Since resolveAliases (via tconsAliasSimple) preserves stateSubstInfo,
-          -- Env1.subst = Env.subst. Apply HasType_subst_fresh_all.
+        · -- Typing under arbitrary absorbing S
+          intro S h_abs_S h_wf_S
           have h_nd := h_bvnd x ty h_find
-          have h_ty := instantiateWithCheck_fvar_HasType C Env.context x ty mty Env Env1 m
+          have h_base := instantiateWithCheck_fvar_HasType C Env.context x ty mty Env Env1 m
             h_find rfl h_inst h_nd (h_bvf x ty h_find) h_aw
-          exact HasType_subst_fresh_all C Env.context (.fvar m x none) mty
-            Env1.stateSubstInfo.subst h_ty
-            (by -- keys of Env1.subst in freeVars mty are fresh in Env.context
-                -- This follows because freeVars mty are generated names fresh in context
-                -- and Env1.subst = Env.subst whose keys have lower counters
+          -- h_base : HasType C Env.context (.fvar m x none) (.forAll [] mty)
+          -- Need: HasType C Env.context (.fvar m x none) (.forAll [] (subst S mty))
+          -- Use HasType_subst_fresh_all with S directly
+          exact HasType_subst_fresh_all C Env.context (.fvar m x none) mty S h_base
+            (by -- keys of S in freeVars mty are fresh in Env.context
+                -- freeVars mty are generated names (from instantiateWithCheck)
+                -- that are fresh in context. S's keys are also generated names.
+                -- Any key of S that appears in freeVars mty must be fresh in context.
                 sorry)
-            Env1.stateSubstInfo.isWF
+            h_wf_S
       · -- Case fty = some fty_val
         rename_i fty_val
         split at h
@@ -7245,11 +7247,26 @@ theorem inferFVar_HasType
                 fty_inst Env2 h_inst2
               simp [TEnv.context] at h1 h2
               rw [h2, h1]
-            · -- Typing: delegate to instantiateWithCheck_fvar_annotated_HasType
-              simp [TEnv.updateSubst]
-              exact instantiateWithCheck_fvar_annotated_HasType C Env.context x ty
+            · -- Typing under arbitrary absorbing S_outer
+              intro S_outer h_abs_S h_wf_S
+              simp [TEnv.updateSubst] at h_abs_S ⊢
+              -- instantiateWithCheck_fvar_annotated_HasType gives:
+              --   HasType ... (subst S.subst mty) where S is the unification result
+              have h_base := instantiateWithCheck_fvar_annotated_HasType C Env.context x ty
                 mty fty_val fty_inst Env Env1 Env2 S m h_find rfl h_inst h_inst2
                 h_unify
+              -- h_base : HasType ... (.forAll [] (subst S.subst mty))
+              -- Need: HasType ... (.forAll [] (subst S_outer mty))
+              -- Since S_outer absorbs S.subst, subst S_outer (subst S.subst mty) = subst S_outer mty
+              -- Use HasType_subst_fresh_all to go from subst S.subst mty to subst S_outer (subst S.subst mty)
+              -- then rewrite via absorption
+              have h1 := HasType_subst_fresh_all C Env.context (.fvar m x (some fty_val))
+                (LMonoTy.subst S.subst mty) S_outer h_base
+                (by -- freshness of keys of S_outer in freeVars (subst S.subst mty) w.r.t. context
+                    sorry)
+                h_wf_S
+              rw [LMonoTy.subst_absorbs S_outer S.subst mty h_abs_S] at h1
+              exact h1
 
 /-!
 ### Core theorem: `resolveAux_HasType`
@@ -7400,17 +7417,10 @@ theorem resolveAux_HasType :
         exact (inferFVar_HasType C Env x fty ty_res Env_res m h_infer h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF).1
       · -- Typing under arbitrary absorbing S
         intro S h_abs_S h_wf_S
-        -- We have: HasType ... (subst Env_res.subst ty_res) from inferFVar_HasType
+        -- inferFVar_HasType now gives typing under arbitrary absorbing S directly
         have ⟨_, h_ty⟩ := inferFVar_HasType C Env x fty ty_res Env_res m h_infer
           h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF
-        -- Upgrade: subst S (subst Env_res ty_res) = subst S ty_res (by absorption)
-        have h1 := HasType_subst_fresh_all C Env.context (.fvar m x fty)
-          (LMonoTy.subst Env_res.stateSubstInfo.subst ty_res) S h_ty
-          (by -- relevant-key freshness for subst Env_res.subst ty_res
-              sorry)
-          h_wf_S
-        rw [LMonoTy.subst_absorbs S Env_res.stateSubstInfo.subst ty_res h_abs_S] at h1
-        exact h1
+        exact h_ty S h_abs_S h_wf_S
   | .op m o oty =>
     intro et C Env Env' h h_envwf h_ne h_fwf
     have h_aw := h_envwf.aliasesWF
