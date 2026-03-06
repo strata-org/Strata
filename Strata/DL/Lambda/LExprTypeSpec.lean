@@ -7383,6 +7383,15 @@ private theorem resolveAux_output_type_no_future_vars :
     ((resolveAux_preserves_combined e.sizeOf e rfl et C Env Env' h h_ne).2
       h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.aliasesWF h_fwf h_envwf.boundVarsFresh).2
 
+/-- An expression is well-scoped w.r.t. a context: all its free variable
+    identifiers appear in the context's `knownVars`.
+    This is the standard precondition for type-checking: every free variable
+    reference must be bound in the context.
+    Propagates through `varOpen`: if `WellScoped e Γ`, then
+    `WellScoped (varOpen 0 (xv, some xty) e) (extend Γ xv)`. -/
+def WellScoped (e : LExpr T.mono) (Γ : TContext T.IDMeta) : Prop :=
+  ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Γ
+
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
@@ -7390,6 +7399,7 @@ theorem resolveAux_HasType :
       TEnvWF Env →
       Env.context.types ≠ [] →
       FactoryWF C.functions →
+      WellScoped e Env.context →
       Env'.context = Env.context ∧
       ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         HasType C (Env.context) e
@@ -7402,6 +7412,7 @@ theorem resolveAux_HasType :
       TEnvWF Env →
       Env.context.types ≠ [] →
       FactoryWF C.functions →
+      WellScoped e Env.context →
       Env'.context = Env.context ∧
       ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         HasType C (Env.context) e
@@ -7419,6 +7430,7 @@ theorem resolveAux_HasType :
       TEnvWF Env →
       Env.context.types ≠ [] →
       FactoryWF C.functions →
+      WellScoped e' Env.context →
       Env'.context = Env.context ∧
       ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         HasType C (Env.context) e'
@@ -7426,7 +7438,7 @@ theorem resolveAux_HasType :
     fun e' h_lt => ih_n (LExpr.sizeOf e') h_lt e' rfl
   match e with
   | .const m c =>
-    intro et C Env Env' h h_envwf _ _
+    intro et C Env Env' h h_envwf _ _ _
     have h_aw := h_envwf.aliasesWF
     simp [resolveAux, inferConst] at h
     split at h
@@ -7446,13 +7458,13 @@ theorem resolveAux_HasType :
         | bitvecConst n b => exact HasType.tbitvec_const _ _ _ _ h_known
     · exact absurd h (by simp [Bind.bind, Except.bind])
   | .bvar m i =>
-    intro et C Env Env' h h_envwf _ _
+    intro et C Env Env' h h_envwf _ _ _
     have h_aw := h_envwf.aliasesWF
     simp [resolveAux, Bind.bind, Except.bind] at h
   | .fvar m x fty =>
     -- resolveAux calls inferFVar, which looks up x in context, instantiates
     -- bound type variables, and optionally unifies with the annotation.
-    intro et C Env Env' h h_envwf _ _
+    intro et C Env Env' h h_envwf _ _ _
     have h_aw := h_envwf.aliasesWF
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h
@@ -7473,7 +7485,7 @@ theorem resolveAux_HasType :
           h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF
         exact h_ty S h_abs_S h_wf_S
   | .op m o oty =>
-    intro et C Env Env' h h_envwf h_ne h_fwf
+    intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
     -- Decompose resolveAux for .op
     simp only [resolveAux, Bind.bind, Except.bind] at h
@@ -7632,7 +7644,7 @@ theorem resolveAux_HasType :
 
       8. Apply HasType.tapp.
     -/
-    intro et C Env Env' h h_envwf h_ne h_fwf
+    intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env e1
@@ -7678,7 +7690,7 @@ theorem resolveAux_HasType :
             -- IHs from recursive calls (using strong induction)
             have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
             have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
-            have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf
+            have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; left; exact hx))
             have h_ne1 := h_ctx1 ▸ h_ne
             -- Build TEnvWF for Env1 (context preserved, subst/gen extended)
             have h_envwf1 : TEnvWF Env1 :=
@@ -7688,7 +7700,9 @@ theorem resolveAux_HasType :
                 boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
                 boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx1
                   (resolveAux_genState_mono e1 e1t C Env Env1 h_res1) }
-            have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf
+            have h_ws2 : WellScoped e2 Env1.context := by
+              rw [h_ctx1]; intro x hx; exact h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)
+            have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf h_ws2
             -- Absorption chain: v4 absorbs Env3.subst = Env2.subst
             have h_abs_v4_Env3 := unify_absorbs
               [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
@@ -7799,7 +7813,7 @@ theorem resolveAux_HasType :
                 (by simp [LTy.toMonoType]; exact h_ty1_S)
                 h_ty2_S
   | .abs m bty e_body =>
-    intro et C Env Env' h h_envwf h_ne h_fwf
+    intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
     -- The abs case of resolveAux calls typeBoundVar then recurses on the opened body.
     simp only [resolveAux, Bind.bind, Except.bind] at h
@@ -7834,7 +7848,7 @@ theorem resolveAux_HasType :
             boundVarsFresh := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_envwf.boundVarsFresh }
         have h_ne1 : Env1.context.types ≠ [] :=
           typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
-        have ⟨h_ctx_body, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf
+        have ⟨h_ctx_body, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (by sorry)
         -- h_ctx_body : Env2.context = Env1.context
         -- h_ty_body : HasType C Env1.context (varOpen 0 (xv, some xty) e_body)
         --             (.forAll [] (subst Env2.subst et_body.toLMonoTy))
@@ -7936,7 +7950,32 @@ theorem resolveAux_HasType :
           -- Apply tabs
           have h_tabs := HasType.tabs Env.context m (xv, some xty) (.forAll [] xty)
             e_body (.forAll [] (LMonoTy.subst S et_body.toLMonoTy)) bty
-            (by sorry) -- LExpr.fresh: xv generated, not in e_body
+            (by -- LExpr.fresh (xv, some xty) e_body from WellScoped + genVar_fresh
+                -- xv ∉ knownVars Env.context (per-scope freshness → global freshness)
+                -- All fvars of e_body have identifiers in knownVars Env.context (WellScoped)
+                -- Therefore (xv, some xty) ∉ freeVars e_body
+                intro h_mem
+                have h_in_ctx := h_ws (xv, some xty) (by simp [LExpr.freeVars]; exact h_mem)
+                -- xv is fresh in every scope of Env.context
+                have h_per_scope := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv
+                -- Derive xv ∉ knownVars from per-scope freshness
+                have h_not_known : xv ∉ TContext.knownVars Env.context := by
+                  intro h_kv
+                  simp [TContext.knownVars] at h_kv
+                  have : ∀ (types : Maps T.Identifier LTy),
+                      (∀ m, m ∈ types → Map.find? m xv = none) →
+                      xv ∉ TContext.knownVars.go types := by
+                    intro types h_all h_in
+                    induction types with
+                    | nil => simp [TContext.knownVars.go] at h_in
+                    | cons scope rest ih =>
+                      simp [TContext.knownVars.go, List.mem_append] at h_in
+                      rcases h_in with h_key | h_rest
+                      · exact Map.find?_of_not_mem_values scope
+                          (h_all scope (List.mem_cons_self ..)) h_key
+                      · exact ih (fun m hm => h_all m (List.mem_cons_of_mem _ hm)) h_rest
+                  exact this _ h_per_scope h_kv
+                exact h_not_known h_in_ctx)
             (by simp [LTy.isMonoType, LTy.boundVars])
             (by simp [LTy.isMonoType, LTy.boundVars])
             (by rw [← h_ctx_bridge]; exact h_body_S)
@@ -7961,7 +8000,7 @@ theorem resolveAux_HasType :
             (Subst.absorbs_refl S h_wf_S)] at h1
           exact h1
   | .quant m qk bty tr e_body =>
-    intro et C Env Env' h h_envwf h_ne h_fwf
+    intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
     -- Decompose resolveAux for quant
     simp only [resolveAux, Bind.bind, Except.bind] at h
@@ -7992,7 +8031,7 @@ theorem resolveAux_HasType :
       -- IH for body
       have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
         (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
-      have ⟨h_ctx2, _⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf
+      have ⟨h_ctx2, _⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (by sorry)
       -- IH for triggers (need TEnvWF Env2)
       have ih_tr := ih_sub (varOpen 0 (xv, some xty) tr)
         (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
@@ -8003,7 +8042,7 @@ theorem resolveAux_HasType :
           boundVarsNodup := transfer_boundVarsNodup h_envwf1.boundVarsNodup h_ctx2
           boundVarsFresh := transfer_boundVarsFresh h_envwf1.boundVarsFresh h_ctx2 (resolveAux_genState_mono _ et_body C Env1 Env2 h_res_body) }
       have h_ne2 := h_ctx2 ▸ h_ne1
-      have ⟨h_ctx3, _⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf
+      have ⟨h_ctx3, _⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf (by sorry)
       constructor
       · -- Context preservation: eraseFromContext Env3 xv → Env.context
         rw [← h_env']
@@ -8024,7 +8063,7 @@ theorem resolveAux_HasType :
         -- Body: IH gives HasType under any absorbing S. Take S = Env3.subst.
         have h_abs_Env3_Env2 : Subst.absorbs Env3.stateSubstInfo.subst Env2.stateSubstInfo.subst :=
           resolveAux_absorbs _ triggersT C Env2 Env3 h_res_tr h_envwf2.toEnvFreshForGen h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.boundVarsFresh
-        have ⟨_, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf
+        have ⟨_, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (by sorry)
         have h_body_bool := h_ty_body Env3.stateSubstInfo.subst h_abs_Env3_Env2 Env3.stateSubstInfo.isWF
         -- et_body.toLMonoTy should be bool (from the if-check)
         -- h_ety_bool : ¬(et_body.toLMonoTy != LMonoTy.bool) = true means et_body.toLMonoTy = bool
@@ -8033,7 +8072,7 @@ theorem resolveAux_HasType :
         rw [h_ety_eq_bool, LMonoTy.subst_bool] at h_body_bool
         -- h_body_bool : HasType C Env1.context (varOpen 0 (xv, some xty) e_body) (.forAll [] .bool)
         -- Trigger typing from IH
-        have ⟨_, h_ty_tr⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf
+        have ⟨_, h_ty_tr⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf (by sorry)
         have h_tr_typed := h_ty_tr Env3.stateSubstInfo.subst (Subst.absorbs_refl _ Env3.stateSubstInfo.isWF) Env3.stateSubstInfo.isWF
         rw [h_ctx2] at h_tr_typed
         -- h_tr_typed : HasType C Env1.context (varOpen 0 (xv, some xty) tr) (...)
@@ -8108,16 +8147,28 @@ theorem resolveAux_HasType :
         exact HasType.tquant Env.context m qk tr
           (.forAll [] (LMonoTy.subst Env3.stateSubstInfo.subst (triggersT.toLMonoTy)))
           (xv, some xty) (.forAll [] xty) e_body bty
-          (by -- LExpr.fresh (xv, some xty) e_body: xv not in freeVars e_body.
-              -- xv was generated by genVar → xv ∉ knownVars Env.context.
-              -- If e_body is well-scoped (freeVars e_body ⊆ knownVars Env.context),
-              -- then xv ∉ freeVars e_body. Well-scopedness follows from:
-              --   (a) e_body is a user input sub-expression
-              --   (b) xv has the reserved $__var prefix not used by the parser
-              --   (c) bvar 0 (the quantified variable) is not an fvar
-              -- Formal proof needs: well-scopedness precondition or
-              -- "no reserved identifiers in input" assumption.
-              sorry)
+          (by -- LExpr.fresh (xv, some xty) e_body from WellScoped + genVar_fresh
+              intro h_mem
+              -- freeVars (.quant _ _ _ tr e_body) = freeVars tr ++ freeVars e_body
+              have h_in_ctx := h_ws (xv, some xty) (by
+                simp [LExpr.freeVars, List.mem_append]; right; exact h_mem)
+              have h_per_scope := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv
+              have h_not_known : xv ∉ TContext.knownVars Env.context := by
+                intro h_kv
+                have : ∀ (types : Maps T.Identifier LTy),
+                    (∀ m, m ∈ types → Map.find? m xv = none) →
+                    xv ∉ TContext.knownVars.go types := by
+                  intro types h_all h_in
+                  induction types with
+                  | nil => simp [TContext.knownVars.go] at h_in
+                  | cons scope rest ih =>
+                    simp [TContext.knownVars.go, List.mem_append] at h_in
+                    rcases h_in with h_key | h_rest
+                    · exact Map.find?_of_not_mem_values scope
+                        (h_all scope (List.mem_cons_self ..)) h_key
+                    · exact ih (fun m hm => h_all m (List.mem_cons_of_mem _ hm)) h_rest
+                exact this _ h_per_scope h_kv
+              exact h_not_known h_in_ctx)
           h_isMonoType
           (by rw [← h_ctx_bridge]; exact h_body_bool)
           (by rw [← h_ctx_bridge]; exact h_tr_typed)
@@ -8131,7 +8182,7 @@ theorem resolveAux_HasType :
   | .ite m c t e =>
     -- resolveAux recurses on c, t, e, then unifies [(cty, bool), (tty, ety)].
     -- Result type is tty (the then-branch type), and the HasType rule is `tif`.
-    intro et C Env Env' h h_envwf h_ne h_fwf
+    intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env c
@@ -8174,7 +8225,7 @@ theorem resolveAux_HasType :
             have ih_c := ih_sub c (by subst h_sz; simp [LExpr.sizeOf]; omega)
             have ih_t := ih_sub t (by subst h_sz; simp [LExpr.sizeOf]; omega)
             have ih_e := ih_sub e (by subst h_sz; simp [LExpr.sizeOf]; omega)
-            have ⟨h_ctx1, h_ty_c⟩ := ih_c ct C Env Env1 h_res_c h_envwf h_ne h_fwf
+            have ⟨h_ctx1, h_ty_c⟩ := ih_c ct C Env Env1 h_res_c h_envwf h_ne h_fwf (by intro x hx; apply h_ws; simp only [WellScoped, LExpr.freeVars] at h_ws ⊢; exact List.mem_append_left _ (List.mem_append_left _ hx))
             have h_ne1 := h_ctx1 ▸ h_ne
             -- (h_sf1 removed: keysFresh no longer in TEnvWF)
             -- Build TEnvWF for Env1
@@ -8185,7 +8236,7 @@ theorem resolveAux_HasType :
                 boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
                 boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx1
                   (resolveAux_genState_mono c ct C Env Env1 h_res_c) }
-            have ⟨h_ctx2, h_ty_t⟩ := ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 h_fwf
+            have ⟨h_ctx2, h_ty_t⟩ := ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 h_fwf (by rw [h_ctx1]; intro x hx; apply h_ws; simp only [LExpr.freeVars]; exact List.mem_append_left _ (List.mem_append_right _ hx))
             have h_ne2 := h_ctx2 ▸ h_ne1
             -- Build TEnvWF for Env2
             have h_envwf2 : TEnvWF Env2 :=
@@ -8195,7 +8246,7 @@ theorem resolveAux_HasType :
                 boundVarsNodup := transfer_boundVarsNodup h_envwf1.boundVarsNodup h_ctx2
                 boundVarsFresh := transfer_boundVarsFresh h_envwf1.boundVarsFresh h_ctx2
                   (resolveAux_genState_mono t tht C Env1 Env2 h_res_t) }
-            have ⟨h_ctx3, h_ty_e⟩ := ih_e elt C Env2 Env3 h_res_e h_envwf2 h_ne2 h_fwf
+            have ⟨h_ctx3, h_ty_e⟩ := ih_e elt C Env2 Env3 h_res_e h_envwf2 h_ne2 h_fwf (by rw [h_ctx2, h_ctx1]; intro x hx; apply h_ws; simp only [LExpr.freeVars]; exact List.mem_append_right _ hx)
             -- Absorption chain: v4 absorbs Env3 absorbs Env2 absorbs Env1 absorbs Env
             have h_abs_v4_Env3 := unify_absorbs
               [(ct.toLMonoTy, LMonoTy.bool), (tht.toLMonoTy, elt.toLMonoTy)]
@@ -8270,7 +8321,7 @@ theorem resolveAux_HasType :
     -- resolveAux recurses on e1 and e2, then unifies their types.
     -- Result type is LMonoTy.bool (ground), so subst S bool = bool for any S.
     -- We upgrade both IHs to the final substitution via absorption.
-    intro et C Env Env' h h_envwf h_ne h_fwf
+    intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env e1
@@ -8304,7 +8355,7 @@ theorem resolveAux_HasType :
           -- IHs from recursive calls (using strong induction)
           have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
           have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
-          have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf
+          have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; left; exact hx))
           have h_ne1 := h_ctx1 ▸ h_ne
           -- (h_sf1 removed: keysFresh no longer in TEnvWF)
           -- Build TEnvWF for Env1
@@ -8315,7 +8366,7 @@ theorem resolveAux_HasType :
               boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
               boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx1
                 (resolveAux_genState_mono e1 e1t C Env Env1 h_res1) }
-          have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf
+          have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf (by rw [h_ctx1]; intro x hx; exact h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx))
           -- Absorption chain: v3 absorbs Env2 absorbs Env1 absorbs Env
           have h_abs_v3_Env2 := unify_absorbs [(e1t.toLMonoTy, e2t.toLMonoTy)]
             Env2.stateSubstInfo v3 h_unify
@@ -8382,8 +8433,9 @@ theorem annotate_HasType :
       TEnvWF Env →
       Env.context.types ≠ [] →
       FactoryWF C.functions →
+      WellScoped e Env.context →
       HasType C (Env.context) e (.forAll [] e_typed.toLMonoTy) := by
-  intro e e_typed C Env _env h h_envwf h_ne h_fwf
+  intro e e_typed C Env _env h h_envwf h_ne h_fwf h_ws
   -- Decompose resolve into resolveAux + applySubstT
   simp only [LExpr.resolve, Bind.bind, Except.bind] at h
   split at h
@@ -8392,7 +8444,7 @@ theorem annotate_HasType :
     obtain ⟨et, Env'⟩ := v
     simp at h
     obtain ⟨h_typed, h_env'⟩ := h
-    have ⟨_h_ctx, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux h_envwf h_ne h_fwf
+    have ⟨_h_ctx, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux h_envwf h_ne h_fwf h_ws
     rw [← h_typed, applySubstT_toLMonoTy]
     exact h_hastype Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
 

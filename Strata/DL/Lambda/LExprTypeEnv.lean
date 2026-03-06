@@ -202,13 +202,15 @@ def TContext.subst (ctx : TContext IDMeta) (S : Subst) : TContext IDMeta :=
 /-- Fixed prefix for generated type variable names. -/
 def TState.tyPrefix : String := "$__ty"
 
+/-- Fixed prefix for generated expression variable names. -/
+def TState.exprPrefix : String := "$__var"
+
 /--
 The state of a generator used by typing.
 -/
 structure TState where
   tyGen : Nat := 0
   exprGen : Nat := 0
-  exprPrefix : String := "$__var"
 deriving Repr, Inhabited
 
 def TState.init : TState := {}
@@ -228,7 +230,7 @@ def TState.incExprGen (state : TState) : TState :=
 def TState.genExprSym (state : TState) : String × TState :=
   let new_idx := state.exprGen
   let state := state.incExprGen
-  let new_var := state.exprPrefix ++ toString new_idx
+  let new_var := TState.exprPrefix ++ toString new_idx
   (new_var, state)
 
 ---------------------------------------------------------------------
@@ -371,7 +373,7 @@ instance [ToFormat IDMeta] : ToFormat (TEnv IDMeta) where
        tyGen: {g.tyGen}{Format.line}\
        tyPrefix: {TState.tyPrefix}{Format.line}\
        exprGen: {g.exprGen}{Format.line}\
-       exprPrefix: {g.exprPrefix}{Format.line}\
+       exprPrefix: {TState.exprPrefix}{Format.line}\
        subst: {s.stateSubstInfo.subst}"
 
 instance : ToFormat (LContext T) where
