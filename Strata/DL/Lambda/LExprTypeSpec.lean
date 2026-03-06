@@ -6996,6 +6996,52 @@ theorem tconsAlias_eq_simple
       h_alias_wf.fvs_closed h_pred.2).symm
 
 mutual
+/-- `AliasEquiv` is preserved under type substitution. -/
+private theorem AliasEquiv_subst (aliases : List TypeAlias)
+    (a b : LMonoTy) (S : Subst) (h : AliasEquiv aliases a b)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
+    AliasEquiv aliases (LMonoTy.subst S a) (LMonoTy.subst S b) := by
+  by_cases hS : Subst.hasEmptyScopes S
+  · simp [LMonoTy.subst_emptyS hS]; exact h
+  · match h with
+    | .refl => exact .refl
+    | .expand h_exp =>
+      obtain ⟨alias, h_mem, h_name, h_len, h_expand⟩ := h_exp
+      subst h_expand
+      simp [LMonoTy.subst, hS, TypeAlias.expand]
+      rw [subst_openVars_comm S alias.typeArgs _ alias.type
+        (h_aw alias h_mem).fvs_closed h_len]
+      rw [LMonoTys.subst_eq_substLogic]
+      have h_sl_len : ∀ (S' : Subst) (xs : LMonoTys), (LMonoTys.substLogic S' xs).length = xs.length := by
+        intro S' xs; induction xs with
+        | nil => simp [LMonoTys.substLogic]
+        | cons _ _ ih => unfold LMonoTys.substLogic; split <;> simp [ih]
+      refine .expand ⟨alias, h_mem, h_name, ?_⟩
+      rw [h_sl_len]; exact ⟨h_len, rfl⟩
+    | .cong_tcons h_args =>
+      simp [LMonoTy.subst, hS]
+      exact .cong_tcons (AliasEquivList_subst aliases _ _ S h_args h_aw)
+    | .trans h1 h2 =>
+      exact .trans (AliasEquiv_subst aliases _ _ S h1 h_aw) (AliasEquiv_subst aliases _ _ S h2 h_aw)
+
+/-- `AliasEquivList` is preserved under type substitution. -/
+private theorem AliasEquivList_subst (aliases : List TypeAlias)
+    (as bs : LMonoTys) (S : Subst) (h : AliasEquivList aliases as bs)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
+    AliasEquivList aliases (LMonoTys.subst S as) (LMonoTys.subst S bs) := by
+  by_cases hS : Subst.hasEmptyScopes S
+  · simp [LMonoTys.subst, hS]; exact h
+  · match h with
+    | .nil => simp [LMonoTys.subst, hS, LMonoTys.subst.substAux]; exact .nil
+    | .cons h_hd h_tl =>
+      rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+      simp [LMonoTys.substLogic, hS]
+      exact .cons (AliasEquiv_subst aliases _ _ S h_hd h_aw)
+        (by rw [← LMonoTys.subst_eq_substLogic, ← LMonoTys.subst_eq_substLogic]
+            exact AliasEquivList_subst aliases _ _ S h_tl h_aw)
+end
+
+mutual
 /-- `LMonoTy.resolveAliases` (with `tconsAliasSimple`) produces alias-equivalent output. -/
 private theorem resolveAliases_aliasEquiv
     (mty : LMonoTy) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
