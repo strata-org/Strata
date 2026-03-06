@@ -77,6 +77,11 @@ CORPUS = [
     (r"[^b]",   "b",     "fullmatch"),  # noMatch
     (r"[^A-Z]+","hello",  "fullmatch"),  # match
     (r"[^A-Z]+","Hello",  "fullmatch"),  # noMatch — H is uppercase
+    # Regression: complement must be single-char, not multi-char or empty
+    (r"[^a]",   "",      "fullmatch"),  # noMatch — must be exactly 1 char
+    (r"[^a]",   "bc",    "fullmatch"),  # noMatch — 2 chars, not 1
+    (r"[^a]",   "bb",    "fullmatch"),  # noMatch — 2 chars
+    (r"[^b]+",  "",      "fullmatch"),  # noMatch — below min (1)
 
     # ── Quantifiers ─────────────────────────────────────────────────────────────
 
