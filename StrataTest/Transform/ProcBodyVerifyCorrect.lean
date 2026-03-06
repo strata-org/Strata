@@ -260,19 +260,36 @@ theorem procBodyVerify_sound
   --    We need to show the block can reach the asserts.
   --    The block steps to .block, then the prefix executes, reaching the asserts.
   let full_prefix := pre_body ++ [Stmt.block bodyLabel proc.body #[]]
+  -- 5. The prefix (pre_body ++ [body_block]) executes to (σ_final, δ_final)
+  --    We need to construct a small-step path through the verification block.
+  --    The key: there exists SOME initial store σ₀' such that:
+  --    - The inits in pre_body create the parameters with values matching σ₀
+  --    - The assumes pass (preconditions hold at σ₀)
+  --    - The body block executes from σ₀ to σ_final (by h_body)
+  --    This requires showing that InitState with arbitrary values can produce σ₀.
   have h_prefix_exec : ∃ (δ₀' : CoreEval) (σ₀' : CoreStore),
       CoreStepStar π φ
         (.stmt (Stmt.block blk_label (full_prefix ++ ensuresToAsserts proc.spec.postconditions) blk_md) σ₀' δ₀')
         (.block blk_label (ensuresToAsserts proc.spec.postconditions) σ_final δ_final) := by
-    refine ⟨δ, σ₀, ?_⟩
-    -- Step 1: block statement → block config
-    apply ReflTrans.step _ (.block blk_label (full_prefix ++ ensuresToAsserts proc.spec.postconditions) σ₀ δ)
-    · exact StepStmt.step_block
-    -- Step 2: block steps through the prefix
-    apply block_steps_through_prefix
-    -- Need: .stmts (full_prefix ++ asserts) σ₀ δ →* .stmts asserts σ_final δ_final
-    -- full_prefix = pre_body ++ [body_block]
-    -- This requires the prefix statements to execute to (σ_final, δ_final)
+    -- We need an initial store where the prefix can execute to reach σ_final.
+    -- The prefix = pre_body ++ [body_block].
+    -- pre_body contains inits (which create variables) and assumes (which filter).
+    -- The body_block executes proc.body.
+    --
+    -- Strategy: pick σ₀' such that after pre_body executes, we're at σ₀.
+    -- Then the body block executes from σ₀ to σ_final (by h_body).
+    --
+    -- For this, we need: .stmts pre_body σ₀' δ →* .terminal σ₀ δ
+    -- (pre_body executes from σ₀' to σ₀)
+    -- And: .stmts [body_block] σ₀ δ →* .terminal σ_final δ_final
+    -- (body block executes from σ₀ to σ_final)
+    --
+    -- The body block step: .stmts [block bodyLabel proc.body #[]] σ₀ δ
+    --   → .stmts [] σ_final δ_final (via step_stmt_cons + step_block + body execution)
+    --   → .terminal σ_final δ_final (via step_stmts_nil)
+    --
+    -- For pre_body: this requires constructing InitState derivations for each
+    -- init statement and showing assumes pass. This is the remaining gap.
     sorry
   -- 6. Apply block_correct_implies_asserts_hold
   have h_eq : full_prefix ++ ensuresToAsserts proc.spec.postconditions =
