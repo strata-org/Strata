@@ -151,7 +151,7 @@ Result: ✅ pass
 #eval verify typeDeclStmt4
 
 /--
-error: Expression has type fvar!0 int bool when fvar!0 bool int expected.
+error: Expression has type T int bool when T bool int expected.
 -/
 #guard_msgs in
 def typeDeclStmtError1 :=
