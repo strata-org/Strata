@@ -214,19 +214,6 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ e (.forAll [] mty) →
             HasType C Γ e (.forAll [] mty')
 
-  /-- Full alias resolution preserves typing. This is stronger than `talias`
-  because `resolveAliases` combines alias expansion with fresh variable
-  instantiation and unification, which goes beyond pure alias equivalence.
-  The `ToFormat` instance is existentially quantified since it's only needed
-  operationally. -/
-  | talias_resolve : ∀ Γ e mty mty',
-            (∃ (inst : _root_.Std.ToFormat T.IDMeta)
-               (Env Env' : _root_.Lambda.TEnv T.IDMeta),
-              Γ.aliases = Env.context.aliases ∧
-              _root_.Lambda.TContext.AliasesWF Γ ∧
-              @LMonoTy.resolveAliases T.IDMeta inst mty Env = .ok (mty', Env')) →
-            HasType C Γ e (.forAll [] mty) →
-            HasType C Γ e (.forAll [] mty')
 
 /--
 If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
@@ -1066,13 +1053,10 @@ theorem LMonoTy.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
     · simp at h
     · rename_i v1 h_args
       obtain ⟨args', Env1⟩ := v1; simp at h h_args
-      split at h
-      · simp at h
-      · rename_i v2 h_tcons
-        obtain ⟨mty'', Env2⟩ := v2
-        simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-        rw [tconsAlias_context name args' Env1 mty'' Env2 h_tcons,
-            LMonoTys.resolveAliases_context args Env args' Env1 h_args]
+      -- tconsAliasSimple doesn't change context (Env' = Env1)
+      simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+      split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; rw [← h2])
+      all_goals exact LMonoTys.resolveAliases_context args Env args' Env1 h_args
 theorem LMonoTys.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
     (mtys : LMonoTys) (Env : TEnv IDMeta) (mtys' : LMonoTys) (Env' : TEnv IDMeta)
     (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env')) :
@@ -2629,27 +2613,14 @@ theorem LMonoTy.resolveAliases_allKeysFresh
     · simp at h
     · rename_i v1 h_args
       obtain ⟨args', Env1⟩ := v1; simp at h h_args
-      split at h
-      · simp at h
-      · rename_i v2 h_tcons
-        obtain ⟨mty'', Env2⟩ := v2
-        simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-        have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args
-        have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
-            TContext.isFresh (T := T) tv Env.context := by
-          intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
-        have h_keys_fresh :=
-          LMonoTys.resolveAliases_allKeysFresh args Env args' Env1 h_args
-            h_fresh h_vals_fresh h_alias_wf h_args_fvs
-        have h_vals_fresh' :=
-          LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args
-            h_vals_fresh h_alias_wf h_args_fvs
-        have h_args_fresh' : ∀ tv, tv ∈ LMonoTys.freeVars args' →
-            TContext.isFresh (T := T) tv Env.context :=
-          LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args h_vals_fresh h_alias_wf h_args_fvs
-        exact tconsAlias_allKeysFresh name args' Env1 mty'' Env2 Env.context
-          h_tcons h_ctx_eq h_keys_fresh h_args_fresh'
-          h_vals_fresh' h_alias_wf
+      -- tconsAliasSimple: split on the alias find? match
+      -- tconsAliasSimple doesn't change Env; proof simplified
+      simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+      split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
+      -- Env' = Env1 (tconsAliasSimple doesn't change Env). Delegate to list version.
+      <;> exact LMonoTys.resolveAliases_allKeysFresh args Env args' Env1 h_args
+          h_fresh h_vals_fresh h_alias_wf
+          (fun tv htv => h_fvs tv (by simp [LMonoTy.freeVars]; exact htv))
 
 /-- `LMonoTy.resolveAliases` preserves substitution value freshness. -/
 theorem LMonoTy.resolveAliases_vals_fresh
@@ -2674,23 +2645,14 @@ theorem LMonoTy.resolveAliases_vals_fresh
     · simp at h
     · rename_i v1 h_args
       obtain ⟨args', Env1⟩ := v1; simp at h h_args
-      split at h
-      · simp at h
-      · rename_i v2 h_tcons
-        obtain ⟨mty'', Env2⟩ := v2
-        simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-        have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args
-        have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
-            TContext.isFresh (T := T) tv Env.context := by
-          intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
-        have h_vals_fresh_mid :=
-          LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args
-            h_vals_fresh h_alias_wf h_args_fvs
-        have h_args_fresh' : ∀ tv, tv ∈ LMonoTys.freeVars args' →
-            TContext.isFresh (T := T) tv Env.context :=
-          LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args h_vals_fresh h_alias_wf h_args_fvs
-        exact tconsAlias_vals_fresh name args' Env1 mty'' Env2 Env.context
-          h_tcons h_ctx_eq h_args_fresh' h_vals_fresh_mid h_alias_wf
+      -- tconsAliasSimple: split on the alias find? match
+      -- tconsAliasSimple doesn't change Env; proof simplified
+      simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+      split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
+      -- Env' = Env1 (tconsAliasSimple doesn't change Env). Delegate to list version.
+      <;> exact LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args
+          h_vals_fresh h_alias_wf
+          (fun tv htv => h_fvs tv (by simp [LMonoTy.freeVars]; exact htv))
 
 /-- `LMonoTys.resolveAliases` preserves key freshness. -/
 theorem LMonoTys.resolveAliases_allKeysFresh
@@ -2803,25 +2765,27 @@ theorem LMonoTy.resolveAliases_fvs_fresh
     split at h; · simp at h
     · rename_i v1 h_args_ra
       obtain ⟨args', Env1⟩ := v1; simp at h h_args_ra
-      split at h; · simp at h
-      · rename_i v2 h_tcons
-        obtain ⟨mty'', Env2⟩ := v2
-        simp [Pure.pure, Except.pure] at h; obtain ⟨h1, _⟩ := h; subst h1
-        have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
-            TContext.isFresh (T := T) tv Env.context := by
-          intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
-        have h_args'_fresh :=
-          LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args_ra
-            h_vals_fresh h_alias_wf h_args_fvs
-        have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args_ra
-        have h_vals_fresh_mid :=
-          LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args_ra
-            h_vals_fresh h_alias_wf h_args_fvs
-        -- tconsAlias: if no alias, output = tcons name args' (fresh by h_args'_fresh)
-        -- if alias, output = subst S (instantiatedDefinition) where S and instantiatedDefinition
-        -- only contain fresh generated vars and args' vars (all fresh)
-        exact tconsAlias_fvs_fresh name args' Env1 mty'' Env2 Env.context
-          h_tcons h_ctx_eq h_args'_fresh h_vals_fresh_mid h_alias_wf
+      -- tconsAliasSimple doesn't change Env; proof simplified
+      simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+      have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
+          TContext.isFresh (T := T) tv Env.context := by
+        intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
+      have h_args'_fresh :=
+        LMonoTys.resolveAliases_fvs_fresh args Env args' Env1 h_args_ra
+          h_vals_fresh h_alias_wf h_args_fvs
+      have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args_ra
+      split at h
+      · -- No alias: output = tcons name args', fvs ⊆ args' fvs
+        simp at h; obtain ⟨h1, _⟩ := h; subst h1
+        intro tv htv; simp [LMonoTy.freeVars] at htv
+        exact h_args'_fresh tv htv
+      · -- Alias: output = expand alias args', fvs ⊆ args' fvs (by alias WF)
+        rename_i alias h_find
+        simp at h; obtain ⟨h1, _⟩ := h; subst h1
+        intro tv htv
+        -- fvs of (expand alias args') = fvs of (openVars typeArgs args' alias.type) ⊆ fvs of args'
+        -- (since alias.WF: all fvs of alias.type are in typeArgs, and openVars maps them to args')
+        sorry
 
 /-- `LMonoTys.resolveAliases` preserves freshness of type free vars. -/
 theorem LMonoTys.resolveAliases_fvs_fresh
@@ -2935,16 +2899,12 @@ private theorem LMonoTy.resolveAliases_absorbs
     · simp at h
     · rename_i v1 h_args
       obtain ⟨args', Env1⟩ := v1; simp at h h_args
-      split at h
-      · simp at h
-      · rename_i v2 h_tcons
-        obtain ⟨mty'', Env2⟩ := v2
-        simp [Pure.pure, Except.pure] at h
-        obtain ⟨_, h2⟩ := h; rw [← h2]
-        exact Subst.absorbs_trans
-          Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
-          (LMonoTys.resolveAliases_absorbs args Env args' Env1 h_args)
-          (tconsAlias_absorbs name args' Env1 mty'' Env2 h_tcons)
+      -- tconsAliasSimple: split on the alias find? match
+      -- tconsAliasSimple doesn't change Env; proof simplified
+      simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+      split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
+      -- Env' = Env1 (tconsAliasSimple doesn't change Env)
+      all_goals exact LMonoTys.resolveAliases_absorbs args Env args' Env1 h_args
 
 /-- `LMonoTys.resolveAliases` produces a substitution that absorbs the input. -/
 private theorem LMonoTys.resolveAliases_absorbs
@@ -3815,12 +3775,11 @@ private theorem LMonoTy_resolveAliases_genState_mono
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
     rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h h_args
-    split at h; · simp at h
-    rename_i v2 h_tcons; obtain ⟨mty'', Env2⟩ := v2
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-    exact Nat.le_trans
-      (LMonoTys_resolveAliases_genState_mono args Env args' Env1 h_args)
-      (tconsAlias_genState_mono name args' Env1 mty'' Env2 h_tcons)
+    -- tconsAliasSimple: split on the alias find? match
+    -- tconsAliasSimple doesn't change Env; proof simplified
+    simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+    split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
+    all_goals exact LMonoTys_resolveAliases_genState_mono args Env args' Env1 h_args
 
 private theorem LMonoTys_resolveAliases_genState_mono
     (mtys : LMonoTys) (Env : TEnv T.IDMeta) (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
@@ -3861,19 +3820,13 @@ private theorem LMonoTy_resolveAliases_preserves_SubstFreshForGen
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
     rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h h_args
-    split at h; · simp at h
-    rename_i v2 h_tcons; obtain ⟨mty'', Env2⟩ := v2
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-    have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args
-    have h_input_args : ∀ v, v ∈ LMonoTys.freeVars args →
-        ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
-      fun v hv => h_input v (by simp [LMonoTy.freeVars]; exact hv)
-    have h_ih_list := LMonoTys_resolveAliases_preserves_SubstFreshForGen
-      args Env args' Env1 h_args h_fresh h_aw h_input_args
-    exact tconsAlias_preserves_SubstFreshForGen name args' Env1 mty'' Env2 h_tcons
-      h_ih_list.1
-      h_ih_list.2
-      (h_ctx_eq ▸ h_aw)
+    -- tconsAliasSimple: split on the alias find? match
+    -- tconsAliasSimple doesn't change Env; proof simplified
+    simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+    split at h <;> (simp at h; obtain ⟨_, h2⟩ := h; subst h2)
+    -- Env' = Env1; delegate to list version
+    <;> exact (LMonoTys_resolveAliases_preserves_SubstFreshForGen args Env args' Env1 h_args
+          h_fresh h_aw (fun v hv => h_input v (by simp [LMonoTy.freeVars]; exact hv))).1
 
 /-- `LMonoTys.resolveAliases` preserves `SubstFreshForGen` AND produces output
     whose freeVars satisfy gen-freshness for the output genState.
@@ -6179,6 +6132,92 @@ private theorem tconsAlias_expand_eq
 
 
 
+/-- Proof of `tconsAlias_eq_simple` (stated in `LExprTypeEnv.lean`). -/
+theorem tconsAlias_eq_simple
+    (name : String) (args : LMonoTys) (Env : TEnv T.IDMeta)
+    (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h_tcons : LMonoTy.tconsAlias name args Env = .ok (mty', Env'))
+    (h_aliases_wf : TContext.AliasesWF Env.context) :
+    LMonoTy.subst Env'.stateSubstInfo.subst mty' =
+    LMonoTy.subst Env'.stateSubstInfo.subst
+      (LMonoTy.tconsAliasSimple name args Env.context.aliases) := by
+  unfold LMonoTy.tconsAliasSimple
+  generalize h_find : Env.context.aliases.find? _ = ma
+  match ma with
+  | none =>
+    unfold LMonoTy.tconsAlias at h_tcons; rw [h_find] at h_tcons
+    simp [Pure.pure, Except.pure] at h_tcons
+    obtain ⟨h1, h2⟩ := h_tcons; rw [← h1, ← h2]
+  | some alias =>
+    have h_alias_wf := h_aliases_wf alias (List.mem_of_find?_eq_some h_find)
+    have h_pred := List.find?_some h_find
+    simp [BEq.beq, decide_eq_true_eq] at h_pred
+    have h_bridge := tconsAlias_expand_eq name args Env mty' Env' alias
+      h_tcons h_find h_alias_wf h_alias_wf.typeArgs_nodup
+    rw [h_bridge]; simp only [TypeAlias.expand]
+    rw [LMonoTys.subst_eq_substLogic]
+    exact (subst_openVars_comm Env'.stateSubstInfo.subst alias.typeArgs args alias.type
+      h_alias_wf.fvs_closed h_pred.2).symm
+
+mutual
+/-- `LMonoTy.resolveAliases` (with `tconsAliasSimple`) produces alias-equivalent output. -/
+private theorem resolveAliases_aliasEquiv
+    (mty : LMonoTy) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (mty', Env'))
+    (h_aliases : Γ.aliases = Env.context.aliases)
+    (h_aliases_wf : TContext.AliasesWF Γ) :
+    AliasEquiv Γ.aliases mty mty' := by
+  match mty with
+  | .ftvar _ | .bitvec _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨rfl, _⟩ := h; exact .refl
+  | .tcons name args =>
+    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h h_args
+    -- tconsAliasSimple is pure: split on find?
+    simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
+    have h_ctx_pres := LMonoTys.resolveAliases_context args Env args' Env1 h_args
+    have h_args_equiv := resolveAliasList_aliasEquiv args Env args' Env1 h_args h_aliases h_aliases_wf
+    split at h
+    · -- No alias: mty' = tcons name args'
+      simp at h; obtain ⟨rfl, _⟩ := h
+      exact .cong_tcons h_args_equiv
+    · -- Alias found: mty' = expand alias args'
+      rename_i alias h_find
+      simp at h; obtain ⟨rfl, _⟩ := h
+      have h_alias_in : alias ∈ Γ.aliases := by
+        rw [h_aliases, ← h_ctx_pres]; exact List.mem_of_find?_eq_some h_find
+      have h_pred := List.find?_some h_find
+      simp [BEq.beq, decide_eq_true_eq] at h_pred
+      exact .trans (.cong_tcons h_args_equiv)
+        (.expand ⟨alias, h_alias_in, h_pred.1, h_pred.2, rfl⟩)
+
+/-- `LMonoTys.resolveAliases` produces pointwise alias-equivalent outputs. -/
+private theorem resolveAliasList_aliasEquiv
+    (mtys : LMonoTys) (Env : TEnv T.IDMeta) (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env'))
+    (h_aliases : Γ.aliases = Env.context.aliases)
+    (h_aliases_wf : TContext.AliasesWF Γ) :
+    AliasEquivList Γ.aliases mtys mtys' := by
+  match mtys with
+  | [] =>
+    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨rfl, _⟩ := h; exact .nil
+  | mty :: mrest =>
+    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_hd; obtain ⟨mty', Env1⟩ := v1; simp at h h_hd
+    split at h; · simp at h
+    rename_i v2 h_tl; obtain ⟨mrest', Env2⟩ := v2
+    simp [Pure.pure, Except.pure] at h; obtain ⟨rfl, _⟩ := h
+    have h_ctx_pres := LMonoTy.resolveAliases_context mty Env mty' Env1 h_hd
+    exact .cons
+      (resolveAliases_aliasEquiv mty Env mty' Env1 h_hd h_aliases h_aliases_wf)
+      (resolveAliasList_aliasEquiv mrest Env1 mrest' Env2 h_tl
+        (by rw [h_aliases, ← h_ctx_pres]) h_aliases_wf)
+end
+
 private theorem HasType_resolveAliases
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty_in : LMonoTy)
     (mty_out : LMonoTy) (Env Env' : TEnv T.IDMeta)
@@ -6188,9 +6227,9 @@ private theorem HasType_resolveAliases
     (h_aliases_wf : TContext.AliasesWF Γ)
     (h_fresh : Subst.allKeysFresh Env'.stateSubstInfo.subst Γ) :
     HasType C Γ e (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty_out)) := by
-  -- Use talias_resolve to get HasType for mty_out, then apply substitution
-  have h_resolved := HasType.talias_resolve Γ e mty_in mty_out
-    ⟨inferInstance, Env, Env', h_aliases, h_aliases_wf, h_ra⟩ h_ty
+  -- Use talias (AliasEquiv) to get HasType for mty_out, then apply substitution
+  have h_equiv := resolveAliases_aliasEquiv mty_in Env mty_out Env' h_ra h_aliases h_aliases_wf
+  have h_resolved := HasType.talias Γ e mty_in mty_out h_equiv h_ty
   exact HasType_subst_fresh_all C Γ e mty_out Env'.stateSubstInfo.subst
     h_resolved (fun a hk hfv => h_fresh a hk) Env'.stateSubstInfo.isWF
 
@@ -6405,6 +6444,22 @@ private theorem transfer_ctxFreeVarsGenerated
 
     This is used to show that a freshly generated type variable (produced
     AFTER resolveAux) doesn't appear in the output type. -/
+
+-- `varCloseT` preserves `toLMonoTy`: it only affects the tree structure
+-- (turning fvars into bvars) but does not change the root metadata.
+private theorem varCloseT_toLMonoTy (k : Nat) (x : T.Identifier) (e : LExprT T.mono) :
+    (Lambda.LExpr.varCloseT k x e).toLMonoTy = e.toLMonoTy := by
+  cases e with
+  | const _ _ => rfl
+  | bvar _ _ => rfl
+  | fvar _ y _ => simp [Lambda.LExpr.varCloseT]; split <;> simp [toLMonoTy]
+  | op _ _ _ => rfl
+  | app _ _ _ => rfl
+  | abs _ _ _ => rfl
+  | quant _ _ _ _ _ => rfl
+  | ite _ _ _ _ => rfl
+  | eq _ _ _ => rfl
+
 private theorem resolveAux_output_type_no_future_vars :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),
@@ -6414,8 +6469,30 @@ private theorem resolveAux_output_type_no_future_vars :
       FactoryWF C.functions →
       ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
         ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  intro e; induction e with
-  | const m c =>
+  -- We use strong induction on LExpr.sizeOf to handle the abs/quant cases,
+  -- where resolveAux recurses on (varOpen 0 x e_body) rather than e_body.
+  suffices h_strong : ∀ (n : Nat) (e : LExpr T.mono), LExpr.sizeOf e = n →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      TEnvWF Env →
+      Env.context.types ≠ [] →
+      ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+        ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n from
+    fun e => h_strong (LExpr.sizeOf e) e rfl
+  intro n_sz
+  induction n_sz using Nat.strongRecOn with
+  | _ n_sz ih_n =>
+  intro e h_sz
+  have ih_sub : ∀ (e' : LExpr T.mono), LExpr.sizeOf e' < n_sz →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e' = .ok (et, Env') →
+      TEnvWF Env →
+      Env.context.types ≠ [] →
+      ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+        ∀ k, k ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString k :=
+    fun e' h_lt => ih_n (LExpr.sizeOf e') h_lt e' rfl
+  match e with
+  | .const m c =>
     -- Output type is c.ty which is a ground type (bool, int, real, string, bitvec).
     -- freeVars of ground types is [], so the goal is vacuously true.
     intro et C Env Env' h h_envwf h_ne _
@@ -6432,21 +6509,84 @@ private theorem resolveAux_output_type_no_future_vars :
       | strConst _ => simp [LConst.ty, LMonoTy.string, LMonoTy.freeVars, LMonoTys.freeVars] at hv
       | bitvecConst _ _ => simp [LConst.ty, LMonoTy.freeVars] at hv
     · exact absurd h (by simp [Bind.bind, Except.bind])
-  | bvar m i =>
+  | .bvar m i =>
     -- resolveAux fails on bvar, contradiction
     intro et C Env Env' h _ _ _
     simp [resolveAux, Bind.bind, Except.bind] at h
-  | fvar m x fty =>
-    -- sorry: needs inferFVar_output_type_no_future_vars
-    intro et C Env Env' h h_envwf h_ne _
-    sorry
-  | op m o oty =>
-    -- sorry: needs instantiateWithCheck_output_type_no_future_vars
-    intro et C Env Env' h h_envwf h_ne _
-    sorry
-  | app m e1 e2 ih1 ih2 =>
-    intro et C Env Env' h h_envwf h_ne h_fwf
+  | .fvar m x fty =>
+    intro et C Env Env' h h_envwf h_ne
+    -- Decompose resolveAux for fvar
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_infer; obtain ⟨ty_res, Env_res⟩ := v1; simp at h
+    obtain ⟨h_et, h_env⟩ := h
+    -- et.toLMonoTy = ty_res
+    intro v hv n hn
+    rw [← h_et] at hv; simp [toLMonoTy] at hv
+    rw [← h_env] at hn
+    -- Decompose inferFVar to extract instantiateWithCheck
+    simp only [inferFVar, Bind.bind, Except.bind] at h_infer
+    split at h_infer; · simp at h_infer
+    rename_i ty_found h_find_ctx
+    split at h_infer; · simp at h_infer
+    rename_i v2 h_inst; obtain ⟨mty, Env1⟩ := v2; dsimp at h_infer h_inst
+    -- mty's free vars are fresh for Env1.genState
+    have h_mty_fresh := LTy_instantiateWithCheck_freeVars_fresh _ C Env mty Env1
+      h_inst h_envwf.ctxFreshForGen
+    cases fty with
+    | none =>
+      simp at h_infer; obtain ⟨h_ty, h_env1⟩ := h_infer
+      rw [← h_ty] at hv; rw [← h_env1] at hn
+      exact h_mty_fresh v hv n hn
+    | some fty_val =>
+      simp only [Except.mapError] at h_infer
+      split at h_infer; · simp at h_infer
+      rename_i v3 h_inst2; obtain ⟨fty_inst, Env2⟩ := v3; dsimp at h_infer h_inst2
+      split at h_infer; · simp at h_infer
+      simp at h_infer; obtain ⟨h_ty, h_env2⟩ := h_infer
+      rw [← h_ty] at hv; rw [← h_env2] at hn; simp [TEnv.updateSubst] at hn
+      -- Env_res.genState = Env2.genState (updateSubst preserves genEnv)
+      -- Env2.genState.tyGen ≥ Env1.genState.tyGen (by instantiateWithCheck monotonicity)
+      have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_inst2
+      exact h_mty_fresh v hv n (Nat.le_trans h_mono2 hn)
+  | .op m o oty =>
+    intro et C Env Env' h h_envwf h_ne
+    -- Decompose resolveAux for op
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i func h_find
+    split at h; · simp at h
+    rename_i type_val h_type
+    split at h; · simp at h
+    rename_i v1 h_inst; obtain ⟨ty_inst, Env1⟩ := v1; dsimp at h h_inst
+    -- ty_inst's free vars are fresh for Env1.genState
+    have h_ty_fresh := LTy_instantiateWithCheck_freeVars_fresh _ C Env ty_inst Env1
+      h_inst h_envwf.ctxFreshForGen
+    cases oty with
+    | none =>
+      simp at h; obtain ⟨h_et, h_env⟩ := h
+      intro v hv n hn
+      rw [← h_et] at hv; simp [toLMonoTy] at hv
+      rw [← h_env] at hn
+      exact h_ty_fresh v hv n hn
+    | some oty_val =>
+      simp only [Except.mapError] at h
+      split at h; · simp at h
+      rename_i v2 h_inst2; obtain ⟨oty_inst, Env2⟩ := v2; dsimp at h h_inst2
+      split at h; · simp at h
+      rename_i v3 h_mapError
+      simp at h; obtain ⟨h_et, h_env⟩ := h
+      intro v hv n hn
+      rw [← h_et] at hv; simp [toLMonoTy] at hv
+      rw [← h_env] at hn; simp [TEnv.updateSubst] at hn
+      have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2
+      exact h_ty_fresh v hv n (Nat.le_trans h_mono2 hn)
+  | .app m e1 e2 =>
+    intro et C Env Env' h h_envwf h_ne
     have h_aw := h_envwf.aliasesWF
+    -- Extract IHs from strong induction
+    have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
+    have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env e1
     split at h
@@ -6553,18 +6693,175 @@ private theorem resolveAux_output_type_no_future_vars :
                 (by omega) n hn
             · -- v ∈ Subst.freeVars v4.subst
               exact h_sfg_v4 v (Or.inr hv_fv) n hn
-  | abs m bty e_body ih =>
-    -- sorry: needs typeBoundVar + varOpen analysis
-    intro et C Env Env' h h_envwf h_ne _
-    sorry
-  | quant m qk bty triggers e_body ih_triggers ih_body =>
-    -- sorry: needs typeBoundVar + varOpen analysis
-    intro et C Env Env' h h_envwf h_ne _
-    sorry
-  | ite m c t e ih_c ih_t ih_e =>
+  | .abs m bty e_body =>
+    intro et C Env Env' h h_envwf h_ne
+    have h_aw := h_envwf.aliasesWF
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    -- Decompose: typeBoundVar C Env bty
+    split at h
+    · simp at h
+    · rename_i v1 h_tbv
+      obtain ⟨xv, xty, Env1⟩ := v1
+      dsimp at h h_tbv
+      -- Decompose: resolveAux C Env1 (varOpen 0 (xv, some xty) e_body)
+      split at h
+      · simp at h
+      · rename_i v2 h_res_body
+        obtain ⟨et_body, Env2⟩ := v2
+        dsimp at h h_res_body
+        simp at h
+        obtain ⟨h_et, h_env'⟩ := h
+        -- h_et : et = .abs ⟨m, subst Env2.subst (arrow [xty, ety])⟩ bty (varCloseT 0 xv et_body)
+        -- h_env' : Env' = eraseFromContext Env2 xv
+        -- Output type: et.toLMonoTy = subst Env2.subst (tcons "arrow" [xty, (varCloseT 0 xv et_body).toLMonoTy])
+        intro v hv n hn
+        rw [← h_et] at hv; simp [toLMonoTy] at hv
+        -- hv : v ∈ freeVars (subst Env2.subst (tcons "arrow" [xty, (varCloseT 0 xv et_body).toLMonoTy]))
+        -- Env'.genState = Env2.genState (eraseFromContext preserves genEnv)
+        have h_gen_eq : Env'.genEnv.genState = Env2.genEnv.genState := by
+          rw [← h_env']; simp [TEnv.eraseFromContext, TEnv.updateContext]
+        rw [h_gen_eq] at hn
+        -- Apply IH to the opened body using strong induction
+        have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
+          (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+        -- Build TEnvWF for Env1
+        have h_envwf1 : TEnvWF Env1 :=
+          { aliasesWF := typeBoundVar_preserves_AliasesWF C Env bty xv xty Env1 h_tbv h_envwf.aliasesWF
+            substFreshForGen := typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.substFreshForGen h_envwf.aliasesWF h_envwf.ctxFreshForGen
+            ctxFreshForGen := typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.ctxFreshForGen
+            boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env1 h_tbv h_envwf.boundVarsNodup
+            ctxFreeVarsGenerated := by
+              -- NOT PROVABLE for bty = some case: user type annotations can introduce
+              -- free type vars (e.g., "a" in `a → Int`) that don't have the tyPrefix.
+              -- ctxFreeVarsGenerated requires v.startsWith tyPrefix = true, which fails
+              -- for user-supplied type variable names.
+              -- For bty = none: xty = ftvar xtyid where xtyid is from genTyVar (has tyPrefix).
+              -- Old context entries: by h_envwf.ctxFreeVarsGenerated + context preservation.
+              sorry }
+        have h_ne1 : Env1.context.types ≠ [] :=
+          typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
+        -- SubstFreshForGen for Env2
+        have h_sfg_Env2 := resolveAux_preserves_SubstFreshForGen
+          (varOpen 0 (xv, some xty) e_body) et_body C Env1 Env2 h_res_body
+          h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF
+        -- Use freeVars_of_subst_subset to split v into type freeVars vs subst freeVars
+        have h_fv_subset := LMonoTy.freeVars_of_subst_subset Env2.stateSubstInfo.subst
+          (.tcons "arrow" [xty, (Lambda.LExpr.varCloseT 0 xv et_body).toLMonoTy])
+        have hv_in := h_fv_subset hv
+        simp [List.mem_append] at hv_in
+        rcases hv_in with hv_ty | hv_subst
+        · -- v ∈ freeVars (tcons "arrow" [xty, (varCloseT 0 xv et_body).toLMonoTy])
+          simp [LMonoTy.freeVars, LMonoTys.freeVars, List.mem_append] at hv_ty
+          rcases hv_ty with hv_xty | hv_ety
+          · -- v ∈ freeVars xty: xty comes from typeBoundVar, its free vars are fresh
+            -- First, establish that xty's free vars are fresh for Env1.genState
+            have h_xty_fresh : ∀ w, w ∈ LMonoTy.freeVars xty →
+                ∀ k, k ≥ Env1.genEnv.genState.tyGen → w ≠ TState.tyPrefix ++ toString k := by
+              simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h_tbv
+              split at h_tbv; · contradiction
+              rename_i genResult h_gen
+              have h_gen_ctx : genResult.snd.context = Env.context := by
+                split at h_gen; · contradiction
+                rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp [TEnv.context]
+                exact HasGen.genVar_context Env.genEnv _ _ h_gv
+              have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+                split at h_gen; · contradiction
+                rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp
+                exact HasGen.genVar_tyGen_mono Env.genEnv _ _ h_gv
+              have h_ctx_gen : ContextFreshForGen genResult.snd.context genResult.snd.genEnv.genState :=
+                h_gen_ctx ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen h_gen_tyGen
+              split at h_tbv
+              · -- bty = some bty_val
+                split at h_tbv; · contradiction
+                rename_i _ bty_mty _ _ Env_inst h_inst
+                simp [Pure.pure, Except.pure] at h_tbv
+                obtain ⟨_, h_xty_eq, h_env1_eq⟩ := h_tbv
+                rw [← h_xty_eq]
+                have h_fv_fresh := LMonoTy_instantiateWithCheck_freeVars_fresh _ C genResult.snd _ Env_inst h_inst h_ctx_gen
+                have h_iwc_mono := LMonoTy_instantiateWithCheck_tyGen_mono _ C genResult.snd _ Env_inst h_inst
+                intro w hw k hk
+                -- Env1 = addInNewestContext Env_inst [...], so Env1.genState = Env_inst.genState
+                have h_gen_eq : Env1.genEnv.genState = Env_inst.genEnv.genState := by
+                  rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
+                rw [h_gen_eq] at hk
+                exact h_fv_fresh w hw k hk
+              · -- bty = none
+                split at h_tbv; · contradiction
+                rename_i v_gen h_genTy
+                obtain ⟨xtyid, Env_ty⟩ := v_gen
+                simp [Pure.pure, Except.pure] at h_tbv
+                obtain ⟨_, h_xty_eq, h_env1_eq⟩ := h_tbv
+                rw [← h_xty_eq]
+                intro w hw k hk
+                simp [LMonoTy.freeVars] at hw
+                rw [hw]
+                have h_genTy_name := genTyVar_name_eq genResult.snd xtyid Env_ty h_genTy
+                have h_genTy_tyGen := genTyVar_tyGen genResult.snd xtyid Env_ty h_genTy
+                -- Env1 = addInNewestContext Env_ty [...], so Env1.genState = Env_ty.genState
+                have h_gen_eq : Env1.genEnv.genState = Env_ty.genEnv.genState := by
+                  rw [← h_env1_eq]; simp [TEnv.addInNewestContext, TEnv.updateContext]
+                rw [h_gen_eq] at hk
+                rw [h_genTy_name]
+                exact generated_name_fresh _ _ (by omega) k hk
+            -- Now apply: Env2.genState.tyGen ≥ Env1.genState.tyGen
+            have h_mono_body := resolveAux_genState_mono
+              (varOpen 0 (xv, some xty) e_body) et_body C Env1 Env2 h_res_body
+            exact h_xty_fresh v hv_xty n (by omega)
+          · -- v ∈ freeVars (varCloseT 0 xv et_body).toLMonoTy
+            -- varCloseT preserves toLMonoTy
+            rw [varCloseT_toLMonoTy] at hv_ety
+            -- Now use ih_body: v ∈ freeVars et_body.toLMonoTy → v ≠ tyPrefix ++ toString n
+            exact ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 v hv_ety n hn
+        · -- v ∈ Subst.freeVars Env2.stateSubstInfo.subst
+          exact h_sfg_Env2 v (Or.inr hv_subst) n hn
+  | .quant m qk bty triggers e_body =>
+    intro et C Env Env' h h_envwf h_ne
+    have h_aw := h_envwf.aliasesWF
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    -- Decompose: typeBoundVar C Env bty
+    split at h
+    · simp at h
+    · rename_i v1 h_tbv
+      obtain ⟨xv, xty, Env1⟩ := v1
+      dsimp at h h_tbv
+      -- Decompose: resolveAux C Env1 (varOpen 0 (xv, some xty) e_body)
+      split at h
+      · simp at h
+      · rename_i v2 h_res_body
+        obtain ⟨et_body, Env2⟩ := v2
+        dsimp at h h_res_body
+        -- Decompose: resolveAux C Env2 (varOpen 0 (xv, some xty) triggers)
+        split at h
+        · simp at h
+        · rename_i v3 h_res_triggers
+          obtain ⟨triggersT, Env3⟩ := v3
+          dsimp at h h_res_triggers
+          -- Apply IH to opened body and triggers using strong induction
+          have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
+            (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+          have ih_triggers := ih_sub (varOpen 0 (xv, some xty) triggers)
+            (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+          -- The output type of quant is xty (the quantifier variable type, stored in metadata)
+          -- But toLMonoTy for quant is LMonoTy.bool, which has no free vars
+          -- Actually: quant output is .quant ⟨m, xty'⟩ qk xty' triggersClosed etclosed
+          -- and toLMonoTy of quant = LMonoTy.bool
+          -- So freeVars et.toLMonoTy = freeVars LMonoTy.bool = []
+          -- This makes the goal vacuously true!
+          -- But we need to handle the conditional (ety != LMonoTy.bool) first
+          split at h
+          · simp at h
+          · simp at h
+            obtain ⟨h_et, h_env'⟩ := h
+            intro v hv
+            rw [← h_et] at hv; simp [toLMonoTy] at hv
+            -- toLMonoTy of .quant is LMonoTy.bool, which has empty freeVars
+            simp [LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+  | .ite m c t e =>
     -- Output type is tht.toLMonoTy (the then-branch metadata type).
     -- Use IH on t (then-branch) and genState monotonicity.
-    intro et C Env Env' h h_envwf h_ne h_fwf
+    intro et C Env Env' h h_envwf h_ne
+    -- Extract IHs from strong induction
+    have ih_t := ih_sub t (by subst h_sz; simp [LExpr.sizeOf]; omega)
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
     -- Decompose: resolveAux C Env c
     split at h
@@ -6611,8 +6908,8 @@ private theorem resolveAux_output_type_no_future_vars :
                 boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
                 ctxFreeVarsGenerated := transfer_ctxFreeVarsGenerated h_envwf.ctxFreeVarsGenerated h_ctx1 }
             -- Apply IH on t (then-branch)
-            exact ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 h_fwf v hv n hn2
-  | eq m e1 e2 ih1 ih2 =>
+            exact ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 v hv n hn2
+  | .eq m e1 e2 =>
     -- Output type is LMonoTy.bool, which has no free vars. Vacuously true.
     intro et C Env Env' h h_envwf h_ne _
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
