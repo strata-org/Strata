@@ -13,6 +13,7 @@ public import Strata.DDM.Util.SourceRange
 
 import Std.Data.HashMap
 import all Strata.DDM.Util.Array
+import Strata.Util.DecideProp
 import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
@@ -588,6 +589,14 @@ def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
   | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
   | some _ => panic! s!"Unexpected argument count to scopeDatatype"
 
+/-- Returns (nameIndex, argsIndex, typeIndex) if @[scopeSelf] is present.
+    Used to bring a function's own name into scope within its body. -/
+def scopeSelfIndex (metadata : Metadata) : Option (Nat × Nat × Nat) :=
+  match metadata[q`StrataDDL.scopeSelf]? with
+  | none => none
+  | some #[.catbvar n, .catbvar a, .catbvar t] => some (n, a, t)
+  | some _ => panic! s!"Unexpected argument count to scopeSelf"
+
 /-- Returns the name index if @[declareTVar] is present.
     Used for operations that introduce a type variable (creates .tvar binding in result context). -/
 def declareTVarIndex (metadata : Metadata) : Option Nat :=
@@ -613,6 +622,23 @@ def resultLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :
       some ⟨varCount - (idx + 1), by omega⟩
     else
       panic! s!"Scope index {idx} out of bounds (varCount = {varCount})"
+
+/-- Returns the argument index from @[preRegisterTypes] metadata, if present. -/
+def preRegisterTypesIndex (metadata : Metadata) : Option Nat :=
+  match metadata[q`StrataDDL.preRegisterTypes]? with
+  | none => none
+  | some #[.catbvar idx] => some idx
+  | some _ => panic! s!"Unexpected argument count to preRegisterTypes"
+
+/-- Returns the level for @[preRegisterTypes] metadata, if present. -/
+def preRegisterTypesLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :=
+  match metadata.preRegisterTypesIndex with
+  | none => none
+  | some idx =>
+    if _ : idx < varCount then
+      some ⟨varCount - (idx + 1), by omega⟩
+    else
+      panic! s!"preRegisterTypes index {idx} out of bounds (varCount = {varCount})"
 
 end Metadata
 
@@ -821,6 +847,22 @@ def argScopeDatatypeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Op
     else
       panic! s!"scopeDatatype name index {nameIdx} out of bounds ({level.val})"
 
+/-- Returns (nameLevel, argsLevel, typeLevel) if @[scopeSelf] is present. -/
+def argScopeSelfLevel (argDecls : ArgDecls) (level : Fin argDecls.size)
+    : Option (Fin level.val × Fin level.val × Fin level.val) :=
+  match argDecls[level].metadata.scopeSelfIndex with
+  | none => none
+  | some (nIdx, aIdx, tIdx) =>
+    if h1 : nIdx < level.val then
+      if h2 : aIdx < level.val then
+        if h3 : tIdx < level.val then
+          some (⟨level.val - (nIdx + 1), by omega⟩,
+                ⟨level.val - (aIdx + 1), by omega⟩,
+                ⟨level.val - (tIdx + 1), by omega⟩)
+        else panic! s!"scopeSelf type index {tIdx} out of bounds ({level.val})"
+      else panic! s!"scopeSelf args index {aIdx} out of bounds ({level.val})"
+    else panic! s!"scopeSelf name index {nIdx} out of bounds ({level.val})"
+
 end ArgDecls
 
 /--
@@ -908,122 +950,6 @@ def buildFunctionType (template : FunctionTemplate)
   .ok <| paramTypes.foldr (init := returnType) fun argType tp => .arrow default argType tp
 
 /--
-Result of expanding a single template.
-Contains the generated function signatures and any errors encountered.
--/
-structure TemplateExpansionResult where
-  /-- Generated function signatures as (name, type) pairs -/
-  functions : Array (String × TypeExpr)
-  /-- Errors encountered during expansion -/
-  errors : Array String
-  deriving Repr
-
-/--
-Expand a single function template based on its scope.
-
-Function templates specify patterns for generating auxiliary functions
-from datatype declarations. This function expands one template according to
-its iteration scope:
-
-- **perConstructor**: Generates one function per constructor (e.g., testers
-like `..isNone`)
-- **perField**: Generates one function per unique field across all constructors
-(e.g., accessors)
-
-**Parameters:**
-- `datatypeName`: Name of the datatype (used in name pattern expansion)
-- `datatypeType`: TypeExpr for the datatype (used in function signatures)
-- `constructorInfo`: Array of constructor information
-- `template`: The function template to expand
-- `dialectName`: Dialect name (for resolving builtin types)
-- `existingNames`: Set of already-used names (for duplicate detection)
-
-**Example:** For a `perConstructor` template defined as:
-```
-perConstructor([.datatype, .literal "..is", .constructor], [.datatype],
-.builtin "bool")
-```
-This specifies:
-- Name pattern: `[.datatype, .literal "..is", .constructor]` → generates names
-like `Option..isNone`
-- Parameter types: `[.datatype]` → takes one parameter of the datatype type
-- Return type: `.builtin "bool"` → returns a boolean
-
-Applied to `Option<T>` with constructors `None` and `Some`, this generates:
-- `Option..isNone : Option<T> -> bool`
-- `Option..isSome : Option<T> -> bool`
--/
-def expandSingleTemplate
-    (datatypeName : String)
-    (datatypeType : TypeExpr)
-    (constructorInfo : Array ConstructorInfo)
-    (template : FunctionTemplate)
-    (dialectName : String)
-    (existingNames : Std.HashSet String) : TemplateExpansionResult :=
-  -- First validate the pattern
-  match validateNamePattern template.namePattern template.scope with
-  | some err => { functions := #[], errors := #[err] }
-  | none =>
-    match template.scope with
-    | .perConstructor =>
-      -- Generate one function per constructor
-      let (funcs, errs, _) := constructorInfo.foldl (init := (#[], #[], existingNames)) fun (funcs, errs, names) constr =>
-        let funcName := expandNamePattern template.namePattern datatypeName (some constr.name)
-        if names.contains funcName then
-          (funcs, errs.push s!"Duplicate function name: {funcName}", names)
-        else
-          match buildFunctionType template datatypeType none dialectName with
-          | .ok funcType =>
-            (funcs.push (funcName, funcType), errs, names.insert funcName)
-          | .error e =>
-            (funcs, errs.push e, names)
-      { functions := funcs, errors := errs }
-
-    | .perField =>
-      -- Generate one function per unique field across all constructors
-      -- Error if the same field name appears with different types
-      let allFields := constructorInfo.foldl (init := #[]) fun acc c => acc ++ c.fields
-      let (funcs, errs, _) := allFields.foldl (init := (#[], #[], existingNames)) fun (funcs, errs, names) (fieldName, fieldTp) =>
-        let funcName := expandNamePattern template.namePattern datatypeName none (some fieldName)
-        if names.contains funcName then
-          (funcs, errs.push s!"Duplicate field name '{fieldName}' across constructors in datatype '{datatypeName}'", names)
-        else
-          match buildFunctionType template datatypeType (some fieldTp) dialectName with
-          | .ok funcType =>
-            (funcs.push (funcName, funcType), errs, names.insert funcName)
-          | .error e =>
-            (funcs, errs.push e, names)
-      { functions := funcs, errors := errs }
-
-/--
-This function generates function signatures for an array of function templates
-in order. Templates are specified in `@[declareDatatype]` annotations
-to automatically generate auxiliary functions like testers and field accessors.
-Within each template, functions are generated in constructor/field declaration order.
-
-**Parameters:**
-- `datatypeName`: Name of the datatype
-- `datatypeType`: TypeExpr for the datatype
-- `constructorInfo`: Array of constructor information
-- `templates`: Array of function templates to expand
-- `dialectName`: Dialect name (for resolving builtin types)
-- `existingNames`: Optional set of pre-existing names to avoid
--/
-def expandFunctionTemplates
-    (datatypeName : String)
-    (datatypeType : TypeExpr)
-    (constructorInfo : Array ConstructorInfo)
-    (templates : Array FunctionTemplate)
-    (dialectName : String)
-    (existingNames : Std.HashSet String := {}) : TemplateExpansionResult :=
-  templates.foldl (init := { functions := #[], errors := #[] }) fun acc template =>
-    -- Track names from previous templates to detect cross-template duplicates
-    let currentNames := acc.functions.foldl (init := existingNames) fun s (name, _) => s.insert name
-    let result := expandSingleTemplate datatypeName datatypeType constructorInfo template dialectName currentNames
-    { functions := acc.functions ++ result.functions
-      errors := acc.errors ++ result.errors }
-
-/--
 Specification for datatype declarations.
 Includes indices for extracting datatype information and optional function templates.
 -/
@@ -1053,7 +979,6 @@ A spec for introducing a new binding into a type context.
 inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
-| typeForward (_ : TypeBindingSpec argDecls)  -- Forward declaration (no AST node)
 | datatype (_ : DatatypeBindingSpec argDecls)
 | tvar (_ : TvarBindingSpec argDecls)
 deriving Repr
@@ -1063,7 +988,6 @@ namespace BindingSpec
 def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
-| .typeForward v => v.nameIndex
 | .datatype v => v.nameIndex
 | .tvar v => v.nameIndex
 
@@ -1104,12 +1028,19 @@ private def mkValueBindingSpec
     newBindingErr "Arguments only allowed when result is a type."
   return { nameIndex, argsIndex, typeIndex, allowCat }
 
-/-- Parse function templates from metadata arguments. -/
-private def parseFunctionTemplates (args : Array MetadataArg) : Array FunctionTemplate :=
-  args.filterMap fun arg =>
+/-- Parse and validate function templates from metadata arguments. -/
+private def parseFunctionTemplates (args : Array MetadataArg)
+    : NewBindingM (Array FunctionTemplate) := do
+  let mut result := #[]
+  for arg in args do
     match arg with
-    | .functionTemplate t => some t
-    | _ => none
+    | .functionTemplate t =>
+      if let some err := validateNamePattern t.namePattern t.scope then
+        newBindingErr s!"Function template error: {err}"
+      else
+        result := result.push t
+    | _ => pure ()
+  return result
 
 def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec argDecls) × Array String :=
   let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec argDecls)) := do
@@ -1148,22 +1079,6 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := none }
-        | q`StrataDDL.declareTypeForward => do
-          let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
-            | newBindingErr s!"declareTypeForward has bad arguments {repr attr.args}."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
-            | return panic! "Invalid name index"
-          let nameIndex := ⟨nameIndex, nameP⟩
-          checkNameIndexIsIdent argDecls nameIndex
-          let argsIndex ←
-                match mArgsArg with
-                | none => pure none
-                | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
-                    | return panic! "Invalid arg index"
-                  pure <| some ⟨idx, argsP⟩
-                | _ => newBindingErr "declareTypeForward args invalid."; return none
-          some <$> .typeForward <$> pure { nameIndex, argsIndex, defIndex := none }
         | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
@@ -1212,8 +1127,8 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             | return panic! "Invalid typeParams index"
           let .isTrue constructorsP := inferInstanceAs (Decidable (constructorsIndex < argDecls.size))
             | return panic! "Invalid constructors index"
-          -- Parse function templates from remaining arguments (args[3..])
-          let functionTemplates := parseFunctionTemplates (args.extract 3 args.size)
+          -- Parse and validate function templates from remaining arguments (args[3..])
+          let functionTemplates ← parseFunctionTemplates (args.extract 3 args.size)
           some <$> .datatype <$> pure {
             nameIndex := ⟨nameIndex, nameP⟩,
             typeParamsIndex := ⟨typeParamsIndex, typeParamsP⟩,
@@ -1726,6 +1641,15 @@ This includes transitive imports.
 partial def importedDialects (dm : DialectMap) (dialect : DialectName) (p : dialect ∈ dm) : DialectMap :=
   importedDialectsAux dm.map dm.closed dialect p
 
+/--
+Look up an operation's metadata in the dialect.
+Returns the OpDecl if found, or none if the operation is not in the dialect.
+-/
+def lookupOpDecl (dialects : DialectMap) (opName : QualifiedIdent) : Option OpDecl :=
+  match dialects[opName.dialect]? with
+  | none => none
+  | some dialect => dialect.ops[opName.name]?
+
 end DialectMap
 
 mutual
@@ -1751,7 +1675,7 @@ partial def foldOverArgBindingSpecs {α β}
 /--
 Invoke a function `f` over each of the declaration specifications for an operator.
 -/
-private partial def OperationF.foldBindingSpecs {α β}
+partial def OperationF.foldBindingSpecs {α β}
     (m : DialectMap)
     (f : β → α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector (ArgF α) argDecls.size → β)
     (init : β)
@@ -1798,12 +1722,6 @@ inductive GlobalKind where
 | type (params : List String) (definition : Option TypeExpr)
 deriving BEq, Inhabited, Repr
 
-/-- State of a symbol in the GlobalContext -/
-inductive DeclState where
-  | forward   -- Symbol is forward-declared (no AST node will be generated)
-  | defined   -- Symbol has a complete definition
-deriving BEq, DecidableEq, Repr, Inhabited
-
 /-- Resolves a binding spec into a global kind. -/
 partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Option GlobalKind :=
   match b with
@@ -1829,7 +1747,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
         panic! s!"Expected new binding to be Type instead of {repr c}."
     | a =>
       panic! s!"Expected new binding to be bound to type instead of {repr a}."
-  | .type b | .typeForward b =>
+  | .type b =>
     let params : Array String :=
         match b.argsIndex with
         | none => #[]
@@ -1849,9 +1767,9 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
               | _ => panic! "Bad arg"
     some <| .type params.toList value
   | .datatype b =>
-    /- For datatypes, resolveBindingIndices only returns the datatype type
-    itself; the constructors and template-generated functions are handled
-    separately in addDatatypeBindings. -/
+    -- For datatypes, resolveBindingIndices only returns the datatype type
+    -- itself; the constructors and template-generated functions are handled
+    -- separately in addDatatypeBindings!.
     let params : Array String :=
         let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
             match args[b.nameIndex.toLevel] with
@@ -1862,80 +1780,6 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
   | .tvar _ =>
     -- tvar bindings are local only, not added to GlobalContext
     none
-
-/--
-Typing environment created from declarations in an environment.
--/
-structure GlobalContext where
-  nameMap : Std.HashMap Var FreeVarIndex
-  vars : Array (Var × GlobalKind × DeclState)
-deriving Repr
-
-namespace GlobalContext
-
-instance : EmptyCollection GlobalContext where
-  emptyCollection := private { nameMap := {}, vars := {}}
-
---deriving instance BEq for GlobalContext
-
-instance : Inhabited GlobalContext where
-  default := {}
-
-instance : Membership Var GlobalContext where
-  mem ctx v := v ∈ ctx.nameMap
-
-@[instance]
-def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
-  inferInstanceAs (Decidable (v ∈ ctx.nameMap))
-
-/-- Add a forward declaration (must not exist). Used by @[declareTypeForward].
-    This adds to GlobalContext for name resolution but will NOT generate an AST node. -/
-def declareForward (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
-  if v ∈ ctx then
-    .error s!"Symbol '{v}' is already in scope"
-  else
-    let idx := ctx.vars.size
-    .ok { nameMap := ctx.nameMap.insert v idx,
-          vars := ctx.vars.push (v, k, .forward) }
-
-/-- Define a symbol. Used by @[declareDatatype], @[declareFn] with body, etc.
-    Replaces forward declaration, or adds new as defined. -/
-def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) : Except String GlobalContext :=
-  match ctx.nameMap.get? v with
-  | none =>
-    -- Not declared, add as defined directly
-    let idx := ctx.vars.size
-    .ok { nameMap := ctx.nameMap.insert v idx,
-          vars := ctx.vars.push (v, k, .defined) }
-  | some idx =>
-    let (name, _, state) := ctx.vars[idx]!
-    match state with
-    | .forward =>
-      -- Replace forward declaration with definition (update in place)
-      .ok { ctx with vars := ctx.vars.set! idx (name, k, .defined) }
-    | .defined =>
-      .error s!"Symbol '{v}' is already defined"
-
-/-- Check if a symbol is forward-declared (not yet defined). -/
-def isForward (ctx : GlobalContext) (idx : FreeVarIndex) : Bool :=
-  match ctx.vars[idx]? with
-  | some (_, _, .forward) => true
-  | _ => false
-
-/-- Add a symbol as defined. -/
-def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
-  match ctx.define v k with
-  | .ok ctx' => ctx'
-  | .error msg => panic! msg
-
-/-- Return the index of the variable with the given name. -/
-def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
-
-def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.vars[idx]? |>.map (·.fst)
-
-def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
-  assert! idx < ctx.vars.size
-  ctx.vars[idx]!.2.1
 
 /-!
 ## Annotation-based Constructor Info Extraction
@@ -1948,15 +1792,6 @@ The annotation-based approach:
 2. Checks if the operation has the appropriate metadata annotation
 3. Uses the indices from the annotation to extract the relevant arguments
 -/
-
-/--
-Look up an operation's metadata in the dialect.
-Returns the OpDecl if found, or none if the operation is not in the dialect.
--/
-private def lookupOpDecl (dialects : DialectMap) (opName : QualifiedIdent) : Option OpDecl :=
-  match dialects[opName.dialect]? with
-  | none => none
-  | some dialect => dialect.ops[opName.name]?
 
 /--
 Check if an operation has the @[constructor(name, fields)] annotation.
@@ -1985,52 +1820,58 @@ private def getConstructorListPushAnnotation (opDecl : OpDecl) : Option (Nat × 
   | some #[.catbvar listIdx, .catbvar constrIdx] => some (listIdx, constrIdx)
   | _ => none
 
-/--
-Extract fields from a Bindings argument using the existing @[declare] annotations.
--/
-private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg) : Array (String × TypeExpr) :=
-  let addField (acc : Array (String × TypeExpr)) (_ : SourceRange)
-      {argDecls : ArgDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Array (String × TypeExpr) :=
+/-- Extract fields from a Bindings argument using the existing @[declare] annotations.
+The accumulator is `Except String ...` because `foldOverArgBindingSpecs` fixes the
+fold's accumulator type; wrapping in `Except` lets us propagate errors through
+the fold without changing its generic signature. -/
+private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg)
+    : Except String (Array (String × TypeExpr)) :=
+  -- We thread `Except` through the accumulator rather than changing
+  -- `foldOverArgBindingSpecs`, which is used broadly with plain accumulators.
+  let addField (acc : Except String (Array (String × TypeExpr))) (_ : SourceRange)
+      {argDecls : ArgDecls} (b : BindingSpec argDecls)
+      (args : Vector Arg argDecls.size)
+      : Except String (Array (String × TypeExpr)) := do
+    let acc ← acc
     match b with
     | .value vb =>
       match args[vb.nameIndex.toLevel], args[vb.typeIndex.toLevel] with
-      | .ident _ name, .type tp => acc.push (name, tp)
-      | _, _ => acc
-    | _ => acc
-  foldOverArgBindingSpecs dialects addField #[] arg
+      | .ident _ name, .type tp => return acc.push (name, tp)
+      | _, _ => throw s!"Expected (ident, type) for field binding, \
+           got ({repr args[vb.nameIndex.toLevel]}, \
+           {repr args[vb.typeIndex.toLevel]})"
+    | _ => return acc
+  foldOverArgBindingSpecs dialects addField (.ok #[]) arg
 
 /--
 Extract constructor information using the @[constructor] annotation.
 -/
-private def extractSingleConstructor (dialects : DialectMap) (arg : Arg) : Option ConstructorInfo :=
-  match arg with
-  | .op op =>
-    match lookupOpDecl dialects op.name with
-    | none => none
-    | some opDecl =>
-      match getConstructorAnnotation opDecl with
-      | none => none
-      | some (nameIdx, fieldsIdx) =>
-        -- Convert deBruijn indices to levels
-        let argCount := opDecl.argDecls.size
-        if nameIdx < argCount && fieldsIdx < argCount then
-          let nameLevel := argCount - nameIdx - 1
-          let fieldsLevel := argCount - fieldsIdx - 1
-          if h1 : nameLevel < op.args.size then
-            if h2 : fieldsLevel < op.args.size then
-              match op.args[nameLevel] with
-              | .ident _ constrName =>
-                -- Extract fields from the Bindings argument using @[declare] annotations
-                let fields := match op.args[fieldsLevel] with
-                  | .option _ (some bindingsArg) => extractFieldsFromBindings dialects bindingsArg
-                  | .option _ none => #[]
-                  | other => extractFieldsFromBindings dialects other
-                some { name := constrName, fields := fields }
-              | _ => none
-            else none
-          else none
-        else none
-  | _ => none
+private def extractSingleConstructor (dialects : DialectMap) (arg : Arg)
+    : Except String ConstructorInfo := do
+  let .op op := arg
+    | throw s!"Expected op for constructor, got {repr arg}"
+  let some opDecl := dialects.lookupOpDecl op.name
+    | throw s!"Unknown operation '{op.name}'"
+  let some (nameIdx, fieldsIdx) := getConstructorAnnotation opDecl
+    | throw s!"Operation '{op.name}' missing @[constructor] annotation"
+  let argCount := opDecl.argDecls.size
+  unless nameIdx < argCount && fieldsIdx < argCount do
+    throw s!"Annotation indices out of bounds: \
+       nameIdx={nameIdx}, fieldsIdx={fieldsIdx}, \
+       argCount={argCount}"
+  let nameLevel := argCount - nameIdx - 1
+  let fieldsLevel := argCount - fieldsIdx - 1
+  let .isTrue h1 := decideProp (nameLevel < op.args.size)
+    | throw s!"Name index {nameLevel} out of bounds (size {op.args.size})"
+  let .isTrue h2 := decideProp (fieldsLevel < op.args.size)
+    | throw s!"Fields index {fieldsLevel} out of bounds (size {op.args.size})"
+  let .ident _ constrName := op.args[nameLevel]
+    | throw s!"Expected ident for constructor name, got {repr op.args[nameLevel]}"
+  let fields ← match op.args[fieldsLevel] with
+    | .option _ (some bindingsArg) => extractFieldsFromBindings dialects bindingsArg
+    | .option _ none => pure #[]
+    | other => extractFieldsFromBindings dialects other
+  return { name := constrName, fields }
 
 /--
 This function traverses a constructor list AST node and extracts structured
@@ -2046,48 +1887,254 @@ dialect annotations `@[constructor]`, `@[constructorListAtom]`,
 ]
 ```
 -/
-def extractConstructorInfo (dialects : DialectMap) (arg : Arg) : Array ConstructorInfo :=
-  match arg with
-  | .op op =>
-    match lookupOpDecl dialects op.name with
-    | none => #[]
-    | some opDecl =>
-      match getConstructorListAtomAnnotation opDecl with
-      | some constrIdx =>
-        let argCount := opDecl.argDecls.size
-        if constrIdx < argCount then
-          let constrLevel := argCount - constrIdx - 1
-          if h : constrLevel < op.args.size then
-            match extractSingleConstructor dialects op.args[constrLevel] with
-            | some constr => #[constr]
-            | none => #[]
-          else #[]
-        else #[]
-      | none =>
-        match getConstructorListPushAnnotation opDecl with
-        | some (listIdx, constrIdx) =>
-          let argCount := opDecl.argDecls.size
-          if listIdx < argCount && constrIdx < argCount then
-            let listLevel := argCount - listIdx - 1
-            let constrLevel := argCount - constrIdx - 1
-            if h1 : listLevel < op.args.size then
-              if h2 : constrLevel < op.args.size then
-                let prevConstrs := extractConstructorInfo dialects op.args[listLevel]
-                match extractSingleConstructor dialects op.args[constrLevel] with
-                | some constr => prevConstrs.push constr
-                | none => prevConstrs
-              else #[]
-            else #[]
-          else #[]
-        | none =>
-          -- Could be a direct constructor operation
-          match extractSingleConstructor dialects arg with
-          | some constr => #[constr]
-          | none => #[]
-  | _ => #[]
+def extractConstructorInfo (dialects : DialectMap) (arg : Arg)
+    : Except String (Array ConstructorInfo) := do
+  let .op op := arg
+    | throw s!"Expected op for constructor list, got {repr arg}"
+  let some opDecl := dialects.lookupOpDecl op.name
+    | throw s!"Unknown operation '{op.name}'"
+  -- Try constructorListAtom annotation
+  if let some constrIdx := getConstructorListAtomAnnotation opDecl then
+    let argCount := opDecl.argDecls.size
+    unless constrIdx < argCount do
+      throw s!"constructorListAtom index {constrIdx} out of bounds (argCount={argCount})"
+    let constrLevel := argCount - constrIdx - 1
+    let .isTrue h := decideProp (constrLevel < op.args.size)
+      | throw s!"Constructor level {constrLevel} out of bounds (size {op.args.size})"
+    let constr ← extractSingleConstructor dialects op.args[constrLevel]
+    return #[constr]
+  -- Try constructorListPush annotation
+  if let some (listIdx, constrIdx) := getConstructorListPushAnnotation opDecl then
+    let argCount := opDecl.argDecls.size
+    unless listIdx < argCount && constrIdx < argCount do
+      throw s!"constructorListPush indices out of bounds: \
+         listIdx={listIdx}, constrIdx={constrIdx}, \
+         argCount={argCount}"
+    let listLevel := argCount - listIdx - 1
+    let constrLevel := argCount - constrIdx - 1
+    let .isTrue h1 := decideProp (listLevel < op.args.size)
+      | throw s!"List level {listLevel} out of bounds (size {op.args.size})"
+    let .isTrue h2 := decideProp (constrLevel < op.args.size)
+      | throw s!"Constructor level {constrLevel} out of bounds (size {op.args.size})"
+    let prevConstrs ← extractConstructorInfo dialects op.args[listLevel]
+    let constr ← extractSingleConstructor dialects op.args[constrLevel]
+    return prevConstrs.push constr
+  -- Fallback: try as a direct constructor
+  let constr ← extractSingleConstructor dialects arg
+  return #[constr]
   decreasing_by
     simp_wf; rw[OperationF.sizeOf_spec]
     have := Array.sizeOf_get op.args (opDecl.argDecls.size - listIdx - 1) (by omega); omega
+
+
+/--
+Typing environment created from declarations in an environment.
+-/
+structure GlobalContext where
+  nameMap : Std.HashMap Var FreeVarIndex
+  vars : Array (Var × GlobalKind)
+deriving Repr
+
+namespace GlobalContext
+
+instance : EmptyCollection GlobalContext where
+  emptyCollection := private { nameMap := {}, vars := {}}
+
+--deriving instance BEq for GlobalContext
+
+instance : Inhabited GlobalContext where
+  default := {}
+
+instance : Membership Var GlobalContext where
+  mem ctx v := v ∈ ctx.nameMap
+
+@[instance]
+def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
+  inferInstanceAs (Decidable (v ∈ ctx.nameMap))
+
+/-- Define a symbol. Caller must prove `v ∉ ctx`. -/
+def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) (_ : v ∉ ctx) : GlobalContext :=
+  let idx := ctx.vars.size
+  { nameMap := ctx.nameMap.insert v idx,
+    vars := ctx.vars.push (v, k) }
+
+/-- Define a symbol if not already present. No-op if already defined. -/
+def ensureDefined (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
+  if h : v ∈ ctx then
+    ctx
+  else
+    ctx.define v k h
+
+/-- Define a symbol, with behavior controlled by `preRegistered`:
+- `preRegistered = true`: the name is expected to already exist (was
+  pre-registered). Returns the context unchanged, or an error if missing.
+- `preRegistered = false`: the name must be fresh. Defines it, or returns
+  an error if already present. -/
+def defineChecked (ctx : GlobalContext) (v : Var) (k : GlobalKind) (preRegistered : Bool) :
+      Except String GlobalContext :=
+  match instDecidableMem v ctx, preRegistered with
+  | .isTrue _, true => .ok ctx
+  | .isTrue _, false => .error s!"'{v}' already defined"
+  | .isFalse h, false => .ok (ctx.define v k h)
+  | .isFalse _, true => .error s!"pre-registered '{v}' not found"
+
+/-- Return the index of the variable with the given name. -/
+def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
+
+def nameOf? (ctx : GlobalContext) (idx : FreeVarIndex) : Option String := ctx.vars[idx]? |>.map (·.fst)
+
+def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
+  assert! idx < ctx.vars.size
+  ctx.vars[idx]!.2
+
+private structure TemplateExpandState where
+  gctx : GlobalContext
+  errors : Array String := #[]
+  deriving Inhabited
+
+namespace TemplateExpandState
+
+private def addError (s : TemplateExpandState) (msg : String) : TemplateExpandState :=
+  { s with errors := s.errors.push msg }
+
+end TemplateExpandState
+
+private abbrev TemplateExpandM := StateM TemplateExpandState
+
+
+namespace TemplateExpandM
+
+private def runChecked (act : TemplateExpandM Unit) : TemplateExpandM Bool := do
+  let oldCount := (←get).errors.size
+  act
+  let newCount := (←get).errors.size
+  return oldCount = newCount
+
+private def addError (msg : String) : TemplateExpandM Unit :=
+  modify (·.addError msg)
+
+private def addFunction
+    (name : String) (tp : TypeExpr)
+    (errorMsg : Thunk String := .mk fun _ => s!"{name} already defined." )
+    : TemplateExpandM Unit :=
+  modify fun s =>
+   if h : name ∈ s.gctx then
+    s.addError errorMsg.get
+  else
+    { s with gctx := s.gctx.define name (.expr tp) h }
+
+
+/--
+Build the function type from a template, then atomically check freshness
+and define. Reports an error (via `dupMsg`) if the name already exists, or
+if the type cannot be built. Uses `define` with a proof — never panics.
+-/
+private def buildAndDefine
+    (template : FunctionTemplate)
+    (datatypeType : TypeExpr)
+    (fieldType : Option TypeExpr)
+    (dialectName : String)
+    (funcName : String)
+    (dupMsg : String) : TemplateExpandM Unit := do
+  match buildFunctionType template datatypeType fieldType dialectName with
+  | .ok funcType =>
+    addFunction funcName funcType (errorMsg := .mk fun _ => dupMsg)
+  | .error e =>
+    TemplateExpandM.addError e
+
+end TemplateExpandM
+
+/--
+Expand a single function template based on its scope.
+
+Function templates specify patterns for generating auxiliary functions
+from datatype declarations. This function expands one template according to
+its iteration scope:
+
+- **perConstructor**: Generates one function per constructor (e.g., testers
+like `..isNone`)
+- **perField**: Generates one function per unique field across all constructors
+(e.g., accessors)
+
+**Parameters:**
+- `datatypeName`: Name of the datatype (used in name pattern expansion)
+- `datatypeType`: TypeExpr for the datatype (used in function signatures)
+- `constructorInfo`: Array of constructor information
+- `template`: The function template to expand
+- `dialectName`: Dialect name (for resolving builtin types)
+
+**Example:** For a `perConstructor` template defined as:
+```
+perConstructor([.datatype, .literal "..is", .constructor], [.datatype],
+.builtin "bool")
+```
+This specifies:
+- Name pattern: `[.datatype, .literal "..is", .constructor]` → generates names
+like `Option..isNone`
+- Parameter types: `[.datatype]` → takes one parameter of the datatype type
+- Return type: `.builtin "bool"` → returns a boolean
+
+Applied to `Option<T>` with constructors `None` and `Some`, this generates:
+- `Option..isNone : Option<T> -> bool`
+- `Option..isSome : Option<T> -> bool`
+-/
+private def expandSingleTemplate1
+    (dialectName datatypeName : String)
+    (datatypeType : TypeExpr)
+    (constr : ConstructorInfo)
+    (template : FunctionTemplate)
+    : TemplateExpandM Unit := do
+  match template.scope with
+  | .perConstructor =>
+    let funcName := expandNamePattern template.namePattern datatypeName (some constr.name)
+    TemplateExpandM.buildAndDefine template datatypeType none dialectName
+      funcName s!"Duplicate function name: {funcName}"
+  | .perField =>
+    for (fieldName, fieldTp) in constr.fields do
+      let funcName := expandNamePattern
+        template.namePattern datatypeName none (some fieldName)
+      TemplateExpandM.buildAndDefine template datatypeType (some fieldTp) dialectName
+        funcName s!"Duplicate field name '{fieldName}' across \
+           constructors in datatype '{datatypeName}'"
+
+/--
+Register constructor signatures and expand function templates for a
+datatype, returning the updated `GlobalContext` and any error messages.
+
+`dialectName` is the dialect that owns the `@[declareDatatype]`-annotated
+operator. It is used to qualify builtin type references in templates
+(e.g., `.builtin "bool"` resolves to `⟨dialectName, "bool"⟩`).
+-/
+def expandFunctionTemplates
+    (dialectName : String)
+    (src : SourceRange)
+    (datatypeName : String)
+    (datatypeType : TypeExpr)
+    (constructorInfo : Array ConstructorInfo)
+    (templates : Array FunctionTemplate)
+    (gctx : GlobalContext)
+    : GlobalContext × Array String :=
+  let initState : TemplateExpandState := { gctx }
+  let ((), finalState) := StateT.run (m := Id) (do
+    -- Pass 1: Register all constructor signatures first to maintain
+    -- FreeVarIndex ordering (constructors before template functions).
+    let mut  failures : Std.HashSet String := {}
+    for constr in constructorInfo do
+      let constrType := mkConstructorType src datatypeType constr.fields
+      let success ← TemplateExpandM.runChecked <|
+            TemplateExpandM.addFunction constr.name constrType
+      if not success then
+        failures := failures.insert constr.name
+
+    -- Pass 2: Expand all templates for all constructors.
+    for template in templates do
+      for constr in constructorInfo do
+        -- Skip constructors that failed to be added.
+        if constr.name ∈ failures then
+          continue
+        expandSingleTemplate1 dialectName datatypeName datatypeType constr template
+  ) initState
+  (finalState.gctx, finalState.errors)
 
 /--
 Add all bindings for a datatype declaration to the GlobalContext when
@@ -2112,11 +2159,12 @@ FreeVarIndex values are consistent with this order.
 this adds entries for: `Option` (type), `None` (constructor), `Some` (constructor),
 `Option..isNone` (tester), `Option..isSome` (tester).
 -/
-private def addDatatypeBindings
+private def addDatatypeBindings!
     (dialects : DialectMap)
     (gctx : GlobalContext)
     (src : SourceRange)
     (dialectName : DialectName)
+    (preRegistered : Bool)
     {argDecls : ArgDecls}
     (b : DatatypeBindingSpec argDecls)
     (args : Vector Arg argDecls.size)
@@ -2134,56 +2182,90 @@ private def addDatatypeBindings
         | a => panic! s!"Expected ident for type param {repr a}"
     foldOverArgAtLevel dialects addBinding #[] argDecls args b.typeParamsIndex.toLevel
 
-  let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
-
-  -- Step 1: Add datatype type (or update forward declaration)
-  let gctx := match gctx.define datatypeName (GlobalKind.type typeParams.toList none) with
-    | .ok gctx' => gctx'
-    | .error msg => panic! s!"addDatatypeBindings: {msg}"
+  -- Step 1: Add datatype type.
+  -- When preRegistered, the type was already added by preRegisterTypeName;
+  -- otherwise it must be fresh.
+  let k := GlobalKind.type typeParams.toList none
+  let gctx :=
+    match gctx.defineChecked datatypeName k preRegistered with
+    | .ok gctx => gctx
+    | .error e => panic! s!"addDatatypeBindings!: {e}"
   let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
-  -- Step 2: Add constructor signatures
-  let gctx := constructorInfo.foldl (init := gctx) fun gctx constr =>
-    let constrType := mkConstructorType src datatypeType constr.fields
-    gctx.push constr.name (.expr constrType)
+  -- Step 2: Add constructor signatures and expand function templates
+  let constrArg := args[b.constructorsIndex.toLevel]
+  let constructorInfo :=
+    match extractConstructorInfo dialects constrArg with
+    | .ok info => info
+    | .error e => panic! s!"Constructor extraction error: {e}"
+  -- Errors from template expansion are reported during elaboration
+  -- (evalBindingSpec); here we just take the updated context.
+  let (gctx, _) := expandFunctionTemplates dialectName src
+    datatypeName datatypeType constructorInfo
+    b.functionTemplates gctx
+  gctx
 
-  -- Step 3: Expand and add function templates
-  let existingNames : Std.HashSet String := gctx.nameMap.fold (init := {}) fun s name _ => s.insert name
-  let result := expandFunctionTemplates datatypeName datatypeType constructorInfo b.functionTemplates dialectName existingNames
+/--
+Pre-register a type name in the `GlobalContext` before the main `addCommand`
+pass. Used by operations annotated with `@[preRegisterTypes]` (e.g., mutual
+blocks) so that forward references between sibling datatypes resolve correctly.
+Names must be fresh — panics if the name is already defined.
+-/
+private def preRegisterType (dialects : DialectMap) (gctx : GlobalContext) (l : SourceRange)
+    {argDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
+  match b with
+  | .datatype _ | .type _ =>
+    let name :=
+          match args[b.nameIndex.toLevel] with
+          | .ident _ e => e
+          | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+    match resolveBindingIndices dialects l b args with
+    -- Names must be fresh: this is the pre-registration pass.
+    | some kind =>
+      if h : name ∈ gctx then
+        panic! s!"'{name}' already defined"
+      else
+        gctx.define name kind h
+    | none => gctx
+  | _ => gctx
 
-  if !result.errors.isEmpty then
-    panic! s!"Datatype template expansion errors: {result.errors}"
-  else
-    result.functions.foldl (init := gctx) fun gctx (funcName, funcType) =>
-      gctx.push funcName (.expr funcType)
+private def addBinding (dialects : DialectMap) (dialectName : DialectName) (preRegistered : Bool)
+                       (gctx : GlobalContext) (l : SourceRange) {argDecls} (b : BindingSpec argDecls)
+                       (args : Vector Arg argDecls.size) :=
+  match b with
+  | .datatype datatypeSpec =>
+    addDatatypeBindings! dialects gctx l dialectName preRegistered datatypeSpec args
+  | _ =>
+    let name : Var :=
+          match args[b.nameIndex.toLevel] with
+          | .ident _ e => e
+          | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+    match resolveBindingIndices dialects l b args with
+    | some kind =>
+      match gctx.defineChecked name kind preRegistered with
+      | .ok gctx => gctx
+      | .error e => panic! s!"addCommand: {e}"
+    | none => gctx
 
-def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
+def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) : GlobalContext :=
     let dialectName := op.name.dialect
-    op.foldBindingSpecs dialects (addBinding dialectName) init
-  where addBinding (dialectName : DialectName) (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
-          match b with
-          | .datatype datatypeSpec =>
-            addDatatypeBindings dialects gctx l dialectName datatypeSpec args
-          | .typeForward typeSpec =>
-            let name :=
-                  match args[typeSpec.nameIndex.toLevel] with
-                  | .ident _ e => e
-                  | a => panic! s!"Expected ident at {typeSpec.nameIndex.toLevel} {repr a}"
-            match resolveBindingIndices dialects l b args with
-            | some kind =>
-              match gctx.declareForward name kind with
-              | .ok gctx' => gctx'
-              | .error msg => panic! msg
-            | none => gctx
-          | _ =>
-            let name :=
-                  match args[b.nameIndex.toLevel] with
-                  | .ident _ e => e
-                  | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
-            match resolveBindingIndices dialects l b args with
-            | some kind => gctx.push name kind
-            | none => gctx
+    -- Pre-register types if op has @[preRegisterTypes] metadata
+    let (gctx, preRegistered) := Id.run do
+      let .op decl := dialects.decl! op.name
+        | return (panic! "Expected operator declaration", false)
+      let .isTrue h := decideProp (op.args.size = decl.argDecls.size)
+        | return (panic! "Expected arguments to match", false)
+      match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
+      | some lvl =>
+        let gctx := foldOverArgAtLevel dialects
+          (preRegisterType dialects) gctx
+          decl.argDecls ⟨op.args, h⟩ lvl
+        (gctx, true)
+      | none =>
+        (gctx, false)
+    -- Normal fold
+    op.foldBindingSpecs dialects (addBinding dialects dialectName preRegistered) gctx
 
 end GlobalContext
 

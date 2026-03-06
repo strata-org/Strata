@@ -1,0 +1,33 @@
+name: Nightly Release
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 8 AM UTC daily
+  workflow_dispatch:
+
+jobs:
+  nightly-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for recent commits
+        id: check
+        run: |
+          LAST_COMMIT=$(git log -1 --format=%ct)
+          NOW=$(date +%s)
+          DIFF=$((NOW - LAST_COMMIT))
+          if [ $DIFF -lt 86400 ]; then
+            echo "has_commits=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_commits=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create nightly tag
+        if: steps.check.outputs.has_commits == 'true'
+        run: |
+          TAG="nightly-$(date +%Y%m%d)"
+          git tag $TAG
+          git push origin $TAG

@@ -297,8 +297,6 @@ private def polyRoseTreeHavocPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree (a : Type);
-forward type Forest (a : Type);
 mutual
   datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
@@ -322,9 +320,7 @@ spec {
 #end
 
 /--
-info: forward type RoseTree (a : Type);
-forward type Forest (a : Type);
-mutual
+info: mutual
    datatype Forest (a : Type) {(
     (FNil())),
     (FCons(head : (RoseTree a), tail : (Forest a)))

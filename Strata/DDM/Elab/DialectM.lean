@@ -624,11 +624,12 @@ def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree)
 structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/
   loadDialect : LoadDialectCallback
+  /-- Mutable reference for syncing loaded dialects after callbacks. -/
+  loadedRef : IO.Ref LoadedDialects
   inputContext : Parser.InputContext
   stopPos : String.Pos.Raw
 
 structure DialectState where
-  loaded : LoadedDialects
   declState : DeclState
   dialect : Dialect
   /--
@@ -641,21 +642,24 @@ abbrev DialectM := ReaderT DialectContext (StateRefT DialectState BaseIO)
 
 def getCurrentDialect : DialectM Dialect := return (←get).dialect
 
+/-- Read the current loaded dialects from the IO.Ref. -/
+def getLoadedDialects : DialectM LoadedDialects := do
+  (← read).loadedRef.get
+
 instance :  MonadState DialectState DialectM := inferInstanceAs (MonadState DialectState (ReaderT _ _))
 
 instance : MonadLift DeclM DialectM where
   monadLift act := fun c => do
     let s ← get
-    let dialect := s.dialect
-    let missingImport := s.missingImport
+    let loaded ← c.loadedRef.get
     let ctx : DeclContext := {
         inputContext := c.inputContext,
         stopPos := c.stopPos,
-        loader := s.loaded
-        missingImport := missingImport
+        loader := loaded
+        missingImport := s.missingImport
     }
     let (r, ds) := act ctx s.declState
-    set ({ loaded := ctx.loader, declState := ds, dialect := dialect, missingImport } : DialectState)
+    set ({ declState := ds, dialect := s.dialect, missingImport := s.missingImport } : DialectState)
     pure  r
 
 def getDeclState : DialectM DeclState := fun _ => DialectState.declState <$> get
@@ -670,7 +674,7 @@ def addDeclToDialect (decl : Decl) : DialectM Unit :=
 
 instance : ElabClass DialectM where
   getInputContext := fun c => pure c.inputContext
-  getDialects := return (← get).loaded.dialects
+  getDialects := return (← getLoadedDialects).dialects
   getOpenDialects := return (← get).declState.openDialectSet
   getGlobalContext := return (←get).declState.globalContext
   getErrorCount := return (←get).declState.errors.size
@@ -702,17 +706,11 @@ def elabDialectImportCommand : DialectElab := fun tree => do
     return
   modifyDialect fun d => { d with imports := d.imports.push name }
   let d ←
-    match (← get).loaded.dialects[name]? with
+    match (← getLoadedDialects).dialects[name]? with
     | some d =>
       pure d
     | none =>
-      let loadCallback ← (·.loadDialect) <$> read
-      let r ← fun _ ref => do
-        let loaded := (← ref.get).loaded
-        assert! "StrataDDL" ∈ loaded.dialects
-        let (loaded, r) ← loadCallback loaded name
-        ref.modify fun s => { s with loaded := loaded }
-        pure r
+      let r ← (← read).loadDialect name
       match r with
       | .ok d =>
         pure d
@@ -720,7 +718,8 @@ def elabDialectImportCommand : DialectElab := fun tree => do
         logError identTree.loc msg
         modify fun s => { s with missingImport := true }
         return
-  modify fun s => { s with declState := s.declState.openLoadedDialect! s.loaded d }
+  let loaded ← getLoadedDialects
+  modify fun s => { s with declState := s.declState.openLoadedDialect! loaded d }
 
 private def elabCategoryCommand : DialectElab := fun tree => do
   let .isTrue p := checkTreeSize tree 1
@@ -920,7 +919,7 @@ def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
     ]
 
 partial def runDialectCommand (leanEnv : Lean.Environment) : DialectM Bool := do
-  assert! "StrataDDL" ∈ (← get).loaded.dialects
+  assert! "StrataDDL" ∈ (← getLoadedDialects).dialects
   let (mtree, success) ← MonadLift.monadLift <| runChecked <| elabCommand leanEnv
   match mtree with
   | none =>
