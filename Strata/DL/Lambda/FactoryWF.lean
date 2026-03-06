@@ -3,17 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.LExprTypeSpec
-import Strata.DL.Lambda.Semantics
-import Strata.DDM.Util.Array
-import Strata.DL.Util.Func
-import Strata.DL.Util.List
-import Strata.DL.Util.ListMap
+public import Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.LExprTypeSpec
+public import Strata.DL.Lambda.Semantics
+public import Strata.DDM.Util.Array
+public import Strata.DL.Util.Func
+public import Strata.DL.Util.List
+public import Strata.DL.Util.ListMap
 
 /-!
 ## Well-formedness of LFunc and Factory
@@ -25,6 +27,8 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 open Strata.DL.Util (Func FuncWF TyIdentifier)
+
+public section
 
 variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
@@ -187,4 +191,5 @@ by
       simp only [] at H
       apply tail_ih F_interm HF_interm_wf (lf_tail.toArray) <;> grind
 
+end -- public section
 end Lambda

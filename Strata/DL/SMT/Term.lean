@@ -3,13 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.TermType
-import Strata.DL.SMT.Basic
-import Strata.DL.SMT.Op
-import Strata.DDM.Util.Decimal
-import Strata.DDM.Util.DecimalRat
+public import Strata.DL.SMT.TermType
+import all Strata.DL.Util.BitVec
+public import Strata.DL.SMT.Op
+public import Strata.DDM.Util.Decimal
+public import Strata.DDM.Util.DecimalRat
 
+public section
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Term.lean)
@@ -213,3 +215,4 @@ instance : Coe TermVar Term where
   coe v := .var v
 
 end Strata.SMT
+end
