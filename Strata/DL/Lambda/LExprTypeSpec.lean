@@ -190,7 +190,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   An un-annotated operator has the type recorded for it in `C.functions`, if any.
   -/
   | top: ∀ Γ m f op ty,
-            C.functions.find? (fun fn => fn.name == op) = some f →
+            C.functions.find? (fun fn => fn.name.name == op.name) = some f →
             f.type = .ok ty →
             HasType C Γ (.op m op none) ty
   /--
@@ -198,7 +198,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   instantiation of the type `ty_o` recorded for it in `C.functions`.
   -/
   | top_annotated: ∀ Γ m f op ty_o ty_s tys,
-            C.functions.find? (fun fn => fn.name == op) = some f →
+            C.functions.find? (fun fn => fn.name.name == op.name) = some f →
             f.type = .ok ty_o →
             tys.length = ty_o.boundVars.length →
             LTy.openFull ty_o tys = ty_s →
@@ -6071,9 +6071,67 @@ theorem resolveAux_HasType :
       simp [toLMonoTy]
       exact inferFVar_HasType C Env x fty ty_res Env_res m h_infer h_envwf.boundVarsWF
   | .op m o oty =>
-    intro et C Env Env' h h_envwf _
+    intro et C Env Env' h h_envwf h_ne
     have h_sf := h_envwf.keysFresh; have h_vf := h_envwf.valsFresh; have h_aw := h_envwf.aliasesWF
-    exact ⟨sorry, sorry⟩
+    -- Decompose resolveAux for .op
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h; · simp at h  -- function not found
+    rename_i func h_find
+    split at h; · simp at h  -- func.type error
+    rename_i type_val h_type
+    split at h; · simp at h  -- instantiateWithCheck error
+    rename_i v1 h_inst; obtain ⟨ty_inst, Env1⟩ := v1; dsimp at h h_inst
+    cases oty with
+    | none =>
+      simp at h; obtain ⟨h_et, h_env⟩ := h; rw [← h_env]
+      constructor
+      · -- Context preservation
+        exact LTy_instantiateWithCheck_context type_val C Env ty_inst Env1 h_inst
+      · -- Typing: use `top` + instantiateWithCheck_fvar_HasType-like logic
+        rw [← h_et]; simp [toLMonoTy]
+        -- HasType.top gives HasType C Γ (.op m o none) type_val
+        have h_top := HasType.top (C := C) Env.context m func o type_val h_find h_type
+        -- instantiateWithCheck decomposes into instantiate + resolveAliases
+        -- Same structure as instantiateWithCheck_fvar_HasType but with top instead of tvar
+        simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h_inst
+        split at h_inst; · simp at h_inst
+        rename_i v2 h_ra; obtain ⟨mty_ra, Env_ra⟩ := v2
+        split at h_inst; · simp at h_inst
+        split at h_inst
+        · simp [Pure.pure, Except.pure] at h_inst
+          obtain ⟨h_mty, h_env'⟩ := h_inst; subst h_mty; subst h_env'
+          simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+          split at h_ra; · simp at h_ra
+          rename_i v3 h_inst_inner; obtain ⟨mty_inst, genEnv'⟩ := v3
+          simp at h_ra h_inst_inner
+          have h_mono := HasType_LTy_instantiate C Env.context (.op m o none) type_val mty_inst
+            Env.genEnv genEnv' h_top h_inst_inner
+            (by sorry) -- Nodup for func type bound vars (needs WF condition on C.functions)
+            (by sorry) -- bound vars known in context (needs WF condition on C.functions)
+          have h_fresh : Subst.allKeysFresh Env_ra.stateSubstInfo.subst Env.context := by
+            sorry -- Needs: freshness property of genTyVar / resolveAliases
+          have h_ctx_pres := LTy.instantiate_context type_val Env.genEnv mty_inst genEnv' h_inst_inner
+          have h_aliases : Env.context.aliases = ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context.aliases := by
+            simp [TEnv.context]; rw [h_ctx_pres]
+          exact HasType_resolveAliases C Env.context _ mty_inst mty_ra
+            {Env with genEnv := genEnv'} Env_ra h_mono h_ra h_aliases h_fresh
+        · simp at h_inst
+    | some oty_val =>
+      simp only [Except.mapError] at h
+      split at h; · simp at h
+      rename_i v2 h_inst2; obtain ⟨oty_inst, Env2⟩ := v2; dsimp at h h_inst2
+      split at h; · simp at h
+      rename_i v3 h_mapError
+      simp at h; obtain ⟨h_et, h_env⟩ := h; rw [← h_env]
+      constructor
+      · -- Context preservation
+        simp [TEnv.updateSubst, TEnv.context]
+        have h1 := LTy_instantiateWithCheck_context type_val C Env ty_inst Env1 h_inst
+        have h2 := LMonoTy_instantiateWithCheck_context oty_val C Env1 oty_inst Env2 h_inst2
+        simp [TEnv.context] at h1 h2; rw [h2, h1]
+      · -- Typing: annotated op case
+        rw [← h_et]; simp [toLMonoTy, TEnv.updateSubst]
+        sorry -- annotated op typing: needs instantiateWithCheck_op_annotated_HasType (similar to fvar annotated)
   | .app m e1 e2 =>
     /-
     Theorem: The .app case of resolveAux_HasType.
