@@ -579,11 +579,6 @@ def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
     (S : Subst) (Γ : TContext T.IDMeta) : Prop :=
   ∀ a, a ∈ Maps.keys S → TContext.isFresh (T := T) a Γ
 
-/-- All free variables in substitution values are fresh w.r.t. context `Γ`. -/
-def Subst.valsFresh {T : LExprParams} [DecidableEq T.IDMeta]
-    (S : Subst) (Γ : TContext T.IDMeta) : Prop :=
-  ∀ tv, tv ∈ Subst.freeVars S → TContext.isFresh (T := T) tv Γ
-
 /-!
 #### Absorption: relating substitutions produced by successive resolveAux calls
 
