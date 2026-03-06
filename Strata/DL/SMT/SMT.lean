@@ -12,4 +12,3 @@ public import Strata.DL.SMT.Op
 public import Strata.DL.SMT.Solver
 public import Strata.DL.SMT.Term
 public import Strata.DL.SMT.TermType
-public import Strata.DL.SMT.CexParser
