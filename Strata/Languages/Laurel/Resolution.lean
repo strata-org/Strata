@@ -114,15 +114,7 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  if id.uniqueId == none then
-    -- The Python pipeline generates constructor/discriminator calls that may not
-    -- be resolved at the Laurel level. Treating them as functions keeps them as
-    -- expressions; any real errors will be caught during Core type checking.
-    -- Make an exception for 'test_helper_procedure' since it's a procedure
-    -- We will remove this hack when we enable the Python through Laurel pipeline to correctly resolve
-    id.text != "test_helper_procedure"
-  else
-    match model.get id with
+  match model.get id with
     | .staticProcedure proc => proc.isFunctional
     | .parameter _ => true
     | .datatypeConstructor _ _ => true

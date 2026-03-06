@@ -319,6 +319,21 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
     pure allModifies
   | _ => pure []
 
+def translateRequiresClauses (arg : Arg) : TransM (List StmtExprMd) := do
+  match arg with
+  | .seq _ _ args => do
+    let mut allRequires : List StmtExprMd := []
+    for clauseArg in args do
+      match clauseArg with
+      | .op clauseOp => match clauseOp.name, clauseOp.args with
+        | q`Laurel.requiresClause, #[exprArg] =>
+          let expr ← translateStmtExpr exprArg
+          allRequires := allRequires ++ [expr]
+        | _, _ => TransM.error s!"Expected requiresClause operation, got {repr clauseOp.name}"
+      | _ => TransM.error s!"Expected requiresClause operation in requires sequence"
+    pure allRequires
+  | _ => pure []
+
 def translateEnsuresClauses (arg : Arg) : TransM (List StmtExprMd) := do
   match arg with
   | .seq _ _ args => do
@@ -363,15 +378,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | .option _ none => pure []
         | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
-    -- Parse preconditions (requires clause)
-    let preconditions ← match requiresArg with
-      | .option _ (some (.op requiresOp)) => match requiresOp.name, requiresOp.args with
-        | q`Laurel.optionalRequires, #[exprArg] => do
-          let precond ← translateStmtExpr exprArg
-          pure [precond]
-        | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
-      | .option _ none => pure []
-      | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"
+    -- Parse preconditions (requires clauses - zero or more)
+    let preconditions ← translateRequiresClauses requiresArg
     -- Parse postconditions (ensures clauses - zero or more)
     let postconditions ← translateEnsuresClauses ensuresArg
     -- Parse modifies clauses (zero or more)

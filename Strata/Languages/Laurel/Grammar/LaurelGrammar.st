@@ -126,8 +126,8 @@ op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "d
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
-category OptionalRequires;
-op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
+category RequiresClause;
+op requiresClause(cond: StmtExpr): RequiresClause => "requires" cond:0;
 
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures" cond:0;
@@ -146,7 +146,7 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: Seq RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
@@ -155,7 +155,7 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: Seq RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>

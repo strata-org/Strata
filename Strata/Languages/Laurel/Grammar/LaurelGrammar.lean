@@ -7,8 +7,10 @@
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
+-- Last grammar change: requires now uses Seq RequiresClause instead of Option OptionalRequires
 import Strata.DDM.Integration.Lean
 
 namespace Strata.Laurel
+
 
 #load_dialect "./LaurelGrammar.st"

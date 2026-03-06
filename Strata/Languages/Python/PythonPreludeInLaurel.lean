@@ -11,6 +11,8 @@ import Strata.Languages.Laurel.Laurel
 namespace Strata
 namespace Python
 
+set_option maxRecDepth 10000
+
 /--
 Python prelude declarations expressed in Laurel grammar.
 This covers datatypes, opaque types, and function/procedure signatures
@@ -211,6 +213,39 @@ procedure timedelta(days: IntOrNone, hours: IntOrNone)
    // [assume_timedelta_sign_matches]:
    assume (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
  }
+
+
+procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
+// [req_format_str]:
+  requires (format == "%Y-%m-%d")
+// [ensures_str_strp_reverse]:
+// Need to add support for forall
+  // ensures (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)))
+{
+  //[assume_str_strp_reverse]:
+// Need to add support for forall
+  // assume (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
+}
+
+procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
+// [req_name_is_foo]:
+  requires req_name == "foo"
+  //[req_opt_name_none_or_str]:
+  requires if (!StrOrNone..isStrOrNone_mk_none(opt_name)) (StrOrNone..isStrOrNone_mk_str(opt_name)) else true
+  //[req_opt_name_none_or_bar]:
+  requires if (StrOrNone..isStrOrNone_mk_str(opt_name)) (StrOrNone..str_val!(opt_name) == "bar") else true
+  //[ensures_maybe_except_none]:
+  ensures ExceptOrNone..isExceptOrNone_mk_none(maybe_except)
+{
+  //[assert_name_is_foo]:
+  assert req_name == "foo";
+  //[assert_opt_name_none_or_str]:
+  assert if (!StrOrNone..isStrOrNone_mk_none(opt_name)) (StrOrNone..isStrOrNone_mk_str(opt_name)) else true;
+  //[assert_opt_name_none_or_bar]:
+  assert if (StrOrNone..isStrOrNone_mk_str(opt_name)) (StrOrNone..str_val!(opt_name) == "bar") else true;
+  //[assume_maybe_except_none]:
+  assume ExceptOrNone..isExceptOrNone_mk_none(maybe_except);
+}
 
 // Works around the end macro being parsed as field selection by changing the parser state
 // Better fix is to require laurel procedures to end with ;
