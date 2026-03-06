@@ -1071,7 +1071,7 @@ def pyTranslateLaurelCommand : Command where
     let pgm ← readPythonStrata v[0]
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.prelude
+    let prelude := Strata.Python.Core.PythonLaurelPrelude
     let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
     match laurelPgm with
     | .error e =>
@@ -1094,7 +1094,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let pySourceOpt ← tryReadPythonSource filePath
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.prelude
+    let prelude := Strata.Python.Core.PythonLaurelPrelude
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
@@ -1106,7 +1106,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
-        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
+        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls.filter (λ d=> d.name.name != "Box") }
         -- Inline procedure calls (except main) repeatedly until fixpoint
         let mut coreProgram := coreProgram
         for _ in List.range 10 do
