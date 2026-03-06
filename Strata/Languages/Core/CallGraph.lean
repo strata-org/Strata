@@ -61,32 +61,39 @@ def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
   }
 
 /-- Compute transitive closure of callees; the result does not contain `name`. -/
-partial def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
-  let rec go (visited : List String) (toVisit : List String) : List String :=
+def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
+  -- Fuel bound: initially 1 item is enqueued; processing each new node `n`
+  -- enqueues |callees(n)| more. Total enqueued ≤ 1 + Σ |callees(n)| ≤ 1 + totalEdges.
+  let fuel := cg.callees.toList.foldl (fun acc (_, v) => acc + v.size) 0 + 1
+  let rec go (fuel : Nat) (visited : List String) (toVisit : List String) : List String :=
     match toVisit with
     | [] => visited
     | head :: tail =>
-      if visited.contains head then go visited tail
-      else
-        let newCallees := cg.getCallees head
-        go (head :: visited) (newCallees ++ tail)
-  (go [] [name]).filter (· ≠ name)
+      match fuel with
+      | 0 => visited
+      | n + 1 =>
+        if visited.contains head then go n visited tail
+        else go n (head :: visited) (cg.getCallees head ++ tail)
+  (go fuel [] [name]).filter (· ≠ name)
 
 /-- Compute transitive closure of callees for multiple `names`. -/
 def CallGraph.getAllCalleesClosure (cg : CallGraph) (names : List String) : List String :=
   names.flatMap (cg.getCalleesClosure ·)
 
 /-- Compute transitive closure of callers; the result does not contain `name`. -/
-partial def CallGraph.getCallersClosure (cg : CallGraph) (name : String) : List String :=
-  let rec go (visited : List String) (toVisit : List String) : List String :=
+def CallGraph.getCallersClosure (cg : CallGraph) (name : String) : List String :=
+  -- Fuel bound: symmetric to `getCalleesClosure` but over the callers graph.
+  let fuel := cg.callers.toList.foldl (fun acc (_, v) => acc + v.size) 0 + 1
+  let rec go (fuel : Nat) (visited : List String) (toVisit : List String) : List String :=
     match toVisit with
     | [] => visited
     | head :: tail =>
-      if visited.contains head then go visited tail
-      else
-        let newCallers := cg.getCallers head
-        go (head :: visited) (newCallers ++ tail)
-  (go [] [name]).filter (· ≠ name)
+      match fuel with
+      | 0 => visited
+      | n + 1 =>
+        if visited.contains head then go n visited tail
+        else go n (head :: visited) (cg.getCallers head ++ tail)
+  (go fuel [] [name]).filter (· ≠ name)
 
 /-- Compute transitive closure of callers for multiple `names`. -/
 def CallGraph.getAllCallersClosure (cg : CallGraph) (names : List String) : List String :=
@@ -135,7 +142,7 @@ def extractCallsFromFunction (func : Function) : List String :=
 
 mutual
 /-- Extract procedure calls from a single statement -/
-partial def extractCallsFromStatement (stmt : Statement) : List String :=
+def extractCallsFromStatement (stmt : Statement) : List String :=
   match stmt with
   | .cmd (.call _ procName _ _) => [procName]
   | .cmd _ => []
@@ -146,15 +153,19 @@ partial def extractCallsFromStatement (stmt : Statement) : List String :=
   | .loop _ _ _ body _ => extractCallsFromStatements body
   | .exit _ _ => []
   | .funcDecl _ _ => []
+termination_by sizeOf stmt
 
 /-- Extract procedure calls from a list of statements -/
-partial def extractCallsFromStatements (stmts : List Statement) : List String :=
-  stmts.flatMap extractCallsFromStatement
+def extractCallsFromStatements (stmts : List Statement) : List String :=
+  match stmts with
+  | [] => []
+  | s :: rest => extractCallsFromStatement s ++ extractCallsFromStatements rest
+termination_by sizeOf stmts
+end
 
 /-- Extract all procedure calls from a procedure's body -/
-partial def extractCallsFromProcedure (proc : Procedure) : List String :=
+def extractCallsFromProcedure (proc : Procedure) : List String :=
   extractCallsFromStatements proc.body
-end
 
 abbrev ProcedureCG := CallGraph
 abbrev FunctionCG := CallGraph
@@ -204,29 +215,42 @@ def Program.functionImmediateAxiomMap (prog : Program) : FuncAxMap :=
   functions, then expands the relevant-function set with functions appearing
   in those newly discovered axioms (and their call-graph neighbors), repeating
   until no new axioms are found.
+
+  Terminates because each recursive call strictly grows `discoveredAxioms`
+  by at least one element (checked via `newAxioms.isEmpty`), and the total
+  number of axioms is bounded by `fuel` (initially `prog.decls.length`).
 -/
-partial def computeRelevantAxioms (prog : Program) (cg : FunctionCG) (fmap : FuncAxMap)
+private def computeRelevantAxiomsAux (prog : Program) (cg : FunctionCG) (fmap : FuncAxMap)
+    (fuel : Nat) (relevantFunctions discoveredAxioms : List String) : List String :=
+  match fuel with
+  | 0 => discoveredAxioms
+  | n + 1 =>
+    -- Get axioms immediately relevant to the current relevant functions.
+    let newAxioms := relevantFunctions.flatMap (fun fn => fmap.getD fn []) |>.dedup
+    let newAxioms := newAxioms.filter (fun a => a ∉ discoveredAxioms)
+
+    if newAxioms.isEmpty then discoveredAxioms
+    else
+      let allAxioms := (discoveredAxioms ++ newAxioms).dedup
+
+      -- Find functions mentioned in newly discovered axioms.
+      let newFunctions := newAxioms.flatMap (fun axName =>
+        match prog.getAxiom? ⟨axName, ()⟩ with
+        | some ax => (Lambda.LExpr.getOps ax.e).map CoreIdent.toPretty
+        | none => [])
+
+      -- Expand with call graph neighbors.
+      let expandedFunctions := newFunctions.flatMap (fun fn =>
+        fn :: cg.getCalleesClosure fn ++ cg.getCallersClosure fn) |>.dedup
+
+      let updatedRelevantFunctions := (relevantFunctions ++ expandedFunctions).dedup
+      computeRelevantAxiomsAux prog cg fmap n updatedRelevantFunctions allAxioms
+termination_by fuel
+
+def computeRelevantAxioms (prog : Program) (cg : FunctionCG) (fmap : FuncAxMap)
     (relevantFunctions discoveredAxioms : List String) : List String :=
-  -- Get axioms immediately relevant to the current relevant functions.
-  let newAxioms := relevantFunctions.flatMap (fun fn => fmap.getD fn []) |>.dedup
-  let newAxioms := newAxioms.filter (fun a => a ∉ discoveredAxioms)
-
-  if newAxioms.isEmpty then discoveredAxioms
-  else
-    let allAxioms := (discoveredAxioms ++ newAxioms).dedup
-
-    -- Find functions mentioned in newly discovered axioms.
-    let newFunctions := newAxioms.flatMap (fun axName =>
-      match prog.getAxiom? ⟨axName, ()⟩ with
-      | some ax => (Lambda.LExpr.getOps ax.e).map CoreIdent.toPretty
-      | none => [])
-
-    -- Expand with call graph neighbors.
-    let expandedFunctions := newFunctions.flatMap (fun fn =>
-      fn :: cg.getCalleesClosure fn ++ cg.getCallersClosure fn) |>.dedup
-
-    let updatedRelevantFunctions := (relevantFunctions ++ expandedFunctions).dedup
-    computeRelevantAxioms prog cg fmap updatedRelevantFunctions allAxioms
+  -- Each iteration adds ≥1 new axiom; total axioms ≤ total declarations.
+  computeRelevantAxiomsAux prog cg fmap prog.decls.length relevantFunctions discoveredAxioms
 
 /-- Compute all axioms relevant to function `f`. An axiom `a` is relevant to
   function `f` if:
