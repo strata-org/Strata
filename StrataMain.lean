@@ -578,6 +578,7 @@ private partial def unwrapCmdExt (rn : Std.HashMap String String) : Core.Stateme
     .ok (.loop (renameExpr rn g) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md => .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
+  | .typeDecl _tc _md => .error f!"[unwrapCmdExt] Unexpected typeDecl."
 
 /-- Check whether a Core statement list contains any call statements. -/
 private def hasCallStmt : List Core.Statement → Bool
@@ -921,7 +922,7 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
     value := Lean.Json.mkObj [("id", "nil")]
   })
 
-private def typeConstructorToSymbolEntry (tc : Core.TypeConstructor) :
+private def typeConstructorToSymbolEntry (tc : TypeConstructor) :
     String × CProverGOTO.CBMCSymbol :=
   -- CBMC requires structs to have at least one component.
   -- Abstract type constructors have no fields, so add a dummy padding field.
