@@ -5479,14 +5479,27 @@ private theorem resolveAux_preserves_combined :
         simp [LMonoTy.freeVars, LMonoTys.freeVars, List.mem_append] at hv_ty
         rcases hv_ty with hv_xty | hv_ety
         · -- v from xty_val: gen-fresh from typeBoundVar
-          -- xty_val freeVars are gen-fresh for Env1.genState (from typeBoundVar analysis)
-          -- Env2.genState ≥ Env1.genState by resolveAux genState monotonicity
+          -- xty_val comes from typeBoundVar which either:
+          -- (a) calls LMonoTy.instantiateWithCheck (annotation) → gen-fresh by freeVars_fresh
+          -- (b) calls genTyVar (no annotation) → single fresh var, gen-fresh
+          -- In both cases, xty_val freeVars are gen-fresh for Env1.genState.
+          -- Env2.genState ≥ Env1.genState by resolveAux genState monotonicity.
+          have h_mono_body := resolveAux_genState_mono
+            (LExpr.varOpen 0 (xv_id, some xty_val) body) et' C Env1 Env2 h_rec
+          -- Need: xty_val freeVars gen-fresh for Env1.genState
+          -- This follows from typeBoundVar analysis (same as resolveAux_output_type_no_future_vars)
           sorry
-        · -- v from varCloseT et': gen-fresh by IH
-          -- varCloseT preserves toLMonoTy, so freeVars match et'.toLMonoTy
-          -- h_ih_result.2 gives the result
-          -- Needs varCloseT_toLMonoTy (defined later in the file)
-          sorry
+        · -- v from varCloseT et': varCloseT preserves toLMonoTy
+          -- (varCloseT 0 xv et').toLMonoTy = et'.toLMonoTy
+          -- So v ∈ freeVars et'.toLMonoTy, gen-fresh by IH (h_ih_result.2)
+          -- varCloseT_toLMonoTy is defined later, but the equality is simple:
+          -- varCloseT only changes fvar/bvar structure, not metadata types
+          have : (Lambda.LExpr.varCloseT 0 xv_id et').toLMonoTy = et'.toLMonoTy := by
+            -- varCloseT preserves toLMonoTy (metadata type unchanged)
+            -- varCloseT_toLMonoTy is proved later in the file
+            sorry
+          rw [this] at hv_ety
+          exact h_ih_result.2 v hv_ety k hk
       · -- v from Subst.freeVars Env2.subst: gen-fresh by SubstFreshForGen
         exact h_ih_result.1 v (Or.inr hv_subst) k hk
   | .quant m qk bty tr body =>
