@@ -157,14 +157,14 @@ def stmt_valid
     ps.eval ps.store a.expr = some HasBool.tt
 
 /-- **Falsifiability**: There exists a reachable state at a given assertion where
-    the predicate fails. "There is a counterexample." -/
+    the predicate is false. "There is a counterexample." -/
 def stmt_falsifiable
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (stmt : Statement) (a : AssertId) : Prop :=
   ∃ (ps : ProgramState),
     reachable π φ stmt ps ∧
     ps.pc = some a ∧
-    ps.eval ps.store a.expr ≠ some HasBool.tt
+    ps.eval ps.store a.expr = some HasBool.ff
 
 /-- **Satisfiability**: There exists a reachable state at a given assertion where
     the predicate holds. "The assertion can be true." -/
@@ -177,14 +177,14 @@ def stmt_satisfiable
     ps.eval ps.store a.expr = some HasBool.tt
 
 /-- **Unsatisfiability**: For all reachable states at a given assertion, the
-    predicate fails. "The assertion is always false." -/
+    predicate is false. "The assertion is always false." -/
 def stmt_unsatisfiable
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (stmt : Statement) (a : AssertId) : Prop :=
   ∀ (ps : ProgramState),
     reachable π φ stmt ps →
     ps.pc = some a →
-    ps.eval ps.store a.expr ≠ some HasBool.tt
+    ps.eval ps.store a.expr = some HasBool.ff
 
 /-- `stmt_correct` is validity for all assertion ids. -/
 def stmt_correct
