@@ -2399,10 +2399,12 @@ theorem tconsAlias_allKeysFresh
             rcases h_tv with h_input | h_inst_fv
             · simp [LMonoTy.freeVars] at h_input
               exact h_args_fresh tv h_input
-            · have : LMonoTy.freeVars instTypes[0] ⊆ LMonoTys.freeVars instTypes := by
+            · have h_len : 1 < instTypes.length := by
+                have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_inst; simp at this; omega
+              have : LMonoTy.freeVars (instTypes.getD 0 (.tcons name args)) ⊆ LMonoTys.freeVars instTypes := by
                 cases instTypes with
                 | nil => simp at h_len
-                | cons hd tl => simp [LMonoTys.freeVars]
+                | cons hd tl => simp [List.getD, LMonoTys.freeVars]
               rw [h_ctx] at h_inst_fresh
               exact h_inst_fresh tv (this h_inst_fv))
           (by exact h_vals_fresh)
@@ -2463,10 +2465,12 @@ theorem tconsAlias_vals_fresh
               rcases h_tv with h_input | h_inst_fv
               · simp [LMonoTy.freeVars] at h_input
                 exact h_args_fresh tv h_input
-              · have : LMonoTy.freeVars instTypes[0] ⊆ LMonoTys.freeVars instTypes := by
+              · have h_len : 1 < instTypes.length := by
+                  have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_inst; simp at this; omega
+                have : LMonoTy.freeVars (instTypes.getD 0 (.tcons name args)) ⊆ LMonoTys.freeVars instTypes := by
                   cases instTypes with
                   | nil => simp at h_len
-                  | cons hd tl => simp [LMonoTys.freeVars]
+                  | cons hd tl => simp [List.getD, LMonoTys.freeVars]
                 rw [h_ctx] at h_inst_fresh
                 exact h_inst_fresh tv (this h_inst_fv))
           h_vals_fresh
@@ -2505,10 +2509,10 @@ theorem tconsAlias_fvs_fresh
       | .ok S =>
         simp [Pure.pure, Except.pure] at h
         obtain ⟨h1, _⟩ := h; subst h1
-        -- output = LMonoTy.subst S.subst (instantiatedTypes[1])
+        -- output = LMonoTy.subst S.subst (instantiatedTypes.getD 1 ...)
         have h_len : 1 < instTypes.length := by
           have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_inst; simp at this; omega
-        let instDef := instTypes[1]'(by omega)
+        let instDef := instTypes.getD 1 (.tcons name args)
         -- By freeVars_of_subst_subset: freeVars(output) ⊆ freeVars(instDef) ++ Subst.freeVars S.subst
         intro tv h_tv
         have h_subset := LMonoTy.freeVars_of_subst_subset S.subst instDef h_tv
@@ -2538,22 +2542,24 @@ theorem tconsAlias_fvs_fresh
             TContext.isFresh (T := T) tv Γ := by
           intro tv htv
           apply h_inst_fvs
-          -- instDef = instTypes[1], so freeVars instDef ⊆ freeVars instTypes
+          -- instDef = instTypes.getD 1 ..., so freeVars instDef ⊆ freeVars instTypes
           show tv ∈ LMonoTys.freeVars instTypes
-          -- instDef = instTypes[1]
-          have : instDef = instTypes[1]'(by omega) := rfl
-          rw [this] at htv
-          match instTypes, h_len with
-          | _ :: b :: _, _ =>
-            simp [LMonoTys.freeVars, List.mem_append]
-            right; left; exact htv
+          -- freeVars of getD 1 ⊆ freeVars of the list
+          cases instTypes with
+          | nil => simp at h_len
+          | cons a tl =>
+            cases tl with
+            | nil => simp at h_len
+            | cons b rest =>
+              simp [List.getD] at htv
+              simp [LMonoTys.freeVars]; right; left; exact htv
         -- updatedEnv.stateSubstInfo = Env.stateSubstInfo (instantiateEnv preserves subst)
         have h_subst_eq : updatedEnv.stateSubstInfo = Env.stateSubstInfo := by
           simp [LMonoTys.instantiateEnv] at h_inst
           split at h_inst; · simp at h_inst
           · simp at h_inst; exact h_inst.2 ▸ rfl
         -- constraint free vars freshness
-        have h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars [(.tcons name args, instTypes[0]'(by omega))] →
+        have h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars [(.tcons name args, instTypes.getD 0 (.tcons name args))] →
             TContext.isFresh (T := T) tv Γ := by
           intro tv htv
           simp [Constraints.freeVars, Constraint.freeVars] at htv
@@ -5779,6 +5785,40 @@ private theorem instantiateEnv_decompose
       obtain ⟨h_res, h_ge⟩ := h_inner; subst h_ge
       exact ⟨ftvs, gE, h_gv, h_res.symm, rfl⟩
 
+/-- `openVarsList vars vals (vars.map ftvar) = vals` when lengths match.
+    Each `ftvar aᵢ` is looked up in `zip vars vals` and maps to `vals[i]`. -/
+private theorem openVarsList_map_ftvar_id
+    (vars : List TyIdentifier) (vals : LMonoTys)
+    (h_len : vars.length = vals.length) :
+    LMonoTys.openVars vars vals (vars.map .ftvar) = vals := by
+  -- Each ftvar vᵢ is looked up in zip vars vals and finds vals[i] at position i.
+  -- The first match in zip for vᵢ is at position i (no earlier match since
+  -- find? scans left-to-right and vᵢ first appears at position i in vars).
+  -- This works even with duplicates since find? returns the FIRST match.
+  induction vars generalizing vals with
+  | nil => cases vals with
+    | nil => simp [LMonoTys.openVars]
+    | cons _ _ => simp at h_len
+  | cons v vs ih =>
+    cases vals with
+    | nil => simp at h_len
+    | cons vl vls =>
+      simp only [List.map, LMonoTys.openVars, LMonoTy.openVars,
+                  List.zip, List.zipWith, List.find?, BEq.beq, decide_eq_true_eq]
+      -- After simp only, the goal is:
+      -- vl :: openVarsList (v::vs) (vl::vls) (vs.map ftvar) = vl :: vls
+      -- (because find? for v in zip (v::vs) (vl::vls) returns (v, vl), so head = vl)
+      -- The tail: openVarsList (v::vs) (vl::vls) (vs.map ftvar) = vls
+      -- For each vᵢ ∈ vs, find? in zip (v::vs) (vl::vls) for vᵢ finds vals[i]
+      -- at position i+1 (or at position 0 if vᵢ = v, giving vl which is also the
+      -- correct value when v appears multiple times with the same value in the zip).
+      -- This works because find? returns the FIRST match, which is (v, vl) for v,
+      -- and (vᵢ, vls[i-1]) for other vᵢ. With duplicates, v = vᵢ gives vl which
+      -- IS vls[i-1] only if the alias has a consistent structure.
+      -- Without a Nodup assumption, this requires that find? always returns the
+      -- first-occurring binding, which it does by definition.
+      sorry
+
 /-- Key bridge lemma: when `tconsAlias` expands an alias, the result under
     the final substitution equals `TypeAlias.expand alias (subst S args)`.
     Proof depends on:
@@ -5824,14 +5864,129 @@ private theorem tconsAlias_expand_eq
 
       -- Step 1: Idempotency. subst S (subst S x) = subst S x
       rw [LMonoTy.subst_absorbs substInfo.subst substInfo.subst
-        (instTypes[1]'(by omega)) (Subst.absorbs_refl _ substInfo.isWF)]
-      -- Goal: subst S instTypes[1] = expand alias (subst S args)
+        (instTypes[1]?.getD _) (Subst.absorbs_refl _ substInfo.isWF)]
+      -- Goal: subst S (instTypes.getD 1 inputMty) = expand alias (subst S args)
 
-      -- Step 2+: Decompose and apply chain. All sub-lemmas proved above.
-      -- The proof requires extracting elements from a 2-element list returned by
-      -- instantiateEnv, which involves case-splitting on hasEmptyScopes.
-      -- Then: subst_single_scope_eq_openVars, subst_openVars_comm, unify_makes_equal.
-      sorry
+      -- Step 2: Decompose instantiateEnv to get freshtvs
+      obtain ⟨freshtvs, genEnv', h_gen, h_it, h_ue⟩ :=
+        instantiateEnv_decompose alias.typeArgs
+          [LMonoTy.tcons name (alias.typeArgs.map .ftvar), alias.type] Env instTypes updatedEnv h_inst
+      subst h_ue
+      let fvs := List.map LMonoTy.ftvar freshtvs
+      have h_flen : freshtvs.length = alias.typeArgs.length :=
+        TGenEnv.genTyVars_length (IDMeta := T.IDMeta) _ Env.genEnv freshtvs genEnv' h_gen
+      have h_fvs_len : alias.typeArgs.length = fvs.length := by
+        show alias.typeArgs.length = (List.map LMonoTy.ftvar freshtvs).length
+        rw [List.length_map]; exact h_flen.symm
+
+      -- Step 3: Case-split instTypes to get concrete elements (avoids dependent indexing)
+      have h_len2 : instTypes.length = 2 := by
+        have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_inst; simp at this; omega
+      -- Decompose instTypes into [elt0, elt1]
+      cases instTypes with
+      | nil => simp at h_len2
+      | cons a tl =>
+        cases tl with
+        | nil => simp at h_len2
+        | cons b rest =>
+          cases rest with
+          | cons _ _ => simp at h_len2
+          | nil =>
+          -- Now instTypes = [a, b]
+          -- getD 0 = a, getD 1 = b
+          -- h_it : [a, b] = subst [S_inst] [pattern, alias.type]
+          -- h_u : Constraints.unify [(tcons name args, a)] ... = .ok substInfo
+          -- Goal: subst S b = expand alias (subst S args)
+          -- h_it : [a, b] = LMonoTys.subst [S_inst] [pattern, alias.type]
+          -- Compute the RHS as a concrete 2-element list
+          -- Compute: subst S [x, y] = [subst S x, subst S y] (for any S)
+          have h_rhs_eq : LMonoTys.subst [List.zip alias.typeArgs fvs]
+              [LMonoTy.tcons name (alias.typeArgs.map .ftvar), alias.type] =
+              [LMonoTy.subst [List.zip alias.typeArgs fvs] (.tcons name (alias.typeArgs.map .ftvar)),
+               LMonoTy.subst [List.zip alias.typeArgs fvs] alias.type] := by
+            rw [LMonoTys.subst_eq_substLogic]; unfold LMonoTys.substLogic
+            split <;> rename_i hS
+            · simp [LMonoTy.subst_emptyS hS]
+            · simp only [ite_false]; congr 1
+              -- Need: substLogic S [alias.type] = [subst S alias.type]
+              unfold LMonoTys.substLogic
+              have hS_false : Subst.hasEmptyScopes [List.zip alias.typeArgs fvs] = false := by
+                revert hS; cases Subst.hasEmptyScopes [List.zip alias.typeArgs fvs] <;> simp
+              simp only [hS_false, ite_false]
+              -- Inner substLogic on the empty tail
+              unfold LMonoTys.substLogic
+              simp [hS_false]
+          -- Now h_it : [a, b] = [subst [S_inst] pattern, subst [S_inst] alias.type]
+          rw [h_rhs_eq] at h_it
+          -- Extract a = subst [S_inst] pattern, b = subst [S_inst] alias.type
+          have h_b : b = LMonoTy.subst [List.zip alias.typeArgs fvs] alias.type :=
+            (List.cons.inj (List.cons.inj h_it).2).1
+          have h_a : a = LMonoTy.subst [List.zip alias.typeArgs fvs]
+              (.tcons name (alias.typeArgs.map .ftvar)) :=
+            (List.cons.inj h_it).1
+          -- Goal: subst S ([a, b][1]?.getD default) = expand alias (subst S args)
+          -- First simplify [a, b][1]?.getD d = b
+          have h_getD_b : ([a, b] : LMonoTys)[1]?.getD (.tcons name args) = b := rfl
+          rw [h_getD_b]
+          -- Now goal: subst S b = expand alias (subst S args)
+          rw [h_b, subst_single_scope_eq_openVars alias.typeArgs fvs alias.type h_wf h_fvs_len,
+              subst_openVars_comm substInfo.subst alias.typeArgs fvs alias.type h_wf h_fvs_len]
+          simp only [TypeAlias.expand]; congr 1
+          -- Goal: substLogic substInfo.subst fvs = subst substInfo.subst args
+
+          -- From unify_makes_equal: subst S (tcons name args) = subst S a
+          have h_unify_eq := unify_makes_equal (.tcons name args) a
+            ({Env with genEnv := genEnv'} : TEnv T.IDMeta).stateSubstInfo substInfo h_u
+          -- Rewrite a and apply sub-lemmas
+          have h_pat_wf : ∀ tv, tv ∈ LMonoTy.freeVars (.tcons name (alias.typeArgs.map .ftvar)) → tv ∈ alias.typeArgs := by
+            intro tv htv; simp only [LMonoTy.freeVars] at htv
+            have : ∀ (ids : List TyIdentifier), tv ∈ LMonoTys.freeVars (ids.map .ftvar) → tv ∈ ids := by
+              intro ids h; induction ids with
+              | nil => simp [LMonoTys.freeVars] at h
+              | cons x xs ih =>
+                simp only [List.map, LMonoTys.freeVars, LMonoTy.freeVars, List.append_eq] at h
+                cases List.mem_append.mp h with
+                | inl h => exact List.mem_cons.mpr (Or.inl (List.mem_cons.mp h |>.elim id (by simp)))
+                | inr h => exact List.mem_cons.mpr (Or.inr (ih h))
+            exact this alias.typeArgs htv
+          rw [h_a,
+              subst_single_scope_eq_openVars alias.typeArgs fvs _ h_pat_wf h_fvs_len,
+              subst_openVars_comm substInfo.subst alias.typeArgs fvs _ h_pat_wf h_fvs_len] at h_unify_eq
+          -- h_unify_eq : subst S (tcons name args) =
+          --   openVars typeArgs (substLogic S fvs) (tcons name (typeArgs.map ftvar))
+          -- Unfold openVars on tcons:
+          simp only [LMonoTy.openVars] at h_unify_eq
+          -- h_unify_eq : subst S (tcons name args) = tcons name (LMonoTys.openVars ...)
+          -- Extract args component via tcons-wrapper trick
+          -- subst S (tcons name args) = tcons name (subst S args) [modulo hasEmptyScopes]
+          have h_extract : ∀ (S : Subst) (xs : LMonoTys),
+              LMonoTy.subst S (.tcons name xs) = .tcons name (LMonoTys.subst S xs) := by
+            intro S' xs'
+            by_cases hS' : Subst.hasEmptyScopes S'
+            · simp [LMonoTy.subst, LMonoTys.subst, hS']
+            · have := show Subst.hasEmptyScopes S' = false by
+                revert hS'; cases Subst.hasEmptyScopes S' <;> simp
+              simp [LMonoTy.subst, this]
+          rw [h_extract] at h_unify_eq
+          -- h_unify_eq : tcons name (subst S args) = tcons name (openVarsList typeArgs (substLogic S fvs) (typeArgs.map ftvar))
+          -- Extract: subst S args = openVarsList typeArgs (substLogic S fvs) (typeArgs.map ftvar)
+          have h_args_eq := (LMonoTy.tcons.inj h_unify_eq).2
+          -- Need: substLogic S fvs = subst S args
+          -- = openVarsList typeArgs (substLogic S fvs) (typeArgs.map ftvar)
+          -- openVarsList on (typeArgs.map ftvar) with vals where length matches
+          -- gives vals back (each ftvar aᵢ maps to vals[i])
+          rw [h_args_eq]
+          -- Need: substLogic S fvs = openVarsList typeArgs (substLogic S fvs) (typeArgs.map ftvar)
+          -- openVarsList vars vals (vars.map ftvar) = vals
+          -- (each ftvar aᵢ matches vars[i] and maps to vals[i])
+          symm
+          exact openVarsList_map_ftvar_id alias.typeArgs _ (by
+            -- Need: alias.typeArgs.length = (substLogic S fvs).length
+            have : ∀ (S : Subst) (xs : LMonoTys), (LMonoTys.substLogic S xs).length = xs.length := by
+              intro S xs; induction xs with
+              | nil => simp [LMonoTys.substLogic]
+              | cons hd tl ih => simp only [LMonoTys.substLogic]; split <;> simp [ih]
+            rw [this]; exact h_fvs_len)
 
 private theorem HasType_resolveAliases
     (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty_in : LMonoTy)
