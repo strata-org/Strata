@@ -236,7 +236,8 @@ def inlineCallCmd
             }
           }:CoreTransformState)
 
-        return .some [.block (procName ++ "$inlined") stmts md]
+        let inlinedLabel ← genIdent (procName ++ "$inlined") id
+        return .some [.block inlinedLabel.name stmts md]
 
       | _ => return .none
 

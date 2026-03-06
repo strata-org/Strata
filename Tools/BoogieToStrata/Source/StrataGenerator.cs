@@ -842,7 +842,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                     targets.Add(target.Label);
                 }
             } else if (getTransferCmd(item) is ReturnCmd) {
-                targets.Add("_exit");
+                targets.Add("__strata_return");
             }
         }
         return targets;
@@ -898,7 +898,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override ReturnCmd VisitReturnCmd(ReturnCmd node) {
-        IndentLine("exit _exit;");
+        IndentLine("exit __strata_return;");
         return node;
     }
 
@@ -1017,8 +1017,8 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
     }
 
-    private void EmitBigBlock(BigBlock bigBlock) {
-        if (bigBlock.LabelName != null) {
+    private void EmitBigBlock(BigBlock bigBlock, bool skipLabel = false) {
+        if (bigBlock.LabelName != null && !skipLabel) {
             IndentLine($"{Name(bigBlock.LabelName)}: {{");
             IncIndent();
         }
@@ -1033,7 +1033,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             Visit(bigBlock.tc);
         }
 
-        if (bigBlock.LabelName != null) {
+        if (bigBlock.LabelName != null && !skipLabel) {
             DecIndent();
             IndentLine("}");
         }
@@ -1086,7 +1086,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         var gotoTargets = CollectGotoTargets(bigBlocks, bb => bb.tc);
 
         if (gotoTargets.Count == 0) {
-            EmitSeparated(bigBlocks, EmitBigBlock, "\n");
+            EmitSeparated(bigBlocks, bb => EmitBigBlock(bb), "\n");
             return;
         }
 
@@ -1096,20 +1096,35 @@ public class StrataGenerator : ReadOnlyVisitor {
                 labelToIndex[bigBlocks[i].LabelName] = i;
             }
         }
-        if (!labelToIndex.ContainsKey("_exit")) {
-            labelToIndex["_exit"] = bigBlocks.Count;
+        if (!labelToIndex.ContainsKey("__strata_return")) {
+            labelToIndex["__strata_return"] = bigBlocks.Count;
         }
 
         EmitWithExitWrappers(gotoTargets, labelToIndex, bigBlocks.Count, i => {
             if (i > 0) { WriteLine(); }
-            EmitBigBlock(bigBlocks[i]);
+            // If this big block's label is a goto target, the exit-wrapper
+            // already provides the enclosing labeled block.  Skip the label
+            // in EmitBigBlock to avoid duplicates.
+            EmitBigBlock(bigBlocks[i], skipLabel: bigBlocks[i].LabelName != null && gotoTargets.Contains(bigBlocks[i].LabelName));
         });
     }
 
     public override Block VisitBlock(Block node) {
+        EmitBlockContents(node, skipLabel: false);
+        return node;
+    }
+
+    /// <summary>
+    /// Emit a block's contents. When skipLabel is true, the block's own
+    /// label wrapper is omitted because an exit-target wrapper already
+    /// provides it.
+    /// </summary>
+    private void EmitBlockContents(Block node, bool skipLabel) {
         var label = BlockName(node);
-        IndentLine($"{label}: {{");
-        IncIndent();
+        if (!skipLabel) {
+            IndentLine($"{label}: {{");
+            IncIndent();
+        }
         node.Cmds.ForEach(c => Visit(c));
         if (node.TransferCmd is ReturnCmd returnCmd) {
             VisitReturnCmd(returnCmd);
@@ -1121,10 +1136,10 @@ public class StrataGenerator : ReadOnlyVisitor {
             throw new StrataConversionException(node.TransferCmd.tok,
                 $"Unsupported transfer command: {node.TransferCmd}");
         }
-
-        DecIndent();
-        IndentLine("}}");
-        return node;
+        if (!skipLabel) {
+            DecIndent();
+            IndentLine("}}");
+        }
     }
 
     public override Constant VisitConstant(Constant node) {
@@ -1452,10 +1467,15 @@ public class StrataGenerator : ReadOnlyVisitor {
             for (var i = 0; i < blocks.Count; i++) {
                 labelToIndex[blocks[i].Label] = i;
             }
-            labelToIndex["_exit"] = blocks.Count;
+            labelToIndex["__strata_return"] = blocks.Count;
 
             EmitWithExitWrappers(gotoTargets, labelToIndex, blocks.Count, i => {
-                VisitBlock(blocks[i]);
+                // If this block's label is a goto target, the exit-wrapper
+                // already provides the enclosing labeled block.  The wrapper
+                // closes just before this index, and the block's contents
+                // become the continuation after the wrapper.  Emitting the
+                // label again would create a duplicate.
+                EmitBlockContents(blocks[i], skipLabel: gotoTargets.Contains(blocks[i].Label));
             });
         }
 

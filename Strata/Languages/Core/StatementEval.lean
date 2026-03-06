@@ -402,6 +402,50 @@ def processExit : Statements → Option (Option String) → (Statements × Optio
 | rest, .none => (rest, .none)
 | _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
+/--
+Merge two `EnvWithNext` results by inspecting the newest path condition of
+`ewn2` to determine which is the true/false branch and what the ite condition is.
+-/
+private def mergeTwoEnvs (ewn1 ewn2 : EnvWithNext) : EnvWithNext :=
+  let (ewn_t, ewn_f, cond) := match ewn2.env.pathConditions.newest with
+    | (_, c) :: _ =>
+      match c with
+      | .ite _ inner (.false _) (.true _) =>
+        -- ewn2 has the negated condition, so it's the false branch
+        (ewn1, ewn2, inner)
+      | _ => (ewn2, ewn1, c)
+    | [] => (ewn1, ewn2, LExpr.true ())
+  { ewn_t with env := Env.merge cond ewn_t.env ewn_f.env }
+
+/--
+Merge `EnvWithNext` results that share the same exit label after block exit
+consumption.
+
+This function is safe to use even without enforced label uniqueness because it
+only merges paths that result from evaluating the same block's statements. All
+paths in the input list are siblings (they started from the same entry point),
+so if they converge to the same exit label, they represent different execution
+paths through the same code that should be merged.
+
+For groups of 2+ paths with the same label, paths are iteratively merged by
+inspecting each path's newest path condition to determine the ite condition.
+This handles nested if-then-else with exits (e.g., 3 paths from two levels
+of branching) by folding merges from right to left — innermost branches are
+merged first, then outer branches.
+
+Note: This merging is essential to prevent path multiplication in the VCG.
+Without it, subsequent procedures would be verified once per path from the
+previous procedure, causing duplicate proof obligations (see issue #419).
+-/
+private def mergeByExitLabel (ewns : List EnvWithNext) : List EnvWithNext :=
+  let labels := ewns.map (·.exitLabel) |>.eraseDups
+  labels.flatMap fun label =>
+    let group := ewns.filter (·.exitLabel == label)
+    match group with
+    | [] => []
+    | [ewn] => [ewn]
+    | ewn :: rest => [rest.foldr (init := ewn) fun next acc => mergeTwoEnvs acc next]
+
 mutual
 def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
     List EnvWithNext :=
@@ -445,7 +489,11 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                               let ss' := ewn.stk.top
                                               let s' := Imperative.Stmt.block label ss' md
                                               orig_stk.appendToTop [s'] })
-            Ewns
+            -- After consuming exits, multiple paths may converge to the same
+            -- exit label. Merge them to prevent path multiplication.
+            -- This is safe because all paths in Ewns are siblings (they all
+            -- result from evaluating the same block's statements).
+            mergeByExitLabel Ewns
 
           | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
@@ -559,17 +607,31 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                     .none
                     (orig_stk.appendToTop [s'])]
   | _, _ =>
-    let Ewns_t := Ewns_t.map
-                      (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
-    let Ewns_f := Ewns_f.map
-                      (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
-  Ewns_t ++ Ewns_f
+    -- Group results by exit label and merge true/false branches within each
+    -- group using the ite condition `cond'`. This happens *before* popping
+    -- the ite scope so that the path-condition structure is still intact.
+    let labels := (Ewns_t ++ Ewns_f).map (·.exitLabel) |>.eraseDups
+    let merged := labels.flatMap fun label =>
+      let ts := Ewns_t.filter (·.exitLabel == label)
+      let fs := Ewns_f.filter (·.exitLabel == label)
+      match ts, fs with
+      | [ewn_t], [ewn_f] =>
+        let s' := Imperative.Stmt.ite cond' ewn_t.stk.top ewn_f.stk.top md
+        [EnvWithNext.mk (Env.merge cond' ewn_t.env ewn_f.env).popScope
+                        label
+                        (orig_stk.appendToTop [s'])]
+      | _, _ =>
+        -- Unmatched paths: pop scope and pass through individually.
+        let ts' := ts.map fun ewn =>
+          let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+          { ewn with env := ewn.env.popScope,
+                     stk := orig_stk.appendToTop [s'] }
+        let fs' := fs.map fun ewn =>
+          let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+          { ewn with env := ewn.env.popScope,
+                     stk := orig_stk.appendToTop [s'] }
+        ts' ++ fs'
+    merged
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 end
 
