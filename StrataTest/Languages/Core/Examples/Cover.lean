@@ -123,14 +123,14 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (path not reachable)
+Result: ✅ pass (❗path unreachable)
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ unreachable
+Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
 
 ---------------------------------------------------------------------
 
@@ -164,26 +164,26 @@ procedure Test() returns ()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (path not reachable)
+Result: ✅ pass (❗path unreachable)
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ unreachable
+Result: ❌ fail (❗path unreachable)
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✅ always true and is reachable from declaration entry
+Result: ✅ pass
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ✅ satisfiable and reachable from declaration entry
+Result: ✅ pass
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ❌ always false and is reachable from declaration entry
+Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
 
 ---------------------------------------------------------------------
 
@@ -214,7 +214,7 @@ procedure Test() returns ()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass
+Result: ✅ pass (❗path unreachable)
 
 Obligation: no_rc_assert
 Property: assert
@@ -222,7 +222,7 @@ Result: ✅ pass
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail
+Result: ❌ fail (❗path unreachable)
 
 Obligation: no_rc_cover
 Property: cover
@@ -256,7 +256,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -290,21 +290,21 @@ procedure Test() returns ()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ✅ pass (path not reachable)
+Result: ✅ pass (❗path unreachable)
 
 Obligation: pe_cover_fail
 Property: cover
-Result: ❌ unreachable
+Result: ❌ fail (❗path unreachable)
 
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (path not reachable)
+Result: ✅ pass (❗path unreachable)
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ unreachable
+Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with reachCheck := true})
 
 ---------------------------------------------------------------------

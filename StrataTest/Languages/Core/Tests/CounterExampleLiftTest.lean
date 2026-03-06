@@ -39,7 +39,7 @@ Obligation: must_be_42
 Property: assert
 Result: ❌ fail
 Model:
-[($__x1, #0)]
+($__x1, 0)
 -/
 #guard_msgs in
 #eval verify intCexPgm (options := .models)
@@ -77,7 +77,7 @@ Obligation: must_be_true
 Property: assert
 Result: ❌ fail
 Model:
-[($__b1, #false)]
+($__b1, false)
 -/
 #guard_msgs in
 #eval verify boolCexPgm (options := .models)
@@ -103,7 +103,7 @@ Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
 Model:
-[($__xs1, ~Nil)]
+($__xs1, Nil)
 -/
 #guard_msgs in
 #eval verify datatypeCexPgm (options := .models)
@@ -129,7 +129,7 @@ Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
 Model:
-[($__xs1, (~Cons #0 ~Nil))]
+($__xs1, Cons(0, Nil))
 -/
 #guard_msgs in
 #eval verify datatypeCexPgm2 (options := .models)
@@ -155,7 +155,7 @@ Obligation: must_be_left
 Property: assert
 Result: ❌ fail
 Model:
-[($__e1, (~Right #true))]
+($__e1, Right(true))
 -/
 #guard_msgs in
 #eval verify eitherCexPgm (options := .models)
@@ -184,7 +184,7 @@ Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-[($__x0, #0)]
+($__x0, 0)
 -/
 #guard_msgs in
 #eval verify quantCexPgm (options := .models)

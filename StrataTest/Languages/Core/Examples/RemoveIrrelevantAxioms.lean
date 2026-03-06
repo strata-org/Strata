@@ -88,20 +88,20 @@ procedure Q3(x : int) returns ()
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    -- Find "($__x" in the line (handles both old and new model formats)
-    let marker := "($__x"
-    if line.contains marker then
-      match line.splitOn marker with
-      | [linePrefix, rest] =>
-        let modelPart := marker ++ rest
-        match modelPart.splitOn ", " with
-        | [var, valRest] =>
-          match valRest.dropEnd 1 |>.trimAscii.toInt? with
-          | some val =>
-            let normalized := if val == 2 then s!"{var}, VALUE_WAS_2)" else s!"{var}, model_not_2)"
-            linePrefix ++ normalized
-          | none => line
-        | _ => line
+    if line.startsWith "($__x" && line.contains ", " then
+      -- Extract the value after the comma
+      match line.splitOn ", " with
+      | [var, rest] =>
+        -- Remove trailing ")" and strip LExpr integer prefix "#"
+        let valStr := rest.dropEnd 1 |>.trimAscii
+        let valStr := if valStr.startsWith "#" then valStr.drop 1 else valStr
+        match valStr.toInt? with
+        | some val =>
+          if val == 2 then
+            s!"{var}, VALUE_WAS_2)"
+          else
+            s!"{var}, model_not_2)"
+        | none => line
       | _ => line
     else
       line
@@ -115,7 +115,7 @@ Result: ✅ pass
 
 Obligation: assert_1
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_2
 Property: assert
@@ -123,55 +123,55 @@ Result: ✅ pass
 
 Obligation: assert_3
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_4
 Property: assert
 Result: ❌ fail
 Model:
-[($__x0, #0)]
+($__x0, model_not_2)
 
 Obligation: assert_5
 Property: assert
 Result: ❌ fail
 Model:
-[($__x0, #0)]
+($__x0, model_not_2)
 
 Obligation: assert_6
 Property: assert
 Result: ❌ fail
 Model:
-[($__x1, #0)]
+($__x1, model_not_2)
 
 Obligation: assert_7
 Property: assert
 Result: ❌ fail
 Model:
-[($__x1, #0)]
+($__x1, model_not_2)
 
 Obligation: assert_8
 Property: assert
 Result: ❌ fail
 Model:
-[($__x2, #0)]
+($__x2, model_not_2)
 
 Obligation: assert_9
 Property: assert
 Result: ❌ fail
 Model:
-[($__x2, #0)]
+($__x2, model_not_2)
 
 Obligation: assert_10
 Property: assert
 Result: ❌ fail
 Model:
-[($__x3, #0)]
+($__x3, model_not_2)
 
 Obligation: assert_11
 Property: assert
 Result: ❌ fail
 Model:
-[($__x3, #0)]
+($__x3, model_not_2)
 -/
 #guard_msgs in
 #eval do
@@ -189,7 +189,7 @@ Result: ✅ pass
 
 Obligation: assert_1
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_2
 Property: assert
@@ -197,95 +197,42 @@ Result: ✅ pass
 
 Obligation: assert_3
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_4
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_5
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_6
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_7
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_8
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_9
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_10
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 
 Obligation: assert_11
 Property: assert
-Result: ❓ unknown
+Result: 🟡 unknown
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := false})
 
-/--
-info:
-Obligation: assert_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_1
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_2
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_3
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_4
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_5
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_6
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_7
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_8
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_9
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_10
-Property: assert
-Result: ❓ unknown
-
-Obligation: assert_11
-Property: assert
-Result: ❓ unknown
--/
-#guard_msgs in
-#eval verify irrelevantAxiomsTestPgm
-        (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := false})
-
+---------------------------------------------------------------------

@@ -279,8 +279,12 @@ def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) 
     (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
+  -- Handle unreachable specially in both modes
+  if o.unreachable then
+    if property == .assert then "pass (❗path unreachable)"
+    else "fail (❗path unreachable)"
   -- Simplified labels for minimal check amount
-  if checkLevel == .minimal then
+  else if checkLevel == .minimal then
     match property, checkMode with
     | .assert, .deductive =>
       -- Validity check only: unsat=pass, sat=fail, unknown=unknown
@@ -305,10 +309,8 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .err _ => "unknown"
   else
     -- Full check amount: detailed labels
-    -- Special case: unreachable assert in full mode
-    if property == .assert && o.unreachable then "pass (path not reachable)"
     -- For cover: satisfiability sat means the cover is satisfied (pass)
-    else if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
+    if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
     else if o.passAndReachable then "always true and is reachable from declaration entry"
     else if o.alwaysFalseAndReachable then "always false and is reachable from declaration entry"
     else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
@@ -373,6 +375,22 @@ This is used for formatting counterexamples in a human-readable way
 using Core's expression formatter and for future use as program metadata.
 -/
 abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
+
+/-- Format LExprModel in Core syntax (without # prefix for constants) -/
+private def formatLExprModelValue (e : LExpr CoreLParams.mono) : Format :=
+  match e with
+  | .const _ (.intConst n) => Std.format n
+  | .const _ (.boolConst b) => Std.format b
+  | .const _ (.strConst s) => f!"\"{s}\""
+  | .op _ c _ => f!"{c}"
+  | _ => Std.format e
+
+instance : ToFormat LExprModel where
+  format model :=
+    match model with
+    | [] => ""
+    | [(id, v)] => f!"({id}, {formatLExprModelValue v})"
+    | pairs => Format.joinSep (pairs.map fun (id, v) => f!"({id}, {formatLExprModelValue v})") "\n"
 
 /--
 A collection of all information relevant to a verification condition's
