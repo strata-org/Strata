@@ -6476,6 +6476,7 @@ private theorem resolveAux_output_type_no_future_vars :
       resolveAux C Env e = .ok (et, Env') →
       TEnvWF Env →
       Env.context.types ≠ [] →
+      FactoryWF C.functions →
       ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
         ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n from
     fun e => h_strong (LExpr.sizeOf e) e rfl
@@ -6488,6 +6489,7 @@ private theorem resolveAux_output_type_no_future_vars :
       resolveAux C Env e' = .ok (et, Env') →
       TEnvWF Env →
       Env.context.types ≠ [] →
+      FactoryWF C.functions →
       ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
         ∀ k, k ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString k :=
     fun e' h_lt => ih_n (LExpr.sizeOf e') h_lt e' rfl
@@ -6514,7 +6516,7 @@ private theorem resolveAux_output_type_no_future_vars :
     intro et C Env Env' h _ _ _
     simp [resolveAux, Bind.bind, Except.bind] at h
   | .fvar m x fty =>
-    intro et C Env Env' h h_envwf h_ne
+    intro et C Env Env' h h_envwf h_ne _
     -- Decompose resolveAux for fvar
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -6550,7 +6552,7 @@ private theorem resolveAux_output_type_no_future_vars :
       have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_inst2
       exact h_mty_fresh v hv n (Nat.le_trans h_mono2 hn)
   | .op m o oty =>
-    intro et C Env Env' h h_envwf h_ne
+    intro et C Env Env' h h_envwf h_ne _
     -- Decompose resolveAux for op
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -6582,7 +6584,7 @@ private theorem resolveAux_output_type_no_future_vars :
       have h_mono2 := LMonoTy_instantiateWithCheck_tyGen_mono oty_val C Env1 oty_inst Env2 h_inst2
       exact h_ty_fresh v hv n (Nat.le_trans h_mono2 hn)
   | .app m e1 e2 =>
-    intro et C Env Env' h h_envwf h_ne
+    intro et C Env Env' h h_envwf h_ne h_fwf
     have h_aw := h_envwf.aliasesWF
     -- Extract IHs from strong induction
     have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
@@ -6694,7 +6696,7 @@ private theorem resolveAux_output_type_no_future_vars :
             · -- v ∈ Subst.freeVars v4.subst
               exact h_sfg_v4 v (Or.inr hv_fv) n hn
   | .abs m bty e_body =>
-    intro et C Env Env' h h_envwf h_ne
+    intro et C Env Env' h h_envwf h_ne h_fwf
     have h_aw := h_envwf.aliasesWF
     simp only [resolveAux, Bind.bind, Except.bind] at h
     -- Decompose: typeBoundVar C Env bty
@@ -6743,7 +6745,7 @@ private theorem resolveAux_output_type_no_future_vars :
         -- SubstFreshForGen for Env2
         have h_sfg_Env2 := resolveAux_preserves_SubstFreshForGen
           (varOpen 0 (xv, some xty) e_body) et_body C Env1 Env2 h_res_body
-          h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF
+          h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF h_fwf
         -- Use freeVars_of_subst_subset to split v into type freeVars vs subst freeVars
         have h_fv_subset := LMonoTy.freeVars_of_subst_subset Env2.stateSubstInfo.subst
           (.tcons "arrow" [xty, (Lambda.LExpr.varCloseT 0 xv et_body).toLMonoTy])
@@ -6811,11 +6813,11 @@ private theorem resolveAux_output_type_no_future_vars :
             -- varCloseT preserves toLMonoTy
             rw [varCloseT_toLMonoTy] at hv_ety
             -- Now use ih_body: v ∈ freeVars et_body.toLMonoTy → v ≠ tyPrefix ++ toString n
-            exact ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 v hv_ety n hn
+            exact ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf v hv_ety n hn
         · -- v ∈ Subst.freeVars Env2.stateSubstInfo.subst
           exact h_sfg_Env2 v (Or.inr hv_subst) n hn
   | .quant m qk bty triggers e_body =>
-    intro et C Env Env' h h_envwf h_ne
+    intro et C Env Env' h h_envwf h_ne _
     have h_aw := h_envwf.aliasesWF
     simp only [resolveAux, Bind.bind, Except.bind] at h
     -- Decompose: typeBoundVar C Env bty
@@ -6859,7 +6861,7 @@ private theorem resolveAux_output_type_no_future_vars :
   | .ite m c t e =>
     -- Output type is tht.toLMonoTy (the then-branch metadata type).
     -- Use IH on t (then-branch) and genState monotonicity.
-    intro et C Env Env' h h_envwf h_ne
+    intro et C Env Env' h h_envwf h_ne h_fwf
     -- Extract IHs from strong induction
     have ih_t := ih_sub t (by subst h_sz; simp [LExpr.sizeOf]; omega)
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
@@ -6908,7 +6910,7 @@ private theorem resolveAux_output_type_no_future_vars :
                 boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
                 ctxFreeVarsGenerated := transfer_ctxFreeVarsGenerated h_envwf.ctxFreeVarsGenerated h_ctx1 }
             -- Apply IH on t (then-branch)
-            exact ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 v hv n hn2
+            exact ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 h_fwf v hv n hn2
   | .eq m e1 e2 =>
     -- Output type is LMonoTy.bool, which has no free vars. Vacuously true.
     intro et C Env Env' h h_envwf h_ne _
