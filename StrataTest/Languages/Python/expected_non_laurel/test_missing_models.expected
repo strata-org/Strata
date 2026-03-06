@@ -1,4 +1,10 @@
 
+Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_3: ❌ fail
+
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11131)
+
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11278)
+
 datetime_now_ensures_0: ✅ pass (at byte 7134)
 
 datetime_utcnow_ensures_0: ✅ pass (at byte 7372)
@@ -24,9 +30,3 @@ Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_15: ❌
 test_helper_procedure_assert_opt_name_none_or_str_16: ✅ pass (at byte 11131)
 
 test_helper_procedure_assert_opt_name_none_or_bar_17: ✅ pass (at byte 11278)
-
-Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_3: ❌ fail
-
-test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11131)
-
-test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11278)
