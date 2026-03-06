@@ -175,6 +175,8 @@ def extractCallsFromProcedure (proc : Procedure) : List String :=
 abbrev ProcedureCG := CallGraph
 abbrev FunctionCG := CallGraph
 
+/-- Build a call graph whose nodes are procedures and whose edges represent
+direct procedure calls. -/
 def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   let procedures := prog.decls.filterMap (fun decl =>
     match decl with
@@ -183,6 +185,9 @@ def Program.toProcedureCG (prog : Program) : ProcedureCG :=
     | _ => none)
   buildCallGraph procedures
 
+/-- Build a call graph whose nodes are user-defined functions and whose edges
+represent calls between them. Builtin functions (e.g. `Bool.And`, arithmetic
+operators) are not listed as nodes; calls to builtins are silently dropped. -/
 def Program.toFunctionCG (prog : Program) : FunctionCG :=
   let functions := prog.decls.filterMap (fun decl =>
     match decl with
@@ -199,6 +204,11 @@ Map from functions to their _immediately_ relevant axioms. An axiom `a` is
 _immediately_ relevant for a function `f` if `f` occurs in the body of `a`,
 including in any trigger expressions. Callees and callers of `f` are not
 associated with `a` in this map.
+
+Builtin functions (e.g. `Bool.And`, `Bool.Implies`) are excluded from the map
+keys. Because builtins appear in nearly every axiom body, including them would
+make almost every axiom "immediately relevant" to any goal that touches a
+builtin, collapsing the relevance filter entirely.
 -/
 def Program.functionImmediateAxiomMap (prog : Program) : FuncAxMap :=
   let axioms := prog.decls.filterMap (fun decl =>
@@ -208,7 +218,9 @@ def Program.functionImmediateAxiomMap (prog : Program) : FuncAxMap :=
 
   let functionAxiomPairs := axioms.flatMap (fun ax =>
     let ops := Lambda.LExpr.getOps ax.e
-    ops.map (fun op => (CoreIdent.toPretty op, ax)))
+    ops.filterMap (fun op =>
+      let fname := CoreIdent.toPretty op
+      if builtinFunctions.contains fname then none else some (fname, ax)))
 
   functionAxiomPairs.foldl
     (fun acc (funcName, ax) =>
@@ -242,9 +254,12 @@ private def computeRelevantAxiomsAux (prog : Program) (cg : FunctionCG)
       let allAxioms := (discoveredAxioms ++ newAxioms).dedup
 
       -- Find functions mentioned in newly discovered axioms.
+      -- Builtins are excluded for the same reason as in `functionImmediateAxiomMap`.
       let newFunctions := newAxioms.flatMap (fun axName =>
         match prog.getAxiom? ⟨axName, ()⟩ with
-        | some ax => (Lambda.LExpr.getOps ax.e).map CoreIdent.toPretty
+        | some ax => (Lambda.LExpr.getOps ax.e).filterMap (fun op =>
+            let fname := CoreIdent.toPretty op
+            if builtinFunctions.contains fname then none else some fname)
         | none => [])
 
       -- Expand with call graph neighbors.

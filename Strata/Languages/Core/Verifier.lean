@@ -304,7 +304,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       -- Axiom removal: prune path conditions to reduce the size of the proof
       -- obligation and reduce brittleness due to quantifiers.
       match options.removeIrrelevantAxioms, axiomCache with
-      | .Off, _ | _, .none => return (obligation, none)
+      | .Off, _ | _, .none =>
+        return (obligation, none)
       | mode, .some cache =>
         let consequentFns := obligation.obligation.getOps.map CoreIdent.toPretty
         let relevantFns :=
@@ -315,10 +316,17 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
             consequentFns
           | .Precise =>
             -- Functions from both P and Q are used. The antecedent functions
-            -- are extracted from the flattened path conditions.
+            -- are extracted from non-axiom path conditions only. Axioms are
+            -- excluded because including them would seed the relevant-function
+            -- set with every function they mention, causing those axioms to be
+            -- found trivially relevant and never removed.
+            let axiomNames : List String := p.decls.filterMap (fun decl =>
+              match decl with | .ax a _ => some a.name | _ => none)
             let antecedentFns :=
               obligation.assumptions.flatten.flatMap
-                (fun (_, e) => e.getOps.map CoreIdent.toPretty)
+                (fun (label, e) =>
+                  if axiomNames.contains label then []
+                  else e.getOps.map CoreIdent.toPretty)
             (consequentFns ++ antecedentFns).dedup
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
