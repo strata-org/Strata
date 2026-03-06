@@ -4512,7 +4512,8 @@ theorem resolveAux_context :
                     rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega)
                 triggersT C Env2 Env3 h_ra2 (h_ctx2 ▸ h_ne1)
             exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env3
-              (h_ctx3.trans h_ctx2) (by sorry) h_ne
+              (h_ctx3.trans h_ctx2)
+              (typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv) h_ne
           · -- ety != bool is false → contradicts the if
             simp at h
   | .eq m e1 e2 =>
@@ -6324,7 +6325,9 @@ theorem resolveAux_HasType :
           -- Env2.context = Env1.context (from IH)
           -- Env1 = typeBoundVar result, adds xv to Env's context
           -- eraseFromContext removes xv → back to Env.context
-          sorry
+          rw [← h_env']
+          exact typeBoundVar_erase_context C Env bty xv xty Env1 h_tbv Env2 h_ctx_body
+            (typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv) h_ne
         · -- Typing: HasType C Env.context (.abs m bty e_body)
           --         (.forAll [] (subst Env'.subst et.toLMonoTy))
           sorry
