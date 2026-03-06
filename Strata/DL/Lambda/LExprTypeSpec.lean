@@ -98,6 +98,19 @@ variables in `ty`.
 def LTy.openFull (ty: LTy) (tys: List LMonoTy) : LMonoTy :=
   LMonoTy.subst [(List.zip (LTy.boundVars ty) tys)] (LTy.toMonoTypeUnsafe ty)
 
+/-- An annotation `ann` is compatible with a type `xty` under `aliases`:
+    there exists a substitution of `ann`'s free type variables that makes it
+    alias-equivalent to `xty`. This captures the relationship between a user's
+    type annotation and the processed bound-variable type produced by
+    `instantiateWithCheck` (which renames free vars and resolves aliases). -/
+def AnnotCompat (aliases : List TypeAlias) (ann xty : LMonoTy) : Prop :=
+  ∃ (σ : Map TyIdentifier LMonoTy),
+    AliasEquiv aliases (LMonoTy.subst [σ] ann) xty
+
+theorem AnnotCompat.of_eq {aliases : List TypeAlias} {ann : LMonoTy} :
+    AnnotCompat aliases ann ann :=
+  ⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact .refl⟩
+
 /--
 Typing relation for `LExpr`s with respect to `LTy`.
 
@@ -161,7 +174,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             (hx : LTy.isMonoType x_ty) →
             (he : LTy.isMonoType e_ty) →
             HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
-            o = none ∨ o = some (x_ty.toMonoType hx) →
+            (o = none ∨ ∃ t, o = some t ∧ AnnotCompat Γ.aliases t (x_ty.toMonoType hx)) →
             HasType C Γ (.abs m o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
@@ -223,7 +236,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             (hx : LTy.isMonoType x_ty) →
             HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) (.forAll [] .bool) →
             HasType C {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
-            o = none ∨ o = some (x_ty.toMonoType hx) →
+            (o = none ∨ ∃ t, o = some t ∧ AnnotCompat Γ.aliases t (x_ty.toMonoType hx)) →
             HasType C Γ (.quant m k o tr e) (.forAll [] .bool)
 
   /--
@@ -7078,6 +7091,44 @@ private theorem LMonoTys_resolveAliases_subst_eq
       (LMonoTy_resolveAliases_subst_eq mty Env mty' Env1 h_hd)
 end
 
+/-- `LMonoTy.instantiateWithCheck` produces a type that is `AnnotCompat` with
+    the input: there exists a substitution σ (renaming free vars to fresh
+    generated names) such that the output is alias-equivalent to `subst [σ] mty_in`. -/
+private theorem instantiateWithCheck_AnnotCompat
+    (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty_out : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty_in C Env = .ok (mty_out, Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    AnnotCompat Env.context.aliases mty_in mty_out := by
+  -- Proof sketch: instantiateWithCheck does instantiateEnv (renames free vars
+  -- to fresh generated names via σ) then resolveAliases (alias-equivalent output).
+  -- Together: ∃ σ, AliasEquiv aliases (subst [σ] mty_in) mty_out.
+  -- The σ witness is zip(mty_in.freeVars, map ftvar freshtvs) from genTyVars.
+  -- Uses instantiateEnv_decompose + resolveAliases_aliasEquiv.
+  sorry
+
+/-- `typeBoundVar` with a `some` annotation produces a type that is
+    `AnnotCompat` with the annotation. -/
+private theorem typeBoundVar_AnnotCompat
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty_val : LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env (some bty_val) = .ok (xv, xty, Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    AnnotCompat Env.context.aliases bty_val xty := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  -- liftGenEnv genVar
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen; simp at h
+  have h_g_ctx : Env_g.context = Env.context := liftGenEnv_context Env _ Env_g h_gen
+  -- instantiateWithCheck
+  generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h
+  match res_ic with
+  | .error _ => simp at h
+  | .ok (mty_ic, Env_mid) =>
+  simp [Pure.pure, Except.pure] at h
+  obtain ⟨_, h_xty, _⟩ := h; subst h_xty
+  exact h_g_ctx ▸ instantiateWithCheck_AnnotCompat bty_val C Env_g mty_ic Env_mid h_ic (h_g_ctx ▸ h_aw)
+
 /-- `resolveAliases` preserves typing via `AliasEquiv`. Since `tconsAliasSimple` does
     not modify the substitution, no freshness/substitution argument is needed. -/
 private theorem HasType_resolveAliases
@@ -7976,19 +8027,13 @@ theorem resolveAux_HasType :
           h_isMonoType
           (by rw [← h_ctx_bridge]; exact h_body_bool)
           (by rw [← h_ctx_bridge]; exact h_tr_typed)
-          (by -- annotation: bty = none ∨ bty = some xty
+          (by -- annotation: bty = none ∨ ∃ t, bty = some t ∧ AnnotCompat ...
               cases bty with
               | none => exact Or.inl rfl
               | some bty_val =>
-                -- bty_val is the user annotation; xty is the processed version
-                -- from LMonoTy.instantiateWithCheck bty_val.
-                -- instantiateWithCheck replaces free vars with generated names
-                -- and resolves aliases, so xty ≠ bty_val in general.
-                -- The tquant rule requires the annotation to exactly match the
-                -- processed type. This is a spec limitation — same issue as
-                -- tvar_annotated requiring openFull.
-                -- Possible fix: weaken tquant to allow alias-equivalent annotations.
-                right; sorry)
+                right
+                exact ⟨bty_val, rfl,
+                  typeBoundVar_AnnotCompat C Env bty_val xv xty Env1 h_tbv h_aw⟩)
   | .ite m c t e =>
     -- resolveAux recurses on c, t, e, then unifies [(cty, bool), (tty, ety)].
     -- Result type is tty (the then-branch type), and the HasType rule is `tif`.
