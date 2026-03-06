@@ -6,10 +6,29 @@
 
 import Strata.Languages.Core.Verifier
 
-/-! ## Test that a statement-level type is not visible in another procedure -/
+/-! ## Tests for statement-level type scoping -/
 
 namespace Strata
 
+-- A top-level type cannot be shadowed by a statement-level one
+def shadowTopLevelType : Program :=
+#strata
+program Core;
+type T;
+procedure P () returns () {
+  type T;
+  var x : T;
+};
+#end
+
+/--
+error:  ❌ Type checking error.
+Type 'T' is already declared
+-/
+#guard_msgs in
+#eval verify shadowTopLevelType
+
+-- A statement-level type is not visible in another procedure
 /--
 error: Undeclared type or category T.
 -/
