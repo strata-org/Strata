@@ -29,7 +29,6 @@
 
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.Regex.ReToCore
-import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 open Strata Strata.Python
 open Core (VerifyOptions)
