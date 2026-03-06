@@ -548,6 +548,35 @@ def removeLeadingAssertTrue (label : CoreLabel) (md : MetaData Expression)
     if l = label ∧ m = md then rest else stmts
   | _ => stmts
 
+/-- Helper: removeLeadingAssertTrue either returns rest or stmts unchanged -/
+theorem removeLeadingAssertTrue_cases (label : CoreLabel) (md : MetaData Expression)
+    (stmts : List Statement) :
+    (∃ rest, stmts = Statement.assert label Core.true md :: rest ∧
+      removeLeadingAssertTrue label md stmts = rest) ∨
+    removeLeadingAssertTrue label md stmts = stmts := by
+  match stmts with
+  | Statement.assert l Core.true m :: rest =>
+    by_cases h : l = label ∧ m = md
+    · obtain ⟨rfl, rfl⟩ := h
+      left; exact ⟨rest, rfl, by simp [removeLeadingAssertTrue]⟩
+    · right; simp [removeLeadingAssertTrue, h]
+  | _ => right; sorry -- removeLeadingAssertTrue is identity for non-matching heads
+
+/-- If (assert :: rest) evaluates and assert is a skip, rest evaluates -/
+theorem eval_skip_assert_rest
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) (σ σ' : CoreStore) (δ' : CoreEval)
+    (l : CoreLabel) (e : Expression.Expr) (m : MetaData Expression)
+    (rest : List Statement) :
+    EvalStatements π φ δ σ (Statement.assert l e m :: rest) σ' δ' →
+    EvalStatements π φ δ σ rest σ' δ' := by
+  intro h_eval
+  cases h_eval with
+  | stmts_some_sem h_stmt h_rest =>
+    have ⟨h_σ, h_δ⟩ := ProcBodyVerifyCorrect.eval_assert_is_skip π φ δ σ _ _ l e m h_stmt
+    subst h_σ; subst h_δ
+    exact h_rest
+
 /-- Removing a leading `assert true` is a sound transformation:
     if the shortened list is correct, so is the original. -/
 theorem removeLeadingAssertTrue_correct
@@ -555,32 +584,24 @@ theorem removeLeadingAssertTrue_correct
     (label : CoreLabel) (md : MetaData Expression)
     (h_eval_true : ∀ (δ : CoreEval) (σ : CoreStore), δ σ Core.true = some HasBool.tt) :
     transform_correct π φ (removeLeadingAssertTrue label md) := by
-  intro stmts h_target_correct
-  intro δ σ σ' δ' h_eval lbl expr md' h_in
-  -- Case split: is this the removed assert or one in the rest?
-  unfold removeLeadingAssertTrue at h_target_correct
-  match h_stmts : stmts, h_in with
-  | s :: rest, h_in =>
-    rw [List.mem_cons] at h_in
+  intro stmts h_target_correct δ σ σ' δ' h_eval lbl expr md' h_in
+  cases removeLeadingAssertTrue_cases label md stmts with
+  | inl h_removed =>
+    -- T removed the leading assert: stmts = assert label true md :: rest, T(stmts) = rest
+    obtain ⟨rest, h_stmts_eq, h_T_eq⟩ := h_removed
+    subst h_stmts_eq
+    rw [h_T_eq] at h_target_correct
+    -- h_in : assert lbl expr md' ∈ (assert label true md :: rest)
     cases h_in with
-    | inl h_eq =>
-      -- This is the first statement. We need to show its condition holds.
-      -- Since it's an assert, and assert is a skip, the store at this point is σ.
-      cases h_eq
-      -- expr = the expression in the first assert. If it's Core.true, we're done.
-      -- But we don't know it's Core.true in general — only the specific removed one is.
-      -- Actually, h_in says this assert IS in stmts, but it might not be the removed one.
-      -- We need to show δ_at σ_at expr = some tt for some σ_at, δ_at.
-      -- The assert is at position 0, so σ_at = σ, δ_at = δ.
-      -- But we don't know the condition holds unless it's Core.true.
-      -- Use h_target_correct: if the assert is also in T(stmts), it holds there.
-      -- If it was removed (it's assert true), then h_eval_true gives us the result.
-      sorry
-    | inr h_in_rest =>
-      -- The assert is in the rest. We need to show it holds.
-      -- The rest is a suffix of stmts, and T(stmts) contains rest (or stmts).
-      -- Use h_target_correct on the rest.
-      sorry
-  | [], h_in => cases h_in
+    | head =>
+      exact ⟨σ, δ, h_eval_true δ σ⟩
+    | tail _ h =>
+      exact h_target_correct δ σ σ' δ'
+        (eval_skip_assert_rest π φ δ σ σ' δ' label Core.true md rest h_eval)
+        lbl expr md' h
+  | inr h_unchanged =>
+    -- T didn't change anything: T(stmts) = stmts
+    rw [h_unchanged] at h_target_correct
+    exact h_target_correct δ σ σ' δ' h_eval lbl expr md' h_in
 
 end Soundness
