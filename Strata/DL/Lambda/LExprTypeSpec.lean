@@ -6986,7 +6986,7 @@ theorem resolveAux_HasType :
               have h_fresh_Env2 := genTyVar_fresh_wrt_input_subst
                 Env2 Env2 Env3 fresh_name h_genTyVar
                 (resolveAux_preserves_SubstFreshForGen e2 e2t C Env1 Env2 h_res2
-                  h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1)
+                  h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF)
                 (Nat.le_refl _)
               -- absorbs (remove v4 fresh) Env1.subst and Env2.subst
               have h_abs_rem_Env1 := Subst.absorbs_of_remove
