@@ -95,6 +95,48 @@ CORPUS = [
     ("a+",     "a",     "fullmatch"),  # match
     ("a+",     "aaa",   "fullmatch"),  # match
 
+    # deeply nested plus — a few cases to verify recursion depth, not re-testing a+ semantics
+    ("((((((a+)+)+)+)+)+)+", "a",    "fullmatch"),  # match
+    ("((((((a+)+)+)+)+)+)+", "b",    "fullmatch"),  # noMatch
+    ("((((((a+)+)+)+)+)+)+", "aab",  "match"),      # match — trailing b ok
+    ("((((((a+)+)+)+)+)+)+", "bab",  "search"),     # match — found in middle
+
+    # (a+)* — plus inside star: equivalent to a*
+    ("(a+)*",  "",     "fullmatch"),  # match — zero groups
+    ("(a+)*",  "a",    "fullmatch"),  # match
+    ("(a+)*",  "aaa",  "fullmatch"),  # match
+    ("(a+)*",  "b",    "fullmatch"),  # noMatch
+    ("(a+)*",  "ab",   "match"),      # match — trailing b ok
+    ("(a+)*",  "bab",  "search"),     # match — found in middle
+
+    # (a*)+ — star inside plus: equivalent to a*
+    ("(a*)+",  "",     "fullmatch"),  # match — one empty group
+    ("(a*)+",  "a",    "fullmatch"),  # match
+    ("(a*)+",  "aaa",  "fullmatch"),  # match
+    ("(a*)+",  "b",    "fullmatch"),  # noMatch
+    ("(a*)+",  "ab",   "match"),      # match — trailing b ok
+    ("(a*)+",  "bab",  "search"),     # match — found in middle
+
+    # (a+b+)+ — concat of pluses inside plus
+    ("(a+b+)+",  "",      "fullmatch"),  # noMatch
+    ("(a+b+)+",  "ab",    "fullmatch"),  # match
+    ("(a+b+)+",  "aabb",  "fullmatch"),  # match — two chars each
+    ("(a+b+)+",  "abab",  "fullmatch"),  # match — two groups
+    ("(a+b+)+",  "a",     "fullmatch"),  # noMatch — no b
+    ("(a+b+)+",  "ba",    "fullmatch"),  # noMatch — wrong order
+    ("(a+b+)+",  "abx",   "match"),      # match — trailing x ok
+    ("(a+b+)+",  "xab",   "search"),     # match — found after x
+
+    # (a+|b+)+ — alternation of pluses inside plus
+    ("(a+|b+)+",  "",     "fullmatch"),  # noMatch
+    ("(a+|b+)+",  "a",    "fullmatch"),  # match
+    ("(a+|b+)+",  "b",    "fullmatch"),  # match
+    ("(a+|b+)+",  "aabb", "fullmatch"),  # match — aa then bb
+    ("(a+|b+)+",  "abba", "fullmatch"),  # match — a, bb, a
+    ("(a+|b+)+",  "c",    "fullmatch"),  # noMatch
+    ("(a+|b+)+",  "ac",   "match"),      # match — trailing c ok
+    ("(a+|b+)+",  "cab",  "search"),     # match — found after c
+
     # ? (optional = union empty r): zero or one
     ("a?",     "",      "fullmatch"),  # match
     ("a?",     "a",     "fullmatch"),  # match
