@@ -7850,7 +7850,19 @@ theorem resolveAux_HasType :
         · -- Typing under arbitrary absorbing S
           intro S h_abs_S h_wf_S
           -- Step 1: Simplify et.toLMonoTy
-          rw [← h_et]; simp [toLMonoTy]
+          -- h_et : et = .abs ⟨m, subst Env2.subst (tcons "arrow" [xty, (varCloseT ..).toLMonoTy])⟩ bty (varCloseT ..)
+          -- We need: HasType ... (.forAll [] (subst S et.toLMonoTy))
+          -- et.toLMonoTy = subst Env2.subst (tcons "arrow" [xty, (varCloseT ..).toLMonoTy])
+          -- (varCloseT ..).toLMonoTy = et_body.toLMonoTy
+          have h_et_ty : et.toLMonoTy = LMonoTy.subst Env2.stateSubstInfo.subst
+              (.tcons "arrow" [xty, et_body.toLMonoTy]) := by
+            subst h_et
+            -- Unfold outer toLMonoTy (.abs ⟨_, mty⟩ _ _) = mty, keeping inner intact
+            change (LMonoTy.subst Env2.stateSubstInfo.subst
+              (.tcons "arrow" [xty, (LExpr.varCloseT 0 xv et_body).toLMonoTy]))
+              = LMonoTy.subst Env2.stateSubstInfo.subst (.tcons "arrow" [xty, et_body.toLMonoTy])
+            rw [varCloseT_toLMonoTy]
+          rw [h_et_ty]
           -- Step 2: Absorption: S absorbs Env2.subst
           have h_abs_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst := by
             rw [← h_env'] at h_abs_S
@@ -7858,14 +7870,96 @@ theorem resolveAux_HasType :
             exact h_abs_S
           -- Step 3: Use IH to get body typing under S
           have h_body_S := h_ty_body S h_abs_Env2 h_wf_S
-          -- h_body_S : HasType C Env1.context (varOpen ..) (.forAll [] (subst S et_body.toLMonoTy))
-          -- The proof applies `tabs` then upgrades via `HasType_subst_fresh_all`.
-          -- Key issue: tabs requires annotation matching (bty = none ∨ bty = some xty).
-          -- When bty = some bty_val, the original annotation may differ from the
-          -- resolved xty (after instantiateWithCheck). This is a spec limitation.
-          -- For bty = none: the proof goes through.
-          -- For bty = some: needs additional typing rule for annotated abs.
-          sorry
+          -- After rw [← h_et]; simp [toLMonoTy], goal is:
+          -- HasType ... (.forAll [] (subst S (subst Env2.subst (tcons "arrow" [xty, et_body.toLMonoTy]))))
+          -- By absorption: subst S (subst Env2.subst x) = subst S x
+          rw [LMonoTy.subst_absorbs S Env2.stateSubstInfo.subst
+            (.tcons "arrow" [xty, et_body.toLMonoTy]) h_abs_Env2]
+          -- Goal: HasType ... (.forAll [] (subst S (tcons "arrow" [xty, et_body.toLMonoTy])))
+          -- Distribute subst over tcons:
+          rw [LMonoTy.subst_tcons_pair S "arrow" xty et_body.toLMonoTy]
+          -- Goal: HasType ... (.forAll [] (tcons "arrow" [subst S xty, subst S et_body.toLMonoTy]))
+          -- Step 4: Apply tabs to get arrow [xty, subst S ety], then HasType_subst_fresh_all for S
+          -- tabs gives: arrow [xty, subst S et_body.toLMonoTy]
+          -- Then HasType_subst_fresh_all gives: subst S (arrow [xty, subst S ety])
+          --   = arrow [subst S xty, subst S (subst S ety)]
+          --   = arrow [subst S xty, subst S ety]  (by idempotence: SubstWF → absorbs S S)
+          -- Build context bridge
+          have h_xv_fresh_maps : Maps.find? Env.context.types xv = none := by
+            have h_per_scope := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv
+            suffices ∀ (types : Maps T.Identifier LTy),
+                (∀ m, m ∈ types → Map.find? m xv = none) →
+                Maps.find? types xv = none by
+              exact this _ h_per_scope
+            intro types h_all; induction types with
+            | nil => simp [Maps.find?]
+            | cons scope rest ih =>
+              simp [Maps.find?]
+              rw [h_all scope (List.mem_cons_self ..)]
+              exact ih (fun m hm => h_all m (List.mem_cons_of_mem _ hm))
+          have ⟨Env_mid, h_mid_ctx, h_env1_eq⟩ :
+              ∃ Env_mid : TEnv T.IDMeta, Env_mid.context = Env.context ∧
+                Env1 = TEnv.addInNewestContext Env_mid [(xv, .forAll [] xty)] := by
+            simp only [typeBoundVar, Bind.bind, Except.bind] at h_tbv
+            split at h_tbv; · simp at h_tbv
+            rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen; simp at h_tbv
+            have h_g_ctx := liftGenEnv_context Env _ Env_g h_gen
+            revert h_tbv; cases bty with
+            | some bty_val =>
+              simp only []; intro h_tbv
+              generalize h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g = res_ic at h_tbv
+              match res_ic with
+              | .error _ => simp at h_tbv
+              | .ok (_, Env_ic) =>
+                simp [Pure.pure, Except.pure] at h_tbv
+                obtain ⟨h_xv_eq, h_xty_eq, h_env1⟩ := h_tbv
+                subst h_xv_eq; subst h_xty_eq
+                exact ⟨Env_ic,
+                  (LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ Env_ic h_ic).trans h_g_ctx,
+                  h_env1.symm⟩
+            | none =>
+              simp only [Bind.bind, Except.bind]; intro h_tbv; split at h_tbv; · simp at h_tbv
+              rename_i v_tg h_tg; obtain ⟨xtyid, Env_tg⟩ := v_tg
+              simp [Pure.pure, Except.pure] at h_tbv
+              obtain ⟨h_xv_eq, h_xty_eq, h_env1⟩ := h_tbv
+              subst h_xv_eq; subst h_xty_eq
+              exact ⟨Env_tg,
+                (TEnv.genTyVar_context Env_g xtyid Env_tg h_tg).trans h_g_ctx,
+                h_env1.symm⟩
+          have h_ctx_bridge : Env1.context =
+              { Env.context with types := Env.context.types.insert xv (.forAll [] xty) } := by
+            subst h_env1_eq
+            simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_mid_ctx ⊢
+            rw [congrArg TContext.types h_mid_ctx, congrArg TContext.aliases h_mid_ctx]
+            congr 1
+            exact (Maps.insert_eq_addInNewest_fresh _ _ _ h_xv_fresh_maps).symm
+          -- Apply tabs
+          have h_tabs := HasType.tabs Env.context m (xv, some xty) (.forAll [] xty)
+            e_body (.forAll [] (LMonoTy.subst S et_body.toLMonoTy)) bty
+            (by sorry) -- LExpr.fresh: xv generated, not in e_body
+            (by simp [LTy.isMonoType, LTy.boundVars])
+            (by simp [LTy.isMonoType, LTy.boundVars])
+            (by rw [← h_ctx_bridge]; exact h_body_S)
+            (by cases bty with
+                | none => exact Or.inl rfl
+                | some bty_val =>
+                  right; exact ⟨bty_val, rfl,
+                    typeBoundVar_AnnotCompat C Env bty_val xv xty Env1 h_tbv h_aw⟩)
+          -- h_tabs : HasType ... (.forAll [] (tcons "arrow" [xty, subst S et_body.toLMonoTy]))
+          -- Apply HasType_subst_fresh_all to get subst S applied
+          have h1 := HasType_subst_fresh_all C Env.context (.abs m bty e_body)
+            (.tcons "arrow" [xty, LMonoTy.subst S et_body.toLMonoTy]) S
+            (by simp [LTy.toMonoType] at h_tabs; exact h_tabs)
+            (by sorry) -- freshness: keys of S in freeVars (arrow [xty, subst S ety])
+            h_wf_S
+          -- h1 : HasType ... (.forAll [] (subst S (tcons "arrow" [xty, subst S ety])))
+          -- Rewrite: subst S (tcons "arrow" [xty, subst S ety])
+          --        = tcons "arrow" [subst S xty, subst S (subst S ety)]
+          --        = tcons "arrow" [subst S xty, subst S ety]  (idempotence)
+          rw [LMonoTy.subst_tcons_pair S "arrow" xty (LMonoTy.subst S et_body.toLMonoTy)] at h1
+          rw [LMonoTy.subst_absorbs S S et_body.toLMonoTy
+            (Subst.absorbs_refl S h_wf_S)] at h1
+          exact h1
   | .quant m qk bty tr e_body =>
     intro et C Env Env' h h_envwf h_ne h_fwf
     have h_aw := h_envwf.aliasesWF
