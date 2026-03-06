@@ -14,6 +14,9 @@ public section
 /-! # Type Constructor
 
 A type constructor declaration that can be shared across dialects.
+This file lives under `DL/` rather than `DL/Lambda/` because type
+constructors are dialect-independent; the Lambda import is only needed
+for `LTy`/`LMonoTy` in `toType`.
 -/
 
 inductive Boundedness where
