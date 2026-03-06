@@ -701,6 +701,10 @@ def main() -> int:
         print(f"Logging .core.st programs to: {args.log_dir}")
 
     strata_results = run_strata(CORPUS, args.lake_exe, log_dir=args.log_dir)
+    if len(strata_results) != len(CORPUS):
+        print(f"ERROR: expected {len(CORPUS)} results from DiffTestCore, got {len(strata_results)}.",
+              file=sys.stderr)
+        return 2
 
     counts: dict[str, int] = {"agree": 0, "bug": 0, "known_gap": 0, "investigate": 0}
     bugs, gaps, investigations = [], [], []
