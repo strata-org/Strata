@@ -7286,44 +7286,6 @@ private theorem resolveAux_output_type_no_future_vars :
     ((resolveAux_preserves_combined e.sizeOf e rfl et C Env Env' h h_ne).2
       h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.aliasesWF h_fwf h_envwf.boundVarsFresh).2
 
-private theorem Map.insert_fresh_eq_append [DecidableEq α]
-    (m : Map α β) (x : α) (v : β) (h : Map.find? m x = none) :
-    Map.insert m x v = List.append m [(x, v)] := by
-  induction m with
-  | nil => unfold Map.insert; rfl
-  | cons hd tl ih =>
-    obtain ⟨a, b⟩ := hd
-    simp only [Map.find?] at h
-    split at h
-    · exact absurd h (by simp)
-    · rename_i h_ne
-      show (if a = x then (x, v) :: tl else (a, b) :: Map.insert tl x v) =
-           (a, b) :: List.append tl [(x, v)]
-      rw [if_neg h_ne]
-      congr 1
-      exact ih h
-
-private theorem Maps.find?_none_newest [DecidableEq α]
-    (ms : Maps α β) (x : α) (h : Maps.find? ms x = none) :
-    Map.find? (Maps.newest ms) x = none := by
-  match ms with
-  | [] => simp [Maps.newest, Map.find?]
-  | m :: rest =>
-    simp only [Maps.newest]
-    simp only [Maps.find?] at h
-    split at h
-    · assumption
-    · exact absurd h (by simp)
-
-private theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
-    (ms : Maps α β) (x : α) (v : β) (h : Maps.find? ms x = none) :
-    Maps.insert ms x v = Maps.addInNewest ms [(x, v)] := by
-  unfold Maps.insert
-  simp [h]
-  rw [Map.insert_fresh_eq_append _ _ _ (Maps.find?_none_newest ms x h)]
-  unfold Maps.addInNewest
-  rfl
-
 theorem resolveAux_HasType :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
       (Env Env' : TEnv T.IDMeta),

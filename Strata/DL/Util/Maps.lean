@@ -532,4 +532,27 @@ theorem Maps.find?_addInNewest_single [DecidableEq α]
     · left; rw [h1]; exact ⟨rfl, h2⟩
     · right; rw [h1]
 
+/-- When `Maps.find? ms x = none`, the newest scope also has `find? = none`. -/
+theorem Maps.find?_none_newest [DecidableEq α]
+    (ms : Maps α β) (x : α) (h : Maps.find? ms x = none) :
+    Map.find? (Maps.newest ms) x = none := by
+  match ms with
+  | [] => simp [Maps.newest, Map.find?]
+  | m :: rest =>
+    simp only [Maps.newest]
+    simp only [Maps.find?] at h
+    split at h
+    · assumption
+    · exact absurd h (by simp)
+
+/-- When the key is fresh (not found in any scope), `Maps.insert` equals `Maps.addInNewest`. -/
+theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (h : Maps.find? ms x = none) :
+    Maps.insert ms x v = Maps.addInNewest ms [(x, v)] := by
+  unfold Maps.insert
+  simp [h]
+  rw [Map.insert_fresh_eq_append _ _ _ (Maps.find?_none_newest ms x h)]
+  unfold Maps.addInNewest
+  rfl
+
 ---------------------------------------------------------------------
