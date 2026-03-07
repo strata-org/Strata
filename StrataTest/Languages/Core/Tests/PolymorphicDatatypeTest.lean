@@ -473,4 +473,62 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify polyWithUserDatatypePgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 11: Non-datatype parameterized by a datatype
+-- (Abstract type Seq's argument Inner must still be registered in SMT)
+---------------------------------------------------------------------
+
+def nonDatatypeWithDatatypeArgPgm : Program :=
+#strata
+program Core;
+
+type Seq (a: Type);
+
+datatype Option (a : Type) { None(), Some(val: a) };
+
+datatype Inner () {
+  MkInner(x: int)
+};
+
+datatype Middle () {
+  MkMiddle(items: (Seq Inner))
+};
+
+datatype Outer () {
+  MkOuter(
+    mid: Option Middle,
+    flag: Option bool
+  )
+};
+
+var v : Outer;
+
+procedure Test() returns ()
+spec { ensures true; }
+{
+  assert [test]: Option..isSome(Outer..flag(v));
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram nonDatatypeWithDatatypeArgPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: assert_test_calls_Outer..flag_0
+Property: assert
+Result: ✅ pass
+
+Obligation: test
+Property: assert
+Result: ❌ fail
+
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify nonDatatypeWithDatatypeArgPgm (options := .quiet)
+
 end Strata.PolymorphicDatatypeTest
