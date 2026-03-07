@@ -39,9 +39,20 @@ structure SMT.Context where
   /-- Stores the TypeFactory purely for ordering datatype declarations
   correctly (TypeFactory in topological order) -/
   typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
-  seenDatatypes : Std.HashSet String := {}
+  seenDatatypes : List String := []
   datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
 deriving Repr, Inhabited
+
+deriving instance DecidableEq for Lambda.LConstr
+deriving instance DecidableEq for Lambda.LDatatype
+
+instance [DecidableEq α] : DecidableEq (Lambda.MutualDatatype α) :=
+  inferInstance
+
+instance [DecidableEq α] : DecidableEq (@Lambda.TypeFactory α) :=
+  show DecidableEq (Array (Lambda.MutualDatatype α)) from inferInstance
+
+deriving instance DecidableEq for SMT.Context
 
 def SMT.Context.default : SMT.Context := {}
 
@@ -79,7 +90,7 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMet
     let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
     let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
     let m := Map.union m (u.fmap (fun (_, x) => (.selector, x)))
-    { ctx with seenDatatypes := ctx.seenDatatypes.insert d.name, datatypeFuns := m }
+    { ctx with seenDatatypes := d.name :: ctx.seenDatatypes, datatypeFuns := m }
 
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
   { ctx with typeFactory := tf }
