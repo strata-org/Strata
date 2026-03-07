@@ -13,7 +13,7 @@ assert_opt_name_none_or_bar: ✔️ always true if reached (at byte 11278)
 
 ensures_maybe_except_none: ✔️ always true if reached (at byte 10984)
 
-Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_3: ❌ fail
+Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_3: ➖ can be false and is reachable from declaration entry
 
 test_helper_procedure_assert_opt_name_none_or_str_4: ✔️ always true if reached (at byte 11131)
 
