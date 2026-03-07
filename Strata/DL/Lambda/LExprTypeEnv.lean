@@ -92,6 +92,9 @@ inductive AliasEquiv (aliases : List TypeAlias) : LMonoTy → LMonoTy → Prop w
   /-- Single-step alias expansion at the top level. -/
   | expand : TypeAlias.expandsTo aliases name args mty →
       AliasEquiv aliases (.tcons name args) mty
+  /-- Single-step alias collapse at the top level (reverse of expand). -/
+  | collapse : TypeAlias.expandsTo aliases name args mty →
+      AliasEquiv aliases mty (.tcons name args)
   /-- Congruence: alias-equivalent argument lists give alias-equivalent tcons types. -/
   | cong_tcons : AliasEquivList aliases args args' →
       AliasEquiv aliases (.tcons name args) (.tcons name args')
