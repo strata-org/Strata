@@ -45,7 +45,7 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
   | .bugFindingAssumingCompleteSpec =>
     if outcome.passAndReachable || outcome.passReachabilityUnknown then
       .none
-    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown 
+    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown
          || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
       .error  -- Any counterexample is an error when preconditions are complete
     else if outcome.unreachable then

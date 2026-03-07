@@ -277,7 +277,7 @@ def isPassIfReachable := passReachabilityUnknown
 def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
-def label (o : VCOutcome) (property : Imperative.PropertyType := .assert) 
+def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
   -- Simplified labels for minimal check level
   if checkLevel == .minimal then
