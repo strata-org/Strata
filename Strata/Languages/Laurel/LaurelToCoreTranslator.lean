@@ -75,6 +75,7 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  preludeFunctions : List String
 
 /-- The translation monad: state over Id -/
 abbrev TranslateM := StateT TranslateState Id
@@ -185,7 +186,7 @@ def translateExpr (expr : StmtExprMd)
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
-      if isPureContext && !model.isFunction callee then
+      if isPureContext && !((model.isFunction callee) || (callee.text ∈ s.preludeFunctions)) then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
@@ -233,7 +234,16 @@ def translateExpr (expr : StmtExprMd)
   | .ContractOf _ _ => panic "contractOf expression not implemented"
   | .Abstract => panic "abstract expression not implemented"
   | .All => panic "all expression not implemented"
-  | .InstanceCall _ _ _ => panic "InstanceCall not implemented"
+  | .InstanceCall target callee args =>
+      if isPureContext then
+        disallowed expr "calls to instance methods are not supported in functions or contracts"
+      else
+        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
+        let coreTarget ← translateExpr target boundVars isPureContext
+        let withTarget := .app () fnOp coreTarget
+        args.attach.foldlM (fun acc ⟨arg, _⟩ => do
+          let re ← translateExpr arg boundVars isPureContext
+          return .app () acc re) withTarget
   | .PureFieldUpdate _ _ _ => panic "This expression not implemented"
   | .This => panic "This expression not implemented"
   termination_by expr
@@ -281,7 +291,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
-          if model.isFunction callee then
+          if (model.isFunction callee) || (callee.text ∈ s.preludeFunctions) then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
             return [Core.Statement.init ident coreType (some coreExpr) md]
@@ -291,7 +301,14 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
             let defaultExpr := defaultExprForType model ty
             let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
-            return [initStmt, callStmt]
+            return ([initStmt, callStmt])
+      | some (⟨ .InstanceCall .., _⟩) =>
+          -- Instance method call as initializer: var name := target.method(args)
+          -- Havoc the result since instance methods may be on unmodeled types
+          let defaultExpr := defaultExprForType model ty
+          let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
+          let havocStmt := Core.Statement.havoc ident md
+          return ([initStmt, havocStmt])
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
           return [Core.Statement.init ident coreType (some coreExpr) md]
@@ -305,14 +322,17 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           -- Check if RHS is a procedure call (not a function)
           match value.val with
           | .StaticCall callee args =>
-              if model.isFunction callee then
+              if (model.isFunction callee) || (callee.text ∈ s.preludeFunctions) then
                 -- Functions are translated as expressions
                 let coreExpr ← translateExpr value
                 return [Core.Statement.set ident coreExpr md]
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
-                return [Core.Statement.call [ident] callee.text coreArgs md]
+                return ([Core.Statement.call [ident] callee.text coreArgs md])
+          | .InstanceCall .. =>
+              -- Instance method call: havoc the target variable
+              return ([Core.Statement.havoc ident md])
           | _ =>
               let coreExpr ← translateExpr value
               return [Core.Statement.set ident coreExpr md]
@@ -326,7 +346,14 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                 match t.val with
                 | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
-              return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
+              return ([Core.Statement.call lhsIdents callee.text coreArgs value.md])
+          | .InstanceCall .. =>
+              -- Instance method call: havoc all target variables
+              let havocStmts := targets.filterMap fun t =>
+                match t.val with
+                | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
+                | _ => none
+              return (havocStmts)
           | _ =>
               panic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
@@ -338,12 +365,15 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       return [Imperative.Stmt.ite bcond bthen belse .empty]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
-      if model.isFunction callee then
+      if (model.isFunction callee) || (callee.text ∈ s.preludeFunctions) then
         -- Functions as statements have no effect (shouldn't happen in well-formed programs)
         return []
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        return [Core.Statement.call [] callee.text coreArgs md]
+        return ([Core.Statement.call [] callee.text coreArgs md])
+  | .InstanceCall .. =>
+      -- Instance method call as statement: no return value, treated as no-op
+      return ([])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
@@ -454,7 +484,7 @@ private def isPureExpr(expr: StmtExprMd): Bool :=
   | .This => panic s!"isPureExpr not implemented for This"
   | .AsType .. => panic s!"isPureExpr not supported for AsType"
   | .IsType .. => panic s!"isPureExpr not supported for IsType"
-  | .InstanceCall .. => panic s!"isPureExpr not implemented for InstanceCall"
+  | .InstanceCall .. => false
   -- Verification specific
   | .Forall .. => panic s!"isPureExpr not implemented for Forall"
   | .Exists .. => panic s!"isPureExpr not implemented for Exists"
@@ -552,7 +582,7 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
 /--
 Translate Laurel Program to Core Program
 -/
-def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+def translate (program : Program) (preludeFunctionNames: List String): Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -587,7 +617,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
   -- External procedures are completely ignored (not translated to Core).
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
   let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-  let initState : TranslateState := { model := model }
+  let initState : TranslateState := { model := model, preludeFunctions:= preludeFunctionNames}
   -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
   let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
     match tryTranslatePureToFunction p initState with
@@ -636,10 +666,10 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 /--
 Verify a Laurel program using an SMT solver
 -/
-def verifyToVcResults (program : Program)
+def verifyToVcResults (program : Program) (preludeFunctionNames: List String)
     (options : VerifyOptions := .default)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let (strataCoreProgram, translateDiags) ← match translate program with
+  let (strataCoreProgram, translateDiags) ← match translate program preludeFunctionNames with
     | .error translateErrorDiags => return .error translateErrorDiags
     | .ok result => pure result
 
@@ -658,16 +688,16 @@ def verifyToVcResults (program : Program)
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program) (preludeFunctionNames: List String)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
-  let results <- verifyToVcResults program options
+  let results <- verifyToVcResults program preludeFunctionNames options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
-  let results <- verifyToVcResults program options
+def verifyToDiagnosticModels (program : Program) (preludeFunctionNames: List String) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults program preludeFunctionNames options
   match results with
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel

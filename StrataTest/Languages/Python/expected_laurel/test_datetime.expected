@@ -1,0 +1,30 @@
+
+==== Verification Results ====
+PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
+PAnd_body_calls_Any_to_bool_0: ✅ pass
+PAnd_body_calls_Any_to_bool_1: ✅ pass
+POr_body_calls_Any_to_bool_0: ✅ pass
+POr_body_calls_Any_to_bool_1: ✅ pass
+ret_type: ✅ pass (at byte 25158)
+ret_type: ✅ pass (at byte 25591)
+ret_pos: ✅ pass (at byte 26089)
+assert_name_is_foo: ✅ pass (at byte 27093)
+assert_opt_name_none_or_str: ✅ pass (at byte 27156)
+assert_opt_name_none_or_bar: ✅ pass (at byte 27260)
+ensures_maybe_except_none: ✅ pass (at byte 27016)
+(Origin_datetime_date_Requires)d_type: ✅ pass (at byte 25112)
+(Origin_timedelta_Requires)days_type: ✅ pass (at byte 25792)
+(Origin_timedelta_Requires)hours_type: ✅ pass (at byte 25865)
+(Origin_timedelta_Requires)days_pos: ✅ pass (at byte 25941)
+(Origin_timedelta_Requires)hours_type: ✅ pass (at byte 26013)
+assert_assert(554)_calls_Any_to_bool_0: ✅ pass (at line 21, col 0)
+assert(554): ✅ pass (at line 21, col 0)
+assert_assert(673)_calls_Any_to_bool_0: ✅ pass (at line 25, col 0)
+assert(673): ✅ pass (at line 25, col 0)
+assert_assert(758)_calls_Any_to_bool_0: ✅ pass (at line 27, col 0)
+assert(758): ✅ pass (at line 27, col 0)
+assert_assert(798)_calls_Any_to_bool_0: ✅ pass (at line 30, col 0)
+assert(798): ✅ pass (at line 30, col 0)
