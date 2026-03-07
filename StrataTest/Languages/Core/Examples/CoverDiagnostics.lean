@@ -23,7 +23,7 @@ procedure Test() returns ()
 #end
 
 /--
-info: #["cover property is not satisfiable", "assertion does not hold"]
+info: #["cover property is not satisfiable if reached", "assertion does not hold"]
 -/
 #guard_msgs in
 #eval do
