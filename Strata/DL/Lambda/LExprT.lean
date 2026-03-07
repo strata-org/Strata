@@ -341,6 +341,13 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
 
 protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
+  -- Ensure the context has at least one scope for type bindings.
+  -- This is required by resolveAux for the abs/quant cases, where
+  -- addInNewestContext/eraseFromContext round-trip correctly only
+  -- when there is at least one scope.
+  let Env := if Env.context.types.isEmpty then
+      Env.updateContext { Env.context with types := [[]] }
+    else Env
   let (et, Env) ← resolveAux C Env e
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)
 
