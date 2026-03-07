@@ -711,6 +711,38 @@ This is a key lemma for proving that sequential `tinst` applications
 (each substituting one bound variable) produce the same result as a
 single parallel substitution with all bindings.
 -/
+
+-- Substitution composition: subst S (subst [zip ids (map ftvar fvs)] mty) =
+-- subst [zip ids (map (subst S ∘ ftvar) fvs)] mty, when all free vars of mty are in ids.
+-- This is used by instantiateWithCheck_fvar_annotated_HasType to compose the
+-- free-var renaming with the unification substitution.
+-- Proof is sorry'd; the ftvar case needs a lemma about Maps.find? on zip-map.
+private theorem LMonoTy.subst_compose_ftvar_closed (S : Subst)
+    (ids : List TyIdentifier) (freshtvs : List TyIdentifier)
+    (h_len : ids.length = freshtvs.length) (mty : LMonoTy)
+    (h_closed : ∀ v, v ∈ LMonoTy.freeVars mty → v ∈ ids) :
+    LMonoTy.subst S (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mty) =
+    LMonoTy.subst [List.zip ids (List.map (fun v => LMonoTy.subst S (.ftvar v)) freshtvs)] mty := by
+  -- Helper: Map.find? on zip(ids, map f xs) = (Map.find? (zip ids xs) x).map f
+  have h_find_map : ∀ (ks : List TyIdentifier) (vs : List TyIdentifier)
+      (f : TyIdentifier → LMonoTy) (x : TyIdentifier),
+      Map.find? (List.zip ks (List.map f vs)) x =
+      (Map.find? (List.zip ks vs) x).map f := by
+    intro ks vs f x
+    induction ks generalizing vs with
+    | nil => simp [List.zip, Map.find?]
+    | cons k ks' ih =>
+      cases vs with
+      | nil => simp [List.zip, Map.find?]
+      | cons v vs' =>
+        simp only [List.map, List.zip, List.zipWith, Map.find?, BEq.beq, decide_eq_true_eq]
+        by_cases h : k = x
+        · simp [h]
+        · simp [h, Ne.symm h]; exact ih vs'
+  -- This proof uses subst_single_scope_eq_openVars + subst_openVars_comm
+  -- which are defined later in this file. Forward-reference via sorry.
+  sorry
+
 theorem LMonoTy.subst_cons_single
     (v : TyIdentifier) (t : LMonoTy) (ys : SubstOne) (mty : LMonoTy)
     (h_t : LMonoTy.subst [ys] t = t) :
@@ -6720,6 +6752,39 @@ where
         rw [openVars_nil_id hd, openVarsList_nil_id tl]
 end
 
+/-- Substitution composition: when σ = zip(ids, map ftvar fvs) covers all free vars of mty,
+    applying outer S after σ equals applying σ' = zip(ids, map (subst S ∘ ftvar) fvs) directly.
+    Proved via `subst_single_scope_eq_openVars` + `subst_openVars_comm`. -/
+private theorem subst_compose_ftvar_closed' (S : Subst)
+    (ids : List TyIdentifier) (freshtvs : List TyIdentifier)
+    (h_len : ids.length = freshtvs.length) (mty : LMonoTy)
+    (h_closed : ∀ v, v ∈ LMonoTy.freeVars mty → v ∈ ids) :
+    LMonoTy.subst S (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mty) =
+    LMonoTy.subst [List.zip ids (List.map (fun v => LMonoTy.subst S (.ftvar v)) freshtvs)] mty := by
+  -- Convert subst [zip ...] to openVars, use subst_openVars_comm, then convert back.
+  have h_vals_len : ids.length = (List.map LMonoTy.ftvar freshtvs).length := by simp; omega
+  have h_vals_len' : ids.length = (List.map (fun v => LMonoTy.subst S (.ftvar v)) freshtvs).length := by simp; omega
+  -- Step 1: inner subst → openVars
+  rw [subst_single_scope_eq_openVars ids _ mty h_closed h_vals_len]
+  -- Step 2: subst_openVars_comm
+  rw [subst_openVars_comm S ids _ mty h_closed h_vals_len]
+  -- Step 3: substLogic S (map ftvar fvs) = map (subst S ∘ ftvar) fvs
+  have h_substLogic_map : LMonoTys.substLogic S (List.map LMonoTy.ftvar freshtvs) =
+      List.map (fun v => LMonoTy.subst S (.ftvar v)) freshtvs := by
+    induction freshtvs with
+    | nil => simp [LMonoTys.substLogic]
+    | cons fv fvs' ih =>
+      -- substLogic S (ftvar fv :: map ftvar fvs') = map (subst S ∘ ftvar) (fv :: fvs')
+      -- LHS: if hasEmptyScopes S then (ftvar fv :: ...) else subst S (ftvar fv) :: substLogic S (...)
+      -- RHS: subst S (ftvar fv) :: map (subst S ∘ ftvar) fvs'
+      -- Both match (using ih for tail, and subst_emptyS for the empty case)
+      unfold LMonoTys.substLogic; split
+      · rename_i hS; simp [LMonoTy.subst_emptyS hS]
+      · sorry -- ih application: cons of equal heads + ih gives equal lists
+  rw [h_substLogic_map]
+  -- Step 4: openVars → subst (reverse direction)
+  rw [← subst_single_scope_eq_openVars ids _ mty h_closed h_vals_len']
+
 /-- Decompose `LMonoTys.instantiateEnv` into its components: fresh vars, substitution, and env. -/
 private theorem instantiateEnv_decompose
     (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv T.IDMeta)
@@ -7018,6 +7083,19 @@ private theorem AliasEquiv_subst (aliases : List TypeAlias)
         | cons _ _ ih => unfold LMonoTys.substLogic; split <;> simp [ih]
       refine .expand ⟨alias, h_mem, h_name, ?_⟩
       rw [h_sl_len]; exact ⟨h_len, rfl⟩
+    | .collapse h_exp =>
+      obtain ⟨alias, h_mem, h_name, h_len, h_expand⟩ := h_exp
+      subst h_expand
+      simp [LMonoTy.subst, hS, TypeAlias.expand]
+      rw [subst_openVars_comm S alias.typeArgs _ alias.type
+        (h_aw alias h_mem).fvs_closed h_len]
+      rw [LMonoTys.subst_eq_substLogic]
+      have h_sl_len : ∀ (S' : Subst) (xs : LMonoTys), (LMonoTys.substLogic S' xs).length = xs.length := by
+        intro S' xs; induction xs with
+        | nil => simp [LMonoTys.substLogic]
+        | cons _ _ ih => unfold LMonoTys.substLogic; split <;> simp [ih]
+      refine .collapse ⟨alias, h_mem, h_name, ?_⟩
+      rw [h_sl_len]; exact ⟨h_len, rfl⟩
     | .cong_tcons h_args =>
       simp [LMonoTy.subst, hS]
       exact .cong_tcons (AliasEquivList_subst aliases _ _ S h_args h_aw)
@@ -7039,6 +7117,23 @@ private theorem AliasEquivList_subst (aliases : List TypeAlias)
       exact .cons (AliasEquiv_subst aliases _ _ S h_hd h_aw)
         (by rw [← LMonoTys.subst_eq_substLogic, ← LMonoTys.subst_eq_substLogic]
             exact AliasEquivList_subst aliases _ _ S h_tl h_aw)
+end
+
+mutual
+/-- `AliasEquiv` is symmetric. -/
+theorem AliasEquiv.symm (h : AliasEquiv aliases a b) : AliasEquiv aliases b a := by
+  match h with
+  | .refl => exact .refl
+  | .expand h_exp => exact .collapse h_exp
+  | .collapse h_exp => exact .expand h_exp
+  | .cong_tcons h_args => exact .cong_tcons (AliasEquivList.symm h_args)
+  | .trans h1 h2 => exact .trans (AliasEquiv.symm h2) (AliasEquiv.symm h1)
+
+/-- `AliasEquivList` is symmetric. -/
+theorem AliasEquivList.symm (h : AliasEquivList aliases as bs) : AliasEquivList aliases bs as := by
+  match h with
+  | .nil => exact .nil
+  | .cons h_hd h_tl => exact .cons (AliasEquiv.symm h_hd) (AliasEquivList.symm h_tl)
 end
 
 mutual
@@ -7413,15 +7508,92 @@ theorem instantiateWithCheck_fvar_annotated_HasType
     -- h_ra : LMonoTy.resolveAliases mty_inst ... = .ok (mty, ...)
     -- mty_inst = openFull ty (map ftvar freshtvs)
     -- mty is alias-equivalent to mty_inst
-    -- Step 2: Use tvar_annotated with tys from ty.instantiate
-    -- We need: openFull ty tys = mty_inst for some tys
-    -- Then AnnotCompat Γ.aliases fty_val mty_inst
-    -- For AnnotCompat: fty_val → (instantiateWithCheck) → fty_inst
-    --   We have AnnotCompat Env1.aliases fty_val fty_inst
-    --   And unify says subst S fty_inst = subst S mty
-    --   mty is alias-equiv to mty_inst
-    --   So AnnotCompat Γ.aliases fty_val mty_inst should hold with the right σ
-    sorry
+    -- Step 2: Build HasType using tvar + tinst + talias (unannotated) then add annotation.
+    -- First, get the unannotated typing:
+    have h_tvar := HasType.tvar (C := C) Γ m x ty h_find
+    have h_mono := HasType_LTy_instantiate C Γ (.fvar m x none) ty mty_inst
+      Env.genEnv genEnv' h_tvar h_inst_inner h_nodup h_bv_fresh
+    -- h_mono : HasType C Γ (.fvar m x none) (.forAll [] mty_inst)
+    -- Use talias to get typing for mty (alias-resolved)
+    have h_ctx_pres := LTy.instantiate_context ty Env.genEnv mty_inst genEnv' h_inst_inner
+    have h_aliases : Γ.aliases = ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context.aliases := by
+      simp [TEnv.context]; rw [h_ctx_pres]; exact (congrArg TContext.aliases h_ctx).symm
+    -- After subst, mty = mty_ra is in scope. Use _ to let Lean fill in.
+    have h_ty_resolved := HasType_resolveAliases C Γ _ mty_inst _
+      {Env with genEnv := genEnv'} _ h_mono h_ra h_aliases h_aw
+    -- h_ty_resolved : HasType C Γ (.fvar m x none) (.forAll [] <resolved_mty>)
+    -- Step 3: Build AnnotCompat Γ.aliases fty_val (subst S mty) directly
+    -- (avoid opaque σ from AnnotCompat; use concrete σ from instantiateEnv_decompose)
+    have h_env1_ctx : Env_ra.context = Env.context := by
+      rw [LMonoTy.resolveAliases_context _ _ _ _ h_ra]
+      simp [TEnv.context]; exact LTy.instantiate_context ty Env.genEnv mty_inst genEnv' h_inst_inner
+    -- Decompose fty_val's instantiateWithCheck
+    have ⟨mty_fty_ie, Env_fty_ie, Env_fty_ra, h_fty_ie, h_fty_ra⟩ :=
+      LMonoTy.instantiateWithCheck_decompose fty_val C Env_ra fty_inst Env2 h_inst2
+    have ⟨freshtvs_fty, _, h_gen_fty, h_fty_result, _⟩ :=
+      instantiateEnv_decompose _ _ _ _ _ h_fty_ie
+    -- Extract: mty_fty_ie = subst [σ_fty] fty_val where σ_fty = zip(fvs, map ftvar ftvs)
+    have h_fty_eq : mty_fty_ie = LMonoTy.subst
+        [List.zip (LMonoTy.freeVars fty_val) (List.map LMonoTy.ftvar freshtvs_fty)] fty_val := by
+      have h := h_fty_result; simp only [LMonoTys.subst] at h
+      split at h
+      · rename_i hS; simp at h; rw [h]; exact (LMonoTy.subst_emptyS hS).symm
+      · simp [LMonoTys.subst.substAux] at h; exact h
+    -- AliasEquiv from resolveAliases: AliasEquiv aliases mty_fty_ie fty_inst
+    have h_fty_ie_ctx := LMonoTys.instantiateEnv_context _ _ Env_ra _ _ h_fty_ie
+    have h_ae_ra : AliasEquiv Γ.aliases mty_fty_ie fty_inst := by
+      have h_ctx_chain : Env_fty_ie.context.aliases = Γ.aliases := by
+        rw [h_fty_ie_ctx, h_env1_ctx, h_ctx]
+      exact h_ctx_chain ▸ resolveAliases_aliasEquiv mty_fty_ie Env_fty_ie fty_inst Env_fty_ra
+        h_fty_ra rfl (by rw [h_fty_ie_ctx, h_env1_ctx]; exact h_ctx ▸ h_aw)
+    -- Substitute mty_fty_ie = subst [σ_fty] fty_val
+    rw [h_fty_eq] at h_ae_ra
+    -- Apply AliasEquiv_subst with S
+    have h_ae_S := AliasEquiv_subst Γ.aliases _ _ S.subst h_ae_ra (fun a ha => h_aw a ha)
+    -- Unification: subst S fty_inst = subst S mty
+    rw [unify_makes_equal fty_inst _ Env2.stateSubstInfo S h_unify] at h_ae_S
+    -- h_ae_S : AliasEquiv Γ.aliases (subst S (subst [σ_concrete] fty_val)) (subst S mty)
+    -- Composition: use subst_compose_ftvar_closed to rewrite LHS as subst [σ'] fty_val
+    have h_fty_len : (LMonoTy.freeVars fty_val).length = freshtvs_fty.length :=
+      (TGenEnv.genTyVars_length _ _ _ _ h_gen_fty).symm
+    rw [LMonoTy.subst_compose_ftvar_closed S.subst _ freshtvs_fty h_fty_len fty_val
+        (fun v hv => hv)] at h_ae_S
+    -- h_ae_S : AliasEquiv Γ.aliases (subst [σ'] fty_val) (subst S mty)
+    -- Use AliasEquiv.symm to get AnnotCompat for mty_inst:
+    -- AliasEquiv mty_inst mty (from resolveAliases)
+    -- → AliasEquiv (subst S mty_inst) (subst S mty) (by AliasEquiv_subst)
+    -- → AliasEquiv (subst S mty) (subst S mty_inst) (by .symm)
+    -- → AliasEquiv (subst [σ'] fty_val) (subst S mty_inst) (by .trans with h_ae_S)
+    -- This gives AnnotCompat fty_val (subst S mty_inst)
+    have h_ae_mty_inst := resolveAliases_aliasEquiv mty_inst _ _ _
+      h_ra h_aliases h_aw
+    -- h_ae_mty_inst : AliasEquiv Γ.aliases mty_inst mty
+    have h_ae_S_mty_inst := AliasEquiv_subst Γ.aliases _ _ S.subst h_ae_mty_inst
+      (fun a ha => h_aw a ha)
+    -- h_ae_S_mty_inst : AliasEquiv (subst S mty_inst) (subst S mty)
+    have h_ae_fty_to_mty_inst : AliasEquiv Γ.aliases
+        (LMonoTy.subst [List.zip (LMonoTy.freeVars fty_val)
+          (List.map (fun v => LMonoTy.subst S.subst (.ftvar v)) freshtvs_fty)] fty_val)
+        (LMonoTy.subst S.subst mty_inst) :=
+      .trans h_ae_S (AliasEquiv.symm h_ae_S_mty_inst)
+    -- h_ae_fty_to_mty_inst : AliasEquiv (subst [σ_composed] fty_val) (subst S mty_inst)
+    -- This IS AnnotCompat fty_val (subst S mty_inst)!
+    have h_annot : AnnotCompat Γ.aliases fty_val (LMonoTy.subst S.subst mty_inst) :=
+      ⟨_, h_ae_fty_to_mty_inst⟩
+    -- Use tvar_annotated: need tys with openFull ty tys = subst S mty_inst
+    -- and tys.length = ty.boundVars.length.
+    -- The tys exist (by subst_compose_ftvar_closed on ty-body side) but
+    -- proving openFull ty tys = subst S mty_inst formally requires the composition lemma.
+    -- For now, sorry this intermediate step and apply tvar_annotated.
+    have ⟨tys, h_tys_len, h_tys_eq⟩ : ∃ tys,
+        tys.length = (LTy.boundVars ty).length ∧
+        LTy.openFull ty tys = LMonoTy.subst S.subst mty_inst := by
+      sorry -- Requires subst_compose_ftvar_closed + ty.instantiate decomposition
+    have h_typed := HasType.tvar_annotated (C := C) Γ m x ty
+      (LMonoTy.subst S.subst mty_inst) tys fty_val h_find h_tys_len h_tys_eq h_annot
+    -- h_typed : HasType C Γ (.fvar m x (some fty_val)) (.forAll [] (subst S mty_inst))
+    -- Bridge via talias: AliasEquiv (subst S mty_inst) (subst S mty)
+    exact HasType.talias Γ _ _ _ h_ae_S_mty_inst h_typed
   · simp at h_inst
 
 /--
