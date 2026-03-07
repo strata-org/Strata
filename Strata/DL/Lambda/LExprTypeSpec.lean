@@ -712,37 +712,6 @@ This is a key lemma for proving that sequential `tinst` applications
 single parallel substitution with all bindings.
 -/
 
--- Substitution composition: subst S (subst [zip ids (map ftvar fvs)] mty) =
--- subst [zip ids (map (subst S ∘ ftvar) fvs)] mty, when all free vars of mty are in ids.
--- This is used by instantiateWithCheck_fvar_annotated_HasType to compose the
--- free-var renaming with the unification substitution.
--- Proof is sorry'd; the ftvar case needs a lemma about Maps.find? on zip-map.
-private theorem LMonoTy.subst_compose_ftvar_closed (S : Subst)
-    (ids : List TyIdentifier) (freshtvs : List TyIdentifier)
-    (h_len : ids.length = freshtvs.length) (mty : LMonoTy)
-    (h_closed : ∀ v, v ∈ LMonoTy.freeVars mty → v ∈ ids) :
-    LMonoTy.subst S (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mty) =
-    LMonoTy.subst [List.zip ids (List.map (fun v => LMonoTy.subst S (.ftvar v)) freshtvs)] mty := by
-  -- Helper: Map.find? on zip(ids, map f xs) = (Map.find? (zip ids xs) x).map f
-  have h_find_map : ∀ (ks : List TyIdentifier) (vs : List TyIdentifier)
-      (f : TyIdentifier → LMonoTy) (x : TyIdentifier),
-      Map.find? (List.zip ks (List.map f vs)) x =
-      (Map.find? (List.zip ks vs) x).map f := by
-    intro ks vs f x
-    induction ks generalizing vs with
-    | nil => simp [List.zip, Map.find?]
-    | cons k ks' ih =>
-      cases vs with
-      | nil => simp [List.zip, Map.find?]
-      | cons v vs' =>
-        simp only [List.map, List.zip, List.zipWith, Map.find?, BEq.beq, decide_eq_true_eq]
-        by_cases h : k = x
-        · simp [h]
-        · simp [h, Ne.symm h]; exact ih vs'
-  -- This proof uses subst_single_scope_eq_openVars + subst_openVars_comm
-  -- which are defined later in this file. Forward-reference via sorry.
-  sorry
-
 theorem LMonoTy.subst_cons_single
     (v : TyIdentifier) (t : LMonoTy) (ys : SubstOne) (mty : LMonoTy)
     (h_t : LMonoTy.subst [ys] t = t) :
@@ -6776,16 +6745,13 @@ private theorem subst_compose_ftvar_closed' (S : Subst)
   -- Step 3: substLogic S (map ftvar fvs) = map (subst S ∘ ftvar) fvs
   have h_substLogic_map : LMonoTys.substLogic S (List.map LMonoTy.ftvar freshtvs) =
       List.map (fun v => LMonoTy.subst S (.ftvar v)) freshtvs := by
+    clear h_vals_len h_vals_len' h_len h_closed
     induction freshtvs with
     | nil => simp [LMonoTys.substLogic]
     | cons fv fvs' ih =>
-      -- substLogic S (ftvar fv :: map ftvar fvs') = map (subst S ∘ ftvar) (fv :: fvs')
-      -- LHS: if hasEmptyScopes S then (ftvar fv :: ...) else subst S (ftvar fv) :: substLogic S (...)
-      -- RHS: subst S (ftvar fv) :: map (subst S ∘ ftvar) fvs'
-      -- Both match (using ih for tail, and subst_emptyS for the empty case)
       unfold LMonoTys.substLogic; split
       · rename_i hS; simp [LMonoTy.subst_emptyS hS]
-      · sorry -- ih application: cons of equal heads + ih gives equal lists
+      · simp only [List.map]; exact congrArg _ ih
   rw [h_substLogic_map]
   -- Step 4: openVars → subst (reverse direction)
   rw [← subst_single_scope_eq_openVars ids _ mty h_closed h_vals_len']
@@ -7561,7 +7527,7 @@ theorem instantiateWithCheck_fvar_annotated_HasType
     -- Composition: use subst_compose_ftvar_closed to rewrite LHS as subst [σ'] fty_val
     have h_fty_len : (LMonoTy.freeVars fty_val).length = freshtvs_fty.length :=
       (TGenEnv.genTyVars_length _ _ _ _ h_gen_fty).symm
-    rw [LMonoTy.subst_compose_ftvar_closed S.subst _ freshtvs_fty h_fty_len fty_val
+    rw [subst_compose_ftvar_closed' S.subst _ freshtvs_fty h_fty_len fty_val
         (fun v hv => hv)] at h_ae_S
     -- h_ae_S : AliasEquiv Γ.aliases (subst [σ'] fty_val) (subst S mty)
     -- Use AliasEquiv.symm to get AnnotCompat for mty_inst:
