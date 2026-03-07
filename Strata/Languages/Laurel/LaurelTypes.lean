@@ -75,8 +75,8 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .AsType _ ty => ty
   | .IsType _ _ => ⟨ .TBool, md ⟩
   -- Verification specific
-  | .Forall _ _ => ⟨ .TBool, md ⟩
-  | .Exists _ _ => ⟨ .TBool, md ⟩
+  | .Forall _ _ _ => ⟨ .TBool, md ⟩
+  | .Exists _ _ _ => ⟨ .TBool, md ⟩
   | .Assigned _ => ⟨ .TBool, md ⟩
   | .Old v => computeExprType model v
   | .Fresh _ => ⟨ .TBool, md ⟩

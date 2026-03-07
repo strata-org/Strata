@@ -333,18 +333,20 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let callee' ← resolveRef callee md
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
-  | .Forall param body =>
+  | .Forall param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
-      pure (.Forall ⟨paramName', paramTy'⟩ body')
-  | .Exists param body =>
+      pure (.Forall ⟨paramName', paramTy'⟩ trigger' body')
+  | .Exists param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
-      pure (.Exists ⟨paramName', paramTy'⟩ body')
+      pure (.Exists ⟨paramName', paramTy'⟩ trigger' body')
   | .Assigned name =>
     let name' ← resolveStmtExpr name
     pure (.Assigned name')
@@ -567,13 +569,15 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
   | .InstanceCall target _ args =>
     let map := collectStmtExpr map target
     args.foldl collectStmtExpr map
-  | .Forall param body =>
+  | .Forall param trigger body =>
     let map := register map param.name (.quantifierVar param.name param.type)
     let map := collectHighType map param.type
+    let map := match trigger with | some t => collectStmtExpr map t | none => map
     collectStmtExpr map body
-  | .Exists param body =>
+  | .Exists param trigger body =>
     let map := register map param.name (.quantifierVar param.name param.type)
     let map := collectHighType map param.type
+    let map := match trigger with | some t => collectStmtExpr map t | none => map
     collectStmtExpr map body
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val

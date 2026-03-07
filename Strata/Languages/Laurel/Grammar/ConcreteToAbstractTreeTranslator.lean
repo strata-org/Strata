@@ -264,12 +264,12 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Forall { name := name, type := ty } body) md
+      return mkStmtExprMd (.Forall { name := name, type := ty } none body) md
     | q`Laurel.existsExpr, #[nameArg, tyArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Exists { name := name, type := ty } body) md
+      return mkStmtExprMd (.Exists { name := name, type := ty } none body) md
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0

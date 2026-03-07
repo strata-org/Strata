@@ -193,14 +193,24 @@ def translateExpr (expr : StmtExprMd)
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
   | .Block [single] _ => translateExpr single boundVars isPureContext
-  | .Forall ⟨ name, ty ⟩ body =>
+  | .Forall ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.all () name.text (some coreTy) coreBody
-  | .Exists ⟨ name, ty ⟩ body =>
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.allTr () name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.all () name.text (some coreTy) coreBody
+  | .Exists ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.exist () name.text (some coreTy) coreBody
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.exist () name.text (some coreTy) coreBody
   | .Hole => return dummy
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
