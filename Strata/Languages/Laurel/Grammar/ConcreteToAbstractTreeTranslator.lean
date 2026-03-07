@@ -260,16 +260,28 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => pure []
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.While cond invariants none body) md
-    | q`Laurel.forallExpr, #[nameArg, tyArg, bodyArg] =>
+    | q`Laurel.forallExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
+      let trigger ← match triggerArg with
+        | .option _ (some (.op triggerOp)) => match triggerOp.name, triggerOp.args with
+          | q`Laurel.optionalTrigger, #[triggerExprArg] =>
+            translateStmtExpr triggerExprArg >>= (pure ∘ some)
+          | _, _ => pure none
+        | _ => pure none
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Forall { name := name, type := ty } none body) md
-    | q`Laurel.existsExpr, #[nameArg, tyArg, bodyArg] =>
+      return mkStmtExprMd (.Forall { name := name, type := ty } trigger body) md
+    | q`Laurel.existsExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
+      let trigger ← match triggerArg with
+        | .option _ (some (.op triggerOp)) => match triggerOp.name, triggerOp.args with
+          | q`Laurel.optionalTrigger, #[triggerExprArg] =>
+            translateStmtExpr triggerExprArg >>= (pure ∘ some)
+          | _, _ => pure none
+        | _ => pure none
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Exists { name := name, type := ty } none body) md
+      return mkStmtExprMd (.Exists { name := name, type := ty } trigger body) md
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0

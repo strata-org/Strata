@@ -65,10 +65,13 @@ op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
 
 // Quantifiers
-op forallExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
-  => "forall(" name ": " ty ") => " body:0;
-op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
-  => "exists(" name ": " ty ") => " body:0;
+category OptionalTrigger;
+op optionalTrigger(trigger: StmtExpr): OptionalTrigger => "{" trigger "}";
+
+op forallExpr (name: Ident, ty: LaurelType, trigger: Option OptionalTrigger, body: StmtExpr): StmtExpr
+  => "forall(" name ": " ty ")" trigger " => " body:0;
+op existsExpr (name: Ident, ty: LaurelType, trigger: Option OptionalTrigger, body: StmtExpr): StmtExpr
+  => "exists(" name ": " ty ")" trigger " => " body:0;
 
 // If-else
 category OptionalElse;

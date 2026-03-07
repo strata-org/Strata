@@ -148,31 +148,6 @@ axiom [Datetime_lt_ax]:
         ==> Datetime_lt(d1, d2) ==
             (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2)));
 
-// Procedures with discriminator access or labeled specs
-
-procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
-spec{
-  requires [req_format_str]: (format == "%Y-%m-%d");
-  ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
-}
-{
-  assume [assume_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
-};
-
-procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
-spec {
-  requires [req_name_is_foo]: req_name == "foo";
-  requires [req_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  requires [req_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val!(opt_name) == "bar") else true);
-  ensures [ensures_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
-}
-{
-  assert [assert_name_is_foo]: req_name == "foo";
-  assert [assert_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
-  assert [assert_opt_name_none_or_bar]: (if (StrOrNone..isStrOrNone_mk_str(opt_name)) then (StrOrNone..str_val!(opt_name) == "bar") else true);
-  assume [assume_maybe_except_none]: (ExceptOrNone..isExceptOrNone_mk_none(maybe_except));
-};
-
 #end
 
 /--

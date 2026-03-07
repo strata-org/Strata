@@ -219,12 +219,10 @@ procedure datetime_strptime(time: string, format: string) returns (d : Datetime,
 // [req_format_str]:
   requires (format == "%Y-%m-%d")
 // [ensures_str_strp_reverse]:
-// Need to add support for forall
-  // ensures (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)))
+  ensures forall(dt : Datetime) {d == dt} => (time == datetime_to_str(dt)) == (d == dt)
 {
   //[assume_str_strp_reverse]:
-// Need to add support for forall
-  // assume (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
+  assume forall(dt : Datetime) {d == dt} => (time == datetime_to_str(dt)) == (d == dt);
 }
 
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
