@@ -12,7 +12,7 @@ import StrataTest.Transform.ProcedureInlining
 namespace Strata
 namespace Python
 
-def PyThonLaurelprelude :=
+def pyThonLaurelPrelude :=
 #strata
 program Core;
 
@@ -104,7 +104,7 @@ inline function isList (v: Any) : Any {
   from_bool (Any..isfrom_ListAny(v))
 }
 
-inline function isClassIntance (v: Any) : Any {
+inline function isClassInstance (v: Any) : Any {
   from_bool (Any..isfrom_ClassInstance(v))
 }
 
@@ -126,11 +126,11 @@ inline function isTypeError (e: Error) : Any {
 }
 
 inline function isAttributeError (e: Error) : Any {
-  from_bool (Error..isTypeError(e))
+  from_bool (Error..isAttributeError(e))
 }
 
 inline function isAssertionError (e: Error) : Any {
-  from_bool (Error..isAttributeError(e))
+  from_bool (Error..isAssertionError(e))
 }
 
 inline function isUnimplementedError (e: Error) : Any {
@@ -275,7 +275,7 @@ inline function PAdd (v1: Any, v2: Any) : Any
   else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
     from_int(Any..as_int!(v1) + bool_to_int(Any..as_bool!(v2)))
   else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) then
-    from_float(bool_to_real(Any..as_bool!(v1)) + Any..as_float!(v2))
+    from_float(int_to_real(Any..as_int!(v1)) + Any..as_float!(v2))
   else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) then
     from_float(Any..as_float!(v1) + bool_to_real(Any..as_bool!(v2)))
   else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) then
@@ -651,7 +651,7 @@ datatype Box () {
 #end
 
 def Core.PythonLaurelPrelude : Core.Program :=
-   Core.getProgram PyThonLaurelprelude |>.fst
+   Core.getProgram pyThonLaurelPrelude |>.fst
 
 def getFunctions (decls: List Core.Decl) : List String :=
   match decls with
