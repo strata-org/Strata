@@ -193,14 +193,24 @@ def translateExpr (expr : StmtExprMd)
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
   | .Block [single] _ => translateExpr single boundVars isPureContext
-  | .Forall ⟨ name, ty ⟩ body =>
+  | .Forall ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.all () name.text (some coreTy) coreBody
-  | .Exists ⟨ name, ty ⟩ body =>
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.allTr () name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.all () name.text (some coreTy) coreBody
+  | .Exists ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.exist () name.text (some coreTy) coreBody
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.exist () name.text (some coreTy) coreBody
   | .Hole => return dummy
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
@@ -527,7 +537,8 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
   | first :: rest =>
     let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
       { name := ⟨c.name.text, ()⟩
-        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty) }
+        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty)
+        testerName := s!"{dt.name}..is{c.name}" }
     let ldt : Lambda.LDatatype Unit := {
       name := dt.name.text
       typeArgs := dt.typeArgs.map (fun id => id.text)
@@ -559,29 +570,29 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   let result := resolve program
   let (program, model) := (result.program, result.model)
-  let mut _resolutionDiags := result.errors
+  let mut resolutionDiags := result.errors
   let diamondErrors := validateDiamondFieldAccesses model program
 
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
 
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
   let program := liftExpressionAssignments model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
 
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   -- External procedures are completely ignored (not translated to Core).
@@ -612,9 +623,7 @@ def translate (program : Program) : Except (Array DiagnosticModel) (Core.Program
 
   -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
   let allErrors :=
-    -- Not including resolution diagnostics yet because the Python through Laurel pipeline
-    -- does not resolve yet.
-    -- resolutionDiags.toList ++
+    resolutionDiags.toList ++
     pureErrors ++ procDiags ++ constantsState.diagnostics
   if !allErrors.isEmpty then
     .error allErrors.toArray
@@ -645,7 +654,6 @@ def verifyToVcResults (program : Program)
 
   -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
-  -- Debug: Print the generated Strata Core program
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))
         (Core.verify strataCoreProgram tempDir .none options)

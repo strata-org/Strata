@@ -16,6 +16,8 @@ import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.PythonPreludeInLaurel
+import Strata.Languages.Python.CorePreludeForLaurel
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
@@ -431,36 +433,27 @@ def pyAnalyzeLaurelCommand : Command where
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
       | .ok laurelProgram =>
+        -- Combine the Laurel prelude declarations with the translated program
+        let pythonRuntimeInLaurel := Strata.Python.pythonPreludeInLaurel
+        let combinedLaurelProgram : Strata.Laurel.Program := {
+          staticProcedures := pythonRuntimeInLaurel.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := pythonRuntimeInLaurel.staticFields ++ laurelProgram.staticFields
+          types := pythonRuntimeInLaurel.types ++ laurelProgram.types
+          constants := pythonRuntimeInLaurel.constants ++ laurelProgram.constants
+        }
         if verbose then
           IO.println "\n==== Laurel Program ===="
-          IO.println f!"{laurelProgram}"
+          IO.println f!"{combinedLaurelProgram}"
 
         -- Translate Laurel to Core
-        match Strata.Laurel.translate laurelProgram with
+        match Strata.Laurel.translate combinedLaurelProgram with
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok (coreProgramDecls, modifiesDiags) =>
+          let coreProgram := { decls := coreProgramDecls.decls ++ Strata.Python.coreOnlyPreludeForLaurel }
           if verbose then
             IO.println "\n==== Core Program ===="
             IO.print (coreProgramDecls, modifiesDiags)
-
-          -- The Laurel prelude is now included at the Laurel level during
-          -- HeapParameterization, so translate output contains prelude decls as normal decls.
-          -- No stripping needed.
-          let programDecls := coreProgramDecls.decls
-          -- Check for name collisions between program and prelude
-          let preludeNames : Std.HashSet String :=
-            pyPrelude.decls.flatMap Core.Decl.names
-              |>.foldl (init := {}) fun s n => s.insert n.name
-          let collisions := programDecls.flatMap fun d =>
-            d.names.filter fun n => preludeNames.contains n.name
-          if !collisions.isEmpty then
-            let names := ", ".intercalate (collisions.map (·.name))
-            exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := pyPrelude.decls ++ programDecls }
-          -- dbg_trace "=== Generated Strata Core Program ==="
-          -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram coreProgram) 100))
-          -- dbg_trace "================================="
 
           -- Verify using Core verifier
           let vcResults ← IO.FS.withTempDir (fun tempDir =>

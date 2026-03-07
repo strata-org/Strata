@@ -267,10 +267,10 @@ inductive StmtExpr : Type where
   | IsType (target : WithMetadata StmtExpr) (type : WithMetadata HighType)
   /-- Call an instance method on a target object. -/
   | InstanceCall (target : WithMetadata StmtExpr) (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
-  /-- Universal quantification over a typed parameter. -/
-  | Forall (param : Parameter) (body : WithMetadata StmtExpr)
-  /-- Existential quantification over a typed parameter. -/
-  | Exists (param : Parameter) (body : WithMetadata StmtExpr)
+  /-- Universal quantification over a typed parameter with an optional trigger. -/
+  | Forall (param : Parameter) (trigger : Option (WithMetadata StmtExpr)) (body : WithMetadata StmtExpr)
+  /-- Existential quantification over a typed parameter with an optional trigger. -/
+  | Exists (param : Parameter) (trigger : Option (WithMetadata StmtExpr)) (body : WithMetadata StmtExpr)
   /-- Check whether a variable has been assigned. -/
   | Assigned (name : WithMetadata StmtExpr)
   /-- Refer to the pre-state value of an expression in a postcondition. -/

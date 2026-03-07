@@ -124,10 +124,16 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .InstanceCall target name args =>
       formatStmtExpr target ++ "." ++ format name ++ "(" ++
       Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
-  | .Forall param body =>
-      "forall " ++ format param.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
-  | .Exists param body =>
-      "exists " ++ format param.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
+  | .Forall param trigger body =>
+      let trigFmt := match trigger with
+        | some t => " {" ++ formatStmtExpr t ++ "}"
+        | none => ""
+      "forall " ++ format param.name ++ ": " ++ formatHighType param.type ++ trigFmt ++ " => " ++ formatStmtExpr body
+  | .Exists param trigger body =>
+      let trigFmt := match trigger with
+        | some t => " {" ++ formatStmtExpr t ++ "}"
+        | none => ""
+      "exists " ++ format param.name ++ ": " ++ formatHighType param.type ++ trigFmt ++ " => " ++ formatStmtExpr body
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"

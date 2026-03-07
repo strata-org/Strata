@@ -78,8 +78,8 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
-  | .Forall _ b => collectExprMd b
-  | .Exists _ b => collectExprMd b
+  | .Forall _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
+  | .Exists _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
@@ -317,8 +317,8 @@ where
         let assertStmt := ⟨ .Assert isCheck, md ⟩
         return ⟨ .Block [assertStmt, t'] none, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
-    | .Forall p b => return ⟨ .Forall p (← recurse b), md ⟩
-    | .Exists p b => return ⟨ .Exists p (← recurse b), md ⟩
+    | .Forall p trigger b => return ⟨ .Forall p (← trigger.attach.mapM (fun pv => have := pv.property; recurse pv.val)) (← recurse b), md ⟩
+    | .Exists p trigger b => return ⟨ .Exists p (← trigger.attach.mapM (fun pv => have := pv.property; recurse pv.val)) (← recurse b), md ⟩
     | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
     | .Old v => return ⟨ .Old (← recurse v), md ⟩
     | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
@@ -329,7 +329,7 @@ where
     | _ => return expr
     termination_by sizeOf expr
     decreasing_by
-      all_goals simp_wf
+      all_goals (simp_wf; try term_by_mem)
       all_goals
         have hval := WithMetadata.sizeOf_val_lt expr
         rw [_h] at hval; simp at hval

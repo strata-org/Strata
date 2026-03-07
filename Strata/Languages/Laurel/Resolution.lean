@@ -114,15 +114,7 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  if id.uniqueId == none then
-    -- The Python pipeline generates constructor/discriminator calls that may not
-    -- be resolved at the Laurel level. Treating them as functions keeps them as
-    -- expressions; any real errors will be caught during Core type checking.
-    -- Make an exception for 'test_helper_procedure' since it's a procedure
-    -- We will remove this hack when we enable the Python through Laurel pipeline to correctly resolve
-    id.text != "test_helper_procedure"
-  else
-    match model.get id with
+  match model.get id with
     | .staticProcedure proc => proc.isFunctional
     | .parameter _ => true
     | .datatypeConstructor _ _ => true
@@ -341,18 +333,20 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let callee' ← resolveRef callee md
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
-  | .Forall param body =>
+  | .Forall param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
-      pure (.Forall ⟨paramName', paramTy'⟩ body')
-  | .Exists param body =>
+      pure (.Forall ⟨paramName', paramTy'⟩ trigger' body')
+  | .Exists param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
-      pure (.Exists ⟨paramName', paramTy'⟩ body')
+      pure (.Exists ⟨paramName', paramTy'⟩ trigger' body')
   | .Assigned name =>
     let name' ← resolveStmtExpr name
     pure (.Assigned name')
@@ -486,9 +480,12 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
+      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some s!"{dt.name}..is{ctor.name}")
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
         let destructorId ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text)
+        -- unsafeDestructorId
+        _ ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text ++ "!")
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
@@ -572,13 +569,15 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
   | .InstanceCall target _ args =>
     let map := collectStmtExpr map target
     args.foldl collectStmtExpr map
-  | .Forall param body =>
+  | .Forall param trigger body =>
     let map := register map param.name (.quantifierVar param.name param.type)
     let map := collectHighType map param.type
+    let map := match trigger with | some t => collectStmtExpr map t | none => map
     collectStmtExpr map body
-  | .Exists param body =>
+  | .Exists param trigger body =>
     let map := register map param.name (.quantifierVar param.name param.type)
     let map := collectHighType map param.type
+    let map := match trigger with | some t => collectStmtExpr map t | none => map
     collectStmtExpr map body
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val

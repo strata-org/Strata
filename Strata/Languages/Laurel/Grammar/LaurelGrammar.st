@@ -65,10 +65,13 @@ op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
 
 // Quantifiers
-op forallExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
-  => "forall(" name ": " ty ") => " body:0;
-op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
-  => "exists(" name ": " ty ") => " body:0;
+category OptionalTrigger;
+op optionalTrigger(trigger: StmtExpr): OptionalTrigger => "{" trigger "}";
+
+op forallExpr (name: Ident, ty: LaurelType, trigger: Option OptionalTrigger, body: StmtExpr): StmtExpr
+  => "forall(" name ": " ty ")" trigger " => " body:0;
+op existsExpr (name: Ident, ty: LaurelType, trigger: Option OptionalTrigger, body: StmtExpr): StmtExpr
+  => "exists(" name ": " ty ")" trigger " => " body:0;
 
 // If-else
 category OptionalElse;
@@ -126,8 +129,8 @@ op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "d
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
-category OptionalRequires;
-op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
+category RequiresClause;
+op requiresClause(cond: StmtExpr): RequiresClause => "requires" cond:0;
 
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures" cond:0;
@@ -146,7 +149,7 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: Seq RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
@@ -155,15 +158,20 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: Seq RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
 
+// Opaque type declarations
+category OpaqueType;
+op opaqueType (name: Ident): OpaqueType => "type " name ";";
+
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;
 op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
 op topLevelDatatype(datatype: Datatype): TopLevel => datatype;
+op topLevelOpaqueType(opaqueType: OpaqueType): TopLevel => opaqueType;
 
 op program (items: Seq TopLevel): Command => items;
