@@ -315,6 +315,11 @@ theorem TContext_subst_insert_fresh [DecidableEq IDMeta]
     congr 1
     exact TContext_types_subst_go_append S scope [(xv, xty)]
 
+/-- `LTy.subst` preserves bound variables. -/
+theorem LTy_subst_boundVars (S : Subst) (ty : LTy) :
+    (LTy.subst S ty).boundVars = ty.boundVars := by
+  cases ty with | forAll xs body => simp [LTy.subst, LTy.boundVars]
+
 ---------------------------------------------------------------------
 
 /-- Fixed prefix for generated type variable names. -/
@@ -807,6 +812,31 @@ def LTy.instantiate [ToFormat IDMeta] (ty : LTy) (Env : TGenEnv IDMeta) : Except
     let (freshtvs, Env) ← TGenEnv.genTyVars xs.length Env
     let S := List.zip xs (List.map (fun tv => (.ftvar tv)) freshtvs)
     .ok (LMonoTy.subst [S] lty', Env)
+
+/-- `LTy.subst S ty` can be instantiated with the same `genEnv` as `ty`,
+    producing the same `genEnv'` (same fresh variables are generated).
+    The resulting mono type differs only in the substituted body. -/
+theorem LTy_subst_instantiate {IDMeta : Type} [ToFormat IDMeta]
+    (S : Subst) (ty : LTy)
+    (genEnv : TGenEnv IDMeta) (mty : LMonoTy) (genEnv' : TGenEnv IDMeta)
+    (h : LTy.instantiate ty genEnv = .ok (mty, genEnv')) :
+    ∃ mty', LTy.instantiate (LTy.subst S ty) genEnv = .ok (mty', genEnv') := by
+  cases ty with
+  | forAll xs body =>
+    cases xs with
+    | nil =>
+      simp [LTy.instantiate] at h
+      obtain ⟨h_eq, h_env⟩ := h; subst h_eq; subst h_env
+      exact ⟨LMonoTy.subst S body, by simp [LTy.subst, LTy.subst.go, LTy.instantiate]⟩
+    | cons x rest =>
+      simp only [LTy.instantiate, Bind.bind, Except.bind] at h
+      split at h; · simp at h
+      rename_i v1 h_gen; obtain ⟨freshtvs, genEnv1⟩ := v1; simp at h
+      obtain ⟨h_mty, h_env⟩ := h; subst h_mty; subst h_env
+      refine ⟨LMonoTy.subst [List.zip (x :: rest) (List.map LMonoTy.ftvar freshtvs)]
+        (LMonoTy.subst (LTy.subst.go (x :: rest) S) body), ?_⟩
+      simp only [LTy.subst, LTy.instantiate, Bind.bind, Except.bind]
+      rw [h_gen]
 
 instance : Inhabited (Option LMonoTy × TEnv IDMeta) where
   default := (none, TEnv.default)
