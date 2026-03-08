@@ -19,9 +19,10 @@ HITS=$(git diff "$MERGE_BASE"...HEAD --unified=0 --diff-filter=ACMR -- '*.lean' 
     /^@@/      { split($3, a, /[,+]/); lineno = a[2]; next }
     /^\+/      { print file ":" lineno ":" substr($0, 2); lineno++ }
   ' \
-  | grep -F 'panic!' \
-  | grep -v -- '-- nopanic:ok' \
-  || true)
+  | { \
+      grep -F 'panic!' | \
+      grep -v -- '-- nopanic:ok'; grep_status=$?; \
+      if [ "$grep_status" -gt 1 ]; then exit "$grep_status"; else exit 0; fi; })
 
 if [ -n "$HITS" ]; then
   echo "ERROR: New code introduces panic! — use Except/throw instead."
