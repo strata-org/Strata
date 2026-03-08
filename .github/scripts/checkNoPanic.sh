@@ -19,7 +19,7 @@ HITS=$(git diff "$MERGE_BASE"...HEAD --unified=0 --diff-filter=ACMR -- '*.lean' 
     /^@@/      { split($3, a, /[,+]/); lineno = a[2]; next }
     /^\+/      { print file ":" lineno ":" substr($0, 2); lineno++ }
   ' \
-  | grep -E '\bpanic!' \
+  | grep -F 'panic!' \
   | grep -v -- '-- nopanic:ok' \
   || true)
 
