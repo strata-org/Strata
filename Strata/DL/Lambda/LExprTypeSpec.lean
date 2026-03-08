@@ -6015,7 +6015,16 @@ private theorem allKeysFresh_eraseFromContext
     (h : Subst.allKeysFresh Env.stateSubstInfo.subst Env.context) :
     Subst.allKeysFresh (Env.eraseFromContext xv).stateSubstInfo.subst
       (Env.eraseFromContext xv).context := by
-  sorry
+  have h_subst : (Env.eraseFromContext xv).stateSubstInfo = Env.stateSubstInfo := by
+    simp [TEnv.eraseFromContext, TEnv.updateContext]
+  rw [h_subst]
+  intro a ha
+  have h_a := h a ha
+  intro x ty h_find
+  simp only [TEnv.eraseFromContext, TEnv.updateContext, TEnv.context] at h_find
+  by_cases h_eq : x = xv
+  · subst h_eq; rw [Maps.find?_erase_self] at h_find; simp at h_find
+  · rw [Maps.find?_erase_ne _ _ _ h_eq] at h_find; exact h_a x ty h_find
 
 private theorem resolveAux_preserves_allKeysFresh :
     ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
