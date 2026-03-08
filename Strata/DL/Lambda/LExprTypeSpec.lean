@@ -7469,7 +7469,8 @@ theorem inferFVar_HasType
     (h_bvf : ∀ y ty, Env.context.types.find? y = some ty →
       ∀ v, v ∈ LTy.boundVars ty →
       ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n)
-    (h_aw : TContext.AliasesWF Env.context) :
+    (h_aw : TContext.AliasesWF Env.context)
+    (h_skf : Subst.allKeysFresh Env.stateSubstInfo.subst Env.context) :
     Env'.context = Env.context ∧
       HasType C (Env.context) (.fvar m x fty)
         (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
@@ -7515,7 +7516,7 @@ theorem inferFVar_HasType
           -- Need: HasType ... (.forAll [] (subst Env.subst mty))
           exact HasType_subst_fresh_all C Env.context (.fvar m x none) mty
             Env.stateSubstInfo.subst h_base
-            (by sorry) -- freshness: keys of Env.subst in freeVars mty are fresh
+            (fun a h_key _ => h_skf a h_key)
             Env.stateSubstInfo.isWF
       · -- Case fty = some fty_val
         rename_i fty_val
@@ -8010,6 +8011,7 @@ theorem resolveAux_HasType :
       simp [toLMonoTy]
       have ⟨h_ctx_pres, h_base_ty⟩ := inferFVar_HasType C Env x fty ty_res Env_res m
         h_infer h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF
+        h_envwf.substKeysFreshForCtx
       constructor
       · exact h_ctx_pres
       · -- h_base_ty : HasType ... (subst Env_res.subst ty_res)
