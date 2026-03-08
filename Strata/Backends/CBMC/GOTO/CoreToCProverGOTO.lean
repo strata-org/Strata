@@ -145,7 +145,7 @@ structure CProverGOTO.Json where
 
 open Strata in
 def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context) :
-  CProverGOTO.Json :=
+  Except String CProverGOTO.Json := do
   let fn_symbol : Map String CProverGOTO.CBMCSymbol :=
     [CProverGOTO.createFunctionSymbol programName ctx.formals ctx.ret ctx.contracts]
   let formals : Map String CProverGOTO.CBMCSymbol :=
@@ -166,8 +166,8 @@ def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context
         CProverGOTO.createGOTOSymbol programName info.name info.name
           (isParameter := false) (isStateVar := false) (ty := some info.type)
   let symbols := Lean.toJson (knownSymbols ++ extraSymbols)
-  let goto_functions := CProverGOTO.programsToJson [(programName, ctx.program)]
-  { symtab := symbols, goto := goto_functions }
+  let goto_functions ← CProverGOTO.programsToJson [(programName, ctx.program)]
+  return { symtab := symbols, goto := goto_functions }
 
 open Lambda.LTy.Syntax in
 def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context := do
@@ -240,9 +240,9 @@ def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := 
         dbg_trace s!"{e}"
         return {}
       | .ok ctx =>
-        return (CProverGOTO.Context.toJson programName ctx))
+        IO.ofExcept (CProverGOTO.Context.toJson programName ctx))
   else
-    panic! s!"DDM Transform Error: {repr errors}"
+    throw (IO.userError s!"DDM Transform Error: {repr errors}")
 
 open Strata in
 def writeToGotoJson (programName symTabFileName gotoFileName : String) (env : Program) : IO Unit := do
