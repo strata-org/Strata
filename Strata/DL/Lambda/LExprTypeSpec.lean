@@ -3391,10 +3391,6 @@ structure TEnvWF (Env : TEnv T.IDMeta) : Prop where
   boundVarsFresh : ∀ y ty, Env.context.types.find? y = some ty →
     ∀ v, v ∈ LTy.boundVars ty →
       ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n
-  /-- Substitution keys are fresh for the context. This ensures that
-      `HasType_subst_fresh_all` can apply the substitution to the result
-      type without changing the context. -/
-  substKeysFreshForCtx : Subst.allKeysFresh Env.stateSubstInfo.subst Env.context
 
 /-- Extract `EnvFreshForGen` from the combined `TEnvWF` invariant. -/
 theorem TEnvWF.toEnvFreshForGen {Env : TEnv T.IDMeta} (h : TEnvWF Env) : EnvFreshForGen Env :=
@@ -5988,191 +5984,6 @@ private theorem resolveAux_preserves_SubstFreshForGen :
   fun e et C Env Env' h h_sf h_cf h_ne h_aw h_fwf h_bvf =>
     ((resolveAux_preserves_combined e.sizeOf e rfl et C Env Env' h h_ne).2 h_sf h_cf h_aw h_fwf h_bvf).1
 
-/-- `resolveAux` preserves `Subst.allKeysFresh`: if all substitution keys are
-    fresh for the context before the call, they remain fresh after. This holds
-    because (1) the context is preserved, and (2) new keys added during type
-    checking are generated names that are fresh for the (preserved) context. -/
-private theorem inferFVar_preserves_allKeysFresh
-    (C : LContext T) (Env : TEnv T.IDMeta) (x : T.Identifier) (fty : Option LMonoTy)
-    (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : inferFVar C Env x fty = .ok (ty_res, Env'))
-    (h_envwf : TEnvWF Env) :
-    Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
-  sorry
-
-private theorem typeBoundVar_preserves_allKeysFresh
-    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
-    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
-    (h_envwf : TEnvWF Env) :
-    Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
-  -- Decompose typeBoundVar: liftGenEnv genVar → match bty → addInNewestContext
-  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
-  split at h; · contradiction
-  rename_i genResult h_gen
-  -- genVar preserves subst and context
-  have h_gen_subst : genResult.snd.stateSubstInfo = Env.stateSubstInfo := by
-    split at h_gen; · contradiction
-    have := Except.ok.inj h_gen; rw [← this]
-  have h_gen_ctx : genResult.snd.context = Env.context := by
-    split at h_gen; · contradiction
-    rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp [TEnv.context]
-    exact HasGen.genVar_context Env.genEnv _ _ h_gv
-  have h_gen_tyGen : genResult.snd.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-    split at h_gen; · contradiction
-    rename_i _ _ h_gv; have := Except.ok.inj h_gen; rw [← this]; simp
-    exact HasGen.genVar_tyGen_mono Env.genEnv _ _ h_gv
-  -- SubstFreshForGen for genResult.snd
-  have h_sfg_gen : SubstFreshForGen genResult.snd.stateSubstInfo genResult.snd.genEnv.genState :=
-    h_gen_subst ▸ SubstFreshForGen.mono _ _ _ h_envwf.substFreshForGen h_gen_tyGen
-  -- allKeysFresh for genResult.snd (same subst and context as Env)
-  have h_akf_gen : Subst.allKeysFresh genResult.snd.stateSubstInfo.subst genResult.snd.context :=
-    h_gen_subst ▸ h_gen_ctx ▸ h_envwf.substKeysFreshForCtx
-  split at h
-  · -- bty = some bty_val: instantiateWithCheck then addInNewestContext
-    split at h; · contradiction
-    rename_i _ bty_mty _ _ Env_inst h_inst
-    simp [Pure.pure, Except.pure] at h
-    obtain ⟨_, rfl, h_env⟩ := h; rw [← h_env]
-    simp only [TEnv.addInNewestContext, TEnv.updateContext]
-    -- instantiateWithCheck preserves context and stateSubstInfo
-    have h_inst_ctx := LMonoTy_instantiateWithCheck_context' _ C genResult.snd _ _ h_inst
-    have h_inst_subst : Env_inst.stateSubstInfo = genResult.snd.stateSubstInfo := by
-      simp only [LMonoTy.instantiateWithCheck, Bind.bind, Except.bind] at h_inst
-      split at h_inst; · simp at h_inst
-      rename_i instTypes Env_ie h_ie
-      split at h_inst; · simp at h_inst
-      rename_i _ Env_ra h_ra; split at h_inst; · simp at h_inst
-      split at h_inst
-      · simp [Pure.pure, Except.pure] at h_inst; obtain ⟨_, h2⟩ := h_inst; rw [← h2]
-        have h_ie_subst : Env_ie.stateSubstInfo = genResult.snd.stateSubstInfo := by
-          simp [LMonoTys.instantiateEnv] at h_ie; split at h_ie; · simp at h_ie
-          simp at h_ie; obtain ⟨_, h2⟩ := h_ie; rw [← h2]
-        -- resolveAliases with tconsAliasSimple preserves stateSubstInfo
-        sorry
-      · simp at h_inst
-    -- allKeysFresh for Env_inst (subst and context same as genResult.snd)
-    have h_akf_inst : Subst.allKeysFresh Env_inst.stateSubstInfo.subst Env_inst.context :=
-      h_inst_subst ▸ h_inst_ctx ▸ h_akf_gen
-    -- For each key a and binding found in the extended context:
-    intro a h_key x ty h_find
-    simp only [TEnv.context] at h_find
-    rcases Maps.find?_addInNewest_single
-      Env_inst.genEnv.context.types genResult.fst _ x with ⟨h_eq, _⟩ | h_old
-    · -- New binding
-      rw [h_eq] at h_find; cases h_find
-      simp [LTy.freeVars, List.removeAll]
-      -- Need: a ∉ freeVars bty_mty. Follows from:
-      -- bty_mty's freeVars ⊆ freshtvs from instantiateEnv (resolveAliases only shrinks freeVars).
-      -- freshtvs are generated names ≥ genResult.snd.genState.tyGen.
-      -- SubstFreshForGen says subst keys ≠ $__ty n for n ≥ genResult.snd.genState.tyGen.
-      sorry
-    · -- Old binding: same as before addInNewestContext
-      rw [h_old] at h_find
-      exact h_akf_inst a h_key x ty (by simp [TEnv.context]; exact h_find)
-  · -- bty = none: genTyVar then addInNewestContext
-    split at h; · contradiction
-    rename_i v1 h_genTy
-    obtain ⟨xtyid, Env1⟩ := v1
-    simp [Pure.pure, Except.pure] at h
-    obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
-    simp only [TEnv.addInNewestContext, TEnv.updateContext]
-    -- Env1 preserves subst and context from genResult.snd
-    have h_subst1 := TEnv.genTyVar_subst genResult.snd xtyid Env1 h_genTy
-    have h_ctx1 := TEnv.genTyVar_context genResult.snd xtyid Env1 h_genTy
-    -- allKeysFresh for Env1 (same as genResult.snd)
-    have h_akf1 : Subst.allKeysFresh Env1.stateSubstInfo.subst Env1.context :=
-      h_subst1 ▸ h_ctx1 ▸ h_akf_gen
-    -- For each key a and binding found in the extended context:
-    intro a h_key x ty h_find
-    simp only [TEnv.context] at h_find
-    have h_cases := Maps.find?_addInNewest_single
-      Env1.genEnv.context.types genResult.fst (.forAll [] (.ftvar xtyid)) x
-    rcases h_cases with ⟨h_eq, _⟩ | h_old
-    · -- New binding: ty = forAll [] (ftvar xtyid)
-      rw [h_eq] at h_find; cases h_find
-      -- Need: a ∉ freeVars (forAll [] (ftvar xtyid)) = [xtyid]
-      simp [LTy.freeVars, List.removeAll, LMonoTy.freeVars]
-      -- a ≠ xtyid: a is a subst key, xtyid is freshly generated
-      intro h_eq; subst h_eq
-      -- After subst, xtyid is replaced by a everywhere
-      have h_name := genTyVar_name_eq genResult.snd a Env1 h_genTy
-      rw [h_subst1] at h_key
-      exact absurd h_name
-        (h_sfg_gen a (Or.inl h_key) genResult.snd.genEnv.genState.tyGen (Nat.le_refl _))
-    · -- Old binding: same as before addInNewestContext
-      rw [h_old] at h_find
-      exact h_akf1 a h_key x ty (by simp [TEnv.context]; exact h_find)
-
-/-- After erasing a variable from the context, `allKeysFresh` is preserved
-    (the context only gets smaller). -/
-private theorem allKeysFresh_eraseFromContext
-    (Env : TEnv T.IDMeta) (xv : T.Identifier)
-    (h : Subst.allKeysFresh Env.stateSubstInfo.subst Env.context) :
-    Subst.allKeysFresh (Env.eraseFromContext xv).stateSubstInfo.subst
-      (Env.eraseFromContext xv).context := by
-  have h_subst : (Env.eraseFromContext xv).stateSubstInfo = Env.stateSubstInfo := by
-    simp [TEnv.eraseFromContext, TEnv.updateContext]
-  rw [h_subst]
-  intro a ha
-  have h_a := h a ha
-  intro x ty h_find
-  simp only [TEnv.eraseFromContext, TEnv.updateContext, TEnv.context] at h_find
-  by_cases h_eq : x = xv
-  · subst h_eq; rw [Maps.find?_erase_self] at h_find; simp at h_find
-  · rw [Maps.find?_erase_ne _ _ _ h_eq] at h_find; exact h_a x ty h_find
-
-private theorem resolveAux_preserves_allKeysFresh :
-    ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
-      (Env Env' : TEnv T.IDMeta),
-      resolveAux C Env e = .ok (et, Env') →
-      TEnvWF Env →
-      Env.context.types ≠ [] →
-      FactoryWF C.functions →
-      Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
-  intro e
-  -- Strong induction on sizeOf
-  suffices h_strong : ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
-      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
-      resolveAux C Env e = .ok (et, Env') →
-      TEnvWF Env →
-      Env.context.types ≠ [] →
-      FactoryWF C.functions →
-      Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context from
-    fun et C Env Env' h h_wf h_ne h_fwf =>
-      h_strong e.sizeOf e rfl et C Env Env' h h_wf h_ne h_fwf
-  intro n
-  induction n using Nat.strongRecOn with
-  | _ n ih =>
-  intro e h_sz et C Env Env' h h_envwf h_ne h_fwf
-  match e with
-  | .const m c =>
-    -- inferConst doesn't change the substitution
-    simp [resolveAux, inferConst] at h
-    split at h
-    · simp [Bind.bind, Except.bind] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-      exact h_envwf.substKeysFreshForCtx
-    · exact absurd h (by simp [Bind.bind, Except.bind])
-  | .bvar _ _ => simp [resolveAux, Bind.bind, Except.bind] at h
-  | .fvar m x fty =>
-    simp only [resolveAux, Bind.bind, Except.bind] at h
-    split at h; · simp at h
-    rename_i v1 h_infer; obtain ⟨ty_res, Env_res⟩ := v1; simp at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]
-    exact inferFVar_preserves_allKeysFresh C Env x fty ty_res Env_res h_infer h_envwf
-  | .op m o oty =>
-    sorry -- op case: instantiateWithCheck + optional unify
-  | .app m e1 e2 =>
-    sorry -- app case: two recursive calls + genTyVar + unify + remove
-  | .abs m bty e_body =>
-    sorry -- abs case: typeBoundVar + recursive call + eraseFromContext
-  | .quant m qk bty triggers e_body =>
-    sorry -- quant case: typeBoundVar + two recursive calls + eraseFromContext
-  | .eq m e1 e2 =>
-    sorry -- eq case: two recursive calls + unify
-  | .ite m c th el =>
-    sorry -- ite case: three recursive calls + unify
-
 /-- A type variable produced by `genTyVar` does not appear (as key or in values)
     in any substitution satisfying `SubstFreshForGen` for an earlier gen state.
 
@@ -7654,8 +7465,7 @@ theorem inferFVar_HasType
     (h_bvf : ∀ y ty, Env.context.types.find? y = some ty →
       ∀ v, v ∈ LTy.boundVars ty →
       ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n)
-    (h_aw : TContext.AliasesWF Env.context)
-    (h_skf : Subst.allKeysFresh Env.stateSubstInfo.subst Env.context) :
+    (h_aw : TContext.AliasesWF Env.context) :
     Env'.context = Env.context ∧
       HasType C (Env.context) (.fvar m x fty)
         (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
@@ -7701,7 +7511,7 @@ theorem inferFVar_HasType
           -- Need: HasType ... (.forAll [] (subst Env.subst mty))
           exact HasType_subst_fresh_all C Env.context (.fvar m x none) mty
             Env.stateSubstInfo.subst h_base
-            (fun a h_key _ => h_skf a h_key)
+            (by sorry) -- freshness: subst keys in freeVars(mty) are fresh for context
             Env.stateSubstInfo.isWF
       · -- Case fty = some fty_val
         rename_i fty_val
@@ -8196,7 +8006,6 @@ theorem resolveAux_HasType :
       simp [toLMonoTy]
       have ⟨h_ctx_pres, h_base_ty⟩ := inferFVar_HasType C Env x fty ty_res Env_res m
         h_infer h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF
-        h_envwf.substKeysFreshForCtx
       constructor
       · exact h_ctx_pres
       · -- h_base_ty : HasType ... (subst Env_res.subst ty_res)
@@ -8577,8 +8386,7 @@ theorem resolveAux_HasType :
                 ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
                 boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
                 boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx1
-                  (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
-                substKeysFreshForCtx := sorry }
+                  (resolveAux_genState_mono e1 e1t C Env Env1 h_res1) }
             have h_ws2 : WellScoped e2 Env1.context := by
               rw [h_ctx1]; intro x hx; exact h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)
             have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf h_ws2
@@ -8724,8 +8532,7 @@ theorem resolveAux_HasType :
             substFreshForGen := typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.substFreshForGen h_envwf.aliasesWF h_envwf.ctxFreshForGen
             ctxFreshForGen := typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.ctxFreshForGen
             boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env1 h_tbv h_envwf.boundVarsNodup
-            boundVarsFresh := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_envwf.boundVarsFresh
-            substKeysFreshForCtx := sorry }
+            boundVarsFresh := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_envwf.boundVarsFresh }
         have h_ne1 : Env1.context.types ≠ [] :=
           typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
         -- WellScoped for the opened body
@@ -8919,8 +8726,7 @@ theorem resolveAux_HasType :
           substFreshForGen := typeBoundVar_preserves_SubstFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.substFreshForGen h_envwf.aliasesWF h_envwf.ctxFreshForGen
           ctxFreshForGen := typeBoundVar_preserves_ContextFreshForGen C Env bty xv xty Env1 h_tbv h_envwf.ctxFreshForGen
           boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env1 h_tbv h_envwf.boundVarsNodup
-          boundVarsFresh := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_envwf.boundVarsFresh
-          substKeysFreshForCtx := sorry }
+          boundVarsFresh := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_envwf.boundVarsFresh }
       have h_ne1 : Env1.context.types ≠ [] :=
         typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
       -- IH for body
@@ -8936,8 +8742,7 @@ theorem resolveAux_HasType :
           substFreshForGen := resolveAux_preserves_SubstFreshForGen _ et_body C Env1 Env2 h_res_body h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF h_fwf h_envwf1.boundVarsFresh
           ctxFreshForGen := h_ctx2 ▸ ContextFreshForGen.mono _ _ _ h_envwf1.ctxFreshForGen (resolveAux_genState_mono _ et_body C Env1 Env2 h_res_body)
           boundVarsNodup := transfer_boundVarsNodup h_envwf1.boundVarsNodup h_ctx2
-          boundVarsFresh := transfer_boundVarsFresh h_envwf1.boundVarsFresh h_ctx2 (resolveAux_genState_mono _ et_body C Env1 Env2 h_res_body)
-          substKeysFreshForCtx := sorry }
+          boundVarsFresh := transfer_boundVarsFresh h_envwf1.boundVarsFresh h_ctx2 (resolveAux_genState_mono _ et_body C Env1 Env2 h_res_body) }
       have h_ne2 := h_ctx2 ▸ h_ne1
       have h_ws_tr : WellScoped (varOpen 0 (xv, some xty) tr) Env1.context :=
         WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 tr h_tbv
@@ -9141,8 +8946,7 @@ theorem resolveAux_HasType :
                 ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono c ct C Env Env1 h_res_c)
                 boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
                 boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx1
-                  (resolveAux_genState_mono c ct C Env Env1 h_res_c)
-                substKeysFreshForCtx := sorry }
+                  (resolveAux_genState_mono c ct C Env Env1 h_res_c) }
             have ⟨h_ctx2, h_ty_t⟩ := ih_t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 h_fwf (by rw [h_ctx1]; intro x hx; apply h_ws; simp only [LExpr.freeVars]; exact List.mem_append_left _ (List.mem_append_right _ hx))
             have h_ne2 := h_ctx2 ▸ h_ne1
             -- Build TEnvWF for Env2
@@ -9152,8 +8956,7 @@ theorem resolveAux_HasType :
                 ctxFreshForGen := h_ctx2 ▸ ContextFreshForGen.mono _ _ _ h_envwf1.ctxFreshForGen (resolveAux_genState_mono t tht C Env1 Env2 h_res_t)
                 boundVarsNodup := transfer_boundVarsNodup h_envwf1.boundVarsNodup h_ctx2
                 boundVarsFresh := transfer_boundVarsFresh h_envwf1.boundVarsFresh h_ctx2
-                  (resolveAux_genState_mono t tht C Env1 Env2 h_res_t)
-                substKeysFreshForCtx := sorry }
+                  (resolveAux_genState_mono t tht C Env1 Env2 h_res_t) }
             have ⟨h_ctx3, h_ty_e⟩ := ih_e elt C Env2 Env3 h_res_e h_envwf2 h_ne2 h_fwf (by rw [h_ctx2, h_ctx1]; intro x hx; apply h_ws; simp only [LExpr.freeVars]; exact List.mem_append_right _ hx)
             -- Absorption chain: v4 absorbs Env3 absorbs Env2 absorbs Env1 absorbs Env
             have h_abs_v4_Env3 := unify_absorbs
@@ -9273,8 +9076,7 @@ theorem resolveAux_HasType :
               ctxFreshForGen := h_ctx1 ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
               boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx1
               boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx1
-                (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
-              substKeysFreshForCtx := sorry }
+                (resolveAux_genState_mono e1 e1t C Env Env1 h_res1) }
           have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf (by rw [h_ctx1]; intro x hx; exact h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx))
           -- Absorption chain: v3 absorbs Env2 absorbs Env1 absorbs Env
           have h_abs_v3_Env2 := unify_absorbs [(e1t.toLMonoTy, e2t.toLMonoTy)]
@@ -9432,9 +9234,6 @@ theorem annotate_HasType :
         boundVarsFresh := by
           intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
           simp [Maps.find?, Map.find?] at h_f
-        substKeysFreshForCtx := by
-          intro a _ x ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
-          simp [Maps.find?, Map.find?] at h_f
       }
       -- WellScoped transfers: both [] and [[]] have knownVars = []
       have h_ws_upd : WellScoped e Env_upd.context := by
@@ -9460,8 +9259,7 @@ theorem annotate_HasType :
           substFreshForGen := resolveAux_preserves_SubstFreshForGen e et C Env_upd Env' h_aux' h_envwf_upd.substFreshForGen h_envwf_upd.ctxFreshForGen h_upd_ne h_envwf_upd.aliasesWF h_fwf h_envwf_upd.boundVarsFresh
           ctxFreshForGen := h_ctx_upd ▸ ContextFreshForGen.mono _ _ _ h_envwf_upd.ctxFreshForGen (resolveAux_genState_mono e et C Env_upd Env' h_aux')
           boundVarsNodup := transfer_boundVarsNodup h_envwf_upd.boundVarsNodup h_ctx_upd
-          boundVarsFresh := transfer_boundVarsFresh h_envwf_upd.boundVarsFresh h_ctx_upd (resolveAux_genState_mono e et C Env_upd Env' h_aux')
-          substKeysFreshForCtx := resolveAux_preserves_allKeysFresh e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf }
+          boundVarsFresh := transfer_boundVarsFresh h_envwf_upd.boundVarsFresh h_ctx_upd (resolveAux_genState_mono e et C Env_upd Env' h_aux') }
       rw [← h_typed, applySubstT_toLMonoTy]
       exact ⟨by
         -- HasType: Transfer from Env_upd.context to Env.context
@@ -9494,8 +9292,7 @@ theorem annotate_HasType :
           substFreshForGen := resolveAux_preserves_SubstFreshForGen e et C Env Env' h_aux h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne h_envwf.aliasesWF h_fwf h_envwf.boundVarsFresh
           ctxFreshForGen := h_ctx_pres ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e et C Env Env' h_aux)
           boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx_pres
-          boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx_pres (resolveAux_genState_mono e et C Env Env' h_aux)
-          substKeysFreshForCtx := resolveAux_preserves_allKeysFresh e et C Env Env' h_aux h_envwf h_ne h_fwf }
+          boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx_pres (resolveAux_genState_mono e et C Env Env' h_aux) }
       rw [← h_typed, applySubstT_toLMonoTy]
       exact ⟨h_hastype Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF, h_envwf'⟩
 
