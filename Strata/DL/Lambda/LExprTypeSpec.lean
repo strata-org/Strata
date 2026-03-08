@@ -9247,7 +9247,9 @@ theorem annotate_HasType :
         boundVarsFresh := by
           intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
           simp [Maps.find?, Map.find?] at h_f
-        substKeysFreshForCtx := sorry
+        substKeysFreshForCtx := by
+          intro a _ x ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
+          simp [Maps.find?, Map.find?] at h_f
       }
       -- WellScoped transfers: both [] and [[]] have knownVars = []
       have h_ws_upd : WellScoped e Env_upd.context := by
