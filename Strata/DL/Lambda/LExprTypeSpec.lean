@@ -5988,6 +5988,86 @@ private theorem resolveAux_preserves_SubstFreshForGen :
   fun e et C Env Env' h h_sf h_cf h_ne h_aw h_fwf h_bvf =>
     ((resolveAux_preserves_combined e.sizeOf e rfl et C Env Env' h h_ne).2 h_sf h_cf h_aw h_fwf h_bvf).1
 
+/-- `resolveAux` preserves `Subst.allKeysFresh`: if all substitution keys are
+    fresh for the context before the call, they remain fresh after. This holds
+    because (1) the context is preserved, and (2) new keys added during type
+    checking are generated names that are fresh for the (preserved) context. -/
+private theorem inferFVar_preserves_allKeysFresh
+    (C : LContext T) (Env : TEnv T.IDMeta) (x : T.Identifier) (fty : Option LMonoTy)
+    (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : inferFVar C Env x fty = .ok (ty_res, Env'))
+    (h_envwf : TEnvWF Env) :
+    Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
+  sorry
+
+private theorem typeBoundVar_preserves_allKeysFresh
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h_envwf : TEnvWF Env) :
+    Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
+  sorry
+
+/-- After erasing a variable from the context, `allKeysFresh` is preserved
+    (the context only gets smaller). -/
+private theorem allKeysFresh_eraseFromContext
+    (Env : TEnv T.IDMeta) (xv : T.Identifier)
+    (h : Subst.allKeysFresh Env.stateSubstInfo.subst Env.context) :
+    Subst.allKeysFresh (Env.eraseFromContext xv).stateSubstInfo.subst
+      (Env.eraseFromContext xv).context := by
+  sorry
+
+private theorem resolveAux_preserves_allKeysFresh :
+    ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+      (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      TEnvWF Env →
+      Env.context.types ≠ [] →
+      FactoryWF C.functions →
+      Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
+  intro e
+  -- Strong induction on sizeOf
+  suffices h_strong : ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      TEnvWF Env →
+      Env.context.types ≠ [] →
+      FactoryWF C.functions →
+      Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context from
+    fun et C Env Env' h h_wf h_ne h_fwf =>
+      h_strong e.sizeOf e rfl et C Env Env' h h_wf h_ne h_fwf
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  intro e h_sz et C Env Env' h h_envwf h_ne h_fwf
+  match e with
+  | .const m c =>
+    -- inferConst doesn't change the substitution
+    simp [resolveAux, inferConst] at h
+    split at h
+    · simp [Bind.bind, Except.bind] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+      exact h_envwf.substKeysFreshForCtx
+    · exact absurd h (by simp [Bind.bind, Except.bind])
+  | .bvar _ _ => simp [resolveAux, Bind.bind, Except.bind] at h
+  | .fvar m x fty =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h; · simp at h
+    rename_i v1 h_infer; obtain ⟨ty_res, Env_res⟩ := v1; simp at h
+    obtain ⟨_, h2⟩ := h; rw [← h2]
+    exact inferFVar_preserves_allKeysFresh C Env x fty ty_res Env_res h_infer h_envwf
+  | .op m o oty =>
+    sorry -- op case: instantiateWithCheck + optional unify
+  | .app m e1 e2 =>
+    sorry -- app case: two recursive calls + genTyVar + unify + remove
+  | .abs m bty e_body =>
+    sorry -- abs case: typeBoundVar + recursive call + eraseFromContext
+  | .quant m qk bty triggers e_body =>
+    sorry -- quant case: typeBoundVar + two recursive calls + eraseFromContext
+  | .eq m e1 e2 =>
+    sorry -- eq case: two recursive calls + unify
+  | .ite m c th el =>
+    sorry -- ite case: three recursive calls + unify
+
 /-- A type variable produced by `genTyVar` does not appear (as key or in values)
     in any substitution satisfying `SubstFreshForGen` for an earlier gen state.
 
@@ -9266,29 +9346,30 @@ theorem annotate_HasType :
       have h_aux' : resolveAux C Env_upd e = .ok (et, Env') := by
         simp only [Env_upd, TEnv.updateContext] at h_aux ⊢
         exact h_aux
-      have ⟨_, h_hastype⟩ := resolveAux_HasType e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf h_ws_upd
+      subst h_env'
+      have ⟨h_ctx_upd, h_hastype⟩ := resolveAux_HasType e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf h_ws_upd
+      have h_envwf' : TEnvWF Env' :=
+        { aliasesWF := h_ctx_upd ▸ h_envwf_upd.aliasesWF
+          substFreshForGen := resolveAux_preserves_SubstFreshForGen e et C Env_upd Env' h_aux' h_envwf_upd.substFreshForGen h_envwf_upd.ctxFreshForGen h_upd_ne h_envwf_upd.aliasesWF h_fwf h_envwf_upd.boundVarsFresh
+          ctxFreshForGen := h_ctx_upd ▸ ContextFreshForGen.mono _ _ _ h_envwf_upd.ctxFreshForGen (resolveAux_genState_mono e et C Env_upd Env' h_aux')
+          boundVarsNodup := transfer_boundVarsNodup h_envwf_upd.boundVarsNodup h_ctx_upd
+          boundVarsFresh := transfer_boundVarsFresh h_envwf_upd.boundVarsFresh h_ctx_upd (resolveAux_genState_mono e et C Env_upd Env' h_aux')
+          substKeysFreshForCtx := resolveAux_preserves_allKeysFresh e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf }
       rw [← h_typed, applySubstT_toLMonoTy]
-      constructor
-      · -- HasType
-        -- Transfer HasType from Env_upd.context (types = [[]]) to Env.context (types = [])
+      exact ⟨by
+        -- HasType: Transfer from Env_upd.context to Env.context
         have h_upd_eq : Env_upd.context = { types := [[]], aliases := Env.context.aliases } := by
           simp [Env_upd, TEnv.updateContext, TEnv.context]
         have h_ht := h_hastype Env'.stateSubstInfo.subst
           (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
         rw [h_upd_eq] at h_ht
         have h_result := HasType_transfer_empty_scope C Env.context.aliases e _ h_ht
-        -- Need: HasType C Env.context e (...)
-        -- h_result : HasType C {types := [], aliases := Env.context.aliases} e (...)
-        -- Show Env.context = {types := [], aliases := Env.context.aliases}
         suffices Env.context = { types := [], aliases := Env.context.aliases } by
           rw [this]; exact h_result
-        -- Env.context.types = [] (from h_types) and aliases unchanged
         have h_t : Env.context.types = [] := h_types
         cases h_ctx : Env.context
         simp [TEnv.context] at h_t
-        simp_all
-      · -- TEnvWF Env'
-        sorry
+        simp_all, h_envwf'⟩
   | cons hd tl =>
     -- types was non-empty: resolve passes Env unchanged to resolveAux
     simp [Maps.isEmpty, h_types] at h
@@ -9298,12 +9379,18 @@ theorem annotate_HasType :
       obtain ⟨et, Env'⟩ := v
       simp at h
       obtain ⟨h_typed, h_env'⟩ := h
+      subst h_env'
       have h_ne : Env.context.types ≠ [] := by rw [h_types]; exact List.cons_ne_nil _ _
-      have ⟨_, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux h_envwf h_ne h_fwf h_ws
+      have ⟨h_ctx_pres, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux h_envwf h_ne h_fwf h_ws
+      have h_envwf' : TEnvWF Env' :=
+        { aliasesWF := h_ctx_pres ▸ h_envwf.aliasesWF
+          substFreshForGen := resolveAux_preserves_SubstFreshForGen e et C Env Env' h_aux h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_ne h_envwf.aliasesWF h_fwf h_envwf.boundVarsFresh
+          ctxFreshForGen := h_ctx_pres ▸ ContextFreshForGen.mono _ _ _ h_envwf.ctxFreshForGen (resolveAux_genState_mono e et C Env Env' h_aux)
+          boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx_pres
+          boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx_pres (resolveAux_genState_mono e et C Env Env' h_aux)
+          substKeysFreshForCtx := resolveAux_preserves_allKeysFresh e et C Env Env' h_aux h_envwf h_ne h_fwf }
       rw [← h_typed, applySubstT_toLMonoTy]
-      constructor
-      · exact h_hastype Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
-      · sorry
+      exact ⟨h_hastype Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF, h_envwf'⟩
 
 ---------------------------------------------------------------------
 
