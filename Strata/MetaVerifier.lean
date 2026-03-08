@@ -53,8 +53,8 @@ end C_Simp
 
 namespace Boole
 
-def genVCs (program : Strata.Boole.Program) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
-  let program ← (Strata.Boole.toCoreProgram program).toOption
+def genVCs (program : Strata.Boole.Program) (gctx : Strata.GlobalContext) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
+  let program ← (Strata.Boole.toCoreProgram program gctx).toOption
   Core.genVCs program options
 
 end Boole
@@ -71,7 +71,7 @@ def genCoreVCs (program : Program) : Option Core.coreVCs := do
   else if program.dialect == "Boole" then
     match Boole.getProgram program with
     | .ok booleProgram =>
-      Boole.genVCs booleProgram { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
+      Boole.genVCs booleProgram program.globalContext { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
     | .error _ => none
   else
     none

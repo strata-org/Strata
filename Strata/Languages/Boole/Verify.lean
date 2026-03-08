@@ -22,7 +22,6 @@ Boole verification pipeline:
 structure TranslateState where
   fileName : String := ""
   gctx : GlobalContext := {}
-  fvars : Array String := #[]
   fvarIsOp : Array Bool := #[]
   tyBVars : Array String := #[]
   bvars : Array Core.Expression.Expr := #[]
@@ -77,13 +76,9 @@ def getTypeBVarName (m : SourceRange) (i : Nat) : TranslateM String := do
     throwAt m s!"Unknown bound type variable with index {i}"
 
 def getFVarName (m : SourceRange) (i : Nat) : TranslateM String := do
-  let st ← get
-  match st.gctx.nameOf? i with
+  match (← get).gctx.nameOf? i with
   | some n => return n
-  | none =>
-    match st.fvars[i]? with
-    | some n => return n
-    | none => throwAt m s!"Unknown free variable with index {i}"
+  | none => throwAt m s!"Unknown free variable with index {i}"
 
 def getFVarIsOp (m : SourceRange) (i : Nat) : TranslateM Bool := do
   let st ← get
@@ -497,29 +492,36 @@ def toCoreSpec (m : SourceRange) (pname : String) (spec? : Option (BooleDDM.Spec
   | some (.spec_mk _ ⟨_, elts⟩) =>
     toCoreSpecElts m pname elts
 
-def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List (String × Bool) :=
+/--
+Classify command-introduced free symbols:
+- constant/function declarations are treated as function symbols,
+- variable/type/datatype declarations are treated as term/type symbols.
+-/
+def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List Bool :=
   match cmd with
-  | .command_typedecl _ ⟨_, n⟩ _ => [(n, false)]
-  | .command_typesynonym _ ⟨_, n⟩ _ _ _ => [(n, false)]
-  | .command_constdecl _ ⟨_, n⟩ _ _ => [(n, true)]
-  | .command_fndecl _ ⟨_, n⟩ _ _ _ => [(n, true)]
-  | .command_fndef _ ⟨_, n⟩ _ _ _ _ _ _ => [(n, true)]
-  | .command_recfndef _ ⟨_, n⟩ _ _ _ _ _ => [(n, true)]
-  | .command_var _ (.bind_mk _ ⟨_, n⟩ _ _) => [(n, false)]
+  | .command_typedecl _ _ _ => [false]
+  | .command_typesynonym _ _ _ _ _ => [false]
+  | .command_constdecl _ _ _ _ => [true]
+  | .command_fndecl _ _ _ _ _ => [true]
+  | .command_fndef _ _ _ _ _ _ _ _ => [true]
+  | .command_recfndef _ _ _ _ _ _ _ => [true]
+  | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
   | .command_procedure _ _ _ _ _ _ _ => []
-  | .command_datatype _ ⟨_, n⟩ _ _ => [(n, false)]
+  | .command_datatype _ _ _ _ => [false]
   | .command_mutual _ ⟨_, cmds⟩ =>
     (cmds.map registerCommandSymbols).toList.flatten
   | .command_block _ _ => []
   | .command_axiom _ _ _ => []
   | .command_distinct _ _ _ => []
 
-def initFVars (p : Boole.Program) : Array String × Array Bool :=
+/--
+Build the symbol-class table used by `getFVarIsOp`.
+-/
+def initFVarIsOp (p : Boole.Program) : Array Bool :=
   match p with
   | .prog _ ⟨_, cmds⟩ =>
-    let syms := (cmds.map registerCommandSymbols).toList.flatten
-    (syms.map (·.1) |>.toArray, syms.map (·.2) |>.toArray)
+    (cmds.map registerCommandSymbols).toList.flatten.toArray
 
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
   match cmd with
@@ -528,13 +530,13 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     withTypeBVars tys do
       let inputs ← (bindingsToList ins).mapM toCoreBinding
       let outputs ← match outs? with
-        | none => pure []
+        | none => return []
         | some os => (monoDeclListToList os).mapM toCoreMonoBind
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
       let body ← match body? with
-        | none => pure []
+        | none => return []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
       return [Core.Decl.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
@@ -621,15 +623,14 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
-    let (fvars, fvarIsOp) := initFVars p
+    let fvarIsOp := initFVarIsOp p
     let init : TranslateState := {
       gctx := gctx
-      fvars := fvars
       fvarIsOp := fvarIsOp
     }
     let act : TranslateM Core.Program := do
       let decls := (← cmds.mapM toCoreDecls).toList.flatten
-      pure { decls := decls }
+      return { decls := decls }
     act.run' init
 
 open Lean.Parser in
