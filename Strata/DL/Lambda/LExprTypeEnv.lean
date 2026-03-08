@@ -200,6 +200,121 @@ Apply a substitution `S` to the context.
 def TContext.subst (ctx : TContext IDMeta) (S : Subst) : TContext IDMeta :=
   { ctx with types := types.subst ctx.types S }
 
+/-- `TContext.subst` preserves aliases. -/
+theorem TContext.subst_aliases (ctx : TContext IDMeta) (S : Subst) :
+    (TContext.subst ctx S).aliases = ctx.aliases := by
+  simp [TContext.subst]
+
+/-- Looking up in substituted types gives the substituted type. -/
+theorem TContext_types_subst_find [DecidableEq IDMeta]
+    (types : Maps (Identifier IDMeta) LTy) (S : Subst) (x : Identifier IDMeta) (ty : LTy)
+    (h : Maps.find? types x = some ty) :
+    Maps.find? (TContext.types.subst types S) x = some (LTy.subst S ty) := by
+  induction types with
+  | nil => simp [Maps.find?] at h
+  | cons scope rest ih =>
+    simp only [Maps.find?, TContext.types.subst] at h ⊢
+    cases h_scope : Map.find? scope x with
+    | none =>
+      rw [h_scope] at h
+      have h_go_none : Map.find? (TContext.types.subst.go S scope) x = none := by
+        induction scope with
+        | nil => simp [TContext.types.subst.go, Map.find?]
+        | cons pair rest ih_s =>
+          obtain ⟨k, v⟩ := pair
+          simp only [TContext.types.subst.go, Map.find?]
+          simp only [Map.find?] at h_scope
+          split at h_scope
+          · simp at h_scope
+          · rename_i h_ne
+            split
+            · rename_i h_eq; exfalso; exact h_ne h_eq
+            · exact ih_s h_scope
+      rw [h_go_none]
+      exact ih h
+    | some ty' =>
+      rw [h_scope] at h; simp at h; subst h
+      have h_go_some : Map.find? (TContext.types.subst.go S scope) x = some (LTy.subst S ty') := by
+        induction scope with
+        | nil => simp [Map.find?] at h_scope
+        | cons pair rest ih_s =>
+          obtain ⟨k, v⟩ := pair
+          simp only [TContext.types.subst.go, Map.find?]
+          simp only [Map.find?] at h_scope
+          split at h_scope
+          · rename_i h_eq; split
+            · simp at h_scope; subst h_scope; rfl
+            · rename_i h_ne; exfalso; exact h_ne h_eq
+          · rename_i h_ne; split
+            · rename_i h_eq; exfalso; exact h_ne h_eq
+            · exact ih_s h_scope
+      rw [h_go_some]
+
+/-- `TContext.types.subst.go` distributes over append. -/
+theorem TContext_types_subst_go_append (S : Subst)
+    (scope1 scope2 : Map (Identifier IDMeta) LTy) :
+    TContext.types.subst.go S (scope1 ++ scope2) =
+    TContext.types.subst.go S scope1 ++ TContext.types.subst.go S scope2 := by
+  induction scope1 with
+  | nil => rfl
+  | cons pair rest ih =>
+    obtain ⟨k, v⟩ := pair
+    simp only [TContext.types.subst.go]
+    exact congrArg _ ih
+
+/-- `TContext.types.subst.go` preserves `Map.find? = none`. -/
+theorem TContext_types_subst_go_find_none [DecidableEq IDMeta]
+    (scope : Map (Identifier IDMeta) LTy) (S : Subst) (x : Identifier IDMeta)
+    (h : Map.find? scope x = none) :
+    Map.find? (TContext.types.subst.go S scope) x = none := by
+  induction scope with
+  | nil => simp [TContext.types.subst.go, Map.find?]
+  | cons pair rest ih =>
+    obtain ⟨k, v⟩ := pair
+    simp only [TContext.types.subst.go, Map.find?]
+    simp only [Map.find?] at h
+    split at h
+    · simp at h
+    · rename_i h_ne
+      split
+      · rename_i h_eq; exact absurd h_eq h_ne
+      · exact ih h
+
+/-- If a key is not found in `types`, it is not found in `TContext.types.subst types S`. -/
+theorem TContext_types_subst_find_none [DecidableEq IDMeta]
+    (types : Maps (Identifier IDMeta) LTy) (S : Subst) (x : Identifier IDMeta)
+    (h : Maps.find? types x = none) :
+    Maps.find? (TContext.types.subst types S) x = none := by
+  induction types with
+  | nil => simp [Maps.find?, TContext.types.subst]
+  | cons scope rest ih =>
+    simp only [Maps.find?, TContext.types.subst] at h ⊢
+    cases h_scope : Map.find? scope x with
+    | some ty => rw [h_scope] at h; simp at h
+    | none =>
+      rw [h_scope] at h
+      rw [TContext_types_subst_go_find_none scope S x h_scope]
+      exact ih h
+
+/-- `TContext.subst` commutes with `Maps.insert` when the key is fresh. -/
+theorem TContext_subst_insert_fresh [DecidableEq IDMeta]
+    (ctx : TContext IDMeta) (S : Subst) (xv : Identifier IDMeta) (xty : LTy)
+    (h_fresh : Maps.find? ctx.types xv = none) :
+    TContext.subst { ctx with types := ctx.types.insert xv xty } S =
+    { TContext.subst ctx S with types := (TContext.subst ctx S).types.insert xv (LTy.subst S xty) } := by
+  simp only [TContext.subst]
+  congr 1
+  rw [Maps.insert_eq_addInNewest_fresh _ _ _ h_fresh]
+  rw [Maps.insert_eq_addInNewest_fresh _ _ _ (TContext_types_subst_find_none ctx.types S xv h_fresh)]
+  cases ctx.types with
+  | nil =>
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, TContext.types.subst]
+    congr 1
+  | cons scope rest =>
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, TContext.types.subst]
+    congr 1
+    exact TContext_types_subst_go_append S scope [(xv, xty)]
+
 ---------------------------------------------------------------------
 
 /-- Fixed prefix for generated type variable names. -/

@@ -108,6 +108,25 @@ theorem AnnotCompat.of_eq {aliases : List TypeAlias} {ann : LMonoTy} :
     AnnotCompat aliases ann ann :=
   ⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact .refl⟩
 
+/-- `AnnotCompat` is preserved under type substitution: if `ann` is compatible
+    with `xty` under `aliases`, then it is also compatible with `subst S xty`.
+    The witness σ' is obtained by composing the original σ with S on values:
+    `σ' = map (fun (k,v) => (k, subst S v)) σ`. -/
+theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
+    (S : Subst)
+    (h : AnnotCompat aliases ann xty)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
+    AnnotCompat aliases ann (LMonoTy.subst S xty) := by
+  -- Proof sketch:
+  -- 1. From h, obtain σ with AliasEquiv aliases (subst [σ] ann) xty
+  -- 2. Apply AliasEquiv_subst to get AliasEquiv aliases (subst S (subst [σ] ann)) (subst S xty)
+  -- 3. Compose substitutions: subst S (subst [σ] ann) = subst [σ'] ann
+  --    where σ' = map (fun (k,v) => (k, subst S v)) σ
+  -- 4. This gives AnnotCompat aliases ann (subst S xty)
+  -- The composition step (3) needs a single-scope substitution composition lemma.
+  -- AliasEquiv_subst is private and defined later in the file, so we sorry for now.
+  sorry
+
 /--
 Typing relation for `LExpr`s with respect to `LTy`.
 
@@ -7467,8 +7486,9 @@ theorem inferFVar_HasType
       ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n)
     (h_aw : TContext.AliasesWF Env.context) :
     Env'.context = Env.context ∧
-      HasType C (Env.context) (.fvar m x fty)
-        (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst ty_res)) := by
+      ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+        HasType C (TContext.subst Env.context S) (.fvar m x fty)
+          (.forAll [] (LMonoTy.subst S ty_res)) := by
   simp only [inferFVar, Bind.bind, Except.bind] at h
   split at h
   · simp at h  -- context lookup failed
@@ -7483,36 +7503,32 @@ theorem inferFVar_HasType
         simp at h
         obtain ⟨h_ty, h_env⟩ := h
         subst h_ty; subst h_env
-        -- Env' = Env1 and instantiateWithCheck preserves stateSubstInfo
-        -- (resolveAliases = instantiate on genEnv + LMonoTy.resolveAliases; neither touches subst)
-        have h_subst_eq : Env1.stateSubstInfo = Env.stateSubstInfo := by
-          simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h_inst
-          split at h_inst; · simp at h_inst
-          rename_i v1 h_ra_; obtain ⟨mty_ra_, Env_ra_⟩ := v1
-          split at h_inst; · simp at h_inst
-          split at h_inst
-          · simp [Pure.pure, Except.pure] at h_inst; obtain ⟨_, h2⟩ := h_inst; rw [← h2]
-            -- resolveAliases = instantiate (genEnv only) + LMonoTy.resolveAliases
-            simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra_
-            split at h_ra_; · simp at h_ra_
-            rename_i v2 _; obtain ⟨mty_inst_, genEnv_⟩ := v2; simp at h_ra_
-            -- LMonoTy.resolveAliases preserves stateSubstInfo
-            exact LMonoTy_resolveAliases_subst_eq mty_inst_
-              {Env with genEnv := genEnv_} mty_ra_ Env_ra_ h_ra_
-          · simp at h_inst
         constructor
         · exact LTy_instantiateWithCheck_context ty C Env mty Env1 h_inst
-        · -- HasType with the specific Env1.subst (= Env.subst since preserved)
-          rw [h_subst_eq]
-          -- Use the base HasType (sorry-free) then apply Env.subst
+        · intro S h_abs_S h_wf_S
+          -- Strategy: use tvar on the substituted context, then instantiate + resolve aliases.
+          -- Step 1: tvar in substituted context
+          have h_find_S := _root_.Lambda.TContext_types_subst_find
+            Env.context.types S x ty h_find
+          have h_tvar_S := HasType.tvar (C := C) (TContext.subst Env.context S) m x
+            (LTy.subst S ty) h_find_S
+          -- h_tvar_S : HasType C (TContext.subst Env.context S) (.fvar m x none) (LTy.subst S ty)
+          -- Step 2: Connect LTy.subst S ty with .forAll [] (LMonoTy.subst S mty)
+          -- mty comes from instantiateWithCheck ty, which does:
+          --   ty.instantiate genEnv → (mty_inst, genEnv')
+          --   LMonoTy.resolveAliases mty_inst → (mty, Env_ra)
+          -- We need: HasType C (TContext.subst Γ S) (.fvar m x none) (.forAll [] (subst S mty))
+          -- from: HasType C (TContext.subst Γ S) (.fvar m x none) (LTy.subst S ty)
+          -- This requires showing that (LTy.subst S ty) instantiates to (subst S mty).
+          -- For now, use the base HasType and bridge via sorry for the instantiation commutation.
           have h_base := instantiateWithCheck_fvar_HasType C Env.context x ty mty Env Env1 m
             h_find rfl h_inst (h_bvnd x ty h_find) (h_bvf x ty h_find) h_aw
-          -- h_base : HasType ... (.forAll [] mty)
-          -- Need: HasType ... (.forAll [] (subst Env.subst mty))
-          exact HasType_subst_fresh_all C Env.context (.fvar m x none) mty
-            Env.stateSubstInfo.subst h_base
-            (by sorry) -- freshness: subst keys in freeVars(mty) are fresh for context
-            Env.stateSubstInfo.isWF
+          -- h_base : HasType C Env.context (.fvar m x none) (.forAll [] mty)
+          -- We need to lift this to TContext.subst Env.context S with subst S mty.
+          -- The key fact: HasType only inspects the context via types.find? and aliases.
+          -- For tvar: uses types.find?. For tinst: no context. For talias: uses aliases.
+          -- So we can reconstruct the proof in the substituted context.
+          sorry
       · -- Case fty = some fty_val
         rename_i fty_val
         split at h
@@ -7522,13 +7538,13 @@ theorem inferFVar_HasType
           simp at h h_inst2
           split at h
           · simp at h  -- unify failed (via mapError)
-          · rename_i S h_unify_raw
+          · rename_i S_info h_unify_raw
             simp at h
             obtain ⟨h_ty, h_env⟩ := h
             subst h_ty; subst h_env
             -- Extract unify hypothesis from mapError wrapper
             have h_unify : Constraints.unify [(fty_inst, mty)]
-                Env2.stateSubstInfo = .ok S := by
+                Env2.stateSubstInfo = .ok S_info := by
               revert h_unify_raw
               generalize Constraints.unify [(fty_inst, mty)]
                 Env2.stateSubstInfo = res
@@ -7544,12 +7560,17 @@ theorem inferFVar_HasType
                 fty_inst Env2 h_inst2
               simp [TEnv.context] at h1 h2
               rw [h2, h1]
-            · -- HasType with the specific Env'.subst = S.subst (from unification)
-              simp [TEnv.updateSubst]
-              -- instantiateWithCheck_fvar_annotated_HasType gives exactly what we need
-              exact instantiateWithCheck_fvar_annotated_HasType C Env.context x ty
-                mty fty_val fty_inst Env Env1 Env2 S m h_find rfl h_inst h_inst2
-                h_unify (h_bvnd x ty h_find) (h_bvf x ty h_find) h_aw
+            · -- HasType with arbitrary absorbing S in substituted context
+              intro S h_abs_S h_wf_S
+              simp [TEnv.updateSubst] at h_abs_S
+              -- The annotated case: use tvar_annotated in the substituted context.
+              -- tvar_annotated needs:
+              --   (TContext.subst Γ S).types.find? x = some (LTy.subst S ty)
+              --   openFull (LTy.subst S ty) tys = subst S mty_inst
+              --   AnnotCompat (TContext.subst Γ S).aliases fty_val (subst S mty_inst)
+              -- The aliases are preserved: (TContext.subst Γ S).aliases = Γ.aliases
+              -- For now, sorry this case and focus on getting the structure right.
+              sorry
 
 /-!
 ### Core theorem: `resolveAux_HasType`
@@ -7931,7 +7952,7 @@ theorem resolveAux_HasType :
       WellScoped e Env.context →
       Env'.context = Env.context ∧
       ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
-        HasType C (Env.context) e
+        HasType C (TContext.subst Env.context S) e
           (.forAll [] (LMonoTy.subst S et.toLMonoTy)) := by
   -- We use strong induction on LExpr.sizeOf to handle the abs/quant cases,
   -- where resolveAux recurses on (varOpen 0 x e_body) rather than e_body.
@@ -7944,7 +7965,7 @@ theorem resolveAux_HasType :
       WellScoped e Env.context →
       Env'.context = Env.context ∧
       ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
-        HasType C (Env.context) e
+        HasType C (TContext.subst Env.context S) e
           (.forAll [] (LMonoTy.subst S et.toLMonoTy)) from
     fun e => h_strong (LExpr.sizeOf e) e rfl
   intro n
@@ -7962,7 +7983,7 @@ theorem resolveAux_HasType :
       WellScoped e' Env.context →
       Env'.context = Env.context ∧
       ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
-        HasType C (Env.context) e'
+        HasType C (TContext.subst Env.context S) e'
           (.forAll [] (LMonoTy.subst S et.toLMonoTy)) :=
     fun e' h_lt => ih_n (LExpr.sizeOf e') h_lt e' rfl
   match e with
@@ -8008,16 +8029,11 @@ theorem resolveAux_HasType :
         h_infer h_envwf.boundVarsNodup h_envwf.boundVarsFresh h_envwf.aliasesWF
       constructor
       · exact h_ctx_pres
-      · -- h_base_ty : HasType ... (subst Env_res.subst ty_res)
-        -- Need: HasType ... (subst S ty_res) where S absorbs Env_res.subst
+      · -- h_base_ty : ∀ S, absorbs S Env_res.subst → SubstWF S →
+        --   HasType C (TContext.subst Env.context S) (.fvar m x fty) (.forAll [] (subst S ty_res))
+        -- Apply directly with the caller's S
         intro S h_abs_S h_wf_S
-        -- Bridge via HasType_subst_fresh_all + subst_absorbs
-        have h1 := HasType_subst_fresh_all C Env.context (.fvar m x fty)
-          (LMonoTy.subst Env_res.stateSubstInfo.subst ty_res) S h_base_ty
-          (by sorry) -- freshness: keys of S in freeVars(subst Env_res.subst ty_res) are fresh
-          h_wf_S
-        rw [LMonoTy.subst_absorbs S Env_res.stateSubstInfo.subst ty_res h_abs_S] at h1
-        exact h1
+        exact h_base_ty S h_abs_S h_wf_S
   | .op m o oty =>
     intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
@@ -8041,7 +8057,7 @@ theorem resolveAux_HasType :
         -- Step 1: HasType.top gives the full polymorphic type
         have h_func_mem : func ∈ C.functions := Array.mem_of_find?_eq_some h_find
         have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
-        have h_top := HasType.top Env.context m func o type_val h_find h_type
+        have h_top := HasType.top (TContext.subst Env.context S) m func o type_val h_find h_type
         -- Step 2: HasType_LTy_instantiate gives the mono type
         have h_ty_closed := LFunc.type_freeVars_eq_nil func type_val h_type h_func_wf
         have h_bv_eq := LFunc.type_boundVars_eq_typeArgs func type_val h_type
@@ -8065,70 +8081,33 @@ theorem resolveAux_HasType :
           rename_i v_inst h_lty_inst; obtain ⟨mty_inst, genEnv'⟩ := v_inst
           simp at h_ra h_lty_inst
           have h_ctx_inst := LTy.instantiate_context type_val Env.genEnv mty_inst genEnv' h_lty_inst
-          have h_mono := HasType_LTy_instantiate C Env.context (.op m o none) type_val mty_inst
+          have h_mono := HasType_LTy_instantiate C (TContext.subst Env.context S) (.op m o none) type_val mty_inst
             Env.genEnv genEnv' h_top h_lty_inst h_nodup h_bv_fresh
-          -- h_mono : HasType C Env.context (.op m o none) (.forAll [] mty_inst)
+          -- h_mono : HasType C (TContext.subst Env.context S) (.op m o none) (.forAll [] mty_inst)
           -- Alias resolution: resolveAliases preserves HasType via talias
           have h_ra_ctx : ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context = Env.context := by
             simp [TEnv.context]; exact h_ctx_inst
           have h_aw_ra : TContext.AliasesWF ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context :=
             h_ra_ctx ▸ h_aw
-          have h_aliases_eq : Env.context.aliases =
+          -- Aliases of substituted context = aliases of original context
+          have h_aliases_subst : (TContext.subst Env.context S).aliases = Env.context.aliases :=
+            _root_.Lambda.TContext.subst_aliases Env.context S
+          have h_aliases_eq : (TContext.subst Env.context S).aliases =
             ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context.aliases := by
-            simp [TEnv.context]; rw [h_ctx_inst]
-          -- Get allKeysFresh for the substitution (keys of S are generated, context is fresh)
-          -- Use isFresh: all freeVars of mty_ra are fresh in Env.context
-          -- Chain: freeVars mty_ra ⊆ freeVars mty_inst ⊆ generated vars → all fresh
-          have h_ra_sub := LMonoTy_resolveAliases_freeVars_subset mty_inst
-            {Env with genEnv := genEnv'} mty_ra Env_ra h_ra h_aw_ra
-          have h_fv_fresh : ∀ v, v ∈ LMonoTy.freeVars mty_ra →
-              TContext.isFresh (T := T) v Env.context := by
-            intro v hv
-            have hv_inst := h_ra_sub v hv
-            -- mty_inst comes from LTy.instantiate of closed type → freeVars ⊆ freshtvs
-            cases type_val with
-            | forAll vars body =>
-            simp [LTy.freeVars] at h_ty_closed
-            cases vars with
-            | nil =>
-              simp [LTy.instantiate] at h_lty_inst
-              obtain ⟨h_eq, _⟩ := h_lty_inst; subst h_eq
-              have : LMonoTy.freeVars body = [] := by
-                simp only [List.removeAll, List.filter_eq_nil_iff] at h_ty_closed
-                match h_fv : LMonoTy.freeVars body with
-                | [] => rfl
-                | a :: _ => exfalso; have := h_ty_closed a (by simp [h_fv])
-                            simp [List.elem_eq_mem] at this
-              simp [this] at hv_inst
-            | cons x' xs' =>
-              simp only [LTy.instantiate, Bind.bind, Except.bind] at h_lty_inst
-              split at h_lty_inst; · simp at h_lty_inst
-              rename_i v_gen h_gen'; obtain ⟨ftvs, gE⟩ := v_gen; simp at h_lty_inst h_gen'
-              obtain ⟨h_eq, _⟩ := h_lty_inst; subst h_eq
-              have h_body_cl : ∀ tv, tv ∈ LMonoTy.freeVars body → tv ∈ (x' :: xs') := by
-                intro tv htv
-                simp only [List.removeAll, List.filter_eq_nil_iff] at h_ty_closed
-                have := h_ty_closed tv htv
-                simp only [List.elem_eq_mem, Bool.not_eq_true', decide_eq_false_iff_not,
-                           Decidable.not_not] at this
-                exact this
-              have h_len := TGenEnv.genTyVars_length _ _ _ _ h_gen'
-              have h_gf := TGenEnv.genTyVars_allFresh (x' :: xs').length Env.genEnv ftvs gE h_gen'
-              have hSNE' : Subst.hasEmptyScopes
-                  [List.zip (x' :: xs') (List.map LMonoTy.ftvar ftvs)] = false := by
-                simp only [Subst.hasEmptyScopes, List.all_cons, List.all_nil, Bool.and_true]
-                cases ftvs with
-                | nil => simp [TGenEnv.genTyVars_length] at h_len
-                | cons _ _ => simp [List.zip_cons_cons]; rfl
-              exact h_gf v
-                (LMonoTy.freeVars_subst_closed (x' :: xs') ftvs h_len body h_body_cl hSNE' v hv_inst)
+            rw [h_aliases_subst]; simp [TEnv.context]; rw [h_ctx_inst]
+          have h_aw_subst : TContext.AliasesWF (TContext.subst Env.context S) := by
+            rw [TContext.AliasesWF]; rw [h_aliases_subst]; exact h_aw
           -- HasType_resolveAliases gives HasType ... (.forAll [] mty_ra) via AliasEquiv
-          have h_typed := HasType_resolveAliases C Env.context (.op m o none) mty_inst mty_ra
+          have h_typed := HasType_resolveAliases C (TContext.subst Env.context S) (.op m o none) mty_inst mty_ra
             {Env with genEnv := genEnv'} Env_ra h_mono h_ra h_aliases_eq
-            (h_ra_ctx ▸ h_aw)
-          -- Apply S: keys of S in freeVars mty_ra are fresh (all freeVars are fresh)
-          exact HasType_subst_fresh_all C Env.context (.op m o none) mty_ra S h_typed
-            (fun a _ ha_fv => h_fv_fresh a ha_fv) h_wf_S
+            h_aw_subst
+          -- h_typed : HasType C (TContext.subst Env.context S) (.op ...) (.forAll [] mty_ra)
+          -- Goal: HasType C (TContext.subst Env.context S) (.op ...) (.forAll [] (LMonoTy.subst S mty_ra))
+          -- Use HasType_subst_fresh_all: keys of S in freeVars mty_ra are fresh in TContext.subst Γ S
+          -- (because SubstWF S means S is idempotent, so keys don't appear in substituted types)
+          exact HasType_subst_fresh_all C (TContext.subst Env.context S) (.op m o none) mty_ra S h_typed
+            (by sorry) -- freshness: keys of S fresh in TContext.subst Env.context S (needs SubstWF idempotency lemma)
+            h_wf_S
         · simp at h_inst
     | some oty_val =>
       simp only [Except.mapError] at h
@@ -8266,8 +8245,11 @@ theorem resolveAux_HasType :
             have h_open : LTy.openFull (.forAll [] body) [] = body := by
               simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
               exact LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty])
-            exact HasType.talias Env.context _ _ _ h_ae_S
-              (HasType.top_annotated Env.context m func o (.forAll [] body) body [] oty_val
+            have h_aliases_subst : (TContext.subst Env.context S).aliases = Env.context.aliases :=
+              _root_.Lambda.TContext.subst_aliases Env.context S
+            rw [← h_aliases_subst] at h_annot h_ae_S
+            exact HasType.talias (TContext.subst Env.context S) _ _ _ h_ae_S
+              (HasType.top_annotated (TContext.subst Env.context S) m func o (.forAll [] body) body [] oty_val
                 h_find h_type (by simp [LTy.boundVars]) h_open h_annot)
           | cons x' xs' =>
             -- Polymorphic case
@@ -8295,8 +8277,11 @@ theorem resolveAux_HasType :
                   (List.map (fun v => LMonoTy.subst S (.ftvar v)) ftvs)] body := by
               simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, tys]
             rw [← h_open] at h_annot h_ae_S
-            exact HasType.talias Env.context _ _ _ h_ae_S
-              (HasType.top_annotated Env.context m func o (.forAll (x' :: xs') body)
+            have h_aliases_subst : (TContext.subst Env.context S).aliases = Env.context.aliases :=
+              _root_.Lambda.TContext.subst_aliases Env.context S
+            rw [← h_aliases_subst] at h_annot h_ae_S
+            exact HasType.talias (TContext.subst Env.context S) _ _ _ h_ae_S
+              (HasType.top_annotated (TContext.subst Env.context S) m func o (.forAll (x' :: xs') body)
                 (LTy.openFull (.forAll (x' :: xs') body) tys) tys oty_val
                 h_find h_type (by simp [LTy.boundVars]; exact h_tys_len) rfl h_annot)
         · simp at h_inst
@@ -8492,7 +8477,7 @@ theorem resolveAux_HasType :
                 exact h
               rw [h_eq_S] at h_ty1_S
               -- Apply HasType.tapp with result type = subst S (subst v4 (ftvar fresh))
-              exact HasType.tapp Env.context m e1 e2
+              exact HasType.tapp (TContext.subst Env.context S) m e1 e2
                 (.forAll [] (LMonoTy.subst S (LMonoTy.subst v4.subst (.ftvar fresh_name))))
                 (.forAll [] (LMonoTy.subst S e2t.toLMonoTy))
                 (by simp [LTy.isMonoType, LTy.boundVars])
@@ -8639,18 +8624,22 @@ theorem resolveAux_HasType :
             rw [congrArg TContext.types h_mid_ctx, congrArg TContext.aliases h_mid_ctx]
             congr 1
             exact (Maps.insert_eq_addInNewest_fresh _ _ _ h_xv_fresh_maps).symm
-          -- Apply tabs
-          have h_tabs := HasType.tabs Env.context m (xv, some xty) (.forAll [] xty)
+          -- Apply tabs with substituted context directly
+          -- Build the substituted context bridge
+          have h_ctx_subst_bridge : Env1.context.subst S =
+              { Env.context.subst S with types :=
+                (Env.context.subst S).types.insert xv (.forAll [] (LMonoTy.subst S xty)) } := by
+            rw [h_ctx_bridge]
+            exact _root_.Lambda.TContext_subst_insert_fresh Env.context S xv (.forAll [] xty) h_xv_fresh_maps
+          -- Option A: Use tabs with x_ty = .forAll [] (subst S xty)
+          -- This makes body typing match directly, at the cost of needing AnnotCompat_subst
+          have h_tabs := HasType.tabs (TContext.subst Env.context S) m (xv, some xty)
+            (.forAll [] (LMonoTy.subst S xty))
             e_body (.forAll [] (LMonoTy.subst S et_body.toLMonoTy)) bty
-            (by -- LExpr.fresh (xv, some xty) e_body from WellScoped + genVar_fresh
-                -- xv ∉ knownVars Env.context (per-scope freshness → global freshness)
-                -- All fvars of e_body have identifiers in knownVars Env.context (WellScoped)
-                -- Therefore (xv, some xty) ∉ freeVars e_body
+            (by -- LExpr.fresh (xv, some xty) e_body
                 intro h_mem
                 have h_in_ctx := h_ws (xv, some xty) (by simp [LExpr.freeVars]; exact h_mem)
-                -- xv is fresh in every scope of Env.context
                 have h_per_scope := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv
-                -- Derive xv ∉ knownVars from per-scope freshness
                 have h_not_known : xv ∉ TContext.knownVars Env.context := by
                   intro h_kv
                   simp [TContext.knownVars] at h_kv
@@ -8670,36 +8659,23 @@ theorem resolveAux_HasType :
                 exact h_not_known h_in_ctx)
             (by simp [LTy.isMonoType, LTy.boundVars])
             (by simp [LTy.isMonoType, LTy.boundVars])
-            (by rw [← h_ctx_bridge]; exact h_body_S)
+            (by -- Body typing: h_body_S gives typing in Env1.context.subst S
+                -- which equals {Env.context.subst S with insert xv (.forAll [] (subst S xty))}
+                -- This matches exactly what tabs needs
+                rw [h_ctx_subst_bridge] at h_body_S
+                exact h_body_S)
             (by cases bty with
                 | none => exact Or.inl rfl
                 | some bty_val =>
                   right; exact ⟨bty_val, rfl,
-                    typeBoundVar_AnnotCompat C Env bty_val xv xty Env1 h_tbv h_aw⟩)
-          -- h_tabs : HasType ... (.forAll [] (tcons "arrow" [xty, subst S et_body.toLMonoTy]))
-          -- Apply HasType_subst_fresh_all to get subst S applied
-          have h1 := HasType_subst_fresh_all C Env.context (.abs m bty e_body)
-            (.tcons "arrow" [xty, LMonoTy.subst S et_body.toLMonoTy]) S
-            (by simp [LTy.toMonoType] at h_tabs; exact h_tabs)
-            (by -- keys of S in freeVars (arrow [xty, subst S ety]) are fresh
-                intro a ha_key ha_fv
-                -- freeVars (arrow [xty, subst S ety]) = freeVars xty ++ freeVars (subst S ety)
-                simp only [LMonoTy.freeVars, LMonoTys.freeVars, List.mem_append, List.append_nil] at ha_fv
-                rcases ha_fv with ha_xty | ha_subst
-                · -- a ∈ freeVars xty: xty from typeBoundVar, freeVars are generated $__ty vars
-                  -- All generated vars are fresh in Env.context by ContextFreshForGen
-                  exact typeBoundVar_xty_freeVars_isFresh C Env bty xv xty Env1 h_tbv h_aw a ha_xty
-                · -- a ∈ freeVars (subst S ety): impossible by SubstWF (keys eliminated by subst)
-                  exact absurd ha_subst (SubstWF.key_not_in_freeVars_subst S _ a ha_key h_wf_S))
-            h_wf_S
-          -- h1 : HasType ... (.forAll [] (subst S (tcons "arrow" [xty, subst S ety])))
-          -- Rewrite: subst S (tcons "arrow" [xty, subst S ety])
-          --        = tcons "arrow" [subst S xty, subst S (subst S ety)]
-          --        = tcons "arrow" [subst S xty, subst S ety]  (idempotence)
-          rw [LMonoTy.subst_tcons_pair S "arrow" xty (LMonoTy.subst S et_body.toLMonoTy)] at h1
-          rw [LMonoTy.subst_absorbs S S et_body.toLMonoTy
-            (Subst.absorbs_refl S h_wf_S)] at h1
-          exact h1
+                    (TContext.subst_aliases Env.context S) ▸
+                    AnnotCompat_subst S
+                      (typeBoundVar_AnnotCompat C Env bty_val xv xty Env1 h_tbv h_aw)
+                      (fun a ha => h_aw a ha)⟩)
+          simp [LTy.toMonoType] at h_tabs
+          -- h_tabs : HasType C (Env.context.subst S) (.abs m bty e_body)
+          --   (.forAll [] (.tcons "arrow" [subst S xty, subst S et_body.toLMonoTy]))
+          exact h_tabs
   | .quant m qk bty tr e_body =>
     intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
@@ -8756,45 +8732,42 @@ theorem resolveAux_HasType :
           (h_ctx3.trans h_ctx2)
           (typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv) h_ne
       · -- Typing: quant result type is bool, subst S bool = bool
-        intro S _ _
+        intro S h_abs_S h_wf_S
         rw [← h_et]; simp [toLMonoTy, LMonoTy.subst_bool]
-        -- Goal: HasType C Env.context (.quant m qk bty tr e_body) (.forAll [] .bool)
-        -- Use tquant rule with x = (xv, some xty), x_ty = .forAll [] xty
+        -- Goal: HasType C (Env.context.subst S) (.quant m qk bty tr e_body) (.forAll [] .bool)
+        -- Use tquant rule with x = (xv, some xty), x_ty = .forAll [] (subst S xty)
         -- The if-check gives et_body.toLMonoTy = .bool (ety = bool)
         rename_i h_ety_bool
         -- h_ety_bool : ¬(et_body.toLMonoTy != LMonoTy.bool) = true
         -- i.e., et_body.toLMonoTy = LMonoTy.bool
-        -- Get body and trigger typings from IH
-        -- Get body and trigger typings from IH (under Env3.subst via absorption)
-        -- Body: IH gives HasType under any absorbing S. Take S = Env3.subst.
-        have h_abs_Env3_Env2 : Subst.absorbs Env3.stateSubstInfo.subst Env2.stateSubstInfo.subst :=
-          resolveAux_absorbs _ triggersT C Env2 Env3 h_res_tr h_envwf2.toEnvFreshForGen h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.boundVarsFresh
-        have ⟨_, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 e_body h_tbv
-              (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)))
-        have h_body_bool := h_ty_body Env3.stateSubstInfo.subst h_abs_Env3_Env2 Env3.stateSubstInfo.isWF
-        -- et_body.toLMonoTy should be bool (from the if-check)
-        -- h_ety_bool : ¬(et_body.toLMonoTy != LMonoTy.bool) = true means et_body.toLMonoTy = bool
         have h_ety_eq_bool : et_body.toLMonoTy = LMonoTy.bool := by
           revert h_ety_bool; intro h; simp_all
-        rw [h_ety_eq_bool, LMonoTy.subst_bool] at h_body_bool
-        -- h_body_bool : HasType C Env1.context (varOpen 0 (xv, some xty) e_body) (.forAll [] .bool)
+        -- Get body and trigger typings from IH (under S via absorption)
+        -- S absorbs Env'.subst = Env3.subst (eraseFromContext doesn't change subst)
+        have h_abs_S_Env3 : Subst.absorbs S Env3.stateSubstInfo.subst := by
+          rw [← h_env'] at h_abs_S
+          simp [TEnv.eraseFromContext, TEnv.updateContext] at h_abs_S
+          exact h_abs_S
+        have h_abs_Env3_Env2 : Subst.absorbs Env3.stateSubstInfo.subst Env2.stateSubstInfo.subst :=
+          resolveAux_absorbs _ triggersT C Env2 Env3 h_res_tr h_envwf2.toEnvFreshForGen h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.boundVarsFresh
+        have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst :=
+          Subst.absorbs_trans Env2.stateSubstInfo.subst Env3.stateSubstInfo.subst S
+            h_abs_Env3_Env2 h_abs_S_Env3
+        have ⟨_, h_ty_body⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 e_body h_tbv
+              (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)))
+        have h_body_S := h_ty_body S h_abs_S_Env2 h_wf_S
+        rw [h_ety_eq_bool, LMonoTy.subst_bool] at h_body_S
+        -- h_body_S : HasType C (Env1.context.subst S) (varOpen 0 (xv, some xty) e_body) (.forAll [] .bool)
         -- Trigger typing from IH
         have h_ws_tr' : WellScoped (varOpen 0 (xv, some xty) tr) Env1.context :=
           WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 tr h_tbv
             (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; left; exact hx))
         have ⟨_, h_ty_tr⟩ := ih_tr triggersT C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf
           (by rw [h_ctx2]; exact h_ws_tr')
-        have h_tr_typed := h_ty_tr Env3.stateSubstInfo.subst (Subst.absorbs_refl _ Env3.stateSubstInfo.isWF) Env3.stateSubstInfo.isWF
-        rw [h_ctx2] at h_tr_typed
-        -- h_tr_typed : HasType C Env1.context (varOpen 0 (xv, some xty) tr) (...)
-        -- Apply tquant with x = (xv, some xty), x_ty = .forAll [] xty
-        -- Env1.context comes from typeBoundVar = addInNewestContext on Env_mid
-        -- tquant needs {Γ | types := insert xv (.forAll [] xty)}
-        -- These are equivalent when xv is fresh (addInNewest = insert for fresh keys)
-        have h_isMonoType : LTy.isMonoType (.forAll [] xty) := by simp [LTy.isMonoType, LTy.boundVars]
-        -- Bridge: Env1.context = {Env.context | types := insert xv (.forAll [] xty)}
-        -- xv freshness: typeBoundVar_xv_fresh_in_context gives Map.find? = none for each scope
-        -- → Maps.find? = none for the full context
+        have h_tr_S := h_ty_tr S h_abs_S_Env3 h_wf_S
+        rw [h_ctx2] at h_tr_S
+        -- h_tr_S : HasType C (Env1.context.subst S) (varOpen 0 (xv, some xty) tr) (...)
+        -- Freshness and bridge setup (same as abs case)
         have h_xv_fresh_maps : Maps.find? Env.context.types xv = none := by
           have h_per_scope := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv
           suffices ∀ (types : Maps T.Identifier LTy),
@@ -8854,13 +8827,18 @@ theorem resolveAux_HasType :
           rw [h_types_eq, h_aliases_eq]
           congr 1
           exact (Maps.insert_eq_addInNewest_fresh _ _ _ h_xv_fresh_maps).symm
-        -- Now apply tquant with the bridge available to all subgoals
-        exact HasType.tquant Env.context m qk tr
-          (.forAll [] (LMonoTy.subst Env3.stateSubstInfo.subst (triggersT.toLMonoTy)))
-          (xv, some xty) (.forAll [] xty) e_body bty
-          (by -- LExpr.fresh (xv, some xty) e_body from WellScoped + genVar_fresh
+        -- Build the substituted context bridge (same as abs case)
+        have h_ctx_subst_bridge : Env1.context.subst S =
+            { Env.context.subst S with types :=
+              (Env.context.subst S).types.insert xv (.forAll [] (LMonoTy.subst S xty)) } := by
+          rw [h_ctx_bridge]
+          exact _root_.Lambda.TContext_subst_insert_fresh Env.context S xv (.forAll [] xty) h_xv_fresh_maps
+        -- Apply tquant with substituted context and substituted x_ty
+        have h_tquant := HasType.tquant (TContext.subst Env.context S) m qk tr
+          (.forAll [] (LMonoTy.subst S (triggersT.toLMonoTy)))
+          (xv, some xty) (.forAll [] (LMonoTy.subst S xty)) e_body bty
+          (by -- LExpr.fresh (xv, some xty) e_body
               intro h_mem
-              -- freeVars (.quant _ _ _ tr e_body) = freeVars tr ++ freeVars e_body
               have h_in_ctx := h_ws (xv, some xty) (by
                 simp [LExpr.freeVars, List.mem_append]; right; exact h_mem)
               have h_per_scope := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env1 h_tbv
@@ -8880,16 +8858,24 @@ theorem resolveAux_HasType :
                     · exact ih (fun m hm => h_all m (List.mem_cons_of_mem _ hm)) h_rest
                 exact this _ h_per_scope h_kv
               exact h_not_known h_in_ctx)
-          h_isMonoType
-          (by rw [← h_ctx_bridge]; exact h_body_bool)
-          (by rw [← h_ctx_bridge]; exact h_tr_typed)
-          (by -- annotation: bty = none ∨ ∃ t, bty = some t ∧ AnnotCompat ...
+          (by simp [LTy.isMonoType, LTy.boundVars])
+          (by -- Body typing in substituted context
+              rw [h_ctx_subst_bridge] at h_body_S
+              exact h_body_S)
+          (by -- Trigger typing in substituted context
+              rw [h_ctx_subst_bridge] at h_tr_S
+              exact h_tr_S)
+          (by -- annotation
               cases bty with
               | none => exact Or.inl rfl
               | some bty_val =>
-                right
-                exact ⟨bty_val, rfl,
-                  typeBoundVar_AnnotCompat C Env bty_val xv xty Env1 h_tbv h_aw⟩)
+                right; exact ⟨bty_val, rfl,
+                  (TContext.subst_aliases Env.context S) ▸
+                  AnnotCompat_subst S
+                    (typeBoundVar_AnnotCompat C Env bty_val xv xty Env1 h_tbv h_aw)
+                    (fun a ha => h_aw a ha)⟩)
+        simp [LTy.toMonoType] at h_tquant
+        exact h_tquant
   | .ite m c t e =>
     -- resolveAux recurses on c, t, e, then unifies [(cty, bool), (tty, ety)].
     -- Result type is tty (the then-branch type), and the HasType rule is `tif`.
@@ -9025,7 +9011,7 @@ theorem resolveAux_HasType :
               rw [h_eq_bool_S] at h_ty_c_S
               -- Then and else branches have the same type
               rw [← h_eq_te_S] at h_ty_e_S
-              exact HasType.tif Env.context m c t e
+              exact HasType.tif (Env.context.subst S) m c t e
                 (.forAll [] (LMonoTy.subst S tht.toLMonoTy))
                 h_ty_c_S h_ty_t_S h_ty_e_S
   | .eq m e1 e2 =>
@@ -9123,7 +9109,7 @@ theorem resolveAux_HasType :
                   LMonoTy.subst_absorbs S v3.subst _ h_abs_S_v3] at h
               exact h
             rw [h_eq_S] at h_ty1_S
-            exact HasType.teq Env.context m e1 e2
+            exact HasType.teq (Env.context.subst S) m e1 e2
               (.forAll [] (LMonoTy.subst S e2t.toLMonoTy))
               h_ty1_S h_ty2_S
 
@@ -9200,7 +9186,7 @@ theorem annotate_HasType :
       TEnvWF Env →
       FactoryWF C.functions →
       WellScoped e Env.context →
-      HasType C (Env.context) e (.forAll [] e_typed.toLMonoTy) ∧
+      HasType C (TContext.subst Env.context Env'.stateSubstInfo.subst) e (.forAll [] e_typed.toLMonoTy) ∧
       TEnvWF Env' := by
   intro e e_typed C Env Env' h h_envwf h_fwf h_ws
   -- Decompose resolve: it ensures types ≠ [] then calls resolveAux
@@ -9261,13 +9247,22 @@ theorem annotate_HasType :
           boundVarsNodup := transfer_boundVarsNodup h_envwf_upd.boundVarsNodup h_ctx_upd
           boundVarsFresh := transfer_boundVarsFresh h_envwf_upd.boundVarsFresh h_ctx_upd (resolveAux_genState_mono e et C Env_upd Env' h_aux') }
       rw [← h_typed, applySubstT_toLMonoTy]
+      -- Env.context.subst S = Env.context since types = []
+      have h_ctx_subst_id : TContext.subst Env.context Env'.stateSubstInfo.subst = Env.context := by
+        unfold TContext.subst
+        rw [h_types]
+        simp only [TContext.types.subst]
+        exact congrArg (TContext.mk · _) h_types.symm
+      -- Env_upd.context.subst S = Env_upd.context since types = [[]]
+      have h_upd_subst_id : TContext.subst Env_upd.context Env'.stateSubstInfo.subst = Env_upd.context := by
+        simp [Env_upd, TEnv.updateContext, TEnv.context, TContext.subst, TContext.types.subst, TContext.types.subst.go]
       exact ⟨by
-        -- HasType: Transfer from Env_upd.context to Env.context
+        rw [h_ctx_subst_id]
         have h_upd_eq : Env_upd.context = { types := [[]], aliases := Env.context.aliases } := by
           simp [Env_upd, TEnv.updateContext, TEnv.context]
         have h_ht := h_hastype Env'.stateSubstInfo.subst
           (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
-        rw [h_upd_eq] at h_ht
+        rw [h_upd_subst_id, h_upd_eq] at h_ht
         have h_result := HasType_transfer_empty_scope C Env.context.aliases e _ h_ht
         suffices Env.context = { types := [], aliases := Env.context.aliases } by
           rw [this]; exact h_result
