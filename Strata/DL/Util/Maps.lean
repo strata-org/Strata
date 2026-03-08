@@ -555,4 +555,22 @@ theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
   unfold Maps.addInNewest
   rfl
 
+/-- After erasing key `x` from all scopes, looking up `x` returns `none`. -/
+theorem Maps.find?_erase_self [DecidableEq α]
+    (ms : Maps α β) (x : α) :
+    Maps.find? (Maps.erase ms x) x = none := by
+  induction ms with
+  | nil => simp [Maps.erase, Maps.find?]
+  | cons m rest ih =>
+    simp only [Maps.erase, Maps.find?, Map.find?_erase_self, ih]
+
+/-- Erasing key `x` from all scopes does not affect lookups for `y ≠ x`. -/
+theorem Maps.find?_erase_ne [DecidableEq α]
+    (ms : Maps α β) (x y : α) (h_ne : y ≠ x) :
+    Maps.find? (Maps.erase ms x) y = Maps.find? ms y := by
+  induction ms with
+  | nil => simp [Maps.erase, Maps.find?]
+  | cons m rest ih =>
+    simp only [Maps.erase, Maps.find?, Map.find?_erase_ne m x y h_ne, ih]
+
 ---------------------------------------------------------------------

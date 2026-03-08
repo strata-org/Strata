@@ -299,4 +299,32 @@ theorem Map.insert_fresh_eq_append [DecidableEq α]
       congr 1
       exact ih h
 
+/-- After erasing key `x`, looking up `x` returns `none`. -/
+theorem Map.find?_erase_self [DecidableEq α]
+    (m : Map α β) (x : α) :
+    Map.find? (Map.erase m x) x = none := by
+  induction m with
+  | nil => simp [Map.erase, Map.find?]
+  | cons p ps ih =>
+    simp only [Map.erase]; split
+    · exact ih
+    · simp only [Map.find?]; split
+      · rename_i h_ne h_eq; exact absurd h_eq h_ne
+      · exact ih
+
+/-- Erasing key `x` does not affect lookups for a different key `y ≠ x`. -/
+theorem Map.find?_erase_ne [DecidableEq α]
+    (m : Map α β) (x y : α) (h_ne : y ≠ x) :
+    Map.find? (Map.erase m x) y = Map.find? m y := by
+  induction m with
+  | nil => simp [Map.erase, Map.find?]
+  | cons p ps ih =>
+    simp only [Map.erase]; split
+    · rename_i h_eq; simp only [Map.find?]; split
+      · rename_i h_py; exact absurd (h_eq ▸ h_py.symm) h_ne
+      · exact ih
+    · simp only [Map.find?]; split
+      · rfl
+      · exact ih
+
 -------------------------------------------------------------------------------
