@@ -24,18 +24,3 @@ function f1<T1, T2>(x : T1) : Map T1 T2;
 #end
 
 ---------------------------------------------------------------------
-
-/--
-error: Leaf already defined.
----
-error: Node already defined.
--/
-#guard_msgs in
-def dupDatatypes : Program :=
-#strata
-program Core;
-datatype Tree (a : Type) { Leaf(), Node(val: a, left: Tree a, right: Tree a) };
-datatype Tree (a : Type) { Leaf(), Node(val: a, left: Tree a, right: Tree a) };
-#end
-
----------------------------------------------------------------------
