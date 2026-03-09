@@ -551,7 +551,7 @@ inline function PPow (v1: Any, v2: Any) : Any
 
 inline function PMod (v1: Any, v2: Any) : Any
 {
-  exception(UnimplementedError ("Mod operator is not suuported"))
+  exception(UnimplementedError ("Mod operator is not supported"))
 }
 
 
