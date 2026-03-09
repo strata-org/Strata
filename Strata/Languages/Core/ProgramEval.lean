@@ -31,14 +31,14 @@ def initStmtToGlobalVarDecl (s : Statement) : Decl :=
   | .init x ty e md => (.var x ty e md)
   | _ => panic s!"Expected a variable initialization; found {format s} instead."
 
-def eval (E : Env) : List (Program × Env) :=
+def eval (E : Env) : Program × Env :=
   -- Push a path condition scope to store axioms
   let E := { E with pathConditions := E.pathConditions.push [] }
-  let declsEnv := go E.program.decls { env := E }
-  declsEnv.map (fun (decls, E) => ({ decls }, E))
-  where go (decls : Decls) (declsE : DeclsEnv) : List (Decls × Env) :=
+  let (decls, E) := go E.program.decls { env := E }
+  ({ decls }, E)
+  where go (decls : Decls) (declsE : DeclsEnv) : Decls × Env :=
   match decls with
-  | [] => [(declsE.xdecls, declsE.env)]
+  | [] => (declsE.xdecls, declsE.env)
   | decl :: rest =>
     match decl with
 
@@ -77,7 +77,7 @@ def eval (E : Env) : List (Program × Env) :=
 
     | .func func _ =>
       match declsE.env.addFactoryFunc func with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .error e => (declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }

@@ -437,13 +437,13 @@ def verify (program : Program)
   match Core.typeCheckAndPartialEval options finalProgram moreFns with
   | .error err =>
     .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-  | .ok pEs =>
+  | .ok pE =>
     let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
-    let VCss ← if options.checkOnly then
-                 pure []
+    let VCs ← if options.checkOnly then
+                 pure #[]
                else
-                 (List.mapM (fun pE => verifySingleEnv pE options counter tempDir) pEs)
-    .ok VCss.toArray.flatten
+                 verifySingleEnv pE options counter tempDir
+    .ok VCs
 
 end Core
 ---------------------------------------------------------------------

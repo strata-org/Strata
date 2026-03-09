@@ -311,7 +311,7 @@ info: ok: [(type Foo (a : Type, b : Type);
 -/
 #guard_msgs in
 #eval do let ans ← typeCheckAndPartialEval .default good_prog
-         return (format ans)
+         return (format [ans])
 
 ---------------------------------------------------------------------
 
