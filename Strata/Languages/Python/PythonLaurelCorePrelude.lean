@@ -607,7 +607,7 @@ spec{
   requires [days_type]: Any..isfrom_none(days) || Any..isfrom_int(days);
   requires [hours_type]: Any..isfrom_none(hours) || Any..isfrom_int(hours);
   requires [days_pos]: Any..isfrom_int(days) ==> Any..as_int!(days)>=0;
-  requires [hours_type]: Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0;
+  requires [hours_pos]: Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0;
   ensures [ret_pos]: Any..isfrom_int(delta) && Any..as_int!(delta)>=0;
 }
 {
