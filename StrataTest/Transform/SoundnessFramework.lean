@@ -49,13 +49,11 @@ def ProgramState.ofConfig : CoreConfig → Option ProgramState
     some ⟨σ, δ, some ⟨label, expr, md⟩⟩
   | .stmts (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md)) :: _) σ δ =>
     some ⟨σ, δ, some ⟨label, expr, md⟩⟩
-  | .block _ (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md)) :: _) σ δ =>
-    some ⟨σ, δ, some ⟨label, expr, md⟩⟩
+  | .block _ inner => ProgramState.ofConfig inner
   | .seq inner _ => ProgramState.ofConfig inner
   | .stmt _ σ δ => some ⟨σ, δ, none⟩
   | .stmts _ σ δ => some ⟨σ, δ, none⟩
   | .terminal σ δ => some ⟨σ, δ, none⟩
-  | .block _ _ σ δ => some ⟨σ, δ, none⟩
   | .exiting _ σ δ => some ⟨σ, δ, none⟩
 
 /-- A program state is reachable from a statement if there exists an initial

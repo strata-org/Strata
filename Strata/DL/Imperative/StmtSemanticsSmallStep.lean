@@ -36,9 +36,9 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
   /-- An exiting configuration, indicating that an exit statement was encountered.
       The optional label identifies which block to exit to. -/
   | exiting : Option String → SemanticStore P → SemanticEval P → Config P CmdT
-  /-- A block context: execute the inner statement list, then consume matching exits.
+  /-- A block context: execute the inner config, then consume matching exits.
       The string is the block label. -/
-  | block : String → List (Stmt P CmdT) → SemanticStore P → SemanticEval P → Config P CmdT
+  | block : String → Config P CmdT → Config P CmdT
   /-- A sequence context: execute the first statement (as a sub-config), then
       continue with the remaining statements. The sub-config is represented
       by the inner Config. -/
@@ -70,11 +70,11 @@ inductive StepStmt
       (.stmt (.cmd c) σ δ)
       (.terminal σ' δ)
 
-  /-- A labeled block steps to a block context that tracks the label. -/
+  /-- A labeled block steps to a block context that wraps its body as `.stmts`. -/
   | step_block :
     StepStmt P EvalCmd extendEval
       (.stmt (.block label ss _) σ δ)
-      (.block label ss σ δ)
+      (.block label (.stmts ss σ δ))
 
   /-- If the condition of an `ite` statement evaluates to true, step to the then
   branch. -/
@@ -161,46 +161,41 @@ inductive StepStmt
       (.seq (.exiting label σ' δ') ss)
       (.exiting label σ' δ')
 
-  /-- A block context steps its body one step forward. -/
+  /-- A block context steps its inner body one step forward.
+      The inner body can be any config (stmts, seq, etc.). -/
   | step_block_body :
-    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.stmts ss' σ' δ') →
+    StepStmt P EvalCmd extendEval inner inner' →
     ----
     StepStmt P EvalCmd extendEval
-      (.block label ss σ δ)
-      (.block label ss' σ' δ')
+      (.block label inner)
+      (.block label inner')
 
-  /-- When a block's body terminates normally, the block terminates normally. -/
+  /-- When a block's inner body reaches terminal, the block terminates. -/
   | step_block_done :
-    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.terminal σ' δ') →
-    ----
     StepStmt P EvalCmd extendEval
-      (.block label ss σ δ)
+      (.block label (.terminal σ' δ'))
       (.terminal σ' δ')
 
-  /-- When a block's body exits with no label, the block consumes the exit. -/
+  /-- When a block's inner body exits with no label, the block consumes the exit. -/
   | step_block_exit_none :
-    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.exiting .none σ' δ') →
-    ----
     StepStmt P EvalCmd extendEval
-      (.block label ss σ δ)
+      (.block label (.exiting .none σ' δ'))
       (.terminal σ' δ')
 
-  /-- When a block's body exits with a matching label, the block consumes the exit. -/
+  /-- When a block's inner body exits with a matching label, the block consumes it. -/
   | step_block_exit_match :
-    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.exiting (.some l) σ' δ') →
     l = label →
     ----
     StepStmt P EvalCmd extendEval
-      (.block label ss σ δ)
+      (.block label (.exiting (.some l) σ' δ'))
       (.terminal σ' δ')
 
-  /-- When a block's body exits with a non-matching label, the exit propagates. -/
+  /-- When a block's inner body exits with a non-matching label, the exit propagates. -/
   | step_block_exit_mismatch :
-    StepStmt P EvalCmd extendEval (.stmts ss σ δ) (.exiting (.some l) σ' δ') →
     l ≠ label →
     ----
     StepStmt P EvalCmd extendEval
-      (.block label ss σ δ)
+      (.block label (.exiting (.some l) σ' δ'))
       (.exiting (.some l) σ' δ')
 
 /--
