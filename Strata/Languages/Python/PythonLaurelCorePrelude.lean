@@ -675,6 +675,14 @@ def getPreludeFunctions (prelude: Core.Program) : List String := (getFunctions p
 
 def corePreludeFunctions := getPreludeFunctions Core.PythonLaurelPrelude
 
+def getProcedures (decls: List Core.Decl) : List String :=
+  match decls with
+  | [] => []
+  | decl::t => match decl.kind with
+        |.proc => decl.name.name::getProcedures t
+        | _ => getProcedures t
+
+def corePreludeProcedures := getProcedures Core.PythonLaurelPrelude.decls
 
 end Python
 end Strata
