@@ -7870,15 +7870,6 @@ theorem instantiateWithCheck_fvar_HasType
           {Env with genEnv := genEnv'} Env_ra h_mono h_ra h_aliases h_aliases_wf
     · simp at h_inst
 
-/-! The following theorem `instantiateWithCheck_fvar_annotated_HasType` has been
-    subsumed by the direct proof in `inferFVar_HasType` (annotated case), which
-    handles both monomorphic and polymorphic types via `polyKeysFresh`.
-    It was previously defined here but is no longer needed or referenced. -/
-private theorem instantiateWithCheck_fvar_annotated_HasType_placeholder : True := trivial
--- Original theorem removed to eliminate sorrys; the functionality is now
--- handled inline in inferFVar_HasType.
-private theorem instantiateWithCheck_fvar_annotated_HasType_removed : True := trivial
-
 /-- A key of a well-formed substitution does not appear in the free variables
     of any substituted type. Proved via `freeVars_of_subst_subset` + `SubstWF`:
     freeVars after subst ⊆ freeVars(original) ∪ freeVars(values), and keys ∉ freeVars(values). -/
