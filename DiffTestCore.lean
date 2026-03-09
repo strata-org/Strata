@@ -110,7 +110,6 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
           else if o.isRefuted || o.isCanBeTrueOrFalse then .noMatch 
           else .smtError "unknown"
         | .error msg => .smtError s!"impl: {msg}"
-        | .implementationError msg => .smtError s!"impl: {msg}"
 
 def main (args : List String) : IO UInt32 := do
   let logDir : Option String ← match args with
