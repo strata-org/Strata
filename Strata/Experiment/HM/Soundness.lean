@@ -68,6 +68,20 @@ theorem AExpr.erase_varClose (k : Nat) (x : String) (ae : AExpr) :
   | eq _ _ _ ih₁ ih₂     => simp [AExpr.varClose, AExpr.erase, Expr.varClose, ih₁, ih₂]
   | quant _ _ _ ih       => simp [AExpr.varClose, AExpr.erase, Expr.varClose, ih]
 
+theorem AExpr.erase_varOpen (k : Nat) (ty : Ty) (x : String) (ae : AExpr) :
+    (ae.varOpen k ty x).erase = ae.erase.varOpen k x := by
+  induction ae generalizing k with
+  | bvar n               => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen]; split <;> rfl
+  | fvar _ _             => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen]
+  | app _ _ _ _ ihf iha  => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen, ihf, iha]
+  | abs _ _ ih           => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen, ih]
+  | op _ _               => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen]
+  | const _              => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen]
+  | ite _ _ _ _ ihc iht ihf =>
+    simp [AExpr.varOpen, AExpr.erase, Expr.varOpen, ihc, iht, ihf]
+  | eq _ _ _ ih₁ ih₂     => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen, ih₁, ih₂]
+  | quant _ _ _ ih       => simp [AExpr.varOpen, AExpr.erase, Expr.varOpen, ih]
+
 ---------------------------------------------------------------------
 -- AExpr erasure under applyAExpr
 ---------------------------------------------------------------------
@@ -121,13 +135,6 @@ theorem Subst.applyCtx_addVar (S : Subst) (Γ : Ctx) (x : String) (σ : Scheme) 
 theorem Expr.varClose_varOpen (x : String) (e : Expr) (k : Nat)
     (hfresh : e.fresh x) :
     (e.varOpen k x).varClose k x = e := by
-  sorry
-
----------------------------------------------------------------------
--- freshFor produces a name fresh in the expression
----------------------------------------------------------------------
-
-theorem freshFor_fresh (e : Expr) : e.fresh e.freshFor := by
   sorry
 
 ---------------------------------------------------------------------
