@@ -308,7 +308,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           let defaultExpr := defaultExprForType model ty
           let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
           let havocStmt := Core.Statement.havoc ident md
-          return ([initStmt, havocStmt])
+          return [initStmt, havocStmt]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
           return [Core.Statement.init ident coreType (some coreExpr) md]
@@ -370,7 +370,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
         return []
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        return ([Core.Statement.call [] callee.text coreArgs md])
+        return [Core.Statement.call [] callee.text coreArgs md]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
