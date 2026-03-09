@@ -595,7 +595,6 @@ spec {
 }
 {
   var d: int;
-  havoc d;
   ret := from_datetime(d);
 };
 
