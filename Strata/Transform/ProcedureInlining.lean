@@ -37,6 +37,7 @@ def Statement.labels (s : Core.Statement) : List String :=
   -- No other labeled commands.
   | .cmd _ => []
   | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
 end
 
 mutual
@@ -62,6 +63,7 @@ def Statement.replaceLabels
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
   | .funcDecl _ _ => s
+  | .typeDecl _ _ => s
 end
 
 
