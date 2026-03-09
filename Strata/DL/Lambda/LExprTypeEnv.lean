@@ -870,7 +870,7 @@ def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
     let aliasPattern := .tcons name (alias.typeArgs.map .ftvar)
     let typesToInstantiate := [aliasPattern, alias.type]
     -- Instantiate both types with fresh variables.
-    match h_inst : LMonoTys.instantiateEnv alias.typeArgs typesToInstantiate Env with
+    match LMonoTys.instantiateEnv alias.typeArgs typesToInstantiate Env with
     | .error e => .error e
     | .ok (instantiatedTypes, updatedEnv) =>
     -- Extract the instantiated pattern and definition using getD to avoid
