@@ -39,12 +39,12 @@ namespace CoreToGOTO
 private def lookupType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident) :
     Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
-  | none => .error s!"Cannot find {i} in the type context!"
+  | none => throw f!"Cannot find {i} in the type context!"
   | some ty =>
     if ty.isMonoType then
       let ty := ty.toMonoTypeUnsafe
       ty.toGotoType
-    else .error f!"Poly-type unexpected in the context for {i}: {ty}"
+    else throw f!"Poly-type unexpected in the context for {i}: {ty}"
 
 private def updateType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident)
     (ty : Core.Expression.Ty) : Core.Expression.TyEnv :=
@@ -60,12 +60,12 @@ instance : Imperative.ToGoto Core.Expression where
 private def lookupTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident) :
     Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
-  | none => .error s!"Cannot find {i} in the type context!"
+  | none => throw f!"Cannot find {i} in the type context!"
   | some ty =>
     if ty.isMonoType then
       let ty := ty.toMonoTypeUnsafe
       ty.toGotoType
-    else .error f!"Poly-type unexpected in the context for {i}: {ty}"
+    else throw f!"Poly-type unexpected in the context for {i}: {ty}"
 
 private def updateTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident)
     (ty : Core.ExprStr.Ty) : Core.ExprStr.TyEnv :=
@@ -178,22 +178,22 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
   if h : cprog.decls.length = 1 then
     let decl := cprog.decls[0]'(by exact Nat.lt_of_sub_eq_succ h)
     match decl.getProc? with
-    | none => .error f!"[transformToGoto] We can process only Strata Core procedures at this time. \
+    | none => throw f!"[transformToGoto] We can process only Strata Core procedures at this time. \
                         Declaration encountered: {decl}"
     | some p =>
       let pname := Core.CoreIdent.toPretty p.header.name
 
       if !p.header.typeArgs.isEmpty then
-        .error f!"[transformToGoto] Translation for polymorphic Strata Core procedures is unimplemented."
+        throw f!"[transformToGoto] Translation for polymorphic Strata Core procedures is unimplemented."
 
       let cmds ← p.body.mapM
         (fun b => match b with
           | .cmd (.cmd c) => return c
-          | _ => .error f!"[transformToGoto] We can process Strata Core commands only, not statements! \
+          | _ => throw f!"[transformToGoto] We can process Strata Core commands only, not statements! \
                            Statement encountered: {b}")
 
       if 1 < p.header.outputs.length then
-        .error f!"[transformToGoto] Translation for multi-return value Strata Core procedures is unimplemented."
+        throw f!"[transformToGoto] Translation for multi-return value Strata Core procedures is unimplemented."
       let ret_tys ← p.header.outputs.values.mapM (fun ty => Lambda.LMonoTy.toGotoType ty)
       let ret_ty := if ret_tys.isEmpty then CProverGOTO.Ty.Empty else ret_tys[0]!
 
@@ -228,7 +228,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
                ret := ret_ty,
                locals := locals }
   else
-    .error f!"[transformToGoto] We can transform only a single Strata Core procedure to \
+    throw f!"[transformToGoto] We can transform only a single Strata Core procedure to \
               GOTO at a time!"
 
 open Strata in

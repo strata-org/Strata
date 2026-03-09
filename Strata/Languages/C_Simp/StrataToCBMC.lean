@@ -96,7 +96,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ]
       ])
     ]
-  | _ => .error "lexprToCBMC: Unimplemented"
+  | _ => throw "lexprToCBMC: Unimplemented"
 
 def createContractSymbolFromAST (func : Strata.C_Simp.Function) : Except String CProverJson.CBMCSymbol := do
   let location : Location := {
@@ -226,22 +226,22 @@ def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Except Str
   match e with
   | .app (.app (.op op _) left) right =>
     let leftJson ← match left with
-      | .fvar "z" _ => .ok (mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName defaultConfig)
-      | .fvar varName _ => .ok (mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName defaultConfig)
+      | .fvar "z" _ => pure (mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName defaultConfig)
+      | .fvar varName _ => pure (mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName defaultConfig)
       | _ => exprToJson left loc
     let rightJson ← match right with
-      | .fvar varName _ => .ok (mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName defaultConfig)
+      | .fvar varName _ => pure (mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName defaultConfig)
       | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum defaultConfig) defaultConfig
       | _ => exprToJson right loc
     mkBinaryOp (← opToStr op) loc.lineNum loc.functionName leftJson rightJson defaultConfig
   | .const n _ =>
     mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14" defaultConfig) defaultConfig
-  | _ => .error "exprToJson: Unimplemented"
+  | _ => throw "exprToJson: Unimplemented"
 
 def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json := do
   match e with
   | .init name _ _ _ =>
-    .ok (mkCodeBlock "decl" "5" loc.functionName (config := defaultConfig) #[
+    return (mkCodeBlock "decl" "5" loc.functionName (config := defaultConfig) #[
       Json.mkObj [
         ("id", "symbol"),
         ("namedSub", Json.mkObj [
@@ -254,7 +254,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
   | .set ("return") _ _ => returnStmt loc.functionName
   | .set name expr _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
-    .ok (mkCodeBlock "expression" "6" loc.functionName (config := defaultConfig) #[
+    return (mkCodeBlock "expression" "6" loc.functionName (config := defaultConfig) #[
       mkSideEffect "assign" "6" loc.functionName (mkIntType defaultConfig) (config := defaultConfig) #[
         mkLvalueSymbol s!"{loc.functionName}::1::{name}" "6" loc.functionName defaultConfig,
         ← exprToJson expr exprLoc
@@ -262,7 +262,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
     ])
   | .assert label expr _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "7" }
-    .ok (mkCodeBlock "expression" "7" loc.functionName (config := defaultConfig) #[
+    return (mkCodeBlock "expression" "7" loc.functionName (config := defaultConfig) #[
       mkSideEffect "function_call" "7" loc.functionName (config := defaultConfig)
         (Json.mkObj [
           ("id", "empty"),
@@ -291,7 +291,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
     ])
   | .assume _ expr _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "13" }
-    .ok (mkCodeBlock "expression" "13" loc.functionName (config := defaultConfig) #[
+    return (mkCodeBlock "expression" "13" loc.functionName (config := defaultConfig) #[
       mkSideEffect "function_call" "13" loc.functionName (config := defaultConfig)
         (Json.mkObj [
           ("id", "empty"),
@@ -316,7 +316,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
         ]
       ]
     ])
-  | .havoc _ _ => .error "cmdToJson: Unimplemented"
+  | .havoc _ _ => throw "cmdToJson: Unimplemented"
 
 mutual
 partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json := do
@@ -349,7 +349,7 @@ partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Except S
         ← blockToJson elseb loc,
       ])
     ]
-  | _ => .error "stmtToJson: Unimplemented"
+  | _ => throw "stmtToJson: Unimplemented"
 end
 
 def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : Except String CProverJson.CBMCSymbol := do

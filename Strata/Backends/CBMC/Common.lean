@@ -236,22 +236,22 @@ def mkSymbol (identifier : String) (symbolType : Json) : Json :=
 
 /-! # Constants -/
 
-def i32ToHex (s : String) : Except String String :=
+def i32ToHex (s : String) : Except String String := do
   match s.toInt? with
   | some n =>
     let unsigned := if n < 0 then UInt32.size + n else n
-    .ok ("".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString)))
-  | none => .error "Failed to convert String to int"
+    return "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
+  | none => throw "Failed to convert String to int"
 
 /-- Convert a decimal integer string to hex for a bitvector of the given bit width.
     Negative values are two's-complement encoded. -/
-def bvToHex (s : String) (width : Nat) : Except String String :=
+def bvToHex (s : String) (width : Nat) : Except String String := do
   match s.toInt? with
   | some n =>
     let modulus := 2 ^ width
     let unsigned := if n < 0 then modulus + n else n
-    .ok ("".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString)))
-  | none => .error s!"Failed to convert '{s}' to int"
+    return "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
+  | none => throw s!"Failed to convert '{s}' to int"
 
 def mkConstant (value : String) (base : String) (sourceLocation : Json) (config : CBMCConfig := .empty) : Except String Json := do
   let hex ← i32ToHex value
@@ -436,23 +436,23 @@ def mkLvalueSymbol (identifier : String) (line : String) (functionName : String)
 
 def opToStr (op: String) : Except String String :=
   match op with
-  | "Int.Gt" => .ok ">"
-  | "Int.Lt" => .ok "<"
-  | "Int.Ge" => .ok ">="
-  | "Int.Le" => .ok "<="
-  | "Int.Add" => .ok "+"
-  | "Int.Sub" => .ok "-"
-  | _ => .error s!"opToStr: Unimplemented operator '{op}'"
+  | "Int.Gt" => return ">"
+  | "Int.Lt" => return "<"
+  | "Int.Ge" => return ">="
+  | "Int.Le" => return "<="
+  | "Int.Add" => return "+"
+  | "Int.Sub" => return "-"
+  | _ => throw s!"opToStr: Unimplemented operator '{op}'"
 
 def opToOutTypeJson (op: String) (config : CBMCConfig := .empty): Except String Json :=
   match op with
-  | ">" => .ok boolType
-  | "<" => .ok boolType
-  | ">=" => .ok boolType
-  | "<=" => .ok boolType
-  | "+" => .ok (mkIntType config)
-  | "-" => .ok (mkIntType config)
-  | _ => .error s!"opToOutTypeJson: Unimplemented operator '{op}'"
+  | ">" => return boolType
+  | "<" => return boolType
+  | ">=" => return boolType
+  | "<=" => return boolType
+  | "+" => return (mkIntType config)
+  | "-" => return (mkIntType config)
+  | _ => throw s!"opToOutTypeJson: Unimplemented operator '{op}'"
 
 
 def mkBinaryOp (op : String) (line : String) (functionName : String) (left : Json) (right : Json) (config : CBMCConfig := .empty) : Except String Json := do

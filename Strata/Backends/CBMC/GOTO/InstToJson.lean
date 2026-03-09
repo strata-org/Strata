@@ -78,13 +78,13 @@ def exprToJson (expr : Expr) : Except String Json := do
       srcField
     ]
   let exprObj ← match expr.id with
-    | .nullary (.symbol name) => .ok (mkSymbolWithSourceLocation name (tyToJson expr.type) expr.sourceLoc)
+    | .nullary (.symbol name) => pure (mkSymbolWithSourceLocation name (tyToJson expr.type) expr.sourceLoc)
     | .nullary (.constant value) => do
       let value ← match expr.type.id with
         | .bitVector (.signedbv w) => bvToHex value w
         | .bitVector (.unsignedbv w) => bvToHex value w
-        | _ => .ok value
-      .ok (Json.mkObj [
+        | _ => pure value
+      pure (Json.mkObj [
         ("id", "constant"),
         ("namedSub", Json.mkObj [
           ("type", tyToJson expr.type),
@@ -93,7 +93,7 @@ def exprToJson (expr : Expr) : Except String Json := do
         srcField
       ])
     | .nullary (.nondet name) =>
-      .ok (Json.mkObj [
+      pure (Json.mkObj [
         ("id", "nondet"),
         ("namedSub", Json.mkObj [
           ("identifier", Json.mkObj [("id", name)]),
@@ -113,7 +113,7 @@ def exprToJson (expr : Expr) : Except String Json := do
           ("namedSub", Json.mkObj [("type", Json.mkObj [("id", "tuple")])]),
           ("sub", Json.arr #[subs[0]!])
         ]
-        .ok (Json.mkObj [
+        pure (Json.mkObj [
           ("id", opStr),
           ("namedSub", Json.mkObj [("type", tyToJson expr.type)]),
           ("sub", Json.arr #[sub0, subs[1]!]),
@@ -125,7 +125,7 @@ def exprToJson (expr : Expr) : Except String Json := do
     | .side_effect effect => do
       let effect_str := toString f!"{effect}"
       let subs ← expr.operands.mapM exprToJson
-      .ok (Json.mkObj [
+      pure (Json.mkObj [
         ("id", "side_effect"),
         ("namedSub", Json.mkObj [
           ("statement", Json.mkObj [("id", effect_str)]),
@@ -149,13 +149,13 @@ def exprToJson (expr : Expr) : Except String Json := do
         ("id", "tuple"),
         ("sub", Json.arr argsSubs.toArray)
       ]
-      .ok (Json.mkObj [
+      pure (Json.mkObj [
         ("id", "function_application"),
         ("namedSub", Json.mkObj [("type", tyToJson expr.type)]),
         ("sub", Json.arr #[fnSymbol, argsTuple]),
         srcField
       ])
-    | _ => .error s!"[exprToJson] Unsupported expr: {format expr}"
+    | _ => throw s!"[exprToJson] Unsupported expr: {format expr}"
   return exprObj
   termination_by (SizeOf.sizeOf expr)
   decreasing_by all_goals (cases expr; term_by_mem)
