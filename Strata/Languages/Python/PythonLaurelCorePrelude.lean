@@ -549,7 +549,7 @@ inline function POr (v1: Any, v2: Any) : Any
 // /////////////////////////////////////////////////////////////////////////////////////
 inline function PPow (v1: Any, v2: Any) : Any
 {
-  exception(UnimplementedError ("Pow operator is not suuported"))
+  exception(UnimplementedError ("Pow operator is not supported"))
 }
 
 inline function PMod (v1: Any, v2: Any) : Any
