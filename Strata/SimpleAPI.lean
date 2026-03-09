@@ -229,7 +229,6 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
   -- Parse skip names into PythonIdents
   let some fileStem := pythonFile.fileStem
     | throw s!"No file stem for {pythonFile}"
-  let stem := fileStem
 
   let mod ← match Strata.Python.Specs.ModuleName.ofString fileStem with
     | .ok m => pure m
@@ -238,7 +237,7 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
   let skipIdents := skipNames.foldl (init := {}) fun acc s =>
     match Strata.Python.Specs.PythonIdent.ofString s with
     | some id => acc.insert id
-    | none => acc.insert { pythonModule := stem, name := s }
+    | none => acc.insert { pythonModule := fileStem, name := s }
 
   -- Create directory if it doesn't exist
   match ← strataDir.metadata |>.toBaseIO with

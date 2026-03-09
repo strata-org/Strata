@@ -1322,17 +1322,6 @@ end
 /-- Maps file paths to their FileMap for error location reporting. -/
 public abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
 
-namespace FileMaps
-
-def ppSourceRange (fmm : FileMaps)  (path : System.FilePath) (loc : SourceRange) : String :=
-  match fmm[path]? with
-  | none =>
-    panic! "Invalid path {file}"
-  | some fm =>
-    loc.format path fm
-
-end FileMaps
-
 /-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
 def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
@@ -1406,13 +1395,18 @@ public def translateFile
         (pythonFile := pythonFile)
         (.ofString contents)
         body
+  let ppErr (e : SpecError) : EIO String String :=
+        match fmm[e.file]? with
+        | none =>
+          throw s!"No location information for {e.file}"
+        | some fm =>
+          pure s!"{e.loc.format e.file fm}: {e.message}"
   if errors.size > 0 then
     let msg := "Translation errors:\n"
-    let msg := errors.foldl (init := msg) fun msg e =>
-      s!"{msg}{fmm.ppSourceRange pythonFile e.loc}: {e.message}\n"
+    let msg ←
+      errors.foldlM (init := msg) fun msg e =>
+        return s!"{msg}{← ppErr e}\n"
     throw msg
-  let warningMsgs := warnings.map fun w =>
-    s!"{fmm.ppSourceRange w.file w.loc}: {w.message}"
-  pure (sigs, warningMsgs)
+  pure (sigs, ← warnings.mapM ppErr)
 
 end Strata.Python.Specs
