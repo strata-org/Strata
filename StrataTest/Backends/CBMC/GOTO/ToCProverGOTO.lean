@@ -427,7 +427,7 @@ info: ok: #[ASSERT skip]
 
 -- Test that contracts are included in the function symbol's code type
 #eval do
-  let reqExpr := CProverGOTO.exprToJson
+  let reqExpr ← CProverGOTO.exprToJson
     (CProverGOTO.Expr.gt (.symbol "x" .Integer) (.constant "0" .Integer))
   let contracts := [("#spec_requires",
     Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr #[reqExpr])])]

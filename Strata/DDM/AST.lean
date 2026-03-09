@@ -979,6 +979,7 @@ A spec for introducing a new binding into a type context.
 inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
+| scopedType (_ : TypeBindingSpec argDecls)  -- Type added to global context
 | datatype (_ : DatatypeBindingSpec argDecls)
 | tvar (_ : TvarBindingSpec argDecls)
 deriving Repr
@@ -988,6 +989,7 @@ namespace BindingSpec
 def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
+| .scopedType v => v.nameIndex
 | .datatype v => v.nameIndex
 | .tvar v => v.nameIndex
 
@@ -1079,6 +1081,22 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := none }
+        | q`StrataDDL.declareScopedType => do
+          let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
+            | newBindingErr s!"declareScopedType has bad arguments {repr attr.args}."; return none
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+            | return panic! "Invalid name index"
+          let nameIndex := ⟨nameIndex, nameP⟩
+          checkNameIndexIsIdent argDecls nameIndex
+          let argsIndex ←
+                match mArgsArg with
+                | none => pure none
+                | some (.catbvar idx) =>
+                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
+                    | return panic! "Invalid arg index"
+                  pure <| some ⟨idx, argsP⟩
+                | _ => newBindingErr "declareScopedType args invalid."; return none
+          some <$> .scopedType <$> pure { nameIndex, argsIndex, defIndex := none }
         | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
@@ -1747,7 +1765,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
         panic! s!"Expected new binding to be Type instead of {repr c}."
     | a =>
       panic! s!"Expected new binding to be bound to type instead of {repr a}."
-  | .type b =>
+  | .type b | .scopedType b =>
     let params : Array String :=
         match b.argsIndex with
         | none => #[]

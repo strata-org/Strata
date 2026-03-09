@@ -38,9 +38,10 @@ spec {
 open Core in
 def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
 
-def myProc : Core.Procedure := match SimpleTestEnvAST.fst.decls.head!.getProc? with
-  | .some p => p
-  | .none => panic! "Expected procedure"
+def myProc : Except String Core.Procedure := do
+  match SimpleTestEnvAST.fst.decls.head!.getProc? with
+  | .some p => return p
+  | .none => throw "Expected procedure"
 
 
 class IdentToStr (I : Type) where
@@ -58,35 +59,35 @@ class HasLExpr (P : Imperative.PureExpr) (I : Lambda.LExprParams) where
 instance : HasLExpr Core.Expression CoreLParams where
   expr_eq := rfl
 
-def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] (e : Lambda.LExpr I.mono) (loc: SourceLoc) : Json :=
+def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] (e : Lambda.LExpr I.mono) (loc: SourceLoc) : Except String Json :=
   match e with
-  | .app _ (.app _ (.op _ op _) left) right =>
-    let leftJson := match left with
+  | .app _ (.app _ (.op _ op _) left) right => do
+    let leftJson ← match left with
       | .fvar _ varName _ =>
         if IdentToStr.toStr varName == "z" then
-          mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
+          pure (mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName)
         else
-          mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
+          pure (mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName)
       | _ => exprToJson (I:=I) left loc
-    let rightJson := match right with
-      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
+    let rightJson ← match right with
+      | .fvar _ varName _ => pure (mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName)
       | .intConst _ value => mkConstant (toString value) "10" (mkSourceLocation "ex_prog.c" loc.functionName loc.lineNum)
       | _ => exprToJson (I:=I) right loc
-    mkBinaryOp (opToStr (IdentToStr.toStr op)) loc.lineNum loc.functionName leftJson rightJson
+    mkBinaryOp (← opToStr (IdentToStr.toStr op)) loc.lineNum loc.functionName leftJson rightJson
   | .true _ => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
   | .intConst _ n =>
     mkConstant (toString n) "10" (mkSourceLocation "ex_prog.c" loc.functionName "14")
   | .fvar _ name _ =>
-    mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr name}" loc.lineNum loc.functionName
-  | _ => panic! "Unimplemented"
+    return (mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr name}" loc.lineNum loc.functionName)
+  | _ => throw "exprToJson: Unimplemented"
 
-def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
+def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
   match e with
-  | .call _ _ _ _ => panic! "Not supported"
+  | .call _ _ _ _ => throw "cmdToJson: call not supported"
   | .cmd c =>
     match c with
     | .init name _ _ _ =>
-      mkCodeBlock "decl" "5" loc.functionName #[
+      return (mkCodeBlock "decl" "5" loc.functionName #[
         Json.mkObj [
           ("id", "symbol"),
           ("namedSub", Json.mkObj [
@@ -95,20 +96,20 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
             ("type", mkIntType)
           ])
         ]
-      ]
+      ])
     | .set ("ret") _ _ =>
       returnStmt loc.functionName
-    | .set name expr _ =>
+    | .set name expr _ => do
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
-      mkCodeBlock "expression" "6" loc.functionName #[
+      return (mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
           mkLvalueSymbol s!"{loc.functionName}::1::{name.toPretty}" "6" loc.functionName,
-          exprToJson (I:=CoreLParams) expr exprLoc
+          ← exprToJson (I:=CoreLParams) expr exprLoc
         ]
-      ]
-    | .assert label expr _ =>
+      ])
+    | .assert label expr _ => do
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "7" }
-      mkCodeBlock "expression" "7" loc.functionName #[
+      return (mkCodeBlock "expression" "7" loc.functionName #[
         mkSideEffect "function_call" "7" loc.functionName
           (Json.mkObj [
             ("id", "empty"),
@@ -128,15 +129,15 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson (I:=CoreLParams) expr exprLoc,
+              ← exprToJson (I:=CoreLParams) expr exprLoc,
               mkStringConstant label "7" loc.functionName
             ])
           ]
         ]
-      ]
-    | .assume _ expr _ =>
+      ])
+    | .assume _ expr _ => do
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "13" }
-      mkCodeBlock "expression" "13" loc.functionName #[
+      return (mkCodeBlock "expression" "13" loc.functionName #[
         mkSideEffect "function_call" "13" loc.functionName
           (Json.mkObj [
             ("id", "empty"),
@@ -156,22 +157,23 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson (I:=CoreLParams) expr exprLoc
+              ← exprToJson (I:=CoreLParams) expr exprLoc
             ])
           ]
         ]
-      ]
+      ])
     | .cover _ _ md =>
-       panic! s!"{Imperative.MetaData.formatFileRangeD md}\
+       throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   cover unimplemented"
     | .havoc _ md =>
-       panic! s!"{Imperative.MetaData.formatFileRangeD md}\
+       throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   havoc unimplemented"
 
 mutual
 def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
-  (b: Imperative.Block P Command) (loc: SourceLoc) : Json :=
-  Json.mkObj [
+  (b: Imperative.Block P Command) (loc: SourceLoc) : Except String Json := do
+  let subs ← b.mapM (stmtToJson (I:=I) · loc)
+  return Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [
       ("#end_location", mkSourceLocation "ex_prog.c" loc.functionName "10"),
@@ -179,16 +181,16 @@ def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
-    ("sub", Json.arr (b.map (stmtToJson (I:=I) · loc)).toArray)
+    ("sub", Json.arr subs.toArray)
   ]
 
 def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
-  (e : Imperative.Stmt P Command) (loc: SourceLoc) : Json :=
+  (e : Imperative.Stmt P Command) (loc: SourceLoc) : Except String Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
-  | .ite cond thenb elseb _ =>
+  | .ite cond thenb elseb _ => do
     let converted_cond : Lambda.LExpr I.mono := @HasLExpr.expr_eq P (I:=I) _ ▸ cond
-    Json.mkObj [
+    return Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [
         ("#source_location", mkSourceLocation "ex_prog.c" loc.functionName "8"),
@@ -196,19 +198,19 @@ def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (L
         ("type", emptyType)
       ]),
       ("sub", Json.arr #[
-        exprToJson (I:=I) converted_cond loc,
-        blockToJson (I:=I) thenb loc,
-        blockToJson (I:=I) elseb loc,
+        ← exprToJson (I:=I) converted_cond loc,
+        ← blockToJson (I:=I) thenb loc,
+        ← blockToJson (I:=I) elseb loc,
       ])
     ]
-  | _ => panic! "Unimplemented"
+  | _ => throw "stmtToJson: Unimplemented"
 end
 
 def listToExpr (l: ListMap CoreLabel Core.Procedure.Check) : Core.Expression.Expr :=
   match l with
   | _ => .true ()
 
-def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
+def createContractSymbolFromAST (func : Core.Procedure) : Except String CBMCSymbol := do
   let location : Location := {
     id := "",
     namedSub := some (Json.mkObj [
@@ -251,7 +253,7 @@ def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      exprToJson (I:=CoreLParams) (listToExpr func.spec.preconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+      ← exprToJson (I:=CoreLParams) (listToExpr func.spec.preconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
     ])
   ]
 
@@ -263,7 +265,7 @@ def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      exprToJson (I:=CoreLParams) (listToExpr func.spec.postconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+      ← exprToJson (I:=CoreLParams) (listToExpr func.spec.postconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
     ])
   ]
 
@@ -294,7 +296,7 @@ def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
     ])
   ]
 
-  {
+  return {
     baseName := (func.header.name.toPretty),
     isProperty := true,
     location := location,
@@ -314,7 +316,7 @@ def getParamJson(func: Core.Procedure) : Json :=
   ]
 
 
-def createImplementationSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
+def createImplementationSymbolFromAST (func : Core.Procedure) : Except String CBMCSymbol := do
   let location : Location := {
     namedSub := some (Json.mkObj [
       ("file", Json.mkObj [("id", "ex_prog.c")]),
@@ -337,7 +339,7 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
 
   -- For now, keep the hardcoded implementation but use function name from AST
   let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
-  let stmtJsons := (func.body.map (stmtToJson (I:=CoreLParams) · loc))
+  let stmtJsons ← (func.body.mapM (stmtToJson (I:=CoreLParams) · loc))
 
   let implValue := Json.mkObj [
     ("id", "code"),
@@ -350,7 +352,7 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
     ("sub", Json.arr stmtJsons.toArray)
   ]
 
-  {
+  return {
     baseName := (func.header.name.toPretty),
     isLvalue := true,
     location := location,
@@ -364,10 +366,10 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
     value := implValue
   }
 
-def testSymbols (proc: Core.Procedure) : String := Id.run do
+def testSymbols (proc: Core.Procedure) : Except String String := do
   -- Generate symbols using AST data
-  let contractSymbol := createContractSymbolFromAST proc
-  let implSymbol := createImplementationSymbolFromAST proc
+  let contractSymbol ← createContractSymbolFromAST proc
+  let implSymbol ← createImplementationSymbolFromAST proc
 
   -- Get parameter names from AST
   let paramNames : List String := proc.header.inputs.keys.map (λ p => p.name)
@@ -387,6 +389,6 @@ def testSymbols (proc: Core.Procedure) : String := Id.run do
 
   -- Add local variable
   m := m.insert s!"{proc.header.name.name}::1::z" zSymbol
-  toString (toJson m)
+  return toString (toJson m)
 
 end Core
