@@ -21,6 +21,33 @@ namespace HM
 theorem unify_sound (h : unify s t = .ok S) : S.apply s = S.apply t := by
   sorry
 
+-- Counterexample: unifyOne is unsound for non-empty S₀
+-- unifyOne (.var 0, .con "f" [.var 0, .var 1]) [(0, .var 2)]
+-- returns S₁ = [(0, .con "f" [.var 2, .var 1]), (0, .var 2)]
+-- S₁.apply (.var 0) = .con "f" [.var 2, .var 1]
+-- S₁.apply (.con "f" [.var 0, .var 1]) = .con "f" [.con "f" [.var 2, .var 1], .var 1]
+-- These are NOT equal.
+example : ∃ c : Constraint, ∃ S₀ : Subst,
+    ∃ r, unifyOne c S₀ = .ok r ∧ r.subst.apply c.1 ≠ r.subst.apply c.2 := by
+  exists (.var 0, .con "f" [.var 0, .var 1]), [(0, .var 2)]
+  simp [unifyOne, unifyCore, Subst.apply, Map.find?, Ty.occurs, Ty.beq, Ty.beqList]
+
+-- Top-level counterexample: reachable from unify
+-- unify (.con "g" [.var 0, .var 0]) (.con "g" [.var 2, .con "f" [.var 0, .var 1]])
+-- zips to [(.var 0, .var 2), (.var 0, .con "f" [.var 0, .var 1])]
+-- Step 1: unifyOne (.var 0, .var 2) [] → S₁ = [(0, .var 2)]
+-- Step 2: unifyOne (.var 0, .con "f" [.var 0, .var 1]) [(0, .var 2)] → unsound
+example : ∃ s t S, unify s t = .ok S ∧ S.apply s ≠ S.apply t := by
+  refine ⟨.con "g" [.var 0, .var 0], .con "g" [.var 2, .con "f" [.var 0, .var 1]],
+      [(0, .con "f" [.var 2, .var 1]), (0, .var 2)], ?_, ?_⟩
+  · simp_all[unify, Except.map, unifyOne, unifyCore, bind, Subst.apply, Subst.id, Map.find?, Ty.occurs];
+
+    split <;> rename_i heq<;> split at heq <;> try contradiction
+    . simp[Except.bind, Map.find?, Ty.occurs] at *
+    . simp[Except.bind, Map.find?, Ty.occurs] at *
+      subst_vars; simp
+  · native_decide
+
 ---------------------------------------------------------------------
 -- Substitution preserves typing
 ---------------------------------------------------------------------
@@ -135,7 +162,10 @@ theorem HasType.instantiate_preserves (h : HasType Γ e σ)
 
 @[simp] theorem Subst.applyScheme_mono (S : Subst) (τ : Ty) :
     S.applyScheme (Scheme.mono τ) = Scheme.mono (S.apply τ) := by
-  sorry
+  simp [applyScheme, Scheme.mono]
+  congr 1
+  congr 1
+  rw [List.filter_eq_self]; grind
 
 ---------------------------------------------------------------------
 -- tyOf of AExpr.app when fnTy is an arrow
@@ -398,94 +428,5 @@ theorem W_sound (h : W Γ e n = .ok (S, ae, n')) :
       have hmono : ∀ τ : Ty, Scheme.isMono (Scheme.mono τ) := fun _ => rfl
       exact HasType.quant (freshFor_fresh body) (hmono _) hty₁'
   | case9 => contradiction
-
-  -- | bvar _ => simp [W] at h
-  -- | const c =>
-  --   simp [W] at h
-  --   obtain ⟨rfl, rfl, rfl⟩ := h
-  --   constructor
-  --   · rfl
-  --   · sorry -- need Subst.id.applyCtx Γ = Γ, then HasType.const
-  -- | fvar x =>
-  --   simp [W] at h
-  --   sorry
-  -- | op f =>
-  --   simp [W] at h
-  --   sorry
-  -- | abs body ih =>
-  --   unfold W at h
-  --   simp only [bind, Except.bind] at h
-  --   split at h <;> try contradiction
-  --   rename_i _ v₁ hv₁
-  --   obtain ⟨S₁, ae₁, n₁⟩ := v₁
-  --   simp only [Except.ok.injEq] at h
-  --   obtain ⟨rfl, rfl, rfl⟩ := h
-  --   have ⟨herase₁, hty₁⟩ := ih hv₁
-  --   constructor
-  --   · -- Erasure: erase (abs arrTy (ae₁.varClose 0 x)) = abs body
-  --     simp [AExpr.erase, AExpr.erase_varClose, herase₁]
-  --     exact Expr.varClose_varOpen _ _ _ (freshVar_fresh n body) sorry
-  --   · -- Typing: HasType (S₁.applyCtx Γ) (.abs body) (Scheme.mono (Ty.arrow (S₁.apply (Ty.var n)) ae₁.tyOf))
-  --     rw [Subst.applyCtx_addVar, Subst.applyScheme_mono] at hty₁
-  --     have htyOf : (AExpr.abs (Ty.arrow (S₁.apply (Ty.var n)) ae₁.tyOf)
-  --                   (ae₁.varClose 0 (freshVar n))).tyOf =
-  --                  Ty.arrow (S₁.apply (Ty.var n)) ae₁.tyOf := by
-  --       simp [AExpr.tyOf]
-  --     rw [htyOf]
-  --     exact HasType.abs (freshVar_fresh n body) rfl rfl hty₁
-  -- | app e₁ e₂ ih₁ ih₂ =>
-  --   unfold W at h
-  --   simp only [bind, Except.bind] at h
-  --   split at h <;> try contradiction
-  --   split at h <;> try contradiction
-  --   split at h <;> try contradiction
-  --   rename_i _ v₁ hv₁ _ v₂ hv₂ _ S₃ hS₃
-  --   obtain ⟨S₁, ae₁, n₁⟩ := v₁
-  --   obtain ⟨S₂, ae₂, n₂⟩ := v₂
-  --   simp only [Except.ok.injEq] at h
-  --   obtain ⟨rfl, rfl, rfl⟩ := h
-  --   dsimp only at hv₂ hS₃
-  --   have ⟨herase₁, hty₁⟩ := ih₁ hv₁
-  --   have ⟨herase₂, hty₂⟩ := ih₂ hv₂
-  --   have hunif := unify_sound hS₃
-  --   -- Erasure
-  --   constructor
-  --   · simp [AExpr.erase, AExpr.erase_applyAExpr, herase₁, herase₂]
-  --   · -- Typing: need HasType ((S₃∘(S₂∘S₁)).applyCtx Γ) (.app e₁ e₂) ...
-  --     -- unify_sound: S₃(S₂(ae₁.tyOf)) = Ty.arrow (S₃(ae₂.tyOf)) (S₃(Ty.var n₂))
-  --     rw [Subst.apply_arrow] at hunif
-  --     -- Lift hty₁ through S₂ then S₃
-  --     have hty₁' := (hty₁.subst_preserves S₂).subst_preserves S₃
-  --     rw [Subst.applyScheme_mono, Subst.applyScheme_mono] at hty₁'
-  --     rw [Subst.applyCtx_compose, Subst.applyCtx_compose] at hty₁'
-  --     -- rewrite fn type using unification
-  --     rw [hunif] at hty₁'
-  --     -- Lift hty₂ through S₃
-  --     have hty₂' := hty₂.subst_preserves S₃
-  --     rw [Subst.applyScheme_mono, Subst.applyCtx_compose] at hty₂'
-  --     -- Compose associativity: (S₃∘S₂)(S₁(Γ)) = ((S₃∘S₂)∘S₁)(Γ) = (S₃∘(S₂∘S₁))(Γ)
-  --     rw [Subst.compose_assoc] at hty₁'
-  --     rw [Subst.applyCtx_compose, Subst.compose_assoc] at hty₂'
-  --     -- tyOf of the app node: fnTy is an arrow after unification
-  --     have htyOf : (AExpr.app (S₃.apply (S₂.apply ae₁.tyOf)) (S₃.apply ae₂.tyOf)
-  --                   (S₃.applyAExpr (S₂.applyAExpr ae₁)) (S₃.applyAExpr ae₂)).tyOf =
-  --                  S₃.apply (Ty.var n₂) := by
-  --       show (match S₃.apply (S₂.apply ae₁.tyOf) with
-  --             | .con "→" [_, r] => r | t => t) = _
-  --       rw [hunif]
-  --       simp [Ty.arrow]
-  --     rw [htyOf]
-  --     -- isMono for Scheme.mono
-  --     have hmono : ∀ τ : Ty, Scheme.isMono (Scheme.mono τ) := fun _ => rfl
-  --     exact HasType.app (hmono _) (hmono _) hty₁' hty₂'
-  -- | ite c t f ihc iht ihf =>
-  --   simp [W] at h
-  --   sorry
-  -- | eq e₁ e₂ ih₁ ih₂ =>
-  --   simp [W] at h
-  --   sorry
-  -- | quant k body ih =>
-  --   simp [W] at h
-  --   sorry
 
 end HM
