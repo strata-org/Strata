@@ -57,7 +57,10 @@ inductive CheckLevel where
   | minimal         -- One check, simple messages (pass/fail/unknown)
   | minimalVerbose  -- One check, detailed messages (always true if reached, etc.)
   | full            -- Both checks, detailed messages (all 9 outcomes)
-  deriving Inhabited, Repr, DecidableEq
+  deriving Repr, DecidableEq
+
+instance : Inhabited CheckLevel where
+  default := .minimal
 
 structure VerifyOptions where
   verbose : VerboseMode

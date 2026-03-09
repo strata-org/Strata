@@ -1,10 +1,10 @@
 Successfully parsed.
- [entry_invariant_0]: ✔️ always true if reached
- [assert_measure_pos]: ✔️ always true if reached
- [measure_decreases]: ✔️ always true if reached
- [measure_imp_not_guard]: ✔️ always true if reached
- [arbitrary_iter_maintain_invariant_0]: ✔️ always true if reached
- [sum_assert]: ✔️ always true if reached
- [neg_cond]: ✔️ always true if reached
- [post]: ✔️ always true if reached
+ [entry_invariant_0]: ✅ pass
+ [assert_measure_pos]: ✅ pass
+ [measure_decreases]: ✅ pass
+ [measure_imp_not_guard]: ✅ pass
+ [arbitrary_iter_maintain_invariant_0]: ✅ pass
+ [sum_assert]: ✅ pass
+ [neg_cond]: ✅ pass
+ [post]: ✅ pass
 All 8 goals passed.
