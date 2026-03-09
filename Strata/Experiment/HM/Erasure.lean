@@ -17,12 +17,12 @@ namespace HM
 
 /-! ### Compatibility: a named context agrees with the annotations -/
 
-/-- Every `fvar t x` in `ae` satisfies `Γ.vars.find? x = some (Scheme.mono t)`,
-    and every `op t f` satisfies `Γ.ops.find? f = some (Scheme.mono t)`. -/
+/-- Every `fvar t x` in `ae` has a scheme `σ` in `Γ.vars` that is at least as general as `t`,
+    and every `op t f` has a scheme `σ` in `Γ.ops` that is at least as general as `t`. -/
 def AExpr.ctxCompat (Γ : Ctx) : AExpr → Prop
   | .bvar _         => True
-  | .fvar t x       => Γ.vars.find? x = some (Scheme.mono t)
-  | .op t f         => Γ.ops.find? f = some (Scheme.mono t)
+  | .fvar t x       => ∃ σ, Γ.vars.find? x = some σ ∧ σ.isInstanceOf t
+  | .op t f         => ∃ σ, Γ.ops.find? f = some σ ∧ σ.isInstanceOf t
   | .const _        => True
   | .app _ _ f a    => f.ctxCompat Γ ∧ a.ctxCompat Γ
   | .abs _ e        => e.ctxCompat Γ
@@ -77,11 +77,17 @@ theorem HasTypeA_varOpen (Δ : List Ty) (t : Ty) (x : String) (ae : AExpr) (τ :
 
 /-! ### ctxCompat is preserved by varOpen when we extend Γ -/
 
+theorem Scheme.isInstanceOf_mono (τ : Ty) : (Scheme.mono τ).isInstanceOf τ :=
+  ⟨[], by simp [Scheme.openAll, Scheme.mono, List.foldl]⟩
+
 theorem AExpr.ctxCompat_varOpen (Γ : Ctx) (ae : AExpr) (k : Nat) (t : Ty) (x : String)
     (hc : ae.ctxCompat Γ) (hx : Γ.vars.find? x = some (Scheme.mono t)) :
     (ae.varOpen k t x).ctxCompat Γ := by
   induction ae generalizing k with
-  | bvar n => simp [AExpr.varOpen]; split <;> simp [ctxCompat, *]
+  | bvar n =>
+    simp [AExpr.varOpen]; split
+    · simp [ctxCompat]; exact ⟨Scheme.mono t, hx, Scheme.isInstanceOf_mono t⟩
+    · simp [ctxCompat]
   | fvar _ _ => exact hc
   | op _ _ => exact hc
   | const _ => trivial
@@ -168,6 +174,20 @@ def AExpr.size : AExpr → Nat
 
 /-! ### Main erasure theorem -/
 
+theorem HasType_of_isInstanceOf {Γ : Ctx} {e : Expr} {σ : Scheme}
+    (h : HasType Γ e σ) (hinst : σ.isInstanceOf τ) :
+    HasType Γ e (Scheme.mono τ) := by
+  obtain ⟨subst, hopen⟩ := hinst
+  induction subst generalizing σ with
+  | nil =>
+    simp [Scheme.openAll, List.foldl] at hopen
+    rw [← hopen]; exact h
+  | cons p subst ih =>
+    obtain ⟨α, t⟩ := p
+    simp [Scheme.openAll, List.foldl] at hopen
+    have h' : HasType Γ e (σ.open α t) := .inst h rfl
+    exact ih h' hopen
+
 theorem HasTypeA_implies_HasType (ae : AExpr) (τ : Ty) (Γ : Ctx)
     (h : HasTypeA [] ae τ) (hc : ae.ctxCompat Γ) :
     HasType Γ ae.erase (Scheme.mono τ) := by
@@ -179,8 +199,14 @@ theorem HasTypeA_implies_HasType (ae : AExpr) (τ : Ty) (Γ : Ctx)
       intro ae hsize τ Γ h hc
       match ae with
       | .bvar n => cases h; simp at *
-      | .fvar t x => cases h; simp [AExpr.erase]; exact .fvar hc
-      | .op t f => cases h; simp [AExpr.erase]; exact .op hc
+      | .fvar t x =>
+        cases h; simp [AExpr.erase]
+        obtain ⟨σ, hfind, hinstance⟩ := hc
+        exact HasType_of_isInstanceOf (.fvar hfind) hinstance
+      | .op t f =>
+        cases h; simp [AExpr.erase]
+        obtain ⟨σ, hfind, hinstance⟩ := hc
+        exact HasType_of_isInstanceOf (.op hfind) hinstance
       | .const (.bool b) => cases h; simp [AExpr.erase]; exact .const
       | .const (.int i) => cases h; simp [AExpr.erase]; exact .const
       | .app fnTy argTy f a =>

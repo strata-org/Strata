@@ -182,4 +182,14 @@ def Scheme.open (α : Nat) (τ : Ty) (σ : Scheme) : Scheme :=
     ⟨σ.vars.removeAll [α], σ.body.substVar α τ⟩
   else σ
 
+/-- Apply a sequence of `Scheme.open` operations. -/
+def Scheme.openAll (subst : List (Nat × Ty)) (σ : Scheme) : Scheme :=
+  subst.foldl (fun acc (α, τ) => acc.open α τ) σ
+
+/-- `σ.isInstanceOf τ` means `Scheme.mono τ` is an instance of `σ`:
+    there exists a sequence of instantiations yielding `Scheme.mono τ`. -/
+def Scheme.isInstanceOf (σ : Scheme) (τ : Ty) : Prop :=
+  ∃ subst : List (Nat × Ty),
+    σ.openAll subst = Scheme.mono τ
+
 end HM
