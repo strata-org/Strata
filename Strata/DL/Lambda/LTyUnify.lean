@@ -566,6 +566,136 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
   match xs with
   | [] => S | x :: rest => go rest (S.erase x)
 
+/--
+Open `ty` by instantiating the bound type variable `x` with `xty`.
+-/
+def LTy.open (x : TyIdentifier) (xty : LMonoTy) (ty : LTy) : LTy :=
+  match ty with
+  | .forAll vars lty =>
+    if x ∈ vars then
+      let S := [(x, xty)]
+      .forAll (vars.removeAll [x]) (LMonoTy.subst [S] lty)
+    else
+      ty
+
+/--
+Open `ty` by instantiating all its bound variables with `tys`, giving the
+`LMonoTy` that results. `tys` should have length equal to the number of bound
+variables in `ty`.
+-/
+def LTy.openFull (ty: LTy) (tys: List LMonoTy) : LMonoTy :=
+  LMonoTy.subst [(List.zip (LTy.boundVars ty) tys)] (LTy.toMonoTypeUnsafe ty)
+
+---------------------------------------------------------------------
+
+/-! ### Substitution Properties -/
+
+/--
+Substitution on `LMonoTy.bool` is the identity (ground type).
+-/
+theorem LMonoTy.subst_bool (S : Subst) : LMonoTy.subst S LMonoTy.bool = LMonoTy.bool := by
+  simp [LMonoTy.bool, LMonoTy.subst]
+  intro h
+  simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
+
+/-- Substitution distributes over a 2-element `tcons`, giving component-wise results. -/
+theorem LMonoTy.subst_tcons_pair (S : Subst) (name : String) (a b : LMonoTy) :
+    LMonoTy.subst S (.tcons name [a, b]) = .tcons name [LMonoTy.subst S a, LMonoTy.subst S b] := by
+  rw [LMonoTy.subst_tcons]
+  congr 1
+  rw [LMonoTys.subst_eq_substLogic]
+  by_cases hS : Subst.hasEmptyScopes S
+  · simp [LMonoTys.substLogic, hS]
+    exact ⟨(LMonoTy.subst_emptyS hS).symm, (LMonoTy.subst_emptyS hS).symm⟩
+  · have hS_ne : Subst.hasEmptyScopes S = false := by
+      revert hS; cases Subst.hasEmptyScopes S <;> simp
+    simp [LMonoTys.substLogic, hS_ne]
+
+/-- If no key of `S` appears in `freeVars(mty)`, then `subst S mty = mty`. -/
+theorem LMonoTy.subst_no_relevant_keys (S : Subst) (mty : LMonoTy)
+    (h : ∀ x, x ∈ LMonoTy.freeVars mty → x ∉ Maps.keys S) :
+    LMonoTy.subst S mty = mty := by
+  by_cases hS : Subst.hasEmptyScopes S
+  · exact LMonoTy.subst_emptyS hS
+  · induction mty with
+    | ftvar x =>
+      simp [LMonoTy.subst, hS]
+      rw [Maps.not_mem_keys_find?_none' S x (h x (by simp [LMonoTy.freeVars]))]
+    | bitvec n => simp [LMonoTy.subst]
+    | tcons name args ih =>
+      simp [LMonoTy.subst, LMonoTys.subst_eq_substLogic, hS]
+      induction args with
+      | nil => simp [LMonoTys.substLogic, hS]
+      | cons a rest ih_rest =>
+        simp [LMonoTys.substLogic, hS]
+        exact ⟨ih a (List.mem_cons.mpr (Or.inl rfl))
+                 (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; left; exact hx)),
+               ih_rest (fun b hb => ih b (List.mem_cons.mpr (Or.inr hb)))
+                 (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; right; exact hx))⟩
+
+/--
+If `t` is a value in a well-formed substitution `S` (i.e., `Maps.find? S a = some t`),
+then `subst S t = t`. This is because `SubstWF` guarantees no key of `S` appears
+in the free variables of any value in `S`.
+-/
+theorem LMonoTy.subst_idempotent_value (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
+    LMonoTy.subst S t = t := by
+  apply LMonoTy.subst_no_relevant_keys
+  intro x hx
+  have h_x_in_fvs : x ∈ Subst.freeVars S := Subst.freeVars_of_find_subset S h_find hx
+  simp [SubstWF] at h_wf
+  intro h_x_key
+  exact h_wf x h_x_key h_x_in_fvs
+
+/--
+If no key of a substitution `S` appears free in `ty`, then applying `S` to
+`ty` leaves it unchanged. This is the key lemma for proving idempotence.
+-/
+theorem LMonoTy.subst_no_key_free (S : Subst) (ty : LMonoTy)
+    (h : S.keys.all (fun k => k ∉ ty.freeVars)) :
+    LMonoTy.subst S ty = ty := by
+  by_cases hS : S.hasEmptyScopes
+  · exact LMonoTy.subst_emptyS hS
+  · induction ty with
+    | ftvar x =>
+      have : x ∉ Maps.keys S := by
+        simp [List.all_eq_true] at h; intro h_mem
+        exact h x h_mem (by simp [LMonoTy.freeVars])
+      unfold LMonoTy.subst; simp [hS, Maps.not_mem_keys_find?_none' S x this]
+    | bitvec n =>
+      unfold LMonoTy.subst; simp [hS]
+    | tcons name args ih =>
+      unfold LMonoTy.subst; simp only [hS, ↓reduceIte]
+      suffices h_args : LMonoTys.subst S args = args by rw [h_args]; simp
+      rw [LMonoTys.subst_eq_substLogic]
+      have hp : ∀ k, k ∈ Maps.keys S → k ∉ (LMonoTy.tcons name args).freeVars := by
+        simp [List.all_eq_true] at h; exact h
+      induction args with
+      | nil => simp [LMonoTys.substLogic, hS]
+      | cons a rest ih_rest =>
+        simp only [LMonoTys.substLogic, hS, Bool.false_eq_true, ↓reduceIte]
+        have h1_b : S.keys.all (fun k => k ∉ a.freeVars) := by
+          simp [List.all_eq_true]; intro k hk
+          have := hp k hk; simp [LMonoTy.freeVars, LMonoTys.freeVars] at this; exact this.1
+        have h2_b : S.keys.all (fun k => k ∉ (LMonoTy.tcons name rest).freeVars) := by
+          simp [List.all_eq_true]; intro k hk
+          have := hp k hk; simp [LMonoTy.freeVars, LMonoTys.freeVars] at this; exact this.2
+        have h2_p : ∀ k, k ∈ Maps.keys S → k ∉ (LMonoTy.tcons name rest).freeVars := by
+          simp [List.all_eq_true] at h2_b; exact h2_b
+        rw [ih a (.head _) h1_b,
+            ih_rest (fun ty h_mem h_b => ih ty (.tail _ h_mem) h_b) h2_b h2_p]
+
+/--
+Well-formed substitutions are idempotent: applying the substitution twice
+gives the same result as applying it once. Follows from `subst_no_key_free`
+and `subst_keys_not_in_substituted_type`.
+-/
+theorem LMonoTy.subst_idempotent (S : Subst) (hWF : SubstWF S) (ty : LMonoTy) :
+    LMonoTy.subst S (LMonoTy.subst S ty) = LMonoTy.subst S ty := by
+  exact LMonoTy.subst_no_key_free S (LMonoTy.subst S ty)
+    (LMonoTy.subst_keys_not_in_substituted_type hWF)
+
 ---------------------------------------------------------------------
 
 /-! ### Type Constraints -/
