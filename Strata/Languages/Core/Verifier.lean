@@ -399,7 +399,7 @@ structure VCResult where
   outcome : Except String VCOutcome := .error "not yet computed"
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
-  checkLevel : CheckLevel := .full
+  checkLevel : CheckLevel := .minimal
   checkMode : VerificationMode := .deductive
   /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with the outcome, if the outcome was a failure. -/
