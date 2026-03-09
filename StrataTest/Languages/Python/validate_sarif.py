@@ -34,17 +34,11 @@ def validate(sarif_path: str, base_name: str, *, laurel: bool = False) -> str:
     located_results = [r for r in results if r.get("locations")]
 
     if base_name == "test_precondition_verification":
-        if laurel:
-            # Laurel path produces "unknown" which maps to error in deductive mode
-            if len(error_results) < 1:
-                errors.append(
-                    f"expected errors, got {len(error_results)} error-level results"
-                )
-        else:
-            if len(error_results) < 1:
-                errors.append(
-                    f"expected failures, got {len(error_results)} error-level results"
-                )
+        # Both laurel and non-laurel paths produce errors in deductive mode
+        if len(error_results) < 1:
+            errors.append(
+                f"expected errors, got {len(error_results)} error-level results"
+            )
 
     if base_name == "test_arithmetic":
         if len(error_results) != 0:

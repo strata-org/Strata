@@ -117,10 +117,22 @@ while true; do
     fi
   fi
 
-  # 2. Merge conflict? (check before CI so conflicts aren't masked by old failures)
+  # 2. PR merged/closed? Merge conflict? (check before CI so conflicts aren't masked by old failures)
   if [[ -n "$PR_NUMBER" ]]; then
-    m=$("${GH[@]}" pr view "$PR_NUMBER" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
-    if [[ "$m" == "CONFLICTING" ]]; then
+    PR_STATE=$("${GH[@]}" pr view "$PR_NUMBER" --json state,mergeable --jq '.state + "|" + .mergeable' 2>/dev/null || echo "UNKNOWN|UNKNOWN")
+    STATE="${PR_STATE%%|*}"
+    MERGEABLE="${PR_STATE##*|}"
+    if [[ "$STATE" == "MERGED" ]]; then
+      echo "PR_MERGED: PR #$PR_NUMBER has been merged."
+      echo "ACTION: No further action needed on this branch."
+      stop 0
+    fi
+    if [[ "$STATE" == "CLOSED" ]]; then
+      echo "PR_CLOSED: PR #$PR_NUMBER has been closed."
+      echo "ACTION: Investigate why the PR was closed."
+      stop 0
+    fi
+    if [[ "$MERGEABLE" == "CONFLICTING" ]]; then
       echo "CONFLICT: Branch '$BRANCH' has merge conflicts with main."
       echo "ACTION: Run 'git fetch origin main:main && git merge main', resolve conflicts, then commit and push."
       stop 2
