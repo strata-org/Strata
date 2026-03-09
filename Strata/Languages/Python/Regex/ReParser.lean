@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 namespace Strata
 namespace Python
 
@@ -304,3 +306,4 @@ def parseTop (s : String) : Except ParseError RegexAST :=
 
 -------------------------------------------------------------------------------
 end Strata.Python
+end

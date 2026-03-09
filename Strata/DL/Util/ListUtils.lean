@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 /-! ## List Properties Utilities
   This file contains miscellaneous utilities for manipulating lists and
   properties on lists.
@@ -480,3 +482,4 @@ theorem List.Forall_flatMap :
     intros Hfa
     have Hfa := List.Forall_append.mp Hfa
     exact ⟨Hfa.1, ih Hfa.2⟩
+end

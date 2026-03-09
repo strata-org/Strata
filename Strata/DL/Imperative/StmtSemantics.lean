@@ -3,19 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.Stmt
 import Strata.Util.Tactics
 
 ---------------------------------------------------------------------
 
 namespace Imperative
 
+public section
+
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
-abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
+@[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
 mutual
 
@@ -67,6 +68,9 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
     EvalStmt P Cmd EvalCmd extendEval δ σ (.funcDecl decl md) σ
       (extendEval δ σ decl)
+
+  | typeDecl_sem :
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.typeDecl tc md) σ δ
 
   -- (TODO): Define semantics of `exit`.
 
@@ -152,6 +156,7 @@ theorem EvalStmtDefMonotone
   | .exit _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
+  | .typeDecl _ _ => cases Heval; assumption
 
 theorem EvalBlockDefMonotone
   [DecidableEq P.Ident]
@@ -173,3 +178,5 @@ theorem EvalBlockDefMonotone
     apply EvalStmtDefMonotone <;> assumption
     assumption
 end
+
+end -- public section

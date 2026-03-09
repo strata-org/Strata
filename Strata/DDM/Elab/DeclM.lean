@@ -139,9 +139,12 @@ def logError {m} [ElabClass m] (loc : SourceRange) (msg : String) (isSilent : Bo
   let inputCtx ← ElabClass.getInputContext
   logErrorMessage (mkErrorMessage inputCtx loc msg isSilent)
 
-def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) (isSilent : Bool := false) : m Unit := do
+def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) (isSilent : Bool := false) (globalContext? : Option GlobalContext := none) : m Unit := do
   let inputCtx ← ElabClass.getInputContext
-  let c : FormatContext := .ofDialects (← ElabClass.getDialects) (← ElabClass.getGlobalContext) {}
+  let gctx ← match globalContext? with
+    | some gctx => pure gctx
+    | none => ElabClass.getGlobalContext
+  let c : FormatContext := .ofDialects (← ElabClass.getDialects) gctx {}
   let s : FormatState := { openDialects := ← ElabClass.getOpenDialects }
   let msg := msg c s |>.format |>.pretty
   logErrorMessage (mkErrorMessage inputCtx loc msg isSilent)
