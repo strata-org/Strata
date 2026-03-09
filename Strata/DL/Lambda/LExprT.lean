@@ -357,7 +357,7 @@ protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)
 
 /-- Wrapper around `resolve` that checks the closed-context-types precondition
-    required by the soundness theorem `annotate_HasType`. All context types must
+    required by the soundness theorem `resolve_HasType`. All context types must
     be closed (no free type variables). Use this when the soundness guarantee is
     needed; call plain `resolve` when the context may have non-ground annotations
     (e.g., generic procedure parameters in Strata Core). -/

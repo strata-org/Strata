@@ -374,21 +374,26 @@ private theorem LMonoTy.subst_tcons_pair (S : Subst) (name : String) (a b : LMon
 /-!
 ### Proof architecture for `resolve_HasType`
 
-The proof is structured in three layers:
+The proof is structured in two layers:
 
 1. **`resolveAux_HasType`**: The core theorem, proved by induction on `e`.
    States that if `resolveAux C Env e = .ok (et, Env')`, then:
    - `Env'.context = Env.context` (context is preserved), and
-   - `HasType C Env.context e (.forAll [] (subst Env'.subst et.toLMonoTy))`.
+   - for any substitution `S` that absorbs `Env'.stateSubstInfo.subst`,
+     `HasType C (TContext.subst Env.context S) e (.forAll [] (LMonoTy.subst S et.toLMonoTy))`.
 
-   For recursive cases, each IH gives typing under its own output substitution.
-   We upgrade these to the final substitution via `HasType_subst_upgrade`,
-   justified by the absorption chain built from `resolveAux_absorbs`,
-   `unify_absorbs`, and `Subst.absorbs_trans`.
+   The conclusion is universally quantified over `S` so that the caller
+   (including recursive cases) can instantiate it with the final substitution.
+   This eliminates the need for `HasType_subst_upgrade` in recursive cases
+   (e.g., `eq`, `ite`, `app`): each IH directly gives typing under the
+   caller's `S`, provided we can show `S` absorbs each intermediate
+   environment's substitution via the absorption chain built from
+   `resolveAux_absorbs`, `unify_absorbs`, and `Subst.absorbs_trans`.
 
 2. **`resolve_HasType`**: The top-level theorem. Since `resolve` is just
    `resolveAux` followed by `applySubstT`, we decompose the hypothesis,
-   apply `resolveAux_HasType` directly, and use `applySubstT_toLMonoTy`.
+   apply `resolveAux_HasType` (instantiating `S` with the final substitution),
+   and use `applySubstT_toLMonoTy`.
 
 #### Key supporting lemmas:
 
@@ -406,7 +411,7 @@ The proof is structured in three layers:
 
 - **`unify_makes_equal`**: Unification makes constrained types equal.
 
-- **`resolveAux_vals_fresh`**: Substitution value free vars produced by `resolveAux` are fresh in the context.
+- **`resolveAux_preserves_SubstFreshForGen`**: Substitution keys and values produced by `resolveAux` stay fresh w.r.t. the generator counter.
 
 - **`HasType_subst_fresh_all`**: Typing is preserved under substitution of fresh variables.
 -/
