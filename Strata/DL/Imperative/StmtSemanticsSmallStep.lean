@@ -125,6 +125,12 @@ inductive StepStmt
       (.stmt (.funcDecl decl md) σ δ)
       (.terminal σ (extendEval δ σ decl))
 
+  /-- A type declaration is a no-op at runtime. -/
+  | step_typeDecl :
+    StepStmt P EvalCmd extendEval
+      (.stmt (.typeDecl _tc _md) σ δ)
+      (.terminal σ δ)
+
   /-- An empty list of statements steps to `.terminal` with no state changes. -/
   | step_stmts_nil :
     StepStmt P EvalCmd extendEval

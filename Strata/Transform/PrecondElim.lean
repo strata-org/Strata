@@ -240,6 +240,8 @@ def transformStmt (s : Statement)
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty none md
       return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
+  | .typeDecl _ _ =>
+    return (false, [s])  -- Type declarations pass through unchanged
   termination_by s.sizeOf
   decreasing_by all_goals term_by_mem
 end

@@ -361,6 +361,9 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
   | .funcDecl _decl _md =>
     -- Function declarations are not yet supported in GOTO translation
     .error "funcDecl: Unimplemented statement."
+  | .typeDecl _tc _md =>
+    -- Type declarations are not yet supported in GOTO translation
+    .error "typeDecl: Unimplemented statement."
 termination_by Stmt.sizeOf s
 decreasing_by all_goals simp_all <;> omega
 

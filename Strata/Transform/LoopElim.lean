@@ -60,6 +60,7 @@ def Stmt.removeLoopsM
   | .cmd _ => pure s
   | .exit _ _ => pure s
   | .funcDecl _ _ => pure s  -- Function declarations pass through unchanged
+  | .typeDecl _ _ => pure s  -- Type declarations pass through unchanged
 
 def Block.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasPassiveCmds P C]
