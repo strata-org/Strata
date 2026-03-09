@@ -263,19 +263,14 @@ theorem HasType.regularity [DecidableEq T.IDMeta] (h : HasType (T := T) C Γ e t
 /--
 Ground types (from constants) are unaffected by type substitution.
 -/
+theorem LConst.ty_freeVars (c : LConst) : LMonoTy.freeVars c.ty = [] := by
+  cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.real, LMonoTy.string,
+    LMonoTy.freeVars, LMonoTys.freeVars]
+
 theorem LConst.ty_subst (c : LConst) (S : Subst) :
     LMonoTy.subst S c.ty = c.ty := by
-  cases c with
-  | intConst i =>
-    simp [LConst.ty, LMonoTy.int, LMonoTy.subst, LMonoTys.subst, LMonoTys.subst.substAux]
-  | strConst s =>
-    simp [LConst.ty, LMonoTy.string, LMonoTy.subst, LMonoTys.subst, LMonoTys.subst.substAux]
-  | realConst r =>
-    simp [LConst.ty, LMonoTy.real, LMonoTy.subst, LMonoTys.subst, LMonoTys.subst.substAux]
-  | bitvecConst n b =>
-    simp [LConst.ty, LMonoTy.subst]
-  | boolConst b =>
-    simp [LConst.ty, LMonoTy.bool, LMonoTy.subst, LMonoTys.subst, LMonoTys.subst.substAux]
+  cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.real, LMonoTy.string,
+    LMonoTy.subst, LMonoTys.subst, LMonoTys.subst.substAux]
 
 /--
 `HasType` is preserved under substitution of a single fresh type variable.
@@ -3019,6 +3014,12 @@ private theorem typeBoundVar_tyGen_mono
         have h_tyGen := genTyVar_tyGen _ xtyid Env1 h_genTy
         omega
 
+/-- Prove `e_i.sizeOf < n` (or `≤`) from a hypothesis `h : LExpr.sizeOf e = n`. -/
+macro "expr_size" h:ident : tactic =>
+  `(tactic| (subst $h; first | (rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega)
+                              | (rw [varOpen_sizeOf]; simp [LExpr.sizeOf])
+                              | (simp [LExpr.sizeOf]; omega)))
+
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `resolveAux` never decreases the generator counter. -/
 private theorem resolveAux_genState_mono :
@@ -3083,9 +3084,9 @@ private theorem resolveAux_genState_mono :
     split at h; · simp at h
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
     have h_sz1 : e1.sizeOf < n := by
-      subst h_eq; simp [LExpr.sizeOf]; omega
+      expr_size h_eq
     have h_sz2 : e2.sizeOf < n := by
-      subst h_eq; simp [LExpr.sizeOf]; omega
+      expr_size h_eq
     exact Nat.le_trans
       (Nat.le_trans
         (ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1)
@@ -3103,7 +3104,7 @@ private theorem resolveAux_genState_mono :
       · rename_i v2 h_rec; obtain ⟨et', Env2⟩ := v2; simp at h
         obtain ⟨_, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
         have h_sz : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
-          subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]
+          expr_size h_eq
         exact Nat.le_trans (typeBoundVar_tyGen_mono C Env bty xv_id xty_val Env1 h_tbv)
           (ih _ h_sz (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec)
   | .quant m qk _ bty tr body =>
@@ -3123,9 +3124,9 @@ private theorem resolveAux_genState_mono :
           · -- isTrue: toLMonoTy et' = LMonoTy.bool (success case)
             simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext]
             have h_sz_e : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
-              subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+              expr_size h_eq
             have h_sz_tr : (varOpen 0 (xv_id, some xty_val) tr).sizeOf < n := by
-              subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+              expr_size h_eq
             exact Nat.le_trans (Nat.le_trans
               (typeBoundVar_tyGen_mono C Env bty xv_id xty_val Env1 h_tbv)
               (ih _ h_sz_e (varOpen 0 (xv_id, some xty_val) body) rfl et' C Env1 Env2 h_rec_e))
@@ -3141,9 +3142,9 @@ private theorem resolveAux_genState_mono :
     split at h; · simp at h
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
     have h_sz1 : e1.sizeOf < n := by
-      subst h_eq; simp [LExpr.sizeOf]; omega
+      expr_size h_eq
     have h_sz2 : e2.sizeOf < n := by
-      subst h_eq; simp [LExpr.sizeOf]; omega
+      expr_size h_eq
     exact Nat.le_trans
       (ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1)
       (ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h_res2)
@@ -3158,11 +3159,11 @@ private theorem resolveAux_genState_mono :
     split at h; · simp at h
     simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.updateSubst]
     have h_sz_c : c.sizeOf < n := by
-      subst h_eq; simp [LExpr.sizeOf]; omega
+      expr_size h_eq
     have h_sz_t : t.sizeOf < n := by
-      subst h_eq; simp [LExpr.sizeOf]; omega
+      expr_size h_eq
     have h_sz_e : e.sizeOf < n := by
-      subst h_eq; simp [LExpr.sizeOf]; omega
+      expr_size h_eq
     exact Nat.le_trans (Nat.le_trans
       (ih c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c)
       (ih t.sizeOf h_sz_t t rfl tht C Env1 Env2 h_res_t))
@@ -4918,12 +4919,7 @@ private theorem resolveAux_preserves_combined :
     · simp [Bind.bind, Except.bind] at h; obtain ⟨h_et, h2⟩ := h; rw [← h2]
       exact ⟨h_fresh, fun v hv => by
         rw [← h_et] at hv; simp [toLMonoTy] at hv
-        cases c with
-        | boolConst _ => simp [LConst.ty, LMonoTy.bool, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-        | intConst _ => simp [LConst.ty, LMonoTy.int, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-        | realConst _ => simp [LConst.ty, LMonoTy.real, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-        | strConst _ => simp [LConst.ty, LMonoTy.string, LMonoTy.freeVars, LMonoTys.freeVars] at hv
-        | bitvecConst _ _ => simp [LConst.ty, LMonoTy.freeVars] at hv⟩
+        simp [LConst.ty_freeVars] at hv⟩
     · exact absurd h (by simp [Bind.bind, Except.bind])
   | .bvar _ _ => simp [resolveAux] at h
   | .fvar m x fty =>
@@ -5041,8 +5037,8 @@ private theorem resolveAux_preserves_combined :
     split at h; · simp at h
     rename_i v4 h_mapError
     simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2; simp [TEnv.updateSubst]
-    have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
-    have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+    have h_sz1 : e1.sizeOf < n := by expr_size h_eq
+    have h_sz2 : e2.sizeOf < n := by expr_size h_eq
     have h_ctx1_eq := ih_context e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne
     have h_fresh1 := ((ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne).2 h_fresh h_ctx h_aw h_fwf h_bvf).1
     have h_e1t_type_fresh := ih_output_fresh e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne h_fresh h_ctx h_aw h_fwf h_bvf
@@ -5124,7 +5120,7 @@ private theorem resolveAux_preserves_combined :
     rename_i v2 h_rec; obtain ⟨et', Env2⟩ := v2; simp at h
     obtain ⟨h_et, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
     have h_sz : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
-      subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]
+      expr_size h_eq
     have h_fresh1 := typeBoundVar_preserves_SubstFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_fresh h_aw
     have h_ctx1 := typeBoundVar_preserves_ContextFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_ctx
     have h_aw1 := typeBoundVar_preserves_AliasesWF C Env bty xv_id xty_val Env1 h_tbv h_aw
@@ -5222,9 +5218,9 @@ private theorem resolveAux_preserves_combined :
     split at h
     · simp at h; obtain ⟨h_et, h_env⟩ := h; rw [← h_env]; simp [TEnv.eraseFromContext, TEnv.updateContext]
       have h_sz_e : (varOpen 0 (xv_id, some xty_val) body).sizeOf < n := by
-        subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+        expr_size h_eq
       have h_sz_tr : (varOpen 0 (xv_id, some xty_val) tr).sizeOf < n := by
-        subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+        expr_size h_eq
       have h_fresh1 := typeBoundVar_preserves_SubstFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_fresh h_aw
       have h_ctx1 := typeBoundVar_preserves_ContextFreshForGen C Env bty xv_id xty_val Env1 h_tbv h_ctx
       have h_aw1 := typeBoundVar_preserves_AliasesWF C Env bty xv_id xty_val Env1 h_tbv h_aw
@@ -5253,8 +5249,8 @@ private theorem resolveAux_preserves_combined :
     split at h; · simp at h
     rename_i v3 h_mapError
     simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2; simp [TEnv.updateSubst]
-    have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
-    have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+    have h_sz1 : e1.sizeOf < n := by expr_size h_eq
+    have h_sz2 : e2.sizeOf < n := by expr_size h_eq
     have h_ctx1_eq := ih_context e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne
     have h_fresh1 := ((ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne).2 h_fresh h_ctx h_aw h_fwf h_bvf).1
     have h_e1t_type_fresh := ih_output_fresh e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h_res1 h_ne h_fresh h_ctx h_aw h_fwf h_bvf
@@ -5292,9 +5288,9 @@ private theorem resolveAux_preserves_combined :
     split at h; · simp at h
     rename_i v4 h_mapError
     simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2; simp [TEnv.updateSubst]
-    have h_sz_c : c.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
-    have h_sz_t : t.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
-    have h_sz_e : e.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+    have h_sz_c : c.sizeOf < n := by expr_size h_eq
+    have h_sz_t : t.sizeOf < n := by expr_size h_eq
+    have h_sz_e : e.sizeOf < n := by expr_size h_eq
     have h_ctx1_eq := ih_context c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne
     have h_fresh1 := ((ih c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne).2 h_fresh h_ctx h_aw h_fwf h_bvf).1
     have h_ct_type_fresh := ih_output_fresh c.sizeOf h_sz_c c rfl ct C Env Env1 h_res_c h_ne h_fresh h_ctx h_aw h_fwf h_bvf
@@ -5492,8 +5488,8 @@ theorem resolveAux_absorbs :
     have h_aw1 : TContext.AliasesWF Env1.context := h_ctx1_eq ▸ h_aw
     have h_bvf1 := transfer_boundVarsFresh h_bvf h_ctx1_eq (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)
     -- Absorption from IHs
-    have h_abs1 := ih e1.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e1 rfl e1t C Env Env1 h_res1 h_env_fresh h_ne h_aw h_fwf h_bvf
-    have h_abs2 := ih e2.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e2 rfl e2t C Env1 Env2 h_res2
+    have h_abs1 := ih e1.sizeOf (by expr_size h_eq) e1 rfl e1t C Env Env1 h_res1 h_env_fresh h_ne h_aw h_fwf h_bvf
+    have h_abs2 := ih e2.sizeOf (by expr_size h_eq) e2 rfl e2t C Env1 Env2 h_res2
       ⟨h_fresh1, h_ctx1_eq ▸
         ContextFreshForGen.mono _ _ _ h_env_fresh.2
           (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)⟩ h_ne1 h_aw1 h_fwf h_bvf1
@@ -5519,7 +5515,7 @@ theorem resolveAux_absorbs :
     obtain ⟨_, h_env⟩ := h; rw [← h_env]
     simp [TEnv.eraseFromContext, TEnv.updateContext]
     have h_sz : (varOpen 0 (xv, some xty) body).sizeOf < n := by
-      subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]
+      expr_size h_eq
     -- typeBoundVar absorbs, then recursive call absorbs
     have h_abs1 := typeBoundVar_absorbs C Env bty xv xty Env1 h_tbv
     -- For the recursive call, need EnvFreshForGen Env1
@@ -5546,9 +5542,9 @@ theorem resolveAux_absorbs :
     · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
       simp [TEnv.eraseFromContext, TEnv.updateContext]
       have h_sz_e : (varOpen 0 (xv, some xty) body).sizeOf < n := by
-        subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+        expr_size h_eq
       have h_sz_tr : (varOpen 0 (xv, some xty) tr).sizeOf < n := by
-        subst h_eq; rw [varOpen_sizeOf]; simp [LExpr.sizeOf]; omega
+        expr_size h_eq
       have h_abs1 := typeBoundVar_absorbs C Env bty xv xty Env1 h_tbv
       have h_aw1 := typeBoundVar_preserves_AliasesWF C Env bty xv xty Env1 h_tbv h_aw
       have h_bvf1 := typeBoundVar_preserves_boundVarsFresh C Env bty xv xty Env1 h_tbv h_bvf
@@ -5595,8 +5591,8 @@ theorem resolveAux_absorbs :
       Env.stateSubstInfo.subst Env2.stateSubstInfo.subst v3.subst
       (Subst.absorbs_trans
         Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
-        (ih e1.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e1 rfl e1t C Env Env1 h_res1 h_env_fresh h_ne h_aw h_fwf h_bvf)
-        (ih e2.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e2 rfl e2t C Env1 Env2 h_res2
+        (ih e1.sizeOf (by expr_size h_eq) e1 rfl e1t C Env Env1 h_res1 h_env_fresh h_ne h_aw h_fwf h_bvf)
+        (ih e2.sizeOf (by expr_size h_eq) e2 rfl e2t C Env1 Env2 h_res2
           ⟨h_fresh1, h_ctx1_eq ▸
             ContextFreshForGen.mono _ _ _ h_env_fresh.2
               (resolveAux_genState_mono e1 e1t C Env Env1 h_res1)⟩ h_ne1 h_aw1 h_fwf h_bvf1))
@@ -5637,9 +5633,9 @@ theorem resolveAux_absorbs :
         Env.stateSubstInfo.subst Env2.stateSubstInfo.subst Env3.stateSubstInfo.subst
         (Subst.absorbs_trans
           Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
-          (ih c.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) c rfl ct C Env Env1 h_res_c h_env_fresh h_ne h_aw h_fwf h_bvf)
-          (ih t.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) t rfl tht C Env1 Env2 h_res_t ⟨h_fresh1, h_ctx1⟩ h_ne1 h_aw1 h_fwf h_bvf1))
-        (ih e.sizeOf (by subst h_eq; simp [LExpr.sizeOf]; omega) e rfl elt C Env2 Env3 h_res_e ⟨h_fresh2, h_ctx2⟩ h_ne2 h_aw2 h_fwf h_bvf2))
+          (ih c.sizeOf (by expr_size h_eq) c rfl ct C Env Env1 h_res_c h_env_fresh h_ne h_aw h_fwf h_bvf)
+          (ih t.sizeOf (by expr_size h_eq) t rfl tht C Env1 Env2 h_res_t ⟨h_fresh1, h_ctx1⟩ h_ne1 h_aw1 h_fwf h_bvf1))
+        (ih e.sizeOf (by expr_size h_eq) e rfl elt C Env2 Env3 h_res_e ⟨h_fresh2, h_ctx2⟩ h_ne2 h_aw2 h_fwf h_bvf2))
       (unify_absorbs _ _ _ h_unify)
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
@@ -8430,8 +8426,8 @@ theorem resolveAux_HasType :
             have h_gen_ctx := TEnv.genTyVar_context Env2 fresh_name Env3 h_genTyVar
             have h_gen_fresh := TEnv.genTyVar_isFresh Env2 fresh_name Env3 h_genTyVar
             -- IHs from recursive calls (using strong induction)
-            have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
-            have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
+            have ih1 := ih_sub e1 (by expr_size h_sz)
+            have ih2 := ih_sub e2 (by expr_size h_sz)
             have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; left; exact hx))
             have h_ne1 := h_ctx1 ▸ h_ne
             -- Build TEnvWF for Env1 (context preserved, subst/gen extended)
@@ -8580,7 +8576,7 @@ theorem resolveAux_HasType :
         -- Apply IH to the opened body using strong induction
         -- sizeOf (varOpen 0 (xv, some xty) e_body) = sizeOf e_body < 2 + sizeOf e_body = sizeOf (.abs m _ bty e_body) = n
         have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
-          (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+          (by expr_size h_sz)
         -- Build TEnvWF for Env1 (typeBoundVar extends context)
         have h_envwf1 : TEnvWF Env1 :=
           { aliasesWF := typeBoundVar_preserves_AliasesWF C Env bty xv xty Env1 h_tbv h_envwf.aliasesWF
@@ -8783,12 +8779,12 @@ theorem resolveAux_HasType :
         typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
       -- IH for body
       have ih_body := ih_sub (varOpen 0 (xv, some xty) e_body)
-        (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+        (by expr_size h_sz)
       have ⟨h_ctx2, _⟩ := ih_body et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf (WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 e_body h_tbv
               (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)))
       -- IH for triggers (need TEnvWF Env2)
       have ih_tr := ih_sub (varOpen 0 (xv, some xty) tr)
-        (by subst h_sz; simp [LExpr.sizeOf]; rw [varOpen_sizeOf]; omega)
+        (by expr_size h_sz)
       have h_envwf2 : TEnvWF Env2 :=
         { aliasesWF := h_ctx2 ▸ h_envwf1.aliasesWF
           substFreshForGen := resolveAux_preserves_SubstFreshForGen _ et_body C Env1 Env2 h_res_body h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_ne1 h_envwf1.aliasesWF h_fwf h_envwf1.boundVarsFresh
@@ -8997,9 +8993,9 @@ theorem resolveAux_HasType :
               | .ok val, h_me => simp at h_me; rw [h_me]
               | .error _, h_me => simp at h_me
             -- IHs from recursive calls (using strong induction)
-            have ih_c := ih_sub c (by subst h_sz; simp [LExpr.sizeOf]; omega)
-            have ih_t := ih_sub t (by subst h_sz; simp [LExpr.sizeOf]; omega)
-            have ih_e := ih_sub e (by subst h_sz; simp [LExpr.sizeOf]; omega)
+            have ih_c := ih_sub c (by expr_size h_sz)
+            have ih_t := ih_sub t (by expr_size h_sz)
+            have ih_e := ih_sub e (by expr_size h_sz)
             have ⟨h_ctx1, h_ty_c⟩ := ih_c ct C Env Env1 h_res_c h_envwf h_ne h_fwf (by intro x hx; apply h_ws; simp only [WellScoped, LExpr.freeVars] at h_ws ⊢; exact List.mem_append_left _ (List.mem_append_left _ hx))
             have h_ne1 := h_ctx1 ▸ h_ne
             -- (h_sf1 removed: keysFresh no longer in TEnvWF)
@@ -9128,8 +9124,8 @@ theorem resolveAux_HasType :
             | .ok val, h_me => simp at h_me; rw [h_me]
             | .error _, h_me => simp at h_me
           -- IHs from recursive calls (using strong induction)
-          have ih1 := ih_sub e1 (by subst h_sz; simp [LExpr.sizeOf]; omega)
-          have ih2 := ih_sub e2 (by subst h_sz; simp [LExpr.sizeOf]; omega)
+          have ih1 := ih_sub e1 (by expr_size h_sz)
+          have ih2 := ih_sub e2 (by expr_size h_sz)
           have ⟨h_ctx1, h_ty1⟩ := ih1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; left; exact hx))
           have h_ne1 := h_ctx1 ▸ h_ne
           -- (h_sf1 removed: keysFresh no longer in TEnvWF)
