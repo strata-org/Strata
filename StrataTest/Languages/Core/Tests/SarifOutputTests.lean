@@ -272,7 +272,7 @@ def makeVCResult (label : String) (outcome : Outcome)
   let sarif := vcResultsToSarif files vcResults
   Strata.Sarif.toJsonString sarif
 
-/-- info: "{\"runs\":[{\"results\":[{\"level\":\"none\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/pass.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification succeeded\"},\"ruleId\":\"test_pass\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"none\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/pass.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification succeeded\"},\"properties\":{\"propertyType\":\"assert\"},\"ruleId\":\"test_pass\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
 #guard_msgs in
 #eval
   let md := makeMetadata "/test/pass.st" 10 5
@@ -281,7 +281,7 @@ def makeVCResult (label : String) (outcome : Outcome)
   let sarif := vcResultsToSarif files vcResults
   Strata.Sarif.toJsonString sarif
 
-/-- info: "{\"runs\":[{\"results\":[{\"level\":\"error\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/fail.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification failed\"},\"ruleId\":\"test_fail\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"error\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/fail.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification failed\"},\"properties\":{\"propertyType\":\"assert\"},\"ruleId\":\"test_fail\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
 #guard_msgs in
 #eval
   let md := makeMetadata "/test/fail.st" 20 15
@@ -290,7 +290,7 @@ def makeVCResult (label : String) (outcome : Outcome)
   let sarif := vcResultsToSarif files vcResults
   Strata.Sarif.toJsonString sarif
 
-/-- info: "{\"runs\":[{\"results\":[{\"level\":\"warning\",\"locations\":[],\"message\":{\"text\":\"Verification result unknown (solver timeout or incomplete)\"},\"ruleId\":\"test_unknown\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"warning\",\"locations\":[],\"message\":{\"text\":\"Verification result unknown (solver timeout or incomplete)\"},\"properties\":{\"propertyType\":\"assert\"},\"ruleId\":\"test_unknown\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
 #guard_msgs in
 #eval
   let files := makeFilesMap "/test/file.st"
@@ -298,7 +298,7 @@ def makeVCResult (label : String) (outcome : Outcome)
   let sarif := vcResultsToSarif files vcResults
   Strata.Sarif.toJsonString sarif
 
-/-- info: "{\"runs\":[{\"results\":[{\"level\":\"error\",\"locations\":[],\"message\":{\"text\":\"Verification error: timeout\"},\"ruleId\":\"test_error\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"error\",\"locations\":[],\"message\":{\"text\":\"Verification error: timeout\"},\"properties\":{\"propertyType\":\"assert\"},\"ruleId\":\"test_error\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
 #guard_msgs in
 #eval
   let files := makeFilesMap "/test/file.st"
@@ -306,7 +306,7 @@ def makeVCResult (label : String) (outcome : Outcome)
   let sarif := vcResultsToSarif files vcResults
   Strata.Sarif.toJsonString sarif
 
-/-- info: "{\"runs\":[{\"results\":[{\"level\":\"none\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/multi.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification succeeded\"},\"ruleId\":\"obligation1\"},{\"level\":\"error\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/multi.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification failed\"},\"ruleId\":\"obligation2\"},{\"level\":\"warning\",\"locations\":[],\"message\":{\"text\":\"Verification result unknown (solver timeout or incomplete)\"},\"ruleId\":\"obligation3\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"none\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/multi.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification succeeded\"},\"properties\":{\"propertyType\":\"assert\"},\"ruleId\":\"obligation1\"},{\"level\":\"error\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/multi.st\"},\"region\":{\"startColumn\":0,\"startLine\":1}}}],\"message\":{\"text\":\"Verification failed\"},\"properties\":{\"propertyType\":\"assert\"},\"ruleId\":\"obligation2\"},{\"level\":\"warning\",\"locations\":[],\"message\":{\"text\":\"Verification result unknown (solver timeout or incomplete)\"},\"properties\":{\"propertyType\":\"assert\"},\"ruleId\":\"obligation3\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
 #guard_msgs in
 #eval
   let md1 := makeMetadata "/test/multi.st" 5 1
