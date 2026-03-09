@@ -83,6 +83,12 @@ instance : FromJson Level where
     | "error" => pure .error
     | _ => throw s!"Invalid SARIF level: {s}"
 
+/-- SARIF property bag for tool-specific properties -/
+structure PropertyBag where
+  /-- Strata-specific classification of the property being checked -/
+  propertyType : String := "assert"
+  deriving Repr, ToJson, FromJson, DecidableEq
+
 /-- SARIF result representing a single verification result -/
 structure Result where
   /-- Stable identifier of the rule that was evaluated to produce the result --/
@@ -90,6 +96,8 @@ structure Result where
   level : Level
   message : Message
   locations : Array SarifLocation := #[]
+  /-- Tool-specific properties (SARIF property bag) -/
+  properties : PropertyBag := {}
   deriving Repr, ToJson, FromJson, DecidableEq
 
 instance : Inhabited Result where
