@@ -12,6 +12,8 @@ public import Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.DL.Util.Maps
 import all Strata.DL.Util.Maps
+public import Strata.DL.Util.String
+import all Strata.DL.Util.String
 
 /-! ## Type Environment
 
@@ -1028,21 +1030,6 @@ end
 
 def isInstanceOfKnownType (ty : LMonoTy) (C : LContext IDMeta) : Bool :=
   LMonoTy.knownInstance ty C.knownTypes
-
-/-- Parse a `List Char` of decimal digits as a natural number.
-    Returns `none` for empty or non-digit input. -/
-def listCharToNatAux : Nat → List Char → Option Nat
-  | acc, [] => some acc
-  | acc, c :: cs =>
-    if '0' ≤ c ∧ c ≤ '9' then
-      listCharToNatAux (acc * 10 + (c.toNat - '0'.toNat)) cs
-    else none
-
-/-- Parse a non-empty `List Char` of decimal digits as a natural number. -/
-def listCharToNat? (cs : List Char) : Option Nat :=
-  match cs with
-  | [] => none
-  | _ => listCharToNatAux 0 cs
 
 /-- Check whether a type variable name looks like a generated name (`tyPrefix ++ toString n`)
     with `n ≥ tyGen`. Returns `true` if the name is a "future" generated name that should
