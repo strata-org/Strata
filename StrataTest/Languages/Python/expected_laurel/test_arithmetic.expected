@@ -9,12 +9,12 @@ PAnd_body_calls_Any_to_bool_1: ✅ pass
 POr_body_calls_Any_to_bool_0: ✅ pass
 POr_body_calls_Any_to_bool_1: ✅ pass
 ret_type: ✅ pass (at byte 24983)
-ret_type: ✅ pass (at byte 25416)
-ret_pos: ✅ pass (at byte 25913)
-assert_name_is_foo: ✅ pass (at byte 26917)
-assert_opt_name_none_or_str: ✅ pass (at byte 26980)
-assert_opt_name_none_or_bar: ✅ pass (at byte 27084)
-ensures_maybe_except_none: ✅ pass (at byte 26840)
+ret_type: ✅ pass (at byte 25398)
+ret_pos: ✅ pass (at byte 25884)
+assert_name_is_foo: ✅ pass (at byte 26888)
+assert_opt_name_none_or_str: ✅ pass (at byte 26951)
+assert_opt_name_none_or_bar: ✅ pass (at byte 27055)
+ensures_maybe_except_none: ✅ pass (at byte 26811)
 assert_assert(102)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
 assert(102): ✅ pass (at line 7, col 4)
 assert_assert(226)_calls_Any_to_bool_0: ✅ pass (at line 12, col 4)

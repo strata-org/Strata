@@ -1056,7 +1056,6 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
       let inputnames := proc.header.inputs.keys.map (λ n => n.name)
       let outputtypes := proc.header.outputs.values.map getTypeName
       let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
-      --let outputnames := proc.header.outputs.keys
       some {
         name:= proc.header.name.name
         args:= (inputnames.zip inputTypes).map (λ(n,t) => (n,t,noneexpr))
