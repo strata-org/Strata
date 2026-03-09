@@ -50,6 +50,7 @@ partial def collectStmtUsedVarNames : Core.Statement → List String
     match decl.body with
     | some e => collectExprVarNames e
     | none => []
+  | .typeDecl _ _ => []
   | .ite cond thenB elseB _ =>
     collectExprVarNames cond ++ collectStmtsUsedVarNames thenB ++ collectStmtsUsedVarNames elseB
   | .loop guard _ _ body _ =>

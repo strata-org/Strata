@@ -81,6 +81,7 @@ def checkCoreSMTStmt : Core.Statement → Except String Unit
   | .cmd c              => checkCoreSMTCmd c
   | .block _ stmts _    => checkCoreSMTStmts stmts
   | .funcDecl _ _       => .ok ()
+  | .typeDecl _ _       => .ok ()
   | .ite _ _ _ _        => .error "if-then-else statement is not in the CoreSMT subset"
   | .loop _ _ _ _ _     => .error "loop statement is not in the CoreSMT subset"
   | .exit _ _           => .error "exit statement is not in the CoreSMT subset"
