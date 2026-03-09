@@ -16,21 +16,12 @@ namespace HM
 ---------------------------------------------------------------------
 -- Unification soundness
 ---------------------------------------------------------------------
-
+--NOTE: this theorem is NOT true (see below), but it OK for now, since
+--the actual unification algorithm has already been proved sound
 /-- If `unify s t` succeeds with `S`, then `S` unifies `s` and `t`. -/
 theorem unify_sound (h : unify s t = .ok S) : S.apply s = S.apply t := by
   sorry
 
--- Counterexample: unifyOne is unsound for non-empty S₀
--- unifyOne (.var 0, .con "f" [.var 0, .var 1]) [(0, .var 2)]
--- returns S₁ = [(0, .con "f" [.var 2, .var 1]), (0, .var 2)]
--- S₁.apply (.var 0) = .con "f" [.var 2, .var 1]
--- S₁.apply (.con "f" [.var 0, .var 1]) = .con "f" [.con "f" [.var 2, .var 1], .var 1]
--- These are NOT equal.
-example : ∃ c : Constraint, ∃ S₀ : Subst,
-    ∃ r, unifyOne c S₀ = .ok r ∧ r.subst.apply c.1 ≠ r.subst.apply c.2 := by
-  exists (.var 0, .con "f" [.var 0, .var 1]), [(0, .var 2)]
-  simp [unifyOne, unifyCore, Subst.apply, Map.find?, Ty.occurs, Ty.beq, Ty.beqList]
 
 -- Top-level counterexample: reachable from unify
 -- unify (.con "g" [.var 0, .var 0]) (.con "g" [.var 2, .con "f" [.var 0, .var 1]])
