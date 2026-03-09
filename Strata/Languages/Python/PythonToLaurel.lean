@@ -636,7 +636,7 @@ partial def translateCall (ctx : TranslationContext)
         return mkStmtExprMd (StmtExpr.InstanceCall target_trans attr.val (trans_args ++ trans_kwords_exprs))
       else
         return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
-  | _ =>  throw (.unsupportedConstruct "Invalidcall construct" (toString (repr f)))
+  | _ =>  throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
 
 
 end
