@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Python.Regex.ReToCore
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 namespace Strata.Python.Tests
 
@@ -264,17 +265,17 @@ info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), n
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "a$b" .fullmatch
 
-/-- info: ((~Re.Comp (~Str.ToRegEx #b)), none) -/
+/-- info: ((~Re.Inter ~Re.AllChar (~Re.Comp (~Str.ToRegEx #b))), none) -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "[^b]" .fullmatch
 
 /--
-info: ((~Re.Comp (~Re.Range #A #Z)), none)
+info: ((~Re.Inter ~Re.AllChar (~Re.Comp (~Re.Range #A #Z))), none)
 -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "[^A-Z]" .fullmatch
 
-/-- info: ((~Re.Comp (~Str.ToRegEx #^)), none) -/
+/-- info: ((~Re.Inter ~Re.AllChar (~Re.Comp (~Str.ToRegEx #^))), none) -/
 #guard_msgs in
 #eval Std.format $ pythonRegexToCore "[^^]" .fullmatch
 
@@ -283,22 +284,8 @@ info: ((~Re.Comp (~Re.Range #A #Z)), none)
 #eval Std.format $ pythonRegexToCore "a" .fullmatch
 
 /--
-info: ((~Re.Concat
+info: ((~Re.Union
   (~Str.ToRegEx #a)
-  (~Re.Union
-   (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-   (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))),
- none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "a" .match
-
--- search mode tests
-/--
-info: ((~Re.Concat
-  (~Re.Union
-   (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-   (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
   (~Re.Concat
    (~Str.ToRegEx #a)
    (~Re.Union
@@ -307,18 +294,62 @@ info: ((~Re.Concat
  none)
 -/
 #guard_msgs in
+#eval Std.format $ pythonRegexToCore "a" .match
+
+-- search mode tests
+/--
+info: ((~Re.Union
+  (~Str.ToRegEx #a)
+  (~Re.Union
+   (~Re.Concat
+    (~Str.ToRegEx #a)
+    (~Re.Union
+     (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+     (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar)))
+   (~Re.Union
+    (~Re.Concat
+     (~Re.Union
+      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
+     (~Str.ToRegEx #a))
+    (~Re.Concat
+     (~Re.Union
+      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
+     (~Re.Concat
+      (~Str.ToRegEx #a)
+      (~Re.Union
+       (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+       (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))))))),
+ none)
+-/
+#guard_msgs in
 #eval Std.format $ pythonRegexToCore "a" .search
 
 /--
-info: ((~Re.Concat
+info: ((~Re.Union
+  (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
   (~Re.Union
-   (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-   (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
-  (~Re.Concat
-   (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
+   (~Re.Concat
+    (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) ~Re.None)
+    (~Re.Union
+     (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+     (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar)))
    (~Re.Union
-    (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-    (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar)))),
+    (~Re.Concat
+     (~Re.Union
+      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
+     (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #a)) (~Str.ToRegEx #)))
+    (~Re.Concat
+     (~Re.Union
+      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
+     (~Re.Concat
+      (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #a)) ~Re.None)
+      (~Re.Union
+       (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
+       (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))))))),
  none)
 -/
 #guard_msgs in
