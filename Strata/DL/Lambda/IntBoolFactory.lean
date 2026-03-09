@@ -74,7 +74,7 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
       ty.freeVars ⊆ typeArgs := by first | decide | grind)
     (h_output : output.freeVars ⊆ typeArgs
       := by first | decide | grind)
-    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ ta.startsWith "$__ty"
+    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true)
       := by first | decide | grind) : WFLFunc T :=
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
      axioms := axioms }, {

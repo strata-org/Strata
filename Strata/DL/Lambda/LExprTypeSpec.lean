@@ -23,6 +23,9 @@ public import Strata.DL.Lambda.LExprT
 import all Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.FactoryWF
+-- Needed for Nat.toDigitsCore.eq_def, Nat.toDigits.eq_def, Nat.repr.eq_def
+-- used in the Nat.toString_injective proof below.
+import all Init.Data.Repr
 
 /-! ## Typing Relation for Lambda Expressions
 
@@ -52,38 +55,186 @@ variable {IDMeta : Type} [DecidableEq IDMeta]
 /-!
 ### Lean 4 Standard Library Gaps
 
-The following lemmas are standard string/number roundtrip properties that are
-not yet provable in Lean 4.27 due to the `String` API being based on the
-`Slice`/`Pattern` infrastructure with private internal definitions
-(`memcmpStr.go`, etc.) that have no proof-level lemmas.
+The `String.startsWith` and `String.drop` APIs in Lean 4.27 go through the
+`Slice`/`Pattern` infrastructure with private internal definitions that have
+no proof-level lemmas. To avoid this, `TState.isFutureGenVar` uses
+`List.isPrefixOf` on `Char` lists, making the prefix-detection and
+suffix-parsing properties trivially provable with standard `List` lemmas.
 
-These are expected to become provable in Lean 4.29, which will provide
-`String.startsWith` lemmas and a more transparent `String` API.
+`Nat.toString_injective` is proved below via a structurally recursive
+reformulation of `Nat.toDigitsCore` (the `digitLoop` technique).
 -/
 
-/-- `toString` on `Nat` is injective (decimal representation is unique).
-    Blocked: requires `Nat.toDigits 10` injectivity, not in Lean 4 stdlib or Mathlib core.
-    Expected: provable once `Nat.repr`/`String.toNat?` roundtrip lemmas are available (Lean 4.29+). -/
+/-! #### Helper: structurally recursive digit generation
+
+`Nat.toDigitsCore` uses `brecOn` (bounded recursion on Nat), which is hard to
+reason about directly. We define an equivalent structurally recursive version
+and prove it equal to `Nat.toDigitsCore`. -/
+
+private def digitLoop : Nat → Nat → List Char → List Char
+  | 0, _, ds => ds
+  | fuel + 1, n, ds =>
+    let d := (n % 10).digitChar
+    let n' := n / 10
+    if n' = 0 then d :: ds else digitLoop fuel n' (d :: ds)
+
+private theorem digitLoop_eq_toDigitsCore : ∀ (fuel n : Nat) (ds : List Char),
+    digitLoop fuel n ds = Nat.toDigitsCore 10 fuel n ds
+  | 0, _, ds => by
+    simp only [digitLoop]
+    rw [Nat.toDigitsCore.eq_def]
+  | fuel + 1, n, ds => by
+    simp only [digitLoop]
+    rw [Nat.toDigitsCore.eq_def]
+    dsimp only []
+    split
+    · rfl
+    · rw [digitLoop_eq_toDigitsCore]
+
+private theorem digitLoop_acc (fuel n : Nat) (ds : List Char) :
+    digitLoop fuel n ds = digitLoop fuel n [] ++ ds := by
+  induction fuel generalizing n ds with
+  | zero => simp [digitLoop]
+  | succ fuel ih =>
+    simp only [digitLoop]; split
+    · simp
+    · rw [ih, ih (ds := [(n % 10).digitChar])]; simp [List.append_assoc]
+
+private theorem digitLoop_extra (fuel₁ fuel₂ n : Nat) (ds : List Char)
+    (h₁ : fuel₁ > n) (h₂ : fuel₂ > n) :
+    digitLoop fuel₁ n ds = digitLoop fuel₂ n ds := by
+  induction n using Nat.strongRecOn generalizing fuel₁ fuel₂ ds with
+  | _ n ih =>
+    cases fuel₁ with
+    | zero => omega
+    | succ f₁ => cases fuel₂ with
+      | zero => omega
+      | succ f₂ =>
+        simp only [digitLoop]; split
+        · rfl
+        · exact ih (n / 10) (by omega) f₁ f₂ _ (by omega) (by omega)
+
+private theorem digitChar_val {n : Nat} (h : n < 10) :
+    n.digitChar.toNat - '0'.toNat = n := by
+  have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> native_decide
+
+private theorem readBack_digitLoop (n : Nat) :
+    List.foldl (fun acc c => acc * 10 + (c.toNat - '0'.toNat)) 0
+      (digitLoop (n + 1) n []) = n := by
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+    simp only [digitLoop]
+    split
+    · simp only [List.foldl]
+      rw [digitChar_val (Nat.mod_lt n (by omega))]
+      omega
+    · rw [digitLoop_acc, List.foldl_append, List.foldl]
+      rw [digitChar_val (Nat.mod_lt n (by omega))]
+      rw [digitLoop_extra _ (n / 10 + 1) (n / 10) [] (by omega) (by omega)]
+      rw [ih (n / 10) (by omega)]
+      simp [List.foldl]
+      omega
+
+private theorem toDigits_injective : Function.Injective (Nat.toDigits 10) := by
+  intro a b h
+  have ha := readBack_digitLoop a
+  have hb := readBack_digitLoop b
+  rw [Nat.toDigits.eq_def, Nat.toDigits.eq_def] at h
+  rw [← digitLoop_eq_toDigitsCore, ← digitLoop_eq_toDigitsCore] at h
+  rw [← h] at hb
+  omega
+
+/-- `toString` on `Nat` is injective (decimal representation is unique). -/
 private theorem Nat.toString_injective : Function.Injective (toString : Nat → String) := by
   intro a b h
-  simp [toString] at h
-  sorry -- Nat.toDigits 10 is injective
+  simp only [toString] at h
+  rw [Nat.repr.eq_def, Nat.repr.eq_def] at h
+  exact toDigits_injective (String.ofList_injective h)
 
-/-- `(s ++ t).startsWith s = true` for any strings.
-    Blocked: `String.startsWith` goes through the private `memcmpStr.go` in the
-    `Slice.Pattern` API, which has no proof-level lemmas in Lean 4.27.
-    Expected: provable in Lean 4.29+ with `String.startsWith` simp lemmas. -/
-private theorem startsWith_append_self (s t : String) :
-    (s ++ t).startsWith s = true := by
-  sorry
+/-!
+### List-based prefix and suffix lemmas
 
-/-- Dropping a prefix from `(s_prefix ++ toString n)` and parsing as `Nat` recovers `n`.
-    Blocked: `String.drop` returns a `Slice`, and `Slice.toNat?` / `Nat.repr` roundtrip
-    lemmas don't exist in Lean 4.27.
-    Expected: provable in Lean 4.29+ with `String.drop`/`String.toNat?` lemmas. -/
-private theorem drop_prefix_toNat (s_prefix : String) (n : Nat) :
-    ((s_prefix ++ toString n).drop (s_prefix.length)).toNat? = some n := by
-  sorry
+The original `startsWith_append_self` and `drop_prefix_toNat` lemmas were blocked
+by the opaque `String.startsWith`/`String.drop` API in Lean 4.27. By switching
+`TState.isFutureGenVar` to use `List.isPrefixOf` on `Char` lists, these properties
+become trivially provable with standard `List` lemmas.
+-/
+
+/-- A list is a prefix of itself appended with any suffix. -/
+private theorem isPrefixOf_append_self (pfx sfx : List Char) :
+    pfx.isPrefixOf (pfx ++ sfx) = true := by
+  rw [List.isPrefixOf_iff_prefix]
+  exact List.prefix_append pfx sfx
+
+/-! #### `listCharToNat?` roundtrip
+
+We prove that `listCharToNat? (toString n).toList = some n` by connecting
+`listCharToNat?` to the `digitLoop` / `readBack_digitLoop` machinery above. -/
+
+private theorem digitChar_is_digit (n : Nat) (h : n < 10) :
+    '0' ≤ n.digitChar ∧ n.digitChar ≤ '9' := by
+  have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    exact ⟨by native_decide, by native_decide⟩
+
+private theorem listCharToNatAux_digits (acc : Nat) (cs : List Char)
+    (h_digits : ∀ c, c ∈ cs → '0' ≤ c ∧ c ≤ '9') :
+    listCharToNatAux acc cs = some (cs.foldl (fun a c => a * 10 + (c.toNat - '0'.toNat)) acc) := by
+  induction cs generalizing acc with
+  | nil => simp [listCharToNatAux]
+  | cons c cs ih =>
+    simp only [listCharToNatAux, List.foldl_cons]
+    have hc := h_digits c (List.mem_cons_self ..)
+    simp [hc]
+    exact ih _ (fun c' hc' => h_digits c' (List.mem_cons_of_mem c hc'))
+
+private theorem digitLoop_all_digits (fuel n : Nat) (ds : List Char)
+    (h_ds : ∀ c, c ∈ ds → '0' ≤ c ∧ c ≤ '9') :
+    ∀ c, c ∈ digitLoop fuel n ds → '0' ≤ c ∧ c ≤ '9' := by
+  induction fuel generalizing n ds with
+  | zero => simp [digitLoop]; exact h_ds
+  | succ fuel ih =>
+    simp only [digitLoop]
+    split
+    · intro c hc; simp at hc
+      rcases hc with rfl | hc
+      · exact digitChar_is_digit (n % 10) (Nat.mod_lt n (by omega))
+      · exact h_ds c hc
+    · exact ih _ _ (fun c hc => by
+        simp at hc; rcases hc with rfl | hc
+        · exact digitChar_is_digit (n % 10) (Nat.mod_lt n (by omega))
+        · exact h_ds c hc)
+
+private theorem digitLoop_ne_nil (n : Nat) : digitLoop (n + 1) n [] ≠ [] := by
+  simp only [digitLoop]
+  split
+  · simp
+  · rw [digitLoop_acc]; simp
+
+private theorem toString_toList_eq (n : Nat) :
+    (toString n).toList = digitLoop (n + 1) n [] := by
+  simp only [toString, Nat.repr.eq_def, Nat.toDigits.eq_def, String.toList_ofList]
+  exact (digitLoop_eq_toDigitsCore (n + 1) n []).symm
+
+/-- Parsing the decimal representation of `n` back as a `Nat` recovers `n`. -/
+private theorem listCharToNat?_roundtrip (n : Nat) :
+    listCharToNat? (toString n).toList = some n := by
+  rw [toString_toList_eq]
+  have h_ne := digitLoop_ne_nil n
+  have h_digits := digitLoop_all_digits (n + 1) n [] (by simp)
+  match h : digitLoop (n + 1) n [] with
+  | [] => exact absurd h h_ne
+  | c :: cs =>
+    simp only [listCharToNat?]
+    rw [listCharToNatAux_digits 0 (c :: cs)
+      (fun c' hc' => by rw [← h] at hc'; exact h_digits c' hc')]
+    congr 1
+    have : List.foldl (fun a c => a * 10 + (c.toNat - '0'.toNat)) 0 (c :: cs) =
+           List.foldl (fun a c => a * 10 + (c.toNat - '0'.toNat)) 0 (digitLoop (n + 1) n []) := by
+      rw [h]
+    rw [this]
+    exact readBack_digitLoop n
 
 
 /-- An annotation `ann` is compatible with a type `xty` under `aliases`:
@@ -3686,9 +3837,9 @@ private theorem isFutureGenVar_of_tyPrefix (n : Nat) (state : TState)
     (hn : n ≥ state.tyGen) :
     TState.isFutureGenVar state (TState.tyPrefix ++ toString n) = true := by
   simp only [TState.isFutureGenVar, TState.tyPrefix]
-  rw [startsWith_append_self]
+  rw [String.toList_append, isPrefixOf_append_self]
   simp only [ite_true]
-  rw [drop_prefix_toNat]
+  rw [List.drop_left, listCharToNat?_roundtrip]
   simp [hn]
 
 /-- `isFutureGenVar state v = false` implies `v ≠ tyPrefix ++ toString n` for `n ≥ state.tyGen`. -/
@@ -5003,7 +5154,7 @@ private theorem resolveAux_preserves_combined :
       rw [LFunc.type_boundVars_eq_typeArgs func type_val h_type]
       intro v hv _ _ h_eq
       have := h_func_wf.typeArgs_no_gen_prefix v hv
-      exact this (h_eq ▸ startsWith_append_self _ _)
+      exact this (h_eq ▸ (by rw [String.toList_append]; exact isPrefixOf_append_self _ _))
     cases oty with
     | none =>
       simp at h; obtain ⟨h_et, h2⟩ := h; subst h_et h2
@@ -8157,7 +8308,8 @@ theorem resolveAux_HasType :
         have h_bv_fresh : ∀ v, v ∈ LTy.boundVars type_val →
             ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
           rw [h_bv_eq]; intro v hv _ _ h_eq
-          exact h_func_wf.typeArgs_no_gen_prefix v hv (h_eq ▸ startsWith_append_self _ _)
+          exact h_func_wf.typeArgs_no_gen_prefix v hv
+            (h_eq ▸ (by rw [String.toList_append]; exact isPrefixOf_append_self _ _))
         -- Decompose instantiateWithCheck to get the genEnv for instantiate
         simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h_inst
         split at h_inst; · simp at h_inst

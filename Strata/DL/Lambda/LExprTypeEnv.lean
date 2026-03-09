@@ -1029,12 +1029,32 @@ end
 def isInstanceOfKnownType (ty : LMonoTy) (C : LContext IDMeta) : Bool :=
   LMonoTy.knownInstance ty C.knownTypes
 
+/-- Parse a `List Char` of decimal digits as a natural number.
+    Returns `none` for empty or non-digit input. -/
+def listCharToNatAux : Nat → List Char → Option Nat
+  | acc, [] => some acc
+  | acc, c :: cs =>
+    if '0' ≤ c ∧ c ≤ '9' then
+      listCharToNatAux (acc * 10 + (c.toNat - '0'.toNat)) cs
+    else none
+
+/-- Parse a non-empty `List Char` of decimal digits as a natural number. -/
+def listCharToNat? (cs : List Char) : Option Nat :=
+  match cs with
+  | [] => none
+  | _ => listCharToNatAux 0 cs
+
 /-- Check whether a type variable name looks like a generated name (`tyPrefix ++ toString n`)
     with `n ≥ tyGen`. Returns `true` if the name is a "future" generated name that should
-    not appear in a type at this point. -/
+    not appear in a type at this point.
+
+    Uses `List.isPrefixOf` on `Char` lists instead of `String.startsWith` so that
+    the prefix-detection and suffix-parsing properties are provable with standard
+    `List` lemmas (see `LExprTypeSpec.lean`). -/
 def TState.isFutureGenVar (state : TState) (v : TyIdentifier) : Bool :=
-  if v.startsWith TState.tyPrefix then
-    match (v.drop TState.tyPrefix.length).toNat? with
+  let pfx := TState.tyPrefix.toList
+  if pfx.isPrefixOf v.toList then
+    match listCharToNat? (v.toList.drop pfx.length) with
     | some n => n >= state.tyGen
     | none => false
   else false

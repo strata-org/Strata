@@ -42,7 +42,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
   /-- Type arguments must not start with the reserved generated-variable
       prefix `$__ty` used by the type-checker. -/
   typeArgs_no_gen_prefix :
-    ∀ ta, ta ∈ f.typeArgs → ¬ ta.startsWith "$__ty" := by decide
+    ∀ ta, ta ∈ f.typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true) := by decide
 
 /-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where
