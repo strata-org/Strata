@@ -289,11 +289,19 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .sat _ => "fail"
       | .unknown => "unknown"
       | .err _ => "unknown"
-    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec =>
+    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
+    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
       -- Satisfiability check only: sat=satisfiable, unsat=fail, unknown=unknown
       match o.satisfiabilityProperty with
       | .sat _ => "satisfiable"
       | .unsat => "fail"
+      | .unknown => "unknown"
+      | .err _ => "unknown"
+    | .divisionByZero, .deductive =>
+      -- Validity check only: unsat=pass, sat=fail, unknown=unknown
+      match o.validityProperty with
+      | .unsat => "pass"
+      | .sat _ => "fail"
       | .unknown => "unknown"
       | .err _ => "unknown"
     | .cover, _ =>
@@ -333,11 +341,19 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .sat _ => "❌"
       | .unknown => "❓"
       | .err _ => "❓"
-    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec =>
+    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
+    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
       -- Satisfiability check only: sat=❓ (satisfiable), unsat=❌, unknown=❓
       match o.satisfiabilityProperty with
       | .sat _ => "❓"  -- Different meaning: satisfiable but don't know if always true
       | .unsat => "❌"
+      | .unknown => "❓"
+      | .err _ => "❓"
+    | .divisionByZero, .deductive =>
+      -- Validity check only: unsat=✅, sat=❌, unknown=❓
+      match o.validityProperty with
+      | .unsat => "✅"
+      | .sat _ => "❌"
       | .unknown => "❓"
       | .err _ => "❓"
     | .cover, _ =>
@@ -594,12 +610,12 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           match options.checkMode, options.checkLevel, obligation.property with
           | _, .full, _ => (true, true)  -- Full: both checks
           | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
-          | .deductive, .minimal, .assert => (false, true)  -- Deductive needs validity
-          | .deductive, .minimalVerbose, .assert => (false, true)  -- Same checks as minimal
+          | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero => (false, true)  -- Deductive needs validity
+          | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero => (false, true)  -- Same checks as minimal
           | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
           | .deductive, .minimalVerbose, .cover => (true, false)   -- Same checks as minimal
-          | .bugFinding, .minimal, .assert => (true, false) -- Bug finding needs satisfiability
-          | .bugFinding, .minimalVerbose, .assert => (true, false) -- Same checks as minimal
+          | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero => (true, false) -- Bug finding needs satisfiability
+          | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
           | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
