@@ -341,7 +341,10 @@ private def createUnreachableAssertObligations
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .assert pathConditions (LExpr.true ()) md))
+      let propType := match md.getPropertyType with
+        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero else .assert
+        | _ => .assert
+      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
 
 /--
 Substitute free variables in an expression with their current values from the environment,
