@@ -1903,64 +1903,6 @@ theorem Constraints.unify_keys_incl
     simp at h_unify; subst h_unify
     exact unifyCore_keys_incl cs S relS h_core
 
-omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-/-- Unification preserves freshness: if all keys of the input substitution and
-    all free variables in the constraints are fresh in `Γ`, then all keys
-    of the output substitution are also fresh in `Γ`.
-
-    This follows from the structure of `unifyOne`: the only way a new key `id`
-    enters the substitution is when `Maps.find? S.subst id = none` and `id`
-    is a free type variable from the constraint types. -/
-theorem Constraints.unify_allKeysFresh
-    {cs : Constraints} {S S' : SubstInfo} {Γ : TContext T.IDMeta}
-    (h_unify : Constraints.unify cs S = .ok S')
-    (h_keys_fresh : Subst.allKeysFresh S.subst Γ)
-    (h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars cs → TContext.isFresh (T := T) tv Γ)
-    (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars S.subst → TContext.isFresh (T := T) tv Γ) :
-    Subst.allKeysFresh S'.subst Γ := by
-  intro k hk
-  have h_incl := Constraints.unify_keys_incl h_unify k hk
-  cases h_incl with
-  | inl h => exact h_keys_fresh k h
-  | inr h =>
-    cases h with
-    | inl h => exact h_cs_fresh k h
-    | inr h => exact h_vals_fresh k h
-
-omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-/-- `Constraints.unify` preserves substitution value freshness.
-    If constraint fvs and old value fvs are all fresh in Γ, then
-    new value fvs are also fresh in Γ (by `goodSubset`). -/
-theorem Constraints.unify_vals_fresh
-    {cs : Constraints} {S S' : SubstInfo} {Γ : TContext T.IDMeta}
-    (h_unify : Constraints.unify cs S = .ok S')
-    (h_cs_fresh : ∀ tv, tv ∈ Constraints.freeVars cs → TContext.isFresh (T := T) tv Γ)
-    (h_vals_fresh : ∀ tv, tv ∈ Subst.freeVars S.subst → TContext.isFresh (T := T) tv Γ) :
-    ∀ tv, tv ∈ Subst.freeVars S'.subst → TContext.isFresh (T := T) tv Γ := by
-  intro tv h_tv
-  have h_incl : Subst.freeVars S'.subst ⊆
-      Constraints.freeVars cs ++ Subst.freeVars S.subst := by
-    simp only [Constraints.unify, Bind.bind, Except.bind] at h_unify
-    split at h_unify
-    · simp at h_unify
-    · rename_i relS h_core
-      simp at h_unify; subst h_unify
-      exact relS.goodSubset
-  rcases List.mem_append.mp (h_incl h_tv) with h | h
-  · exact h_cs_fresh tv h
-  · exact h_vals_fresh tv h
-
-theorem LMonoTys.instantiateEnv_stateSubstInfo {IDMeta : Type} [ToFormat IDMeta]
-    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv IDMeta)
-    (mtys' : LMonoTys) (Env' : TEnv IDMeta)
-    (h : LMonoTys.instantiateEnv ids mtys Env = .ok (mtys', Env')) :
-    Env'.stateSubstInfo = Env.stateSubstInfo := by
-  unfold LMonoTys.instantiateEnv at h
-  generalize LMonoTys.instantiate ids mtys Env.genEnv = result at h
-  match result with
-  | .error _ => simp at h
-  | .ok (a, gE) => simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-
 /-- `Map.values` of a `zipWith Prod.mk` is the second list truncated to the
     length of the first. -/
 private theorem Map.values_zipWith_eq_take (as : List TyIdentifier) (bs : List LMonoTy) :
@@ -2156,49 +2098,6 @@ private theorem LMonoTys.freeVars_subst_closed
       · exact LMonoTy.freeVars_subst_closed ids freshtvs h_len mty
           (fun tv' h' => h_closed tv' (Or.inl h')) hSNE tv h_mty
       · exact ih (fun tv' h' => h_closed tv' (Or.inr h')) h_rest
-
-/-- When all free variables of `mtys` are in `ids`, `instantiateEnv` produces
-    types whose free variables are all fresh in the context. This is because
-    `instantiate` substitutes `ids` with fresh type variables, and since all
-    original free vars are in `ids`, they all get replaced. -/
-private theorem LMonoTys.instantiateEnv_freeVars_fresh_closed {T : LExprParams}
-    [DecidableEq T.IDMeta] [ToFormat T.IDMeta]
-    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv T.IDMeta)
-    (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
-    (h : LMonoTys.instantiateEnv ids mtys Env = .ok (mtys', Env'))
-    (h_closed : ∀ tv, tv ∈ LMonoTys.freeVars mtys → tv ∈ ids) :
-    ∀ tv, tv ∈ LMonoTys.freeVars mtys' →
-      TContext.isFresh (T := T) tv Env.context := by
-  intro tv h_tv
-  unfold LMonoTys.instantiateEnv at h
-  generalize h_inst : LMonoTys.instantiate ids mtys Env.genEnv = result at h
-  match result, h_inst with
-  | .error _, _ => simp at h
-  | .ok (a, gE), h_inst =>
-    simp at h; obtain ⟨h1, _⟩ := h; rw [← h1] at h_tv
-    simp [LMonoTys.instantiate, Bind.bind, Except.bind] at h_inst
-    split at h_inst
-    · simp at h_inst
-    · rename_i v1 h_gen
-      obtain ⟨freshtvs, genEnv1⟩ := v1; simp at h_inst h_gen
-      obtain ⟨h_eq, _⟩ := h_inst; rw [← h_eq] at h_tv
-      have h_len : freshtvs.length = ids.length :=
-        TGenEnv.genTyVars_length _ _ _ _ h_gen
-      have h_in_fresh :=
-        LMonoTys.freeVars_subst_closed ids freshtvs h_len mtys h_closed tv h_tv
-      exact TGenEnv.genTyVars_allFresh ids.length _ freshtvs genEnv1 h_gen
-        tv h_in_fresh
-
-
-/-- `LMonoTys.freeVars (ids.map .ftvar) = ids`. -/
-private theorem LMonoTys.freeVars_map_ftvar (ids : List TyIdentifier) :
-    LMonoTys.freeVars (ids.map .ftvar) = ids := by
-  induction ids with
-  | nil => simp [LMonoTys.freeVars]
-  | cons a rest ih => simp [List.map, LMonoTy.freeVars, ih]
-
-
-
 
 mutual
 /-- Free vars of `openVars vars vals body` are contained in `freeVarsList vals`
