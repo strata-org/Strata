@@ -193,15 +193,6 @@ def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (Stm
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
 def AnyNone := mkStmtExprMd (.StaticCall "from_none" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
-def FreeVar (name: String) := mkStmtExprMd (StmtExpr.Identifier name)
-
-/-- Create a None value for a given OrNone type -/
-def mkNoneForType (typeName : String) : StmtExprMd :=
-  -- First construct None_none(), then wrap it in the appropriate OrNone constructor
-  let noneVal := mkStmtExprMd (StmtExpr.StaticCall "None_none" [])
-  mkStmtExprMd (StmtExpr.StaticCall s!"{typeName}_mk_none" [noneVal])
-
-def OptionNone : StmtExprMd := mkStmtExprMd (StmtExpr.StaticCall "None" [])
 
 def NoError : StmtExprMd := mkStmtExprMd (StmtExpr.StaticCall "NoError" [])
 
@@ -296,7 +287,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Mult _ => .ok "PMul"
       | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
-      | .BitAnd _ => .ok "PBitAnd"
+      | .BitAnd _ => return mkStmtExprMd .Hole --TODO: Adding BitVector subtype in Any type, then the related operations
       | .BitOr _ => return mkStmtExprMd .Hole
       | .BitXor _ => return mkStmtExprMd .Hole
       -- Unsupported for now
@@ -640,7 +631,7 @@ def withException (ctx : TranslationContext) (funcname: String) : Bool :=
   | some sig => sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
   | _ => false
 
-def maybe_except_var := mkStmtExprMd (.Identifier "maybe_except")
+def maybeExceptVar := mkStmtExprMd (.Identifier "maybe_except")
 def nullcall_var := mkStmtExprMd (.Identifier "nullcall_ret")
 
 partial def translateAssign  (ctx : TranslationContext)
@@ -667,7 +658,7 @@ partial def translateAssign  (ctx : TranslationContext)
               let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
               [newStmt, initStmt]
             else if withException ctx fnname.text then
-              [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybe_except_var] rhs_trans)]
+              [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans)]
             else [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         | _ => [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         newctx := match rhs_trans.val with
@@ -837,7 +828,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
         | some funsig =>
             let targets := if funsig.ret.isNone then [] else [nullcall_var]
-            let targets := if withException ctx fnname.text then targets++[maybe_except_var] else targets
+            let targets := if withException ctx fnname.text then targets++[maybeExceptVar] else targets
             if targets.length > 0 then
               return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assign targets expr) md])
             else
@@ -1255,7 +1246,7 @@ def pythonToLaurel (prelude: Core.Program)
       currentClassName := none,
       preludeProcedures := preludeProcedures,
       functionSignatures := preludeSignatureToPythonFunctionDecl prelude
-      preludeFunctions := get_preludeFunctions prelude
+      preludeFunctions := getPreludeFunctions prelude
       preludeTypes := preludeTypes,
       userFunctions := userFunctions,
       compositeTypes := compositeTypes,
@@ -1309,7 +1300,7 @@ def pythonToLaurel (prelude: Core.Program)
 
   | _ => throw (.internalError "Expected Module")
 
-def pythonToLaurelWithFuncSigature (prelude: Core.Program) (funsig : Python.Command SourceRange) (pyModule : Python.Command SourceRange)
+def pythonToLaurelWithFuncSignature (prelude: Core.Program) (funsig : Python.Command SourceRange) (pyModule : Python.Command SourceRange)
             (filePath : String := "") : Except TranslationError Laurel.Program := do
   let funsig_trans ← pythonToLaurel prelude funsig
   let program ← pythonToLaurel prelude pyModule funsig_trans.snd filePath

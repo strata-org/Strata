@@ -391,8 +391,6 @@ function List_lt (l1: ListAny, l2: ListAny): bool;
 function List_le (l1: ListAny, l2: ListAny): bool;
 function List_gt (l1: ListAny, l2: ListAny): bool;
 function List_ge (l1: ListAny, l2: ListAny): bool;
-function List_gt (l1: ListAny, L2: ListAny): bool;
-function List_ge (l1: ListAny, L2: ListAny): bool;
 
 inline function PLt (v1: Any, v2: Any) : Any
 {
@@ -675,9 +673,9 @@ def getDatatypeFunctions (decls: List Core.Decl) : List String :=
         | _ => getDatatypeFunctions t
 
 
-def get_preludeFunctions (prelude: Core.Program) : List String := (getFunctions prelude.decls) ++ (getDatatypeFunctions prelude.decls)
+def getPreludeFunctions (prelude: Core.Program) : List String := (getFunctions prelude.decls) ++ (getDatatypeFunctions prelude.decls)
 
-def CorePrelude_functions := get_preludeFunctions Core.PythonLaurelPrelude
+def corePreludeFunctions := getPreludeFunctions Core.PythonLaurelPrelude
 
 
 end Python
