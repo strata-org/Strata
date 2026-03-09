@@ -291,7 +291,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
-          if (model.isFunction callee) || (callee.text ∈ s.preludeFunctions) then
+          if model.isFunction callee || callee.text ∈ s.preludeFunctions then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
             return [Core.Statement.init ident coreType (some coreExpr) md]
@@ -301,7 +301,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
             let defaultExpr := defaultExprForType model ty
             let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
-            return ([initStmt, callStmt])
+            return [initStmt, callStmt]
       | some (⟨ .InstanceCall .., _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
@@ -322,17 +322,17 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           -- Check if RHS is a procedure call (not a function)
           match value.val with
           | .StaticCall callee args =>
-              if (model.isFunction callee) || (callee.text ∈ s.preludeFunctions) then
+              if model.isFunction callee || callee.text ∈ s.preludeFunctions then
                 -- Functions are translated as expressions
                 let coreExpr ← translateExpr value
                 return [Core.Statement.set ident coreExpr md]
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
-                return ([Core.Statement.call [ident] callee.text coreArgs md])
+                return [Core.Statement.call [ident] callee.text coreArgs md]
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
-              return ([Core.Statement.havoc ident md])
+              return [Core.Statement.havoc ident md]
           | _ =>
               let coreExpr ← translateExpr value
               return [Core.Statement.set ident coreExpr md]
@@ -346,7 +346,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                 match t.val with
                 | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
-              return ([Core.Statement.call lhsIdents callee.text coreArgs value.md])
+              return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
           | .InstanceCall .. =>
               -- Instance method call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
@@ -365,7 +365,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       return [Imperative.Stmt.ite bcond bthen belse .empty]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
-      if (model.isFunction callee) || (callee.text ∈ s.preludeFunctions) then
+      if model.isFunction callee || callee.text ∈ s.preludeFunctions then
         -- Functions as statements have no effect (shouldn't happen in well-formed programs)
         return []
       else
