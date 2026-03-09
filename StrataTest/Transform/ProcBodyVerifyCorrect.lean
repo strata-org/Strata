@@ -176,15 +176,20 @@ theorem stmts_process_to_suffix
       (seq_process_stmt π φ s (rest ++ suffix_) σ σ_mid δ δ_mid h_s)
       (ih σ_mid δ_mid h_rest)
 
-/-! ## Soundness Theorem -/
-
+/-- Soundness of ProcBodyVerify: if the verification block is correct,
+    then the procedure obeys its contract. -/
 theorem procBodyVerify_sound
+    -- Given a procedure environment and function extension mechanism
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    -- Given a procedure and a program context
     (proc : Procedure) (p : Program) (st : CoreTransformState)
+    -- If procToVerifyStmt produces a verification statement `stmt`
     (stmt : Statement) (st' : CoreTransformState)
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
+    -- And every assertion in `stmt` is valid (holds at all reachable states)
     (h_correct : stmt_correct π φ stmt)
-    -- The prefix (inits + assumes) can execute to produce any state where pre holds
+    -- And the verification block's prefix (inits + assumes) can produce
+    -- any state where preconditions hold from some initial state
     (h_prefix_exec : ∀ (δ : CoreEval) (σ₀ : CoreStore),
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.preconditions.toList →
@@ -192,8 +197,13 @@ theorem procBodyVerify_sound
       ∃ (δ₀ : CoreEval) (σ₀' : CoreStore),
         ∀ (pre_body : List Statement) (bodyLabel : String),
           (∃ blk_label md, stmt = Stmt.block blk_label
-            (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++ ensuresToAsserts proc.spec.postconditions) md) →
+            (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
+              ensuresToAsserts proc.spec.postconditions) md) →
           CoreStepStar π φ (.stmts pre_body σ₀' δ₀) (.terminal σ₀ δ)) :
+    -- Then the procedure obeys its contract:
+    -- for all initial states where preconditions hold,
+    -- if the body executes to completion,
+    -- then all postconditions hold at exit.
     procedure_obeys_contract π φ proc := by
   obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
