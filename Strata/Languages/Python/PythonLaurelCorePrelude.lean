@@ -666,7 +666,7 @@ def getDatatypeFunctions (decls: List Core.Decl) : List String :=
           match typedec with
           | .data dtypes =>
             let constructors := dtypes.flatMap (λ t => t.constrs.map (λ c => c.name.name))
-            let destructors := dtypes.flatMap (λ t => (t.constrs.flatMap (λ c => c.args.map (fun (n,y) => t.name ++ ".." ++ n.name))))
+            let destructors := dtypes.flatMap (λ t => (t.constrs.flatMap (λ c => c.args.map (fun (n, _) => t.name ++ ".." ++ n.name))))
             let testers := dtypes.flatMap (λ t => t.constrs.map (λ c => c.testerName))
             constructors ++ destructors ++ testers ++ getDatatypeFunctions t
           | _ => getDatatypeFunctions t
