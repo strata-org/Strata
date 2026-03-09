@@ -574,7 +574,7 @@ partial def removePosargsFromKwargs (kwords : List (Python.keyword SourceRange))
     | .mk_keyword _ name _ =>
       match name.val with
         | some n => n.val ∉ funcDecl.args.unzip.fst
-        | none => True)
+        | none => true)
 
 partial def combinePositionalAndKeywordArgs
     (posArgs: List (Python.expr SourceRange))
