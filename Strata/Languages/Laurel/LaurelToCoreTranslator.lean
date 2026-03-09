@@ -186,7 +186,7 @@ def translateExpr (expr : StmtExprMd)
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
-      if isPureContext && !((model.isFunction callee) || (callee.text ∈ s.preludeFunctions)) then
+      if isPureContext && !model.isFunction callee && callee.text ∉ s.preludeFunctions then
         disallowed expr "calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
