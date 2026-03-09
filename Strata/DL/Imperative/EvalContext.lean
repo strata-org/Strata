@@ -72,12 +72,14 @@ def PathConditions.removeByNames (ps : PathConditions P) (names : List String) :
 inductive PropertyType where
   | cover
   | assert
+  | divisionByZero
   deriving Repr, DecidableEq
 
 instance : ToFormat PropertyType where
   format p := match p with
     | .cover => "cover"
     | .assert => "assert"
+    | .divisionByZero => "division by zero check"
 
 /--
 A proof obligation can be discharged by some backend solver or a dedicated
