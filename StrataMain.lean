@@ -794,12 +794,12 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
     |>.map (fun c => renameExpr rn c.expr)
   if !preExprs.isEmpty then
     let preGoto ← preExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [])
-    let preJson := preGoto.map CProverGOTO.exprToJson
+    let preJson ← (preGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_requires",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr preJson.toArray)])]
   if !postExprs.isEmpty then
     let postGoto ← postExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [])
-    let postJson := postGoto.map CProverGOTO.exprToJson
+    let postJson ← (postGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
   if !p.spec.modifies.isEmpty then
@@ -809,7 +809,7 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
         | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
         | _ => pure .Integer
       modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
-    let modJson := modGoto.map CProverGOTO.exprToJson
+    let modJson ← (modGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_assigns",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr modJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
@@ -852,7 +852,7 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
     (extraSyms : Lean.Json)
     : IO (Lean.Json × Lean.Json) := do
-  let json := CoreToGOTO.CProverGOTO.Context.toJson procName ctx
+  let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
   let mut gotoFns := match json.goto with
     | .obj m => match m.toList.find? (·.1 == "functions") with
@@ -863,7 +863,7 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     match functionToGotoCtx Env f with
     | .error e => panic! s!"{e}"
     | .ok fctx =>
-      let fjson := CoreToGOTO.CProverGOTO.Context.toJson funcName fctx
+      let fjson ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName fctx)
       match fjson.symtab with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
       match fjson.goto with
       | .obj m => match m.toList.find? (·.1 == "functions") with
@@ -985,7 +985,7 @@ private def collectGlobalSymbols (pgm : Core.Program) :
         | some expr =>
           let gotoExpr ← Lambda.LExpr.toGotoExprCtx
             (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] expr
-          pure (CProverGOTO.exprToJson gotoExpr)
+          (CProverGOTO.exprToJson gotoExpr).mapError (fun e => f!"{e}")
         | none => pure (Lean.Json.mkObj [("id", "nil")])
       syms := syms ++ [(gname, {
         baseName := gname
@@ -1341,7 +1341,7 @@ def laurelAnalyzeToGotoCommand : Command where
           | .error e => panic! s!"{e}"
           | .ok (ctx, liftedFuncs) =>
             allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
-            let json := CoreToGOTO.CProverGOTO.Context.toJson procName ctx
+            let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
             match json.symtab with
             | .obj m => symtabPairs := symtabPairs ++ m.toList
             | _ => pure ()
@@ -1356,7 +1356,7 @@ def laurelAnalyzeToGotoCommand : Command where
           match functionToGotoCtx Env f with
           | .error e => panic! s!"{e}"
           | .ok ctx =>
-            let json := CoreToGOTO.CProverGOTO.Context.toJson funcName ctx
+            let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName ctx)
             match json.symtab with
             | .obj m => symtabPairs := symtabPairs ++ m.toList
             | _ => pure ()
