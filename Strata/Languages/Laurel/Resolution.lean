@@ -450,8 +450,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let ctName' ← defineName ct.name (.compositeType ct)
     let extending' ← ct.extending.mapM (resolveRef · .empty)
     let fields' ← ct.fields.mapM (resolveField ctName')
-    let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
-    -- Build per-type scope: start with inherited fields from parents, then add own fields
+    -- Build per-type scope BEFORE resolving instance procedures, so that
+    -- field references (e.g. self.field) inside methods can be resolved.
     let s ← get
     let mut typeScope : Scope := {}
     for parent in extending' do
@@ -467,6 +467,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
       | some entry => typeScope := typeScope.insert field.name.text entry
       | none => pure ()
     modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.text typeScope }
+    let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
     return .Composite { name := ctName', extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>

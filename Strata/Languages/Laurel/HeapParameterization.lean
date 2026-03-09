@@ -419,8 +419,14 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let program := { program with
     types := program.types
     staticProcedures := program.staticProcedures }
-  let heapReaders := computeReadsHeap program.staticProcedures
-  let heapWriters := computeWritesHeap program.staticProcedures
+  -- Collect instance procedures from composite types for heap analysis
+  let instanceProcs := program.types.foldl (fun acc td =>
+    match td with
+    | .Composite ct => acc ++ ct.instanceProcedures
+    | _ => acc) ([] : List Procedure)
+  let allProcs := program.staticProcedures ++ instanceProcs
+  let heapReaders := computeReadsHeap allProcs
+  let heapWriters := computeWritesHeap allProcs
   let (procs', _) := (program.staticProcedures.mapM (heapTransformProcedure model)).run
     { heapReaders, heapWriters }
   -- Collect all qualified field names and generate a Field datatype
@@ -433,7 +439,11 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- Remove fields from composite types since they are now stored in the heap
   let types' := program.types.map fun td =>
     match td with
-    | .Composite ct => .Composite { ct with fields := [] }
+    | .Composite ct =>
+      -- Also transform instance procedures that may reference fields via the heap
+      let (instProcs', _) := (ct.instanceProcedures.mapM (heapTransformProcedure model)).run
+        { heapReaders, heapWriters }
+      .Composite { ct with fields := [], instanceProcedures := instProcs' }
     | other => other
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',

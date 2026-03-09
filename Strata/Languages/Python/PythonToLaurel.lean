@@ -540,19 +540,28 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       let funcName := pyExprToString f
       if ctx.compositeTypes.any (fun ct => ct.name == funcName) then
         -- This is: var x: ClassName = ClassName(args)
-        -- Translate to: var x = new ClassName; x.__init__(args);
+        -- Translate to: var x = { var __tmp = new ClassName; __tmp.__init__(args); __tmp }
+        --
+        -- We use a block-as-initializer with a temporary variable because
+        -- `translateStmt` returns a single statement. Wrapping the declaration
+        -- and the __init__ call in an outer Block would introduce a new scope,
+        -- hiding `x` from subsequent statements. A cleaner solution would be
+        -- to let `translateStmt` return multiple statements, but that requires
+        -- a larger refactor of the translation pipeline.
         let translatedArgs ← args.val.toList.mapM (translateExpr ctx)
+        let tmpName := s!"__tmp_{varName}"
 
-        let newExpr := mkStmtExprMd (StmtExpr.New funcName)
-        let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some newExpr)) md
-
+        let tmpDecl := mkStmtExprMd (StmtExpr.LocalVariable tmpName varType
+          (some (mkStmtExprMd (StmtExpr.New funcName))))
         let initCall := mkStmtExprMd (StmtExpr.InstanceCall
-          (mkStmtExprMd (StmtExpr.Identifier varName))
+          (mkStmtExprMd (StmtExpr.Identifier tmpName))
           "__init__"
           translatedArgs)
+        let tmpRef := mkStmtExprMd (StmtExpr.Identifier tmpName)
+        let initBlock := mkStmtExprMd (StmtExpr.Block [tmpDecl, initCall, tmpRef] none)
 
-        let blockStmt := mkStmtExprMd (StmtExpr.Block [declStmt, initCall] none)
-        return (newCtx, blockStmt)
+        let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some initBlock)) md
+        return (newCtx, declStmt)
       else
         -- Regular call, not a constructor
         let initVal ← translateCall ctx f args.val.toList
