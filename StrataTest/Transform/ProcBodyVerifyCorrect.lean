@@ -81,17 +81,57 @@ theorem block_stmt_to_terminal
     (block_lift_steps π φ label _ _ h_body)
     (ReflTrans.step _ _ _ StepStmt.step_block_done (ReflTrans.refl _))
 
-/-- Process a prefix of statements, each reaching terminal, advancing to the suffix. -/
+/-- .stmts [] can only step to .terminal -/
+private theorem stmts_nil_step_terminal
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (σ : CoreStore) (δ : CoreEval) (c : CoreConfig) :
+    CoreStep π φ (.stmts [] σ δ) c → c = .terminal σ δ := by
+  intro h; cases h; rfl
+
+/-- .stmts (s :: ss) can only step to .seq (.stmt s σ δ) ss -/
+private theorem stmts_cons_step_seq
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (s : Statement) (ss : List Statement) (σ : CoreStore) (δ : CoreEval) (c : CoreConfig) :
+    CoreStep π φ (.stmts (s :: ss) σ δ) c → c = .seq (.stmt s σ δ) ss := by
+  intro h; cases h; rfl
+
+/-- If .stmts (s :: rest) reaches .terminal, then s reaches .terminal from σ,δ
+    and .stmts rest reaches .terminal from the resulting state. -/
+theorem stmts_cons_decompose
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (s : Statement) (rest : List Statement) (σ σ' : CoreStore) (δ δ' : CoreEval) :
+    CoreStepStar π φ (.stmts (s :: rest) σ δ) (.terminal σ' δ') →
+    ∃ (σ_mid : CoreStore) (δ_mid : CoreEval),
+      CoreStepStar π φ (.stmt s σ δ) (.terminal σ_mid δ_mid) ∧
+      CoreStepStar π φ (.stmts rest σ_mid δ_mid) (.terminal σ' δ') := by
+  sorry
+
 theorem stmts_process_to_suffix
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (prefix_ suffix_ : List Statement) (σ σ' : CoreStore) (δ δ' : CoreEval) :
     CoreStepStar π φ (.stmts prefix_ σ δ) (.terminal σ' δ') →
     CoreStepStar π φ (.stmts (prefix_ ++ suffix_) σ δ) (.stmts suffix_ σ' δ') := by
   intro h
-  -- By induction on the step sequence, but we need to know prefix_ structure.
-  -- Alternative: use the fact that .stmts prefix_ →* .terminal means
-  -- each statement in prefix_ processes to terminal sequentially.
-  sorry
+  induction prefix_ generalizing σ δ with
+  | nil =>
+    cases h with
+    | step _ _ _ h_step h_rest =>
+      have := stmts_nil_step_terminal π φ σ δ _ h_step
+      subst this
+      cases h_rest with
+      | refl => exact ReflTrans.refl _
+      | step _ _ _ h_next => exact absurd h_next (fun h => by cases h)
+  | cons s rest ih =>
+    -- prefix_ = s :: rest
+    obtain ⟨σ_mid, δ_mid, h_s, h_rest⟩ := stmts_cons_decompose π φ s rest σ σ' δ δ' h
+    -- .stmts ((s :: rest) ++ suffix_) σ δ
+    -- = .stmts (s :: (rest ++ suffix_)) σ δ
+    -- →* .stmts (rest ++ suffix_) σ_mid δ_mid  (by seq_process_stmt using h_s)
+    -- →* .stmts suffix_ σ' δ'                  (by IH using h_rest)
+    simp only [List.cons_append]
+    exact ReflTrans_Transitive _ _ _ _
+      (seq_process_stmt π φ s (rest ++ suffix_) σ σ_mid δ δ_mid h_s)
+      (ih σ_mid δ_mid h_rest)
 
 /-! ## Soundness Theorem -/
 
