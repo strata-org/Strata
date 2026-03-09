@@ -649,16 +649,14 @@ def Core.PythonLaurelPrelude : Core.Program :=
    Core.getProgram pythonLaurelPrelude |>.fst
 
 def getFunctions (decls: List Core.Decl) : List String :=
-  match decls with
-  | [] => []
-  | decl::t => match decl.kind with
-        |.func => decl.name.name::getFunctions t
-        | _ => getFunctions t
+  decls.filterMap (λ decl =>
+    match decl.kind with
+        |.func => some decl.name.name
+        | _ => none)
 
 def getDatatypeFunctions (decls: List Core.Decl) : List String :=
-  match decls with
-  | [] => []
-  | decl::t => match h: decl.kind with
+  decls.flatMap (λ decl =>
+    match h: decl.kind with
         |.type =>
           let typedec := decl.getTypeDecl (by simp_all)
           match typedec with
@@ -666,9 +664,9 @@ def getDatatypeFunctions (decls: List Core.Decl) : List String :=
             let constructors := dtypes.flatMap (λ t => t.constrs.map (λ c => c.name.name))
             let destructors := dtypes.flatMap (λ t => (t.constrs.flatMap (λ c => c.args.map (fun (n, _) => t.name ++ ".." ++ n.name))))
             let testers := dtypes.flatMap (λ t => t.constrs.map (λ c => c.testerName))
-            constructors ++ destructors ++ testers ++ getDatatypeFunctions t
-          | _ => getDatatypeFunctions t
-        | _ => getDatatypeFunctions t
+            constructors ++ destructors ++ testers
+          | _ => []
+        | _ => [])
 
 
 def getPreludeFunctions (prelude: Core.Program) : List String := (getFunctions prelude.decls) ++ (getDatatypeFunctions prelude.decls)
@@ -676,11 +674,10 @@ def getPreludeFunctions (prelude: Core.Program) : List String := (getFunctions p
 def corePreludeFunctions := getPreludeFunctions Core.PythonLaurelPrelude
 
 def getProcedures (decls: List Core.Decl) : List String :=
-  match decls with
-  | [] => []
-  | decl::t => match decl.kind with
-        |.proc => decl.name.name::getProcedures t
-        | _ => getProcedures t
+  decls.filterMap (λ decl =>
+    match decl.kind with
+        |.proc => some decl.name.name
+        | _ => none)
 
 def corePreludeProcedures := getProcedures Core.PythonLaurelPrelude.decls
 
