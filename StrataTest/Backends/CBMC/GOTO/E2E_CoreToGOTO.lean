@@ -34,7 +34,7 @@ private def coreToGotoJson (p : Strata.Program) :
   let p := procs[0]!
   let pname := Core.CoreIdent.toPretty p.header.name
   let ctx ← procedureToGotoCtx Env p (axioms := axioms) (distincts := distincts)
-  let json := CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
   let extraJson := Lean.toJson extraSyms
   let symtab := match json.symtab, extraJson with
     | .obj m1, .obj m2 => Lean.Json.obj (m2.mergeWith (fun _ v _ => v) m1)
@@ -53,7 +53,7 @@ procedure test(x : int) returns () {
 #end
 
 #eval! do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_SimpleAssert | panic! "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_SimpleAssert | IO.throwServerError "translation failed"
   assert! symtab.getObjValD "test" != Lean.Json.null
   assert! goto.getObjValD "functions" != Lean.Json.null
 
@@ -70,7 +70,7 @@ procedure test() returns () {
 #end
 
 #eval! do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_GlobalVar | panic! "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_GlobalVar | IO.throwServerError "translation failed"
   let gSym := symtab.getObjValD "g"
   assert! gSym != Lean.Json.null
   -- isStaticLifetime is a Bool field in CBMCSymbol, serialized by deriving ToJson
@@ -92,7 +92,7 @@ spec {
 #end
 
 #eval! do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Precondition | panic! "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_Precondition | IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   let codeType := testSym.getObjValD "type"
   let namedSub := codeType.getObjValD "namedSub"
@@ -114,7 +114,7 @@ spec {
 #end
 
 #eval! do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Postcondition | panic! "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_Postcondition | IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   let codeType := testSym.getObjValD "type"
   let namedSub := codeType.getObjValD "namedSub"
@@ -137,7 +137,7 @@ spec {
 #end
 
 #eval! do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Modifies | panic! "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_Modifies | IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   let codeType := testSym.getObjValD "type"
   let namedSub := codeType.getObjValD "namedSub"
@@ -156,7 +156,7 @@ procedure test(x : int) returns () {
 #end
 
 #eval! do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Cover | panic! "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Cover | IO.throwServerError "translation failed"
   assert! (goto.pretty.splitOn "ASSERT").length > 1
 
 -------------------------------------------------------------------------------
@@ -172,7 +172,7 @@ procedure test(x : bv32, y : bv32) returns () {
 #end
 
 #eval! do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_BVOps | panic! "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_BVOps | IO.throwServerError "translation failed"
   assert! symtab.getObjValD "test" != Lean.Json.null
   assert! goto.getObjValD "functions" != Lean.Json.null
 
@@ -196,7 +196,7 @@ spec {
 
 #eval! do
   match coreToGotoJson E2E_FreeSpecs with
-  | .error e => panic! s!"translation failed: {e}"
+  | .error e => IO.throwServerError s!"translation failed: {e}"
   | .ok (symtab, _) =>
     let testSym := symtab.getObjValD "test"
     let codeType := testSym.getObjValD "type"
@@ -239,7 +239,7 @@ private def coreToGotoJsonByName (p : Strata.Program) (name : String) :
     | .error f!"procedure {name} not found"
   let pname := Core.CoreIdent.toPretty proc.header.name
   let ctx ← procedureToGotoCtx Env proc (axioms := axioms) (distincts := distincts)
-  let json := CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
   let extraJson := Lean.toJson extraSyms
   let symtab := match json.symtab, extraJson with
     | .obj m1, .obj m2 => Lean.Json.obj (m2.mergeWith (fun _ v _ => v) m1)
@@ -265,7 +265,7 @@ procedure test(x : int) returns () {
 #end
 
 #eval! do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Axiom | panic! "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Axiom | IO.throwServerError "translation failed"
   -- The GOTO output should contain an ASSUME for the axiom
   assert! (goto.pretty.splitOn "ASSUME").length > 1
 
@@ -285,7 +285,7 @@ procedure test() returns () {
 #end
 
 #eval! do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Distinct | panic! "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Distinct | IO.throwServerError "translation failed"
   -- Should have 3 ASSUME instructions for pairwise != (a!=b, a!=c, b!=c)
   let assumes := (goto.pretty.splitOn "ASSUME").length - 1
   assert! assumes >= 3
@@ -305,7 +305,7 @@ procedure test(s : string) returns () {
 #end
 
 #eval! do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_Regex | panic! "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_Regex | IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO output should contain function_application nodes
   assert! (gotoStr.splitOn "function_application").length > 1
@@ -353,7 +353,7 @@ procedure test(x : int) returns () {
 #end
 
 #eval! do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_FuncDecl | panic! "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_FuncDecl | IO.throwServerError "translation failed"
   let symStr := symtab.pretty
   -- The lifted function "double" should appear in the symbol table
   assert! (symStr.splitOn "double").length > 1
@@ -370,7 +370,7 @@ procedure test(x : int) returns () {
 #end
 
 #eval! do
-  let (.ok (_, goto)) := coreToGotoJson E2E_SourceLoc | panic! "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_SourceLoc | IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO output should contain non-zero line numbers from source locations
   assert! (gotoStr.splitOn "\"line\"").length > 1
