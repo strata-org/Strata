@@ -32,7 +32,7 @@ The inductive relation `HasType` characterizes well-typed `LExpr`s. We
 specify a Hindley-Milner type system here, but note that at this time, we
 do not have `let`s in `LExpr`, so we do not tackle let-polymorphism yet.
 
-TODO: prove that the implementation conforms to the specification here.
+The theorem `resolve_HasType` shows that the implementation conforms to the specification.
 -/
 
 ---------------------------------------------------------------------
