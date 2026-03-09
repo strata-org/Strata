@@ -278,7 +278,7 @@ def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
-    (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
+    (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
   -- Simplified labels for minimal check level
   if checkLevel == .minimal then
     match property, checkMode with
@@ -322,7 +322,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     else "unknown"
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
-    (checkLevel : CheckLevel := .full) (checkMode : VerificationMode := .deductive) : String :=
+    (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
   -- Simplified emojis for minimal check level
   if checkLevel == .minimal then
     match property, checkMode with
