@@ -12,7 +12,7 @@ import StrataTest.Transform.ProcedureInlining
 namespace Strata
 namespace Python
 
-def pyThonLaurelPrelude :=
+def pythonLaurelPrelude :=
 #strata
 program Core;
 
