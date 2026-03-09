@@ -66,7 +66,7 @@ deriving Repr, Inhabited
 
 structure TranslationContext where
   variableTypes : List (String × String) := []
-  /-- Map from function names to their signatures -/
+  /-- List of function signatures -/
   functionSignatures : List PythonFunctionDecl := []
   /-- Map from prelude procedure names to their full signatures -/
   preludeProcedures : List (String × CoreProcedureSignature) := []
@@ -159,14 +159,23 @@ partial def pyExprToString (e : Python.expr SourceRange) : String :=
     String.intercalate ", " args
   | _ => "<unknown>"
 
+def PyLauType.Int := "int"
+def PyLauType.Bool := "bool"
+def PyLauType.Str := "str"
+def PyLauType.Datetime := "Datetime"
+def PyLauType.DictStrAny := "DictStrAny"
+def PyLauType.ListStr := "ListStr"
+def PyLauType.Package := "Package"
+def PyLauType.Any := "Any"
+
 /-- Map Python type strings to Core type names -/
 def pythonTypeToCoreType (typeStr : String) : Option String :=
   match typeStr with
-  | "Dict[str, Any]" => some "DictStrAny"
-  | "List[str]" => some "ListStr"
-  | "Any" => some "Any"
-  | "datetime" => some "Datetime"
-  | "timedelta" => some "int"
+  | "Dict[str, Any]" => some PyLauType.DictStrAny
+  | "List[str]" => some PyLauType.ListStr
+  | "Any" => some PyLauType.Any
+  | "datetime" => some PyLauType.Datetime
+  | "timedelta" => some PyLauType.Int
   | _ => none
 
 /-- Translate Python type annotation to Laurel HighType -/
@@ -185,16 +194,16 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
         .ok (mkCoreType typeStr)
       else
         -- Map it to a core PyAnyType
-        .ok (mkCoreType "Any")
+        .ok (mkCoreType PyLauType.Any)
 
-def AnyTy := mkCoreType "Any"
+def AnyTy := mkCoreType PyLauType.Any
 def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_string" [mkStmtExprMd (StmtExpr.LiteralString s)])
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
 def AnyNone := mkStmtExprMd (.StaticCall "from_none" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
-
 def NoError : StmtExprMd := mkStmtExprMd (StmtExpr.StaticCall "NoError" [])
+
 
 def DictStrAny_mk_aux
     (kv: List (String × StmtExprMd)) (acc: StmtExprMd): StmtExprMd :=
@@ -419,7 +428,7 @@ partial def getListAttributes (expr: Python.expr SourceRange): (Python.expr Sour
 
 partial def reMapFunctionName (ctx: TranslationContext) (fname: String) : String :=
   if fname ∈ ctx.userClasses then
-    fname ++ "___init__"
+    fname ++ "@__init__"
   else
     match fname with
     | "str" => "to_string_any"
@@ -437,36 +446,36 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
   match e with
   -- Integer literals
   | .Constant _ (.ConPos _ _) _
-  | .Constant _ (.ConNeg _ _) _ => return "int"
+  | .Constant _ (.ConNeg _ _) _ => return PyLauType.Int
   -- String literals
-  | .Constant _ (.ConString _ _) _ => return "string"
+  | .Constant _ (.ConString _ _) _ => return PyLauType.Str
   -- Boolean literals
   | .Constant _ (.ConTrue _) _
   | .Constant _ (.ConFalse _) _
   | .BoolOp _ _ _
-  | .Compare _ _ _ _=> return "bool"
+  | .Compare _ _ _ _=> return PyLauType.Bool
   -- Variable references
   | .Name _ n _ =>
       match ctx.variableTypes.find? (λ v => v.fst == n.val) with
       | some (_, ty) => return ty
-      | _ => return "Package"
+      | _ => return PyLauType.Package
   | .Attribute _ v attr _ =>
     let vty ←  inferExprType ctx v
     match ctx.classAttributeType.get? (vty, attr.val) with
       | some ty => return ty
-      | _ => return "Any"
+      | _ => return PyLauType.Any
   -- Binary operations
-  | .BinOp _ _ _ _ => return "Any"
+  | .BinOp _ _ _ _ => return PyLauType.Any
 
   -- Unary operations
-  | .UnaryOp _ _ _ => return "Any"
+  | .UnaryOp _ _ _ => return PyLauType.Any
 
   -- JoinedStr (f-strings) - return first part until we have string concat
-  | .JoinedStr _ _ => return "Any"
+  | .JoinedStr _ _ => return PyLauType.Any
 
   | .Call _ f args _ => getFunctionReturnType ctx f args.val
 
-  | _ => return "Any"
+  | _ => return PyLauType.Any
 
 partial def getFunctionReturnType (ctx : TranslationContext) (func: Python.expr SourceRange) (args : Array (Python.expr SourceRange))
     : Except TranslationError String := do
@@ -475,8 +484,8 @@ partial def getFunctionReturnType (ctx : TranslationContext) (func: Python.expr 
   | _=>
     let (fname, _) ← refineFunctionCallExpr ctx func
     match ctx.functionSignatures.find? (λ f => f.name == fname) with
-      | some funcDecl => match funcDecl.ret with | some ty => return ty | _ => return "Any"
-      | _ => return "Any"
+      | some funcDecl => match funcDecl.ret with | some ty => return ty | _ => return PyLauType.Any
+      | _ => return PyLauType.Any
 
 
 /-
@@ -498,8 +507,8 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
         if isPackage ctx v then
           return (pyExprToString func, none, false)
         else
-        if callerTy == "Any" then
-          return ("AnyTyInstance" ++ "_" ++ callname, some v, true)
+        if callerTy == PyLauType.Any then
+          return ("AnyTyInstance" ++ "@" ++ callname, some v, true)
         else
           return (callerTy ++ "_" ++ callname, some v, false)
     | _ => throw (.internalError s!"{repr func} is not a function")
@@ -886,15 +895,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let _iterExpr ← translateExpr ctx iter
 
     -- Create context with target variable
-    let targetType := mkCoreType "PyAnyType"
-    let bodyCtx := { ctx with variableTypes := ctx.variableTypes ++ [(targetName, "Any")] }
+    let bodyCtx := { ctx with variableTypes := ctx.variableTypes ++ [(targetName, PyLauType.Any)] }
 
     -- Translate loop body
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
 
     -- Create: { target = havoc; body_statements }
     -- This abstracts: execute body once with arbitrary target value
-    let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName targetType (some (mkStmtExprMd .Hole)))
+    let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block ([targetDecl] ++ bodyStmts) none) md
 
     return (finalCtx, [loopBlock])
@@ -952,7 +960,7 @@ def unpackPyArguments (args: Python.arguments SourceRange)
           | .mk_arg _ name oty _ =>
             match oty.val with
               | .some ty => return (name.val, ← argumentTypeToString ty, a.snd)
-              | _ => return (name.val, "Any", a.snd))
+              | _ => return (name.val, PyLauType.Any, a.snd))
       return (argtypes, kwargs.val.isSome)
 
 def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt SourceRange) : Except TranslationError PythonFunctionDecl := do
@@ -960,8 +968,8 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
   | .FunctionDef _ name args _body _decorator_list returns _type_comment _ =>
     let name := match ctx.currentClassName with | none => name.val | some classname => classname ++ "_" ++ name.val
     let args_trans ← unpackPyArguments args
-    let args := if name.endsWith "___init__" then args_trans.fst.tail else args_trans.fst
-    let ret := if name.endsWith "___init__" then some (name.dropEnd "___init__".length).toString
+    let args := if name.endsWith "@__init__" then args_trans.fst.tail else args_trans.fst
+    let ret := if name.endsWith "@__init__" then some (name.dropEnd "@__init__".length).toString
         else
         match returns.val with
           | some retExpr => some (pyExprToString retExpr)
@@ -988,7 +996,7 @@ def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl)
         else
           { name := name, type := AnyTy})
     if funcDecl.hasKwargs then
-      let paramType ← translateType ctx "DictStrAny"
+      let paramType ← translateType ctx PyLauType.DictStrAny
       inputs:= inputs ++ [{ name := "kwargs", type := paramType }]
 
     -- Translate return type
@@ -1002,7 +1010,7 @@ def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl)
 
     -- Translate function body
     let inputTypes := funcDecl.args.map (λ (name, type, _) => (name, type))
-    let ctx := {ctx with variableTypes:= ("nullcall_ret", "Any")::inputTypes}
+    let ctx := {ctx with variableTypes:= ("nullcall_ret", PyLauType.Any)::inputTypes}
     let (newctx, bodyStmts) ← translateStmtList ctx body
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
@@ -1113,7 +1121,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
           | .mk_arg _ paramName paramAnnotation _ =>
             let paramType ← match paramAnnotation.val with
               | some annot => translateType ctx (pyExprToString annot)
-              | none => .ok (mkCoreType "PyAnyType")  -- Default to PyAnyType
+              | none => .ok (mkCoreType PyLauType.Any)  -- Default to PyAnyType
             inputs := inputs ++ [{name := paramName.val, type := paramType}]
 
     -- Translate return type
@@ -1270,7 +1278,7 @@ def pythonToLaurel (prelude: Core.Program)
       | _ =>
         otherStmts := otherStmts ++ [stmt]
 
-    ctx := {ctx with variableTypes:= [("nullcall_ret", "Any")]}
+    ctx := {ctx with variableTypes:= [("nullcall_ret", PyLauType.Any)]}
     let (_, bodyStmts) ← translateStmtList ctx otherStmts
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" AnyTy (some <| strToAny "__main__")) :: bodyStmts
@@ -1299,15 +1307,6 @@ def pythonToLaurel (prelude: Core.Program)
     return (program, ctx)
 
   | _ => throw (.internalError "Expected Module")
-
-/- This function is used to add the external functions signatures to the TranslationContext
-TODO: Rewrite testing procedures that is currently in PythonLaurelCorePrelude in Python
- -/
-def pythonToLaurelWithFuncSignature (prelude: Core.Program) (funsig : Python.Command SourceRange) (pyModule : Python.Command SourceRange)
-            (filePath : String := "") : Except TranslationError Laurel.Program := do
-  let funsig_trans ← pythonToLaurel prelude funsig
-  let program ← pythonToLaurel prelude pyModule funsig_trans.snd filePath
-  return program.fst
 
 
 end Strata.Python
