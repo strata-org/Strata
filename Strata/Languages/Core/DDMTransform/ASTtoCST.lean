@@ -390,7 +390,7 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bool.Not" => pure (.not default arg)
   -- Strings and regexes
   | "Str.Length" => pure (.str_len default arg)
-  | "Str.ToRegeEx" => pure (.str_toregex default arg)
+  | "Str.ToRegEx" => pure (.str_toregex default arg)
   | "Re.Star" => pure (.re_star default arg)
   | "Re.Plus" => pure (.re_plus default arg)
   | "Re.Comp" => pure (.re_comp default arg)
