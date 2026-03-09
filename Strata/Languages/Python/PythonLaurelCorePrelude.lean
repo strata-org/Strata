@@ -388,7 +388,9 @@ function string_le (s1: string, s2: string) : bool;
 function string_gt (s1: string, s2: string) : bool;
 function string_ge (s1: string, s2: string) : bool;
 function List_lt (l1: ListAny, l2: ListAny): bool;
-function List_le (l1: ListAny, L2: ListAny): bool;
+function List_le (l1: ListAny, l2: ListAny): bool;
+function List_gt (l1: ListAny, l2: ListAny): bool;
+function List_ge (l1: ListAny, l2: ListAny): bool;
 function List_gt (l1: ListAny, L2: ListAny): bool;
 function List_ge (l1: ListAny, L2: ListAny): bool;
 
