@@ -108,24 +108,8 @@ theorem AnnotCompat.of_eq {aliases : List TypeAlias} {ann : LMonoTy} :
     AnnotCompat aliases ann ann :=
   ⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact .refl⟩
 
-/-- `AnnotCompat` is preserved under type substitution: if `ann` is compatible
-    with `xty` under `aliases`, then it is also compatible with `subst S xty`.
-    The witness σ' is obtained by composing the original σ with S on values:
-    `σ' = map (fun (k,v) => (k, subst S v)) σ`. -/
-theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
-    (S : Subst)
-    (h : AnnotCompat aliases ann xty)
-    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
-    AnnotCompat aliases ann (LMonoTy.subst S xty) := by
-  -- Proof sketch:
-  -- 1. From h, obtain σ with AliasEquiv aliases (subst [σ] ann) xty
-  -- 2. Apply AliasEquiv_subst to get AliasEquiv aliases (subst S (subst [σ] ann)) (subst S xty)
-  -- 3. Compose substitutions: subst S (subst [σ] ann) = subst [σ'] ann
-  --    where σ' = map (fun (k,v) => (k, subst S v)) σ
-  -- 4. This gives AnnotCompat aliases ann (subst S xty)
-  -- The composition step (3) needs a single-scope substitution composition lemma.
-  -- AliasEquiv_subst is private and defined later in the file, so we sorry for now.
-  sorry
+-- `AnnotCompat_subst` is defined later (after `AliasEquiv_subst` which it depends on).
+-- See the actual definition below the `AliasEquiv_subst` theorem.
 
 /--
 Typing relation for `LExpr`s with respect to `LTy`.
@@ -7690,6 +7674,93 @@ private theorem LMonoTys_resolveAliases_subst_eq
     exact (LMonoTys_resolveAliases_subst_eq mrest Env1 mrest' Env2 h_tl).trans
       (LMonoTy_resolveAliases_subst_eq mty Env mty' Env1 h_hd)
 end
+
+/-- `subst S (ftvar v) = t` when `S` is non-empty and `find? S v = some t`. -/
+private theorem LMonoTy.subst_ftvar_eq (S : Subst) (v : TyIdentifier) (t : LMonoTy)
+    (h_ne : Subst.hasEmptyScopes S = false) (h_find : Maps.find? S v = some t) :
+    LMonoTy.subst S (.ftvar v) = t := by
+  simp only [LMonoTy.subst, h_ne, ite_false, h_find, Bool.false_eq_true, ↓reduceIte]
+
+/-- Helper: `Map.find?` on `l.map (fun v => (v, f v))` returns `some (f v)` for `v ∈ l`. -/
+private theorem Map.find?_of_map_self {α : Type} [DecidableEq α] {β : Type}
+    (l : List α) (f : α → β) (v : α) (hv : v ∈ l) :
+    Map.find? (l.map (fun x => (x, f x))) v = some (f v) := by
+  induction l with
+  | nil => simp at hv
+  | cons w ws ih =>
+    simp only [List.map, Map.find?]
+    by_cases h_eq : w = v
+    · simp [h_eq]
+    · simp [h_eq]; exact ih (List.mem_of_ne_of_mem (Ne.symm h_eq) hv)
+
+theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
+    (S : Subst)
+    (h : AnnotCompat aliases ann xty)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
+    AnnotCompat aliases ann (LMonoTy.subst S xty) := by
+  obtain ⟨σ, h_ae⟩ := h
+  have h_ae_S := AliasEquiv_subst aliases (LMonoTy.subst [σ] ann) xty S h_ae h_aw
+  -- Build σ' mapping each v ∈ freeVars ann to subst S (subst [σ] (ftvar v))
+  let g : TyIdentifier → LMonoTy := fun v => LMonoTy.subst S (LMonoTy.subst [σ] (.ftvar v))
+  refine ⟨(LMonoTy.freeVars ann).map (fun v => (v, g v)), ?_⟩
+  suffices h_eq : LMonoTy.subst [(LMonoTy.freeVars ann).map (fun v => (v, g v))] ann =
+      LMonoTy.subst S (LMonoTy.subst [σ] ann) by
+    rw [h_eq]; exact h_ae_S
+  -- Helper: find? on the constructed map gives the right value
+  have h_find : ∀ v, v ∈ LMonoTy.freeVars ann →
+      Maps.find? [(LMonoTy.freeVars ann).map (fun v => (v, g v))] v = some (g v) := by
+    intro v hv; unfold Maps.find?; rw [Map.find?_of_map_self _ g v hv]
+  -- Prove by structural induction with freeVars subset condition
+  suffices ∀ (mty : LMonoTy),
+      (∀ v, v ∈ LMonoTy.freeVars mty → v ∈ LMonoTy.freeVars ann) →
+      LMonoTy.subst [(LMonoTy.freeVars ann).map (fun v => (v, g v))] mty =
+        LMonoTy.subst S (LMonoTy.subst [σ] mty) from
+    this ann (fun v hv => hv)
+  intro mty h_sub
+  -- Abbreviate the constructed map
+  let σ' := (LMonoTy.freeVars ann).map (fun v => (v, g v))
+  by_cases hσ'_e : Subst.hasEmptyScopes [σ']
+  · -- σ' empty → ann has no freeVars → mty ground
+    have h_no_fv_ann : LMonoTy.freeVars ann = [] := by
+      cases h_fv : LMonoTy.freeVars ann with
+      | nil => rfl
+      | cons v vs =>
+        exfalso
+        change Subst.hasEmptyScopes [σ'] = true at hσ'_e
+        simp only [σ', h_fv, Subst.hasEmptyScopes, List.map] at hσ'_e
+        exact absurd hσ'_e (by unfold Map.isEmpty; simp)
+    have h_ground : ∀ v, v ∈ LMonoTy.freeVars mty → False := by
+      intro v hv; exact absurd (h_no_fv_ann ▸ h_sub v hv) (by simp)
+    rw [LMonoTy.subst_emptyS hσ'_e]
+    rw [LMonoTy.subst_no_relevant_keys [σ] mty (fun v hv _ => (h_ground v hv).elim)]
+    exact (LMonoTy.subst_no_relevant_keys S mty (fun v hv _ => (h_ground v hv).elim)).symm
+  · have hσ'_ne : Subst.hasEmptyScopes [σ'] = false := Bool.eq_false_iff.mpr hσ'_e
+    induction mty with
+    | ftvar v =>
+      -- LHS: subst [σ'] (ftvar v) = match find? [σ'] v ... (since σ' non-empty)
+      -- RHS: subst S (subst [σ] (ftvar v)) = g v (by def of g)
+      -- Use h_find to match
+      have hv := h_sub v (by simp [LMonoTy.freeVars])
+      have h_fv := h_find v hv
+      -- Goal: subst [σ'] (ftvar v) = subst S (subst [σ] (ftvar v))
+      exact LMonoTy.subst_ftvar_eq [σ'] v (g v) hσ'_ne h_fv
+    | bitvec n =>
+      simp only [LMonoTy.subst, hσ'_ne, ite_false]
+      by_cases hσ : Subst.hasEmptyScopes [σ] <;> by_cases hS : Subst.hasEmptyScopes S <;>
+        simp [LMonoTy.subst, hσ, hS]
+    | tcons name args ih =>
+      rw [LMonoTy.subst_tcons, LMonoTy.subst_tcons, LMonoTy.subst_tcons]; congr 1
+      induction args with
+      | nil => simp [LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
+      | cons hd tl ih_tl =>
+        -- Goal already in cons form after subst_tcons + let unfolding
+        -- Just need to combine head (ih) and tail (ih_tl) results
+        have h1 := ih hd (.head _) (fun v hv => h_sub v
+            (by simp only [LMonoTy.freeVars]; exact List.mem_append_left _ hv))
+        have h2 := ih_tl (fun a ha => ih a (.tail _ ha)) (fun v hv => h_sub v
+            (by simp only [LMonoTy.freeVars]; exact List.mem_append_right _ hv))
+        -- Goal: LMonoTys.subst [σ'] (hd :: tl) = LMonoTys.subst S (LMonoTys.subst [σ] (hd :: tl))
+        rw [LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq, h1, h2]
 
 /-- `LMonoTy.instantiateWithCheck` produces a type that is `AnnotCompat` with
     the input: there exists a substitution σ (renaming free vars to fresh
