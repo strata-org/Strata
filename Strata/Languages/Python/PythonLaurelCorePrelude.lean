@@ -578,7 +578,6 @@ spec {
 {
   var timedt: int;
   if (Any..isfrom_datetime(d)) {
-    havoc timedt;
     assume [timedt_le]: timedt <= Any..as_datetime!(d);
     ret := from_datetime(timedt);
     error := NoError();
