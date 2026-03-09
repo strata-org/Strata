@@ -289,7 +289,7 @@ theorem HasType.regularity [DecidableEq T.IDMeta] (h : HasType (T := T) C Γ e t
 
 
 /-!
-### Helper lemmas for `annotate_HasType`
+### Helper lemmas for `resolve_HasType`
 -/
 
 /--
@@ -372,7 +372,7 @@ private theorem LMonoTy.subst_tcons_pair (S : Subst) (name : String) (a b : LMon
     simp [LMonoTys.substLogic, hS_ne]
 
 /-!
-### Proof architecture for `annotate_HasType`
+### Proof architecture for `resolve_HasType`
 
 The proof is structured in three layers:
 
@@ -386,7 +386,7 @@ The proof is structured in three layers:
    justified by the absorption chain built from `resolveAux_absorbs`,
    `unify_absorbs`, and `Subst.absorbs_trans`.
 
-2. **`annotate_HasType`**: The top-level theorem. Since `resolve` is just
+2. **`resolve_HasType`**: The top-level theorem. Since `resolve` is just
    `resolveAux` followed by `applySubstT`, we decompose the hypothesis,
    apply `resolveAux_HasType` directly, and use `applySubstT_toLMonoTy`.
 
@@ -9989,21 +9989,122 @@ private theorem HasType_transfer_empty_scope
     subst hΓ_eq
     exact HasType.talias _ e mty mty' h_equiv (ih rfl)
 
+/-- Derive the find?-based closedness condition from `checkContextTypesClosed`. -/
+private theorem ctx_closed_of_check (Env : TEnv T.IDMeta)
+    (h : LExpr.checkContextTypesClosed Env) :
+    ∀ y ty, Env.context.types.find? y = some ty → LTy.freeVars ty = [] := by
+  -- checkContextTypesClosed checks all entries in all scopes.
+  -- Maps.find? returns a type from some scope. That type passes the check.
+  intro y ty h_find
+  -- Walk the scopes to find where find? matched
+  have : Env.context.types = Env.genEnv.context.types := rfl
+  rw [this] at h_find
+  simp only [LExpr.checkContextTypesClosed, TEnv.context] at h
+  exact go Env.genEnv.context.types h h_find
+where
+  go (types : Maps (Identifier T.IDMeta) LTy)
+      (h_all : types.all (fun scope => scope.all (fun p => p.2.freeVars == [])))
+      {y : Identifier T.IDMeta} {ty : LTy}
+      (h_find : Maps.find? types y = some ty) :
+      LTy.freeVars ty = [] := by
+    match types, h_all with
+    | [], _ => simp [Maps.find?] at h_find
+    | scope :: rest, h_all =>
+      simp only [Maps.find?] at h_find
+      simp only [List.all_cons, Bool.and_eq_true] at h_all
+      obtain ⟨h_scope, h_rest⟩ := h_all
+      cases h_s : Map.find? scope y with
+      | none => rw [h_s] at h_find; simp at h_find; exact go rest h_rest h_find
+      | some val =>
+        rw [h_s] at h_find; simp at h_find; subst h_find
+        -- val is in scope and all scope entries have empty freeVars
+        exact scope_entry_closed scope h_scope h_s
+  scope_entry_closed (scope : Map (Identifier T.IDMeta) LTy)
+      (h_all : scope.all (fun p => p.2.freeVars == []))
+      {y : Identifier T.IDMeta} {ty : LTy}
+      (h_find : Map.find? scope y = some ty) :
+      LTy.freeVars ty = [] := by
+    match scope, h_all with
+    | [], _ => simp [Map.find?] at h_find
+    | (k, v) :: rest, h_all =>
+      simp only [Map.find?] at h_find
+      simp only [List.all_cons, Bool.and_eq_true] at h_all
+      obtain ⟨h_hd, h_rest⟩ := h_all
+      split at h_find
+      · simp at h_find; subst h_find
+        -- h_hd : (v.freeVars).beq [] = true, need v.freeVars = []
+        -- List.beq returns true iff pointwise BEq holds; for [] this means the list is empty
+        cases h_fv : v.freeVars with
+        | nil => rfl
+        | cons _ _ => rw [h_fv] at h_hd; simp [List.beq] at h_hd
+      · exact scope_entry_closed rest h_rest h_find
+
+/-- `checkContextTypesClosed` is preserved when context is unchanged. -/
+private theorem checkContextTypesClosed_of_ctx_eq {Env Env' : TEnv T.IDMeta}
+    (h : LExpr.checkContextTypesClosed Env) (h_ctx : Env'.context = Env.context) :
+    LExpr.checkContextTypesClosed Env' := by
+  unfold LExpr.checkContextTypesClosed at h ⊢
+  rw [h_ctx]
+  exact h
+
+/-- When all context types are closed (no free type variables), `allKeysFresh` holds
+    for any substitution, because `isFresh` is vacuously true. -/
+theorem Subst.allKeysFresh_of_ctx_closed
+    {S : Subst} {Γ : TContext T.IDMeta}
+    (h_ctx_closed : ∀ y ty, Γ.types.find? y = some ty → LTy.freeVars ty = []) :
+    Subst.allKeysFresh (T := T) S Γ := by
+  intro a _ x ty hf
+  simp [h_ctx_closed x ty hf]
+
+/-- `resolveAux` preserves `allKeysFresh` with respect to the *original* context,
+    provided all types in that context are closed (have no free type variables).
+    Since `resolveAux` preserves the context, this is equivalent to freshness
+    w.r.t. `Env'.context`. The proof is trivial: closed types have empty `freeVars`,
+    so no substitution key can appear in them. -/
+theorem resolveAux_preserves_allKeysFresh
+    (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (_h : resolveAux C Env e = .ok (et, Env'))
+    (_h_envwf : TEnvWF Env)
+    (_h_ne : Env.context.types ≠ [])
+    (_h_fwf : FactoryWF C.functions)
+    (_h_akf : Subst.allKeysFresh Env.stateSubstInfo.subst Env.context)
+    (h_ctx_closed : ∀ y ty, Env.context.types.find? y = some ty → LTy.freeVars ty = []) :
+    Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context :=
+  Subst.allKeysFresh_of_ctx_closed h_ctx_closed
+
 /-- Top-level soundness: if `LExpr.resolve` succeeds, the result is well-typed
     and the output environment is well-formed.
-    Note: `resolve` ensures `context.types ≠ []` internally (adding an empty scope
-    if needed), so the caller does not need this precondition. -/
-theorem annotate_HasType :
+
+    The `checkContextTypesClosed Env` precondition requires all context types
+    to have no free type variables. This is the key enabler for sequential
+    composability: it implies `Subst.allKeysFresh S Env.context` for *any*
+    substitution `S` (since closed types have empty `freeVars`, making `isFresh`
+    vacuously true). In particular, the postcondition
+    `Subst.allKeysFresh Env'.subst Env'.context` is guaranteed, ensuring that
+    the output environment can be safely passed to the next `resolve` call
+    (together with `checkContextTypesClosed Env'`, which is also preserved
+    since `resolveAux` does not modify the context).
+
+    Note: `resolve` ensures `context.types ≠ []` internally (adding an empty
+    scope if needed), so the caller does not need this precondition. -/
+theorem resolve_HasType :
     ∀ (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
       (Env : TEnv T.IDMeta) Env',
       e.resolve C Env = .ok ⟨e_typed, Env'⟩ →
       TEnvWF Env →
       FactoryWF C.functions →
       WellScoped e Env.context →
-      Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
+      LExpr.checkContextTypesClosed Env →
       HasType C (TContext.subst Env.context Env'.stateSubstInfo.subst) e (.forAll [] e_typed.toLMonoTy) ∧
-      TEnvWF Env' := by
-  intro e e_typed C Env Env' h h_envwf h_fwf h_ws h_all_fresh
+      TEnvWF Env' ∧
+      LExpr.checkContextTypesClosed Env' ∧
+      Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
+  intro e e_typed C Env Env' h h_envwf h_fwf h_ws h_all_fresh h_check
+  -- Derive the find?-based closedness from checkContextTypesClosed
+  have h_ctx_closed : ∀ y ty, Env.context.types.find? y = some ty → LTy.freeVars ty = [] :=
+    ctx_closed_of_check Env h_check
   -- Decompose resolve: it ensures types ≠ [] then calls resolveAux
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
@@ -10088,7 +10189,17 @@ theorem annotate_HasType :
         have h_t : Env.context.types = [] := h_types
         cases h_ctx : Env.context
         simp [TEnv.context] at h_t
-        simp_all, h_envwf'⟩
+        simp_all,
+      h_envwf',
+      -- checkContextTypesClosed for Env': Env'.context = Env_upd.context with types = [[]]
+      by have h_check_upd : LExpr.checkContextTypesClosed Env_upd := by
+           simp [LExpr.checkContextTypesClosed, Env_upd, TEnv.updateContext, TEnv.context]
+         exact checkContextTypesClosed_of_ctx_eq h_check_upd h_ctx_upd,
+      -- allKeysFresh for Env'.subst / Env'.context: from closed types
+      by have h_check_upd : LExpr.checkContextTypesClosed Env_upd := by
+           simp [LExpr.checkContextTypesClosed, Env_upd, TEnv.updateContext, TEnv.context]
+         have h_check' := checkContextTypesClosed_of_ctx_eq h_check_upd h_ctx_upd
+         exact Subst.allKeysFresh_of_ctx_closed (ctx_closed_of_check Env' h_check')⟩
   | cons hd tl =>
     -- types was non-empty: resolve passes Env unchanged to resolveAux
     simp [Maps.isEmpty, h_types] at h
@@ -10108,8 +10219,20 @@ theorem annotate_HasType :
           boundVarsNodup := transfer_boundVarsNodup h_envwf.boundVarsNodup h_ctx_pres
           boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx_pres (resolveAux_genState_mono e et C Env Env' h_aux) }
       rw [← h_typed, applySubstT_toLMonoTy]
+      have h_all_fresh' : Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context :=
+        Subst.allKeysFresh_of_ctx_closed h_ctx_closed
+      -- checkContextTypesClosed for Env': context preserved, so types remain closed
+      have h_check' : LExpr.checkContextTypesClosed Env' :=
+        checkContextTypesClosed_of_ctx_eq h_check h_ctx_pres
+      -- contextTypesClosed for Env' (find?-based, for allKeysFresh)
+      have h_ctx_closed' : ∀ y ty, Env'.context.types.find? y = some ty → LTy.freeVars ty = [] :=
+        ctx_closed_of_check Env' h_check'
+      -- allKeysFresh for Env'.subst / Env'.context: from closed types
+      have h_all_fresh_out : Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context :=
+        Subst.allKeysFresh_of_ctx_closed h_ctx_closed'
       exact ⟨h_hastype Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
-        (Subst.allKeysFresh_implies_polyKeysFresh _ _ h_all_fresh), h_envwf'⟩
+        (Subst.allKeysFresh_implies_polyKeysFresh _ _ h_all_fresh'),
+        h_envwf', h_check', h_all_fresh_out⟩
 
 ---------------------------------------------------------------------
 

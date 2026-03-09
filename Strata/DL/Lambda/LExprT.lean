@@ -339,6 +339,11 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
 
   termination_by e.sizeOf
 
+/-- Check that all context types are closed (no free type variables).
+    This is a precondition for soundness: `resolve_HasType` requires it. -/
+def checkContextTypesClosed (Env : TEnv T.IDMeta) : Bool :=
+  Env.context.types.all (·.all (fun (_, ty) => ty.freeVars == []))
+
 protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
   -- Ensure the context has at least one scope for type bindings.
@@ -351,6 +356,16 @@ protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
   let (et, Env) ← resolveAux C Env e
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)
 
+/-- Wrapper around `resolve` that checks the closed-context-types precondition
+    required by the soundness theorem `annotate_HasType`. All context types must
+    be closed (no free type variables). Use this when the soundness guarantee is
+    needed; call plain `resolve` when the context may have non-ground annotations
+    (e.g., generic procedure parameters in Strata Core). -/
+protected def resolveChecked (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
+    Except Format (LExprT T.mono × TEnv T.IDMeta) := do
+  if !checkContextTypesClosed Env then
+    throw f!"resolveChecked: context has non-closed types — all context types must have empty freeVars"
+  LExpr.resolve C Env e
 
 protected def resolves (C: LContext T) (Env : TEnv T.IDMeta) (es : List (LExpr T.mono)) :
     Except Format (List (LExprT T.mono) × TEnv T.IDMeta) := do
