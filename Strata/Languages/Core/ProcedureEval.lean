@@ -27,7 +27,15 @@ def fixupError (E : Env) : Env :=
                      pathConditions := E.pathConditions.pop }
   | some _ => E
 
-def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
+/--
+Evaluate a procedure, producing a single transformed procedure and
+environment.  Internally the statement evaluator may explore multiple
+paths (e.g. both sides of an `ite`), but the block/merge machinery is
+expected to collapse them back to one.  If that invariant is violated
+we surface an explicit error rather than silently duplicating proof
+obligations in downstream procedures.
+-/
+def eval (E : Env) (p : Procedure) : Procedure × Env :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
   let modifies_tys :=
@@ -86,13 +94,8 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
       p.spec.preconditions
   let body' : List Statement := (StateT.run (Block.removeLoopsM p.body) 0).fst
   let ssEs := Statement.eval E old_g_subst (precond_assumes ++ body' ++ postcond_asserts)
-  ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))
-
----------------------------------------------------------------------
-
-def evalOne (E : Env) (p : Procedure) : Procedure × Env :=
-  match eval E p with
-  | [(p', E')] => (p', E')
+  match ssEs with
+  | [(ss, sE)] => ({ p with body := ss }, fixupError sE)
   | _ => (p, { E with error := some (.Misc "More than one result environment") })
 
 ---------------------------------------------------------------------

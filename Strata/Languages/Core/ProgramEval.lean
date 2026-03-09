@@ -43,12 +43,9 @@ def eval (E : Env) : List (Program × Env) :=
     match decl with
 
     | .var name ty init md =>
-      let ssEs := Statement.eval declsE.env [] [(.init name ty init md)]
-      ssEs.flatMap (fun (ss, E) =>
-                      let xdecls := ss.map initStmtToGlobalVarDecl
-                      let declsE := { declsE with xdecls := declsE.xdecls ++ xdecls,
-                                                  env := E }
-                      go rest declsE)
+      let (ss, E) := Statement.evalOne declsE.env [] [(.init name ty init md)]
+      let xdecls := ss.map initStmtToGlobalVarDecl
+      go rest { declsE with xdecls := declsE.xdecls ++ xdecls, env := E }
 
     | .type _ _ =>
       go rest { declsE with xdecls := declsE.xdecls ++ [decl] }
@@ -74,7 +71,7 @@ def eval (E : Env) : List (Program × Env) :=
       go rest declsE
 
     | .proc proc _ =>
-      let procedureResult := Procedure.evalOne declsE.env proc
+      let procedureResult := Procedure.eval declsE.env proc
       go rest { xdecls := declsE.xdecls ++ [.proc procedureResult.fst],
                 env := procedureResult.snd }
 
