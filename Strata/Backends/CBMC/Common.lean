@@ -236,43 +236,44 @@ def mkSymbol (identifier : String) (symbolType : Json) : Json :=
 
 /-! # Constants -/
 
-def i32ToHex (s : String) : String :=
+def i32ToHex (s : String) : Except String String := do
   match s.toInt? with
   | some n =>
     let unsigned := if n < 0 then UInt32.size + n else n
-    ("".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString)))
-  | none => panic! "Failed to convert String to int"
+    return "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
+  | none => throw "Failed to convert String to int"
 
 /-- Convert a decimal integer string to hex for a bitvector of the given bit width.
     Negative values are two's-complement encoded. -/
-def bvToHex (s : String) (width : Nat) : String :=
+def bvToHex (s : String) (width : Nat) : Except String String := do
   match s.toInt? with
   | some n =>
     let modulus := 2 ^ width
     let unsigned := if n < 0 then modulus + n else n
-    "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
-  | none => panic! s!"Failed to convert '{s}' to int"
+    return "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
+  | none => throw s!"Failed to convert '{s}' to int"
 
-def mkConstant (value : String) (base : String) (sourceLocation : Json) (config : CBMCConfig := .empty) : Json :=
-  Json.mkObj [
+def mkConstant (value : String) (base : String) (sourceLocation : Json) (config : CBMCConfig := .empty) : Except String Json := do
+  let hex ← i32ToHex value
+  return Json.mkObj [
     ("id", "constant"),
     ("namedSub", Json.mkObj [
       ("#base", Json.mkObj [("id", base)]),
       ("#source_location", sourceLocation),
       ("type", mkIntType config),
-      ("value", Json.mkObj [("id", i32ToHex value)])
+      ("value", Json.mkObj [("id", hex)])
     ])
   ]
 
-def mkConstantTrue (sourceLocation : Json) (config : CBMCConfig := .empty) : Json :=
-    Json.mkObj [
+def mkConstantTrue (sourceLocation : Json) (config : CBMCConfig := .empty) : Except String Json := do
+    return Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [
         ("#source_location", sourceLocation),
         ("type", Json.mkObj [("id", "bool")])
       ]),
       ("sub", Json.arr #[
-        mkConstant "1" "10" sourceLocation config,
+        ← mkConstant "1" "10" sourceLocation config,
         Json.mkObj [
           ("id", "constant"),
           ("namedSub", Json.mkObj [
@@ -433,33 +434,33 @@ def mkLvalueSymbol (identifier : String) (line : String) (functionName : String)
     ])
   ]
 
-def opToStr (op: String) : String :=
+def opToStr (op: String) : Except String String :=
   match op with
-  | "Int.Gt" => ">"
-  | "Int.Lt" => "<"
-  | "Int.Ge" => ">="
-  | "Int.Le" => "<="
-  | "Int.Add" => "+"
-  | "Int.Sub" => "-"
-  | _ => panic! "Unimplemented"
+  | "Int.Gt" => return ">"
+  | "Int.Lt" => return "<"
+  | "Int.Ge" => return ">="
+  | "Int.Le" => return "<="
+  | "Int.Add" => return "+"
+  | "Int.Sub" => return "-"
+  | _ => throw s!"opToStr: Unimplemented operator '{op}'"
 
-def opToOutTypeJson (op: String) (config : CBMCConfig := .empty): Json :=
+def opToOutTypeJson (op: String) (config : CBMCConfig := .empty): Except String Json :=
   match op with
-  | ">" => boolType
-  | "<" => boolType
-  | ">=" => boolType
-  | "<=" => boolType
-  | "+" => mkIntType config
-  | "-" => mkIntType config
-  | _ => panic! "Unimplemented"
+  | ">" => return boolType
+  | "<" => return boolType
+  | ">=" => return boolType
+  | "<=" => return boolType
+  | "+" => return (mkIntType config)
+  | "-" => return (mkIntType config)
+  | _ => throw s!"opToOutTypeJson: Unimplemented operator '{op}'"
 
 
-def mkBinaryOp (op : String) (line : String) (functionName : String) (left : Json) (right : Json) (config : CBMCConfig := .empty) : Json :=
-  Json.mkObj [
+def mkBinaryOp (op : String) (line : String) (functionName : String) (left : Json) (right : Json) (config : CBMCConfig := .empty) : Except String Json := do
+  return Json.mkObj [
     ("id", op),
     ("namedSub", Json.mkObj [
       ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("type", (opToOutTypeJson op config))
+      ("type", ← opToOutTypeJson op config)
     ]),
     ("sub", Json.arr #[left, right])
   ]
@@ -504,8 +505,8 @@ def mkBuiltinFunction (_funcName : String) (paramTypes : Array Json) (config : C
     ])
   ]
 
-def returnStmt (functionName : String) (config : CBMCConfig := .empty): Json :=
-  Json.mkObj [
+def returnStmt (functionName : String) (config : CBMCConfig := .empty): Except String Json := do
+  return Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [
       ("#source_location", mkSourceLocation config.sourceFile functionName "14" config),
@@ -513,7 +514,7 @@ def returnStmt (functionName : String) (config : CBMCConfig := .empty): Json :=
       ("type", emptyType)
     ]),
     ("sub", Json.arr #[
-      mkConstant "0" "10" (mkSourceLocation config.sourceFile functionName "14" config) config
+      ← mkConstant "0" "10" (mkSourceLocation config.sourceFile functionName "14" config) config
     ])
   ]
 

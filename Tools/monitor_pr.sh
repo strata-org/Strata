@@ -87,13 +87,22 @@ print_ci_failure() {
   echo "--- error log ---"
   "${GH[@]}" run view "$run_id" --log-failed 2>/dev/null \
     | sed 's/^[^\t]*\t[^\t]*\t//; s/\x1b\[[0-9;]*m//g; s/^[0-9T:.Z-]* //' \
-    | grep -E '\[FAIL\]|Error Message:|Assert\.|Expected:|Actual:|^Failed!|##\[error\]' \
-    | head -60 || true
+    | grep -E '\[FAIL\]|^error:|^- |^[+] |Error Message:|Assert\.|Expected:|Actual:|^Failed!|##\[error\]|^Some required' \
+    | grep -v '##\[group\]' \
+    | head -80 || true
 }
 
 INITIAL_COMMENTS=$(comment_count)
 START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-LAST_RUN_ID=""
+MERGE_COUNT=0
+
+stop() {
+  echo "(Merged with main $MERGE_COUNT time(s) during monitoring)"
+  echo "After addressing the above, re-run this script to continue monitoring."
+  exit "$1"
+}
+
+GREEN_SHA=""
 
 # --- Main loop (silent until actionable) ---
 while true; do
@@ -103,65 +112,85 @@ while true; do
     if [[ "$cur" -gt "$INITIAL_COMMENTS" ]]; then
       echo "NEW_COMMENTS ($INITIAL_COMMENTS -> $cur)"
       print_new_comments "$START_TIME"
-      exit 3
+      echo "ACTION: Review the comments above, address them, then commit and push."
+      stop 3
     fi
   fi
 
-  # 2. Merge conflict?
+  # 2. Merge conflict? (check before CI so conflicts aren't masked by old failures)
   if [[ -n "$PR_NUMBER" ]]; then
     m=$("${GH[@]}" pr view "$PR_NUMBER" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
     if [[ "$m" == "CONFLICTING" ]]; then
       echo "CONFLICT: Branch '$BRANCH' has merge conflicts with main."
-      exit 2
+      echo "ACTION: Run 'git fetch origin main:main && git merge main', resolve conflicts, then commit and push."
+      stop 2
     fi
   fi
 
-  # 3. CI status
-  RUN_JSON=$("${GH[@]}" run list --branch "$BRANCH" --limit 1 --json databaseId,status,conclusion 2>/dev/null || echo "[]")
-  RUN_ID=$(echo "$RUN_JSON" | jq -r '.[0].databaseId // empty')
+  # 3. CI status (skip if last green run matches current HEAD)
+  LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
+  if [[ "$GREEN_SHA" != "$LOCAL_SHA" ]]; then
+    RUN_JSON=$("${GH[@]}" run list --branch "$BRANCH" --limit 1 --json databaseId,status,conclusion,headSha 2>/dev/null || echo "[]")
+    RUN_ID=$(echo "$RUN_JSON" | jq -r '.[0].databaseId // empty')
 
-  if [[ -z "$RUN_ID" ]]; then
-    sleep "$INTERVAL"; continue
-  fi
+    if [[ -n "$RUN_ID" ]]; then
+      STATUS=$(echo "$RUN_JSON" | jq -r '.[0].status')
+      CONCLUSION=$(echo "$RUN_JSON" | jq -r '.[0].conclusion')
+      RUN_SHA=$(echo "$RUN_JSON" | jq -r '.[0].headSha')
 
-  STATUS=$(echo "$RUN_JSON" | jq -r '.[0].status')
-  CONCLUSION=$(echo "$RUN_JSON" | jq -r '.[0].conclusion')
-
-  # In-progress: check for early job failure
-  if [[ "$STATUS" != "completed" ]]; then
-    failed=$("${GH[@]}" run view "$RUN_ID" --json jobs \
-      --jq '[.jobs[] | select(.conclusion == "failure")] | length' 2>/dev/null || echo 0)
-    if [[ "$failed" -gt 0 ]]; then
-      echo "CI_FAILURE: Run $RUN_ID (in progress, $failed job(s) already failed)"
-      print_ci_failure "$RUN_ID"
-      exit 1
-    fi
-    sleep 10; continue
-  fi
-
-  # Completed with failure
-  if [[ "$CONCLUSION" != "success" ]]; then
-    echo "CI_FAILURE: Run $RUN_ID concluded '$CONCLUSION'"
-    print_ci_failure "$RUN_ID"
-    exit 1
-  fi
-
-  # Completed with success — merge main if needed, keep monitoring
-  if [[ "$RUN_ID" != "$LAST_RUN_ID" ]]; then
-    LAST_RUN_ID="$RUN_ID"
-    if ! $DRY_RUN; then
-      git fetch origin main:main 2>/dev/null
-      if ! git merge-base --is-ancestor main HEAD 2>/dev/null; then
-        if git merge main --no-edit 2>/dev/null; then
-          git push origin "$BRANCH" 2>/dev/null
-          # New push triggers new CI; reset comment baseline
-          INITIAL_COMMENTS=$(comment_count)
-          START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        else
-          git merge --abort 2>/dev/null || true
-          echo "CONFLICT: Merge conflict when merging main into '$BRANCH'."
-          exit 2
+      # In-progress: check for early job failure
+      if [[ "$STATUS" != "completed" ]]; then
+        failed=$("${GH[@]}" run view "$RUN_ID" --json jobs \
+          --jq '[.jobs[] | select(.conclusion == "failure")] | length' 2>/dev/null || echo 0)
+        if [[ "$failed" -gt 0 ]]; then
+          echo "CI_FAILURE: Run $RUN_ID on commit $RUN_SHA (in progress, $failed job(s) already failed)"
+          print_ci_failure "$RUN_ID"
+          echo "ACTION: Fix the failing test(s) above, commit and push."
+          stop 1
         fi
+        sleep 10; continue
+      fi
+
+      # Completed with failure
+      if [[ "$CONCLUSION" != "success" ]]; then
+        echo "CI_FAILURE: Run $RUN_ID on commit $RUN_SHA concluded '$CONCLUSION'"
+        print_ci_failure "$RUN_ID"
+        echo "ACTION: Fix the failing test(s) above, commit and push."
+        stop 1
+      fi
+
+      # Green — but only trust it if it ran against our current HEAD
+      if [[ "$RUN_SHA" == "$LOCAL_SHA" ]]; then
+        GREEN_SHA="$LOCAL_SHA"
+      fi
+    fi
+  fi
+
+  # 3. CI is green (or no run yet) — check if main needs merging
+  if ! $DRY_RUN; then
+    # Safety: verify we're on the expected branch
+    CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [[ "$CURRENT" != "$BRANCH" ]]; then
+      echo "UNEXPECTED: Local branch is '$CURRENT' but expected '$BRANCH'."
+      echo "ACTION: Investigate why the branch changed and re-run the script."
+      stop 4
+    fi
+    # Pull remote changes to the branch
+    git pull --ff-only origin "$BRANCH" >/dev/null 2>&1 || true
+    # Merge main if ahead
+    git fetch origin main:main 2>/dev/null
+    if ! git merge-base --is-ancestor main HEAD 2>/dev/null; then
+      if git merge main --no-edit >/dev/null 2>&1; then
+        git push origin "$BRANCH" >/dev/null 2>&1
+        MERGE_COUNT=$((MERGE_COUNT + 1))
+        # New push triggers new CI; reset comment baseline
+        INITIAL_COMMENTS=$(comment_count)
+        START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+      else
+        git merge --abort 2>/dev/null || true
+        echo "CONFLICT: Merge conflict when merging main into '$BRANCH'. Merge was aborted, repo is clean."
+        echo "ACTION: Run 'git merge main', resolve conflicts, then commit and push."
+        stop 2
       fi
     fi
   fi

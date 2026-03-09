@@ -96,6 +96,12 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
     pure { uri, startLine := startPos.line, startColumn := startPos.column }
   | _ => none
 
+/-- Convert PropertyType to a property classification string for SARIF output -/
+def propertyTypeToClassification : Imperative.PropertyType → String
+  | .divisionByZero => "division-by-zero"
+  | .cover => "cover"
+  | .assert => "assert"
+
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
