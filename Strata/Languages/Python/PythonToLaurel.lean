@@ -72,7 +72,6 @@ structure TranslationContext where
   preludeProcedures : List (String × CoreProcedureSignature) := []
   /-- Names of prelude functions (non-procedure callables) -/
   preludeFunctions : List String := []
-  preludeFunctions : List String := []
   /-- Names of user-defined functions -/
   userFunctions : List String := []
   /-- Names of user-defined classes -/

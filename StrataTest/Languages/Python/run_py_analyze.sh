@@ -13,7 +13,7 @@ if [ "$mode" = "laurel" ]; then
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
-    skip_tests="test_class_field_use"
+    skip_tests=""
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)
