@@ -95,8 +95,21 @@ private theorem stmts_cons_step_seq
     CoreStep π φ (.stmts (s :: ss) σ δ) c → c = .seq (.stmt s σ δ) ss := by
   intro h; cases h; rfl
 
-/-- If .stmts (s :: rest) reaches .terminal, then s reaches .terminal from σ,δ
-    and .stmts rest reaches .terminal from the resulting state. -/
+/-- If .seq inner ss reaches a non-seq config, then inner must have reached
+    .terminal or .exiting. -/
+private theorem seq_reaches_stmts
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (inner : CoreConfig) (ss : List Statement) (c : CoreConfig) :
+    CoreStepStar π φ (.seq inner ss) c →
+    (∃ c', c = .seq c' ss) ∨
+    (∃ σ_mid δ_mid,
+      CoreStepStar π φ inner (.terminal σ_mid δ_mid) ∧
+      CoreStepStar π φ (.stmts ss σ_mid δ_mid) c) ∨
+    (∃ label σ_mid δ_mid,
+      CoreStepStar π φ inner (.exiting label σ_mid δ_mid) ∧
+      c = .exiting label σ_mid δ_mid) := by
+  sorry
+
 theorem stmts_cons_decompose
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (s : Statement) (rest : List Statement) (σ σ' : CoreStore) (δ δ' : CoreEval) :
@@ -104,7 +117,16 @@ theorem stmts_cons_decompose
     ∃ (σ_mid : CoreStore) (δ_mid : CoreEval),
       CoreStepStar π φ (.stmt s σ δ) (.terminal σ_mid δ_mid) ∧
       CoreStepStar π φ (.stmts rest σ_mid δ_mid) (.terminal σ' δ') := by
-  sorry
+  intro h
+  cases h with
+  | step _ y _ h_step h_rest =>
+    cases h_step with
+    | step_stmts_cons =>
+      have h_seq := seq_reaches_stmts π φ (.stmt s σ δ) rest (.terminal σ' δ') h_rest
+      rcases h_seq with ⟨_, h_eq⟩ | ⟨σ_mid, δ_mid, h_s, h_r⟩ | ⟨_, _, _, _, h_eq⟩
+      · exact absurd h_eq nofun
+      · exact ⟨σ_mid, δ_mid, h_s, h_r⟩
+      · exact absurd h_eq nofun
 
 theorem stmts_process_to_suffix
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
