@@ -123,7 +123,19 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
       | .func func _ => try
         let Env := Env.pushEmptySubstScope
-        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        -- Recursive functions must not have the inline attribute.
+        if func.isRecursive && func.attr.any (· == .inline) then
+          .error (DiagnosticModel.withRange fileRange <|
+            f!"recursive function '{func.name}' cannot be marked inline")
+        -- For recursive functions, temporarily add a signature-only stub to the
+        -- context so that recursive calls in the body can reference the
+        -- function itself. Only the name and signature matter; the body is
+        -- precisely what is being type-checked.
+        let C' := if func.isRecursive then
+          C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
+                                 inputs := func.inputs, output := func.output }
+        else C
+        let (func', Env) ← Function.typeCheck C' Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
         .ok (Decl.func func', C, Env)

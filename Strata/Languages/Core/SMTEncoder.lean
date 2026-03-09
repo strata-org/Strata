@@ -8,8 +8,10 @@
 
 import Strata.Languages.Core.Core
 import Strata.DL.SMT.SMT
+import Strata.DL.Lambda.RecursiveAxioms
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
+import Strata.DL.Imperative.SMTUtils
 
 ---------------------------------------------------------------------
 
@@ -381,7 +383,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
     | "Int.SafeMod"  => .ok (.app Op.mod,        .int ,   ctx)
     -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | "Int.DivT"     =>
+    | "Int.DivT" | "Int.SafeDivT" =>
       let divTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>
@@ -397,7 +399,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
       .ok (divTApp, .int, ctx)
     -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
     -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | "Int.ModT"     =>
+    | "Int.ModT" | "Int.SafeModT" =>
       let modTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>
@@ -587,7 +589,9 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
         let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
         let (ctx, isNew) ←
-          match func.body with
+          if func.isRecursive then
+            .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+          else match func.body with
           | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
           | some body =>
             -- Substitute the formals in the function body with appropriate
@@ -596,6 +600,11 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
             let body := LExpr.substFvarsLifting body (formals.zip bvars)
             let (term, ctx) ← toSMTTerm E bvs body ctx
             .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
+        -- For recursive functions, generate per-constructor axioms
+        let recAxioms ← if func.isRecursive && isNew then
+            Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
+          else .ok []
+        let allAxioms := func.axioms ++ recAxioms
         if isNew then
           -- To ensure termination, we add the axioms only for new functions
           -- Get the function's type patterns (input types + output type)
@@ -612,7 +621,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           -- Add all axioms for this function to the context, with types binding for the type variables in the expr
           -- Save the original tySubst to restore after processing axioms
           let savedSubst := ctx.tySubst
-          let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
+          let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
             let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
               let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
               .ok (new_ctx.addAxiom axiom_term)
@@ -685,5 +694,81 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   match smtctx with
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt
+
+/--
+Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
+
+Handles:
+- Primitives: bool, int, real, bitvec, string
+- UF applications (free variables, constructors, uninterpreted functions)
+- Datatype constructors/selectors/testers
+
+Falls back to rendering the term as a free variable with its string representation
+for any unsupported term shape.
+
+`constructorNames` is the set of known datatype constructor names.  When a
+bare `SMT.Term.var` matches a constructor name (zero-argument constructor
+such as `Nil`), the result uses `.op` instead of `.fvar` so that the
+counterexample formatter can distinguish constructors from plain variables
+and render them with the correct Core data structure.
+-/
+def smtTermToLExpr (t : Strata.SMT.Term)
+    (constructorNames : Std.HashSet String := {}) : LExpr CoreLParams.mono :=
+  match t with
+  | .prim (.bool b)       => .boolConst () b
+  | .prim (.int i)        => .intConst () i
+  | .prim (.real d)       => .realConst () d.toRat
+  | .prim (.bitvec b)     => .bitvecConst () _ b
+  | .prim (.string s)     => .strConst () s
+  | .var v                =>
+    -- Zero-arg constructors arrive as plain variables from the SMT solver.
+    -- Mark them with `.op` so the formatter can emit `Name()`.
+    if constructorNames.contains v.id then
+      .op () v.id none
+    else
+      .fvar () v.id none
+  | .app (.core (.uf uf)) args _retTy =>
+    -- Constructor names use `.op` so the formatter can distinguish them
+    -- from plain variables (e.g., `Nil` constructor must not be .fvar)
+    let fnExpr : LExpr CoreLParams.mono :=
+      if constructorNames.contains uf.id then
+        .op () uf.id none
+      else
+        .fvar () uf.id none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .app (.datatype_op _kind name) args _retTy =>
+    let fnExpr : LExpr CoreLParams.mono := .op () name none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .app op args _ =>
+    -- Generic fallback for other ops: render as op name applied to args
+    let opName := op.mkName
+    let fnExpr : LExpr CoreLParams.mono := .op () opName none
+    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .none _ty             => .op () "none" none
+  | .some inner           => .app () (.op () "some" none) (smtTermToLExpr inner constructorNames)
+  | .quant _ _ _ _        =>
+    -- Quantifiers in model values are unusual; fall back to string repr
+    let s := match Strata.SMTDDM.termToString t with
+             | .ok s => s | .error _ => repr t |>.pretty
+    .fvar () s none
+
+/--
+Extract the set of datatype constructor names from an `SMT.Context`.
+-/
+def SMT.Context.getConstructorNames (ctx : SMT.Context) : Std.HashSet String :=
+  ctx.datatypeFuns.toList.foldl (init := {}) fun acc (name, (kind, _)) =>
+    if kind == .constructor then acc.insert name else acc
+
+/--
+Convert a counterexample map from `SMT.Term` values to `LExpr` values,
+so that model values can be displayed using Core's expression formatter.
+
+`constructorNames` allows zero-argument constructors (which the SMT solver
+returns as plain variables) to be distinguished from ordinary variables (.fvar)
+-/
+def convertCounterEx (cex : Imperative.SMT.CounterEx Expression.Ident)
+    (constructorNames : Std.HashSet String := {})
+    : List (Expression.Ident × LExpr CoreLParams.mono) :=
+  cex.map fun (id, t) => (id, smtTermToLExpr t constructorNames)
 
 end Core

@@ -3,13 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LState
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.LExprTypeEnv
-import Lean.Elab.Term
-import Lean.Meta
+public meta import Strata.DL.Lambda.LExpr
+public meta import Strata.DL.Lambda.LState
+public meta import Strata.DL.Lambda.LTy
+public meta import Strata.DL.Lambda.LExprTypeEnv
+public meta import Lean.Elab.Term
+public meta import Lean.Meta
+public meta import Strata.DL.Lambda.Identifiers
 
 /-!
 ## Reflect Lambda expressions into Lean's Logic
@@ -20,6 +22,8 @@ WIP.
 namespace Lambda
 open Lean Elab Tactic Expr Meta
 open Std (ToFormat Format format)
+
+public meta section
 
 -------------------------------------------------------------------------------
 
@@ -157,5 +161,7 @@ section Tests
 open LTy.Syntax LExpr.Syntax
 
 end Tests
+
+end -- public meta section
 
 -------------------------------------------------------------------------------

@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
+public section
 section Relation
 
-def Relation (A: Type) := A → A → Prop
+@[expose] def Relation (A: Type) := A → A → Prop
 def Reflexive (r: Relation A) : Prop := ∀ x, r x x
 def Transitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
 
@@ -26,3 +29,4 @@ theorem ReflTrans_Transitive {A: Type} (r: Relation A):
     apply (ReflTrans.step _ y1 _ rxy1 (IH _ rzz1))
 
 end Relation
+end

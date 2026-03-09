@@ -131,6 +131,10 @@ fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " div "
 fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " mod " b;
 fn safediv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " / " b;
 fn safemod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " % " b;
+fn divt_expr (tp : Type, a : tp, b : tp) : tp => "Int.DivT(" a ", " b ")";
+fn modt_expr (tp : Type, a : tp, b : tp) : tp => "Int.ModT(" a ", " b ")";
+fn safedivt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " /t " b;
+fn safemodt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " %t " b;
 
 fn bvnot (tp : Type, a : tp) : tp => "~" a;
 fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " & " b;
@@ -246,6 +250,8 @@ op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 category Binding;
 @[declare(name, tp)]
 op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp;
+@[declare(name, tp)]
+op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp;
 
 category Bindings;
 @[scope(bindings)]
@@ -269,10 +275,6 @@ op command_procedure (name : Ident,
 @[declareType(name, some args)]
 op command_typedecl (name : Ident, args : Option Bindings) : Command =>
   "type " name args ";\n";
-
-@[declareTypeForward(name, some args)]
-op command_forward_typedecl (name : Ident, args : Option Bindings) : Command =>
-  "forward type " name args ";\n";
 
 @[aliasType(name, some args, rhs)]
 op command_typesynonym (name : Ident,
@@ -310,6 +312,15 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
+@[declareFn(name, b, r)]
+op command_recfndef (name : Ident,
+                     typeArgs : Option TypeArgs,
+                     @[scope(typeArgs)] b : Bindings,
+                     @[scope(typeArgs)] r : Type,
+                     @[scope(b)] preconds : Seq SpecElt,
+                     @[scopeSelf(name, b, r)] c : r) : Command =>
+  "rec " "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}\n";
+
 // Function declaration statement
 @[declareFn(name, b, r)]
 op funcDecl_statement (name : Ident,
@@ -320,6 +331,11 @@ op funcDecl_statement (name : Ident,
                        @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }\n";
+
+// Type declaration statement
+@[declareScopedType(name, some args)]
+op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
+  "type " name args ";\n";
 
 @[scope(b)]
 op command_var (b : Bind) : Command =>
@@ -368,8 +384,8 @@ op command_datatype (name : Ident,
       "datatype " name typeParams " {" constructors "\n}" ";\n";
 
 // Mutual block for defining mutually recursive types
-// Types should be forward-declared before the mutual block
-@[scope(commands)]
+// Type names are pre-registered via @[preRegisterTypes] before elaboration
+@[scope(commands), preRegisterTypes(commands)]
 op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
   "mutual\n  " indent(2, commands) "end;\n";
 

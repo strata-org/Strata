@@ -240,7 +240,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
       if args.size > 0 then
         reportError default
           s!"Generic class '{name}' with type args unsupported"
-      return mkTy (.UserDefined name)
+      return mkTy (.UserDefined { text := name })
     | .intLiteral _ => return mkTy .TInt
     | .stringLiteral _ => return mkTy .TString
     | .typedDict _ _ _ => return mkCore "DictStrAny"
@@ -271,16 +271,20 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     preconditions := []
     determinism := .nondeterministic
     decreases := none
+    isFunctional := false
     body := .Opaque [] none []
     md := .empty
   }
 
 /-- Convert a class definition to Laurel types and procedures. -/
 def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
+  let laurelFields ← cls.fields.toList.mapM fun f => do
+    let ty ← specTypeToLaurelType f.type
+    pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
   pushType (.Composite {
     name := cls.name
-    extending := []
-    fields := []
+    extending := cls.bases.toList.map (fun cd => mkId $ toString cd)
+    fields := laurelFields
     instanceProcedures := []
   })
   for method in cls.methods do

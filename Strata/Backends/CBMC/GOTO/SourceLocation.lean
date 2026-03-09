@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Lean.Data.Json
+public import Lean.Data.Json
 
 namespace CProverGOTO
 -------------------------------------------------------------------------------
+
+public section
 
 /-- Source location information -/
 structure SourceLocation where
@@ -28,3 +31,5 @@ instance : ToString SourceLocation where
     else s!"{loc.file}:{loc.line}:{loc.column}"
 
 -------------------------------------------------------------------------------
+
+end -- public section

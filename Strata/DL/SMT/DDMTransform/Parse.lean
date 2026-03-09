@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
+public import Strata.DDM.Integration.Lean
+public meta import Strata.DDM.Integration.Lean
+import Strata.DDM.BuiltinDialects.BuiltinM
+
+public section
 
 /-! # The SMTLib syntax
 
@@ -89,7 +94,6 @@ def specialCharsInSimpleSymbol := [
     ("questionmark", "?"),
     -- ("bang", "!"),
     ("period", "."),
-    ("dollar", "$"),
     -- ("underbar", "_"),
     ("tilde", "~"),
     ("amp", "&"),
@@ -765,3 +769,4 @@ namespace SMTResponseDDM
 end SMTResponseDDM
 
 end Strata
+end

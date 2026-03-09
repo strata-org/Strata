@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 -- [STOPGAP] Should be replaced by Std.HashMap.
 
 -- Copied over from LNSym
@@ -15,7 +17,7 @@ open Std (ToFormat Format format)
 A simple Map-like type based on lists
 -/
 
-def Map (α : Type u) (β : Type v) := List (α × β)
+@[expose] def Map (α : Type u) (β : Type v) := List (α × β)
 
 instance [BEq α] [BEq β] : BEq (Map α β) where
   beq m1 m2 := go m1 m2 where
@@ -212,3 +214,4 @@ theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ 
   split at H <;> simp_all
   rw [Eq.comm]; assumption
 -------------------------------------------------------------------------------
+end
