@@ -8196,15 +8196,7 @@ theorem resolveAux_HasType :
         rw [← h_et]; simp [toLMonoTy]
         simp [TEnv.updateSubst] at h_abs_S
         -- Extract unify hypothesis from mapError wrapper
-        have h_unify : Constraints.unify [(ty_inst, oty_inst)]
-            Env2.stateSubstInfo = .ok v3 := by
-          revert h_mapError
-          generalize Constraints.unify [(ty_inst, oty_inst)]
-            Env2.stateSubstInfo = res
-          intro h_me
-          match res, h_me with
-          | .ok val, h_me => simp at h_me; rw [h_me]
-          | .error _, h_me => simp at h_me
+        have h_unify := unify_of_mapError h_mapError
         -- Closed type facts
         have h_func_mem : func ∈ C.functions := Array.mem_of_find?_eq_some h_find
         have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
@@ -8413,17 +8405,7 @@ theorem resolveAux_HasType :
             simp at h
             obtain ⟨h_et, h_env'⟩ := h
             -- Extract the underlying unify hypothesis from the mapError wrapper
-            have h_unify : Constraints.unify
-                [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
-                Env3.stateSubstInfo = .ok v4 := by
-              revert h_mapError
-              generalize Constraints.unify
-                [(toLMonoTy e1t, LMonoTy.tcons "arrow" [toLMonoTy e2t, LMonoTy.ftvar fresh_name])]
-                Env3.stateSubstInfo = res
-              intro h_me
-              match res, h_me with
-              | .ok val, h_me => simp at h_me; rw [h_me]
-              | .error _, h_me => simp at h_me
+            have h_unify := unify_of_mapError h_mapError
             -- genTyVar preserves subst and context
             have h_gen_subst := TEnv.genTyVar_subst Env2 fresh_name Env3 h_genTyVar
             have h_gen_ctx := TEnv.genTyVar_context Env2 fresh_name Env3 h_genTyVar
@@ -8984,17 +8966,7 @@ theorem resolveAux_HasType :
             simp at h
             obtain ⟨h_et, h_env'⟩ := h
             -- Extract the underlying unify hypothesis from the mapError wrapper
-            have h_unify : Constraints.unify [(ct.toLMonoTy, LMonoTy.bool),
-                (tht.toLMonoTy, elt.toLMonoTy)]
-                Env3.stateSubstInfo = .ok v4 := by
-              revert h_mapError
-              generalize Constraints.unify [(toLMonoTy ct, LMonoTy.bool),
-                (toLMonoTy tht, toLMonoTy elt)]
-                Env3.stateSubstInfo = res
-              intro h_me
-              match res, h_me with
-              | .ok val, h_me => simp at h_me; rw [h_me]
-              | .error _, h_me => simp at h_me
+            have h_unify := unify_of_mapError h_mapError
             -- IHs from recursive calls (using strong induction)
             have ih_c := ih_sub c (by expr_size h_sz)
             have ih_t := ih_sub t (by expr_size h_sz)
@@ -9117,15 +9089,7 @@ theorem resolveAux_HasType :
           simp at h
           obtain ⟨h_et, h_env'⟩ := h
           -- Extract the underlying unify hypothesis from the mapError wrapper
-          have h_unify : Constraints.unify [(e1t.toLMonoTy, e2t.toLMonoTy)]
-              Env2.stateSubstInfo = .ok v3 := by
-            revert h_mapError
-            generalize Constraints.unify [(toLMonoTy e1t, toLMonoTy e2t)]
-              Env2.stateSubstInfo = res
-            intro h_me
-            match res, h_me with
-            | .ok val, h_me => simp at h_me; rw [h_me]
-            | .error _, h_me => simp at h_me
+          have h_unify := unify_of_mapError h_mapError
           -- IHs from recursive calls (using strong induction)
           have ih1 := ih_sub e1 (by expr_size h_sz)
           have ih2 := ih_sub e2 (by expr_size h_sz)
