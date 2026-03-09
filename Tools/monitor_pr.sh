@@ -85,11 +85,17 @@ print_ci_failure() {
   "${GH[@]}" run view "$run_id" --json jobs \
     --jq '.jobs[] | select(.conclusion == "failure") | "FAILED job: \(.name)\n  step: \(.steps[] | select(.conclusion == "failure") | .name)"' 2>/dev/null || true
   echo "--- error log ---"
-  "${GH[@]}" run view "$run_id" --log-failed 2>/dev/null \
-    | sed 's/^[^\t]*\t[^\t]*\t//; s/\x1b\[[0-9;]*m//g; s/^[0-9T:.Z-]* //' \
-    | grep -E '\[FAIL\]|^error:|^- |^[+] |Error Message:|Assert\.|Expected:|Actual:|^Failed!|##\[error\]|^Some required' \
-    | grep -v '##\[group\]' \
-    | head -80 || true
+  local log
+  log=$("${GH[@]}" run view "$run_id" --log-failed 2>/dev/null || true)
+  if echo "$log" | grep -q "still in progress"; then
+    echo "(Logs not yet available — run still in progress. Re-run this script after the run completes for full error details.)"
+  else
+    echo "$log" \
+      | sed 's/^[^\t]*\t[^\t]*\t//; s/\x1b\[[0-9;]*m//g; s/^[0-9T:.Z-]* //' \
+      | grep -E '\[FAIL\]|^error:|^- |^[+] |Error Message:|Assert\.|Expected:|Actual:|^Failed!|##\[error\]|^Some required' \
+      | grep -v '##\[group\]' \
+      | head -80 || true
+  fi
 }
 
 INITIAL_COMMENTS=$(comment_count)
@@ -160,6 +166,7 @@ while true; do
           echo "ACTION: Fix the failing test(s) above, commit and push."
           stop 1
         fi
+        $DRY_RUN && { echo "DRY_RUN: CI in progress, no failures yet."; exit 0; }
         sleep 10; continue
       fi
 
@@ -207,5 +214,6 @@ while true; do
     fi
   fi
 
+  $DRY_RUN && { echo "DRY_RUN: One pass complete, no actionable issues found."; exit 0; }
   sleep "$INTERVAL"
 done
