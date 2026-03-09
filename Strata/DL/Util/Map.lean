@@ -171,6 +171,25 @@ theorem Map.mem_keys_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k1 k2 
       simp_all [Map.remove, Map.keys]
       cases h <;> try simp_all
 
+theorem Map.mem_keys_remove_of_ne [DecidableEq α] (m : Map α β) (k a : α)
+    (h_mem : a ∈ Map.keys m) (h_ne : a ≠ k) :
+    a ∈ Map.keys (Map.remove m k) := by
+  induction m with
+  | nil => simp [Map.keys] at h_mem
+  | cons hd tl ih =>
+    obtain ⟨fst, snd⟩ := hd
+    simp [Map.remove]
+    split
+    · rename_i h_eq
+      simp [Map.keys] at h_mem
+      cases h_mem with
+      | inl h => exact absurd (h ▸ h_eq) h_ne
+      | inr h => exact h
+    · simp [Map.keys] at h_mem ⊢
+      cases h_mem with
+      | inl h => left; exact h
+      | inr h => right; exact ih h
+
 theorem Map.mem_values_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k : α) (v : β)
   (h : v ∈ (Map.remove m k).values) : v ∈ m.values := by
   induction m
@@ -213,5 +232,102 @@ theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ 
   split <;> simp_all
   split at H <;> simp_all
   rw [Eq.comm]; assumption
+/-- `Map.erase` on a key not in the map is identity. -/
+theorem Map.erase_of_find?_none [DecidableEq α]
+    (m : Map α β) (x : α) (h : Map.find? m x = none) :
+    Map.erase m x = m := by
+  induction m with
+  | nil => simp [Map.erase]
+  | cons p ps ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?] at h; split at h
+    · simp at h
+    · rename_i h_ne
+      simp only [Map.erase, h_ne, ↓reduceIte]
+      exact congrArg ((a, b) :: ·) (ih h)
+
+/-- `Map.erase` on a singleton appended at the end removes exactly that entry. -/
+theorem Map.erase_append_singleton [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) (h : Map.find? m x = none) :
+    Map.erase (List.append m [(x, v)]) x = m := by
+  induction m with
+  | nil => simp [Map.erase]
+  | cons p ps ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?] at h; split at h
+    · simp at h
+    · rename_i h_ne
+      show Map.erase ((a, b) :: (List.append ps [(x, v)])) x = (a, b) :: ps
+      unfold Map.erase; split
+      · exact absurd ‹_› h_ne
+      · exact congrArg ((a, b) :: ·) (ih h)
+
+/-- `Map.find?` on a map appended with a singleton map: either the new entry
+    is found, or the result is the same as looking up in the original map. -/
+theorem Map.find?_append_singleton [DecidableEq α]
+    (m m' : Map α β) (x : α) (v : β) (y : α)
+    (hm' : m' = [(x, v)]) :
+    Map.find? (m ++ m') y = some v ∧ y = x ∨
+    Map.find? (m ++ m') y = Map.find? m y := by
+  subst hm'
+  induction m with
+  | nil =>
+    unfold Map; simp only [List.nil_append, Map.find?]
+    by_cases h : x = y
+    · left; exact ⟨by simp [h], h.symm⟩
+    · right; simp [h]
+  | cons p m' ih =>
+    obtain ⟨a, b⟩ := p
+    unfold Map at *; simp only [List.cons_append, Map.find?]
+    by_cases h : a = y
+    · right; simp [h]
+    · simp only [h, ↓reduceIte]; exact ih
+
+/-- When `x` is not in the map, `Map.insert` appends `(x, v)` at the end. -/
+theorem Map.insert_fresh_eq_append [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) (h : Map.find? m x = none) :
+    Map.insert m x v = List.append m [(x, v)] := by
+  induction m with
+  | nil => unfold Map.insert; rfl
+  | cons hd tl ih =>
+    obtain ⟨a, b⟩ := hd
+    simp only [Map.find?] at h
+    split at h
+    · exact absurd h (by simp)
+    · rename_i h_ne
+      show (if a = x then (x, v) :: tl else (a, b) :: Map.insert tl x v) =
+           (a, b) :: List.append tl [(x, v)]
+      rw [if_neg h_ne]
+      congr 1
+      exact ih h
+
+/-- After erasing key `x`, looking up `x` returns `none`. -/
+theorem Map.find?_erase_self [DecidableEq α]
+    (m : Map α β) (x : α) :
+    Map.find? (Map.erase m x) x = none := by
+  induction m with
+  | nil => simp [Map.erase, Map.find?]
+  | cons p ps ih =>
+    simp only [Map.erase]; split
+    · exact ih
+    · simp only [Map.find?]; split
+      · rename_i h_ne h_eq; exact absurd h_eq h_ne
+      · exact ih
+
+/-- Erasing key `x` does not affect lookups for a different key `y ≠ x`. -/
+theorem Map.find?_erase_ne [DecidableEq α]
+    (m : Map α β) (x y : α) (h_ne : y ≠ x) :
+    Map.find? (Map.erase m x) y = Map.find? m y := by
+  induction m with
+  | nil => simp [Map.erase, Map.find?]
+  | cons p ps ih =>
+    simp only [Map.erase]; split
+    · rename_i h_eq; simp only [Map.find?]; split
+      · rename_i h_py; exact absurd (h_eq ▸ h_py.symm) h_ne
+      · exact ih
+    · simp only [Map.find?]; split
+      · rfl
+      · exact ih
+
 -------------------------------------------------------------------------------
 end

@@ -328,6 +328,24 @@ theorem Maps.mem_keys_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
       · simp [@Map.mem_keys_of_mem_keys_remove _ _ _ m k1 k2 (by assumption)]
       · simp_all
 
+theorem Maps.mem_keys_remove_of_ne [DecidableEq α] [BEq (Map α β)]
+    (ms : Maps α β) (k a : α)
+    (h_mem : a ∈ Maps.keys ms) (h_ne : a ≠ k) :
+    a ∈ Maps.keys (Maps.remove ms k) := by
+  induction ms with
+  | nil => simp [Maps.keys] at h_mem
+  | cons m mrest ih =>
+    simp [Maps.keys] at h_mem
+    simp [Maps.remove]
+    split <;> simp [Maps.keys]
+    · cases h_mem with
+      | inl h => left; exact h
+      | inr h => right; exact ih h
+    · cases h_mem with
+      | inl h =>
+        left; exact Map.mem_keys_remove_of_ne m k a h h_ne
+      | inr h => right; exact ih h
+
 theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
   (ms : Maps α β) (k : α) (v : β) (h : v ∈ (Maps.remove ms k).values) :
   v ∈ ms.values := by
@@ -340,6 +358,223 @@ theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
     · cases h
       · simp [@Map.mem_values_of_mem_keys_remove _ _ _ m k v (by assumption)]
       · simp_all
+
+/-- `Map.find?` returns `none` when the key is not in `Map.keys`. -/
+theorem Map.find?_none_of_not_mem_keys' [DecidableEq α] (m : Map α β) (i : α)
+    (h : i ∉ Map.keys m) : Map.find? m i = none := by
+  induction m with
+  | nil => simp [Map.find?]
+  | cons p rest ih =>
+    simp [Map.keys] at h; simp [Map.find?]
+    split; exact absurd ‹_› (Ne.symm h.1); exact ih h.2
+
+/-- `Maps.find?` returns `none` when the key is not in `Maps.keys`. -/
+theorem Maps.not_mem_keys_find?_none' [DecidableEq α] (S : Maps α β) (i : α)
+    (h : i ∉ Maps.keys S) : Maps.find? S i = none := by
+  induction S with
+  | nil => simp [Maps.find?]
+  | cons m rest ih =>
+    simp [Maps.keys] at h; simp [Maps.find?]
+    simp [Map.find?_none_of_not_mem_keys' m i h.1]; exact ih h.2
+
+/-- If a key is in `Maps.keys`, then `Maps.find?` returns `some`. -/
+theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
+    (h : i ∈ Maps.keys S) : ∃ v, Maps.find? S i = some v := by
+  induction S with
+  | nil => simp [Maps.keys] at h
+  | cons m rest ih =>
+    simp [Maps.keys] at h
+    simp [Maps.find?]
+    cases h_eq : Map.find? m i with
+    | some v => exact ⟨v, rfl⟩
+    | none =>
+      have h_not_in_m : i ∉ Map.keys m := Map.find?_of_not_mem_values m h_eq
+      exact ih (by cases h with | inl h => exact absurd h h_not_in_m | inr h => exact h)
+
+/-- `Map.find?` returns `some v` after `Map.insert m x v`. -/
+theorem Map.find?_insert_self [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) : Map.find? (Map.insert m x v) x = some v := by
+  induction m with
+  | nil => simp [Map.insert, Map.find?]
+  | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
+
+/-- `Map.find?` is unchanged for a different key after `Map.insert`. -/
+theorem Map.find?_insert_ne [DecidableEq α]
+    (m : Map α β) (x y : α) (v : β) (h : x ≠ y) :
+    Map.find? (Map.insert m y v) x = Map.find? m x := by
+  induction m with
+  | nil => simp [Map.insert, Map.find?, Ne.symm h]
+  | cons hd rest ih =>
+    simp only [Map.insert]
+    split
+    · rename_i h_eq  -- hd.fst = y
+      -- Map.insert replaced hd with (y, v); hd.fst = y, so the if in find? checks y = x
+      simp only [Map.find?]
+      -- In the new list: first element is (y, v), check y = x
+      have h_ne : ¬(y = x) := Ne.symm h
+      simp [h_ne]
+      -- In the old list: first element is hd, check hd.fst = x
+      have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
+      simp [h_ne2]
+    · simp only [Map.find?]; split <;> simp_all
+
+/-- `Maps.find?` is unchanged for a different key after `Maps.insert`, when the
+    inserted key is fresh. -/
+theorem Maps.find?_insert_ne_of_none [DecidableEq α]
+    (ms : Maps α β) (x y : α) (v : β) (h_ne : x ≠ y) (h_none : Maps.find? ms y = none) :
+    Maps.find? (Maps.insert ms y v) x = Maps.find? ms x := by
+  simp only [Maps.insert, h_none]
+  match ms with
+  | [] =>
+    simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
+    rw [Map.find?_insert_ne _ _ _ _ h_ne]
+    simp [Map.find?]
+  | m :: rest =>
+    simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
+    rw [Map.find?_insert_ne _ _ _ _ h_ne]
+
+/-- `Maps.update ms x v` maps `x` to `v`. -/
+theorem Maps.find?_update_self [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (h : ms.find? x ≠ none) :
+    (Maps.update ms x v).find? x = some v := by
+  induction ms with
+  | nil => simp [Maps.find?] at h
+  | cons m rest ih =>
+    simp only [Maps.update]; split
+    · rename_i h_none; simp only [Maps.find?, h_none]; apply ih
+      simp [Maps.find?, h_none] at h; exact h
+    · simp [Maps.find?, Map.find?_insert_self]
+
+/-- `Maps.insert ms x v` maps `x` to `v`. -/
+theorem Maps.find?_insert_self [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) :
+    Maps.find? (Maps.insert ms x v) x = some v := by
+  simp only [Maps.insert]; split
+  · match ms with
+    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
+    | _ :: _ => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
+  · exact Maps.find?_update_self ms x v (by simp_all)
+
+/-- `Maps.find?` is unchanged for a different key after `Maps.insert`. -/
+theorem Maps.find?_insert_ne [DecidableEq α]
+    (ms : Maps α β) (x y : α) (v : β) (h_ne : x ≠ y) :
+    Maps.find? (Maps.insert ms y v) x = Maps.find? ms x := by
+  simp only [Maps.insert]
+  cases h_fb : Maps.find? ms y with
+  | none =>
+    match ms with
+    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?, Map.insert, Ne.symm h_ne]
+    | _ :: _ =>
+      simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
+      rw [Map.find?_insert_ne _ _ _ _ h_ne]
+  | some val =>
+    induction ms with
+    | nil => simp [Maps.find?] at h_fb
+    | cons m rest ih =>
+      simp only [Maps.update]
+      split
+      · rename_i h_none
+        simp only [Maps.find?]
+        cases Map.find? m x with
+        | none =>
+          have h_rest : Maps.find? rest y = some val := by
+            simp only [Maps.find?, h_none] at h_fb; exact h_fb
+          exact ih h_rest
+        | some _ => rfl
+      · simp only [Maps.find?]
+        rw [Map.find?_insert_ne _ _ _ _ h_ne]
+
+/-- `Maps.erase` on a key not in any scope is identity. -/
+theorem Maps.erase_of_fresh [DecidableEq α]
+    (ms : Maps α β) (x : α) (h : ∀ m, m ∈ ms → Map.find? m x = none) :
+    Maps.erase ms x = ms := by
+  induction ms with
+  | nil => simp [Maps.erase]
+  | cons m rest ih =>
+    simp only [Maps.erase]; congr 1
+    · exact Map.erase_of_find?_none m x (h m List.mem_cons_self)
+    · exact ih (fun r hr => h r (List.mem_cons_of_mem m hr))
+
+/-- Erasing a key that was just added to the newest scope restores the original types,
+    provided the key didn't exist in the original and the maps are non-empty. -/
+theorem Maps.erase_addInNewest_fresh [DecidableEq α]
+    {m : Map α β} {rest : Maps α β} (x : α) (v : β)
+    (h_fresh : ∀ s, s ∈ (m :: rest) → Map.find? s x = none) :
+    Maps.erase (Maps.addInNewest (m :: rest) [(x, v)]) x = m :: rest := by
+  -- addInNewest (m :: rest) [(x, v)] = (m ++ [(x, v)]) :: rest
+  show Map.erase (List.append m [(x, v)]) x :: Maps.erase rest x = m :: rest
+  congr 1
+  · exact Map.erase_append_singleton m x v (h_fresh m List.mem_cons_self)
+  · exact Maps.erase_of_fresh rest x (fun r hr => h_fresh r (List.mem_cons_of_mem m hr))
+
+/-- Looking up in `addInNewest ms [(x, v)]` either returns the new binding or
+    falls through to the original map. -/
+theorem Maps.find?_addInNewest_single [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (y : α) :
+    Maps.find? (Maps.addInNewest ms [(x, v)]) y = some v ∧ y = x ∨
+    Maps.find? (Maps.addInNewest ms [(x, v)]) y = Maps.find? ms y := by
+  -- After unfolding, addInNewest ms [(x,v)] prepends (newest ms ++ [(x,v)]) to (pop ms).
+  -- We case split on ms and use Map.find?_append_singleton on the newest map.
+  cases ms with
+  | nil =>
+    show Maps.find? (Maps.addInNewest [] [(x, v)]) y = some v ∧ y = x ∨
+         Maps.find? (Maps.addInNewest [] [(x, v)]) y = Maps.find? [] y
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+    rcases Map.find?_append_singleton [] [(x, v)] x v y rfl with ⟨h1, h2⟩ | h1
+    · left
+      constructor
+      · simp only [Maps.find?]; rw [h1]
+      · exact h2
+    · right
+      simp only [Maps.find?]; rw [h1]; rfl
+  | cons m rest =>
+    show Maps.find? (Maps.addInNewest (m :: rest) [(x, v)]) y = some v ∧ y = x ∨
+         Maps.find? (Maps.addInNewest (m :: rest) [(x, v)]) y = Maps.find? (m :: rest) y
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, Maps.find?]
+    rcases Map.find?_append_singleton m [(x, v)] x v y rfl with ⟨h1, h2⟩ | h1
+    · left; rw [h1]; exact ⟨rfl, h2⟩
+    · right; rw [h1]
+
+/-- When `Maps.find? ms x = none`, the newest scope also has `find? = none`. -/
+theorem Maps.find?_none_newest [DecidableEq α]
+    (ms : Maps α β) (x : α) (h : Maps.find? ms x = none) :
+    Map.find? (Maps.newest ms) x = none := by
+  match ms with
+  | [] => simp [Maps.newest, Map.find?]
+  | m :: rest =>
+    simp only [Maps.newest]
+    simp only [Maps.find?] at h
+    split at h
+    · assumption
+    · exact absurd h (by simp)
+
+/-- When the key is fresh (not found in any scope), `Maps.insert` equals `Maps.addInNewest`. -/
+theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (h : Maps.find? ms x = none) :
+    Maps.insert ms x v = Maps.addInNewest ms [(x, v)] := by
+  unfold Maps.insert
+  simp [h]
+  rw [Map.insert_fresh_eq_append _ _ _ (Maps.find?_none_newest ms x h)]
+  unfold Maps.addInNewest
+  rfl
+
+/-- After erasing key `x` from all scopes, looking up `x` returns `none`. -/
+theorem Maps.find?_erase_self [DecidableEq α]
+    (ms : Maps α β) (x : α) :
+    Maps.find? (Maps.erase ms x) x = none := by
+  induction ms with
+  | nil => simp [Maps.erase, Maps.find?]
+  | cons m rest ih =>
+    simp only [Maps.erase, Maps.find?, Map.find?_erase_self, ih]
+
+/-- Erasing key `x` from all scopes does not affect lookups for `y ≠ x`. -/
+theorem Maps.find?_erase_ne [DecidableEq α]
+    (ms : Maps α β) (x y : α) (h_ne : y ≠ x) :
+    Maps.find? (Maps.erase ms x) y = Maps.find? ms y := by
+  induction ms with
+  | nil => simp [Maps.erase, Maps.find?]
+  | cons m rest ih =>
+    simp only [Maps.erase, Maps.find?, Map.find?_erase_ne m x y h_ne, ih]
 
 ---------------------------------------------------------------------
 end

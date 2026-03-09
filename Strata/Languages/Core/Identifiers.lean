@@ -54,9 +54,6 @@ instance : Repr CoreIdent where
 instance : Inhabited CoreIdent where
   default := ⟨"_", ()⟩
 
-instance : Lambda.HasGen Unit where
-  genVar T := let (sym, state') := (Lambda.TState.genExprSym T.genState)
-              (⟨sym, ()⟩, { T with genState := state' })
 
 namespace Syntax
 
