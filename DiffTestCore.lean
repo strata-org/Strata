@@ -104,10 +104,9 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
       let vcResults ← verify pgm inputCtx none .quiet
       match vcResults[0]? with
       | none    => return .smtError "no VCs generated"
-      | some vc => return match vc.result with
-        | .pass                    => .match
-        | .fail                    => .noMatch
-        | .unknown                 => .smtError "unknown"
+      | some vc => return match vc.outcome with
+        | .ok o => if o.isPass then .match else if o.isRefuted || o.isCanBeTrueOrFalse then .noMatch else .smtError "unknown"
+        | .error _ => .smtError "error"
         | .implementationError msg => .smtError s!"impl: {msg}"
 
 def main (args : List String) : IO UInt32 := do
