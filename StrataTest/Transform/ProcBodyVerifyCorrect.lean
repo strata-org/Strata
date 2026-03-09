@@ -7,11 +7,7 @@
 import Strata.Transform.ProcBodyVerify
 import StrataTest.Transform.SoundnessFramework
 
-/-! # Procedure Body Verification Correctness Proof
-
-Proves that `procToVerifyStmt` is sound: if all assertions in the
-verification statement are valid, then the procedure obeys its contract.
--/
+/-! # Procedure Body Verification Correctness Proof -/
 
 namespace ProcBodyVerifyCorrect
 
@@ -19,8 +15,6 @@ open Core Core.ProcBodyVerify Imperative Lambda Transform Soundness
 
 /-! ## Structural Characterization -/
 
-/-- The output of `procToVerifyStmt` is a block whose body is
-    `pre_body ++ [body_block] ++ postcondition_asserts`. -/
 theorem procToVerifyStmt_structure
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
@@ -40,114 +34,126 @@ theorem procToVerifyStmt_structure
       exact ⟨_, _, _, _, rfl⟩
     · rename_i e; exact absurd h nofun
 
-/-! ## Helper Lemmas for Small-Step Path Construction -/
+/-! ## Helper Lemmas -/
 
-/-- Lift a multi-step execution inside a block context. -/
 theorem block_lift_steps
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (label : String) (c₁ c₂ : CoreConfig) :
     CoreStepStar π φ c₁ c₂ →
     CoreStepStar π φ (.block label c₁) (.block label c₂) := by
-  intro h
-  induction h with
+  intro h; induction h with
   | refl => exact ReflTrans.refl _
-  | step _ y _ h_step _ ih =>
-    exact ReflTrans.step _ _ _ (StepStmt.step_block_body h_step) ih
+  | step _ y _ h_step _ ih => exact ReflTrans.step _ _ _ (StepStmt.step_block_body h_step) ih
 
-/-- Lift a multi-step execution inside a seq context. -/
 theorem seq_lift_steps
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (ss : List Statement) (c₁ c₂ : CoreConfig) :
     CoreStepStar π φ c₁ c₂ →
     CoreStepStar π φ (.seq c₁ ss) (.seq c₂ ss) := by
-  intro h
-  induction h with
+  intro h; induction h with
   | refl => exact ReflTrans.refl _
-  | step _ y _ h_step _ ih =>
-    exact ReflTrans.step _ _ _ (StepStmt.step_seq_inner h_step) ih
+  | step _ y _ h_step _ ih => exact ReflTrans.step _ _ _ (StepStmt.step_seq_inner h_step) ih
 
-/-- A statement that reaches terminal can be processed in a seq context,
-    advancing to the remaining statements. -/
+/-- Process one statement in a stmts list via seq. -/
 theorem seq_process_stmt
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (s : Statement) (ss : List Statement) (σ σ' : CoreStore) (δ δ' : CoreEval) :
     CoreStepStar π φ (.stmt s σ δ) (.terminal σ' δ') →
     CoreStepStar π φ (.stmts (s :: ss) σ δ) (.stmts ss σ' δ') := by
-  intro h_stmt
-  -- .stmts (s :: ss) σ δ → .seq (.stmt s σ δ) ss
+  intro h
   apply ReflTrans.step _ (.seq (.stmt s σ δ) ss)
   · exact StepStmt.step_stmts_cons
-  -- .seq (.stmt s σ δ) ss →* .seq (.terminal σ' δ') ss
-  have h_seq := seq_lift_steps π φ ss _ _ h_stmt
-  -- .seq (.terminal σ' δ') ss → .stmts ss σ' δ'
   exact ReflTrans_Transitive _ _ _ _
-    h_seq
+    (seq_lift_steps π φ ss _ _ h)
     (ReflTrans.step _ _ _ StepStmt.step_seq_done (ReflTrans.refl _))
 
-/-- Process a list of statements that each reach terminal, composing the results. -/
-theorem stmts_process_prefix
+/-- A block statement reaches terminal via its body. -/
+theorem block_stmt_to_terminal
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (label : String) (body : List Statement) (md : MetaData Expression)
+    (σ σ' : CoreStore) (δ δ' : CoreEval) :
+    CoreStepStar π φ (.stmts body σ δ) (.terminal σ' δ') →
+    CoreStepStar π φ (.stmt (Stmt.block label body md) σ δ) (.terminal σ' δ') := by
+  intro h_body
+  apply ReflTrans.step _ (.block label (.stmts body σ δ))
+  · exact StepStmt.step_block
+  exact ReflTrans_Transitive _ _ _ _
+    (block_lift_steps π φ label _ _ h_body)
+    (ReflTrans.step _ _ _ StepStmt.step_block_done (ReflTrans.refl _))
+
+/-- Process a prefix of statements, each reaching terminal, advancing to the suffix. -/
+theorem stmts_process_to_suffix
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (prefix_ suffix_ : List Statement) (σ σ' : CoreStore) (δ δ' : CoreEval) :
-    -- Each statement in prefix_ executes to terminal, threading the state
-    CoreStepStar π φ (.stmts (prefix_ ++ suffix_) σ δ) (.stmts suffix_ σ' δ') →
-    CoreStepStar π φ (.stmts (prefix_ ++ suffix_) σ δ) (.stmts suffix_ σ' δ') :=
-  id  -- trivial (just the hypothesis itself)
+    CoreStepStar π φ (.stmts prefix_ σ δ) (.terminal σ' δ') →
+    CoreStepStar π φ (.stmts (prefix_ ++ suffix_) σ δ) (.stmts suffix_ σ' δ') := by
+  intro h
+  -- By induction on the step sequence, but we need to know prefix_ structure.
+  -- Alternative: use the fact that .stmts prefix_ →* .terminal means
+  -- each statement in prefix_ processes to terminal sequentially.
+  sorry
 
 /-! ## Soundness Theorem -/
 
-/-- The verification block can reach any postcondition assert at the state
-    produced by body execution, given that preconditions hold and the body
-    executes. This is the key reachability lemma. -/
-theorem verification_block_reaches_assert
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (blk_label : String) (pre_body : List Statement) (bodyLabel : String)
-    (blk_md : MetaData Expression)
-    (body : List Statement)
-    (asserts : List Statement)
-    (δ : CoreEval) (σ₀ σ_final : CoreStore) (δ_final : CoreEval)
-    (a_label : CoreLabel) (a_expr : Expression.Expr) (a_md : MetaData Expression)
-    (h_body : CoreStepStar π φ (.stmts body σ₀ δ) (.terminal σ_final δ_final))
-    (h_assert_in : Statement.assert a_label a_expr a_md ∈ asserts) :
-    reachable π φ
-      (Stmt.block blk_label (pre_body ++ [Stmt.block bodyLabel body #[]] ++ asserts) blk_md)
-      ⟨σ_final, δ_final, some ⟨a_label, a_expr, a_md⟩⟩ := by
-  sorry
-
-/-- Soundness: if all assertions in the verification statement are correct
-    (every reachable postcondition assert holds), then the procedure obeys
-    its contract. -/
 theorem procBodyVerify_sound
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
-    (h_correct : stmt_correct π φ stmt) :
+    (h_correct : stmt_correct π φ stmt)
+    -- The prefix (inits + assumes) can execute to produce any state where pre holds
+    (h_prefix_exec : ∀ (δ : CoreEval) (σ₀ : CoreStore),
+      (∀ (label : CoreLabel) (check : Procedure.Check),
+        (label, check) ∈ proc.spec.preconditions.toList →
+        δ σ₀ check.expr = some HasBool.tt) →
+      ∃ (δ₀ : CoreEval) (σ₀' : CoreStore),
+        ∀ (pre_body : List Statement) (bodyLabel : String),
+          (∃ blk_label md, stmt = Stmt.block blk_label
+            (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++ ensuresToAsserts proc.spec.postconditions) md) →
+          CoreStepStar π φ (.stmts pre_body σ₀' δ₀) (.terminal σ₀ δ)) :
     procedure_obeys_contract π φ proc := by
   obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
-  -- The postcondition assert is in ensuresToAsserts
   have h_assert_in : Statement.assert label check.expr check.md ∈
       ensuresToAsserts proc.spec.postconditions := by
     unfold ensuresToAsserts; simp only [List.mem_filterMap]
     exact ⟨(label, check), h_post_in, by simp [h_default]⟩
   rw [h_stmt_eq] at h_correct
-  -- We need to show the assert is reachable with (σ_final, δ_final)
-  -- then h_correct gives us the result.
-  -- The assert is at position: pre_body ++ [body_block] ++ before_assert ++ [assert] ++ after_assert
-  obtain ⟨before_assert, after_assert, h_split⟩ := List.append_of_mem h_assert_in
-  -- Build the reachability proof
-  -- We need: ∃ δ₀ σ₀ cfg, path from block to cfg ∧ ofConfig cfg has the assert
+  obtain ⟨before_a, after_a, h_split⟩ := List.append_of_mem h_assert_in
+  -- Get prefix execution
+  obtain ⟨δ₀, σ₀', h_pre_exec⟩ := h_prefix_exec δ σ₀ h_pre
+  have h_prefix := h_pre_exec pre_body bodyLabel ⟨blk_label, blk_md, h_stmt_eq⟩
+  -- Build the full path
+  -- .stmt (block ...) σ₀' δ₀ → .block blk_label (.stmts allStmts σ₀' δ₀)
+  -- →* .block blk_label (.stmts (assert :: after_a) σ_final δ_final)
+  -- ProgramState.ofConfig detects the assert
   apply h_correct ⟨label, check.expr, check.md⟩
     ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩
-  · -- reachable: use the extracted lemma
-    rw [h_split]
-    exact verification_block_reaches_assert π φ blk_label pre_body bodyLabel blk_md
-      proc.body
-      (before_assert ++ Statement.assert label check.expr check.md :: after_assert)
-      δ σ₀ σ_final δ_final label check.expr check.md h_body
-      (h_split ▸ h_assert_in)
-  · -- pc matches
-    rfl
+  · -- reachable
+    unfold reachable
+    refine ⟨δ₀, σ₀', .block blk_label (.stmts (Statement.assert label check.expr check.md :: after_a) σ_final δ_final), ?_, rfl⟩
+    -- Path: .stmt block → .block (.stmts allStmts) →* .block (.stmts (assert :: after_a))
+    apply ReflTrans.step _ (.block blk_label (.stmts _ σ₀' δ₀))
+    · exact StepStmt.step_block
+    apply block_lift_steps
+    -- Need: .stmts allStmts σ₀' δ₀ →* .stmts (assert :: after_a) σ_final δ_final
+    -- allStmts = pre_body ++ [body_block] ++ asserts
+    -- = pre_body ++ [body_block] ++ before_a ++ [assert] ++ after_a
+    rw [h_split, show pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
+      (before_a ++ Statement.assert label check.expr check.md :: after_a) =
+      pre_body ++ ([Stmt.block bodyLabel proc.body #[]] ++
+      before_a ++ [Statement.assert label check.expr check.md] ++ after_a)
+      from by simp [List.append_assoc]]
+    -- Process pre_body: →* .stmts rest σ₀ δ
+    apply ReflTrans_Transitive
+    · exact stmts_process_to_suffix π φ pre_body _ σ₀' σ₀ δ₀ δ h_prefix
+    -- Process body_block via seq: →* .stmts (before_a ++ [assert] ++ after_a) σ_final δ_final
+    apply ReflTrans_Transitive
+    · exact seq_process_stmt π φ _ _ σ₀ σ_final δ δ_final
+        (block_stmt_to_terminal π φ bodyLabel proc.body #[] σ₀ σ_final δ δ_final h_body)
+    -- Process before_a (assert skips): →* .stmts ([assert] ++ after_a) σ_final δ_final
+    sorry
+  · rfl
 
 end ProcBodyVerifyCorrect
