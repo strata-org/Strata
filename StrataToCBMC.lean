@@ -32,11 +32,15 @@ def main (args : List String) : IO Unit := do
       else
         if file.endsWith ".csimp.st" then
           let csimp_prog := C_Simp.get_program pgm
-          IO.println (CSimp.testSymbols csimp_prog.funcs.head!)
+          match CSimp.testSymbols csimp_prog.funcs.head! with
+          | .ok s => IO.println s
+          | .error e => throw (IO.userError e)
         else if file.endsWith ".core.st" then
           let core_prog := (Core.getProgram pgm inputCtx).fst
           match core_prog.decls.head! with
-            | .proc f => IO.println (Core.testSymbols f)
+            | .proc f => match Core.testSymbols f with
+              | .ok s => IO.println s
+              | .error e => throw (IO.userError e)
             | _ => IO.println "Error: expected Strata Core procedure"
         else
           IO.println "Error: Unrecognized file extension"
