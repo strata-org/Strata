@@ -1,0 +1,61 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
+Tests that the constrained type elimination pass correctly transforms
+Laurel programs by comparing the output against expected results.
+-/
+
+import Strata.DDM.Elab
+import Strata.DDM.BuiltinDialects.Init
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.Resolution
+
+open Strata
+open Strata.Elab (parseStrataProgramFromDialect)
+
+namespace Strata.Laurel
+
+def testProgram : String := r"
+constrained nat = x: int where x >= 0 witness 0
+procedure test(n: nat) returns (r: nat) {
+  var y: nat := n;
+  return y;
+}
+"
+
+def parseLaurelAndElim (input : String) : IO Program := do
+  let inputCtx := Strata.Parser.stringInputContext "test" input
+  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
+  let uri := Strata.Uri.file "test"
+  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
+  | .error e => throw (IO.userError s!"Translation errors: {e}")
+  | .ok program =>
+    let result := resolve program
+    let (program, model) := (result.program, result.model)
+    pure (constrainedTypeElim model program).1
+
+/--
+info: procedure test(n: int) returns ⏎
+(r: int)
+requires n >= 0
+deterministic
+ ensures r >= 0 := { var y: int := n; assert y >= 0; return y }
+procedure $witness_nat() returns ⏎
+()
+deterministic
+{ var $witness: int := 0; assert $witness >= 0 }
+-/
+#guard_msgs in
+#eval! do
+  let program ← parseLaurelAndElim testProgram
+  for proc in program.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+
+end Laurel
