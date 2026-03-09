@@ -214,6 +214,20 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
   | some fr => fr.format fileMap includeEnd?
   | none => f!""
 
+/-- Metadata field for property type classification (e.g., "divisionByZero"). -/
+def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"
+
+/-- Metadata value for division-by-zero property type classification. -/
+def MetaData.divisionByZero : String := "divisionByZero"
+
+/-- Read the property type classification from metadata, if present. -/
+def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=
+  match md.findElem MetaData.propertyType with
+  | some elem => match elem.value with
+    | .msg s => some s
+    | _ => none
+  | none => none
+
 ---------------------------------------------------------------------
 
 end -- public section
