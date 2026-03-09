@@ -155,6 +155,11 @@ we leave as `partial` for now.
 -/
 partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
   SMT.Context :=
+  -- Always recurse into concrete args to register any type references
+  let ctx := args.foldl (fun ctx arg =>
+    match arg with
+    | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+    | _ => ctx) ctx
   match E.datatypes.getType id with
   | some d =>
     if ctx.hasDatatype id then ctx else
