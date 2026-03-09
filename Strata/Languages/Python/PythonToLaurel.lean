@@ -1299,6 +1299,9 @@ def pythonToLaurel (prelude: Core.Program)
 
   | _ => throw (.internalError "Expected Module")
 
+/- This function is used to add the external functions signatures to the TranslationContext
+TODO: Rewrite testing procedures that is currently in PythonLaurelCorePrelude in Python
+ -/
 def pythonToLaurelWithFuncSignature (prelude: Core.Program) (funsig : Python.Command SourceRange) (pyModule : Python.Command SourceRange)
             (filePath : String := "") : Except TranslationError Laurel.Program := do
   let funsig_trans ← pythonToLaurel prelude funsig
