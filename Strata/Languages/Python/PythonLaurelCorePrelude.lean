@@ -529,15 +529,15 @@ inline function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 inline function PAnd (v1: Any, v2: Any) : Any
-  requires Any..isfrom_bool(v1) && Any..isfrom_bool(v2);
+  requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1));
 {
-  from_bool(Any_to_bool (v1) && Any_to_bool (v2))
+  if ! Any_to_bool (v1) then v1 else v2
 }
 
 inline function POr (v1: Any, v2: Any) : Any
-  requires Any..isfrom_bool(v1) && Any..isfrom_bool(v2);
+  requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1));
 {
-  from_bool(Any_to_bool (v1) || Any_to_bool (v2))
+  if Any_to_bool (v1) then v1 else v2
 }
 
 
