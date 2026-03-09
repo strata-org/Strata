@@ -108,7 +108,28 @@ private theorem seq_reaches_stmts
     (∃ label σ_mid δ_mid,
       CoreStepStar π φ inner (.exiting label σ_mid δ_mid) ∧
       c = .exiting label σ_mid δ_mid) := by
-  sorry
+  intro h
+  -- Generalize to avoid ReflTrans index issues
+  generalize h_c1 : Config.seq inner ss = c₁ at h
+  induction h generalizing inner with
+  | refl => left; exact ⟨inner, h_c1 ▸ rfl⟩
+  | step _ y _ h_step h_rest ih =>
+    subst h_c1
+    cases h_step with
+    | step_seq_inner h_inner =>
+      -- y = .seq inner' ss where inner stepped to inner'
+      rename_i inner'
+      rcases ih inner' rfl with ⟨c', rfl⟩ | ⟨σ_mid, δ_mid, h_t, h_r⟩ | ⟨l, σ_mid, δ_mid, h_e, h_eq⟩
+      · left; exact ⟨c', rfl⟩
+      · right; left; exact ⟨σ_mid, δ_mid, ReflTrans.step _ _ _ h_inner h_t, h_r⟩
+      · right; right; exact ⟨l, σ_mid, δ_mid, ReflTrans.step _ _ _ h_inner h_e, h_eq⟩
+    | step_seq_done =>
+      right; left; exact ⟨_, _, ReflTrans.refl _, h_rest⟩
+    | step_seq_exit =>
+      right; right
+      cases h_rest with
+      | refl => exact ⟨_, _, _, ReflTrans.refl _, rfl⟩
+      | step _ _ _ h_next => exact absurd h_next nofun
 
 theorem stmts_cons_decompose
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -205,7 +226,7 @@ theorem procBodyVerify_sound
     rw [h_split, show pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
       (before_a ++ Statement.assert label check.expr check.md :: after_a) =
       pre_body ++ ([Stmt.block bodyLabel proc.body #[]] ++
-      before_a ++ [Statement.assert label check.expr check.md] ++ after_a)
+      (before_a ++ (Statement.assert label check.expr check.md :: after_a)))
       from by simp [List.append_assoc]]
     -- Process pre_body: →* .stmts rest σ₀ δ
     apply ReflTrans_Transitive
@@ -214,8 +235,37 @@ theorem procBodyVerify_sound
     apply ReflTrans_Transitive
     · exact seq_process_stmt π φ _ _ σ₀ σ_final δ δ_final
         (block_stmt_to_terminal π φ bodyLabel proc.body #[] σ₀ σ_final δ δ_final h_body)
-    -- Process before_a (assert skips): →* .stmts ([assert] ++ after_a) σ_final δ_final
-    sorry
+    -- Process before_a (assert skips)
+    -- The goal should be: .stmts (before_a ++ assert :: after_a) σ_final δ_final
+    --   →* .stmts (assert :: after_a) σ_final δ_final
+    -- This is stmts_process_to_suffix with prefix_ = before_a, suffix_ = assert :: after_a
+    -- We need: .stmts before_a σ_final δ_final →* .terminal σ_final δ_final
+    have h_before_asserts : ∀ s, s ∈ before_a → ∃ l e m, s = Statement.assert l e m := by
+      intro s h_s
+      have : s ∈ ensuresToAsserts proc.spec.postconditions := by
+        rw [h_split]; exact List.mem_append.mpr (Or.inl h_s)
+      unfold ensuresToAsserts at this
+      simp only [List.mem_filterMap] at this
+      obtain ⟨⟨l, c⟩, _, h_eq⟩ := this
+      cases h_attr : c.attr <;> simp [h_attr] at h_eq
+      subst h_eq; exact ⟨l, c.expr, c.md, rfl⟩
+    have h_before_exec : CoreStepStar π φ (.stmts before_a σ_final δ_final) (.terminal σ_final δ_final) := by
+      suffices ∀ (stmts : List Statement),
+          (∀ s, s ∈ stmts → ∃ l e m, s = Statement.assert l e m) →
+          CoreStepStar π φ (.stmts stmts σ_final δ_final) (.terminal σ_final δ_final) by
+        exact this before_a h_before_asserts
+      intro stmts h_all
+      induction stmts with
+      | nil => exact ReflTrans.step _ _ _ StepStmt.step_stmts_nil (ReflTrans.refl _)
+      | cons s rest ih =>
+        obtain ⟨l, e, m, rfl⟩ := h_all s (List.mem_cons.mpr (Or.inl rfl))
+        exact ReflTrans_Transitive _ _ _ _
+          (seq_process_stmt π φ _ _ σ_final σ_final δ_final δ_final
+            (ReflTrans.step _ _ _ (StepStmt.step_cmd (EvalCommand.cmd_sem EvalCmd.eval_assert)) (ReflTrans.refl _)))
+          (ih (fun s h => h_all s (List.mem_cons.mpr (Or.inr h))))
+    exact stmts_process_to_suffix π φ before_a
+      (Statement.assert label check.expr check.md :: after_a)
+      σ_final σ_final δ_final δ_final h_before_exec
   · rfl
 
 end ProcBodyVerifyCorrect
