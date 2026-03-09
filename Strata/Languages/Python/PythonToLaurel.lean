@@ -188,28 +188,12 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
         .ok (mkCoreType "Any")
 
 def AnyTy := mkCoreType "Any"
-def PackageTy := mkCoreType "Package"
-def intTy := mkHighTypeMd HighType.TInt
-def boolTy := mkHighTypeMd HighType.TBool
-def strTy := mkHighTypeMd HighType.TString
 def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_string" [mkStmtExprMd (StmtExpr.LiteralString s)])
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
 def AnyNone := mkStmtExprMd (.StaticCall "from_none" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 def FreeVar (name: String) := mkStmtExprMd (StmtExpr.Identifier name)
-
-def HighTypeToString (ty: HighType) : String :=
-  match ty with
-  | .TVoid => "none"
-  | .TBool => "bool"
-  | .TInt => "int"
-  | .TFloat64 => "float"
-  | .TString => "string"
-  | .THeap => "heap"
-  | .UserDefined name => name.text
-  | .TCore s => s
-  | _ => "Any"
 
 /-- Create a None value for a given OrNone type -/
 def mkNoneForType (typeName : String) : StmtExprMd :=
@@ -313,6 +297,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
       | .BitAnd _ => .ok "PBitAnd"
+      | .BitOr _ => return mkStmtExprMd .Hole
+      | .BitXor _ => return mkStmtExprMd .Hole
       -- Unsupported for now
       | _ => throw (.unsupportedConstruct s!"Binary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
@@ -333,6 +319,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Gt _ => .ok "PGt"
       | .GtE _ => .ok "PGe"
       | .In _ => return mkStmtExprMd .Hole  -- Abstract: arbitrary bool (sound)
+      | .NotIn _ => return mkStmtExprMd .Hole
       | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 

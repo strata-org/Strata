@@ -7,7 +7,6 @@
 import Strata.DDM.Elab
 import Strata.DDM.AST
 import Strata.Languages.Core.Verifier
-import StrataTest.Transform.ProcedureInlining
 
 namespace Strata
 namespace Python
@@ -280,8 +279,6 @@ inline function PAdd (v1: Any, v2: Any) : Any
     from_float(Any..as_float!(v1) + bool_to_real(Any..as_bool!(v2)))
   else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) then
     from_int(Any..as_int!(v1) + Any..as_int!(v2))
-  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) then
-    from_float(int_to_real(Any..as_int!(v1)) + Any..as_float!(v2))
   else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) then
     from_float(Any..as_float!(v1) + int_to_real(Any..as_int!(v2)) )
   else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) then
@@ -651,7 +648,7 @@ datatype Box () {
 #end
 
 def Core.PythonLaurelPrelude : Core.Program :=
-   Core.getProgram pyThonLaurelPrelude |>.fst
+   Core.getProgram pythonLaurelPrelude |>.fst
 
 def getFunctions (decls: List Core.Decl) : List String :=
   match decls with
