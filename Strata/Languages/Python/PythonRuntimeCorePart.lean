@@ -23,19 +23,19 @@ This contains declarations that cannot be expressed in Laurel grammar:
 - Procedures using discriminator access (`..`)
 - Procedures with labeled requires/ensures
 
-Types already defined in `PythonPreludeInLaurel.lean` are forward-declared
+Types already defined in `PythonRuntimeLaurelPart.lean` are forward-declared
 here so the DDM parser can resolve references. At the Core level, the
 Laurel-translated declarations take precedence and these forward declarations
 are filtered out.
 
 The original `CorePrelude.lean` remains unchanged for the Python-through-Core pipeline.
 -/
-private def corePreludeForLaurelDDM :=
+private def pythonRuntimeCorePartDDM :=
 #strata
 program Core;
 
 // =====================================================================
-// Forward declarations of types defined in PythonPreludeInLaurel.
+// Forward declarations of types defined in PythonRuntimeLaurelPart.
 // These are needed so the DDM parser can resolve references in axioms
 // and procedures below. They will be filtered out when merging with
 // the Laurel-translated declarations.
@@ -156,20 +156,20 @@ These are declarations that cannot be expressed in Laurel grammar.
 The returned program includes forward declarations of types from the
 Laurel prelude; callers should filter out duplicates when merging.
 -/
-def corePreludeForLaurel : Core.Program :=
-  Core.getProgram corePreludeForLaurelDDM |>.fst
+def pythonRuntimeCorePart : Core.Program :=
+  Core.getProgram pythonRuntimeCorePartDDM |>.fst
 
 /--
 Get only the Core-only declarations, dropping the forward declarations
 that precede the `type CoreOnlyDelimiter;` sentinel (and the sentinel itself).
 Everything after the delimiter is a genuine Core-only declaration.
 -/
-def coreOnlyPreludeForLaurel : List Core.Decl :=
-  let decls := corePreludeForLaurel.decls
+def coreOnlyFromRuntimeCorePart : List Core.Decl :=
+  let decls := pythonRuntimeCorePart.decls
   -- Drop everything up to and including the CoreOnlyDelimiter sentinel
   match decls.dropWhile (fun d => d.name.name != "CoreOnlyDelimiter") with
   | _ :: rest => rest   -- drop the delimiter itself
-  | [] => panic! "CoreOnlyDelimiter sentinel not found in corePreludeForLaurel"
+  | [] => panic! "CoreOnlyDelimiter sentinel not found in pythonRuntimeCorePart"
 
 end Python
 end Strata

@@ -16,8 +16,8 @@ import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
-import Strata.Languages.Python.PythonPreludeInLaurel
-import Strata.Languages.Python.CorePreludeForLaurel
+import Strata.Languages.Python.PythonRuntimeLaurelPart
+import Strata.Languages.Python.PythonRuntimeCorePart
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
@@ -434,12 +434,12 @@ def pyAnalyzeLaurelCommand : Command where
         exitFailure s!"Python to Laurel translation failed: {e}"
       | .ok laurelProgram =>
         -- Combine the Laurel prelude declarations with the translated program
-        let pythonRuntimeInLaurel := Strata.Python.pythonPreludeInLaurel
+        let pythonRuntimeLaurelPart := Strata.Python.pythonRuntimeLaurelPart
         let combinedLaurelProgram : Strata.Laurel.Program := {
-          staticProcedures := pythonRuntimeInLaurel.staticProcedures ++ laurelProgram.staticProcedures
-          staticFields := pythonRuntimeInLaurel.staticFields ++ laurelProgram.staticFields
-          types := pythonRuntimeInLaurel.types ++ laurelProgram.types
-          constants := pythonRuntimeInLaurel.constants ++ laurelProgram.constants
+          staticProcedures := pythonRuntimeLaurelPart.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := pythonRuntimeLaurelPart.staticFields ++ laurelProgram.staticFields
+          types := pythonRuntimeLaurelPart.types ++ laurelProgram.types
+          constants := pythonRuntimeLaurelPart.constants ++ laurelProgram.constants
         }
         if verbose then
           IO.println "\n==== Laurel Program ===="
@@ -450,7 +450,7 @@ def pyAnalyzeLaurelCommand : Command where
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok (coreProgramDecls, modifiesDiags) =>
-          let coreProgram := { decls := coreProgramDecls.decls ++ Strata.Python.coreOnlyPreludeForLaurel }
+          let coreProgram := { decls := coreProgramDecls.decls ++ Strata.Python.coreOnlyFromRuntimeCorePart }
           if verbose then
             IO.println "\n==== Core Program ===="
             IO.print (coreProgramDecls, modifiesDiags)

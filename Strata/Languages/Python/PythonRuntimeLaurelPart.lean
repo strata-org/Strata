@@ -22,7 +22,7 @@ Core-specific constructs (axioms, type synonyms, functions with Core expression
 bodies, discriminator access) remain in `CorePrelude.lean` and are combined
 at the Core level in StrataMain.
 -/
-private def pythonPreludeLaurelDDM :=
+private def pythonRuntimeLaurelPartDDM :=
 #strata
 program Laurel;
 
@@ -254,11 +254,11 @@ datatype Workaround { Dummy() }
 /--
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
-def pythonPreludeInLaurel : Laurel.Program :=
-  let uri := Strata.Uri.file "Strata/Languages/Python/PythonPreludeInLaurel.lean"
-  match Laurel.TransM.run uri (Laurel.parseProgram pythonPreludeLaurelDDM) with
+def pythonRuntimeLaurelPart : Laurel.Program :=
+  let uri := Strata.Uri.file "Strata/Languages/Python/PythonRuntimeLaurelPart.lean"
+  match Laurel.TransM.run uri (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
   | .ok p => p
-  | .error e => panic! s!"Failed to parse Python Laurel prelude: {e}"
+  | .error e => panic! s!"Failed to parse Python runtime Laurel part: {e}"
 
 end Python
 end Strata
