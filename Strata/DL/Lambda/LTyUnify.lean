@@ -3,10 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LTy
-import Strata.DL.Util.List
-import Strata.DL.Util.Maps
+public import Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.LTy
+public import Strata.DL.Util.List
+import all Strata.DL.Util.List
+public import Strata.DL.Util.Maps
+import all Strata.DL.Util.Maps
+import all Strata.DL.Util.Map
 
 /-!
 ## Type Substitution and Unification
@@ -21,23 +26,25 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
+public section
+
 /-! ### Type Substitution -/
 
 /-- Substitution mapping type variables to `LMonoTy`. -/
-abbrev SubstOne := Map TyIdentifier LMonoTy
-abbrev SubstOne.empty : SubstOne := []
+@[expose] abbrev SubstOne := Map TyIdentifier LMonoTy
+@[expose] abbrev SubstOne.empty : SubstOne := []
 
 /--
 Substitution mapping type variables to `LMonoTy`, taking scopes into
 account. The oldest scope can be obtained via `Maps.oldest`.
 -/
-abbrev Subst := Maps TyIdentifier LMonoTy
-abbrev Subst.empty : Subst := []
+@[expose] abbrev Subst := Maps TyIdentifier LMonoTy
+@[expose] abbrev Subst.empty : Subst := []
 /--
 A `Subst` with an empty scope, typically meant for storing global type
 substitutions.
 -/
-abbrev Subst.emptyScope : Subst := [[]]
+@[expose] abbrev Subst.emptyScope : Subst := [[]]
 
 instance : ToFormat Subst where
   format := Maps.format'
@@ -541,11 +548,11 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
 A type constraint `(ty1, ty2)` that records that `ty1` and `ty2` must
 have a common substitution instance.
 -/
-abbrev Constraint := (LMonoTy × LMonoTy)
+@[expose] abbrev Constraint := (LMonoTy × LMonoTy)
 /--
 A list of type constraints. These should really be viewed as a set.
 -/
-abbrev Constraints := List Constraint
+@[expose] abbrev Constraints := List Constraint
 
 /--
 Get the free type variables in the type constraint `c`.
@@ -1178,4 +1185,5 @@ def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Lambda

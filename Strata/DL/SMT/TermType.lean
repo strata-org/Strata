@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/TermType.lean)
@@ -191,3 +193,4 @@ def TermType.isConstrType : TermType → Bool
   | _         => false
 
 end Strata.SMT
+end

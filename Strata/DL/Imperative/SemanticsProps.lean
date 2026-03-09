@@ -3,11 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.CmdSemantics
+import all Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.Cmd
 
 namespace Imperative
+
+public section
 
 theorem eval_assert_store_cst
   [HasFvar P] [HasBool P] [HasNot P]:
@@ -239,3 +245,5 @@ theorem eval_stmts_set_comm
           cases Hs3 with | cmd_sem Hc3 _ =>
           cases Hs4 with | cmd_sem Hc4 _ =>
           exact eval_cmd_set_comm Hwf Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
+
+end -- public section

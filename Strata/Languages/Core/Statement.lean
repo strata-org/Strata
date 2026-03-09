@@ -13,6 +13,7 @@ import Strata.Languages.Core.Factory
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.TypeConstructor
 import Strata.Util.Tactics
 
 namespace Core
@@ -86,6 +87,9 @@ abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : Lis
 @[match_pattern]
 abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
+@[match_pattern]
+abbrev Statement.typeDecl (tc : TypeConstructor) (md : MetaData Expression) :=
+  @Stmt.typeDecl Expression Command tc md
 
 ---------------------------------------------------------------------
 
@@ -127,6 +131,7 @@ def Statement.eraseTypes (s : Statement) : Statement :=
       axioms := decl.axioms.map Lambda.LExpr.eraseTypes,
       preconditions := decl.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
     .funcDecl decl' md
+  | .typeDecl tc md => .typeDecl tc md
 
 def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
@@ -200,6 +205,7 @@ def Statement.modifiedVarsTrans
   | .loop _ _ _ bss _ =>
     Statements.modifiedVarsTrans π bss
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
+  | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
 def Statements.modifiedVarsTrans
   {ProcType : Type}
@@ -244,6 +250,7 @@ def Statement.getVarsTrans
       let bodyVars := HasVarsPure.getVars body
       let formals := decl.inputs.map (·.1)
       bodyVars.filter (fun v => formals.all (fun f => v.name != f.name))
+  | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
 def Statements.getVarsTrans
   {ProcType : Type}
@@ -286,6 +293,7 @@ def Statement.touchedVarsTrans
   | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
   | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
   | .funcDecl decl _ => [decl.name]  -- Function declaration touches (defines) the function name
+  | .typeDecl _ _ => []  -- Type declarations don't touch variables
 
 def Statements.touchedVarsTrans
   {ProcType : Type}
@@ -351,6 +359,7 @@ def Statement.substFvar (s : Core.Statement)
       body := decl.body.map (Lambda.LExpr.substFvar · fr to),
       axioms := decl.axioms.map (Lambda.LExpr.substFvar · fr to) }
     .funcDecl decl' md
+  | .typeDecl _ _ => s  -- Type declarations don't contain expressions
 end
 
 ---------------------------------------------------------------------
@@ -382,6 +391,7 @@ def Statement.renameLhs (s : Core.Statement)
     -- Rename function name if it matches
     let decl' := if decl.name == fr then { decl with name := to } else decl
     .funcDecl decl' md
+  | .typeDecl _ _ => s  -- Type declarations don't have lhs variables
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .exit _ _ => s
 end
 

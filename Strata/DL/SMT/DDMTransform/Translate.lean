@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DL.SMT.DDMTransform.Parse
-import Strata.DL.SMT.Term
-import Strata.Util.Tactics
+module
+
+public import Strata.DL.SMT.DDMTransform.Parse
+public import Strata.DL.SMT.Term
+public import Strata.Util.Tactics
+import Strata.DDM.Elab.LoadedDialects
 
 namespace Strata
+
+public section
 
 namespace SMTDDM
 
@@ -67,9 +72,9 @@ private def translateFromTermPrim (t:SMT.TermPrim):
       return .spec_constant_term srnone (.sc_numeral_neg srnone abs_i.toNat)
   | .real dec =>
     return .spec_constant_term srnone (.sc_decimal srnone dec)
-  | .bitvec bv =>
+  | .bitvec (n := n) bv =>
     let bvty := mkSymbol (s!"bv{bv.toNat}")
-    let val:Index SourceRange := .ind_numeral srnone bv.width
+    let val:Index SourceRange := .ind_numeral srnone n
     return (.qual_identifier srnone
       (.qi_ident srnone (.iden_indexed srnone bvty (Ann.mk srnone #[val]))))
   | .string s =>
@@ -114,21 +119,40 @@ private def translateFromTermType (t:SMT.TermType):
     else
       return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 
+-- Helper: convert an SMTSort to an SExpr for use in pattern attributes
+private def sortToSExpr (s : SMTDDM.SMTSort SourceRange)
+    : Except String (SMTDDM.SExpr SourceRange) := do
+  let srnone := SourceRange.none
+  match s with
+  | .smtsort_ident _ (.iden_simple _ sym) => return .se_symbol srnone sym
+  | .smtsort_param _ (.iden_simple _ sym) args =>
+    let argsSExpr ← args.val.toList.mapM sortToSExpr
+    return .se_ls srnone (Ann.mk srnone ((.se_symbol srnone sym :: argsSExpr).toArray))
+  | _ => throw s!"Doesn't know how to convert sort {repr s} to SMTDDM.SExpr"
+  termination_by SizeOf.sizeOf s
+  decreasing_by cases args; simp_all; term_by_mem
+
+
+-- Helper: convert a QualIdentifier to an SExpr for use in pattern attributes
+private def qiToSExpr (qi : SMTDDM.QualIdentifier SourceRange)
+    : Except String (SMTDDM.SExpr SourceRange) := do
+  let srnone := SourceRange.none
+  match qi with
+  | .qi_ident _ (.iden_simple _ sym) => pure (.se_symbol srnone sym)
+  | .qi_isort _ (.iden_simple _ sym) sort =>
+    let sortSExpr ← sortToSExpr sort
+    let asSym := SMTDDM.SExpr.se_symbol srnone (mkSymbol "as")
+    pure (.se_ls srnone (Ann.mk srnone #[asSym, .se_symbol srnone sym, sortSExpr]))
+  | _ => throw s!"Doesn't know how to convert QI {repr qi} to SMTDDM.SExpr"
+
 -- Helper function to convert a SMTDDM.Term to SExpr for use in pattern attributes
 def termToSExpr (t : SMTDDM.Term SourceRange)
     : Except String (SMTDDM.SExpr SourceRange) := do
   let srnone := SourceRange.none
   match t with
-  | .qual_identifier _ qi =>
-      match qi with
-      | .qi_ident _ (.iden_simple _ sym) => return .se_symbol srnone sym
-      | _ => throw s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
+  | .qual_identifier _ qi => qiToSExpr qi
   | .qual_identifier_args _ qi args =>
-      -- Function application in pattern: convert to nested S-expr
-      let qiSExpr ← match qi with
-        | .qi_ident _ (.iden_simple _ sym) => pure (SMTDDM.SExpr.se_symbol srnone sym)
-        | _ => throw s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
-      -- Convert args array to SExpr list
+      let qiSExpr ← qiToSExpr qi
       let argsSExpr ← args.val.mapM termToSExpr
       return .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
   | .spec_constant_term _ s => return .se_spec_const srnone s
@@ -327,5 +351,7 @@ where
     .app (.core (.uf uf)) args placeholderTy
 
 end SMTResponseDDM
+
+end
 
 end Strata
