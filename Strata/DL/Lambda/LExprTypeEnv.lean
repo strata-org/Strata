@@ -1065,6 +1065,7 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
   else .error f!"Type {mty} is not an instance of a previously registered type!\n\
                  Known Types: {C.knownTypes}"
 
+omit [DecidableEq T.IDMeta] [ToFormat T.Metadata] in
 /-- Decompose `LMonoTy.instantiateWithCheck` into its two main steps:
     `instantiateEnv` (which renames free vars to fresh generated names)
     followed by `resolveAliases` (which expands type aliases). -/
@@ -1515,9 +1516,9 @@ theorem TGenEnv.genTyVars_allFresh {T : LExprParams} [DecidableEq T.IDMeta]
 
 section TyGenMono
 
--- These lemmas don't need [ToFormat T.Metadata]; omit it so callers
--- (e.g. in LExprTypeSpec.lean) don't need to provide it.
-omit [ToFormat T.Metadata]
+-- These lemmas don't need [ToFormat T.Metadata] or [DecidableEq T.IDMeta];
+-- omit them so callers (e.g. in LExprTypeSpec.lean) don't need to provide them.
+omit [ToFormat T.Metadata] [DecidableEq T.IDMeta]
 
 /-- `genTyVar` produces `TState.tyPrefix ++ toString tyGen`. -/
 theorem genTyVar_name_eq (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.IDMeta)

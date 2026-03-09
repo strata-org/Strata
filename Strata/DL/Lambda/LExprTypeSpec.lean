@@ -1144,6 +1144,7 @@ private theorem LMonoTys.freeVars_substLogic_single_mem
     | inr h_ys => exact List.mem_append_right _ (LMonoTys.freeVars_substLogic_single_mem a t ys b h_ys hb_not_t)
 end
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `HasType` is preserved under substitution when keys relevant to the type
     are fresh. Only keys that appear in `freeVars mty` need to be fresh,
     not all keys. This is the key weakening that avoids requiring `allKeysFresh`
@@ -1927,6 +1928,7 @@ theorem Constraints.unify_keys_incl
     simp at h_unify; subst h_unify
     exact unifyCore_keys_incl cs S relS h_core
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Unification preserves freshness: if all keys of the input substitution and
     all free variables in the constraints are fresh in `Γ`, then all keys
     of the output substitution are also fresh in `Γ`.
@@ -1950,6 +1952,7 @@ theorem Constraints.unify_allKeysFresh
     | inl h => exact h_cs_fresh k h
     | inr h => exact h_vals_fresh k h
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `Constraints.unify` preserves substitution value freshness.
     If constraint fvs and old value fvs are all fresh in Γ, then
     new value fvs are also fresh in Γ (by `goodSubset`). -/
@@ -2939,10 +2942,12 @@ structure TEnvWF (Env : TEnv T.IDMeta) : Prop where
     ∀ v, v ∈ LTy.boundVars ty →
       ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Extract `EnvFreshForGen` from the combined `TEnvWF` invariant. -/
 theorem TEnvWF.toEnvFreshForGen {Env : TEnv T.IDMeta} (h : TEnvWF Env) : EnvFreshForGen Env :=
   ⟨h.substFreshForGen, h.ctxFreshForGen⟩
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `ContextFreshForGen` is monotone in the counter. -/
 private theorem ContextFreshForGen.mono (Γ : TContext T.IDMeta) (s s' : TState)
     (h : ContextFreshForGen Γ s) (h_le : s.tyGen ≤ s'.tyGen) :
@@ -2950,6 +2955,7 @@ private theorem ContextFreshForGen.mono (Γ : TContext T.IDMeta) (s s' : TState)
   intro v hv n hn; exact h v hv n (Nat.le_trans h_le hn)
 
 
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem inferFVar_tyGen_mono
     (C : LContext T) (Env : TEnv T.IDMeta) (x : T.Identifier) (fty : Option LMonoTy)
     (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -2982,6 +2988,7 @@ private theorem inferFVar_tyGen_mono
               (LTy_instantiateWithCheck_tyGen_mono ty C Env ty_inst Env1 h_iwc)
               (LMonoTy_instantiateWithCheck_tyGen_mono fty_val C Env1 fty_inst Env2 h_iwc2)
 
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem typeBoundVar_tyGen_mono
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -3221,6 +3228,7 @@ private theorem unify_preserves_SubstFreshForGen
     · exact h_fresh_cs v h n hn
     · exact h_fresh_S v (Or.inr h) n hn
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Each var produced by `TGenEnv.genTyVar` is `tyPrefix ++ toString k` for
     `k = Env.genState.tyGen`, and the output state has `tyGen = k + 1`.
     Therefore the var satisfies gen-freshness for the output state. -/
@@ -3685,6 +3693,7 @@ private theorem checkNoFutureGenVars_imp_fresh (mty : LMonoTy) (state : TState)
   simp [LMonoTy.checkNoFutureGenVars, List.all_eq_true] at h
   exact not_isFutureGenVar_imp_ne state v (by simp [h v hv]) n hn
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Context preservation for `LTy.instantiateWithCheck`. -/
 theorem LTy_instantiateWithCheck_context'
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
@@ -3701,6 +3710,7 @@ theorem LTy_instantiateWithCheck_context'
     exact LTy.resolveAliases_context ty Env mty' Env1 h_ra
   · simp at h
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Context preservation for `LMonoTy.instantiateWithCheck`. -/
 theorem LMonoTy_instantiateWithCheck_context'
     (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
@@ -3718,6 +3728,7 @@ theorem LMonoTy_instantiateWithCheck_context'
     rw [LMonoTy.resolveAliases_context _ _ mty' Env2 h_ra]
     exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
   · simp at h
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem LTy_instantiateWithCheck_freeVars_fresh
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
@@ -3738,6 +3749,7 @@ private theorem LTy_instantiateWithCheck_freeVars_fresh
     exact checkNoFutureGenVars_imp_fresh mty0 Env1.genEnv.genState (by simp at h_check; exact h_check)
   · simp at h
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Free vars of `LMonoTy.instantiateWithCheck` output satisfy freshness for the output gen state. -/
 private theorem LMonoTy_instantiateWithCheck_freeVars_fresh
     (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -3832,6 +3844,7 @@ private theorem not_mem_knownVars_find_none
     ∀ m, m ∈ ctx.types → Map.find? m xv = none :=
   not_mem_go_find_none ctx.types xv (by simp only [TContext.knownVars] at h; exact h)
 
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- The variable `xv` produced by `typeBoundVar` is fresh in the input context:
     it does not appear as a key in any map of `Env.context.types`. -/
 private theorem typeBoundVar_xv_fresh_in_context
@@ -3860,6 +3873,7 @@ private theorem typeBoundVar_xv_fresh_in_context
     obtain ⟨h_xv, _, _⟩ := h; subst h_xv
     exact not_mem_knownVars_find_none Env.context xv_raw h_fresh
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `typeBoundVar` always produces an environment with non-empty `context.types`,
     because it applies `addInNewestContext` which uses `Maps.addInNewest`. -/
 private theorem typeBoundVar_context_types_ne_nil
@@ -3949,6 +3963,7 @@ private theorem typeBoundVar_preserves_SubstFreshForGen
         exact SubstFreshForGen.mono _ _ _ h_fresh
           (by have := genTyVar_tyGen _ xtyid Env1 h_genTy; omega)
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Backward direction: vars in knownTypeVars after addInNewest come from
     the old context or from the new type's freeVars. -/
 private theorem knownTypeVars_addInNewestContext_cases
@@ -4139,6 +4154,7 @@ private theorem typeBoundVar_preserves_AliasesWF
         h_genTy_ctx, h_gen_ctx]
     exact h_aw
 
+omit [DecidableEq IDMeta] in
 /-- `go` is monotone under list append: `go m ⊆ go (m ++ extra)`. -/
 private theorem go_append_superset
     (m extra : Map (Identifier IDMeta) LTy)
@@ -4277,6 +4293,7 @@ private theorem typeBoundVar_preserves_boundVarsFresh
     · rw [h_old] at h_find
       exact h_bf y ty_found h_find v hv n (Nat.le_trans h_mono hn)
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
 Context preservation for `LTy.instantiateWithCheck`.
 `instantiateWithCheck` only modifies `genEnv.genState` and `stateSubstInfo`,
@@ -4299,6 +4316,7 @@ theorem LTy_instantiateWithCheck_context
       exact LTy.resolveAliases_context ty Env mty' Env1 h_ra
     · simp at h
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Context preservation for `LMonoTy.instantiateWithCheck`. -/
 theorem LMonoTy_instantiateWithCheck_context
     (mty_in : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta)
@@ -4709,6 +4727,7 @@ private theorem LMonoTys.freeVars_destructArrow_subset (mtys : LMonoTys) :
     LMonoTys.freeVars (LMonoTys.destructArrow mtys) ⊆ LMonoTys.freeVars mtys :=
   (freeVars_destructArrow_subset_combined (mtysSize mtys)).2 mtys (Nat.le_refl _)
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Factory function types produced by `LFunc.type` have empty `freeVars`
     when the function satisfies `LFuncWF`. -/
 private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
@@ -4749,6 +4768,7 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
       exact this irest h_irest_sub x hx_irest
     · exact h_wf.output_typevars_in_typeArgs (LMonoTy.freeVars_destructArrow_subset func.output hx_destr)
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Factory function types produced by `LFunc.type` have `boundVars = func.typeArgs`. -/
 private theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
     (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty) :
@@ -4824,9 +4844,9 @@ private theorem LMonoTys_resolveAliases_freeVars_subset
 end
 
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Combined result: context preservation, SubstFreshForGen preservation, and output type freshness.
     These are proved together by strong induction to avoid circular dependencies. -/
-
 private theorem transfer_boundVarsFresh
     {Env Env' : TEnv T.IDMeta}
     (h_bf : ∀ y ty, Env.context.types.find? y = some ty →
@@ -5332,6 +5352,7 @@ private theorem resolveAux_preserves_SubstFreshForGen :
   fun e et C Env Env' h h_sf h_cf h_ne h_aw h_fwf h_bvf =>
     ((resolveAux_preserves_combined e.sizeOf e rfl et C Env Env' h h_ne).2 h_sf h_cf h_aw h_fwf h_bvf).1
 
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- A type variable produced by `genTyVar` does not appear (as key or in values)
     in any substitution satisfying `SubstFreshForGen` for an earlier gen state.
 
@@ -5674,6 +5695,7 @@ private theorem Map.keys_zip_subset {α β : Type} [DecidableEq α]
       | inl h => subst h; exact List.mem_cons_self
       | inr h => exact List.mem_cons_of_mem a (ih rest2 h)
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
 Helper: repeated `tinst` applications for each bound variable with the
 corresponding type yield the same result as a parallel substitution.
@@ -5759,6 +5781,7 @@ private theorem HasType_tinst_all
       simp only [List.zip_cons_cons] at h_ih ⊢
       exact h_ih
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Each var produced by `genTyVars` is `tyPrefix ++ toString k` for some
     `k ≥ Env.genState.tyGen`. -/
 private theorem TGenEnv.genTyVars_is_genName
@@ -6550,6 +6573,7 @@ private theorem subst_compose_ftvar_open (S : Subst)
           -- Use subst_cons_eq to distribute over cons, then combine h_hd and h_tl
           simp only [LMonoTys.subst_cons_eq, h_hd, h_tl]
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Decompose `LMonoTys.instantiateEnv` into its components: fresh vars, substitution, and env. -/
 private theorem instantiateEnv_decompose
     (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv T.IDMeta)
@@ -7085,6 +7109,7 @@ theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
         -- Goal: LMonoTys.subst [σ'] (hd :: tl) = LMonoTys.subst S (LMonoTys.subst [σ] (hd :: tl))
         rw [LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq, h1, h2]
 
+omit [ToFormat T.Metadata] in
 /-- `LMonoTy.instantiateWithCheck` produces a type that is `AnnotCompat` with
     the input: there exists a substitution σ (renaming free vars to fresh
     generated names) such that the output is alias-equivalent to `subst [σ] mty_in`. -/
@@ -7120,6 +7145,7 @@ private theorem instantiateWithCheck_AnnotCompat [Std.ToFormat T.Metadata]
   subst h_eq
   exact ⟨_, h_ie_ctx ▸ h_alias⟩
 
+omit [ToFormat T.Metadata] in
 /-- `typeBoundVar` with a `some` annotation produces a type that is
     `AnnotCompat` with the annotation. -/
 private theorem typeBoundVar_AnnotCompat [Std.ToFormat T.Metadata]
@@ -7293,6 +7319,7 @@ private theorem SubstWF.key_not_in_LTy_freeVars_subst
     exact SubstWF.key_not_in_freeVars_subst (LTy.subst.go xs S) body a
       (keys_go_mem S xs a h_key h_not_xs) (SubstWF_go S xs h_wf) h_in_fv
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem TContext_types_subst_go_find_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier) (ty : LTy)
     (h : Map.find? (TContext.types.subst.go S scope) x = some ty) :
@@ -7311,6 +7338,7 @@ private theorem TContext_types_subst_go_find_reverse
       · rename_i h_eq; exact absurd h_eq h_ne
       · exact ih h
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem TContext_types_subst_go_find_none_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier)
     (h : Map.find? (TContext.types.subst.go S scope) x = none) :
@@ -7695,6 +7723,7 @@ theorem inferFVar_HasType
                       h_open h_annot)
               · simp at h_inst
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-!
 ### Core theorem: `resolveAux_HasType`
 
@@ -7722,6 +7751,7 @@ private theorem transfer_boundVarsNodup
   exact h_nd y ty (by rwa [h_ctx] at h_f)
 
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Free type variables in the output type of `resolveAux` don't include
     "future" generated names — i.e., names with counter values ≥ the output
     environment's generator counter. Since each `genTyVar` during resolution
@@ -7768,6 +7798,7 @@ private theorem resolveAux_output_type_no_future_vars :
 def WellScoped (e : LExpr T.mono) (Γ : TContext T.IDMeta) : Prop :=
   ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Γ
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `varOpen k x e` only adds `x` to the free variables: every fvar of the
     opened expression is either an original fvar of `e` or the new `x`. -/
 private theorem varOpen_freeVars_subset
@@ -7852,6 +7883,7 @@ private theorem Maps.addInNewest_cons (scope : Map α β) (rest : Maps α β) (m
   simp [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
 
 -- Helper: knownVars.go of addInNewest extends with new keys
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem knownVars_go_addInNewest_mono
     (types : Maps T.Identifier LTy) (xv : T.Identifier) (ty : LTy)
     (v : T.Identifier) (hv : v ∈ TContext.knownVars.go types) :
@@ -7867,6 +7899,7 @@ private theorem knownVars_go_addInNewest_mono
     · left; left; exact h_scope
     · right; exact h_rest
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem knownVars_go_addInNewest_mem
     (types : Maps T.Identifier LTy) (xv : T.Identifier) (ty : LTy) :
     xv ∈ TContext.knownVars.go (types.addInNewest [(xv, ty)]) := by
@@ -9139,6 +9172,7 @@ theorem resolveAux_HasType :
               (.forAll [] (LMonoTy.subst S e2t.toLMonoTy))
               h_ty1_S h_ty2_S
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `HasType` transfers from `{types := [[]], aliases}` to `{types := [], aliases}`.
     Both contexts have `find? = none` for all variables and `insert` gives the same
     results, so all HasType constructors behave identically. -/
@@ -9201,6 +9235,7 @@ private theorem HasType_transfer_empty_scope
     subst hΓ_eq
     exact HasType.talias _ e mty mty' h_equiv (ih rfl)
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Derive the find?-based closedness condition from `checkContextTypesClosed`. -/
 private theorem ctx_closed_of_check (Env : TEnv T.IDMeta)
     (h : LExpr.checkContextTypesClosed Env) :
@@ -9251,6 +9286,7 @@ where
         | cons _ _ => rw [h_fv] at h_hd; simp at h_hd
       · exact scope_entry_closed rest h_rest h_find
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `checkContextTypesClosed` is preserved when context is unchanged. -/
 private theorem checkContextTypesClosed_of_ctx_eq {Env Env' : TEnv T.IDMeta}
     (h : LExpr.checkContextTypesClosed Env) (h_ctx : Env'.context = Env.context) :
@@ -9259,6 +9295,7 @@ private theorem checkContextTypesClosed_of_ctx_eq {Env Env' : TEnv T.IDMeta}
   rw [h_ctx]
   exact h
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- When all context types are closed (no free type variables), `allKeysFresh` holds
     for any substitution, because `isFresh` is vacuously true. -/
 theorem Subst.allKeysFresh_of_ctx_closed
