@@ -69,6 +69,9 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalStmt P Cmd EvalCmd extendEval δ σ (.funcDecl decl md) σ
       (extendEval δ σ decl)
 
+  | typeDecl_sem :
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.typeDecl tc md) σ δ
+
   -- (TODO): Define semantics of `exit`.
 
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
@@ -153,6 +156,7 @@ theorem EvalStmtDefMonotone
   | .exit _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
+  | .typeDecl _ _ => cases Heval; assumption
 
 theorem EvalBlockDefMonotone
   [DecidableEq P.Ident]

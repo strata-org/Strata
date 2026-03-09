@@ -93,6 +93,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .exit (label : Option String) _ => WFexitProp p label
   | .funcDecl decl _ => WFfuncDeclProp p decl
+  | .typeDecl _ _ => True  -- Type declarations are always well-formed
 
 abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 

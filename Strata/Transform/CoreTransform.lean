@@ -296,6 +296,8 @@ private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)
         return (changed, [.loop guard measure invariant body' md])
       | .funcDecl _ _ =>
         return (false, [s])  -- Function declarations pass through unchanged
+      | .typeDecl _ _ =>
+        return (false, [s])  -- Type declarations pass through unchanged
       | .exit _lbl _md =>
         return (false, [s]))
     return ⟨changed0 || changed, (sres ++ ss'')⟩
