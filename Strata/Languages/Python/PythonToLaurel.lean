@@ -70,7 +70,8 @@ structure TranslationContext where
   functionSignatures : List PythonFunctionDecl := []
   /-- Map from prelude procedure names to their full signatures -/
   preludeProcedures : List (String × CoreProcedureSignature) := []
-  /-- Map from prelude procedure names to their full signatures -/
+  /-- Names of prelude functions (non-procedure callables) -/
+  preludeFunctions : List String := []
   preludeFunctions : List String := []
   /-- Names of user-defined functions -/
   userFunctions : List String := []
