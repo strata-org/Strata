@@ -23,24 +23,24 @@ procedure hasRequires(x: int) returns (r: int)
     assert x > 3;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
   x + 1
-}
+};
 
 procedure caller() {
   var x: int := hasRequires(1);
   var y: int := hasRequires(3);
-}
+};
 
 function aFunctionWithPrecondition(x: int): int
   requires x == 10
 {
   x
-}
+};
 
 procedure aFunctionWithPreconditionCaller() {
   var x: int := aFunctionWithPrecondition(0);
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
-}
+};
 "
 
 #guard_msgs (drop info, error) in

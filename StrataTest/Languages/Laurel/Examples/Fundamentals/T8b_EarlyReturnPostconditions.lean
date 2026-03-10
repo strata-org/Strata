@@ -20,7 +20,7 @@ procedure earlyReturnCorrect(x: int) returns (r: int)
     return -x;
   }
   return x;
-}
+};
 
 procedure earlyReturnBuggy(x: int) returns (r: int)
   ensures r >= 0
@@ -32,7 +32,7 @@ procedure earlyReturnBuggy(x: int) returns (r: int)
     return x;
   }
   return x;
-}
+};
 "
 
 #guard_msgs (drop info, error) in

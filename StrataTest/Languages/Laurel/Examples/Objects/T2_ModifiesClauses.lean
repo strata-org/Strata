@@ -32,12 +32,12 @@ procedure modifyContainerOpaque(c: Container)
   modifies c
 {
   c#value := c#value + 1;
-}
+};
 
 procedure modifyContainerTransparant(c: Container)
 {
   c#value := c#value + 1;
-}
+};
 
 procedure caller() {
   var c: Container := new Container;
@@ -45,7 +45,7 @@ procedure caller() {
   var x: int := d#value;
   modifyContainerOpaque(c)
   assert x == d#value; // pass
-}
+};
 
 // This test-case does not work yet.
 // Because Core procedures never have transparent bodies
@@ -62,7 +62,7 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
    ensures true
 {
     modifyContainerTransparant(c)
-}
+};
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
@@ -71,7 +71,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
   modifies d
 {
     c#value := 2;
-}
+};
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -80,11 +80,12 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
   modifies d
 {
     modifyContainerTransparant(c)
-}
+};
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
   modifies c
   modifies d
+;
 
 procedure multipleModifiesClausesCaller() {
   var c: Container := new Container;
@@ -93,14 +94,14 @@ procedure multipleModifiesClausesCaller() {
   var x: int := e#value;
   multipleModifiesClauses(c, d, e)
   assert x == e#value; // pass
-}
+};
 
 procedure newObjectDoNotCountForModifies()
   ensures true
 {
   var c: Container := new Container;
   c#value := 1;
-}
+};
 "
 
 #guard_msgs (drop info, error) in
