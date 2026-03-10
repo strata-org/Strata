@@ -38,9 +38,6 @@ function guardInFunction(x: int) returns (r: int) {
 }
 
 procedure testFunctions() {
-  // assert letsInFunction() == 2;
-  // assert letsInFunction() == 3; error: assertion does not hold
-
   assert returnAtEnd(1) == 1;
   assert returnAtEnd(1) == 2;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
