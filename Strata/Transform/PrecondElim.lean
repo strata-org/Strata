@@ -45,18 +45,29 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 
 /-! ## Collecting assertions from expressions -/
 
+/-- Classify a function name into a property type for SARIF reporting. -/
+private def classifyPrecondition (funcName : String) : Option String :=
+  if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
+    some Imperative.MetaData.divisionByZero
+  else
+    none
+
 /--
 Given a Factory and an expression, collect all partial function call
 precondition obligations and return them as `assert` statements.
-The metadata from the original statement is attached to the generated assertions.
+The metadata from the original statement is attached to the generated assertions,
+with property type classification added when applicable.
 -/
 def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 (labelPrefix : String) (md : Imperative.MetaData Expression := .empty)
 : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
   wfObs.mapIdx fun idx ob =>
+    let md' := match classifyPrecondition ob.funcName with
+      | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
+      | none => md
     Statement.assert
-    s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md
+    s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md'
 
 /--
 Collect assertions for all expressions in a command.
