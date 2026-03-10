@@ -509,7 +509,10 @@ def pyAnalyzeLaurelCommand : Command where
                         else
                           ("", s!" (at byte {fr.range.start})")
                   | none =>
-                    if isFail vcResult then
+                    let isFail := match vcResult.outcome with
+                      | .error _ => true
+                      | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
+                    if isFail then
                       (s!"Assertion failed at byte {fr.range.start}: ", "")
                     else
                       ("", s!" (at byte {fr.range.start})")
