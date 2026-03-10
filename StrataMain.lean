@@ -565,6 +565,13 @@ def pyAnalyzeLaurelCommand : Command where
           -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram coreProgram) 100))
           -- dbg_trace "================================="
 
+          -- Verify using incremental CoreSMT engine or batch Core verifier
+          let incremental := pflags.getBool "incremental"
+          let vcResults ←
+            if incremental then
+              verifyIncremental programDecls pySourceOpt
+            else
+              verifyBatch coreProgram pySourceOpt
 
           -- Output in SARIF format if requested
           if outputSarif then
