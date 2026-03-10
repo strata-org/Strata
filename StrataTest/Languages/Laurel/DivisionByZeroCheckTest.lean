@@ -26,9 +26,11 @@ procedure safeDivision() {
   assert z == 5;
 }
 
+// Error ranges are too wide because Core does not use expression locations
 procedure unsafeDivision(x: int) {
   var z: int := 10 / x;
-//              ^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// Error ranges are too wide because Core does not use expression locations
 }
 
 function pureDiv(x: int, y: int): int
@@ -44,7 +46,8 @@ procedure callPureDivSafe() {
 
 procedure callPureDivUnsafe(x: int) {
   var z: int := pureDiv(10, x);
-//              ^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+// Error ranges are too wide because Core does not use expression locations
 }
 "
 

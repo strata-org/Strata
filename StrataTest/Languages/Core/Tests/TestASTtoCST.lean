@@ -58,8 +58,8 @@ datatype Tree (a : Type) {
 info: type T0;
 type Byte := bv8;
 type IntMap := Map int int;
-type T1 (a0 : Type);
-type MyMap (a0 : Type, a1 : Type);
+type T1 (x : Type);
+type MyMap (a : Type, b : Type);
 type Foo (a : Type, b : Type) := Map b a;
 datatype List (a : Type) {(
   (Nil())),

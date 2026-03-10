@@ -201,7 +201,16 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
+/-- Add a function to the environment. For recursive functions, checks that
+    the `@[cases]` attribute was provided (which sets `inlineIfConstr`), and
+    rejects cases not yet supported for SMT verification (polymorphic recursive
+    functions, missing `@[cases]` attribute). -/
 def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
+  if func.isRecursive && !func.typeArgs.isEmpty then
+    .error (.fromFormat f!"Polymorphic recursive functions are not yet supported for SMT \
+      verification: '{func.name}'. SMT solvers require monomorphic axioms.")
+  if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isNone then
+    .error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter")
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 

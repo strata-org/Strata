@@ -250,7 +250,6 @@ def translateQualifiedIdent (t : Tree) : MaybeQualifiedIdent :=
   | q`Init.qualifiedIdentImplicit, 1 => Id.run do
     let .ident _ name := args[0]
       | return panic! "Expected ident"
-    let name := name.dropPrefix "«" |>.dropSuffix "»" |>.toString
     match name.splitOn "." with
     | [dialect, rest] => .qid { dialect, name := rest }
     | _ => .name name
@@ -480,7 +479,7 @@ partial def unifyTypes
       let .ofTypeInfo info := t.info
         | panic! "Expected type info"
       if !(← checkExpressionType tctx inferredType info.typeExpr) then
-        logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected."
+        logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected." (globalContext? := some tctx.globalContext)
       pure args
   | .tvar _ _ =>
     -- tvar nodes are passed through without attempting unification
@@ -879,6 +878,23 @@ def evalBindingSpec
             | _ =>
               panic! "Bad arg"
     pure <| tctx.push { ident, kind := .type loc params value }
+  | .scopedType b =>
+    let ident := evalBindingNameIndex args b.nameIndex
+    let params ← elabTypeParams initSize args b.argsIndex
+    let value : Option TypeExpr :=
+          match b.defIndex with
+          | none => none
+          | some idx =>
+            match args[idx.toLevel].info with
+            | .ofTypeInfo info =>
+              some info.typeExpr
+            | _ =>
+              panic! "Bad arg"
+    -- For scoped types, add to global context instead of local bindings
+    let gctx := tctx.globalContext
+    let gkind := GlobalKind.type params value
+    let newGctx := gctx.ensureDefined ident gkind
+    pure (tctx.withGlobalContext newGctx)
   | .datatype b =>
     let nameInfo := args[b.nameIndex.toLevel].info
     let (nameLoc, ident) ←
@@ -1222,6 +1238,32 @@ partial def runSyntaxElaborator
       let tctx := typeParamNames.foldl (init := tctx) fun ctx name =>
           ctx.push { ident := name, kind := .tvar tloc name }
       trees ← elabSyntaxArg getKind isTypeP tctx astx ⟨argLevel, argLevelP⟩ trees
+    else if let some (nameLevel, argsLevel, typeLevel) := ae.scopeSelf then
+      -- @[scopeSelf(name, args, type)] — adds function name as expression binding
+      -- Push function name BEFORE params so params keep their expected bvar indices.
+      -- This subsumes @[scope] — we push both self and params here.
+      match trees[nameLevel], trees[argsLevel], trees[typeLevel] with
+        | some nameT, some argsT, some typeT =>
+          let fnName :=
+            match nameT.info with
+            | .ofIdentInfo info => info.val
+            | _ => panic! "scopeSelf: expected identifier for function name"
+          let inheritedCount := tctx0.bindings.size
+          let paramBindings := argsT.resultContext.bindings.toArray.extract inheritedCount argsT.resultContext.bindings.size
+          let params := paramBindings.filterMap fun b =>
+            match b.kind with
+            | .expr tp => some (b.ident, tp)
+            | _ => none
+          let retType :=
+            match typeT.info with
+            | .ofTypeInfo info => info.typeExpr
+            | _ => panic! "scopeSelf: expected type for return type"
+          let fnType := TypeExprF.mkFunType typeT.info.loc params retType
+          -- Push self-binding, then all param bindings on top
+          let tctx := tctx0.push { ident := fnName, kind := .expr fnType }
+          let tctx := paramBindings.foldl (init := tctx) fun ctx b => ctx.push b
+          trees ← elabSyntaxArg getKind isTypeP tctx astx ⟨argLevel, argLevelP⟩ trees
+        | _, _, _ => continue
     else if let some idx := ae.contextLevel then
       let some t := trees[idx]
         | -- This failed so skip
@@ -1422,7 +1464,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
     fun tctx stx => do
       let some loc := mkSourceRange? stx
         | panic! "ident missing source location"
-      let info : IdentInfo := { inputCtx := tctx, loc := loc, val := stx.getId.toString }
+      let info : IdentInfo := { inputCtx := tctx, loc := loc, val := stx.getId.toString (escape := false) }
       pure <| .node (.ofIdentInfo info) #[]
   | q`Init.Num =>
     fun tctx stx => do

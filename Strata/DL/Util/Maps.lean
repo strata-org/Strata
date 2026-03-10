@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-import Strata.DL.Util.Map
+public import Strata.DL.Util.Map
+import all Strata.DL.Util.Map
 
 open Std (ToFormat Format format)
 
-abbrev Maps (α : Type u) (β : Type v) := List (Map α β)
+public section
+
+@[expose] abbrev Maps (α : Type u) (β : Type v) := List (Map α β)
 
 instance : Inhabited (Maps α β) where
   default := []
@@ -339,3 +342,4 @@ theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
       · simp_all
 
 ---------------------------------------------------------------------
+end

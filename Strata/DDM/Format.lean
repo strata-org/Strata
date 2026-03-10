@@ -61,11 +61,6 @@ Strips Lean's «» notation if present.
 Follows SMT-LIB 2.6 specification for quoted symbols.
 -/
 private def formatIdent (s : String) : Format :=
-  -- Strip Lean's «» notation if present
-  let s := if s.startsWith "«" && s.endsWith "»" then
-             s.drop 1 |>.dropEnd 1 |>.toString
-           else
-             s
   if needsPipeDelimiters s then
     Format.text ("|" ++ escapePipeIdent s ++ "|")
   else
@@ -446,6 +441,21 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
                   a[alvl].snd
+          -- If @[scopeSelf] is present, insert the function name before the param bindings.
+          -- scopeSelf subsumes @[scope]: we get params from argsLevel directly.
+          let s :=
+                match argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
+                | none => s
+                | some (⟨nameLvl, nameIsLt⟩, ⟨argsLvl, argsIsLt⟩, _) =>
+                  have _ : nameLvl < a.size := by simp at nameIsLt; omega
+                  have _ : argsLvl < a.size := by simp at argsIsLt; omega
+                  match args[nameLvl] with
+                  | .ident _ name =>
+                    let paramBindings := a[argsLvl].snd.bindings
+                    let scopeStart := initState.bindings.size
+                    let paramOnly := paramBindings.extract scopeStart paramBindings.size
+                    { s with bindings := s.bindings ++ #[name] ++ paramOnly }
+                  | _ => s
           aux (a.push (args[lvl].mformatM c s))
         else
           a

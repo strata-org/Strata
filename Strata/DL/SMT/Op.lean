@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.TermType
-import Lean.Elab.Command
+public import Strata.DL.SMT.TermType
+public meta import Lean.Elab.Command
+public meta import Init.Data.String.Legacy
 
+public section
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Op.lean)
@@ -357,3 +360,4 @@ instance Op.decLt (x y : Op) : Decidable (x < y) :=
   if h : Op.LT x y then isTrue h else isFalse h
 
 end Strata.SMT
+end

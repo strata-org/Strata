@@ -3,22 +3,23 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.EvalError
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Util.ListMap
-import Strata.DL.Util.Maps
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.EvalError
+public import Strata.DL.Imperative.MetaData
+public import Strata.DL.Util.ListMap
+public import Strata.DL.Util.Maps
 
 namespace Imperative
 open Std (ToFormat Format format)
 
+public section
+
 ---------------------------------------------------------------------
 
-abbrev PathCondition (P : PureExpr)  := ListMap String P.Expr
-abbrev PathConditions (P : PureExpr) := List (PathCondition P)
+@[expose] abbrev PathCondition (P : PureExpr)  := ListMap String P.Expr
+@[expose] abbrev PathConditions (P : PureExpr) := List (PathCondition P)
 
 def PathCondition.format' {P} [ToFormat P.Expr] (m : PathCondition P) : Format :=
   match m with
@@ -71,12 +72,14 @@ def PathConditions.removeByNames (ps : PathConditions P) (names : List String) :
 inductive PropertyType where
   | cover
   | assert
+  | divisionByZero
   deriving Repr, DecidableEq
 
 instance : ToFormat PropertyType where
   format p := match p with
     | .cover => "cover"
     | .assert => "assert"
+    | .divisionByZero => "division by zero check"
 
 /--
 A proof obligation can be discharged by some backend solver or a dedicated
@@ -103,7 +106,7 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] : ToFormat (ProofObligation P) whe
                   Obligation: {ob.obligation}\n\
                   Metadata: {ob.metadata}\n"
 
-abbrev ProofObligations (P : PureExpr) := Array (ProofObligation P)
+@[expose] abbrev ProofObligations (P : PureExpr) := Array (ProofObligation P)
 
 ---------------------------------------------------------------------
 
@@ -132,4 +135,5 @@ class EvalContext (P : PureExpr) (State : Type) where
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative
